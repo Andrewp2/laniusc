@@ -67,6 +67,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMethodFieldsP
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
                 "hir_item_name_token".into(),
                 b.hir_item_name_token.as_entire_binding(),

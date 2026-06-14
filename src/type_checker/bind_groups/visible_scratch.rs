@@ -1,12 +1,12 @@
 use super::super::*;
 
 pub(super) struct ResidentVisibleScratch {
-    pub(super) flag: wgpu::Buffer,
-    pub(super) prefix: wgpu::Buffer,
-    pub(super) scan_local_prefix: wgpu::Buffer,
-    pub(super) scan_block_sum: wgpu::Buffer,
-    pub(super) scan_prefix_a: wgpu::Buffer,
-    pub(super) scan_prefix_b: wgpu::Buffer,
+    pub(super) flag: LaniusBuffer<u32>,
+    pub(super) prefix: LaniusBuffer<u32>,
+    pub(super) scan_local_prefix: LaniusBuffer<u32>,
+    pub(super) scan_block_sum: LaniusBuffer<u32>,
+    pub(super) scan_prefix_a: LaniusBuffer<u32>,
+    pub(super) scan_prefix_b: LaniusBuffer<u32>,
 }
 
 impl ResidentVisibleScratch {
@@ -21,47 +21,65 @@ impl ResidentVisibleScratch {
             // declaration scans run, so the HIR-sized flag/prefix scratch can
             // reuse those buffers instead of allocating another scan family.
             return Self {
-                flag: alias_storage_buffer(&module_path.module_record_flag),
-                prefix: alias_storage_buffer(&module_path.module_record_prefix),
-                scan_local_prefix: alias_storage_buffer(&module_path.record_scan_local_prefix),
-                scan_block_sum: alias_storage_buffer(&module_path.record_scan_block_sum),
-                scan_prefix_a: alias_storage_buffer(&module_path.record_scan_prefix_a),
-                scan_prefix_b: alias_storage_buffer(&module_path.record_scan_prefix_b),
+                flag: typed_alias_storage_u32(
+                    &module_path.module_record_flag,
+                    scan_capacity as usize,
+                ),
+                prefix: typed_alias_storage_u32(
+                    &module_path.module_record_prefix,
+                    scan_capacity as usize,
+                ),
+                scan_local_prefix: typed_alias_storage_u32(
+                    &module_path.record_scan_local_prefix,
+                    scan_capacity as usize,
+                ),
+                scan_block_sum: typed_alias_storage_u32(
+                    &module_path.record_scan_block_sum,
+                    scan_blocks as usize,
+                ),
+                scan_prefix_a: typed_alias_storage_u32(
+                    &module_path.record_scan_prefix_a,
+                    scan_blocks as usize,
+                ),
+                scan_prefix_b: typed_alias_storage_u32(
+                    &module_path.record_scan_prefix_b,
+                    scan_blocks as usize,
+                ),
             };
         }
 
         Self {
-            flag: storage_u32_rw(
+            flag: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_flag",
                 scan_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            prefix: storage_u32_rw(
+            prefix: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_prefix",
                 scan_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            scan_local_prefix: storage_u32_rw(
+            scan_local_prefix: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_scan_local_prefix",
                 scan_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            scan_block_sum: storage_u32_rw(
+            scan_block_sum: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_scan_block_sum",
                 scan_blocks as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            scan_prefix_a: storage_u32_rw(
+            scan_prefix_a: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_scan_prefix_a",
                 scan_blocks as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            scan_prefix_b: storage_u32_rw(
+            scan_prefix_b: typed_storage_u32_rw(
                 device,
                 "type_check.resident.hir_visible_decl_scan_prefix_b",
                 scan_blocks as usize,

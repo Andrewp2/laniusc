@@ -641,8 +641,10 @@ pub(in crate::type_checker) fn create_with_passes(
     // Declaration validation status/duplicate buffers are dead once
     // namespace flags have been marked. Reuse them for public declaration
     // prefixes so the compact type/value lookup prefix buffers remain intact.
-    let decl_type_public_prefix = alias_storage_buffer(&decl_status);
-    let decl_value_public_prefix = alias_storage_buffer(&decl_duplicate_of);
+    let decl_type_public_prefix =
+        typed_alias_storage_u32(&decl_status, record_capacity_u32 as usize);
+    let decl_value_public_prefix =
+        typed_alias_storage_u32(&decl_duplicate_of, record_capacity_u32 as usize);
 
     let decl_type_public_scan = create_counted_u32_scan_bind_groups_with_passes(
         passes,

@@ -5,15 +5,15 @@ use super::*;
 pub(in crate::type_checker) fn record_loop_depth_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    groups: &ResidentTypeCheckBindGroups,
+    state: &ResidentTypeCheckState,
 ) -> Result<()> {
     record_loop_depth_bind_groups_with_passes(
         passes,
         encoder,
-        groups.token_capacity,
-        &groups.hir_active_dispatch_args,
-        groups.loop_n_blocks,
-        &groups.loop_bind_groups,
+        state.cache_key.token_capacity,
+        &state.hir_active_dispatch_args,
+        state.loop_n_blocks,
+        &state.loop_bind_groups,
     )
 }
 

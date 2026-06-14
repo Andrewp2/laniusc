@@ -172,55 +172,55 @@ struct SyntaxBufferCache {
     params_buf: LaniusBuffer<SyntaxParams>,
     delimiter_params: LaniusBuffer<DelimiterParams>,
     delimiter_scan_steps: Vec<DelimiterScanStep>,
-    depth_paren_inblock: wgpu::Buffer,
-    depth_bracket_inblock: wgpu::Buffer,
-    depth_brace_inblock: wgpu::Buffer,
-    depth_angle_inblock: wgpu::Buffer,
-    block_sum_paren: wgpu::Buffer,
-    block_sum_bracket: wgpu::Buffer,
-    block_sum_brace: wgpu::Buffer,
-    block_sum_angle: wgpu::Buffer,
-    prefix_paren_a: wgpu::Buffer,
-    prefix_paren_b: wgpu::Buffer,
-    prefix_bracket_a: wgpu::Buffer,
-    prefix_bracket_b: wgpu::Buffer,
-    prefix_brace_a: wgpu::Buffer,
-    prefix_brace_b: wgpu::Buffer,
-    prefix_angle_a: wgpu::Buffer,
-    prefix_angle_b: wgpu::Buffer,
-    block_prefix_paren: wgpu::Buffer,
-    block_prefix_bracket: wgpu::Buffer,
-    block_prefix_brace: wgpu::Buffer,
-    block_prefix_angle: wgpu::Buffer,
-    statement_context_event_block: wgpu::Buffer,
-    statement_context_event_prefix_a: wgpu::Buffer,
-    statement_context_event_prefix_b: wgpu::Buffer,
-    statement_context_event_block_prefix: wgpu::Buffer,
-    statement_context_kind: wgpu::Buffer,
+    depth_paren_inblock: LaniusBuffer<i32>,
+    depth_bracket_inblock: LaniusBuffer<i32>,
+    depth_brace_inblock: LaniusBuffer<i32>,
+    depth_angle_inblock: LaniusBuffer<i32>,
+    block_sum_paren: LaniusBuffer<i32>,
+    block_sum_bracket: LaniusBuffer<i32>,
+    block_sum_brace: LaniusBuffer<i32>,
+    block_sum_angle: LaniusBuffer<i32>,
+    prefix_paren_a: LaniusBuffer<i32>,
+    prefix_paren_b: LaniusBuffer<i32>,
+    prefix_bracket_a: LaniusBuffer<i32>,
+    prefix_bracket_b: LaniusBuffer<i32>,
+    prefix_brace_a: LaniusBuffer<i32>,
+    prefix_brace_b: LaniusBuffer<i32>,
+    prefix_angle_a: LaniusBuffer<i32>,
+    prefix_angle_b: LaniusBuffer<i32>,
+    block_prefix_paren: LaniusBuffer<i32>,
+    block_prefix_bracket: LaniusBuffer<i32>,
+    block_prefix_brace: LaniusBuffer<i32>,
+    block_prefix_angle: LaniusBuffer<i32>,
+    statement_context_event_block: LaniusBuffer<u32>,
+    statement_context_event_prefix_a: LaniusBuffer<u32>,
+    statement_context_event_prefix_b: LaniusBuffer<u32>,
+    statement_context_event_block_prefix: LaniusBuffer<u32>,
+    statement_context_kind: LaniusBuffer<u32>,
     statement_context_scan_steps: Vec<DelimiterScanStep>,
-    impl_context_event_block: wgpu::Buffer,
-    impl_context_event_prefix_a: wgpu::Buffer,
-    impl_context_event_prefix_b: wgpu::Buffer,
-    impl_context_event_block_prefix: wgpu::Buffer,
-    token_impl_header_kind: wgpu::Buffer,
-    token_impl_context_event: wgpu::Buffer,
+    impl_context_event_block: LaniusBuffer<u32>,
+    impl_context_event_prefix_a: LaniusBuffer<u32>,
+    impl_context_event_prefix_b: LaniusBuffer<u32>,
+    impl_context_event_block_prefix: LaniusBuffer<u32>,
+    token_impl_header_kind: LaniusBuffer<u32>,
+    token_impl_context_event: LaniusBuffer<u32>,
     impl_context_scan_steps: Vec<DelimiterScanStep>,
-    trait_context_event_block: wgpu::Buffer,
-    trait_context_event_prefix_a: wgpu::Buffer,
-    trait_context_event_prefix_b: wgpu::Buffer,
-    trait_context_event_block_prefix: wgpu::Buffer,
-    trait_context_event: wgpu::Buffer,
+    trait_context_event_block: LaniusBuffer<u32>,
+    trait_context_event_prefix_a: LaniusBuffer<u32>,
+    trait_context_event_prefix_b: LaniusBuffer<u32>,
+    trait_context_event_block_prefix: LaniusBuffer<u32>,
+    trait_context_event: LaniusBuffer<u32>,
     trait_context_scan_steps: Vec<DelimiterScanStep>,
-    paren_match_depth: wgpu::Buffer,
-    paren_match_block_min: wgpu::Buffer,
-    paren_match_min_tree: wgpu::Buffer,
-    angle_match_depth: wgpu::Buffer,
-    angle_match_block_min: wgpu::Buffer,
-    angle_match_min_tree: wgpu::Buffer,
+    paren_match_depth: LaniusBuffer<i32>,
+    paren_match_block_min: LaniusBuffer<i32>,
+    paren_match_min_tree: LaniusBuffer<i32>,
+    angle_match_depth: LaniusBuffer<i32>,
+    angle_match_block_min: LaniusBuffer<i32>,
+    angle_match_min_tree: LaniusBuffer<i32>,
     paren_match_min_tree_steps: Vec<MinTreeBuildStep>,
     default_token_file_id: LaniusBuffer<u32>,
-    status_buf: wgpu::Buffer,
-    counters_buf: wgpu::Buffer,
+    status_buf: LaniusBuffer<u32>,
+    counters_buf: LaniusBuffer<i32>,
 }
 
 impl SyntaxBufferCache {
@@ -522,17 +522,11 @@ impl SyntaxBufferCache {
                 n_blocks_capacity,
                 paren_match_min_tree_leaf_base,
             ),
-            default_token_file_id: LaniusBuffer::new(
-                (
-                    storage_u32_rw(
-                        device,
-                        "parser.syntax.default_token_file_id",
-                        token_capacity as usize,
-                        wgpu::BufferUsages::COPY_DST,
-                    ),
-                    (token_capacity.max(1) as u64) * 4,
-                ),
+            default_token_file_id: storage_u32_rw(
+                device,
+                "parser.syntax.default_token_file_id",
                 token_capacity as usize,
+                wgpu::BufferUsages::COPY_DST,
             ),
             status_buf: storage_u32_rw(
                 device,
@@ -2046,13 +2040,15 @@ fn storage_u32_rw(
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
+) -> LaniusBuffer<u32> {
+    let byte_size = (count.max(1) * 4) as u64;
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: (count.max(1) * 4) as u64,
+        size: byte_size,
         usage: wgpu::BufferUsages::STORAGE | extra_usage,
         mapped_at_creation: false,
-    })
+    });
+    LaniusBuffer::new((raw, byte_size), count)
 }
 
 fn storage_i32_rw(
@@ -2060,8 +2056,15 @@ fn storage_i32_rw(
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    storage_u32_rw(device, label, count, extra_usage)
+) -> LaniusBuffer<i32> {
+    let byte_size = (count.max(1) * 4) as u64;
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: byte_size,
+        usage: wgpu::BufferUsages::STORAGE | extra_usage,
+        mapped_at_creation: false,
+    });
+    LaniusBuffer::new((raw, byte_size), count)
 }
 
 fn token_bytes(tokens: &[Token]) -> Vec<u8> {

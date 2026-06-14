@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::{
+    gpu::buffers::LaniusBuffer,
     lexer::{
         types::{GpuToken, Token},
         util::read_tokens_from_mapped,
@@ -452,14 +453,14 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
 }
 
 struct DiagnosticTokenBuffer {
-    buffer: wgpu::Buffer,
+    buffer: LaniusBuffer<crate::lexer::GpuToken>,
     byte_size: usize,
 }
 
 impl DiagnosticTokenBuffer {
     fn from_lexer_buffers(bufs: &crate::lexer::buffers::GpuBuffers) -> Self {
         Self {
-            buffer: bufs.tokens_out.buffer.clone(),
+            buffer: bufs.tokens_out.clone(),
             byte_size: bufs.tokens_out.byte_size,
         }
     }

@@ -46,77 +46,87 @@ pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
     hasher.finish()
 }
 
-pub(super) fn storage_u32_rw(
+pub(super) fn typed_storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
+) -> LaniusBuffer<u32> {
+    let byte_size = (count.max(1) * 4) as u64;
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: (count.max(1) * 4) as u64,
+        size: byte_size,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
         mapped_at_creation: false,
-    })
+    });
+    LaniusBuffer::new((raw, byte_size), count)
 }
 
-pub(super) fn alias_storage_buffer(source: &wgpu::Buffer) -> wgpu::Buffer {
-    source.clone()
+pub(super) fn typed_alias_storage_u32(source: &wgpu::Buffer, count: usize) -> LaniusBuffer<u32> {
+    LaniusBuffer::new((source.clone(), source.size()), count)
 }
 
-pub(super) fn reuse_storage_u32(
+pub(super) fn typed_reuse_storage_u32(
     device: &wgpu::Device,
     label: &str,
     count: usize,
     candidate: Option<&wgpu::Buffer>,
-) -> wgpu::Buffer {
+) -> LaniusBuffer<u32> {
     let byte_count = count.max(1).saturating_mul(4) as u64;
     if let Some(buffer) = candidate.filter(|buffer| buffer.size() >= byte_count) {
-        alias_storage_buffer(buffer)
+        typed_alias_storage_u32(buffer, count)
     } else {
-        storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+        typed_storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
     }
 }
 
-pub(super) fn alias_or_storage_u32(
+pub(super) fn typed_alias_or_storage_u32(
     device: &wgpu::Device,
     label: &str,
     count: usize,
     candidate: Option<&wgpu::Buffer>,
-) -> wgpu::Buffer {
+) -> LaniusBuffer<u32> {
     if let Some(buffer) = candidate {
-        alias_storage_buffer(buffer)
+        typed_alias_storage_u32(buffer, count)
     } else {
-        storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+        typed_storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
     }
 }
 
-pub(super) fn storage_u32_fill_rw(
+pub(super) fn typed_storage_u32_fill_rw(
     device: &wgpu::Device,
     label: &str,
     count: usize,
     value: u32,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    let count = count.max(1);
-    let mut bytes = Vec::with_capacity(count * 4);
-    for _ in 0..count {
+) -> LaniusBuffer<u32> {
+    let allocated_count = count.max(1);
+    let mut bytes = Vec::with_capacity(allocated_count * 4);
+    for _ in 0..allocated_count {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: &bytes,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
-    })
+    });
+    LaniusBuffer::new((raw, bytes.len() as u64), count)
 }
 
-pub(super) fn storage_i32_rw(
+pub(super) fn typed_storage_i32_rw(
     device: &wgpu::Device,
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    storage_u32_rw(device, label, count, extra_usage)
+) -> LaniusBuffer<i32> {
+    let byte_size = (count.max(1) * 4) as u64;
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: byte_size,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
+        mapped_at_creation: false,
+    });
+    LaniusBuffer::new((raw, byte_size), count)
 }
 
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {

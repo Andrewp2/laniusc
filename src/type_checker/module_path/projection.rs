@@ -54,6 +54,8 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         enclosing_fn,
         call_fn_index,
         call_return_type,
+        call_return_type_token,
+        method_call_name_id,
         call_param_count,
         call_param_type,
         call_param_ref_tag,
@@ -409,6 +411,8 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("path_segment_base", path_segment_base.as_entire_binding()),
             ("path_segment_token", path_segment_token.as_entire_binding()),
             ("path_owner_token", path_owner_token.as_entire_binding()),
+            ("token_words", token_buf.as_entire_binding()),
+            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
             (
                 "resolved_value_decl",
                 resolved_value_decl.as_entire_binding(),
@@ -432,6 +436,10 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             (
                 "hir_call_context_stmt_node",
                 hir_items.call_context_stmt_node.as_entire_binding(),
+            ),
+            (
+                "hir_member_name_token",
+                hir_items.member_name_token.as_entire_binding(),
             ),
             (
                 "hir_call_arg_count",
@@ -499,6 +507,14 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("enclosing_fn", enclosing_fn.as_entire_binding()),
             ("call_fn_index", call_fn_index.as_entire_binding()),
             ("call_return_type", call_return_type.as_entire_binding()),
+            (
+                "call_return_type_token",
+                call_return_type_token.as_entire_binding(),
+            ),
+            (
+                "method_call_name_id",
+                method_call_name_id.as_entire_binding(),
+            ),
             ("status", status_buf.as_entire_binding()),
         ],
     )?;

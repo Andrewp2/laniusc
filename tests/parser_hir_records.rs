@@ -485,13 +485,125 @@ fn parser_semantic_tokens_close_const_type_before_next_function() {
 
 #[test]
 fn parser_hir_qualified_generic_constructor_let_keeps_following_statement_in_block() {
-    parse_resident_source(
+    let parsed = parse_resident_source(
         r#"
-fn make_world() {
+fn make_world() -> i32 {
     let world: std::vec::Vec<Sphere> = std::vec::Vec<Sphere>::new();
     world.push();
+    return 0;
 }
 "#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept qualified generic constructor fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let let_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_LET && parsed.hir_kind[node] == HIR_NODE_LET_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish the local declaration");
+    let function_block = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_nearest_block_node[let_node],
+        "local declaration nearest block",
+    );
+    assert_eq!(
+        parsed.hir_kind[function_block], HIR_NODE_BLOCK,
+        "local declaration should belong to the function body block"
+    );
+    let function_node = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_nearest_fn_node[let_node],
+        "local declaration nearest function",
+    );
+    assert_eq!(
+        parsed.hir_kind[function_node], HIR_NODE_FN,
+        "local declaration should belong to the enclosing function"
+    );
+
+    let init_expr = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[let_node],
+        "qualified generic constructor initializer",
+    );
+    assert_hir_child_span_inside_owner(
+        &parsed,
+        let_node,
+        init_expr,
+        "qualified generic constructor initializer",
+    );
+    let init_root = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_expr_result_root_node[init_expr],
+        "qualified generic constructor initializer root",
+    );
+    assert_eq!(
+        parsed.hir_kind[init_root], HIR_NODE_CALL_EXPR,
+        "qualified generic constructor initializer should canonicalize to the call expression, not an intermediate postfix wrapper"
+    );
+    assert_eq!(
+        parsed.hir_nearest_stmt_node[init_root] as usize, let_node,
+        "qualified generic constructor call should retain the let statement as context"
+    );
+    assert_eq!(
+        parsed.hir_nearest_block_node[init_root] as usize, function_block,
+        "qualified generic constructor call should retain the function body block"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[init_root] as usize, function_node,
+        "qualified generic constructor call should retain the enclosing function"
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN
+                && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT
+                && parsed.hir_nearest_block_node[node] as usize == function_block)
+                .then_some(node)
+        })
+        .expect("fixture should publish the following return statement in the same block");
+    assert_eq!(
+        parsed.hir_nearest_fn_node[return_node] as usize, function_node,
+        "following return statement should stay in the same enclosing function"
+    );
+    assert!(
+        parsed.hir_token_end[let_node] <= parsed.hir_token_pos[return_node],
+        "local declaration span should close before the following return statement"
+    );
+
+    let push_call = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_NODE_CALL_EXPR
+                && node != init_root
+                && parsed.hir_token_end[let_node] <= parsed.hir_token_pos[node]
+                && parsed.hir_token_end[node] <= parsed.hir_token_pos[return_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish the method call statement after the local declaration");
+    assert_ne!(
+        parsed.hir_nearest_stmt_node[push_call] as usize, let_node,
+        "method call after the declaration should not inherit the let statement context"
+    );
+    assert_eq!(
+        parsed.hir_nearest_block_node[push_call] as usize, function_block,
+        "method call after the declaration should stay in the function body block"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[push_call] as usize, function_node,
+        "method call after the declaration should stay in the enclosing function"
     );
 }
 
@@ -4892,6 +5004,98 @@ fn free(value: i32) -> i32 {
     assert_eq!(
         free_function_count, 1,
         "free function rows should not publish impl method metadata"
+    );
+}
+
+#[test]
+fn parser_hir_generic_inherent_impl_method_records_attach_to_impl_owner() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+struct Boxed<T> {
+    value: T,
+}
+
+impl<T> Boxed<T> {
+    fn present(self) -> bool {
+        return true;
+    }
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let method_nodes = parsed
+        .hir_method_impl_node
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &impl_node)| (impl_node != INVALID).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        method_nodes.len(),
+        1,
+        "generic inherent impl should publish exactly one impl method record"
+    );
+
+    let method_node = method_nodes[0];
+    let impl_owner = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_method_impl_node[method_node],
+        "generic inherent impl method owner",
+    );
+    assert_eq!(
+        parsed.hir_method_owner_node[method_node] as usize, impl_owner,
+        "method owner should point at the parser-owned impl row"
+    );
+    assert_eq!(
+        parsed.hir_kind[method_node], HIR_NODE_FN,
+        "method record should attach to the parser-owned function row"
+    );
+    assert_eq!(
+        parsed.hir_item_kind[method_node], HIR_ITEM_KIND_NONE,
+        "impl method records should not enter the module value namespace"
+    );
+
+    let receiver_type = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_method_impl_receiver_type_node[impl_owner],
+        "generic inherent impl receiver type",
+    );
+    assert_eq!(
+        parsed.hir_kind[receiver_type], HIR_NODE_TYPE,
+        "generic impl owner should retain its receiver type row"
+    );
+
+    let method_name_token = parsed.hir_method_name_token[method_node];
+    assert_ne!(
+        method_name_token, INVALID,
+        "generic impl method should publish its method name token"
+    );
+    assert!(
+        parsed.hir_token_pos[method_node] < method_name_token
+            && method_name_token < parsed.hir_token_end[method_node],
+        "method name token should stay inside the method function span"
+    );
+    assert_eq!(
+        parsed.hir_method_receiver_mode[method_node], HIR_METHOD_RECEIVER_SELF,
+        "plain self receiver should be published for the generic impl method"
+    );
+
+    let params = parsed
+        .hir_param_owner_fn_node
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &owner)| (owner as usize == method_node).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        params.len(),
+        1,
+        "generic impl method should own its self parameter row"
     );
 }
 

@@ -2,6 +2,8 @@
 
 use super::*;
 
+const METHOD_CALL_RESULT_RECEIVER_PASSES: usize = 8;
+
 pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -108,18 +110,21 @@ pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
         "type_check.methods.mark_call_keys",
         hir_active_dispatch_args,
     )?;
-    record_compute_indirect(
-        encoder,
-        &passes.methods_mark_call_return_keys,
-        &groups.mark_call_return_keys,
-        "type_check.methods.mark_call_return_keys",
-        hir_active_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.methods_resolve_table,
-        &groups.resolve_table,
-        "type_check.methods.resolve_table",
-        token_active_dispatch_args,
-    )
+    for _ in 0..METHOD_CALL_RESULT_RECEIVER_PASSES {
+        record_compute_indirect(
+            encoder,
+            &passes.methods_mark_call_return_keys,
+            &groups.mark_call_return_keys,
+            "type_check.methods.mark_call_return_keys",
+            hir_active_dispatch_args,
+        )?;
+        record_compute_indirect(
+            encoder,
+            &passes.methods_resolve_table,
+            &groups.resolve_table,
+            "type_check.methods.resolve_table",
+            token_active_dispatch_args,
+        )?;
+    }
+    Ok(())
 }

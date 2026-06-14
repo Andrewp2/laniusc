@@ -16,7 +16,10 @@ use timing::{HostCompileTimer, print_timer_trace};
 
 use super::buffers;
 use crate::{
-    gpu::timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
+    gpu::{
+        buffers::LaniusBuffer,
+        timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
+    },
     lexer::{
         passes::{LexerPasses, record_all_passes},
         tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind},
@@ -45,20 +48,20 @@ pub struct GpuLexer {
 
 pub struct ResidentLexerParserInputs {
     pub source_len: u32,
-    pub in_bytes: wgpu::Buffer,
-    pub tokens_out: wgpu::Buffer,
-    pub token_count: wgpu::Buffer,
-    pub token_file_id: wgpu::Buffer,
+    pub in_bytes: LaniusBuffer<u8>,
+    pub tokens_out: LaniusBuffer<GpuToken>,
+    pub token_count: LaniusBuffer<u32>,
+    pub token_file_id: LaniusBuffer<u32>,
 }
 
 impl ResidentLexerParserInputs {
     fn from_buffers(bufs: &buffers::GpuBuffers) -> Self {
         Self {
             source_len: bufs.n,
-            in_bytes: bufs.in_bytes.buffer.clone(),
-            tokens_out: bufs.tokens_out.buffer.clone(),
-            token_count: bufs.token_count.buffer.clone(),
-            token_file_id: bufs.token_file_id.buffer.clone(),
+            in_bytes: bufs.in_bytes.clone(),
+            tokens_out: bufs.tokens_out.clone(),
+            token_count: bufs.token_count.clone(),
+            token_file_id: bufs.token_file_id.clone(),
         }
     }
 }

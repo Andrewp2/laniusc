@@ -22,6 +22,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> generic_param_flag;
@@ -71,6 +72,15 @@ bool is_generic_param_node(uint node)
     return valid_node(node) && node_kind[node] == PROD_ENUM_TYPE_PARAM;
 }
 
+bool simple_impl_generic_param_list_node(uint node)
+{
+    if (!valid_node(node) || node_kind[node] != PROD_ENUM_TYPE_PARAMS_SOME)
+        return false;
+    uint start = hir_token_pos[node];
+    uint end = hir_token_end[node];
+    return valid_token(start + 1u) && end == start + 3u;
+}
+
 bool const_param_node(uint node)
 {
     return valid_node(node) && node_kind[node] == PROD_ENUM_CONST_PARAM;
@@ -88,6 +98,8 @@ uint param_name_token(uint node)
 {
     if (is_generic_param_node(node))
         return hir_token_pos[node];
+    if (simple_impl_generic_param_list_node(node))
+        return hir_token_pos[node] + 1u;
     if (const_param_node(node))
         return const_param_name_token(node);
     return INVALID;

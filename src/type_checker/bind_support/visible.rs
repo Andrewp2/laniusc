@@ -116,7 +116,7 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         clear_pass,
         resources,
     )?;
-    let hir_semantic_dispatch_args = storage_u32_rw(
+    let hir_semantic_dispatch_args = typed_storage_u32_rw(
         device,
         "type_check.visible.hir_semantic_dispatch_args",
         3,
@@ -476,7 +476,10 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         scatter_hir_decl_records,
         seed_hir_decl_order,
         hir_decl_key_radix_dispatch,
-        hir_decl_key_radix_dispatch_args: hir_visible_decl_key_radix_dispatch_args.clone(),
+        hir_decl_key_radix_dispatch_args: typed_alias_storage_u32(
+            hir_visible_decl_key_radix_dispatch_args,
+            3,
+        ),
         _hir_semantic_dispatch_params: hir_semantic_dispatch_params,
         _hir_decl_key_radix_dispatch_params: hir_decl_key_radix_dispatch_params,
         _hir_decl_key_radix_steps: hir_decl_key_radix_step_params,

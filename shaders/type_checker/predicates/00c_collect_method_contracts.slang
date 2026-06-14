@@ -6,8 +6,8 @@
 // parameters consume parser-owned `hir_method_*`, `hir_method_signature_flags`,
 // `hir_fn_return_type_node`, `hir_param_record`, and `hir_param_type_node` rows
 // for trait declarations plus inherent and trait impls. Method rows are
-// identified by parser productions; ownership is accepted only through
-// `hir_method_owner_node` so this pass must not rediscover owners from parents.
+// identified by parser productions; ownership comes from parser-owned
+// `hir_method_owner_node` records.
 
 import atomics;
 import generated_parse_production_ids;

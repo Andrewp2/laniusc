@@ -1,6 +1,7 @@
 // src/compiler/gpu_compiler/wasm_codegen.rs
 
 use super::{typecheck::type_check_error_to_compile_error_for_source, *};
+use crate::gpu::buffers::LaniusBuffer;
 
 impl<'gpu> GpuCompiler<'gpu> {
     pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
@@ -94,6 +95,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_value_node: &parse_bufs.hir_type_value_node,
                                             type_len_token: &parse_bufs.hir_type_len_token,
                                             type_len_value: &parse_bufs.hir_type_len_value,
+                                            type_file_id: &parse_bufs.hir_type_file_id,
                                             type_path_leaf_node: &parse_bufs
                                                 .hir_type_path_leaf_node,
                                             bound_path_owner_by_leaf: &parse_bufs
@@ -342,7 +344,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     })??;
                                 trace_wasm_compile("source_pack.wasm.recorded");
                                 let wasm_diagnostics = WasmDiagnosticBuffers {
-                                    tokens_out: bufs.tokens_out.buffer.clone(),
+                                    tokens_out: bufs.tokens_out.clone(),
                                 };
                                 Ok::<_, CompileError>((recorded, wasm_check, wasm_diagnostics))
                             },
@@ -474,6 +476,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_value_node: &parse_bufs.hir_type_value_node,
                                             type_len_token: &parse_bufs.hir_type_len_token,
                                             type_len_value: &parse_bufs.hir_type_len_value,
+                                            type_file_id: &parse_bufs.hir_type_file_id,
                                             type_path_leaf_node: &parse_bufs
                                                 .hir_type_path_leaf_node,
                                             bound_path_owner_by_leaf: &parse_bufs
@@ -777,7 +780,7 @@ impl<'gpu> GpuCompiler<'gpu> {
 }
 
 struct WasmDiagnosticBuffers {
-    tokens_out: wgpu::Buffer,
+    tokens_out: LaniusBuffer<crate::lexer::GpuToken>,
 }
 
 fn wasm_codegen_error_to_compile_error_for_source(

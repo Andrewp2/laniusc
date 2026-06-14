@@ -304,9 +304,9 @@ impl GpuX86CodeGenerator {
         // before call-record projection. Reuse the alternate ping-pong storage
         // for call-callee-root markers produced by call_records.
         let call_callee_root_call_buf = &enclosing_let_node_b_buf;
-        let hir_param_record_buf = empty_param_record_buf
+        let hir_param_record_buf: &wgpu::Buffer = empty_param_record_buf
             .as_ref()
-            .unwrap_or(function_metadata.param_record);
+            .map_or(function_metadata.param_record, |buffer| buffer);
         // Match-pattern owner records are consumed before call projection.
         // Reuse that HIR-sized table for per-call intrinsic metadata.
         let intrinsic_call_record_buf = &match_pattern_owner_buf;

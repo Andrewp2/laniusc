@@ -304,6 +304,8 @@ uint direct_node_type(uint node)
     if (hir_kind[node] == HIR_CALL_EXPR)
     {
         uint callee_token = call_callee_token(node);
+        if (!valid_token(callee_token))
+            callee_token = hir_token_pos[node];
         return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
     }
 
@@ -1187,15 +1189,6 @@ void count_call_predicate_obligations(uint call_node)
     if (!valid_token(fn_token))
         return;
 
-    if (!call_argument_window_supported(callee_token, fn_token))
-    {
-        record_error(
-            callee_token,
-            ERR_TRAIT_BOUND_UNSATISFIED,
-            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
-        return;
-    }
-
     OwnerLookupKey key;
     key.owner_token = fn_token;
     QueryRange range = equal_range_query<OwnerLookupKey, OwnerKeyCompare>(
@@ -1210,7 +1203,17 @@ void count_call_predicate_obligations(uint call_node)
         return;
     }
 
-    predicate_obligation_count_by_call[call_node] = range.end - range.begin;
+    uint obligation_count = range.end - range.begin;
+    if (obligation_count != 0u && !call_argument_window_supported(callee_token, fn_token))
+    {
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
+        return;
+    }
+
+    predicate_obligation_count_by_call[call_node] = obligation_count;
 }
 
 public struct ObligationPairLookupKey

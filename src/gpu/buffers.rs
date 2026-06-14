@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 /// A thin wrapper around `wgpu::Buffer` that also tracks element count and byte size.
 /// Always create these via the helpers below so we respect WGSL/encase layout rules.
+#[derive(Clone)]
 pub struct LaniusBuffer<T> {
     pub buffer: wgpu::Buffer,
     /// total allocated size in bytes

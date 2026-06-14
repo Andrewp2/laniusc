@@ -186,15 +186,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint value_status = resolved_value_status[path_i];
     if (value_status != PATH_RESOLVE_STATUS_OK)
     {
-        if (path_segment_count[path_i] > 1u)
-            record_error(error_token, ERR_UNRESOLVED_IDENT, value_status);
+        // Qualified value-path status is carried in module_value_path_status so
+        // later value consumers can clear it for non-value-path forms such as
+        // type-qualified associated calls. conditions_hir reports any status
+        // still left after those consumers run.
         return;
     }
 
-    uint projected_status =
-        owner_token < gParams.n_tokens ? module_value_path_status[owner_token]
-                                       : PATH_RESOLVE_STATUS_INVALID;
-    if (projected_status != PATH_RESOLVE_STATUS_INVALID &&
-        projected_status != PATH_RESOLVE_STATUS_OK)
-        record_error(error_token, ERR_UNRESOLVED_IDENT, projected_status);
+    // Qualified value-path status is validated after value consumers and
+    // associated-call resolution have had a chance to clear non-value forms.
 }

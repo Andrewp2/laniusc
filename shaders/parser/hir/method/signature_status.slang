@@ -18,6 +18,7 @@ struct Params
 ConstantBuffer<Params> gHirMethodSignatureStatus;
 
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_fn_signature_function_owner;
@@ -60,8 +61,21 @@ bool method_signature_owner_node(uint node)
            prod == PROD_TRAIT_METHOD_PUB;
 }
 
+bool direct_method_signature_marker(uint node)
+{
+    uint owner = hir_fn_signature_function_owner[node];
+    if (!method_signature_owner_node(owner))
+        return false;
+
+    uint p = parent[node];
+    return p == owner;
+}
+
 uint signature_flag_for_node(uint node)
 {
+    if (!direct_method_signature_marker(node))
+        return 0u;
+
     uint prod = node_kind[node];
     if (prod == PROD_ENUM_TYPE_PARAMS_SOME)
         return METHOD_SIGNATURE_HAS_GENERICS;

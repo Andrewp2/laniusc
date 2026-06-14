@@ -35,6 +35,8 @@ pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) enclosing_fn: &'a wgpu::Buffer,
     pub(in crate::type_checker) call_fn_index: &'a wgpu::Buffer,
     pub(in crate::type_checker) call_return_type: &'a wgpu::Buffer,
+    pub(in crate::type_checker) call_return_type_token: &'a wgpu::Buffer,
+    pub(in crate::type_checker) method_call_name_id: &'a wgpu::Buffer,
     pub(in crate::type_checker) call_param_count: &'a wgpu::Buffer,
     pub(in crate::type_checker) call_param_type: &'a wgpu::Buffer,
     pub(in crate::type_checker) call_param_ref_tag: &'a wgpu::Buffer,

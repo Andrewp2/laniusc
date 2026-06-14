@@ -244,8 +244,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_direct_calls_beyond_gpu_argument_width() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_direct_calls_beyond_cached_argument_width() {
+    assert_gpu_type_check_ok(
         r#"
 fn generated_sum(first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
     return first + second + third + fourth + fifth;
@@ -255,11 +255,6 @@ fn main() {
     return generated_sum(1, 2, 3, 4, 5);
 }
 "#,
-        "LNC0027",
-        &[
-            "call resolution failed",
-            "no supported function or method signature matches this receiver and argument list",
-        ],
     );
 }
 
@@ -786,6 +781,33 @@ fn main() {
 }
 
 #[test]
+fn type_checker_accepts_member_field_in_binary_expression() {
+    assert_gpu_type_check_ok(
+        r#"
+struct RenderSettings {
+    width: i32,
+    height: i32,
+    samples_per_pixel: i32,
+}
+
+fn row_from_top(settings: RenderSettings, y: i32) -> i32 {
+    let row: i32 = settings.height - 1 - y;
+    return row;
+}
+
+fn main() {
+    let settings: RenderSettings = RenderSettings {
+        width: 16,
+        height: 9,
+        samples_per_pixel: 1,
+    };
+    return row_from_top(settings, 2);
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_accepts_self_receiver_field_access_on_gpu() {
     let src = r#"
 struct Range {
@@ -817,6 +839,190 @@ fn main() {
 "#;
 
     assert_gpu_type_check_ok(src);
+}
+
+#[test]
+fn type_checker_resolves_associated_inherent_functions_on_type_paths() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+    y: i32,
+    z: i32,
+}
+
+impl Vec3 {
+    fn new(x: i32, y: i32, z: i32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+}
+
+fn main() {
+    let value: Vec3 = Vec3::new(1, 2, 3);
+    return value.x + value.y + value.z;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_associated_call_result_method_receivers() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+}
+
+impl Vec3 {
+    fn new(x: i32) -> Vec3 {
+        return Vec3 { x: x };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + right.x };
+    }
+}
+
+fn main() {
+    let value: Vec3 = Vec3::new(1).add(Vec3::new(2));
+    return value.x;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_associated_call_result_method_receivers_with_bound_arg() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+}
+
+impl Vec3 {
+    fn new(x: i32) -> Vec3 {
+        return Vec3 { x: x };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + right.x };
+    }
+}
+
+fn main() {
+    let right: Vec3 = Vec3::new(2);
+    let value: Vec3 = Vec3::new(1).add(right);
+    return value.x;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_generic_associated_inherent_functions_on_type_paths() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+impl<T> Boxed<T> {
+    fn new(value: T) -> Boxed<T> {
+        return Boxed { value: value };
+    }
+}
+
+fn main() {
+    let value: Boxed<i32> = Boxed<i32>::new(7);
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_self_receiver_method_calls_inside_impl() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+    y: i32,
+}
+
+impl Vec3 {
+    fn dot(self, right: Vec3) -> i32 {
+        return self.x * right.x + self.y * right.y;
+    }
+
+    fn magnitude_squared(self) -> i32 {
+        return self.dot(self);
+    }
+}
+
+fn main() {
+    let value: Vec3 = Vec3 { x: 2, y: 3 };
+    return value.magnitude_squared();
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_validates_method_return_against_method_signature() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Scalar {
+    value: f32,
+}
+
+impl Scalar {
+    fn value(self) -> f32 {
+        return self.value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_qualified_call_with_nested_self_method_argument() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module core::f32;
+
+pub fn sqrt(value: f32) -> f32 {
+    return value;
+}
+"#,
+        r#"
+module app::main;
+
+import core::f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+}
+
+impl Vec3 {
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y;
+    }
+
+    fn length(self) -> f32 {
+        return core::f32::sqrt(self.dot(self));
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    ]);
 }
 
 #[test]
@@ -955,6 +1161,102 @@ fn main() {
         return 1;
     }
     return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_chained_method_call_receivers() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+}
+
+impl Vec3 {
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + right.x };
+    }
+}
+
+fn main() {
+    let left: Vec3 = Vec3 { x: 1 };
+    let across: Vec3 = Vec3 { x: 2 };
+    let up: Vec3 = Vec3 { x: 3 };
+    let target: Vec3 = left.add(across).add(up);
+    return target.x;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_field_receiver_chained_method_calls() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+}
+
+impl Vec3 {
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + right.x };
+    }
+}
+
+struct Camera {
+    lower_left_corner: Vec3,
+}
+
+impl Camera {
+    fn target(self, across: Vec3, up: Vec3) -> Vec3 {
+        return self.lower_left_corner.add(across).add(up);
+    }
+}
+
+fn main() {
+    let origin: Vec3 = Vec3 { x: 1 };
+    let camera: Camera = Camera { lower_left_corner: origin };
+    let across: Vec3 = Vec3 { x: 2 };
+    let up: Vec3 = Vec3 { x: 3 };
+    let target: Vec3 = camera.target(across, up);
+    return target.x;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_resolves_field_receiver_method_calls() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: i32,
+}
+
+impl Vec3 {
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + right.x };
+    }
+}
+
+struct Camera {
+    lower_left_corner: Vec3,
+}
+
+impl Camera {
+    fn target(self, across: Vec3) -> Vec3 {
+        return self.lower_left_corner.add(across);
+    }
+}
+
+fn main() {
+    let origin: Vec3 = Vec3 { x: 1 };
+    let camera: Camera = Camera { lower_left_corner: origin };
+    let across: Vec3 = Vec3 { x: 2 };
+    let target: Vec3 = camera.target(across);
+    return target.x;
 }
 "#,
     );

@@ -27,7 +27,10 @@ use super::{
     X86RegallocParams,
     X86ScanParams,
 };
-use crate::gpu::passes_core::{PassData, bind_group};
+use crate::gpu::{
+    buffers::LaniusBuffer,
+    passes_core::{PassData, bind_group},
+};
 
 const UNIFORM_BINDING_ARRAY_STRIDE: u64 = 256;
 
@@ -137,6 +140,12 @@ impl From<wgpu::Buffer> for RetainedX86Buffer {
 impl From<PooledStorageBuffer> for RetainedX86Buffer {
     fn from(buffer: PooledStorageBuffer) -> Self {
         Self::Pooled(buffer)
+    }
+}
+
+impl<T> From<LaniusBuffer<T>> for RetainedX86Buffer {
+    fn from(buffer: LaniusBuffer<T>) -> Self {
+        Self::Plain(buffer.buffer)
     }
 }
 
@@ -310,16 +319,26 @@ pub(super) fn zero_u32_words(
     encoder.clear_buffer(buffer, 0, Some(bytes as u64));
 }
 
-pub(super) fn uniform_u32_struct(device: &wgpu::Device, label: &str, bytes: &[u8]) -> wgpu::Buffer {
+pub(super) fn uniform_u32_struct(
+    device: &wgpu::Device,
+    label: &str,
+    bytes: &[u8],
+) -> LaniusBuffer<u32> {
     let contents = if bytes.is_empty() { &[0u8][..] } else { bytes };
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    })
+    });
+    let count = contents.len().div_ceil(4).max(1);
+    LaniusBuffer::new((buffer, contents.len() as u64), count)
 }
 
-pub(super) fn uniform_u32_words(device: &wgpu::Device, label: &str, words: &[u32]) -> wgpu::Buffer {
+pub(super) fn uniform_u32_words(
+    device: &wgpu::Device,
+    label: &str,
+    words: &[u32],
+) -> LaniusBuffer<u32> {
     uniform_u32_struct(device, label, &u32_words_bytes(words))
 }
 
@@ -364,16 +383,22 @@ pub(super) fn storage_u32_rw(
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
+) -> LaniusBuffer<u32> {
+    let count = count.max(1);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: (count.max(1) * 4) as u64,
+        size: (count * 4) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra_usage,
         mapped_at_creation: false,
-    })
+    });
+    LaniusBuffer::new((buffer, (count * 4) as u64), count)
 }
 
-pub(super) fn storage_u32_copy(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
+pub(super) fn storage_u32_copy(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+) -> LaniusBuffer<u32> {
     storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
 }
 
@@ -382,9 +407,11 @@ pub(super) fn external_or_storage_u32_copy(
     label: &str,
     count: usize,
     external: Option<&wgpu::Buffer>,
-) -> wgpu::Buffer {
+) -> LaniusBuffer<u32> {
+    let count = count.max(1);
     external
         .cloned()
+        .map(|buffer| LaniusBuffer::new((buffer, (count * 4) as u64), count))
         .unwrap_or_else(|| storage_u32_copy(device, label, count))
 }
 

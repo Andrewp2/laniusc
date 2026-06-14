@@ -17,6 +17,7 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
 };
 
 ConstantBuffer<Params> gParams;
@@ -29,6 +30,7 @@ StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> hir_type_file_id;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
@@ -72,6 +74,7 @@ StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_module_id;
+StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> import_visible_type_count_out;
 StructuredBuffer<uint> import_visible_type_key_module_id;
 StructuredBuffer<uint> import_visible_type_key_name_id;
@@ -169,6 +172,12 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+[noinline]
+uint source_file_count()
+{
+    return max(gParams.n_source_files, 1u);
 }
 
 [noinline]
@@ -334,6 +343,12 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
         return INVALID;
     uint row = generic_param_key_order[lo];
     return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+}
+
+[noinline]
+bool generic_type_param_declared_on(uint decl_node, uint name_token)
+{
+    return generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE) != INVALID;
 }
 
 [noinline]
@@ -997,12 +1012,31 @@ uint type_path_leaf_token(uint expr_node)
 }
 
 [noinline]
+uint owner_module_from_type_file(uint expr_node)
+{
+    uint file_id = valid_node(expr_node) ? hir_type_file_id[expr_node] : INVALID;
+    if (file_id == INVALID)
+        return INVALID;
+
+    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
+    if (module_id != INVALID)
+        return module_id;
+
+    return file_id == 0u ? 0u : INVALID;
+}
+
+[noinline]
 uint owner_module_for_type_path(uint expr_node)
 {
     uint path_i = type_path_record_id(expr_node);
-    return path_i != INVALID
-        ? path_owner_module_id[path_i]
-        : INVALID;
+    if (path_i != INVALID)
+    {
+        uint module_id = path_owner_module_id[path_i];
+        if (module_id != INVALID)
+            return module_id;
+    }
+
+    return owner_module_from_type_file(expr_node);
 }
 
 public struct TypeModulePrefixLookupKey
@@ -1410,10 +1444,36 @@ bool trait_impl_type_arg_token_shape_supported(uint owner_type_node, uint token)
 [noinline]
 bool trait_impl_type_arg_token_is_header_generic(uint impl_node, uint token)
 {
+    uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
+    uint receiver_node = valid_node(impl_node) ? hir_method_impl_receiver_type_node[impl_node] : INVALID;
+    uint impl_start = valid_node(impl_node) ? hir_token_pos[impl_node] : INVALID;
+    uint receiver_start = valid_node(receiver_node) ? hir_token_pos[receiver_node] : INVALID;
+    bool declared_before_receiver = false;
+    if (name_id != INVALID &&
+        valid_token(impl_start) &&
+        valid_token(receiver_start) &&
+        impl_start < receiver_start)
+    {
+        [loop]
+        for (uint offset = 0u; offset < 64u; offset += 1u)
+        {
+            uint candidate = impl_start + offset;
+            if (candidate >= receiver_start || !valid_token(candidate))
+                break;
+            if (candidate != token && name_id_by_token[candidate] == name_id)
+            {
+                declared_before_receiver = true;
+                break;
+            }
+        }
+    }
+
     return valid_node(impl_node) &&
            valid_token(token) &&
-           (generic_param_slot_for_name(impl_node, token) != INVALID ||
-            type_generic_param_slot_by_token[token] != INVALID);
+           (generic_type_param_declared_on(impl_node, token) ||
+            generic_param_slot_for_name(impl_node, token) != INVALID ||
+            type_generic_param_slot_by_token[token] != INVALID ||
+            declared_before_receiver);
 }
 
 [noinline]
@@ -1696,7 +1756,14 @@ uint direct_type_arg_node(uint owner_type_node, uint ordinal)
 [noinline]
 bool inherent_impl_target_arg_supported(uint impl_node, uint arg_node)
 {
-    if (!valid_node(arg_node) || node_kind[arg_node] != PROD_TYPE_IDENT)
+    if (!valid_node(arg_node))
+        return false;
+
+    uint source_token = hir_token_pos[arg_node];
+    if (trait_impl_type_arg_token_is_header_generic(impl_node, source_token))
+        return true;
+
+    if (node_kind[arg_node] != PROD_TYPE_IDENT)
         return false;
     if (!type_path_scan_supported(arg_node))
         return false;
@@ -1704,6 +1771,8 @@ bool inherent_impl_target_arg_supported(uint impl_node, uint arg_node)
         return false;
 
     uint token = type_path_leaf_token(arg_node);
+    if (!valid_token(token))
+        token = source_token;
     if (type_path_segment_count(arg_node) == 1u &&
         valid_token(token) &&
         (generic_param_slot_for_name(impl_node, token) != INVALID ||
@@ -1751,6 +1820,25 @@ bool inherent_impl_target_args_supported(uint impl_node, uint expr_node, uint ar
             return false;
     }
     return arg_count <= MAX_INHERENT_IMPL_TARGET_ARGS;
+}
+
+[noinline]
+void mark_direct_type_arg_syntax_tokens(uint expr_node, uint arg_count)
+{
+    [loop]
+    for (uint ordinal = 0u; ordinal < MAX_INHERENT_IMPL_TARGET_ARGS; ordinal += 1u)
+    {
+        if (ordinal >= arg_count)
+            return;
+
+        uint arg_node = direct_type_arg_node(expr_node, ordinal);
+        uint token = valid_node(arg_node) ? type_path_leaf_token(arg_node) : INVALID;
+        if (!valid_token(token) && valid_node(arg_node))
+            token = hir_token_pos[arg_node];
+        if (!valid_token(token))
+            token = direct_type_arg_scalar_token(expr_node, ordinal);
+        mark_predicate_syntax_token(token);
+    }
 }
 
 [noinline]
@@ -2193,6 +2281,11 @@ void validate_inherent_impl_header_node(uint node)
         predicate_status[node] = target_status;
         return;
     }
+
+    mark_predicate_syntax_token(receiver_token);
+    mark_direct_type_arg_syntax_tokens(
+        receiver_type_node,
+        direct_type_arg_count(receiver_type_node));
 }
 
 [noinline]
@@ -2243,6 +2336,8 @@ void validate_impl_method_contract_record_node(uint node)
     predicate_owner_node[node] = node;
     predicate_bound_token[node] = diagnostic_token;
     predicate_bound_first_arg_token[node] = diagnostic_token;
+    if (inherent_impl_method)
+        return;
     predicate_status[node] = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
 }
 

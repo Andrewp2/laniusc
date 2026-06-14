@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    bind_groups: &ResidentTypeCheckBindGroups,
+    state: &ResidentTypeCheckState,
     hir_active_dispatch_args: &wgpu::Buffer,
     labels: &TypeInstanceCollectionTimerLabels,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
@@ -13,7 +13,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     record_compute_indirect(
         encoder,
         &passes.type_instances_collect,
-        &bind_groups.type_instances.collect,
+        &state.type_instances.collect,
         "type_check.resident.type_instances_collect.pass",
         hir_active_dispatch_args,
     )?;
@@ -21,7 +21,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     record_compute_indirect(
         encoder,
         &passes.type_instances_collect_named,
-        &bind_groups.type_instances.collect_named,
+        &state.type_instances.collect_named,
         "type_check.resident.type_instances_collect_named.pass",
         hir_active_dispatch_args,
     )?;
@@ -29,7 +29,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     record_compute_indirect(
         encoder,
         &passes.type_instances_collect_aggregate_refs,
-        &bind_groups.type_instances.collect_aggregate_refs,
+        &state.type_instances.collect_aggregate_refs,
         "type_check.resident.type_instances_collect_aggregate_refs.pass",
         hir_active_dispatch_args,
     )?;
@@ -37,7 +37,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     record_compute_indirect(
         encoder,
         &passes.type_instances_collect_aggregate_details,
-        &bind_groups.type_instances.collect_aggregate_details,
+        &state.type_instances.collect_aggregate_details,
         "type_check.resident.type_instances_collect_aggregate_details.pass",
         hir_active_dispatch_args,
     )?;

@@ -5,6 +5,7 @@
 // consumers should read these rows instead of walking parse-tree ancestors or
 // child lists to rediscover method ownership.
 
+import atomics;
 import generated_parse_production_ids;
 
 struct Params
@@ -22,6 +23,7 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
@@ -134,6 +136,36 @@ bool is_impl_owner_node(uint prod)
     return prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT;
 }
 
+uint impl_owner_child(uint node)
+{
+    uint child = first_child_node(node);
+    [loop]
+    for (uint guard = 0u; guard < 8u && valid_node(child); guard += 1u)
+    {
+        if (is_impl_owner_node(node_kind[child]))
+            return child;
+        child = next_sibling_node(child);
+    }
+    return INVALID;
+}
+
+uint impl_owner_from_item_list(uint node)
+{
+    uint child = first_child_node(node);
+    [loop]
+    for (uint guard = 0u; guard < 16u && valid_node(child); guard += 1u)
+    {
+        if (is_impl_item_wrapper(node_kind[child]))
+        {
+            uint owner = impl_owner_child(child);
+            if (valid_node(owner))
+                return owner;
+        }
+        child = next_sibling_node(child);
+    }
+    return INVALID;
+}
+
 bool is_trait_method_node(uint node)
 {
     if (!valid_node(node))
@@ -161,22 +193,47 @@ uint method_impl_node_for_fn(uint fn_node)
     if (!valid_node(fn_node) || hir_kind[fn_node] != HIR_FN || node_kind[fn_node] != PROD_IMPL_FN)
         return INVALID;
 
-    uint method_wrapper = parent_node(fn_node);
-    if (!valid_node(method_wrapper) || !is_impl_method_wrapper(node_kind[method_wrapper]))
-        return INVALID;
+    bool saw_method_wrapper = false;
+    uint ancestor = parent_node(fn_node);
+    [loop]
+    for (uint guard = 0u; guard < 32u && valid_node(ancestor); guard += 1u)
+    {
+        uint prod = node_kind[ancestor];
+        if (is_impl_method_wrapper(prod))
+            saw_method_wrapper = true;
+        if (saw_method_wrapper && is_impl_owner_node(prod))
+            return ancestor;
+        if (saw_method_wrapper && prod == PROD_IMPL_METHODS_SOME)
+        {
+            uint owner = impl_owner_from_item_list(parent_node(ancestor));
+            if (valid_node(owner))
+                return owner;
+        }
+        ancestor = parent_node(ancestor);
+    }
 
     uint fn_row = semantic_row_for_node(fn_node);
     if (!valid_semantic_row(fn_row))
         return INVALID;
 
-    uint item_row = hir_semantic_parent[fn_row];
-    uint item_node = semantic_row_node(item_row);
-    if (!valid_node(item_node) || !is_impl_item_wrapper(node_kind[item_node]))
-        return INVALID;
+    uint row = hir_semantic_parent[fn_row];
+    [loop]
+    for (uint depth = 0u; depth < 8u && valid_semantic_row(row); depth += 1u)
+    {
+        uint node = semantic_row_node(row);
+        if (valid_node(node) && is_impl_owner_node(node_kind[node]))
+            return node;
 
-    uint impl_node = first_child_node(item_node);
-    return valid_node(impl_node) && is_impl_owner_node(node_kind[impl_node]) ? impl_node
-                                                                             : INVALID;
+        if (valid_node(node) && is_impl_item_wrapper(node_kind[node]))
+        {
+            uint owner = impl_owner_child(node);
+            if (valid_node(owner))
+                return owner;
+        }
+
+        row = hir_semantic_parent[row];
+    }
+    return INVALID;
 }
 
 bool has_later_direct_impl_type_sibling(uint type_node)
@@ -235,6 +292,10 @@ void publish_method_function(uint fn_node)
     hir_method_impl_node[fn_node] = impl_node;
     hir_method_name_token[fn_node] = name_token;
     hir_method_visibility[fn_node] = method_visibility_for_fn(fn_node);
+
+    uint method_end = hir_token_end[fn_node];
+    if (method_end != INVALID)
+        atomic_u32_max(hir_token_end, impl_node, method_end);
 }
 
 void publish_trait_method(uint method_node)

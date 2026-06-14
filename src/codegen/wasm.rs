@@ -7,6 +7,7 @@ mod support;
 use support::*;
 
 use crate::gpu::{
+    buffers::LaniusBuffer,
     device,
     passes_core::{PassData, bind_group, make_traced_main_pass},
 };
@@ -187,25 +188,25 @@ struct ResidentWasmBuffers {
     output_capacity: usize,
     token_capacity: u32,
     hir_node_capacity: u32,
-    params_buf: wgpu::Buffer,
-    body_dispatch_buf: wgpu::Buffer,
-    _body_buf: wgpu::Buffer,
-    body_status_buf: wgpu::Buffer,
-    _struct_field_count_by_decl_token_buf: wgpu::Buffer,
-    _struct_field_index_by_token_buf: wgpu::Buffer,
-    _struct_field_decl_by_token_buf: wgpu::Buffer,
-    _struct_field_name_id_buf: wgpu::Buffer,
-    _struct_field_ref_tag_buf: wgpu::Buffer,
-    _struct_field_ref_payload_buf: wgpu::Buffer,
-    _struct_field_scalar_offset_buf: wgpu::Buffer,
-    _struct_field_scalar_width_buf: wgpu::Buffer,
-    _struct_init_field_index_buf: wgpu::Buffer,
-    _member_result_field_index_buf: wgpu::Buffer,
-    _hir_enum_match_record_buf: wgpu::Buffer,
-    wasm_const_value_record_buf: wgpu::Buffer,
-    out_buf: wgpu::Buffer,
-    packed_out_buf: wgpu::Buffer,
-    status_buf: wgpu::Buffer,
+    params_buf: LaniusBuffer<WasmParams>,
+    body_dispatch_buf: LaniusBuffer<u32>,
+    _body_buf: LaniusBuffer<u32>,
+    body_status_buf: LaniusBuffer<u32>,
+    _struct_field_count_by_decl_token_buf: LaniusBuffer<u32>,
+    _struct_field_index_by_token_buf: LaniusBuffer<u32>,
+    _struct_field_decl_by_token_buf: LaniusBuffer<u32>,
+    _struct_field_name_id_buf: LaniusBuffer<u32>,
+    _struct_field_ref_tag_buf: LaniusBuffer<u32>,
+    _struct_field_ref_payload_buf: LaniusBuffer<u32>,
+    _struct_field_scalar_offset_buf: LaniusBuffer<u32>,
+    _struct_field_scalar_width_buf: LaniusBuffer<u32>,
+    _struct_init_field_index_buf: LaniusBuffer<u32>,
+    _member_result_field_index_buf: LaniusBuffer<u32>,
+    _hir_enum_match_record_buf: LaniusBuffer<u32>,
+    wasm_const_value_record_buf: LaniusBuffer<u32>,
+    out_buf: LaniusBuffer<u32>,
+    packed_out_buf: LaniusBuffer<u32>,
+    status_buf: LaniusBuffer<u32>,
     out_readback: wgpu::Buffer,
     status_readback: wgpu::Buffer,
     agg_layout_clear_bind_group: wgpu::BindGroup,
@@ -865,12 +866,18 @@ impl GpuWasmCodeGenerator {
         struct_init_field_expected_ref_tag_buf: &wgpu::Buffer,
         struct_init_field_expected_ref_payload_buf: &wgpu::Buffer,
     ) -> Result<ResidentWasmBuffers> {
-        let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("codegen.wasm.params"),
-            size: 16,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let params_buf = LaniusBuffer::new(
+            (
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("codegen.wasm.params"),
+                    size: 16,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                16,
+            ),
+            1,
+        );
         let out_buf = storage_u32_rw(
             device,
             "codegen.wasm.out_words",

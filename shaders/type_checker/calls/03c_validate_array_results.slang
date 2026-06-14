@@ -422,11 +422,11 @@ void validate_array_call_arg_slot(uint slot)
         return;
     if (method_call_name_id[callee_token] != INVALID)
         return;
-    if (!call_window_fits_cache(callee_token, call_node))
-        return;
 
     uint expected_instance = array_instance_from_call_param(callee_token, ordinal);
     if (expected_instance == INVALID)
+        return;
+    if (!call_window_fits_cache(callee_token, call_node))
         return;
 
     uint arg_node = call_arg_node_for_call(call_node, ordinal);

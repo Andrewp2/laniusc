@@ -8,6 +8,7 @@
 import generated_parse_production_ids;
 import gpu_index;
 import hir_records;
+import lookup;
 import status;
 
 struct Params
@@ -26,6 +27,8 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_name_token;
@@ -45,6 +48,7 @@ StructuredBuffer<uint> call_param_ref_payload;
 StructuredBuffer<uint> function_lookup_key;
 StructuredBuffer<uint> function_lookup_fn;
 StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -75,6 +79,9 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_PATH_EXPR = 33u;
+
+static const uint HIR_ITEM_KIND_FN = 4u;
+static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -290,11 +297,16 @@ uint callee_token_for_hir_call(uint call_node)
 
     uint callee_node = hir_call_callee_node[call_node];
     if (!valid_node(callee_node))
-        return INVALID;
+    {
+        uint call_token = hir_token_pos[call_node];
+        return valid_token(call_token) ? call_token : INVALID;
+    }
 
     uint callee_token = expr_value_token(callee_node);
     if (!valid_token(callee_token))
         callee_token = hir_token_pos[callee_node];
+    if (!valid_token(callee_token))
+        callee_token = hir_token_pos[call_node];
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
@@ -324,7 +336,45 @@ uint direct_function_lookup_slot(uint key)
     uint cap = lookup_capacity();
     if (cap == 0u || key == INVALID)
         return INVALID;
-    return key % cap;
+    [loop]
+    for (uint probe = 0u; probe < cap; probe += 1u)
+    {
+        uint slot = open_address_probe_slot(key, cap, probe);
+        uint row_key = function_lookup_key[slot];
+        if (row_key == key)
+            return slot;
+        if (row_key == INVALID)
+            return INVALID;
+    }
+    return INVALID;
+}
+
+[noinline]
+bool function_item_kind(uint item_kind)
+{
+    return item_kind == HIR_ITEM_KIND_FN || item_kind == HIR_ITEM_KIND_EXTERN_FN;
+}
+
+[noinline]
+uint fallback_function_decl_by_name_id(uint key)
+{
+    if (key == INVALID)
+        return INVALID;
+
+    uint count = active_hir_node_count();
+    [loop]
+    for (uint node = 0u; node < count; node += 1u)
+    {
+        if (!function_item_kind(hir_item_kind[node]))
+            continue;
+        uint name_token = hir_item_name_token[node];
+        if (!valid_token(name_token) || name_id_by_token[name_token] != key)
+            continue;
+        uint fn_token = hir_token_pos[node];
+        if (valid_token(fn_token) && call_fn_index[fn_token] == fn_token)
+            return fn_token;
+    }
+    return INVALID;
 }
 
 [noinline]
@@ -339,7 +389,9 @@ uint find_function_decl_by_name_id(uint name_i)
         return INVALID;
 
     uint fn_i = function_lookup_fn[slot];
-    return valid_token(fn_i) && function_lookup_key[slot] == key ? fn_i : INVALID;
+    if (valid_token(fn_i) && function_lookup_key[slot] == key)
+        return fn_i;
+    return fallback_function_decl_by_name_id(key);
 }
 
 uint path_node_for_call(uint call_node)
@@ -368,6 +420,11 @@ uint path_id_for_call(uint call_node)
         return INVALID;
     uint path_i = path_id_by_owner_hir[path_node];
     return path_i < gParams.n_hir_nodes ? path_i : INVALID;
+}
+
+bool path_is_qualified(uint path_i)
+{
+    return path_i != INVALID && path_i < gParams.n_hir_nodes && path_segment_count[path_i] > 1u;
 }
 
 uint resolved_function_for_call_path(uint call_node)
@@ -436,6 +493,8 @@ uint direct_node_type_no_nested_call(uint node)
     if (hir_kind[node] == HIR_CALL_EXPR)
     {
         uint callee_token = callee_token_for_hir_call(node);
+        if (!valid_token(callee_token))
+            callee_token = hir_token_pos[node];
         return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
     }
 
@@ -1174,9 +1233,7 @@ bool check_argument_cache_bounds(uint callee_i, uint fn_i)
 {
     uint param_count = valid_token(fn_i) ? call_param_count[fn_i] : 0u;
     uint arg_count = call_arg_count_for_callee(callee_i);
-    if (param_count <= PARAM_CACHE_STRIDE &&
-        arg_count <= PARAM_CACHE_STRIDE &&
-        param_count == arg_count)
+    if (param_count == arg_count)
         return true;
 
     record_error(callee_i, ERR_CALL_MISMATCH, param_count * 256u + arg_count);
@@ -1765,7 +1822,7 @@ void resolve_callee_token(uint callee_i, uint call_node)
 
     uint path_i = path_id_for_call(call_node);
     uint fn_i = INVALID;
-    if (path_i != INVALID && path_owner_module_id[path_i] != INVALID)
+    if (path_is_qualified(path_i) && path_owner_module_id[path_i] != INVALID)
     {
         fn_i = resolved_function_for_call_path(call_node);
         if (!valid_token(fn_i))
@@ -1785,17 +1842,23 @@ void resolve_callee_token(uint callee_i, uint call_node)
         uint slot = direct_function_lookup_slot(key);
         if (slot == INVALID)
         {
-            call_return_type[callee_i] = TY_UNKNOWN;
-            return;
+            fn_i = fallback_function_decl_by_name_id(key);
+            if (!valid_token(fn_i))
+            {
+                call_return_type[callee_i] = TY_UNKNOWN;
+                return;
+            }
         }
-
-        fn_i = function_lookup_fn[slot];
-        if (!valid_token(fn_i) || function_lookup_key[slot] != key)
+        else
         {
-            call_return_type[callee_i] = TY_UNKNOWN;
-            if (fn_i != INVALID)
-                record_error(callee_i, ERR_CALL_MISMATCH, key);
-            return;
+            fn_i = function_lookup_fn[slot];
+            if (!valid_token(fn_i) || function_lookup_key[slot] != key)
+                fn_i = fallback_function_decl_by_name_id(key);
+            if (!valid_token(fn_i))
+            {
+                call_return_type[callee_i] = TY_UNKNOWN;
+                return;
+            }
         }
     }
 

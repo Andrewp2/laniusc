@@ -261,6 +261,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 "hir_type_path_leaf_node",
                 items.type_path_leaf_node.as_entire_binding(),
             ),
+            ("hir_type_file_id", items.type_file_id.as_entire_binding()),
             (
                 "hir_type_arg_start",
                 items.type_arg_start.as_entire_binding(),
@@ -392,6 +393,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             (
                 "path_owner_module_id",
                 path.path_owner_module_id.as_entire_binding(),
+            ),
+            (
+                "module_id_by_file_id",
+                path.module_id_by_file_id.as_entire_binding(),
             ),
             (
                 "import_visible_type_count_out",
@@ -930,7 +935,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         count_obligation_pairs,
         obligation_pair_scan,
         obligation_pair_dispatch,
-        obligation_pair_dispatch_args: input.obligation_rows.pair_dispatch_args.clone(),
+        obligation_pair_dispatch_args: typed_alias_storage_u32(
+            input.obligation_rows.pair_dispatch_args,
+            3,
+        ),
         validate_obligation_pairs,
     })
 }

@@ -338,16 +338,20 @@ void infer_array_generic_return(uint callee_token)
     if (!valid_token(fn_token))
         return;
 
+    uint ret_ty = call_return_type[callee_token];
+    if (ret_ty == TY_UNKNOWN)
+        ret_ty = call_return_type[fn_token];
+    if (ret_ty != TY_ARRAY_BASE + TY_UNKNOWN &&
+        plain_generic_slot(ret_ty) == INVALID &&
+        array_or_slice_generic_slot(ret_ty) == INVALID)
+        return;
+
     uint param_count = 0u;
     uint arg_count = 0u;
     if (!bounded_call_window(callee_token, call_node, fn_token, param_count, arg_count))
         return;
 
     bool missing_param_metadata = param_count == 0u;
-
-    uint ret_ty = call_return_type[callee_token];
-    if (ret_ty == TY_UNKNOWN)
-        ret_ty = call_return_type[fn_token];
     if (ret_ty == TY_ARRAY_BASE + TY_UNKNOWN)
     {
         uint array_ty = first_array_or_slice_arg_type(callee_token, call_node, arg_count);

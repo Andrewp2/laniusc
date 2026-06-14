@@ -21,14 +21,20 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> method_decl_param_offset;
+StructuredBuffer<uint> method_decl_receiver_ref_tag;
+StructuredBuffer<uint> method_decl_receiver_ref_payload;
 
 RWStructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
+static const uint TYPE_REF_INVALID = 0u;
 
 static const uint HIR_MEMBER_EXPR = 21u;
 
@@ -61,16 +67,8 @@ uint enclosing_function_token_for_receiver(uint receiver_token)
     return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
 }
 
-void bind_self_receiver_for_member(uint member_node)
+void bind_self_token(uint self_token)
 {
-    if (hir_kind[member_node] != HIR_MEMBER_EXPR)
-        return;
-
-    uint receiver_node = hir_member_receiver_node[member_node];
-    if (!valid_node(receiver_node) || node_kind[receiver_node] != PROD_SELF_VALUE)
-        return;
-
-    uint self_token = hir_member_receiver_token[member_node];
     if (!valid_token(self_token))
         return;
 
@@ -84,6 +82,27 @@ void bind_self_receiver_for_member(uint member_node)
 
     visible_decl[self_decl] = self_decl;
     visible_decl[self_token] = self_decl;
+
+    uint receiver_tag = method_decl_receiver_ref_tag[fn_token];
+    uint receiver_payload = method_decl_receiver_ref_payload[fn_token];
+    if (receiver_tag != TYPE_REF_INVALID && receiver_payload != INVALID)
+    {
+        decl_type_ref_tag[self_decl] = receiver_tag;
+        decl_type_ref_payload[self_decl] = receiver_payload;
+    }
+}
+
+void bind_self_receiver_for_member(uint member_node)
+{
+    if (hir_kind[member_node] != HIR_MEMBER_EXPR)
+        return;
+
+    uint receiver_node = hir_member_receiver_node[member_node];
+    if (!valid_node(receiver_node) || node_kind[receiver_node] != PROD_SELF_VALUE)
+        return;
+
+    uint self_token = hir_member_receiver_token[member_node];
+    bind_self_token(self_token);
 }
 
 [shader("compute")]
@@ -93,6 +112,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (!valid_node(node))
         return;
+
+    if (node_kind[node] == PROD_SELF_VALUE)
+        bind_self_token(hir_token_pos[node]);
 
     bind_self_receiver_for_member(node);
 }

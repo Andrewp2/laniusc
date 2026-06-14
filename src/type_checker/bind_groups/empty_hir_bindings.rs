@@ -68,6 +68,7 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_type_value_node", &hir_items.type_value_node);
     resources.buffer("hir_type_len_token", &hir_items.type_len_token);
     resources.buffer("hir_type_len_value", &hir_items.type_len_value);
+    resources.buffer("hir_type_file_id", &hir_items.type_file_id);
     resources.buffer("hir_type_path_leaf_node", &hir_items.type_path_leaf_node);
     resources.buffer(
         "hir_bound_path_owner_by_leaf",
@@ -230,6 +231,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_type_value_node", &empty_hir.parent);
     resources.buffer("hir_type_len_token", &empty_hir.parent);
     resources.buffer("hir_type_len_value", &empty_hir.parent);
+    resources.buffer("hir_type_file_id", &empty_hir.parent);
     resources.buffer("hir_type_path_leaf_node", &empty_hir.parent);
     resources.buffer("hir_bound_path_owner_by_leaf", &empty_hir.parent);
     resources.buffer("hir_type_arg_start", &empty_hir.parent);

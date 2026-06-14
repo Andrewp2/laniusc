@@ -61,7 +61,7 @@ impl GpuTypeChecker {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let passes = TypeCheckPasses::new(device)?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
-        let status_buf = storage_u32_rw(
+        let status_buf = typed_storage_u32_rw(
             device,
             "type_check.resident.status",
             4,
@@ -74,7 +74,7 @@ impl GpuTypeChecker {
             params_buf,
             status_buf,
             status_readback,
-            bind_groups: Mutex::new(None),
+            resident_state: Mutex::new(None),
         })
     }
 
@@ -399,26 +399,27 @@ impl GpuTypeChecker {
         } else {
             &self.passes.scope
         };
+        let cache_key = ResidentTypeCheckCacheKey {
+            source_file_capacity,
+            token_capacity,
+            hir_node_capacity,
+            input_fingerprint,
+            uses_hir_control,
+            uses_hir_items,
+        };
 
         {
-            let mut bind_group_guard = self
-                .bind_groups
+            let mut resident_state_guard = self
+                .resident_state
                 .lock()
-                .expect("GpuTypeChecker.bind_groups poisoned");
-            let needs_rebuild = bind_group_guard
+                .expect("GpuTypeChecker.resident_state poisoned");
+            let needs_rebuild = resident_state_guard
                 .as_ref()
-                .map(|groups| {
-                    source_file_capacity != groups.source_file_capacity
-                        || token_capacity > groups.token_capacity
-                        || hir_node_capacity > groups.hir_node_capacity
-                        || input_fingerprint != groups.input_fingerprint
-                        || uses_hir_control != groups.uses_hir_control
-                        || uses_hir_items != groups.uses_hir_items
-                })
+                .map(|state| !state.can_reuse_for(cache_key))
                 .unwrap_or(true);
             let rebuilt = needs_rebuild;
             if needs_rebuild {
-                *bind_group_guard = Some(self.create_bind_groups(
+                *resident_state_guard = Some(self.create_resident_state(
                     device,
                     source_len,
                     source_file_capacity,
@@ -444,13 +445,13 @@ impl GpuTypeChecker {
                 )?);
             }
             host_timer.stamp(if rebuilt {
-                "bind_groups_rebuilt"
+                "resident_state_rebuilt"
             } else {
-                "bind_groups_reused"
+                "resident_state_reused"
             });
-            let bind_groups = bind_group_guard
+            let bind_groups = resident_state_guard
                 .as_ref()
-                .expect("resident type checker bind groups must exist");
+                .expect("resident type-check state must exist");
 
             queue.write_buffer(
                 &bind_groups.name_bind_groups.name_max_len,
@@ -471,13 +472,13 @@ impl GpuTypeChecker {
             record_language_name_bind_groups_with_passes(
                 &self.passes,
                 encoder,
-                bind_groups.token_capacity,
+                bind_groups.cache_key.token_capacity,
                 &bind_groups.language_name_bind_groups,
             )?;
             record_name_bind_groups_with_passes(
                 &self.passes,
                 encoder,
-                bind_groups.token_capacity,
+                bind_groups.cache_key.token_capacity,
                 bind_groups.name_capacity,
                 &bind_groups.token_active_dispatch_args,
                 &bind_groups.name_bind_groups,
@@ -797,6 +798,13 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_resolve.done");
             }
+            record_compute_indirect(
+                encoder,
+                &self.passes.methods_mark_call_keys,
+                &bind_groups.methods.mark_call_keys,
+                "type_check.methods.mark_call_keys_before_module_value_calls",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
             if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
                     encoder,
@@ -826,6 +834,22 @@ impl GpuTypeChecker {
                 &bind_groups.hir_active_dispatch_args,
                 &bind_groups.methods,
             )?;
+            if let Some(module_path) = &bind_groups.module_path {
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_consume_value_calls,
+                    &module_path.bind_groups.consume_value_calls,
+                    "type_check.modules.consume_value_calls_after_methods",
+                    &module_path.path_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_mirror_value_call_leaf,
+                    &module_path.bind_groups.mirror_value_call_leaf,
+                    "type_check.modules.mirror_value_call_leaf_after_methods",
+                    &module_path.path_dispatch_args,
+                )?;
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.methods_call_returns.done");
             }
@@ -1169,9 +1193,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.visible_decl))
@@ -1182,9 +1206,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.visible_type))
@@ -1195,9 +1219,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.enclosing_fn))
@@ -1208,9 +1232,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(GpuCodegenBuffers<'_>) -> R,
     ) -> Option<R> {
         let guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         let bind_groups = guard.as_ref()?;
         let module_path = bind_groups.module_path.as_ref()?;
         Some(consume(GpuCodegenBuffers {
@@ -1281,11 +1305,11 @@ impl GpuTypeChecker {
 
     pub fn take_codegen_buffers(&self) -> Option<OwnedGpuCodegenBuffers> {
         let mut guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         let bind_groups = guard.take()?;
-        let ResidentTypeCheckBindGroups {
+        let ResidentTypeCheckState {
             name_id_by_token,
             enclosing_fn,
             visible_decl,
@@ -1421,11 +1445,11 @@ impl GpuTypeChecker {
 
     pub fn take_x86_codegen_buffers(&self) -> Option<OwnedGpuX86CodegenBuffers> {
         let mut guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         let bind_groups = guard.take()?;
-        let ResidentTypeCheckBindGroups {
+        let ResidentTypeCheckState {
             enclosing_fn,
             visible_decl,
             visible_type,
@@ -1522,9 +1546,9 @@ impl GpuTypeChecker {
         ) -> R,
     ) -> Option<R> {
         let guard = self
-            .bind_groups
+            .resident_state
             .lock()
-            .expect("GpuTypeChecker.bind_groups poisoned");
+            .expect("GpuTypeChecker.resident_state poisoned");
         guard.as_ref().map(|bind_groups| {
             consume(
                 &bind_groups.type_expr_ref_tag,

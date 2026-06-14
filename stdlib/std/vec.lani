@@ -1,0 +1,74 @@
+// Source-level vector contract.
+// This module gives programs a generic Vec<T> surface for frontend work.
+// Allocation, element storage, and executable iteration are still runtime/backend
+// responsibilities; these helpers only model the current type relationships.
+
+module std::vec;
+
+pub type VecCapability = bool;
+pub type VecRuntimeAbiVersion = u32;
+pub type VecServiceId = u32;
+pub type VecServiceStatus = u32;
+
+pub const VEC_RUNTIME_ABI_VERSION: VecRuntimeAbiVersion = 1;
+pub const VEC_SERVICE_ID: VecServiceId = 13;
+pub const VEC_SERVICE_STATUS_UNAVAILABLE: VecServiceStatus = 1;
+pub const VEC_HAS_RUNTIME_BINDING: VecCapability = false;
+
+pub struct Vec<T> {
+    len: i32,
+}
+
+pub fn vec_runtime_abi_version() -> VecRuntimeAbiVersion {
+    return VEC_RUNTIME_ABI_VERSION;
+}
+
+pub fn vec_service_id() -> VecServiceId {
+    return VEC_SERVICE_ID;
+}
+
+pub fn vec_service_is_known() -> VecCapability {
+    return true;
+}
+
+pub fn vec_service_status() -> VecServiceStatus {
+    return VEC_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn vec_is_available() -> VecCapability {
+    return VEC_HAS_RUNTIME_BINDING;
+}
+
+pub fn vec_requires_runtime_binding() -> VecCapability {
+    return !VEC_HAS_RUNTIME_BINDING;
+}
+
+pub fn new<T>() -> Vec<T> {
+    return Vec { len: 0 };
+}
+
+pub fn len<T>(value: Vec<T>) -> i32 {
+    return value.len;
+}
+
+pub fn is_empty<T>(value: Vec<T>) -> bool {
+    return value.len == 0;
+}
+
+impl<T> Vec<T> {
+    pub fn new() -> Vec<T> {
+        return Vec { len: 0 };
+    }
+
+    pub fn len(&self) -> i32 {
+        return self.len;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        return self.len == 0;
+    }
+
+    pub fn push(&self, value: T) {
+        return;
+    }
+}

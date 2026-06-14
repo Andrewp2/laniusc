@@ -139,7 +139,7 @@ use super::{
 
 const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
 const HIR_PACKED_NODE_ORDINAL_SLOT_COUNT: u32 = 16;
-const PROD_BOUND_TYPE_IDENT: u32 = 230;
+const PROD_BOUND_TYPE_IDENT: u32 = 241;
 
 /// Staging buffers for parser readbacks.
 pub struct ParserReadbacks {
@@ -8115,7 +8115,11 @@ pub fn validate_hir_type_records_with_node_kinds(
             && node_kinds[row] != PROD_BOUND_TYPE_IDENT
         {
             return Err(anyhow!(
-                "parser HIR row {row} published a path leaf without a path HIR/type owner"
+                "parser HIR row {row} published path leaf row {} without a path HIR/type owner (hir_kind={}, node_kind={}, type_form={})",
+                type_path_leaf_nodes[row],
+                kinds[row],
+                node_kinds[row],
+                type_forms[row]
             ));
         }
 

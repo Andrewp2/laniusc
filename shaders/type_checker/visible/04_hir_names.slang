@@ -187,7 +187,7 @@ bool local_decl_initializer_contains_token(uint use_token, uint decl_i)
 {
     // If the compact row is malformed, do not bind the name through a
     // declaration whose initializer boundary cannot be proven from records.
-    if (decl_i == INVALID || decl_i >= active_decl_count())
+    if (decl_i == INVALID || decl_i >= active_token_count())
         return true;
 
     uint decl_node = hir_visible_decl_node[decl_i];

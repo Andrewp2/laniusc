@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
@@ -35,6 +36,7 @@ StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> struct_field_key_order;
+StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_init_field_ordinal;
 
 RWStructuredBuffer<uint> status;
@@ -349,6 +351,13 @@ void validate_struct_literal_field_node(uint node)
     if (!valid_token(field_token))
         return;
 
+    uint value_root = hir_struct_lit_field_value_node[node];
+    uint literal_node = hir_struct_lit_field_parent_lit[node];
+    if (!valid_node(literal_node) || !valid_node(value_root))
+        return;
+    if (!valid_token(struct_lit_context_decl_token[literal_node]))
+        return;
+
     if (struct_init_field_ordinal[field_token] == INVALID)
     {
         record_error(field_token, ERR_INVALID_MEMBER_ACCESS, 0u);
@@ -359,7 +368,6 @@ void validate_struct_literal_field_node(uint node)
     if (expected == TY_UNKNOWN)
         return;
 
-    uint value_root = hir_struct_lit_field_value_node[node];
     uint value_token = INVALID;
     uint actual = first_value_type_from_node(value_root, value_token);
     if (actual == TY_UNKNOWN)

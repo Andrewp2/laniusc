@@ -637,6 +637,11 @@ void publish_expr(uint i)
             publish_forward(i, tail_result);
             return;
         }
+        if (valid_node(tail) && is_value_postfix_production(node_kind[tail]))
+        {
+            publish_forward(i, tail);
+            return;
+        }
         if (valid_node(tail) &&
             (node_kind[tail] == end_production_for_expr_layer(prod) ||
              is_expr_end_production(node_kind[tail])))

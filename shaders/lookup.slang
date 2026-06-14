@@ -56,16 +56,20 @@ public bool open_address_publish_min_u32_buffer<
         return false;
 
     uint hash = TKeyOps.hash(key);
-    uint slot = open_address_probe_hash(hash, capacity, 0u);
-    uint old_key = atomic_u32_compare_exchange(
-        lookup_key,
-        slot,
-        invalid_key,
-        key);
-    if (old_key == invalid_key || TKeyOps.equal(old_key, key))
+    [loop]
+    for (uint probe = 0u; probe < capacity; probe += 1u)
     {
-        atomic_u32_min(lookup_value, slot, value);
-        return true;
+        uint slot = open_address_probe_hash(hash, capacity, probe);
+        uint old_key = atomic_u32_compare_exchange(
+            lookup_key,
+            slot,
+            invalid_key,
+            key);
+        if (old_key == invalid_key || TKeyOps.equal(old_key, key))
+        {
+            atomic_u32_min(lookup_value, slot, value);
+            return true;
+        }
     }
     return false;
 }

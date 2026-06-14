@@ -27,6 +27,8 @@ fn main() {
     let negative_sign: f32 = core::f32::signum(negative_value);
     let zero_sign: f32 = signum(zero_value);
     let positive_sign: f32 = core::f32::signum(positive_value);
+    let positive_root: f32 = core::f32::sqrt(positive_value);
+    let zero_root: f32 = sqrt(zero_value);
     let between: bool = core::f32::between_exclusive(positive_value, zero_value, 2.0);
     let lower_edge: bool = between_exclusive(zero_value, zero_value, 2.0);
     let upper_edge: bool = core::f32::between_exclusive(2.0, zero_value, 2.0);
@@ -37,6 +39,9 @@ fn main() {
         return 1;
     }
     if (negative_sign != -1.0 || zero_sign != core::f32::ZERO || positive_sign != core::f32::ONE) {
+        return 1;
+    }
+    if (positive_root <= zero_value || zero_root != core::f32::ZERO) {
         return 1;
     }
     if (!between || lower_edge || upper_edge) {
@@ -63,6 +68,7 @@ fn main() {
     for helper_name in [
         "core::f32::is_zero",
         "core::f32::is_nonzero",
+        "core::f32::sqrt",
         "core::f32::signum",
         "core::f32::between_exclusive",
         "core::f32::between_inclusive",

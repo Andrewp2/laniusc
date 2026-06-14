@@ -4,6 +4,8 @@
 // for generic receiver instances, the receiver instance token needed by the
 // later generic substitution pass.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n_tokens;
@@ -14,8 +16,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> enclosing_fn;
@@ -98,6 +102,12 @@ bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
+bool member_receiver_is_self(uint member_node)
+{
+    uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
+    return valid_node(receiver_node) && node_kind[receiver_node] == PROD_SELF_VALUE;
+}
+
 void publish_receiver_ref_for_node(uint member_node)
 {
     if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
@@ -113,7 +123,8 @@ void publish_receiver_ref_for_node(uint member_node)
 
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
-    if (!receiver_decl_type_ref(receiver_token, tag, payload))
+    if (!receiver_decl_type_ref(receiver_token, tag, payload) &&
+        member_receiver_is_self(member_node))
         enclosing_method_receiver_type_ref(member_node, tag, payload);
     if (tag == TYPE_REF_INVALID || payload == INVALID)
         return;

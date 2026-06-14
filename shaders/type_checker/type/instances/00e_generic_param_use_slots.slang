@@ -21,6 +21,8 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_token;
+StructuredBuffer<uint> hir_nearest_fn_node;
+StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_decl_generic_param_count_by_node;
 StructuredBuffer<uint> type_decl_const_param_count_by_node;
@@ -87,6 +89,19 @@ bool decl_has_generic_params(uint decl_node)
     return valid_node(decl_node) &&
            (type_decl_generic_param_count_by_node[decl_node] != 0u ||
             type_decl_const_param_count_by_node[decl_node] != 0u);
+}
+
+uint generic_decl_scope_for_type_node(uint node)
+{
+    uint decl_node = generic_decl_owner_by_node[node];
+    if (valid_node(decl_node) && decl_has_generic_params(decl_node))
+        return decl_node;
+
+    uint fn_node = valid_node(node) ? hir_nearest_fn_node[node] : INVALID;
+    uint impl_node = valid_node(fn_node) ? hir_method_impl_node[fn_node] : INVALID;
+    return valid_node(impl_node) && decl_has_generic_params(impl_node)
+        ? impl_node
+        : decl_node;
 }
 
 bool generic_param_key_less(uint row, uint owner, uint name_id)
@@ -239,7 +254,7 @@ void publish_const_len_use_slot(uint node)
     if (!valid_token(token))
         return;
 
-    uint decl_node = generic_decl_owner_by_node[node];
+    uint decl_node = generic_decl_scope_for_type_node(node);
     if (!valid_node(decl_node) || !decl_has_generic_params(decl_node) ||
         type_decl_const_param_count_by_node[decl_node] == 0u)
         return;
@@ -270,7 +285,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(token))
         return;
 
-    uint decl_node = generic_decl_owner_by_node[node];
+    uint decl_node = generic_decl_scope_for_type_node(node);
     if (!valid_node(decl_node) || !decl_has_generic_params(decl_node) ||
         type_decl_generic_param_count_by_node[decl_node] == 0u)
         return;

@@ -341,8 +341,8 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
     Ok(NameBindGroups {
         token_scan_n_blocks,
         radix_n_blocks: name_n_blocks,
-        radix_dispatch_args: radix_dispatch_args.clone(),
-        name_max_len: name_max_len.clone(),
+        radix_dispatch_args: (*radix_dispatch_args).clone(),
+        name_max_len: (*name_max_len).clone(),
         mark,
         scan_local: name_lexeme_scan.local,
         scan_blocks: name_lexeme_scan.blocks,

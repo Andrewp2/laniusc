@@ -6,6 +6,7 @@ use std::{
 use anyhow::Result;
 
 use super::{WasmOutputError, WasmParams};
+use crate::gpu::buffers::LaniusBuffer;
 
 pub(super) fn trace_wasm_codegen(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
@@ -169,13 +170,15 @@ pub(super) fn storage_u32_rw(
     label: &str,
     count: usize,
     extra_usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
+) -> LaniusBuffer<u32> {
+    let count = count.max(1);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: (count.max(1) * 4) as u64,
+        size: (count * 4) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra_usage,
         mapped_at_creation: false,
-    })
+    });
+    LaniusBuffer::new((buffer, (count * 4) as u64), count)
 }
 
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {

@@ -140,6 +140,10 @@ uint callee_for_call(uint call_node)
     if (is_postfix_operator(node_kind[p]))
         return p;
 
+    uint previous = previous_sibling_node(call_node);
+    if (valid_node(previous))
+        return callable_head_for_node(previous);
+
     return INVALID;
 }
 
