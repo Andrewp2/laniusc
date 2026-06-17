@@ -1,4 +1,4 @@
-use laniusc::formatter::format_source;
+use laniusc_compiler::formatter::format_source;
 
 #[test]
 fn formatter_formats_small_alpha_sample() {

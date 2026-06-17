@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 default-run = "laniusc"
 
+[workspace]
+members = ["crates/laniusc-compiler", "crates/laniusc-shaders"]
+resolver = "3"
+
 [dependencies]
+laniusc-compiler = { path = "crates/laniusc-compiler" }
 wgpu = { version = "29.0.3", features = ["spirv"] }
 
 anyhow = "1.0"
@@ -23,12 +28,11 @@ tokio = { version = "1.47.1", features = ["rt", "macros"] }
 bnf = "0.5.0"
 
 [build-dependencies]
-anyhow = "1.0"
-which = "8.0.0"
+laniusc-shaders = { path = "crates/laniusc-shaders" }
 
 [features]
-gpu-debug = []
-graphics_debugger = []
+gpu-debug = ["laniusc-compiler/gpu-debug"]
+graphics_debugger = ["laniusc-compiler/graphics_debugger"]
 
 [profile.release]
 debug = 1   # keep useful line info without bloating too much

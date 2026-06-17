@@ -1,7 +1,6 @@
 // Publish pointer-jumped call-argument owners and ordinals.
 
 import atomics;
-import hir_records;
 
 struct Params
 {
@@ -17,6 +16,7 @@ StructuredBuffer<uint> hir_call_arg_owner_a;
 StructuredBuffer<uint> hir_call_arg_rank_a;
 
 RWStructuredBuffer<uint> hir_call_arg_parent_call;
+RWStructuredBuffer<uint> hir_call_arg_ordinal;
 RWStructuredBuffer<uint> hir_call_arg_count;
 
 static const uint INVALID = 0xffffffffu;
@@ -53,6 +53,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint ordinal = hir_call_arg_rank_a[node];
-    hir_call_arg_parent_call[node] = pack_hir_node_ordinal(call_node, ordinal);
+    hir_call_arg_parent_call[node] = call_node;
+    hir_call_arg_ordinal[node] = ordinal;
     atomic_u32_max(hir_call_arg_count, call_node, ordinal + 1u);
 }

@@ -25,6 +25,12 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_key_order;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
@@ -60,6 +66,7 @@ static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
@@ -95,6 +102,70 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint active_generic_param_count()
+{
+    return min(generic_param_count_out[0u], gParams.n_tokens);
+}
+
+bool generic_param_key_less(uint row, uint owner, uint name_id)
+{
+    if (row >= active_generic_param_count())
+        return false;
+
+    uint row_owner = generic_param_owner_node[row];
+    if (row_owner != owner)
+        return row_owner < owner;
+    return generic_param_name_id[row] < name_id;
+}
+
+bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
+{
+    return row < active_generic_param_count() &&
+           generic_param_owner_node[row] == owner &&
+           generic_param_name_id[row] == name_id &&
+           generic_param_kind[row] == kind;
+}
+
+uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
+{
+    if (!valid_node(decl_node) || !valid_token(name_token))
+        return INVALID;
+
+    uint name_id = name_id_by_token[name_token];
+    if (name_id == INVALID)
+        return INVALID;
+
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_key_order[mid];
+        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_key_order[lo];
+    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+}
+
+uint generic_param_decl_token_for_name(uint decl_node, uint name_token)
+{
+    uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
+    if (row == INVALID)
+        return INVALID;
+    uint token = generic_param_token[row];
+    return valid_token(token) ? token : INVALID;
 }
 
 uint arg_ref_index(uint instance_i, uint slot)
@@ -273,10 +344,25 @@ uint return_type_token_for_ref(uint tag, uint payload)
                : INVALID;
 }
 
+void return_ref_for_function(uint fn_node, uint fn_decl_token, out uint tag, out uint payload)
+{
+    tag = fn_return_ref_tag[fn_decl_token];
+    payload = fn_return_ref_payload[fn_decl_token];
+    if (tag == TYPE_REF_GENERIC_PARAM &&
+        valid_token(payload) &&
+        type_generic_param_slot_by_token[payload] == INVALID)
+    {
+        uint decl_token = generic_param_decl_token_for_name(fn_node, payload);
+        if (valid_token(decl_token))
+            payload = decl_token;
+    }
+}
+
 uint return_type_for_function(uint fn_node, uint fn_decl_token)
 {
-    uint tag = fn_return_ref_tag[fn_decl_token];
-    uint payload = fn_return_ref_payload[fn_decl_token];
+    uint tag;
+    uint payload;
+    return_ref_for_function(fn_node, fn_decl_token, tag, payload);
     if (tag != TYPE_REF_INVALID)
         return semantic_type_code_for_ref(tag, payload);
     if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN)
@@ -291,8 +377,9 @@ void publish_function_lookup(uint fn_node)
         return;
 
     call_fn_index[fn_decl_token] = fn_decl_token;
-    uint tag = fn_return_ref_tag[fn_decl_token];
-    uint payload = fn_return_ref_payload[fn_decl_token];
+    uint tag;
+    uint payload;
+    return_ref_for_function(fn_node, fn_decl_token, tag, payload);
     call_return_type_token[fn_decl_token] = return_type_token_for_ref(tag, payload);
     call_return_type[fn_decl_token] = return_type_for_function(fn_node, fn_decl_token);
 

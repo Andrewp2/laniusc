@@ -1,6 +1,9 @@
 mod common;
 
-use laniusc::compiler::{load_entry_path_manifest_with_stdlib, type_check_entry_with_stdlib};
+use laniusc_compiler::compiler::{
+    load_entry_path_manifest_with_stdlib,
+    type_check_entry_with_stdlib,
+};
 
 #[test]
 fn core_i64_checked_abs_type_checks_through_stdlib_root() {

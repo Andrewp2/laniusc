@@ -1,11 +1,22 @@
 mod common;
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     CompileError,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
 };
+
+fn make_x86_test_pass(
+    device: &wgpu::Device,
+    label: &str,
+    shader: &str,
+) -> laniusc_compiler::gpu::passes_core::PassData {
+    laniusc_compiler::gpu::passes_core::make_pass_data_from_shader_key(
+        device, label, "main", shader,
+    )
+    .unwrap_or_else(|err| panic!("create {label} pass: {err}"))
+}
 
 fn assert_x86_64_elf_header(bytes: &[u8]) {
     const ELF64_HEADER_SIZE: usize = 64;
@@ -205,23 +216,14 @@ fn x86_func_owner_scan_local_ignores_non_executable_fn_records() {
         const HIR_FN: u32 = 3;
         const HIR_ITEM_KIND_FN: u32 = 4;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
+        let pass = make_x86_test_pass(
             device,
             "test.x86_func_owner_scan_local",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/func/owner/scan/local.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/func/owner/scan/local.reflect.json"
-            )),
-        )
-        .expect("create x86_func_owner_scan_local pass");
+            "codegen/x86/func/owner/scan/local",
+        );
 
         let storage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC;
         let storage_rw = storage | wgpu::BufferUsages::COPY_DST;
@@ -274,32 +276,33 @@ fn x86_func_owner_scan_local_ignores_non_executable_fn_records() {
             &[99],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_func_owner_scan_local.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gScan", params.as_entire_binding()),
-                ("hir_status", hir_status.as_entire_binding()),
-                ("hir_kind", hir_kind.as_entire_binding()),
-                ("hir_item_kind", hir_item_kind.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos.as_entire_binding()),
-                (
-                    "method_decl_param_offset",
-                    method_decl_param_offset.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_local_prefix",
-                    local_prefix.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_sum",
-                    block_sum.as_entire_binding(),
-                ),
-            ],
-        )
-        .expect("create x86_func_owner_scan_local bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_func_owner_scan_local.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gScan", params.as_entire_binding()),
+                    ("hir_status", hir_status.as_entire_binding()),
+                    ("hir_kind", hir_kind.as_entire_binding()),
+                    ("hir_item_kind", hir_item_kind.as_entire_binding()),
+                    ("hir_token_pos", hir_token_pos.as_entire_binding()),
+                    (
+                        "method_decl_param_offset",
+                        method_decl_param_offset.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_owner_scan_local_prefix",
+                        local_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_owner_scan_block_sum",
+                        block_sum.as_entire_binding(),
+                    ),
+                ],
+            )
+            .expect("create x86_func_owner_scan_local bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_func_owner_scan_local.encoder"),
@@ -345,23 +348,14 @@ fn x86_node_tree_info_rejects_malformed_preorder_records() {
         const X86_NODE_TREE_OK: u32 = 1;
         const X86_ERR_TREE_SHAPE: u32 = 57;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
+        let pass = make_x86_test_pass(
             device,
             "test.x86_node_tree_info",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/node/tree_info.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/node/tree_info.reflect.json"
-            )),
-        )
-        .expect("create x86_node_tree_info pass");
+            "codegen/x86/node/tree_info",
+        );
 
         let assert_rejected = |case_name: &str,
                                parent_words: &[u32],
@@ -404,7 +398,7 @@ fn x86_node_tree_info_rejects_malformed_preorder_records() {
             );
 
             let bind_group =
-                laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
                     device,
                     Some("test.x86_node_tree_info.bind_group"),
                     &pass,
@@ -532,23 +526,10 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
         const X86_ERR_CALL_ABI: u32 = 9;
         const X86_ERR_CALL_ARG_COUNT: u32 = 56;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
-            device,
-            "test.x86_call_abi",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/call/abi.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/call/abi.reflect.json"
-            )),
-        )
-        .expect("create x86_call_abi pass");
+        let pass = make_x86_test_pass(device, "test.x86_call_abi", "codegen/x86/call/abi");
 
         let params = buffer_from_u32s(
             device,
@@ -645,64 +626,65 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             &[X86_CALL_ABI_OK, 0, INVALID, 0],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_call_abi.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("gX86Features", feature_params.as_entire_binding()),
-                ("hir_status", hir_status.as_entire_binding()),
-                ("hir_kind", one_word_invalid.as_entire_binding()),
-                (
-                    "hir_fn_return_type_node",
-                    one_word_invalid.as_entire_binding(),
-                ),
-                ("hir_type_form", one_word_invalid.as_entire_binding()),
-                ("hir_type_len_value", one_word_invalid.as_entire_binding()),
-                (
-                    "x86_decl_node_by_token",
-                    decl_node_by_token.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record.as_entire_binding()),
-                ("x86_call_type_record", call_type_record.as_entire_binding()),
-                ("call_record_status", call_record_status.as_entire_binding()),
-                ("type_instance_kind", token_words_zero.as_entire_binding()),
-                (
-                    "type_instance_decl_token",
-                    two_word_invalid.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    token_words_zero.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    token_words_zero.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    token_words_zero.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status.as_entire_binding(),
-                ),
-                ("x86_enum_type_record", token_words_zero.as_entire_binding()),
-                (
-                    "x86_enum_value_record",
-                    enum_value_record.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status.as_entire_binding(),
-                ),
-                ("x86_call_abi_record", call_abi_record.as_entire_binding()),
-                ("call_abi_status", call_abi_status.as_entire_binding()),
-            ],
-        )
-        .expect("create x86_call_abi bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_call_abi.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("gX86Features", feature_params.as_entire_binding()),
+                    ("hir_status", hir_status.as_entire_binding()),
+                    ("hir_kind", one_word_invalid.as_entire_binding()),
+                    (
+                        "hir_fn_return_type_node",
+                        one_word_invalid.as_entire_binding(),
+                    ),
+                    ("hir_type_form", one_word_invalid.as_entire_binding()),
+                    ("hir_type_len_value", one_word_invalid.as_entire_binding()),
+                    (
+                        "x86_decl_node_by_token",
+                        decl_node_by_token.as_entire_binding(),
+                    ),
+                    ("x86_call_record", call_record.as_entire_binding()),
+                    ("x86_call_type_record", call_type_record.as_entire_binding()),
+                    ("call_record_status", call_record_status.as_entire_binding()),
+                    ("type_instance_kind", token_words_zero.as_entire_binding()),
+                    (
+                        "type_instance_decl_token",
+                        two_word_invalid.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_len_kind",
+                        token_words_zero.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_len_payload",
+                        token_words_zero.as_entire_binding(),
+                    ),
+                    (
+                        "x86_struct_type_record",
+                        token_words_zero.as_entire_binding(),
+                    ),
+                    (
+                        "x86_struct_record_status",
+                        struct_record_status.as_entire_binding(),
+                    ),
+                    ("x86_enum_type_record", token_words_zero.as_entire_binding()),
+                    (
+                        "x86_enum_value_record",
+                        enum_value_record.as_entire_binding(),
+                    ),
+                    (
+                        "x86_enum_record_status",
+                        enum_record_status.as_entire_binding(),
+                    ),
+                    ("x86_call_abi_record", call_abi_record.as_entire_binding()),
+                    ("call_abi_status", call_abi_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86_call_abi bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_call_abi.encoder"),
@@ -759,7 +741,7 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             &[X86_CALL_ABI_OK, 0, INVALID, 0],
         );
         let invalid_owner_bind_group =
-            laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
                 device,
                 Some("test.x86_call_abi.invalid_owner_bind_group"),
                 &pass,
@@ -888,20 +870,10 @@ fn x86_select_clears_stale_selected_rows_for_unsupported_virtual_ops() {
         const X86_VINST_UNSUPPORTED: u32 = 99;
         const X86_INST_V_MOV_R32_IMM32: u32 = 50;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
-            device,
-            "test.x86_select",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/codegen/x86/select.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/select.reflect.json"
-            )),
-        )
-        .expect("create x86_select pass");
+        let pass = make_x86_test_pass(device, "test.x86_select", "codegen/x86/select");
 
         let storage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC;
         let storage_rw = storage | wgpu::BufferUsages::COPY_DST;
@@ -982,63 +954,64 @@ fn x86_select_clears_stale_selected_rows_for_unsupported_virtual_ops() {
             &[X86_SELECT_OK, 0, INVALID, 3],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_select.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status.as_entire_binding(),
-                ),
-                ("x86_virtual_phys_reg", virtual_phys_reg.as_entire_binding()),
-                (
-                    "x86_virtual_call_live_reg_mask",
-                    virtual_call_live_reg_mask.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_status",
-                    virtual_regalloc_status.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    func_first_virtual_row.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    func_first_virtual_row_status.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta.as_entire_binding()),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_flag",
-                    virtual_value_def_flag.as_entire_binding(),
-                ),
-                ("x86_inst_kind", inst_kind.as_entire_binding()),
-                ("x86_inst_arg0", inst_arg0.as_entire_binding()),
-                ("x86_inst_arg1", inst_arg1.as_entire_binding()),
-                ("x86_inst_arg2", inst_arg2.as_entire_binding()),
-                ("select_status", select_status.as_entire_binding()),
-            ],
-        )
-        .expect("create x86_select bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_select.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    (
+                        "x86_virtual_inst_record",
+                        virtual_inst_record.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_args",
+                        virtual_inst_args.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_status",
+                        virtual_inst_status.as_entire_binding(),
+                    ),
+                    ("x86_virtual_phys_reg", virtual_phys_reg.as_entire_binding()),
+                    (
+                        "x86_virtual_call_live_reg_mask",
+                        virtual_call_live_reg_mask.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_regalloc_status",
+                        virtual_regalloc_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row",
+                        func_first_virtual_row.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row_status",
+                        func_first_virtual_row_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_decl_layout_status",
+                        decl_layout_status.as_entire_binding(),
+                    ),
+                    ("x86_func_meta", func_meta.as_entire_binding()),
+                    (
+                        "x86_virtual_func_slot",
+                        virtual_func_slot.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_value_def_flag",
+                        virtual_value_def_flag.as_entire_binding(),
+                    ),
+                    ("x86_inst_kind", inst_kind.as_entire_binding()),
+                    ("x86_inst_arg0", inst_arg0.as_entire_binding()),
+                    ("x86_inst_arg1", inst_arg1.as_entire_binding()),
+                    ("x86_inst_arg2", inst_arg2.as_entire_binding()),
+                    ("select_status", select_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86_select bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_select.encoder"),
@@ -1156,23 +1129,10 @@ fn x86_reloc_patch_rejects_non_compact_reloc_rows() {
         const INVALID: u32 = 0xffff_ffff;
         const ELF_TEXT_OFFSET: u32 = 0x78;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
-            device,
-            "test.x86_reloc_patch",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/reloc/patch.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/reloc/patch.reflect.json"
-            )),
-        )
-        .expect("create x86_reloc_patch pass");
+        let pass = make_x86_test_pass(device, "test.x86_reloc_patch", "codegen/x86/reloc/patch");
 
         let text_len = 10;
         let out_word_count = ((ELF_TEXT_OFFSET + text_len + 3) / 4) as usize;
@@ -1285,38 +1245,39 @@ fn x86_reloc_patch_rejects_non_compact_reloc_rows() {
             &[X86_RELOC_OK, 0, INVALID, 2],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_reloc_patch.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("x86_inst_kind", inst_kind.as_entire_binding()),
-                ("x86_inst_arg0", inst_arg0.as_entire_binding()),
-                ("x86_inst_arg1", inst_arg1.as_entire_binding()),
-                ("x86_inst_arg2", inst_arg2.as_entire_binding()),
-                ("x86_inst_size", inst_size.as_entire_binding()),
-                ("x86_inst_byte_offset", inst_byte_offset.as_entire_binding()),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status.as_entire_binding(),
-                ),
-                ("x86_text_len", x86_text_len.as_entire_binding()),
-                ("text_status", text_status.as_entire_binding()),
-                ("encode_status", encode_status.as_entire_binding()),
-                ("x86_reloc_count", reloc_count.as_entire_binding()),
-                ("x86_reloc_kind", reloc_kind.as_entire_binding()),
-                ("x86_reloc_site_inst", reloc_site_inst.as_entire_binding()),
-                (
-                    "x86_reloc_target_inst",
-                    reloc_target_inst.as_entire_binding(),
-                ),
-                ("out_words", out_words.as_entire_binding()),
-                ("reloc_status", reloc_status.as_entire_binding()),
-            ],
-        )
-        .expect("create x86_reloc_patch bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_reloc_patch.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("x86_inst_kind", inst_kind.as_entire_binding()),
+                    ("x86_inst_arg0", inst_arg0.as_entire_binding()),
+                    ("x86_inst_arg1", inst_arg1.as_entire_binding()),
+                    ("x86_inst_arg2", inst_arg2.as_entire_binding()),
+                    ("x86_inst_size", inst_size.as_entire_binding()),
+                    ("x86_inst_byte_offset", inst_byte_offset.as_entire_binding()),
+                    (
+                        "x86_decl_layout_status",
+                        decl_layout_status.as_entire_binding(),
+                    ),
+                    ("x86_text_len", x86_text_len.as_entire_binding()),
+                    ("text_status", text_status.as_entire_binding()),
+                    ("encode_status", encode_status.as_entire_binding()),
+                    ("x86_reloc_count", reloc_count.as_entire_binding()),
+                    ("x86_reloc_kind", reloc_kind.as_entire_binding()),
+                    ("x86_reloc_site_inst", reloc_site_inst.as_entire_binding()),
+                    (
+                        "x86_reloc_target_inst",
+                        reloc_target_inst.as_entire_binding(),
+                    ),
+                    ("out_words", out_words.as_entire_binding()),
+                    ("reloc_status", reloc_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86_reloc_patch bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_reloc_patch.encoder"),
@@ -1381,23 +1342,14 @@ fn x86_virtual_liveness_rejects_cross_function_operands() {
         const X86_VINST_IMM_I32: u32 = 1;
         const X86_VINST_RETURN: u32 = 9;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
+        let pass = make_x86_test_pass(
             device,
             "test.x86_virtual_liveness",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/liveness.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/liveness.reflect.json"
-            )),
-        )
-        .expect("create x86_virtual_liveness pass");
+            "codegen/x86/virtual/liveness",
+        );
 
         let storage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
@@ -1447,41 +1399,42 @@ fn x86_virtual_liveness_rejects_cross_function_operands() {
             &[X86_VIRTUAL_INST_OK, 0, INVALID, 2],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_virtual_liveness.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    func_first_virtual_row_status.as_entire_binding(),
-                ),
-                ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status.as_entire_binding(),
-                ),
-            ],
-        )
-        .expect("create x86_virtual_liveness bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_virtual_liveness.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    (
+                        "x86_virtual_inst_record",
+                        virtual_inst_record.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_args",
+                        virtual_inst_args.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_status",
+                        virtual_inst_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_func_slot",
+                        virtual_func_slot.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row_status",
+                        func_first_virtual_row_status.as_entire_binding(),
+                    ),
+                    ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
+                    (
+                        "x86_virtual_liveness_status",
+                        virtual_liveness_status.as_entire_binding(),
+                    ),
+                ],
+            )
+            .expect("create x86_virtual_liveness bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_virtual_liveness.encoder"),
@@ -1540,23 +1493,14 @@ fn x86_virtual_liveness_preserves_row_local_error_status() {
         const X86_VINST_RETURN: u32 = 9;
         const ROW_LOCAL_EXTRA: u32 = 0x1234_5678;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
+        let pass = make_x86_test_pass(
             device,
             "test.x86_virtual_liveness",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/liveness.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/liveness.reflect.json"
-            )),
-        )
-        .expect("create x86_virtual_liveness pass");
+            "codegen/x86/virtual/liveness",
+        );
 
         let storage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
@@ -1606,41 +1550,42 @@ fn x86_virtual_liveness_preserves_row_local_error_status() {
             &[0, X86_ERR_VIRTUAL_LIVENESS, 1, ROW_LOCAL_EXTRA],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_virtual_liveness.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    func_first_virtual_row_status.as_entire_binding(),
-                ),
-                ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status.as_entire_binding(),
-                ),
-            ],
-        )
-        .expect("create x86_virtual_liveness bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_virtual_liveness.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    (
+                        "x86_virtual_inst_record",
+                        virtual_inst_record.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_args",
+                        virtual_inst_args.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_status",
+                        virtual_inst_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_func_slot",
+                        virtual_func_slot.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row_status",
+                        func_first_virtual_row_status.as_entire_binding(),
+                    ),
+                    ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
+                    (
+                        "x86_virtual_liveness_status",
+                        virtual_liveness_status.as_entire_binding(),
+                    ),
+                ],
+            )
+            .expect("create x86_virtual_liveness bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_virtual_liveness.encoder"),
@@ -1761,23 +1706,14 @@ fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
         const X86_ERR_REGALLOC_BOUNDARY: u32 = 48;
         const X86_VINST_IMM_I32: u32 = 1;
 
-        let gpu = laniusc::gpu::device::GpuDevice::new();
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
-        let pass = laniusc::gpu::passes_core::make_pass_data(
+        let pass = make_x86_test_pass(
             device,
             "test.x86_virtual_regalloc",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/regalloc.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/codegen/x86/virtual/regalloc.reflect.json"
-            )),
-        )
-        .expect("create x86_virtual_regalloc pass");
+            "codegen/x86/virtual/regalloc",
+        );
 
         let params = buffer_from_u32s(
             device,
@@ -1941,92 +1877,93 @@ fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
             &[X86_VIRTUAL_REGALLOC_OK, 0, INVALID, 3],
         );
 
-        let bind_group = laniusc::gpu::passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some("test.x86_virtual_regalloc.bind_group"),
-            &pass,
-            0,
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("gRegalloc", regalloc_params.as_entire_binding()),
-                ("x86_func_meta", func_meta.as_entire_binding()),
-                (
-                    "x86_func_slot_by_index",
-                    func_slot_by_index.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_start",
-                    virtual_live_start.as_entire_binding(),
-                ),
-                ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_status",
-                    virtual_next_call_status.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask",
-                    func_param_reg_mask.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask_status",
-                    func_param_reg_mask_status.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    func_first_virtual_row.as_entire_binding(),
-                ),
-                (
-                    "x86_func_last_virtual_row",
-                    func_last_virtual_row.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    func_first_virtual_row_status.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_row",
-                    virtual_value_def_row.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_status",
-                    virtual_value_def_status.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_active_end",
-                    virtual_regalloc_active_end.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_param_rank_mask",
-                    virtual_regalloc_param_rank_mask.as_entire_binding(),
-                ),
-                ("x86_virtual_phys_reg", virtual_phys_reg.as_entire_binding()),
-                (
-                    "x86_virtual_call_live_reg_mask",
-                    virtual_call_live_reg_mask.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_status",
-                    virtual_regalloc_status.as_entire_binding(),
-                ),
-            ],
-        )
-        .expect("create x86_virtual_regalloc bind group");
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_virtual_regalloc.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("gRegalloc", regalloc_params.as_entire_binding()),
+                    ("x86_func_meta", func_meta.as_entire_binding()),
+                    (
+                        "x86_func_slot_by_index",
+                        func_slot_by_index.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_record",
+                        virtual_inst_record.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_inst_args",
+                        virtual_inst_args.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_live_start",
+                        virtual_live_start.as_entire_binding(),
+                    ),
+                    ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
+                    (
+                        "x86_virtual_liveness_status",
+                        virtual_liveness_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_next_call_status",
+                        virtual_next_call_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_param_reg_mask",
+                        func_param_reg_mask.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_param_reg_mask_status",
+                        func_param_reg_mask_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row",
+                        func_first_virtual_row.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_last_virtual_row",
+                        func_last_virtual_row.as_entire_binding(),
+                    ),
+                    (
+                        "x86_func_first_virtual_row_status",
+                        func_first_virtual_row_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_value_def_row",
+                        virtual_value_def_row.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_value_def_status",
+                        virtual_value_def_status.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_func_slot",
+                        virtual_func_slot.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_regalloc_active_end",
+                        virtual_regalloc_active_end.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_regalloc_param_rank_mask",
+                        virtual_regalloc_param_rank_mask.as_entire_binding(),
+                    ),
+                    ("x86_virtual_phys_reg", virtual_phys_reg.as_entire_binding()),
+                    (
+                        "x86_virtual_call_live_reg_mask",
+                        virtual_call_live_reg_mask.as_entire_binding(),
+                    ),
+                    (
+                        "x86_virtual_regalloc_status",
+                        virtual_regalloc_status.as_entire_binding(),
+                    ),
+                ],
+            )
+            .expect("create x86_virtual_regalloc bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.x86_virtual_regalloc.encoder"),
@@ -2540,7 +2477,7 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_direct_call_argument_count_beyond_packed_abi_with_diagnostic() {
+fn x86_direct_call_with_seven_parameters_reaches_native_parameter_boundary() {
     let source = r#"
 fn sum7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> i32 {
     return a + b + c + d + e + f + g;
@@ -2552,26 +2489,28 @@ fn main() {
 "#
     .to_owned();
 
-    let err = common::run_gpu_codegen_with_timeout("x86 direct call argument count", move || {
+    let err = common::run_gpu_codegen_with_timeout("x86 direct call parameter count", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err("seven-argument direct calls should fail before native x86 bytes are returned");
+    .expect_err("seven-parameter direct callees should fail before native x86 bytes are returned");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
             assert_eq!(
-                diagnostic.code, "LNC0027",
-                "call argument-count rejection should use the stable public call diagnostic: {message}"
+                diagnostic.code, "LNC0017",
+                "wide direct calls should now reach the native x86 diagnostic boundary: {message}"
             );
             assert_eq!(
-                diagnostic.category, "type checking",
-                "direct calls beyond the frontend call-width boundary should fail before native codegen: {message}"
+                diagnostic.category, "native codegen",
+                "wide direct calls should no longer fail in frontend call resolution: {message}"
             );
             assert!(
-                diagnostic.message.contains("call resolution failed")
-                    && message.contains("supported function or method signature"),
-                "diagnostic should identify the public call-resolution boundary: {message}"
+                diagnostic
+                    .message
+                    .contains("unsupported x86 parameter register count")
+                    && message.contains("native x86 backend"),
+                "diagnostic should identify the remaining native parameter-register boundary: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -2580,19 +2519,19 @@ fn main() {
             let source_line = label
                 .source_line
                 .as_deref()
-                .expect("x86 diagnostic should include the direct-call source line");
-            assert_eq!(
-                source_line, "    return sum7(1, 2, 3, 4, 5, 6, 7);",
-                "diagnostic should point at the unsupported direct call: {message}"
+                .expect("x86 diagnostic should include the unsupported parameter source line");
+            assert!(
+                source_line.contains("g: i32"),
+                "diagnostic should point at the first unsupported direct-callee parameter: {message}"
             );
         }
         CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned call diagnostic, got GPU codegen error: {message}")
+            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
         }
         CompileError::GpuTypeCheck(message) => {
-            panic!("expected public call diagnostic, got raw GPU type-check error: {message}")
+            panic!("expected native x86 diagnostic, got raw GPU type-check error: {message}")
         }
-        other => panic!("expected x86 call argument-count diagnostic, got {other:?}"),
+        other => panic!("expected x86 parameter-count diagnostic, got {other:?}"),
     }
 }
 

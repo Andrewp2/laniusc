@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     load_entry_path_manifest_with_stdlib,
     runtime_bound_api_diagnostic_info,
     type_check_entry_with_stdlib,

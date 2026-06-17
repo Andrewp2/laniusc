@@ -1,5 +1,3 @@
-mod cli;
-
 fn main() -> std::process::ExitCode {
-    cli::run_from_env()
+    laniusc_compiler::cli::run_from_env()
 }

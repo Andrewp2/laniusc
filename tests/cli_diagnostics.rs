@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use laniusc::{
+use laniusc_compiler::{
     codegen::unit::SourcePackArtifactTarget,
     compiler::{
         FilesystemArtifactStore,
@@ -50,18 +50,18 @@ fn json_string_array_matches(value: &serde_json::Value, field: &str, expected: &
 
 #[test]
 fn diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_boundaries() {
-    let json = laniusc::compiler::diagnostic_registry_json_pretty()
+    let json = laniusc_compiler::compiler::diagnostic_registry_json_pretty()
         .expect("diagnostic registry should serialize");
     let registry: serde_json::Value =
         serde_json::from_str(&json).expect("diagnostic registry JSON should parse");
 
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         registry["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_NAME
     );
     assert_eq!(registry["no_run_guards"]["source_compilation"], false);
     assert_eq!(registry["no_run_guards"]["source_scanning"], false);
@@ -336,7 +336,7 @@ fn diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_bo
 
 #[test]
 fn diagnostic_explain_describes_source_root_package_boundary_recovery() {
-    let json = laniusc::compiler::diagnostic_explanation_json_pretty("lnc0024")
+    let json = laniusc_compiler::compiler::diagnostic_explanation_json_pretty("lnc0024")
         .expect("diagnostic explanation should serialize");
     let explanation: serde_json::Value =
         serde_json::from_str(&json).expect("diagnostic explanation JSON should parse");
@@ -344,7 +344,7 @@ fn diagnostic_explain_describes_source_root_package_boundary_recovery() {
     assert_eq!(explanation["requested_code"], "LNC0024");
     assert_eq!(
         explanation["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
     );
     assert_eq!(explanation["known"], true);
     assert_eq!(explanation["diagnostic"]["code"], "LNC0024");
@@ -372,7 +372,7 @@ fn diagnostic_explain_describes_source_root_package_boundary_recovery() {
 
 #[test]
 fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
-    let json = laniusc::compiler::diagnostic_explanation_json_pretty("lnc0038")
+    let json = laniusc_compiler::compiler::diagnostic_explanation_json_pretty("lnc0038")
         .expect("diagnostic explanation should serialize");
     let explanation: serde_json::Value =
         serde_json::from_str(&json).expect("diagnostic explanation JSON should parse");
@@ -380,7 +380,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
     assert_eq!(explanation["requested_code"], "LNC0038");
     assert_eq!(
         explanation["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
     );
     assert_eq!(explanation["known"], true);
     assert_eq!(explanation["diagnostic"]["code"], "LNC0038");
@@ -407,13 +407,13 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
         .expect("runtime service boundary explanation should include service rows");
     assert_eq!(
         runtime_services.len(),
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
     );
     assert!(runtime_services.iter().any(|service| {
         service["diagnostic_code"] == "LNC0038"
             && service["service_id"].as_u64()
                 == Some(u64::from(
-                    laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                    laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && service["service_name"] == "stdio"
             && service["module_path"] == "std::io"
@@ -423,7 +423,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
             && service["current_status"] == "known-unbound"
             && service["executable"] == false
@@ -438,13 +438,13 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
         .expect("runtime service boundary explanation should include API rows");
     assert_eq!(
         runtime_apis.len(),
-        laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
     );
     assert!(runtime_apis.iter().any(|api| {
         api["diagnostic_code"] == "LNC0038"
             && api["service_id"].as_u64()
                 == Some(u64::from(
-                    laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                    laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && api["module_path"] == "std::io"
             && api["api_name"] == "std::io::print_i32"
@@ -457,7 +457,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["current_status"] == "known-unbound"
             && api["executable"] == false
@@ -466,8 +466,8 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
         let service_id = api["service_id"]
             .as_u64()
             .and_then(|service_id| u32::try_from(service_id).ok());
-        let service =
-            service_id.and_then(laniusc::compiler::runtime_service_boundary_diagnostic_info);
+        let service = service_id
+            .and_then(laniusc_compiler::compiler::runtime_service_boundary_diagnostic_info);
         api["diagnostic_code"] == "LNC0038"
             && api["current_status"] == "known-unbound"
             && api["executable"] == false
@@ -484,18 +484,18 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
 
 #[test]
 fn diagnostic_output_formats_json_describes_cli_payload_contracts() {
-    let json = laniusc::compiler::diagnostic_output_formats_json_pretty()
+    let json = laniusc_compiler::compiler::diagnostic_output_formats_json_pretty()
         .expect("diagnostic output formats should serialize");
     let registry: serde_json::Value =
         serde_json::from_str(&json).expect("diagnostic output format JSON should parse");
 
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(
         registry["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
     );
     assert_eq!(registry["cli_flag"], "--diagnostic-format");
     assert_eq!(registry["default_format"], "text");
@@ -545,11 +545,11 @@ fn diagnostic_output_formats_json_describes_cli_payload_contracts() {
     assert_eq!(json_format["payload"], "Diagnostic JSON object");
     assert_eq!(
         json_format["payload_schema_name"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_NAME
     );
     assert_eq!(
         json_format["payload_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(json_format["payload_schema_location"], "top-level");
     assert_eq!(
@@ -569,11 +569,11 @@ fn diagnostic_output_formats_json_describes_cli_payload_contracts() {
     assert_eq!(lsp_json_format["payload"], "LSP Diagnostic JSON object");
     assert_eq!(
         lsp_json_format["payload_schema_name"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
     );
     assert_eq!(
         lsp_json_format["payload_schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(lsp_json_format["payload_schema_location"], "data");
     assert_eq!(lsp_json_format["position_encoding"], "utf-16");
@@ -585,7 +585,7 @@ fn diagnostic_output_formats_json_describes_cli_payload_contracts() {
 
 #[test]
 fn diagnostic_output_formats_json_keeps_selector_rows_in_sync_for_wrappers() {
-    let json = laniusc::compiler::diagnostic_output_formats_json_pretty()
+    let json = laniusc_compiler::compiler::diagnostic_output_formats_json_pretty()
         .expect("diagnostic output formats should serialize");
     let registry: serde_json::Value =
         serde_json::from_str(&json).expect("diagnostic output format JSON should parse");
@@ -687,11 +687,11 @@ fn cli_diagnostics_registry_prints_combined_registry_json_without_compiling_sour
         serde_json::from_slice(&output.stdout).expect("registry output should be JSON");
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         registry["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_NAME
     );
     assert_eq!(registry["no_run_guards"]["source_compilation"], false);
     assert_eq!(registry["no_run_guards"]["source_scanning"], false);
@@ -873,7 +873,7 @@ fn cli_diagnostics_codes_prints_compact_code_index_without_compiling_source() {
     assert_eq!(document["schema_name"], "laniusc.diagnostics.codes");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     let codes = document["codes"]
         .as_array()
@@ -1136,7 +1136,7 @@ fn cli_diagnostics_code_unknown_result_includes_discovery_guidance_without_sourc
     assert_eq!(document["schema_name"], "laniusc.diagnostics.code");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["requested_code"], "NOT-A-CODE");
     assert_eq!(document["known"], false);
@@ -1442,7 +1442,7 @@ fn cli_diagnostics_categories_groups_codes_by_stable_category_without_compiling_
     assert_eq!(document["schema_name"], "laniusc.diagnostics.categories");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
@@ -1757,15 +1757,15 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_json_
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_NAME
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0037");
@@ -1850,15 +1850,15 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_lsp_j
     assert_eq!(diagnostic["message"], "package metadata invalid");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["schema_name"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "package metadata invalid");
@@ -1936,11 +1936,11 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_root_can_render_json_di
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0023");
@@ -2008,11 +2008,11 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_root_can_render_lsp_jso
     assert_eq!(diagnostic["message"], "missing CLI option value");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "missing CLI option value");
@@ -2076,11 +2076,11 @@ fn cli_diagnostics_formats_prints_machine_readable_contract_without_compiling_so
         serde_json::from_slice(&output.stdout).expect("formats output should be JSON");
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(
         registry["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
     );
     assert_eq!(registry["cli_flag"], "--diagnostic-format");
     assert_eq!(registry["default_format"], "text");
@@ -2116,9 +2116,10 @@ fn cli_diagnostics_formats_prints_machine_readable_contract_without_compiling_so
     assert!(formats.iter().any(|format| {
         format["name"] == "lsp-json"
             && format["payload"] == "LSP Diagnostic JSON object"
-            && format["payload_schema_name"] == laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
+            && format["payload_schema_name"]
+                == laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
             && format["payload_schema_version"]
-                == laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+                == laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
             && format["payload_schema_location"] == "data"
             && format["position_encoding"] == "utf-16"
             && format["language_server_envelope"] == false
@@ -2274,11 +2275,11 @@ fn cli_diagnostics_version_policy_prints_no_run_tooling_contract() {
     );
     assert_eq!(
         policy["tooling"]["diagnostic_registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         policy["tooling"]["diagnostic_output_formats_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(
         policy["tooling"]["formatter"],
@@ -2624,7 +2625,7 @@ fn cli_diagnostics_version_policy_prints_no_run_tooling_contract() {
     assert_eq!(
         find_discovery_command("laniusc diagnostics explain CODE")
             .and_then(|command| command["schema_name"].as_str()),
-        Some(laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME)
+        Some(laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME)
     );
     assert_eq!(
         find_discovery_command("laniusc diagnostics runtime-api API")
@@ -3126,11 +3127,11 @@ fn cli_global_diagnostic_format_before_no_run_subcommand_keeps_query_routing() {
         serde_json::from_slice(&output.stdout).expect("formats output should be JSON");
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(
         registry["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
     );
     assert_eq!(registry["cli_flag"], "--diagnostic-format");
     assert_eq!(registry["default_format"], "text");
@@ -3178,15 +3179,15 @@ fn cli_diagnostics_explain_prints_single_code_json_without_compiling_source() {
         serde_json::from_slice(&output.stdout).expect("explain output should be JSON");
     assert_eq!(
         explanation["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
     );
     assert_eq!(
         explanation["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
     );
     assert_eq!(
         explanation["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(explanation["requested_code"], "LNC0017");
     assert_eq!(
@@ -3404,11 +3405,11 @@ fn cli_diagnostics_explain_reports_no_run_guards_for_known_and_unknown_codes() {
         );
         assert_eq!(
             explanation["schema_version"],
-            laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
+            laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
         );
         assert_eq!(
             explanation["schema_name"],
-            laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
+            laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_NAME
         );
         assert_eq!(explanation["no_run_guards"]["source_compilation"], false);
         assert_eq!(explanation["no_run_guards"]["source_scanning"], false);
@@ -3444,7 +3445,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
         .expect("runtime-service explanation output should be JSON");
     assert_eq!(
         explanation["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
     );
     assert_eq!(explanation["requested_code"], "LNC0038");
     assert_eq!(explanation["known"], true);
@@ -3458,7 +3459,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
         .expect("LNC0038 explanation should include runtime service rows");
     assert_eq!(
         services.len(),
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
     );
     assert_eq!(
         services
@@ -3467,7 +3468,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
                 .as_u64()
                 .expect("runtime service id should be numeric"))
             .collect::<Vec<_>>(),
-        laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS
+        laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS
             .iter()
             .map(|service_id| u64::from(*service_id))
             .collect::<Vec<_>>()
@@ -3475,7 +3476,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
     assert!(services.iter().any(|service| {
         service["service_id"].as_u64()
             == Some(u64::from(
-                laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID,
+                laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID,
             ))
             && service["module_path"] == "test::harness"
             && service["binding_probe"]
@@ -3484,7 +3485,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
     }));
     assert!(services.iter().all(|service| {
@@ -3492,7 +3493,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
             && service["current_status"] == "known-unbound"
             && service["executable"] == false
@@ -3502,13 +3503,13 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
         .expect("LNC0038 explanation should include runtime-bound API rows");
     assert_eq!(
         apis.len(),
-        laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
     );
     assert!(apis.iter().any(|api| {
         api["api_name"] == "std::io::print_i32"
             && api["service_id"].as_u64()
                 == Some(u64::from(
-                    laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                    laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && api["service_module_path"] == "std::io"
             && api["service_current_status"] == "known-unbound"
@@ -3522,7 +3523,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["executable"] == false
     }));
@@ -3530,13 +3531,13 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
         let service_id = api["service_id"]
             .as_u64()
             .and_then(|service_id| u32::try_from(service_id).ok());
-        let service =
-            service_id.and_then(laniusc::compiler::runtime_service_boundary_diagnostic_info);
+        let service = service_id
+            .and_then(laniusc_compiler::compiler::runtime_service_boundary_diagnostic_info);
         api["diagnostic_code"] == "LNC0038"
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["current_status"] == "known-unbound"
             && api["executable"] == false
@@ -3584,7 +3585,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-api");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["requested_api"], "std::io::print_i32");
     assert_eq!(document["known"], true);
@@ -3592,12 +3593,12 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "service_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert_eq!(document["canonical_api_name"], "std::io::print_i32");
     assert_eq!(document["diagnostic_code"], "LNC0038");
@@ -3609,7 +3610,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     assert_eq!(
         document["runtime_bound_api"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -3619,7 +3620,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     assert!(json_string_array_matches(
         &document["runtime_bound_api"],
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert_eq!(document["runtime_bound_api"]["service_executable"], false);
     assert_eq!(
@@ -3642,7 +3643,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     assert!(json_string_array_matches(
         &document["runtime_service_boundary"],
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert_eq!(document["runtime_service_boundary"]["executable"], false);
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
@@ -3695,7 +3696,7 @@ fn cli_diagnostics_runtime_api_accepts_service_qualified_selector_without_source
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
@@ -3793,7 +3794,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
     assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-apis");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(
@@ -3807,12 +3808,12 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "service_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
 
     let apis = document["runtime_bound_apis"]
@@ -3820,7 +3821,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
         .expect("runtime API index should include API rows");
     assert_eq!(
         document["runtime_bound_api_count"],
-        laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
     );
     assert_eq!(document["runtime_bound_api_count"], apis.len());
     assert!(apis.iter().any(|api| {
@@ -3828,13 +3829,13 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             && api["module_path"] == "std::io"
             && api["service_id"].as_u64()
                 == Some(u64::from(
-                    laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                    laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && api["diagnostic_code"] == "LNC0038"
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["current_status"] == "known-unbound"
             && api["executable"] == false
@@ -3844,7 +3845,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["service_current_status"] == "known-unbound"
             && api["service_executable"] == false
@@ -3857,13 +3858,13 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
         .expect("runtime API index should include service-boundary rows");
     assert_eq!(
         document["runtime_service_boundary_count"],
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
     );
     assert_eq!(document["runtime_service_boundary_count"], services.len());
     assert!(services.iter().any(|service| {
         service["service_id"].as_u64()
             == Some(u64::from(
-                laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
             ))
             && service["service_name"] == "stdio"
             && service["module_path"] == "std::io"
@@ -3871,7 +3872,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
             && service["current_status"] == "known-unbound"
             && service["executable"] == false
@@ -3922,7 +3923,7 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
     );
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(
@@ -3939,13 +3940,13 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
         .expect("runtime service index should include service-boundary rows");
     assert_eq!(
         document["runtime_service_boundary_count"],
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
     );
     assert_eq!(document["runtime_service_boundary_count"], services.len());
     assert!(services.iter().any(|service| {
         service["service_id"].as_u64()
             == Some(u64::from(
-                laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
             ))
             && service["service_name"] == "stdio"
             && service["module_path"] == "std::io"
@@ -3955,7 +3956,7 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
             && service["current_status"] == "known-unbound"
             && service["executable"] == false
@@ -3965,7 +3966,7 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
             && json_string_array_matches(
                 service,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
             && service["current_status"] == "known-unbound"
             && service["executable"] == false
@@ -4033,7 +4034,7 @@ fn cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without
     );
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["requested_service"], "std::io");
     assert_eq!(document["known"], true);
@@ -4041,18 +4042,18 @@ fn cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "runtime_api_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4074,7 +4075,7 @@ fn cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without
     assert!(json_string_array_matches(
         &document["runtime_service_boundary"],
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert_eq!(document["runtime_service_boundary"]["executable"], false);
     assert_eq!(
@@ -4141,7 +4142,7 @@ fn cli_diagnostics_runtime_service_accepts_service_qualified_api_selector_withou
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4269,7 +4270,7 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
     );
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["requested_service"], "stdio");
     assert_eq!(document["known"], true);
@@ -4277,18 +4278,18 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "runtime_api_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4299,9 +4300,11 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
     let apis = document["runtime_bound_apis"]
         .as_array()
         .expect("runtime service API lookup should include API rows");
-    let expected_stdio_api_count = laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
+    let expected_stdio_api_count = laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
         .iter()
-        .filter(|api| api.service_id == laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID)
+        .filter(|api| {
+            api.service_id == laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
+        })
         .count();
     assert_eq!(
         document["runtime_bound_api_count"],
@@ -4311,7 +4314,7 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
     assert!(apis.iter().all(|api| {
         api["service_id"].as_u64()
             == Some(u64::from(
-                laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
             ))
             && api["service_name"] == "stdio"
             && api["service_module_path"] == "std::io"
@@ -4319,7 +4322,7 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
             && json_string_array_matches(
                 api,
                 "accepted_selector_kinds",
-                laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+                laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
             && api["service_current_status"] == "known-unbound"
             && api["service_executable"] == false
@@ -4394,7 +4397,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_capability_constant_selector_wit
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4410,7 +4413,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_capability_constant_selector_wit
             api["api_name"] == "std::io::print_i32"
                 && api["service_id"].as_u64()
                     == Some(u64::from(
-                        laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+                        laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                     ))
                 && api["service_capability_constant"] == "STDIO_HAS_RUNTIME_BINDING"
         }),
@@ -4468,7 +4471,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4479,9 +4482,11 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
     let apis = document["runtime_bound_apis"]
         .as_array()
         .expect("qualified API selector should return service API rows");
-    let expected_stdio_api_count = laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
+    let expected_stdio_api_count = laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
         .iter()
-        .filter(|api| api.service_id == laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID)
+        .filter(|api| {
+            api.service_id == laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
+        })
         .count();
     assert_eq!(
         document["runtime_bound_api_count"],
@@ -4551,7 +4556,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
     assert_eq!(
         document["runtime_service_boundary"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(
@@ -4562,9 +4567,11 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
     let apis = document["runtime_bound_apis"]
         .as_array()
         .expect("service-qualified API selector should return service API rows");
-    let expected_stdio_api_count = laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
+    let expected_stdio_api_count = laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS
         .iter()
-        .filter(|api| api.service_id == laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID)
+        .filter(|api| {
+            api.service_id == laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
+        })
         .count();
     assert_eq!(
         document["runtime_bound_api_count"],
@@ -4629,12 +4636,12 @@ fn cli_diagnostics_runtime_api_reports_unknown_api_as_no_run_result() {
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "service_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert_eq!(
         document["selector_examples"]["api_name"],
@@ -4701,17 +4708,17 @@ fn cli_diagnostics_runtime_service_reports_unknown_selector_as_no_run_result() {
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "runtime_api_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert_eq!(
         document["selector_examples"]["service_id"].as_u64(),
         Some(u64::from(
-            laniusc::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
         ))
     );
     assert_eq!(document["selector_examples"]["service_name"], "stdio");
@@ -4806,12 +4813,12 @@ fn cli_diagnostics_runtime_service_apis_reports_unknown_selector_as_no_run_resul
     assert!(json_string_array_matches(
         &document,
         "accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
     assert!(json_string_array_matches(
         &document,
         "runtime_api_accepted_selector_kinds",
-        laniusc::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
     assert_eq!(
         document["runtime_api_index_command"],
@@ -4867,11 +4874,11 @@ fn cli_diagnostics_explain_missing_code_can_render_json_diagnostic() {
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0026");
@@ -4936,11 +4943,11 @@ fn cli_diagnostics_explain_reports_unknown_code_as_machine_readable_result() {
         serde_json::from_slice(&output.stdout).expect("unknown explain output should be JSON");
     assert_eq!(
         explanation["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
     );
     assert_eq!(
         explanation["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(explanation["requested_code"], "LNC9999");
     assert_eq!(
@@ -4954,19 +4961,19 @@ fn cli_diagnostics_explain_reports_unknown_code_as_machine_readable_result() {
     assert!(explanation["runtime_bound_apis"].is_null());
     assert_eq!(
         json_string_array(&explanation, "accepted_selector_examples").as_slice(),
-        laniusc::compiler::DIAGNOSTIC_CODE_SELECTOR_EXAMPLES
+        laniusc_compiler::compiler::DIAGNOSTIC_CODE_SELECTOR_EXAMPLES
     );
     assert_eq!(
         json_string_array(&explanation, "accepted_selector_patterns").as_slice(),
-        laniusc::compiler::DIAGNOSTIC_CODE_SELECTOR_PATTERNS
+        laniusc_compiler::compiler::DIAGNOSTIC_CODE_SELECTOR_PATTERNS
     );
     assert_eq!(
         explanation["code_index_command"],
-        laniusc::compiler::DIAGNOSTIC_CODE_INDEX_COMMAND
+        laniusc_compiler::compiler::DIAGNOSTIC_CODE_INDEX_COMMAND
     );
     assert_eq!(
         explanation["registry_command"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_COMMAND
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_COMMAND
     );
 }
 
@@ -5133,11 +5140,11 @@ fn cli_fmt_stdin_check_can_render_lsp_json_diagnostic_without_stdout_rewrite() {
     assert_eq!(diagnostic["message"], "formatter check failed");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "formatter check failed");
@@ -5220,11 +5227,11 @@ fn cli_fmt_stdin_invalid_utf8_can_render_json_diagnostic_without_stdout() {
         serde_json::from_str(&stderr).expect("stderr should be one diagnostic JSON object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0040");
@@ -5314,11 +5321,11 @@ fn cli_fmt_missing_input_can_render_json_diagnostic_without_stdout() {
         serde_json::from_str(&stderr).expect("stderr should be one diagnostic JSON object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0040");
@@ -5426,11 +5433,11 @@ fn cli_fmt_readonly_file_can_render_json_output_write_diagnostic_without_stdout(
         serde_json::from_str(&stderr).expect("stderr should be one diagnostic JSON object");
     assert_eq!(
         diagnostic["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
     assert_eq!(diagnostic["code"], "LNC0034");
@@ -5529,11 +5536,11 @@ fn cli_fmt_multiple_inputs_formats_each_file_without_diagnostics() {
 
     assert_eq!(
         fs::read_to_string(&first).expect("read formatted first input"),
-        laniusc::formatter::format_source(first_source)
+        laniusc_compiler::formatter::format_source(first_source)
     );
     assert_eq!(
         fs::read_to_string(&second).expect("read formatted second input"),
-        laniusc::formatter::format_source(second_source)
+        laniusc_compiler::formatter::format_source(second_source)
     );
     fs::remove_dir_all(&root).expect("remove fmt multiple-input temp root");
 }
@@ -6978,11 +6985,11 @@ fn cli_unsupported_edition_can_render_lsp_json_diagnostic_before_source_loading(
     assert_eq!(diagnostic["message"], "unsupported CLI option value");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "unsupported CLI option value");
@@ -7119,7 +7126,7 @@ fn cli_diagnostics_categories_lsp_json_selector_still_prints_metadata_document()
     assert_eq!(document["schema_name"], "laniusc.diagnostics.categories");
     assert_eq!(
         document["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
@@ -7171,7 +7178,7 @@ fn cli_diagnostics_registry_accepts_diagnostic_format_after_subcommand() {
         serde_json::from_slice(&output.stdout).expect("registry output should be JSON");
     assert_eq!(
         registry["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert!(
         registry["codes"]
@@ -7213,11 +7220,11 @@ fn cli_diagnostics_formats_accepts_diagnostic_format_after_subcommand() {
         serde_json::from_slice(&output.stdout).expect("formats output should be JSON");
     assert_eq!(
         formats["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(
         formats["schema_name"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME
     );
     assert_eq!(formats["cli_flag"], "--diagnostic-format");
     assert_eq!(formats["default_format"], "text");
@@ -7277,7 +7284,7 @@ fn cli_diagnostics_explain_accepts_diagnostic_format_after_code() {
         serde_json::from_slice(&output.stdout).expect("explanation output should be JSON");
     assert_eq!(
         explanation["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
     );
     assert_eq!(explanation["requested_code"], "LNC0017");
     assert_eq!(
@@ -7554,11 +7561,11 @@ fn cli_linked_output_contract_descriptor_rejects_target_bytes_as_lsp_json_diagno
     assert_eq!(diagnostic["message"], "linked-output contract descriptor");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["title"],
@@ -7588,8 +7595,8 @@ fn cli_linked_output_contract_descriptor_rejects_target_bytes_as_lsp_json_diagno
 
 #[test]
 fn diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope() {
-    let diagnostic = laniusc::compiler::Diagnostic::error("LNC0016", "syntax error")
-        .with_primary_label(laniusc::compiler::DiagnosticLabel::primary(
+    let diagnostic = laniusc_compiler::compiler::Diagnostic::error("LNC0016", "syntax error")
+        .with_primary_label(laniusc_compiler::compiler::DiagnosticLabel::primary(
             "app.lani",
             2,
             3,
@@ -7611,11 +7618,11 @@ fn diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope() {
     assert_eq!(value["message"], "syntax error");
     assert_eq!(
         value["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         value["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(value["data"]["title"], "syntax error");
     assert_eq!(value["data"]["category"], "parsing");
@@ -7647,8 +7654,8 @@ fn diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope() {
 
 #[test]
 fn diagnostic_lsp_json_renderer_uses_registry_metadata_for_known_codes() {
-    let mut diagnostic = laniusc::compiler::Diagnostic::error("LNC0016", "syntax error")
-        .with_primary_label(laniusc::compiler::DiagnosticLabel::primary(
+    let mut diagnostic = laniusc_compiler::compiler::Diagnostic::error("LNC0016", "syntax error")
+        .with_primary_label(laniusc_compiler::compiler::DiagnosticLabel::primary(
             "app.lani",
             1,
             1,
@@ -7669,11 +7676,11 @@ fn diagnostic_lsp_json_renderer_uses_registry_metadata_for_known_codes() {
     assert_eq!(value["source"], "laniusc");
     assert_eq!(
         value["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         value["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(value["data"]["title"], "syntax error");
     assert_eq!(value["data"]["category"], "parsing");
@@ -7686,17 +7693,19 @@ fn diagnostic_lsp_json_renderer_uses_registry_metadata_for_known_codes() {
 
 #[test]
 fn diagnostic_renderers_expose_public_help_metadata_for_unsupported_boundaries() {
-    let diagnostic =
-        laniusc::compiler::Diagnostic::error("LNC0022", "linked-output contract descriptor")
-            .with_primary_label(laniusc::compiler::DiagnosticLabel::primary(
-                "linked-output.contract",
-                1,
-                1,
-                1,
-                None,
-                "linked-output contract descriptor here",
-            ))
-            .with_note("descriptor payload contains Wasm module target bytes");
+    let diagnostic = laniusc_compiler::compiler::Diagnostic::error(
+        "LNC0022",
+        "linked-output contract descriptor",
+    )
+    .with_primary_label(laniusc_compiler::compiler::DiagnosticLabel::primary(
+        "linked-output.contract",
+        1,
+        1,
+        1,
+        None,
+        "linked-output contract descriptor here",
+    ))
+    .with_note("descriptor payload contains Wasm module target bytes");
 
     let text = diagnostic.render();
     assert!(
@@ -7711,11 +7720,11 @@ fn diagnostic_renderers_expose_public_help_metadata_for_unsupported_boundaries()
         serde_json::from_str(&json).expect("diagnostic JSON should parse");
     assert_eq!(
         value["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_JSON_SCHEMA_VERSION
     );
     assert_eq!(
         value["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(value["code"], "LNC0022");
     assert_eq!(value["category"], "native codegen");
@@ -7745,11 +7754,11 @@ fn diagnostic_renderers_expose_public_help_metadata_for_unsupported_boundaries()
 
 #[test]
 fn diagnostic_renderers_expose_public_help_metadata_for_source_root_package_boundary() {
-    let diagnostic = laniusc::compiler::Diagnostic::error(
+    let diagnostic = laniusc_compiler::compiler::Diagnostic::error(
         "LNC0024",
         "source-root package boundary for app::leaf",
     )
-    .with_primary_label(laniusc::compiler::DiagnosticLabel::primary(
+    .with_primary_label(laniusc_compiler::compiler::DiagnosticLabel::primary(
         "core/shim.lani",
         2,
         1,
@@ -8551,11 +8560,11 @@ fn cli_check_syntax_error_can_render_lsp_json_diagnostic_without_stdout() {
     assert_eq!(diagnostic["message"], "syntax error");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["title"], "syntax error");
     assert_eq!(diagnostic["data"]["category"], "parsing");

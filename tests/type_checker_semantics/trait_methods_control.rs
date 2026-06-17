@@ -1,4 +1,4 @@
-use laniusc::compiler::CompileError;
+use laniusc_compiler::compiler::CompileError;
 
 use super::{
     assert_gpu_type_check_diagnostic,
@@ -1561,12 +1561,12 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
+        "LNC0007",
         &[
-            "error[LNC0021]: invalid trait implementation",
+            "error[LNC0007]: unknown type",
             "impl Marker for Missing {",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+            "type not found",
+            "declare the type before using it or import its defining module",
         ],
     );
 }
@@ -1601,11 +1601,8 @@ fn main() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(
-                rendered.contains(
-                    "trait impl target type is outside the current GPU predicate row shape"
-                )
-            );
+            assert!(rendered
+                .contains("trait impl target type is outside the current GPU predicate row shape"));
         }
         other => panic!("expected reference trait impl target diagnostic, got {other:?}"),
     }
@@ -2105,7 +2102,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_impl_target_paths_beyond_gpu_scan_window() {
+fn type_checker_rejects_unresolved_long_trait_impl_target_paths() {
     let target_path = (0..9)
         .map(|i| format!("module_{i}"))
         .chain(std::iter::once("Target".to_string()))
@@ -2127,12 +2124,12 @@ fn main() {{
 
     assert_gpu_type_check_diagnostic(
         &src,
-        "LNC0021",
+        "LNC0007",
         &[
-            "error[LNC0021]: invalid trait implementation",
+            "error[LNC0007]: unknown type",
             "impl Marker for module_0::module_1::module_2::module_3::module_4::module_5::module_6::module_7::module_8::Target {",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "add target type-argument rows before implementing traits for generic instances",
+            "type not found",
+            "declare the type before using it or import its defining module",
         ],
     );
 }
@@ -2157,35 +2154,79 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_bound_argument_paths_beyond_gpu_scan_window() {
-    let long_arg_path = (0..70)
-        .map(|i| format!("module_{i}"))
-        .collect::<Vec<_>>()
-        .join("::");
-    let source = format!(
-        r#"
-trait Rel<T> {{
-}}
+fn type_checker_rejects_trait_bound_argument_paths_beyond_predicate_row_width() {
+    let source = r#"
+trait Rel<T> {
+}
 
-fn keep<T>(value: T) -> T where T: Rel<{long_arg_path}> {{
+fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {
     return value;
-}}
+}
+"#;
 
-fn main() {{
-    let value: i32 = keep(1);
+    let err = super::common::type_check_source_with_timeout(source)
+        .expect_err("over-wide bound argument paths should fail predicate validation");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let rendered = diagnostic.render();
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should point at the over-wide bound argument");
+            let source_line =
+                "fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {";
+            assert_eq!(label.source_line.as_deref(), Some(source_line));
+            assert_eq!(
+                label.column,
+                source_line.find("i::j").unwrap() + 1,
+                "{rendered}"
+            );
+            assert_eq!(label.length, "i".len());
+
+            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
+            assert!(
+                rendered.contains("trait bound path exceeds the current GPU predicate path limit")
+            );
+        }
+        other => panic!("expected over-wide bound argument diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_rejects_trait_bound_target_paths_beyond_predicate_row_width() {
+    let source = r#"
+fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
     return value;
-}}
-"#,
-    );
+}
+"#;
 
-    assert_gpu_type_check_diagnostic(
-        &source,
-        "LNC0008",
-        &[
-            "error[LNC0008]: unsatisfied trait bound",
-            "fn keep<T>(value: T) -> T where T: Rel<",
-        ],
-    );
+    let err = super::common::type_check_source_with_timeout(source)
+        .expect_err("over-wide bound target paths should fail predicate validation");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let rendered = diagnostic.render();
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should point at the over-wide bound target");
+            let source_line = "fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {";
+            assert_eq!(label.source_line.as_deref(), Some(source_line));
+            assert_eq!(
+                label.column,
+                source_line.find("i::j").unwrap() + 1,
+                "{rendered}"
+            );
+            assert_eq!(label.length, "i".len());
+
+            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
+            assert!(
+                rendered.contains("trait bound path exceeds the current GPU predicate path limit")
+            );
+        }
+        other => panic!("expected over-wide bound target diagnostic, got {other:?}"),
+    }
 }
 
 #[test]

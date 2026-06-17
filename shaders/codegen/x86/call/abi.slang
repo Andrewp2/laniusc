@@ -1,9 +1,8 @@
 // SysV x86_64 call ABI projection over backend call records.
 //
-// x86_call_records owns the parser/resolver/type boundary,
-// x86_call_arg_values owns per-call/per-ordinal argument lookup, and this pass
-// records target/width ABI metadata without looking at argument expression
-// forms.
+// x86_call_records owns the parser/resolver/type boundary. Typechecking owns
+// compact per-call/per-ordinal argument rows, and this pass records
+// target/width ABI metadata without looking at argument expression forms.
 
 import gpu_index;
 import status;

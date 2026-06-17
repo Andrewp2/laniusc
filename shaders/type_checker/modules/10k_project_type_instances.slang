@@ -42,8 +42,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint MAX_PATH_SEGMENTS = 9u;
-static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
-
 static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint TYPE_INSTANCE_NAMED = 1u;
@@ -77,7 +75,7 @@ bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_t
 
     uint actual_count = type_instance_arg_count[leaf_token];
     uint expected_count = type_decl_generic_param_count[decl_token];
-    if (actual_count != expected_count || actual_count > TYPE_INSTANCE_ARG_REF_STRIDE)
+    if (actual_count != expected_count)
     {
         type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
         return false;

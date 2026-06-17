@@ -19,7 +19,11 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_call_context_stmt_node;
-StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_call_node;
+StructuredBuffer<uint> call_arg_row_ordinal;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> hir_variant_payload_node;
 StructuredBuffer<uint> path_count_out;
@@ -359,11 +363,37 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_
     return valid_token(enum_token) && valid_node(variant_node);
 }
 
+uint call_arg_count_for_call(uint owner_token, uint call_node)
+{
+    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
+    if (!valid_node(call_node))
+        return record_count;
+    return max(record_count, call_arg_row_count[call_node]);
+}
+
+uint call_arg_node_for_call(uint call_node, uint ordinal)
+{
+    if (!valid_node(call_node))
+        return INVALID;
+
+    uint start = call_arg_row_start[call_node];
+    uint count = call_arg_row_count[call_node];
+    if (start == INVALID || ordinal >= count)
+        return INVALID;
+
+    uint row = start + ordinal;
+    if (row >= gParams.n_hir_nodes ||
+        call_arg_row_call_node[row] != call_node ||
+        call_arg_row_ordinal[row] != ordinal)
+        return INVALID;
+    return call_arg_row_node[row];
+}
+
 bool payload_matches(uint owner_token, uint enum_token, uint variant_node, uint ordinal)
 {
     uint4 arg_record = call_arg_record[owner_token];
     uint call_node = arg_record.z;
-    uint actual_count = arg_record.w;
+    uint actual_count = call_arg_count_for_call(owner_token, call_node);
     uint expected_count = hir_variant_payload_count[variant_node];
     if (actual_count != expected_count ||
         actual_count > PARAM_CACHE_STRIDE ||
@@ -391,7 +421,7 @@ bool payload_matches(uint owner_token, uint enum_token, uint variant_node, uint 
     if (context_instance == INVALID && expected_ty == TY_UNKNOWN)
         return false;
 
-    uint arg_node = call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
+    uint arg_node = call_arg_node_for_call(call_node, ordinal);
     uint actual_ty = direct_expr_type(arg_node);
     if (actual_ty == TY_UNKNOWN && context_instance != INVALID && expected_ty >= TY_GENERIC_BASE)
         return true;

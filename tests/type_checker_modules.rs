@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     CompileError,
     EntrySourceRoots,
     load_entry_path_manifest_with_source_root,
@@ -326,6 +326,69 @@ fn main() { return 0; }
             panic!("over-deep module path should report LNC0014, got raw GPU error: {message}");
         }
         Err(other) => panic!("expected module-depth diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_deep_qualified_type_path_reports_stable_diagnostic() {
+    let source = r#"module app::main;
+fn main() {
+    let value: a::b::c::d::e::f::g::h::i::Thing = 0;
+    return 0;
+}
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("over-deep qualified type path should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0007");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0007]: unknown type"));
+            assert!(rendered.contains("let value: a::b::c::d::e::f::g::h::i::Thing = 0;"));
+            assert!(rendered.contains("type path exceeds the current resolver depth limit"));
+            assert!(
+                rendered.contains("before the leaf type"),
+                "diagnostic should explain the qualified-type path width:\n{rendered}"
+            );
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!(
+                "over-deep qualified type path should report LNC0007, got raw GPU error: {message}"
+            );
+        }
+        Err(other) => panic!("expected qualified type-path depth diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_deep_qualified_value_path_reports_stable_diagnostic() {
+    let source = r#"module app::main;
+fn main() {
+    return a::b::c::d::e::f::g::h::i::value;
+}
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("over-deep qualified value path should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0005");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0005]: unresolved identifier"));
+            assert!(rendered.contains("return a::b::c::d::e::f::g::h::i::value;"));
+            assert!(rendered.contains("value path exceeds the current resolver depth limit"));
+            assert!(
+                rendered.contains("before the leaf value"),
+                "diagnostic should explain the qualified-value path width:\n{rendered}"
+            );
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!(
+                "over-deep qualified value path should report LNC0005, got raw GPU error: {message}"
+            );
+        }
+        Err(other) => panic!("expected qualified value-path depth diagnostic, got {other:?}"),
     }
 }
 

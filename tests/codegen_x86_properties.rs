@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     CompileError,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,

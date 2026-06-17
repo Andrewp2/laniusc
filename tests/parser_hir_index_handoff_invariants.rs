@@ -1,4 +1,4 @@
-use laniusc::parser::{
+use laniusc_compiler::parser::{
     hir_records::INVALID,
     passes::hir::{
         expr::fields::{HIR_EXPR_FORM_INDEX, HIR_EXPR_FORM_INT, HIR_EXPR_FORM_NAME},

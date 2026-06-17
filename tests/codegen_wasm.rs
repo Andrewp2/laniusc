@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use laniusc_compiler::compiler::CompileError;
 
 #[test]
 fn wasm_rejects_scalar_programs_with_stable_backend_diagnostic() {

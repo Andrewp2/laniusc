@@ -26,15 +26,15 @@ StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_decl_generic_param_count_by_node;
 StructuredBuffer<uint> type_decl_const_param_count_by_node;
-StructuredBuffer<uint> type_decl_first_generic_param_row_by_node;
-StructuredBuffer<uint> type_decl_first_const_param_row_by_node;
 StructuredBuffer<uint> generic_decl_owner_by_node;
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_node;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_node;
 StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_key_order;
+StructuredBuffer<uint> generic_param_slot_order;
 
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -52,7 +52,6 @@ static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 static const uint GENERIC_PARAM_KIND_CONST = 2u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint GENERIC_STATUS_DUPLICATE_PARAM = 21u;
-static const uint GENERIC_STATUS_UNSUPPORTED_PARAM_ORDER = 23u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -145,48 +144,109 @@ void validate_duplicate_generic_param_key(uint sorted_i)
         record_min_token_error(status, token, ERR_BAD_HIR, GENERIC_STATUS_DUPLICATE_PARAM);
 }
 
-uint generic_param_slot(uint row, uint owner, uint kind, out bool unsupported_order)
+bool generic_param_slot_key_less(uint row, uint owner, uint kind, uint node)
 {
-    unsupported_order = false;
-    uint first = kind == GENERIC_PARAM_KIND_CONST
-        ? type_decl_first_const_param_row_by_node[owner]
-        : type_decl_first_generic_param_row_by_node[owner];
-    uint count = kind == GENERIC_PARAM_KIND_CONST
-        ? type_decl_const_param_count_by_node[owner]
-        : type_decl_generic_param_count_by_node[owner];
-    if (first == INVALID || row < first)
-    {
-        unsupported_order = true;
-        return INVALID;
-    }
+    if (!valid_row(row))
+        return false;
 
-    uint slot = row - first;
-    if (slot >= count)
-    {
-        unsupported_order = true;
-        return INVALID;
-    }
-    return slot;
+    uint row_owner = generic_param_owner_node[row];
+    if (row_owner != owner)
+        return row_owner < owner;
+    uint row_kind = generic_param_kind[row];
+    if (row_kind != kind)
+        return row_kind < kind;
+    return generic_param_node[row] < node;
 }
 
-uint slot_for_row(uint row, uint error_token)
+bool generic_param_slot_segment_matches(uint row, uint owner, uint kind)
+{
+    return valid_row(row) &&
+           generic_param_owner_node[row] == owner &&
+           generic_param_kind[row] == kind;
+}
+
+uint generic_param_slot_segment_start(uint owner, uint kind)
+{
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_slot_order[mid];
+        if (row >= count || !generic_param_slot_key_less(row, owner, kind, 0u))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_slot_order[lo];
+    return generic_param_slot_segment_matches(row, owner, kind) ? lo : INVALID;
+}
+
+uint generic_param_slot_order_index_for_row(uint row)
 {
     if (!valid_row(row))
         return INVALID;
 
-    bool unsupported_order = false;
-    uint slot = generic_param_slot(
-        row,
-        generic_param_owner_node[row],
-        generic_param_kind[row],
-        unsupported_order);
-    if (unsupported_order)
+    uint owner = generic_param_owner_node[row];
+    uint kind = generic_param_kind[row];
+    uint node = generic_param_node[row];
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
     {
-        if (valid_token(error_token))
-            record_min_token_error(status, error_token, ERR_BAD_HIR, GENERIC_STATUS_UNSUPPORTED_PARAM_ORDER);
-        return INVALID;
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint mid_row = generic_param_slot_order[mid];
+        if (mid_row >= count || !generic_param_slot_key_less(mid_row, owner, kind, node))
+            hi = mid;
+        else
+            lo = mid + 1u;
     }
-    return slot;
+
+    if (lo >= count || generic_param_slot_order[lo] != row)
+        return INVALID;
+    return lo;
+}
+
+uint generic_param_slot_from_order_index(uint sorted_i)
+{
+    if (sorted_i >= active_generic_param_count())
+        return INVALID;
+
+    uint row = generic_param_slot_order[sorted_i];
+    if (!valid_row(row))
+        return INVALID;
+
+    uint owner = generic_param_owner_node[row];
+    uint kind = generic_param_kind[row];
+    uint start = generic_param_slot_segment_start(owner, kind);
+    if (start == INVALID || sorted_i < start)
+        return INVALID;
+
+    uint slot = sorted_i - start;
+    uint count = kind == GENERIC_PARAM_KIND_CONST
+        ? type_decl_const_param_count_by_node[owner]
+        : type_decl_generic_param_count_by_node[owner];
+    return slot < count ? slot : INVALID;
+}
+
+uint slot_for_row(uint row)
+{
+    if (!valid_row(row))
+        return INVALID;
+
+    uint sorted_i = generic_param_slot_order_index_for_row(row);
+    return sorted_i == INVALID ? INVALID : generic_param_slot_from_order_index(sorted_i);
 }
 
 void publish_decl_generic_param_slot(uint sorted_i)
@@ -194,7 +254,7 @@ void publish_decl_generic_param_slot(uint sorted_i)
     if (sorted_i >= active_generic_param_count())
         return;
 
-    uint row = generic_param_key_order[sorted_i];
+    uint row = generic_param_slot_order[sorted_i];
     if (!valid_row(row))
         return;
 
@@ -202,7 +262,7 @@ void publish_decl_generic_param_slot(uint sorted_i)
     if (!valid_token(token))
         return;
 
-    uint slot = slot_for_row(row, token);
+    uint slot = generic_param_slot_from_order_index(sorted_i);
     if (slot == INVALID)
         return;
 
@@ -263,7 +323,7 @@ void publish_const_len_use_slot(uint node)
     if (row == INVALID)
         return;
 
-    uint slot = slot_for_row(row, token);
+    uint slot = slot_for_row(row);
     if (slot != INVALID)
         type_const_param_slot_by_token[token] = slot;
 }
@@ -294,7 +354,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row == INVALID)
         return;
 
-    uint slot = slot_for_row(row, token);
+    uint slot = slot_for_row(row);
     if (slot != INVALID)
         type_generic_param_slot_by_token[token] = slot;
 }

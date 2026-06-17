@@ -30,6 +30,7 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
@@ -46,6 +47,9 @@ StructuredBuffer<uint> hir_visible_decl_scope_end;
 StructuredBuffer<uint> hir_visible_decl_node;
 StructuredBuffer<uint> hir_visible_decl_key_order;
 StructuredBuffer<uint> hir_visible_decl_scope_tree;
+StructuredBuffer<uint> module_value_path_call_leaf;
+StructuredBuffer<uint> module_value_path_associated_method_token;
+StructuredBuffer<uint> type_expr_ref_tag;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> visible_decl;
@@ -57,10 +61,13 @@ static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 static const uint HIR_VISIBLE_DECL_ROW_BLOCK_SIZE = 64u;
 
 static const uint ERR_UNRESOLVED_IDENT = 2u;
+static const uint TYPE_REF_INVALID = 0u;
 
+static const uint HIR_TYPE = 5u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_PATH_EXPR = 33u;
 
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
@@ -144,6 +151,22 @@ bool valid_token(uint token)
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+bool parser_published_type_syntax(uint node, uint token_i)
+{
+    if (valid_token(token_i) && type_expr_ref_tag[token_i] != TYPE_REF_INVALID)
+        return true;
+
+    uint owner = valid_node(node) ? parent[node] : INVALID;
+    if (valid_node(owner) && hir_kind[owner] == HIR_TYPE)
+        return true;
+    if (valid_node(owner) && hir_kind[owner] == HIR_PATH_EXPR)
+    {
+        uint path_owner = parent[owner];
+        return valid_node(path_owner) && hir_kind[path_owner] == HIR_TYPE;
+    }
+    return false;
 }
 
 uint expr_slot(uint node, uint slot)
@@ -373,6 +396,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint use_token = expr_slot(node, EXPR_RECORD_VALUE_TOKEN);
     if (!valid_token(use_token))
+        return;
+    if (parser_published_type_syntax(node, use_token))
+        return;
+    if (module_value_path_call_leaf[use_token] != 0u)
+        return;
+    if (module_value_path_associated_method_token[use_token] != INVALID)
         return;
     uint use_name = name_id_by_token[use_token];
     if (use_name == INVALID || use_name >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT ||

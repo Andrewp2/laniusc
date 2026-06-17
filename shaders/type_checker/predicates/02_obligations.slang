@@ -36,7 +36,9 @@ StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
@@ -44,8 +46,19 @@ StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> call_param_ref_tag;
-StructuredBuffer<uint> call_param_ref_payload;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_fn_token;
+StructuredBuffer<uint> call_param_row_ordinal;
+StructuredBuffer<uint> call_param_row_start;
+StructuredBuffer<uint> call_param_row_count;
+StructuredBuffer<uint> call_param_row_ref_tag;
+StructuredBuffer<uint> call_param_row_ref_payload;
+StructuredBuffer<uint> call_generic_slot_type;
+StructuredBuffer<uint> call_generic_claim_count_out;
+StructuredBuffer<uint> call_generic_claim_callee;
+StructuredBuffer<uint> call_generic_claim_slot;
+StructuredBuffer<uint> call_generic_claim_type;
+StructuredBuffer<uint> call_generic_claim_order;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
@@ -159,6 +172,7 @@ static const uint PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH = 25u;
 static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW = 27u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
+static const uint PREDICATE_STATUS_BOUND_PATH_TOO_DEEP = 29u;
 
 static const uint OBLIGATION_STAGE_COUNT = 0u;
 static const uint OBLIGATION_STAGE_VALIDATE = 1u;
@@ -184,6 +198,30 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint first_named_bound_arg_token_after_bound(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint bound_token = hir_token_pos[node];
+    if (!valid_token(bound_token))
+        return INVALID;
+
+    uint candidate = bound_token + 1u;
+    if (candidate >= bound_token && valid_token(candidate) && name_id_by_token[candidate] != INVALID)
+        return candidate;
+
+    candidate = bound_token + 2u;
+    if (candidate >= bound_token && valid_token(candidate) && name_id_by_token[candidate] != INVALID)
+        return candidate;
+
+    candidate = bound_token + 3u;
+    return candidate >= bound_token &&
+           valid_token(candidate) &&
+           name_id_by_token[candidate] != INVALID
+        ? candidate
+        : INVALID;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -254,6 +292,7 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
+    uint call_token = hir_token_pos[call_node];
     uint callee_node = hir_call_callee_node[call_node];
     if (!valid_node(callee_node))
         return INVALID;
@@ -263,6 +302,9 @@ uint call_callee_token(uint call_node)
         uint member_token = hir_member_name_token[callee_node];
         return valid_token(member_token) ? member_token : INVALID;
     }
+
+    if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
+        return call_token;
 
     uint token = hir_token_pos[callee_node];
     return valid_token(token) ? token : INVALID;
@@ -493,37 +535,128 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
 
 uint call_arg_node_for_ordinal(uint call_node, uint ordinal)
 {
-    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
+    if (!valid_node(call_node))
         return INVALID;
-    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
+
+    uint start = call_arg_row_start[call_node];
+    uint count = call_arg_row_count[call_node];
+    if (start == INVALID || ordinal >= count)
+        return INVALID;
+
+    uint row = start + ordinal;
+    return row < active_hir_node_count() ? call_arg_row_node[row] : INVALID;
 }
 
-uint call_arg_count_for_callee(uint callee_token)
+uint call_arg_count_for_callee(uint callee_token, uint call_node)
 {
-    return valid_token(callee_token) ? call_arg_record[callee_token].w : 0u;
+    if (!valid_token(callee_token))
+        return 0u;
+    uint record_count = call_arg_record[callee_token].w;
+    if (!valid_node(call_node))
+        return record_count;
+    return max(record_count, call_arg_row_count[call_node]);
 }
 
-bool call_argument_window_supported(uint callee_token, uint fn_token)
+uint nullable_key(uint value)
 {
-    if (!valid_token(callee_token) || !valid_token(fn_token))
-        return false;
-    return call_param_count[fn_token] <= PARAM_CACHE_STRIDE &&
-           call_arg_count_for_callee(callee_token) <= PARAM_CACHE_STRIDE;
+    return value == INVALID ? 0u : value + 1u;
 }
 
-uint param_ref_index(uint fn_token, uint ordinal)
+uint concrete_claim_key(uint row)
 {
-    return fn_token * PARAM_CACHE_STRIDE + ordinal;
+    return call_generic_claim_callee[row] != INVALID &&
+           call_generic_claim_slot[row] != INVALID &&
+           call_generic_claim_type[row] != TY_UNKNOWN
+        ? 1u
+        : 0u;
+}
+
+bool generic_claim_key_less(uint row, uint callee_token, uint slot)
+{
+    uint row_callee = nullable_key(call_generic_claim_callee[row]);
+    uint key_callee = nullable_key(callee_token);
+    if (row_callee != key_callee)
+        return row_callee < key_callee;
+
+    uint row_slot = nullable_key(call_generic_claim_slot[row]);
+    uint key_slot = nullable_key(slot);
+    if (row_slot != key_slot)
+        return row_slot < key_slot;
+
+    return concrete_claim_key(row) < 1u;
+}
+
+bool generic_claim_key_matches(uint row, uint callee_token, uint slot)
+{
+    return call_generic_claim_callee[row] == callee_token &&
+           call_generic_claim_slot[row] == slot &&
+           call_generic_claim_type[row] != TY_UNKNOWN;
+}
+
+uint generic_claim_type_for_slot(uint callee_token, uint slot)
+{
+    if (!valid_token(callee_token) || slot == INVALID)
+        return TY_UNKNOWN;
+
+    uint count = min(call_generic_claim_count_out[0u], active_hir_node_count());
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = call_generic_claim_order[mid];
+        if (row >= count || !generic_claim_key_less(row, callee_token, slot))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+
+    if (lo >= count)
+        return TY_UNKNOWN;
+    uint row = call_generic_claim_order[lo];
+    return row < count && generic_claim_key_matches(row, callee_token, slot)
+        ? call_generic_claim_type[row]
+        : TY_UNKNOWN;
+}
+
+bool param_row_matches(uint row, uint fn_token, uint ordinal)
+{
+    return row < call_param_row_count_out[0u] &&
+           call_param_row_fn_token[row] == fn_token &&
+           call_param_row_ordinal[row] == ordinal;
+}
+
+uint param_ref_row_for_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token) || ordinal >= call_param_count[fn_token])
+        return INVALID;
+
+    uint start = call_param_row_start[fn_token];
+    uint count = call_param_row_count[fn_token];
+    if (start == INVALID || count == 0u || ordinal >= count)
+        return INVALID;
+
+    uint row = start + ordinal;
+    if (row < start || row >= call_param_row_count_out[0u])
+        return INVALID;
+
+    return param_row_matches(row, fn_token, ordinal) ? row : INVALID;
 }
 
 bool param_ref_uses_generic_slot(uint fn_node, uint fn_token, uint ordinal, uint slot)
 {
-    if (!valid_token(fn_token) || ordinal >= PARAM_CACHE_STRIDE || slot == INVALID)
+    if (!valid_token(fn_token) || slot == INVALID)
         return false;
 
-    uint ref_i = param_ref_index(fn_token, ordinal);
-    uint tag = call_param_ref_tag[ref_i];
-    uint payload = call_param_ref_payload[ref_i];
+    uint ref_i = param_ref_row_for_ordinal(fn_token, ordinal);
+    if (ref_i == INVALID)
+        return false;
+
+    uint tag = call_param_row_ref_tag[ref_i];
+    uint payload = call_param_row_ref_payload[ref_i];
     if (tag != TYPE_REF_GENERIC_PARAM || !valid_token(payload))
         return false;
 
@@ -547,13 +680,33 @@ uint actual_type_for_generic_slot_with_detail(
     if (!valid_token(fn_token))
         return TY_UNKNOWN;
 
-    if (call_param_count[fn_token] > PARAM_CACHE_STRIDE)
-        return TY_UNKNOWN;
-
     uint count = call_param_count[fn_token];
     if (count == 0u)
     {
         failure_detail = PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW;
+        return TY_UNKNOWN;
+    }
+
+    uint callee_token = call_callee_token(call_node);
+    uint claimed = generic_claim_type_for_slot(callee_token, slot);
+    if (claimed != TY_UNKNOWN)
+    {
+        failure_detail = PREDICATE_STATUS_OK;
+        return claimed;
+    }
+
+    if (count > PARAM_CACHE_STRIDE)
+    {
+        if (valid_token(callee_token) && slot < PARAM_CACHE_STRIDE)
+        {
+            uint inferred = call_generic_slot_type[callee_token * PARAM_CACHE_STRIDE + slot];
+            if (inferred != INVALID)
+            {
+                failure_detail = PREDICATE_STATUS_OK;
+                return inferred;
+            }
+        }
+        failure_detail = PREDICATE_STATUS_INVALID_SUBJECT;
         return TY_UNKNOWN;
     }
 
@@ -952,6 +1105,7 @@ void validate_predicate_fail_closed_status(uint node)
         status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
+        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP ||
         status_value == PREDICATE_STATUS_INVALID_ARG ||
         (!trait_contract_node &&
          (status_value == PREDICATE_STATUS_INVALID_SUBJECT ||
@@ -966,12 +1120,20 @@ void validate_predicate_fail_closed_status(uint node)
             token_i = predicate_subject_token[node];
         if ((status_value == PREDICATE_STATUS_INVALID_ARG ||
              status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
-             status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION) &&
+             status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
+             status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP) &&
             (valid_token(predicate_bound_first_arg_token[node]) ||
              valid_token(predicate_bound_second_arg_token[node])))
             token_i = valid_token(predicate_bound_second_arg_token[node])
                 ? predicate_bound_second_arg_token[node]
                 : predicate_bound_first_arg_token[node];
+        if (status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE &&
+            token_i == hir_token_pos[node])
+        {
+            uint fallback_token = first_named_bound_arg_token_after_bound(node);
+            if (valid_token(fallback_token))
+                token_i = fallback_token;
+        }
         record_error(
             valid_token(token_i) ? token_i : 0u,
             ERR_TRAIT_BOUND_UNSATISFIED,
@@ -1000,7 +1162,8 @@ void validate_predicate_fail_closed_status(uint node)
         status_value == PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH ||
         status_value == PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW ||
-        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG ||
+        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
     if (!trait_contract_status)
         return;
 
@@ -1008,7 +1171,8 @@ void validate_predicate_fail_closed_status(uint node)
     bool trait_impl_arg_status =
         status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
         status_value == PREDICATE_STATUS_INVALID_IMPL_ARG ||
-        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG ||
+        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
     if (trait_impl_arg_status && valid_token(predicate_bound_second_arg_token[node]))
         token_i = predicate_bound_second_arg_token[node];
     if (!valid_token(token_i))
@@ -1204,15 +1368,6 @@ void count_call_predicate_obligations(uint call_node)
     }
 
     uint obligation_count = range.end - range.begin;
-    if (obligation_count != 0u && !call_argument_window_supported(callee_token, fn_token))
-    {
-        record_error(
-            callee_token,
-            ERR_TRAIT_BOUND_UNSATISFIED,
-            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
-        return;
-    }
-
     predicate_obligation_count_by_call[call_node] = obligation_count;
 }
 

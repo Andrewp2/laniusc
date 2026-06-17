@@ -36,6 +36,7 @@ RWStructuredBuffer<uint> path_len;
 RWStructuredBuffer<uint> path_owner_hir;
 RWStructuredBuffer<uint> path_owner_token;
 RWStructuredBuffer<uint> path_id_by_owner_hir;
+RWStructuredBuffer<uint> path_id_by_owner_token;
 RWStructuredBuffer<uint> path_kind;
 RWStructuredBuffer<uint> path_count_out;
 
@@ -128,6 +129,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         path_owner_hir[slot.dst] = i;
         path_owner_token[slot.dst] = start;
         path_id_by_owner_hir[i] = slot.dst;
+        if (start < gParams.n_tokens)
+            path_id_by_owner_token[start] = slot.dst;
         path_kind[slot.dst] = kind;
     }
 

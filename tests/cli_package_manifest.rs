@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use laniusc::{
+use laniusc_compiler::{
     codegen::unit::{CodegenUnitLimits, SourcePackArtifactTarget, SourcePackJobBatchLimits},
     compiler::{
         ExplicitSourceLibraryPaths,

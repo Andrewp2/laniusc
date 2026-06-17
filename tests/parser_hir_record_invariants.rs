@@ -1,4 +1,4 @@
-use laniusc::parser::{
+use laniusc_compiler::parser::{
     hir_records::INVALID,
     passes::hir::{
         item::fields::{

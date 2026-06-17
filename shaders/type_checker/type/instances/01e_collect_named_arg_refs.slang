@@ -22,9 +22,16 @@ StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
 StructuredBuffer<uint> hir_type_arg_next;
+StructuredBuffer<uint> hir_type_arg_owner;
+StructuredBuffer<uint> hir_type_arg_rank;
 RWStructuredBuffer<uint> type_instance_arg_start;
+RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
 RWStructuredBuffer<uint> type_instance_arg_ref_payload;
+RWStructuredBuffer<uint> type_instance_arg_row_start;
+RWStructuredBuffer<uint> type_instance_arg_row_count_out;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_payload;
 RWStructuredBuffer<uint> type_instance_state;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
@@ -36,7 +43,6 @@ static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 
 static const uint HIR_TYPE = 5u;
 
-static const uint HIR_TYPE_FORM_NONE = 0u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 
 static const uint TYPE_REF_INVALID = 0u;
@@ -66,8 +72,7 @@ bool valid_token(uint token)
 
 bool is_hir_type_node(uint node)
 {
-    return valid_node(node) && hir_kind[node] == HIR_TYPE &&
-           hir_type_form[node] != HIR_TYPE_FORM_NONE;
+    return valid_node(node) && hir_kind[node] == HIR_TYPE;
 }
 
 uint path_leaf_token_for_type_node(uint node)
@@ -81,26 +86,8 @@ uint arg_ref_index(uint instance_i, uint slot)
     return instance_i * TYPE_INSTANCE_ARG_REF_STRIDE + slot;
 }
 
-void clear_arg_refs(uint instance_i)
-{
-    type_instance_arg_start[instance_i] = INVALID;
-    uint out_0 = arg_ref_index(instance_i, 0u);
-    uint out_1 = arg_ref_index(instance_i, 1u);
-    uint out_2 = arg_ref_index(instance_i, 2u);
-    uint out_3 = arg_ref_index(instance_i, 3u);
-    type_instance_arg_ref_tag[out_0] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_0] = INVALID;
-    type_instance_arg_ref_tag[out_1] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_1] = INVALID;
-    type_instance_arg_ref_tag[out_2] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_2] = INVALID;
-    type_instance_arg_ref_tag[out_3] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_3] = INVALID;
-}
-
 void mark_instance_unsupported(uint root, uint leaf_token)
 {
-    clear_arg_refs(leaf_token);
     type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
 
     uint owner_token = valid_node(root) ? hir_token_pos[root] : INVALID;
@@ -116,32 +103,63 @@ void mark_instance_unsupported(uint root, uint leaf_token)
     }
 }
 
-bool publish_arg_ref_slot(uint leaf_token, uint slot, uint node, out uint next_node)
+bool publish_arg_ref(uint leaf_token, uint ordinal, uint node)
 {
-    next_node = INVALID;
     if (!valid_node(node))
         return false;
 
+    uint row_start = type_instance_arg_row_start[leaf_token];
+    uint row_i = row_start == INVALID ? INVALID : row_start + ordinal;
+    if (row_i == INVALID || row_i >= type_instance_arg_row_count_out[0u])
+        return false;
+
     uint arg_token = hir_token_pos[node];
-    uint out_i = arg_ref_index(leaf_token, slot);
+    uint tag = TYPE_REF_ERROR;
+    uint payload = leaf_token;
     if (!valid_token(arg_token) || type_expr_ref_tag[arg_token] == TYPE_REF_INVALID)
     {
-        type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
-        type_instance_arg_ref_payload[out_i] = leaf_token;
+        type_instance_arg_row_ref_tag[row_i] = TYPE_REF_ERROR;
+        type_instance_arg_row_ref_payload[row_i] = leaf_token;
+        if (ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
+        {
+            uint out_i = arg_ref_index(leaf_token, ordinal);
+            type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
+            type_instance_arg_ref_payload[out_i] = leaf_token;
+        }
         return false;
     }
 
-    type_instance_arg_ref_tag[out_i] = type_expr_ref_tag[arg_token];
-    type_instance_arg_ref_payload[out_i] = type_expr_ref_payload[arg_token];
-    next_node = hir_type_arg_next[node];
+    tag = type_expr_ref_tag[arg_token];
+    payload = type_expr_ref_payload[arg_token];
+    type_instance_arg_row_ref_tag[row_i] = tag;
+    type_instance_arg_row_ref_payload[row_i] = payload;
+    if (ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
+    {
+        uint out_i = arg_ref_index(leaf_token, ordinal);
+        type_instance_arg_ref_tag[out_i] = tag;
+        type_instance_arg_ref_payload[out_i] = payload;
+    }
     return true;
+}
+
+bool row_arg_ref_published(uint leaf_token, uint ordinal)
+{
+    uint row_start = type_instance_arg_row_start[leaf_token];
+    uint row_i = row_start == INVALID ? INVALID : row_start + ordinal;
+    return row_i != INVALID &&
+           row_i < type_instance_arg_row_count_out[0u] &&
+           type_instance_arg_row_ref_tag[row_i] != TYPE_REF_INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint root = linear_thread_id(dtid);
+    uint node = linear_thread_id(dtid);
+    if (!is_hir_type_node(node))
+        return;
+
+    uint root = hir_type_arg_owner[node];
     if (!is_hir_type_node(root) || hir_type_form[root] != HIR_TYPE_FORM_PATH)
         return;
 
@@ -149,66 +167,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(leaf_token))
         return;
 
-    uint slot = 0u;
-    clear_arg_refs(leaf_token);
-    type_instance_arg_start[leaf_token] = arg_ref_index(leaf_token, 0u);
-
     uint arg_count = hir_type_arg_count[root];
-    if (arg_count > TYPE_INSTANCE_ARG_REF_STRIDE)
+    uint ordinal = hir_type_arg_rank[node];
+    if (arg_count == 0u || ordinal >= arg_count ||
+        type_instance_arg_count[leaf_token] != arg_count ||
+        type_instance_arg_start[leaf_token] == INVALID)
     {
         mark_instance_unsupported(root, leaf_token);
         return;
     }
 
-    uint node = hir_type_arg_start[root];
-    uint next_node = INVALID;
-    if (arg_count > 0u)
-    {
-        if (!publish_arg_ref_slot(leaf_token, 0u, node, next_node))
-        {
-            mark_instance_unsupported(root, leaf_token);
-            return;
-        }
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 1u)
-    {
-        if (!publish_arg_ref_slot(leaf_token, 1u, node, next_node))
-        {
-            mark_instance_unsupported(root, leaf_token);
-            return;
-        }
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 2u)
-    {
-        if (!publish_arg_ref_slot(leaf_token, 2u, node, next_node))
-        {
-            mark_instance_unsupported(root, leaf_token);
-            return;
-        }
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 3u)
-    {
-        if (!publish_arg_ref_slot(leaf_token, 3u, node, next_node))
-        {
-            mark_instance_unsupported(root, leaf_token);
-            return;
-        }
-        slot += 1u;
-        node = next_node;
-    }
-
-    if (arg_count == 0u)
-        type_instance_arg_start[leaf_token] = INVALID;
-
-    if (slot != arg_count || valid_node(node))
+    if (!publish_arg_ref(leaf_token, ordinal, node) &&
+        !row_arg_ref_published(leaf_token, ordinal))
     {
         mark_instance_unsupported(root, leaf_token);
-        return;
     }
 }

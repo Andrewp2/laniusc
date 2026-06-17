@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> hir_call_arg_start;
 RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_count;
 RWStructuredBuffer<uint> hir_call_arg_parent_call;
+RWStructuredBuffer<uint> hir_call_arg_ordinal;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -155,6 +156,7 @@ void clear_fields(uint i)
     hir_call_arg_end[i] = INVALID;
     hir_call_arg_count[i] = 0u;
     hir_call_arg_parent_call[i] = INVALID;
+    hir_call_arg_ordinal[i] = INVALID;
 }
 
 void publish_call_expr(uint i)

@@ -37,9 +37,6 @@ RWStructuredBuffer<uint> path_segment_count;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint SORT_PATH_SEGMENTS = 8u;
-static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
-static const uint PATH_SEGMENT_OVERFLOW_COUNT = PATH_SEGMENT_ROW_WIDTH + 1u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_COLON = 38u;
@@ -85,27 +82,20 @@ bool segment_exists(uint start, uint end_exclusive, uint segment_i)
 
 uint count_segments(uint start, uint end_exclusive)
 {
-    if (!segment_exists(start, end_exclusive, 0u))
+    if (start >= end_exclusive)
         return 0u;
-    if (!segment_exists(start, end_exclusive, 1u))
-        return 1u;
-    if (!segment_exists(start, end_exclusive, 2u))
-        return 2u;
-    if (!segment_exists(start, end_exclusive, 3u))
-        return 3u;
-    if (!segment_exists(start, end_exclusive, 4u))
-        return 4u;
-    if (!segment_exists(start, end_exclusive, 5u))
-        return 5u;
-    if (!segment_exists(start, end_exclusive, 6u))
-        return 6u;
-    if (!segment_exists(start, end_exclusive, 7u))
-        return 7u;
-    if (!segment_exists(start, end_exclusive, 8u))
-        return 8u;
-    if (!segment_exists(start, end_exclusive, 9u))
-        return 9u;
-    return PATH_SEGMENT_OVERFLOW_COUNT;
+
+    uint span_len = end_exclusive - start;
+    uint possible_segments = (span_len + 2u) / 3u;
+    uint count = 0u;
+    [loop]
+    for (uint segment_i = 0u; segment_i < possible_segments; segment_i += 1u)
+    {
+        if (!segment_exists(start, end_exclusive, segment_i))
+            return count;
+        count += 1u;
+    }
+    return count;
 }
 
 [shader("compute")]

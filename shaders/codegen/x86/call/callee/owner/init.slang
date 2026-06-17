@@ -6,7 +6,6 @@
 // expression without walking parent chains in the instruction-count shader.
 
 import gpu_index;
-import hir_records;
 import status;
 
 struct Params
@@ -61,7 +60,7 @@ bool is_call_argument_root(uint node)
 {
     if (!valid_node(node))
         return false;
-    return valid_node(hir_node_ordinal_node(hir_call_arg_parent_call[node]));
+    return valid_node(hir_call_arg_parent_call[node]);
 }
 
 [shader("compute")]

@@ -53,7 +53,12 @@ StructuredBuffer<uint2> x86_const_value_record;
 StructuredBuffer<uint> x86_local_literal_record;
 StructuredBuffer<uint> x86_param_reg_record;
 StructuredBuffer<uint2> x86_call_abi_record;
-StructuredBuffer<uint> x86_call_arg_lookup_record;
+StructuredBuffer<uint> hir_call_arg_count;
+StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_member_receiver_node;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> x86_intrinsic_call_record;
 StructuredBuffer<uint2> x86_enum_value_record;
 StructuredBuffer<uint4> x86_match_record;
@@ -132,7 +137,6 @@ static const uint X86_VINST_ERROR_CALL_ARG4_NODE = 2121u;
 static const uint X86_VINST_ERROR_CALL_ARG5_NODE = 2122u;
 static const uint X86_VINST_ERROR_CALL_ARG4_OPERAND = 2123u;
 static const uint X86_VINST_ERROR_CALL_ARG5_OPERAND = 2124u;
-static const uint X86_CALL_ARG_LOOKUP_KIND_BITS = 4u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
@@ -237,11 +241,9 @@ static const uint X86_DECL_AGG_STRUCT = 3u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
-static const uint X86_PARAM_REG_STRIDE = 5u;
-static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
-static const uint X86_PARAM_REG_ORDINAL_MASK = 0x0fu;
+static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
-static const uint X86_PARAM_REG_KIND_BITS = 8u;
+static const uint X86_PARAM_REG_KIND_BITS = 4u;
 static const uint X86_LOCAL_LITERAL_STRIDE = 3u;
 
 static const uint ASSIGN_OP_SET = 1u;
@@ -332,7 +334,6 @@ static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
-static const uint X86_CALL_ARG_LOOKUP_SLOTS = 6u;
 static const uint X86_NODE_INST_PADDING = 7u;
 static const uint X86_NODE_INST_RANGE_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
@@ -621,14 +622,12 @@ uint param_node_reg_info(uint param_node)
 
 uint param_reg_ordinal(uint decl_token)
 {
-    uint info = param_reg_info(decl_token);
-    return info == INVALID ? INVALID : info & X86_PARAM_REG_ORDINAL_MASK;
+    return param_reg_word(decl_token, 3u);
 }
 
 uint param_node_reg_ordinal(uint param_node)
 {
-    uint info = param_node_reg_info(param_node);
-    return info == INVALID ? INVALID : info & X86_PARAM_REG_ORDINAL_MASK;
+    return param_node_reg_word(param_node, 3u);
 }
 
 uint param_reg_arg_reg(uint decl_token)
@@ -636,7 +635,7 @@ uint param_reg_arg_reg(uint decl_token)
     uint info = param_reg_info(decl_token);
     return info == INVALID
                ? INVALID
-               : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
+               : info & X86_PARAM_REG_ARG_REG_MASK;
 }
 
 uint param_reg_aggregate_kind(uint decl_token)
@@ -650,17 +649,17 @@ uint param_node_reg_arg_reg(uint param_node)
     uint info = param_node_reg_info(param_node);
     return info == INVALID
                ? INVALID
-               : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
+               : info & X86_PARAM_REG_ARG_REG_MASK;
 }
 
 uint param_reg_type(uint decl_token)
 {
-    return param_reg_word(decl_token, 3u);
+    return param_reg_word(decl_token, 4u);
 }
 
 uint param_reg_link(uint decl_token)
 {
-    return param_reg_word(decl_token, 4u);
+    return param_reg_word(decl_token, 5u);
 }
 
 uint param_node_reg_link(uint param_node)
@@ -2749,22 +2748,95 @@ bool index_assignment_target(
     return true;
 }
 
+uint call_abi_arg_count(uint2 abi)
+{
+    return abi.y & X86_CALL_ABI_ARG_COUNT_MASK;
+}
+
+uint call_abi_return_width(uint2 abi)
+{
+    return abi.y >> X86_CALL_ABI_ARG_COUNT_BITS;
+}
+
+bool has_call_abi_record(uint2 abi)
+{
+    if (abi.x == INVALID || abi.y == INVALID || !valid_node(abi.x))
+        return false;
+
+    uint arg_count = call_abi_arg_count(abi);
+    uint return_width = call_abi_return_width(abi);
+    return arg_count <= X86_BACKEND_MAX_PACKED_CALL_ARGS &&
+           return_width != 0u &&
+           return_width <= X86_CALL_ABI_RETURN_WIDTH_MAX;
+}
+
+uint call_abi_arg_count_for_call(uint call_node)
+{
+    uint call_slot = call_record_slot(call_node);
+    if (call_slot == INVALID)
+        return 0u;
+
+    uint2 abi = x86_call_abi_record[call_slot];
+    return has_call_abi_record(abi) ? call_abi_arg_count(abi) : 0u;
+}
+
+uint method_member_node_for_call(uint call_node)
+{
+    if (!valid_node(call_node))
+        return INVALID;
+
+    uint callee_node = expr_result_root(hir_call_callee_node[call_node]);
+    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR
+               ? callee_node
+               : INVALID;
+}
+
+uint method_receiver_node_for_call(uint call_node)
+{
+    uint member_node = method_member_node_for_call(call_node);
+    return valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
+}
+
+bool method_receiver_is_abi_arg(uint call_node)
+{
+    if (method_member_node_for_call(call_node) == INVALID)
+        return false;
+
+    uint explicit_count = hir_call_arg_count[call_node];
+    return call_abi_arg_count_for_call(call_node) > explicit_count;
+}
+
 bool call_arg_node_for_call(uint call_node, uint ordinal, out uint arg_node)
 {
     arg_node = INVALID;
-    if (!valid_node(call_node) || ordinal >= X86_CALL_ARG_LOOKUP_SLOTS)
+    if (!valid_node(call_node))
         return false;
 
-    uint base = call_record_slot(call_node);
-    if (base == INVALID)
+    uint explicit_count = hir_call_arg_count[call_node];
+    bool receiver_arg = method_receiver_is_abi_arg(call_node);
+    if (receiver_arg)
+    {
+        if (ordinal == 0u)
+        {
+            arg_node = method_receiver_node_for_call(call_node);
+            return valid_node(arg_node);
+        }
+        ordinal -= 1u;
+    }
+
+    if (ordinal >= explicit_count)
         return false;
 
-    uint lookup_slot = row_major_slot(base, X86_CALL_ARG_LOOKUP_SLOTS, ordinal);
-    uint packed = x86_call_arg_lookup_record[lookup_slot];
-    if (packed == INVALID)
+    uint start = call_arg_row_start[call_node];
+    uint count = call_arg_row_count[call_node];
+    if (start == INVALID || ordinal >= count)
         return false;
 
-    arg_node = packed >> X86_CALL_ARG_LOOKUP_KIND_BITS;
+    uint row = start + ordinal;
+    if (row < start || row >= gParams.n_hir_nodes)
+        return false;
+
+    arg_node = call_arg_row_node[row];
     return valid_node(arg_node);
 }
 
@@ -3135,28 +3207,6 @@ bool emit_param(uint node, uint2 range)
     write_inst(load_row, node, 0u, X86_VINST_PARAM, load_row, param_record);
     write_inst(store_row, node, 1u, X86_VINST_STORE_LOCAL, INVALID, uint4(local_slot, load_row, 0u, 0u));
     return true;
-}
-
-uint call_abi_arg_count(uint2 abi)
-{
-    return abi.y & X86_CALL_ABI_ARG_COUNT_MASK;
-}
-
-uint call_abi_return_width(uint2 abi)
-{
-    return abi.y >> X86_CALL_ABI_ARG_COUNT_BITS;
-}
-
-bool has_call_abi_record(uint2 abi)
-{
-    if (abi.x == INVALID || abi.y == INVALID || !valid_node(abi.x))
-        return false;
-
-    uint arg_count = call_abi_arg_count(abi);
-    uint return_width = call_abi_return_width(abi);
-    return arg_count <= X86_BACKEND_MAX_PACKED_CALL_ARGS &&
-           return_width != 0u &&
-           return_width <= X86_CALL_ABI_RETURN_WIDTH_MAX;
 }
 
 uint function_slot_for_node(uint fn_node)

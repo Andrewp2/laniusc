@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use laniusc_compiler::compiler::CompileError;
 
 #[test]
 fn imports_expose_only_public_declarations_from_imported_module_records() {

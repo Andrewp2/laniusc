@@ -74,6 +74,67 @@ bool generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
+bool impl_node_kind(uint kind)
+{
+    return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
+}
+
+bool type_params_list_param_node(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    uint kind = node_kind[node];
+    return kind == PROD_ENUM_TYPE_PARAMS_SOME ||
+           kind == PROD_ENUM_TYPE_PARAMS_MORE;
+}
+
+uint impl_generic_param_owner_from_parents(uint node)
+{
+    uint p = valid_node(node) ? parent[node] : INVALID;
+    [loop]
+    while (valid_node(p))
+    {
+        if (impl_node_kind(node_kind[p]))
+            return p;
+        p = parent[p];
+    }
+    return INVALID;
+}
+
+uint impl_generic_param_owner_from_span(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint start = hir_token_pos[node];
+    uint end = hir_token_end[node];
+    if (!valid_token(start) || end == INVALID)
+        return INVALID;
+
+    uint cursor = node;
+    [loop]
+    while (cursor > 0u)
+    {
+        cursor -= 1u;
+        if (!valid_node(cursor) || !impl_node_kind(node_kind[cursor]))
+            continue;
+
+        uint owner_start = hir_token_pos[cursor];
+        if (valid_token(owner_start) && owner_start <= start)
+            return cursor;
+    }
+    return INVALID;
+}
+
+uint impl_generic_param_owner(uint node)
+{
+    if (!type_params_list_param_node(node))
+        return INVALID;
+
+    uint owner = impl_generic_param_owner_from_parents(node);
+    return owner != INVALID ? owner : impl_generic_param_owner_from_span(node);
+}
+
 bool generic_param_record_node(uint node)
 {
     if (!valid_node(node))
@@ -82,15 +143,11 @@ bool generic_param_record_node(uint node)
     if (kind == PROD_ENUM_TYPE_PARAM || kind == PROD_ENUM_CONST_PARAM)
         return true;
 
-    uint p = parent[node];
-    if (kind != PROD_ENUM_TYPE_PARAMS_SOME ||
-        !valid_node(p) ||
-        (node_kind[p] != PROD_IMPL_INHERENT && node_kind[p] != PROD_IMPL_TRAIT))
+    if (!type_params_list_param_node(node))
         return false;
 
     uint start = hir_token_pos[node];
-    uint end = hir_token_end[node];
-    return valid_token(start + 1u) && end == start + 3u;
+    return valid_token(start + 1u) && impl_generic_param_owner(node) != INVALID;
 }
 
 bool generic_decl_node(uint node)
@@ -112,7 +169,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     generic_param_flag[node] = generic_param_record_node(node) ? 1u : 0u;
-    generic_decl_owner_by_node_a[node] = generic_decl_node(node) ? node : INVALID;
+    uint impl_param_owner = impl_generic_param_owner(node);
+    generic_decl_owner_by_node_a[node] =
+        generic_decl_node(node) ? node : impl_param_owner;
     generic_decl_parent_jump_a[node] = valid_node(parent[node]) ? parent[node] : INVALID;
 
     if (generic_decl_item_kind(hir_item_kind[node]))

@@ -40,9 +40,6 @@ RWStructuredBuffer<uint> path_segment_token;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint SORT_PATH_SEGMENTS = 8u;
-static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
-static const uint PATH_SEGMENT_OVERFLOW_COUNT = PATH_SEGMENT_ROW_WIDTH + 1u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_COLON = 38u;
@@ -114,15 +111,12 @@ void write_segment(uint path_slot, uint segment_i)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    uint path_slot = i / PATH_SEGMENT_ROW_WIDTH;
-    uint segment_i = i - path_slot * PATH_SEGMENT_ROW_WIDTH;
+    uint path_slot = linear_thread_id(dtid);
     if (path_slot >= active_path_count())
         return;
 
-    uint count = min(path_segment_count[path_slot], PATH_SEGMENT_ROW_WIDTH);
-    if (segment_i >= count)
-        return;
-
-    write_segment(path_slot, segment_i);
+    uint count = path_segment_count[path_slot];
+    [loop]
+    for (uint segment_i = 0u; segment_i < count; segment_i += 1u)
+        write_segment(path_slot, segment_i);
 }

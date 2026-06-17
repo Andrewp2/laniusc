@@ -10,9 +10,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_nearest_block_node;
+StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> hir_nearest_fn_node;
 StructuredBuffer<uint> hir_stmt_record;
 
@@ -71,6 +71,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(fn_node) || hir_kind[fn_node] != HIR_FN)
         return;
 
-    if (valid_node(block) && parent[block] == fn_node)
+    if (hir_nearest_enclosing_control_node[node] == INVALID)
         InterlockedMax(return_fn_flags[fn_node], 1u);
 }

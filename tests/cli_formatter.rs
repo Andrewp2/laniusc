@@ -576,11 +576,11 @@ fn cli_fmt_check_can_render_lsp_json_diagnostic_without_writing() {
     assert_eq!(diagnostic["message"], "formatter check failed");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "formatter check failed");
@@ -708,11 +708,11 @@ fn cli_fmt_missing_input_can_render_lsp_json_diagnostic_without_reading_source()
     assert_eq!(diagnostic["message"], "missing CLI argument");
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
     assert_eq!(diagnostic["data"]["title"], "missing CLI argument");

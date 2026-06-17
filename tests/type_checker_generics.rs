@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use laniusc_compiler::compiler::CompileError;
 
 fn assert_gpu_type_check_ok(src: &str) {
     common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
@@ -64,6 +64,75 @@ fn assert_gpu_type_check_diagnostic(src: &str, expected_code: &str, expected_fra
         }
         other => panic!("expected diagnostic {expected_code}, got {other:?}"),
     }
+}
+
+fn generated_reused_wide_instance_call_source(
+    type_arg_count: usize,
+    good_call_count: usize,
+) -> String {
+    assert!(type_arg_count >= 6);
+    let generic_params = (0..type_arg_count)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expected_args = std::iter::repeat("i32")
+        .take(type_arg_count)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut bad_args = std::iter::repeat("i32")
+        .take(type_arg_count)
+        .collect::<Vec<_>>();
+    bad_args[type_arg_count - 1] = "bool";
+    let bad_args = bad_args.join(", ");
+    let mut calls = String::new();
+    for i in 0..good_call_count {
+        calls.push_str(&format!("    let good_{i}: i32 = accept(good);\n"));
+    }
+
+    format!(
+        r#"
+struct Wide<{generic_params}> {{
+    value: i32,
+}}
+
+fn accept(value: Wide<{expected_args}>) -> i32 {{
+    return 0;
+}}
+
+fn main() {{
+    let good: Wide<{expected_args}> = Wide {{ value: 1 }};
+    let bad: Wide<{bad_args}> = Wide {{ value: 1 }};
+{calls}    let failed: i32 = accept(bad);
+    return failed;
+}}
+"#
+    )
+}
+
+fn generated_generic_declaration_source(generic_count: usize) -> String {
+    assert!(generic_count > 0);
+    let generic_params = (0..generic_count)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        r#"
+struct Many<{generic_params}> {{
+    value: i32,
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    )
+}
+
+#[test]
+fn type_checker_accepts_generic_parameter_list_beyond_stale_record_limit() {
+    let src = generated_generic_declaration_source(129);
+    assert_gpu_type_check_ok(&src);
 }
 
 #[test]
@@ -152,7 +221,7 @@ fn main() {
         &[
             "error[LNC0006]: type mismatch",
             "let value: i32 = score(flag, 2);",
-            "value type is i32 but this context expects generic parameter 0",
+            "value type is i32 but this context expects bool",
         ],
     );
 }
@@ -205,7 +274,7 @@ fn main() {
         &[
             "error[LNC0006]: type mismatch",
             "let value: i32 = score(wrap(true), 0);",
-            "value type is i32 but this context expects generic parameter 0",
+            "value type is i32 but this context expects bool",
         ],
     );
 }
@@ -457,7 +526,7 @@ fn main() {
         &[
             "error[LNC0006]: type mismatch",
             "let number: i32 = choose(1, false);",
-            "value type is bool but this context expects generic parameter 0",
+            "value type is bool but this context expects i32",
         ],
     );
 }
@@ -516,6 +585,8 @@ pub fn choose<T>(left: T, right: T) -> T {
         r#"
 module app;
 
+import core::choice;
+
 fn main() {
     let number: i32 = core::choice::choose(1, 2);
     let flag: bool = core::choice::choose(true, false);
@@ -539,6 +610,8 @@ pub fn choose<T>(left: T, right: T) -> T {
             r#"
 module app;
 
+import core::choice;
+
 fn main() {
     let value: i32 = core::choice::choose(1, false);
     return value;
@@ -549,7 +622,7 @@ fn main() {
         &[
             "error[LNC0006]: type mismatch",
             "let value: i32 = core::choice::choose(1, false);",
-            "value type is i32, which is not accepted here",
+            "value type is bool but this context expects i32",
         ],
     );
 }
@@ -566,6 +639,8 @@ pub fn select_right<T, U>(left: T, right: U) -> U {
 "#,
         r#"
 module app;
+
+import core::pair;
 
 fn main() {
     let flag: bool = core::pair::select_right(1, true);
@@ -588,6 +663,8 @@ pub fn select_right<T, U>(left: T, right: U) -> U {
 "#,
         r#"
 module app;
+
+import core::pair;
 
 fn main() {
     let number: i32 = core::pair::select_right(1, true);
@@ -618,6 +695,8 @@ pub fn select_forwarded_right<T, U>(left: T, right: U) -> U {
         r#"
 module app;
 
+import core::forward;
+
 fn main() {
     let number: i32 = core::forward::forward(core::forward::keep(7));
     let flag: bool = core::forward::select_forwarded_right(number, true);
@@ -647,6 +726,8 @@ pub fn select_forwarded_right<T, U>(left: T, right: U) -> U {
 "#,
         r#"
 module app;
+
+import core::forward;
 
 fn main() {
     let number: i32 = core::forward::select_forwarded_right(1, true);
@@ -760,6 +841,28 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_uninferred_direct_generic_beyond_cached_slot_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn ignore_fifth<A, B, C, D, E>(a: A, b: B, c: C, d: D) -> i32 {
+    return 0;
+}
+
+fn main() {
+    let value: i32 = ignore_fifth(1, true, 2, false);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = ignore_fifth(1, true, 2, false);",
+            "expected generic parameter 4, found unknown type",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_uninferred_qualified_generic_parameters_on_gpu() {
     assert_gpu_type_check_pack_diagnostic(
         &[
@@ -772,6 +875,8 @@ pub fn ignore_extra<T, U>(value: T) -> i32 {
 "#,
             r#"
 module app;
+
+import core::helpers;
 
 fn main() {
     let value: i32 = core::helpers::ignore_extra(1);
@@ -789,7 +894,220 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_calls_beyond_gpu_argument_width_before_substitution() {
+fn type_checker_accepts_generic_call_beyond_cached_argument_width() {
+    assert_gpu_type_check_ok(
+        r#"
+fn choose_first<T>(first: T, second: T, third: T, fourth: T, fifth: T) -> T {
+    return first;
+}
+
+fn main() {
+    let value: i32 = choose_first(1, 2, 3, 4, 5);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_return_generic_beyond_cached_slot_width() {
+    assert_gpu_type_check_ok(
+        r#"
+fn choose_fifth<A, B, C, D, E>(a: A, b: B, c: C, d: D, e: E) -> E {
+    return e;
+}
+
+fn main() {
+    let value: i32 = choose_fifth(true, 1, false, 2, 5);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_named_instance_type_args_beyond_fixed_cache_width() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Wide<A, B, C, D, E> {
+    value: E,
+}
+
+fn accept(value: Wide<bool, i32, bool, i32, bool>) -> i32 {
+    return 1;
+}
+
+fn main() {
+    let wide: Wide<bool, i32, bool, i32, bool> = Wide { value: true };
+    let value: i32 = accept(wide);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_named_instance_type_arg_mismatch_beyond_fixed_cache_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Wide<A, B, C, D, E> {
+    value: E,
+}
+
+fn accept(value: Wide<bool, i32, bool, i32, bool>) -> i32 {
+    return 1;
+}
+
+fn main() {
+    let wide: Wide<bool, i32, bool, i32, i32> = Wide { value: 1 };
+    let value: i32 = accept(wide);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = accept(wide);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_repeated_instance_argument_mismatch_after_cached_slots() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Wide<A, B, C, D, E, F> {
+    value: F,
+}
+
+fn same_wide<A, B, C, D, E, F>(
+    left: Wide<A, B, C, D, E, F>,
+    right: Wide<A, B, C, D, E, F>,
+) -> i32 {
+    return 0;
+}
+
+fn main() {
+    let left: Wide<i32, i32, i32, i32, i32, i32> = Wide { value: 1 };
+    let right: Wide<i32, i32, i32, i32, i32, bool> = Wide { value: true };
+    let value: i32 = same_wide(left, right);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = same_wide(left, right);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_concrete_instance_argument_mismatch_after_cached_slots() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Wide<A, B, C, D, E, F> {
+    value: F,
+}
+
+fn accept(value: Wide<i32, i32, i32, i32, i32, i32>) -> i32 {
+    return 0;
+}
+
+fn main() {
+    let wide: Wide<i32, i32, i32, i32, i32, bool> = Wide { value: true };
+    let value: i32 = accept(wide);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = accept(wide);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_reused_wide_instance_argument_mismatch_after_claim_capacity() {
+    let src = generated_reused_wide_instance_call_source(96, 160);
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let failed: i32 = accept(bad);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_infers_return_generic_from_instance_argument_beyond_cached_slot_width() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+fn unbox_fifth<A, B, C, D, T>(a: A, b: B, c: C, d: D, value: Boxed<T>) -> T {
+    return value.value;
+}
+
+fn main() {
+    let boxed: Boxed<i32> = Boxed { value: 7 };
+    let value: i32 = unbox_fifth(true, 1, false, 2, boxed);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+fn unbox_fifth<A, B, C, D, T>(a: A, b: B, c: C, d: D, value: Boxed<T>) -> T {
+    return value.value;
+}
+
+fn main() {
+    let boxed: Boxed<bool> = Boxed { value: true };
+    let value: i32 = unbox_fifth(true, 1, false, 2, boxed);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = unbox_fifth(true, 1, false, 2, boxed);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_repeated_generic_parameter_mismatch_beyond_cached_slot_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn agree_fifth<A, B, C, D, E>(a: A, b: B, c: C, d: D, left: E, right: E) -> i32 {
+    return 0;
+}
+
+fn main() {
+    let value: i32 = agree_fifth(1, true, 2, false, 3, true);
+    return value;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = agree_fifth(1, true, 2, false, 3, true);",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_generic_call_mismatch_beyond_cached_argument_width() {
     assert_gpu_type_check_diagnostic(
         r#"
 fn choose_first<T>(first: T, second: T, third: T, fourth: T, fifth: T) -> T {
@@ -801,16 +1119,40 @@ fn main() {
     return value;
 }
 "#,
-        "LNC0027",
+        "LNC0006",
         &[
-            "call resolution failed",
-            "no supported function or method signature matches this receiver and argument list",
+            "error[LNC0006]: type mismatch",
+            "let value: i32 = choose_first(1, 2, 3, 4, true);",
+            "value type is bool but this context expects i32",
         ],
     );
 }
 
 #[test]
-fn type_checker_rejects_qualified_generic_calls_beyond_gpu_argument_width_before_substitution() {
+fn type_checker_accepts_qualified_generic_call_beyond_cached_argument_width() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module core::wide;
+
+pub fn choose_first<T>(first: T, second: T, third: T, fourth: T, fifth: T) -> T {
+    return first;
+}
+"#,
+        r#"
+module app;
+
+import core::wide;
+
+fn main() {
+    let value: i32 = core::wide::choose_first(1, 2, 3, 4, 5);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_qualified_generic_call_mismatch_beyond_cached_argument_width() {
     assert_gpu_type_check_pack_diagnostic(
         &[
             r#"
@@ -823,17 +1165,19 @@ pub fn choose_first<T>(first: T, second: T, third: T, fourth: T, fifth: T) -> T 
             r#"
 module app;
 
+import core::wide;
+
 fn main() {
     let value: i32 = core::wide::choose_first(1, 2, 3, 4, true);
     return value;
 }
 "#,
         ],
-        "LNC0027",
+        "LNC0006",
         &[
-            "error[LNC0027]: call resolution failed",
+            "error[LNC0006]: type mismatch",
             "let value: i32 = core::wide::choose_first(1, 2, 3, 4, true);",
-            "no supported function or method signature matches this receiver and argument list",
+            "value type is bool but this context expects i32",
         ],
     );
 }

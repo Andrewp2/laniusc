@@ -414,14 +414,15 @@ emission from GPU-resident compiler data.
   records after the type checker resolves the method-name token to a function
   target. The call-record pass adds one receiver ABI argument only when the
   resolved method declaration exposes a receiver parameter, and
-  `x86_call_arg_values` scatters the receiver into ordinal 0 before explicit
-  call arguments. This keeps the method-call slice on resolver-owned records
-  instead of source spelling or CPU method lookup. The old call-record-only
-  cap at one explicit method argument is gone; receiver methods now share the
-  packed six-register ABI limit with ordinary direct calls. Source-pack imported
-  method calls now have executable evidence in both branch and loop-condition
-  consumers, and same-source methods have executable evidence for multiple
-  explicit scalar arguments.
+  node-local instruction generation resolves the receiver as ordinal 0 before
+  explicit call arguments only when the ABI row proves the receiver is consumed.
+  This keeps the method-call slice on resolver-owned records instead of source
+  spelling or CPU method lookup. The old call-record-only cap at one explicit
+  method argument is gone; receiver methods now share the packed six-register
+  ABI limit with ordinary direct calls. Source-pack imported method calls now
+  have executable evidence in both branch and loop-condition consumers, and
+  same-source methods have executable evidence for multiple explicit scalar
+  arguments.
 - Source-pack imported free helpers now have executable evidence for passing an
   aggregate struct value across the helper-call ABI after the aggregate was
   returned by another imported helper. The coverage keeps the contract at the
@@ -785,8 +786,8 @@ The direct backend should add these x86-specific GPU buffers.
 | `x86_const_value_status` | const value projection pass | Status/count row for the const value projection. Unsupported deeper-nested/trapping const expressions leave their declaration row absent and consumers fail closed if they need it. |
 | `x86_local_literal_record` | local literal projection pass | Sparse declaration-token table for supported scalar literal `let` values: owning function from `x86_node_func`, let statement node, literal value, and flags. Consumers resolve names through `visible_decl`, then validate same function and definition-before-use ordering from HIR node ids instead of scanning HIR statements. |
 | `x86_local_literal_status` | local literal projection pass | Status/count row for local literal projection. Unsupported local initializers leave their declaration row absent and consumers fail closed when they need the value. |
-| `x86_call_arg_lookup_record` | call-argument lookup projection pass | Per-call/per-ordinal slot table scattered from parser-owned call argument links. The slot index encodes call token and ordinal; the row stores the argument node. |
-| `x86_call_abi_record` | call ABI projection pass | Sparse per-call SysV ABI record containing target function, argument count, return width, and readiness flags. Non-direct callees and unsupported direct-call ABI shapes leave the row absent, and argument nodes stay in the per-call lookup table instead of being duplicated here. |
+| `call_arg_row_node`, `call_arg_row_start`, `call_arg_row_count` | type-check call row projection | Compact per-call/per-ordinal source-argument rows retained from typechecking. Node-local instruction generation reads `row_start[call] + ordinal` for explicit arguments and handles method receivers as x86 ABI arguments only when the ABI row includes one. |
+| `x86_call_abi_record` | call ABI projection pass | Sparse per-call SysV ABI record containing target function, argument count, return width, and readiness flags. Non-direct callees and unsupported direct-call ABI shapes leave the row absent, and argument nodes stay in the compact typechecker rows instead of being duplicated here. |
 | `x86_enum_value_record` | enum-record projection pass | Sparse per-value enum constructor row containing packed kind/payload count and variant ordinal. Instruction counting and generation consume it only for exact active x86 shapes, so invalid ordinals or wider constructor payloads fail closed before being counted as supported values. |
 | `x86_match_pattern_node_owner` | match-pattern owner pointer-jump passes | Nearest owning match arm for each HIR node in a pattern subtree. Pattern classification and node instruction counting consume this table instead of walking parent chains. |
 | `x86_match_pattern_owner_link` | match-pattern owner pointer-jump passes | Scratch parent-link relation used while converging nearest match-pattern owners. |
@@ -861,13 +862,13 @@ The current resident pass sequence is:
    arguments remain parser-owned call-argument rows and are capped only by the
    shared packed SysV register slice. This removes whole-HIR searches from
    call-argument and function-body value planning.
-5. `x86_call_arg_values`: scatter parser-owned call-argument links into
-   per-call / per-ordinal lookup slots. For direct receiver methods, this pass
-   scatters the HIR member receiver into ordinal 0 and shifts explicit
-   arguments only when the call record's ABI count proves the receiver is
-   consumed. Argument expression lowering remains in instruction
-   counting/generation, where it consumes HIR expression, resolver, and type
-   metadata without inspecting source text or token layout.
+5. Node instruction generation consumes the typechecker's compact
+   `call_arg_row_*` source-argument rows directly. For direct receiver methods,
+   it resolves the HIR member receiver as ordinal 0 and shifts explicit
+   arguments only when the call ABI row proves the receiver is consumed.
+   Argument expression lowering remains in instruction counting/generation,
+   where it consumes HIR expression, resolver, and type metadata without
+   inspecting source text or token layout.
 6. `x86_intrinsic_calls` and `x86_call_abi`: project intrinsic calls and SysV
    ABI call rows from backend call/type records plus call-argument identity
    rows. Direct targets are mapped through the exact resolver target id in

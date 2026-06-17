@@ -100,7 +100,9 @@ uint first_child_node(uint node)
     if (!valid_node(node))
         return INVALID;
     uint child = first_child[node];
-    return valid_node(child) ? child : INVALID;
+    return valid_node(child) && parent_node(child) == node && child > node
+        ? child
+        : INVALID;
 }
 
 uint next_sibling_node(uint node)
@@ -108,7 +110,11 @@ uint next_sibling_node(uint node)
     if (!valid_node(node))
         return INVALID;
     uint sibling = next_sibling[node];
-    return valid_node(sibling) && parent_node(sibling) == parent_node(node)
+    uint owner = parent_node(node);
+    return valid_node(owner) &&
+           valid_node(sibling) &&
+           parent_node(sibling) == owner &&
+           sibling > node
         ? sibling
         : INVALID;
 }
@@ -140,7 +146,7 @@ uint impl_owner_child(uint node)
 {
     uint child = first_child_node(node);
     [loop]
-    for (uint guard = 0u; guard < 8u && valid_node(child); guard += 1u)
+    while (valid_node(child))
     {
         if (is_impl_owner_node(node_kind[child]))
             return child;
@@ -149,11 +155,59 @@ uint impl_owner_child(uint node)
     return INVALID;
 }
 
+uint preceding_impl_owner_sibling(uint node)
+{
+    uint owner = parent_node(node);
+    if (!valid_node(owner))
+        return INVALID;
+
+    uint child = first_child_node(owner);
+    uint impl_node = INVALID;
+    [loop]
+    while (valid_node(child) && child < node)
+    {
+        uint prod = node_kind[child];
+        if (is_impl_owner_node(prod))
+            impl_node = child;
+        else if (is_impl_item_wrapper(prod))
+        {
+            uint wrapped_impl = impl_owner_child(child);
+            if (valid_node(wrapped_impl))
+                impl_node = wrapped_impl;
+        }
+
+        child = next_sibling_node(child);
+    }
+
+    return child == node ? impl_node : INVALID;
+}
+
+uint preceding_inherent_impl_header(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint start = hir_token_pos[node];
+    uint cursor = node;
+    [loop]
+    while (cursor > 0u)
+    {
+        cursor -= 1u;
+        if (!valid_node(cursor) || node_kind[cursor] != PROD_IMPL_INHERENT)
+            continue;
+
+        uint impl_start = hir_token_pos[cursor];
+        if (impl_start != INVALID && impl_start < start)
+            return cursor;
+    }
+    return INVALID;
+}
+
 uint impl_owner_from_item_list(uint node)
 {
     uint child = first_child_node(node);
     [loop]
-    for (uint guard = 0u; guard < 16u && valid_node(child); guard += 1u)
+    while (valid_node(child))
     {
         if (is_impl_item_wrapper(node_kind[child]))
         {
@@ -196,7 +250,7 @@ uint method_impl_node_for_fn(uint fn_node)
     bool saw_method_wrapper = false;
     uint ancestor = parent_node(fn_node);
     [loop]
-    for (uint guard = 0u; guard < 32u && valid_node(ancestor); guard += 1u)
+    while (valid_node(ancestor))
     {
         uint prod = node_kind[ancestor];
         if (is_impl_method_wrapper(prod))
@@ -206,10 +260,15 @@ uint method_impl_node_for_fn(uint fn_node)
         if (saw_method_wrapper && prod == PROD_IMPL_METHODS_SOME)
         {
             uint owner = impl_owner_from_item_list(parent_node(ancestor));
+            if (!valid_node(owner))
+                owner = preceding_inherent_impl_header(ancestor);
             if (valid_node(owner))
                 return owner;
         }
-        ancestor = parent_node(ancestor);
+        uint next_ancestor = parent_node(ancestor);
+        if (valid_node(next_ancestor) && next_ancestor >= ancestor)
+            break;
+        ancestor = next_ancestor;
     }
 
     uint fn_row = semantic_row_for_node(fn_node);
@@ -217,9 +276,11 @@ uint method_impl_node_for_fn(uint fn_node)
         return INVALID;
 
     uint row = hir_semantic_parent[fn_row];
+    uint remaining = active_semantic_count();
     [loop]
-    for (uint depth = 0u; depth < 8u && valid_semantic_row(row); depth += 1u)
+    while (valid_semantic_row(row) && remaining > 0u)
     {
+        remaining -= 1u;
         uint node = semantic_row_node(row);
         if (valid_node(node) && is_impl_owner_node(node_kind[node]))
             return node;
@@ -231,7 +292,10 @@ uint method_impl_node_for_fn(uint fn_node)
                 return owner;
         }
 
-        row = hir_semantic_parent[row];
+        uint next_row = hir_semantic_parent[row];
+        if (valid_semantic_row(next_row) && next_row == row)
+            break;
+        row = next_row;
     }
     return INVALID;
 }
@@ -334,10 +398,26 @@ void publish_method_first_param(uint param_node)
 void publish_impl_receiver_type(uint type_node)
 {
     uint impl_node = parent_node(type_node);
-    if (!valid_node(impl_node))
-        return;
+    uint prod = valid_node(impl_node) ? node_kind[impl_node] : INVALID;
+    if (!is_impl_owner_node(prod))
+    {
+        uint sibling_impl = preceding_impl_owner_sibling(type_node);
+        if (valid_node(sibling_impl) && node_kind[sibling_impl] == PROD_IMPL_INHERENT)
+        {
+            impl_node = sibling_impl;
+            prod = node_kind[impl_node];
+        }
+    }
+    if (!is_impl_owner_node(prod) && !valid_node(parent_node(type_node)))
+    {
+        uint preceding_impl = preceding_inherent_impl_header(type_node);
+        if (valid_node(preceding_impl))
+        {
+            impl_node = preceding_impl;
+            prod = node_kind[impl_node];
+        }
+    }
 
-    uint prod = node_kind[impl_node];
     if (prod == PROD_IMPL_INHERENT)
         hir_method_impl_receiver_type_node[impl_node] = type_node;
     else if (prod == PROD_IMPL_TRAIT && !has_later_direct_impl_type_sibling(type_node))

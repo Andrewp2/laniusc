@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::lexer::{
+use laniusc_compiler::lexer::{
     GpuLexer,
     Token,
     tables::TokenKind,

@@ -394,4 +394,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     if (operand_count >= 4u && !extend_operand_live_end(row, inst_count, inst.z, 3u))
         return;
+    if (operand_count >= 5u && !extend_operand_live_end(row, inst_count, inst.z, 4u))
+        return;
+    if (operand_count >= 6u && !extend_operand_live_end(row, inst_count, inst.z, 5u))
+        return;
 }

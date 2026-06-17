@@ -18,6 +18,13 @@ RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_param_type;
 RWStructuredBuffer<uint> call_param_ref_tag;
 RWStructuredBuffer<uint> call_param_ref_payload;
+RWStructuredBuffer<uint> call_param_row_start;
+RWStructuredBuffer<uint> call_param_row_count;
+RWStructuredBuffer<uint> call_generic_slot_type;
+RWStructuredBuffer<uint> call_generic_slot_ordinal;
+RWStructuredBuffer<uint> call_const_slot_len;
+RWStructuredBuffer<uint> call_has_array_arg;
+RWStructuredBuffer<uint> call_array_return_arg_instance;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
 
@@ -92,6 +99,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_return_type[i] = TY_UNKNOWN;
         call_return_type_token[i] = INVALID;
         call_param_count[i] = 0u;
+        call_param_row_start[i] = INVALID;
+        call_param_row_count[i] = 0u;
         clear_call_param_slot(i, 0u);
         clear_call_param_slot(i, 1u);
         clear_call_param_slot(i, 2u);
@@ -99,7 +108,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     if (i < gParams.n_hir_nodes)
+    {
         fn_entrypoint_tag[i] = 0u;
+        call_has_array_arg[i] = 0u;
+        call_array_return_arg_instance[i] = INVALID;
+    }
+
+    if (i < gParams.n_tokens * PARAM_CACHE_STRIDE)
+    {
+        call_generic_slot_type[i] = INVALID;
+        call_generic_slot_ordinal[i] = INVALID;
+        call_const_slot_len[i] = INVALID;
+    }
 
     if (i < lookup_capacity())
     {

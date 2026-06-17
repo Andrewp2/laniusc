@@ -387,11 +387,11 @@ fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
     );
     assert_eq!(
         document["diagnostics"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         document["diagnostics"]["formats_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(document["diagnostics"]["lsp_source"], "laniusc");
     assert_eq!(document["diagnostics"]["lsp_position_encoding"], "utf-16");
@@ -650,11 +650,11 @@ fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
     );
     assert_eq!(
         document["stdlib"]["runtime_service_boundary_count"],
-        laniusc::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS.len()
     );
     assert_eq!(
         document["stdlib"]["runtime_bound_api_count"],
-        laniusc::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
+        laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
     );
     assert_eq!(
         document["stdlib"]["runtime_boundary_detail"],

@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::{
+use laniusc_compiler::{
     dev::generator::gen_valid_program,
     lexer::driver::GpuLexer,
     parser::{driver::GpuParser, tables::PrecomputedParseTables},

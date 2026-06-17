@@ -25,6 +25,7 @@ RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> type_instance_kind;
 RWStructuredBuffer<uint> type_instance_head_token;
+RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_state;
 
@@ -42,7 +43,6 @@ static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_UNRESOLVED = 2u;
-static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -107,8 +107,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_expr_ref_payload[leaf_token] = leaf_token;
     type_instance_kind[leaf_token] = TYPE_INSTANCE_NAMED;
     type_instance_head_token[leaf_token] = leaf_token;
+    type_instance_arg_start[leaf_token] = leaf_token * TYPE_INSTANCE_ARG_REF_STRIDE;
     type_instance_arg_count[leaf_token] = arg_count;
-    type_instance_state[leaf_token] = arg_count <= TYPE_INSTANCE_ARG_REF_STRIDE
-                                       ? TYPE_INSTANCE_UNRESOLVED
-                                       : TYPE_INSTANCE_UNSUPPORTED;
+    type_instance_state[leaf_token] = TYPE_INSTANCE_UNRESOLVED;
 }

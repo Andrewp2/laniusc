@@ -41,6 +41,11 @@ StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_hash;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 
 RWStructuredBuffer<uint> method_key_status;
 RWStructuredBuffer<uint> method_key_duplicate_of;
@@ -133,17 +138,59 @@ uint receiver_arg_count(uint fn_i)
     uint payload = method_decl_receiver_ref_payload[fn_i];
     if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
         return 0u;
-    return min(type_instance_arg_count[payload], TYPE_INSTANCE_ARG_REF_STRIDE);
+    return type_instance_arg_count[payload];
 }
 
-bool receiver_arg_slot_valid(uint start, uint arg_count, uint slot)
+uint receiver_arg_hash(uint fn_i)
 {
-    if (slot >= arg_count)
-        return true;
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+        return 0u;
+    return type_instance_arg_hash[payload];
+}
 
-    uint arg_i = start + slot;
-    return type_instance_arg_ref_tag[arg_i] != TYPE_REF_INVALID &&
-           type_instance_arg_ref_payload[arg_i] != INVALID;
+uint instance_arg_ref_index(uint instance_i, uint slot)
+{
+    uint start = type_instance_arg_start[instance_i];
+    return start == INVALID ? INVALID : start + slot;
+}
+
+uint instance_arg_row_ref_index(uint instance_i, uint ordinal)
+{
+    uint start = type_instance_arg_row_start[instance_i];
+    uint ref_i = start == INVALID ? INVALID : start + ordinal;
+    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
+        ? ref_i
+        : INVALID;
+}
+
+bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+    if (instance_i >= active_method_capacity() || ordinal >= type_instance_arg_count[instance_i])
+        return false;
+
+    uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
+    if (row_ref_i != INVALID)
+    {
+        tag = type_instance_arg_row_ref_tag[row_ref_i];
+        payload = type_instance_arg_row_ref_payload[row_ref_i];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+    }
+
+    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
+        return false;
+
+    uint fixed_ref_i = instance_arg_ref_index(instance_i, ordinal);
+    if (fixed_ref_i == INVALID)
+        return false;
+
+    tag = type_instance_arg_ref_tag[fixed_ref_i];
+    payload = type_instance_arg_ref_payload[fixed_ref_i];
+    return tag != TYPE_REF_INVALID;
 }
 
 bool receiver_args_valid(uint fn_i)
@@ -158,47 +205,18 @@ bool receiver_args_valid(uint fn_i)
         return false;
 
     uint arg_count = type_instance_arg_count[payload];
-    if (arg_count > TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
     if (arg_count == 0u)
         return true;
 
-    uint start = type_instance_arg_start[payload];
-    if (start == INVALID)
-        return false;
-
-    return receiver_arg_slot_valid(start, arg_count, 0u) &&
-           receiver_arg_slot_valid(start, arg_count, 1u) &&
-           receiver_arg_slot_valid(start, arg_count, 2u) &&
-           receiver_arg_slot_valid(start, arg_count, 3u);
-}
-
-uint receiver_arg_ref_index(uint fn_i, uint slot)
-{
-    uint tag = method_decl_receiver_ref_tag[fn_i];
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
-        return INVALID;
-    if (slot >= receiver_arg_count(fn_i))
-        return INVALID;
-    uint start = type_instance_arg_start[payload];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint receiver_arg_ref_tag_key(uint fn_i, uint slot)
-{
-    uint arg_i = receiver_arg_ref_index(fn_i, slot);
-    return arg_i == INVALID ? TYPE_REF_INVALID : type_instance_arg_ref_tag[arg_i];
-}
-
-uint receiver_arg_ref_payload_key(uint fn_i, uint slot)
-{
-    uint arg_i = receiver_arg_ref_index(fn_i, slot);
-    if (arg_i == INVALID)
-        return INVALID;
-    return type_ref_payload_key(
-        type_instance_arg_ref_tag[arg_i],
-        type_instance_arg_ref_payload[arg_i]);
+    [loop]
+    for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
+    {
+        uint tag_i;
+        uint payload_i;
+        if (!instance_arg_ref(payload, ordinal, tag_i, payload_i))
+            return false;
+    }
+    return true;
 }
 
 uint invalid_method_status(uint fn_i)
@@ -233,38 +251,8 @@ public struct MethodValidationFixedKey : IFixedU32RowKey<uint>
         if (lane == 2u)
             return receiver_arg_count(fn_i) + 1u;
         if (lane == 3u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(fn_i, 0u),
-                TYPE_REF_INVALID);
+            return receiver_arg_hash(fn_i);
         if (lane == 4u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(fn_i, 0u),
-                INVALID);
-        if (lane == 5u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(fn_i, 1u),
-                TYPE_REF_INVALID);
-        if (lane == 6u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(fn_i, 1u),
-                INVALID);
-        if (lane == 7u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(fn_i, 2u),
-                TYPE_REF_INVALID);
-        if (lane == 8u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(fn_i, 2u),
-                INVALID);
-        if (lane == 9u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(fn_i, 3u),
-                TYPE_REF_INVALID);
-        if (lane == 10u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(fn_i, 3u),
-                INVALID);
-        if (lane == 11u)
             return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
         return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
     }
@@ -273,6 +261,48 @@ public struct MethodValidationFixedKey : IFixedU32RowKey<uint>
     {
         return row_lane(fn_i, lane);
     }
+}
+
+bool same_receiver_arg_ref(uint left_tag, uint left_payload, uint right_tag, uint right_payload)
+{
+    if (left_tag != right_tag)
+        return false;
+    return type_ref_payload_key(left_tag, left_payload) ==
+           type_ref_payload_key(right_tag, right_payload);
+}
+
+bool receiver_arg_rows_equal(uint left_fn_i, uint right_fn_i)
+{
+    uint left_tag = method_decl_receiver_ref_tag[left_fn_i];
+    uint left_payload = method_decl_receiver_ref_payload[left_fn_i];
+    uint right_tag = method_decl_receiver_ref_tag[right_fn_i];
+    uint right_payload = method_decl_receiver_ref_payload[right_fn_i];
+    if (left_tag != TYPE_REF_INSTANCE || right_tag != TYPE_REF_INSTANCE)
+        return true;
+    if (left_payload >= active_method_capacity() || right_payload >= active_method_capacity())
+        return false;
+
+    uint count = type_instance_arg_count[left_payload];
+    if (count != type_instance_arg_count[right_payload])
+        return false;
+
+    [loop]
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        uint left_arg_tag;
+        uint left_arg_payload;
+        uint right_arg_tag;
+        uint right_arg_payload;
+        if (!instance_arg_ref(left_payload, ordinal, left_arg_tag, left_arg_payload) ||
+            !instance_arg_ref(right_payload, ordinal, right_arg_tag, right_arg_payload) ||
+            !same_receiver_arg_ref(
+                left_arg_tag,
+                left_arg_payload,
+                right_arg_tag,
+                right_arg_payload))
+            return false;
+    }
+    return true;
 }
 
 bool method_keys_equal(uint left_fn_i, uint right_fn_i)
@@ -284,7 +314,7 @@ bool method_keys_equal(uint left_fn_i, uint right_fn_i)
     return fixed_u32_row_key_equal<uint, MethodValidationFixedKey>(
         left_fn_i,
         right_fn_i,
-        13u);
+        6u) && receiver_arg_rows_equal(left_fn_i, right_fn_i);
 }
 
 public struct MethodKeyEquality : ISortedRunEquality

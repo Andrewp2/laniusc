@@ -33,6 +33,8 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_owner_hir;
+StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
@@ -50,10 +52,12 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_PATH_TOO_DEEP = 7u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
+static const uint TYPECHECK_DETAIL_PATH_TOO_DEEP = 0xffffff05u;
 
 static const uint TK_IMPORT = 96u;
 static const uint TK_MODULE = 97u;
@@ -73,36 +77,22 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
+bool valid_hir_index(uint node)
+{
+    return node != INVALID && node < gParams.n_hir_nodes;
+}
+
 bool predicate_bound_type_path(uint path_i)
 {
-    uint node = path_owner_hir[path_i];
-    [loop]
-    for (uint guard = 0u; guard < 16u && node != INVALID && node < gParams.n_hir_nodes; guard += 1u)
-    {
-        uint kind = node_kind[node];
-        if (kind == PROD_BOUND_TYPE_IDENT ||
-            kind == PROD_BOUND_TYPE_REF ||
-            kind == PROD_BOUND_TYPE_PATH ||
-            kind == PROD_BOUND_TYPE_PATH_IDENT ||
-            kind == PROD_BOUND_TYPE_PATH_MORE ||
-            kind == PROD_BOUND_TYPE_PATH_END ||
-            kind == PROD_BOUND_TYPE_ARGS_NONE ||
-            kind == PROD_BOUND_TYPE_ARGS_SOME ||
-            kind == PROD_BOUND_TYPE_ARGS_MORE ||
-            kind == PROD_BOUND_TYPE_ARGS_END ||
-            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
-            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_TRAILING ||
-            kind == PROD_TYPE_PARAM_BOUND ||
-            kind == PROD_TYPE_PARAM_BOUND_NONE ||
-            kind == PROD_TYPE_PARAM_BOUND_LIST ||
-            kind == PROD_TYPE_PARAM_BOUND_MORE ||
-            kind == PROD_TYPE_PARAM_BOUND_END ||
-            kind == PROD_WHERE_TYPE_BOUND)
-            return true;
+    uint owner = path_owner_hir[path_i];
+    if (!valid_hir_index(owner))
+        return false;
 
-        node = parent[node];
-    }
-    return false;
+    uint leaf = hir_type_path_leaf_node[owner];
+    if (!valid_hir_index(leaf))
+        return false;
+
+    return valid_hir_index(hir_bound_path_owner_by_leaf[leaf]);
 }
 
 bool metadata_path_record_step(inout uint node, out bool done)
@@ -172,7 +162,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
         uint resolved_status = resolved_type_status[path_i];
         if (resolved_status != PATH_RESOLVE_STATUS_OK)
-            record_error(error_token, ERR_UNKNOWN_TYPE, resolved_status);
+        {
+            uint detail =
+                resolved_status == PATH_RESOLVE_STATUS_PATH_TOO_DEEP
+                    ? TYPECHECK_DETAIL_PATH_TOO_DEEP
+                    : resolved_status;
+            record_error(error_token, ERR_UNKNOWN_TYPE, detail);
+        }
         return;
     }
 

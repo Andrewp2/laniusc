@@ -2,7 +2,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     CompileError,
     PACKAGE_LOCKFILE_LANGUAGE_EDITION,
     PACKAGE_LOCKFILE_VERSION,

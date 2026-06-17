@@ -1,6 +1,8 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use std::fmt::Write as _;
+
+use laniusc_compiler::compiler::CompileError;
 
 fn assert_gpu_type_check_ok(src: &str) {
     common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
@@ -67,6 +69,130 @@ fn assert_gpu_type_check_pack_diagnostic(
         }
         other => panic!("expected diagnostic {expected_code}, got {other:?}"),
     }
+}
+
+fn generated_wide_scalar_call_source(param_count: usize, bad_arg: Option<usize>) -> String {
+    assert!(param_count > 0);
+    let params = (0..param_count)
+        .map(|i| format!("p{i}: i32"))
+        .collect::<Vec<_>>()
+        .join(",\n    ");
+    let args = (0..param_count)
+        .map(|i| {
+            if bad_arg == Some(i) {
+                "false".to_string()
+            } else {
+                i.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",\n        ");
+    let return_param = format!("p{}", param_count - 1);
+
+    format!(
+        r#"
+fn generated_wide(
+    {params}
+) -> i32 {{
+    return {return_param};
+}}
+
+fn main() {{
+    return generated_wide(
+        {args}
+    );
+}}
+"#
+    )
+}
+
+fn generated_repeated_wide_scalar_call_source(
+    param_count: usize,
+    bad_arg: Option<usize>,
+) -> String {
+    assert!(param_count > 0);
+
+    let mut source = String::with_capacity(param_count.saturating_mul(18));
+    source.push_str("fn generated_wide(\n");
+    for i in 0..param_count {
+        let sep = if i + 1 == param_count { "\n" } else { ",\n" };
+        writeln!(source, "    p{i}: i32{sep}").expect("write generated parameter");
+    }
+    writeln!(source, ") -> i32 {{").expect("write generated function signature");
+    writeln!(source, "    return p{};", param_count - 1).expect("write generated return");
+    source.push_str("}\n\nfn main() {\n    let value: i32 = 0;\n    return generated_wide(\n");
+    for i in 0..param_count {
+        let arg = if bad_arg == Some(i) { "false" } else { "value" };
+        let sep = if i + 1 == param_count { "\n" } else { ",\n" };
+        writeln!(source, "        {arg}{sep}").expect("write generated argument");
+    }
+    source.push_str("    );\n}\n");
+    source
+}
+
+fn generated_wide_receiver_dispatch_source(arg_count: usize) -> String {
+    assert!(arg_count > 4);
+
+    let params = (0..arg_count)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let shared_args = (0..arg_count - 1)
+        .map(|_| "i32".to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let bool_receiver = format!("{shared_args}, bool");
+    let int_receiver = format!("{shared_args}, i32");
+    let fields = (0..arg_count)
+        .map(|i| format!("    value{i}: T{i},"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let bool_values = (0..arg_count)
+        .map(|i| {
+            if i + 1 == arg_count {
+                format!("value{i}: true")
+            } else {
+                format!("value{i}: {}", i + 1)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let int_values = (0..arg_count)
+        .map(|i| format!("value{i}: {}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let tail_field = format!("value{}", arg_count - 1);
+
+    format!(
+        r#"
+struct WideBox<{params}> {{
+{fields}
+}}
+
+impl WideBox<{bool_receiver}> {{
+    fn pick(self) -> bool {{
+        return self.{tail_field};
+    }}
+}}
+
+impl WideBox<{int_receiver}> {{
+    fn pick(self) -> i32 {{
+        return self.{tail_field};
+    }}
+}}
+
+fn main() {{
+    let left: WideBox<{bool_receiver}> = WideBox {{ {bool_values} }};
+    let right: WideBox<{int_receiver}> = WideBox {{ {int_values} }};
+    let flag: bool = left.pick();
+    let value: i32 = right.pick();
+    if (flag) {{
+        return value;
+    }}
+    return 0;
+}}
+"#
+    )
 }
 
 #[test]
@@ -244,6 +370,48 @@ fn main() {
 }
 
 #[test]
+fn type_checker_reports_direct_call_arity_mismatch_reason() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn take_one(value: i32) -> i32 {
+    return value;
+}
+
+fn main() {
+    return take_one();
+}
+"#,
+        "LNC0027",
+        &[
+            "error[LNC0027]: call resolution failed",
+            "return take_one();",
+            "call has the wrong number of arguments",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_direct_call_mismatch_within_cached_argument_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn take_pair(first: i32, second: i32) -> i32 {
+    return first;
+}
+
+fn main() {
+    return take_pair(1, false);
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "return take_pair(1, false);",
+            "expected i32, found bool",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_accepts_direct_calls_beyond_cached_argument_width() {
     assert_gpu_type_check_ok(
         r#"
@@ -259,8 +427,63 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_array_calls_beyond_gpu_argument_width() {
+fn type_checker_rejects_direct_call_mismatch_beyond_cached_argument_width() {
     assert_gpu_type_check_diagnostic(
+        r#"
+fn generated_sum(first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
+    return first + second + third + fourth + fifth;
+}
+
+fn main() {
+    return generated_sum(1, 2, 3, 4, true);
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "return generated_sum(1, 2, 3, 4, true);",
+            "expected i32, found bool",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_direct_call_mismatch_across_param_row_scan_boundary() {
+    let src = generated_wide_scalar_call_source(257, Some(256));
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0006",
+        &["error[LNC0006]: type mismatch", "expected i32, found bool"],
+    );
+}
+
+#[test]
+fn type_checker_accepts_direct_call_across_param_row_scan_boundary() {
+    let src = generated_wide_scalar_call_source(257, None);
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
+#[ignore = "large end-to-end capacity proof; run explicitly"]
+fn type_checker_accepts_65k_direct_call_arguments() {
+    let src = generated_repeated_wide_scalar_call_source(65_535, None);
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
+#[ignore = "large end-to-end capacity proof; run explicitly"]
+fn type_checker_reports_65k_direct_call_last_argument_mismatch() {
+    let src = generated_repeated_wide_scalar_call_source(65_535, Some(65_534));
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0006",
+        &["error[LNC0006]: type mismatch", "expected i32, found bool"],
+    );
+}
+
+#[test]
+fn type_checker_accepts_generic_array_calls_beyond_cached_argument_width() {
+    assert_gpu_type_check_ok(
         r#"
 fn copy_wide<T, const N: usize>(
     values: [T; N],
@@ -278,10 +501,238 @@ fn main() {
     return copied[0];
 }
 "#,
-        "LNC0027",
+    );
+}
+
+#[test]
+fn type_checker_rejects_repeated_array_const_generic_mismatch_beyond_cached_argument_width() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn same_len<T, const N: usize>(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    left: [T; N],
+    right: [T; N]
+) -> i32 {
+    return first + second + third + fourth;
+}
+
+fn main() {
+    let left: [i32; 2] = [1, 2];
+    let right: [i32; 3] = [1, 2, 3];
+    return same_len(1, 2, 3, 4, left, right);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_infers_array_generic_from_fifth_argument() {
+    assert_gpu_type_check_ok(
+        r#"
+fn fifth_elem<T, const N: usize>(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    values: [T; N]
+) -> T {
+    return values[0];
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let value: i32 = fifth_elem(1, 2, 3, 4, values);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_infers_array_generic_from_fifth_generic_slot() {
+    assert_gpu_type_check_ok(
+        r#"
+fn fifth_slot_elem<A, B, C, D, T, const N: usize>(
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    values: [T; N]
+) -> T {
+    return values[0];
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let value: i32 = fifth_slot_elem(true, 1, false, 2, values);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_array_length_from_fifth_const_generic_slot() {
+    assert_gpu_type_check_ok(
+        r#"
+fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, const N: usize>(
+    left: [T; N],
+    right: [T; N]
+) -> T {
+    return left[0];
+}
+
+fn main() {
+    let left: [i32; 2] = [1, 2];
+    let right: [i32; 2] = [3, 4];
+    let value: i32 = same_len(left, right);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_array_length_mismatch_from_fifth_const_generic_slot() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, const N: usize>(
+    left: [T; N],
+    right: [T; N]
+) -> T {
+    return left[0];
+}
+
+fn main() {
+    let left: [i32; 2] = [1, 2];
+    let right: [i32; 3] = [3, 4, 5];
+    let value: i32 = same_len(left, right);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_contextual_array_return_from_fifth_argument() {
+    assert_gpu_type_check_ok(
+        r#"
+fn copy_tail<T, const N: usize>(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    values: [T; N]
+) -> [T; N] {
+    return values;
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let copied: [i32; 2] = copy_tail(1, 2, 3, 4, values);
+    return copied[0];
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_self_method_calls_beyond_cached_argument_width() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn add(self, first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
+        return self.value + first + second + third + fourth + fifth;
+    }
+}
+
+fn main() {
+    let counter: Counter = Counter { value: 1 };
+    return counter.add(1, 2, 3, 4, 5);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_self_method_mismatch_beyond_cached_argument_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn add(self, first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
+        return self.value + first + second + third + fourth + fifth;
+    }
+}
+
+fn main() {
+    let counter: Counter = Counter { value: 1 };
+    return counter.add(1, 2, 3, 4, true);
+}
+"#,
+        "LNC0006",
         &[
-            "call resolution failed",
-            "no supported function or method signature matches this receiver and argument list",
+            "error[LNC0006]: type mismatch",
+            "return counter.add(1, 2, 3, 4, true);",
+            "expected i32, found bool",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_accepts_associated_function_calls_beyond_cached_argument_width() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn sum(first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
+        return first + second + third + fourth + fifth;
+    }
+}
+
+fn main() {
+    return Counter::sum(1, 2, 3, 4, 5);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_associated_function_mismatch_beyond_cached_argument_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn sum(first: i32, second: i32, third: i32, fourth: i32, fifth: i32) -> i32 {
+        return first + second + third + fourth + fifth;
+    }
+}
+
+fn main() {
+    return Counter::sum(1, 2, 3, 4, true);
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "return Counter::sum(1, 2, 3, 4, true);",
+            "expected i32, found bool",
         ],
     );
 }
@@ -503,6 +954,44 @@ fn main() {
         return 1;
     }
     return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_deep_unary_string_operand_without_scan_window() {
+    let src = format!(
+        r#"
+fn main() {{
+    let flag: bool = {}"nope";
+}}
+"#,
+        "!".repeat(17)
+    );
+    assert_gpu_type_check_rejects(&src);
+}
+
+#[test]
+fn type_checker_rejects_deep_grouped_binary_left_operand_without_scan_window() {
+    let left = format!("{}false{}", "(".repeat(33), ")".repeat(33));
+    let src = format!(
+        r#"
+fn main() {{
+    let value: i32 = {left} + 1;
+}}
+"#
+    );
+    assert_gpu_type_check_rejects(&src);
+}
+
+#[test]
+fn type_checker_rejects_chained_binary_left_operand_type_mismatch() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() {
+    let value: i32 = false + 1 + 2;
+    return value;
 }
 "#,
     );
@@ -941,6 +1430,50 @@ fn main() {
 }
 
 #[test]
+fn type_checker_resolves_associated_inherent_function_after_long_qualified_receiver_args() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module a::b::c::d::e;
+
+pub struct A { value: i32, }
+pub struct B { value: i32, }
+pub struct C { value: i32, }
+pub struct D { value: i32, }
+"#,
+        r#"
+module app;
+
+import a::b::c::d::e;
+
+struct Wide<A, B, C, D> {
+    value: i32,
+}
+
+impl Wide<
+    a::b::c::d::e::A,
+    a::b::c::d::e::B,
+    a::b::c::d::e::C,
+    a::b::c::d::e::D
+> {
+    fn tag() -> i32 {
+        return 7;
+    }
+}
+
+fn main() {
+    let value: i32 = Wide<
+        a::b::c::d::e::A,
+        a::b::c::d::e::B,
+        a::b::c::d::e::C,
+        a::b::c::d::e::D
+    >::tag();
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_resolves_self_receiver_method_calls_inside_impl() {
     assert_gpu_type_check_ok(
         r#"
@@ -1284,6 +1817,7 @@ fn main() {
         "LNC0027",
         &[
             "error[LNC0027]: call resolution failed",
+            "call does not match a resolved function or method",
             "no supported function or method signature matches this receiver and argument list",
         ],
     );
@@ -1592,8 +2126,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_reports_generic_inherent_method_returns_outside_bounded_gpu_slice() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_substitutes_generic_inherent_method_returns_from_receiver() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed<T> {
     value: T,
@@ -1616,13 +2150,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0027",
-        &[
-            "error[LNC0027]: call resolution failed",
-            "let number: i32 = number_box.read();",
-            "method return type is outside the current GPU substitution records",
-            "publish method return substitution rows keyed by receiver type-instance arguments",
-        ],
     );
 
     assert_gpu_type_check_rejects(
@@ -1749,31 +2276,32 @@ fn main() {
 }
 
 #[test]
-fn type_checker_matches_methods_by_four_concrete_generic_receiver_arguments() {
+fn type_checker_matches_methods_by_five_concrete_generic_receiver_arguments() {
     assert_gpu_type_check_ok(
         r#"
-struct QuadBox<A, B, C, D> {
+struct PentaBox<A, B, C, D, E> {
     a: A,
     b: B,
     c: C,
     d: D,
+    e: E,
 }
 
-impl QuadBox<i32, bool, i32, bool> {
+impl PentaBox<i32, bool, i32, bool, bool> {
     fn pick(self) -> bool {
-        return self.d;
+        return self.e;
     }
 }
 
-impl QuadBox<i32, bool, bool, i32> {
+impl PentaBox<i32, bool, i32, bool, i32> {
     fn pick(self) -> i32 {
-        return self.d;
+        return self.e;
     }
 }
 
 fn main() {
-    let left: QuadBox<i32, bool, i32, bool> = QuadBox { a: 1, b: true, c: 2, d: false };
-    let right: QuadBox<i32, bool, bool, i32> = QuadBox { a: 1, b: true, c: false, d: 4 };
+    let left: PentaBox<i32, bool, i32, bool, bool> = PentaBox { a: 1, b: true, c: 2, d: false, e: true };
+    let right: PentaBox<i32, bool, i32, bool, i32> = PentaBox { a: 1, b: true, c: 2, d: false, e: 4 };
     let flag: bool = left.pick();
     let value: i32 = right.pick();
     if (flag) {
@@ -1786,30 +2314,31 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_inherent_impl_receiver_targets_beyond_gpu_arg_window() {
-    assert_gpu_type_check_diagnostic(
-        r#"
-struct PentaBox<A, B, C, D, E> {
-    value: i32,
+fn type_checker_matches_methods_by_seventeen_concrete_generic_receiver_arguments() {
+    let src = generated_wide_receiver_dispatch_source(17);
+    assert_gpu_type_check_ok(&src);
 }
 
-impl PentaBox<i32, bool, i32, bool, i32> {
-    fn pick(self) -> i32 {
-        return 0;
+#[test]
+fn type_checker_substitutes_fifth_receiver_generic_arg_in_method_return() {
+    assert_gpu_type_check_ok(
+        r#"
+struct WideBox<A, B, C, D, E> {
+    value: E,
+}
+
+impl<A, B, C, D, E> WideBox<A, B, C, D, E> {
+    fn read(self) -> E {
+        return self.value;
     }
 }
 
 fn main() {
-    return 0;
+    let box: WideBox<bool, i32, bool, i32, i32> = WideBox { value: 7 };
+    let value: i32 = box.read();
+    return value;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl PentaBox<i32, bool, i32, bool, i32> {",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
-        ],
     );
 }
 
@@ -2129,8 +2658,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_overwide_generic_type_instance_record() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_generic_type_instance_beyond_fixed_arg_record_width() {
+    assert_gpu_type_check_ok(
         r#"
 struct Five<A, B, C, D, E> {
     a: A,
@@ -2145,11 +2674,53 @@ fn main() {
     return item.a;
 }
 "#,
-        "LNC0007",
+    );
+}
+
+#[test]
+fn type_checker_accepts_wide_generic_type_instance_local_assignment() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Five<A, B, C, D, E> {
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E,
+}
+
+fn main() {
+    let item: Five<i32, bool, i32, bool, i32> = Five { a: 1, b: true, c: 2, d: false, e: 3 };
+    let same: Five<i32, bool, i32, bool, i32> = item;
+    return same.a;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_wide_generic_type_instance_local_assignment_mismatch() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Five<A, B, C, D, E> {
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E,
+}
+
+fn main() {
+    let item: Five<i32, bool, i32, bool, i32> = Five { a: 1, b: true, c: 2, d: false, e: 3 };
+    let bad: Five<i32, bool, i32, bool, bool> = item;
+    return 0;
+}
+"#,
+        "LNC0006",
         &[
-            "error[LNC0007]: unknown type",
-            "let item: Five<i32, bool, i32, bool, i32>",
-            "type not found",
+            "error[LNC0006]: type mismatch",
+            "let bad: Five<i32, bool, i32, bool, bool> = item;",
+            "value type does not match this context",
         ],
     );
 }
@@ -2204,6 +2775,170 @@ fn main() {
     return value;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_substitutes_trait_bound_subject_from_fifth_argument_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Marker {
+}
+
+impl Marker for i32 {
+}
+
+fn keep_wide<T>(first: i32, second: i32, third: i32, fourth: i32, value: T) -> T where T: Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep_wide(1, 2, 3, 4, 5);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_missing_trait_bound_for_fifth_argument_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker for bool {
+}
+
+fn keep_wide<T>(first: i32, second: i32, third: i32, fourth: i32, value: T) -> T where T: Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep_wide(1, 2, 3, 4, 5);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep_wide(1, 2, 3, 4, 5);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_substitutes_trait_bound_subject_from_fifth_generic_slot_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Marker {
+}
+
+impl Marker for i32 {
+}
+
+fn keep_fifth<A, B, C, D, T>(a: A, b: B, c: C, d: D, value: T) -> T where T: Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep_fifth(true, 1, false, 2, 5);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_missing_trait_bound_for_fifth_generic_slot_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker for bool {
+}
+
+fn keep_fifth<A, B, C, D, T>(a: A, b: B, c: C, d: D, value: T) -> T where T: Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep_fifth(true, 1, false, 2, 5);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep_fifth(true, 1, false, 2, 5);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_substitutes_trait_bound_subject_from_array_fifth_generic_slot_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Marker {
+}
+
+impl Marker for i32 {
+}
+
+fn keep_array<A, B, C, D, T, const N: usize>(
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    values: [T; N]
+) -> T where T: Marker {
+    return values[0];
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let value: i32 = keep_array(true, 1, false, 2, values);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_missing_trait_bound_for_array_fifth_generic_slot_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker for bool {
+}
+
+fn keep_array<A, B, C, D, T, const N: usize>(
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    values: [T; N]
+) -> T where T: Marker {
+    return values[0];
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let value: i32 = keep_array(true, 1, false, 2, values);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep_array(true, 1, false, 2, values);",
+            "no matching impl satisfies this call",
+        ],
     );
 }
 
@@ -2527,7 +3262,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_impl_method_signatures_beyond_gpu_param_width() {
+fn type_checker_checks_trait_impl_method_signatures_beyond_old_param_width() {
     let trait_params = (0..33)
         .map(|i| format!("p{i}: T"))
         .collect::<Vec<_>>()
@@ -2565,8 +3300,8 @@ fn main() {{
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait impl method has the wrong number of parameters",
-            "match each implemented method's parameter list to the trait declaration",
+            "trait impl method signature does not match the trait declaration",
+            "match each implemented method's parameter and return types",
         ],
     );
 }
@@ -3076,9 +3811,7 @@ fn main() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(
-                rendered.contains("trait impl header uses an unsupported trait argument shape")
-            );
+            assert!(rendered.contains("trait impl header uses an unsupported trait argument shape"));
         }
         other => panic!("expected reference trait impl argument diagnostic, got {other:?}"),
     }

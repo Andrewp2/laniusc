@@ -33,6 +33,7 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_arg_row_count;
 
 RWStructuredBuffer<uint> module_value_path_status;
 
@@ -149,6 +150,14 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_decl_i, out uint enum_to
     return valid_token(enum_token) && valid_node(variant_node);
 }
 
+uint call_arg_count_for_call(uint owner_token, uint call_node)
+{
+    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
+    if (!valid_node(call_node))
+        return record_count;
+    return max(record_count, call_arg_row_count[call_node]);
+}
+
 bool prepare_enum_constructor_call(
     uint owner_token,
     uint enum_token,
@@ -156,7 +165,7 @@ bool prepare_enum_constructor_call(
 {
     uint4 arg_record = call_arg_record[owner_token];
     uint call_node = arg_record.z;
-    uint actual_count = arg_record.w;
+    uint actual_count = call_arg_count_for_call(owner_token, call_node);
     uint expected_count = hir_variant_payload_count[variant_node];
     if (actual_count != expected_count)
         return false;
@@ -195,4 +204,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
         return;
     }
+    module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
 }

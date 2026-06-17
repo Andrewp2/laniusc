@@ -708,6 +708,8 @@ dependencies = [
  "encase",
  "futures-intrusive",
  "hashbrown 0.15.5",
+ "laniusc-compiler",
+ "laniusc-shaders",
  "log",
  "pollster",
  "proptest",
@@ -718,6 +720,36 @@ dependencies = [
  "serde_with",
  "tokio",
  "wgpu",
+ "which",
+]
+
+[[package]]
+name = "laniusc-compiler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bnf",
+ "encase",
+ "futures-intrusive",
+ "hashbrown 0.15.5",
+ "log",
+ "pollster",
+ "proptest",
+ "rand 0.9.2",
+ "rayon",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tokio",
+ "wgpu",
+ "which",
+]
+
+[[package]]
+name = "laniusc-shaders"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "which",
 ]
 

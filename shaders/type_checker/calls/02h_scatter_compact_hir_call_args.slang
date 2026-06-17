@@ -1,10 +1,8 @@
 // Scatter compact parser-owned HIR call-argument rows.
 //
-// Input flags have already been prefix-scanned, so each argument row writes to
-// one dense row. Per-call start/count records let semantic consumers lookup an
-// argument by `(call_node, ordinal)` without reading the old four-slot table.
-
-import hir_records;
+// Per-call argument counts have already been prefix-scanned, so each argument
+// row writes to row_start[call] + ordinal. That makes `(call_node, ordinal)`
+// lookup stable even when nested call HIR rows interleave in source order.
 
 struct Params
 {
@@ -19,7 +17,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> call_arg_row_flag;
+StructuredBuffer<uint> hir_call_arg_ordinal;
 StructuredBuffer<uint> call_arg_row_prefix;
 
 RWStructuredBuffer<uint> call_arg_row_node;
@@ -54,16 +52,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     uint n = active_hir_node_count();
-    if (node >= n || call_arg_row_flag[node] == 0u)
+    if (node >= n)
         return;
 
-    uint row = call_arg_row_prefix[node];
-    if (row >= n)
-        return;
-
-    uint packed = hir_call_arg_parent_call[node];
-    uint call_node = hir_node_ordinal_node(packed);
-    uint ordinal = hir_node_ordinal_ordinal(packed);
+    uint call_node = hir_call_arg_parent_call[node];
+    uint ordinal = hir_call_arg_ordinal[node];
     if (!valid_node(call_node, n) || hir_kind[call_node] != HIR_CALL_EXPR)
         return;
 
@@ -71,13 +64,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (count == 0u || ordinal >= count)
         return;
 
+    uint start = call_arg_row_prefix[call_node];
+    uint row = start + ordinal;
+    if (row < start || row >= n)
+        return;
+
     call_arg_row_node[row] = node;
     call_arg_row_call_node[row] = call_node;
     call_arg_row_ordinal[row] = ordinal;
-
-    if (ordinal == 0u)
-    {
-        call_arg_row_start[call_node] = row;
-        call_arg_row_count[call_node] = count;
-    }
+    call_arg_row_start[call_node] = start;
+    call_arg_row_count[call_node] = count;
 }

@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use laniusc::compiler::compile_source_to_x86_64_with_gpu_codegen_from_path;
+use laniusc_compiler::compiler::compile_source_to_x86_64_with_gpu_codegen_from_path;
 
 const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/raytracer_ppm");
 

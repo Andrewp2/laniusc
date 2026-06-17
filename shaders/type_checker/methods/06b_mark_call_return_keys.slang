@@ -41,6 +41,7 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_node;
@@ -55,6 +56,8 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> module_value_path_call_open;
+StructuredBuffer<uint> module_value_path_call_path_id;
+StructuredBuffer<uint> module_value_path_associated_method_token;
 
 RWStructuredBuffer<uint> method_call_receiver_ref_tag;
 RWStructuredBuffer<uint> method_call_receiver_ref_payload;
@@ -64,6 +67,7 @@ RWStructuredBuffer<uint> method_call_site_module_id;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -71,15 +75,6 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
 static const uint MAX_PATH_SEGMENTS = 9u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_COLON = 38u;
-static const uint TK_PATH_COLON = 114u;
-static const uint TK_TYPE_ARG_LT = 131u;
-static const uint TK_TYPE_ARG_GT = 132u;
-static const uint TK_PATH_TYPE_ARG_LT = 184u;
-static const uint TK_PATH_TYPE_ARG_GT = 185u;
-
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -121,26 +116,6 @@ bool valid_token(uint i)
 bool valid_path(uint i)
 {
     return i != INVALID && i < active_path_count();
-}
-
-uint token_kind(uint token_i)
-{
-    return token_i < active_token_count() ? token_words[token_i].kind : 0u;
-}
-
-bool type_arg_open(uint kind)
-{
-    return kind == TK_LT || kind == TK_PATH_TYPE_ARG_LT || kind == TK_TYPE_ARG_LT;
-}
-
-bool type_arg_close(uint kind)
-{
-    return kind == TK_GT || kind == TK_PATH_TYPE_ARG_GT || kind == TK_TYPE_ARG_GT;
-}
-
-bool path_colon(uint kind)
-{
-    return kind == TK_COLON || kind == TK_PATH_COLON;
 }
 
 uint module_for_hir_node(uint node)
@@ -201,7 +176,7 @@ uint path_id_for_callee_node(uint callee_node)
     if (!valid_node(callee_node))
         return INVALID;
 
-    if (hir_kind[callee_node] == HIR_PATH_EXPR)
+    if (hir_kind[callee_node] == HIR_PATH_EXPR || hir_kind[callee_node] == HIR_TYPE)
     {
         uint path_i = path_id_by_owner_hir[callee_node];
         return valid_path(path_i) ? path_i : INVALID;
@@ -210,7 +185,7 @@ uint path_id_for_callee_node(uint callee_node)
     if (hir_kind[callee_node] == HIR_NAME_EXPR)
     {
         uint child = first_child[callee_node];
-        if (valid_node(child) && hir_kind[child] == HIR_PATH_EXPR)
+        if (valid_node(child) && (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
         {
             uint path_i = path_id_by_owner_hir[child];
             return valid_path(path_i) ? path_i : INVALID;
@@ -229,54 +204,33 @@ uint path_leaf_token(uint path_i)
     return slot < active_token_count() * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
 }
 
-uint token_after_type_args(uint token_i)
-{
-    if (!valid_token(token_i))
-        return INVALID;
-
-    uint cursor = token_i + 1u;
-    if (!valid_token(cursor) || !type_arg_open(token_kind(cursor)))
-        return cursor;
-
-    cursor += 1u;
-    uint depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_token(cursor); guard += 1u)
-    {
-        uint kind = token_kind(cursor);
-        if (type_arg_open(kind))
-            depth += 1u;
-        else if (type_arg_close(kind))
-        {
-            if (depth == 0u)
-                return cursor + 1u;
-            depth -= 1u;
-        }
-        cursor += 1u;
-    }
-    return INVALID;
-}
-
-uint associated_method_token_after_receiver(uint receiver_token)
-{
-    uint cursor = token_after_type_args(receiver_token);
-    if (!valid_token(cursor + 2u))
-        return INVALID;
-    if (!path_colon(token_kind(cursor)) || !path_colon(token_kind(cursor + 1u)))
-        return INVALID;
-    return cursor + 2u;
-}
-
 uint associated_method_token_for_call(uint call_node)
 {
     uint callee_node = valid_node(call_node) ? hir_call_callee_node[call_node] : INVALID;
     uint path_i = path_id_for_callee_node(callee_node);
-    if (!valid_path(path_i))
-        return INVALID;
+    if (valid_path(path_i))
+    {
+        uint owner_token = path_owner_token[path_i];
+        uint method_token = valid_token(owner_token)
+            ? module_value_path_associated_method_token[owner_token]
+            : INVALID;
+        if (valid_token(method_token))
+            return method_token;
+        uint receiver_token = path_leaf_token(path_i);
+        method_token = valid_token(receiver_token)
+            ? module_value_path_associated_method_token[receiver_token]
+            : INVALID;
+        return valid_token(method_token) ? method_token : receiver_token;
+    }
 
-    uint receiver_token = path_leaf_token(path_i);
-    uint method_token = associated_method_token_after_receiver(receiver_token);
-    return valid_token(method_token) ? method_token : receiver_token;
+    uint call_token = valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
+    uint method_token = valid_token(call_token)
+        ? module_value_path_associated_method_token[call_token]
+        : INVALID;
+    if (valid_token(method_token))
+        return method_token;
+    uint callee_token = valid_node(callee_node) ? hir_token_pos[callee_node] : INVALID;
+    return valid_token(callee_token) ? module_value_path_associated_method_token[callee_token] : INVALID;
 }
 
 uint callee_token_for_call(uint call_node)

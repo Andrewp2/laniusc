@@ -17,7 +17,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_status;
@@ -27,14 +26,6 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> hir_nearest_loop_node;
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
 
 RWStructuredBuffer<uint> status;
 
@@ -47,25 +38,6 @@ static const uint ERR_LOOP_CONTROL = 7u;
 static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_INDEX_EXPR = 20u;
-
-static const uint TK_STAR = 7u;
-static const uint TK_SLASH = 9u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LE = 14u;
-static const uint TK_GE = 15u;
-static const uint TK_EQEQ = 16u;
-static const uint TK_ANDAND = 17u;
-static const uint TK_OROR = 18u;
-static const uint TK_AMPERSAND = 25u;
-static const uint TK_PIPE = 26u;
-static const uint TK_NOT_EQUAL = 40u;
-static const uint TK_PERCENT = 41u;
-static const uint TK_CARET = 42u;
-static const uint TK_SHL = 43u;
-static const uint TK_SHR = 44u;
-static const uint TK_INFIX_PLUS = 59u;
-static const uint TK_INFIX_MINUS = 61u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -343,107 +315,16 @@ bool binary_operand_ok(uint form, uint ty)
     return true;
 }
 
-uint binary_operator_token(uint right)
-{
-    if (!valid_node(right))
-        return INVALID;
-    uint right_token = hir_token_pos[right];
-    if (!valid_token(right_token) || right_token == 0u)
-        return INVALID;
-    return right_token - 1u;
-}
-
-bool binary_operator_matches_form(uint form, uint operator_kind)
-{
-    if (form == HIR_EXPR_OR)
-        return operator_kind == TK_OROR;
-    if (form == HIR_EXPR_AND)
-        return operator_kind == TK_ANDAND;
-    if (form == HIR_EXPR_BIT_OR)
-        return operator_kind == TK_PIPE;
-    if (form == HIR_EXPR_BIT_XOR)
-        return operator_kind == TK_CARET;
-    if (form == HIR_EXPR_BIT_AND)
-        return operator_kind == TK_AMPERSAND;
-    if (form == HIR_EXPR_EQ)
-        return operator_kind == TK_EQEQ;
-    if (form == HIR_EXPR_NE)
-        return operator_kind == TK_NOT_EQUAL;
-    if (form == HIR_EXPR_LT)
-        return operator_kind == TK_LT;
-    if (form == HIR_EXPR_GT)
-        return operator_kind == TK_GT;
-    if (form == HIR_EXPR_LE)
-        return operator_kind == TK_LE;
-    if (form == HIR_EXPR_GE)
-        return operator_kind == TK_GE;
-    if (form == HIR_EXPR_SHL)
-        return operator_kind == TK_SHL;
-    if (form == HIR_EXPR_SHR)
-        return operator_kind == TK_SHR;
-    if (form == HIR_EXPR_ADD)
-        return operator_kind == TK_INFIX_PLUS;
-    if (form == HIR_EXPR_SUB)
-        return operator_kind == TK_INFIX_MINUS;
-    if (form == HIR_EXPR_MUL)
-        return operator_kind == TK_STAR;
-    if (form == HIR_EXPR_DIV)
-        return operator_kind == TK_SLASH;
-    if (form == HIR_EXPR_MOD)
-        return operator_kind == TK_PERCENT;
-    return false;
-}
-
-bool binary_operator_is_value_expr(uint form, uint right)
-{
-    uint operator_token = binary_operator_token(right);
-    if (!valid_token(operator_token))
-        return false;
-    return binary_operator_matches_form(form, token_words[operator_token].kind);
-}
-
-bool enclosed_by_different_same_start_result(uint node)
-{
-    if (!valid_node(node))
-        return false;
-
-    uint start = hir_token_pos[node];
-    uint cursor = parent[node];
-    [loop]
-    for (uint depth = 0u; depth < 64u && valid_node(cursor); depth += 1u)
-    {
-        if (hir_token_pos[cursor] == start)
-        {
-            uint root = hir_expr_result_root_node[cursor];
-            if (valid_node(root) && root != node)
-                return true;
-        }
-
-        uint next = parent[cursor];
-        if (next == cursor)
-            break;
-        cursor = next;
-    }
-    return false;
-}
-
 void validate_binary_expr_node(uint node)
 {
-    if (expr_result_root(node) != node)
-        return;
-
     uint form = expr_form(node);
     if (!is_integer_binary_form(form) &&
         !is_numeric_binary_form(form) &&
         !is_equality_binary_form(form))
         return;
-    if (enclosed_by_different_same_start_result(node))
-        return;
 
     uint left = expr_left(node);
     uint right = expr_right(node);
-    if (!binary_operator_is_value_expr(form, right))
-        return;
 
     uint left_ty = direct_expr_record_type(left);
     if (!binary_operand_ok(form, left_ty))

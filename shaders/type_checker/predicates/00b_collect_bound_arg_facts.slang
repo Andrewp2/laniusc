@@ -71,7 +71,9 @@ uint first_child_node(uint node)
     if (!valid_node(node))
         return INVALID;
     uint child = first_child[node];
-    return valid_node(child) && parent_node(child) == node ? child : INVALID;
+    return valid_node(child) && parent_node(child) == node && child > node
+        ? child
+        : INVALID;
 }
 
 uint next_sibling_node(uint node)
@@ -79,7 +81,11 @@ uint next_sibling_node(uint node)
     if (!valid_node(node))
         return INVALID;
     uint sibling = next_sibling[node];
-    return valid_node(sibling) && parent_node(sibling) == parent_node(node)
+    uint owner = parent_node(node);
+    return valid_node(owner) &&
+           valid_node(sibling) &&
+           parent_node(sibling) == owner &&
+           sibling > node
         ? sibling
         : INVALID;
 }
@@ -176,7 +182,7 @@ bool bound_ident_has_arg_list(uint node)
 
     uint child = first_child_node(node);
     [loop]
-    for (uint guard = 0u; guard < 4u && valid_node(child); guard += 1u)
+    while (valid_node(child))
     {
         uint kind = node_kind[child];
         if (kind == PROD_BOUND_TYPE_ARGS_SOME)

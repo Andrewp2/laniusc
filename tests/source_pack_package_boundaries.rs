@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::{
+use laniusc_compiler::{
     codegen::unit::{
         CodegenUnitLimits,
         SourcePackArtifactKind,

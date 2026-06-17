@@ -22,9 +22,15 @@ StructuredBuffer<uint> path_owner_token;
 
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_return_type;
+RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_generic_slot_type;
+RWStructuredBuffer<uint> call_generic_slot_ordinal;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_GENERIC_BASE = 8192u;
+static const uint PARAM_CACHE_STRIDE = 4u;
+static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -49,8 +55,94 @@ uint path_leaf_token(uint path_i, uint owner_token)
     if (count <= 1u)
         return owner_token;
     uint leaf_i = path_segment_base[path_i] + count - 1u;
-    uint leaf_token = leaf_i < gParams.n_tokens * 4u ? path_segment_token[leaf_i] : INVALID;
+    uint leaf_token = leaf_i < gParams.n_tokens * MAX_PATH_SEGMENTS
+        ? path_segment_token[leaf_i]
+        : INVALID;
     return valid_token(leaf_token) ? leaf_token : owner_token;
+}
+
+bool concrete_return_type(uint ty)
+{
+    return ty != TY_UNKNOWN && ty < TY_GENERIC_BASE;
+}
+
+void mirror_call_fn_index(uint owner_token, uint leaf_token)
+{
+    uint owner_fn = call_fn_index[owner_token];
+    uint leaf_fn = call_fn_index[leaf_token];
+    if (valid_token(owner_fn))
+        call_fn_index[leaf_token] = owner_fn;
+    else if (valid_token(leaf_fn))
+        call_fn_index[owner_token] = leaf_fn;
+}
+
+void mirror_call_return_type(uint owner_token, uint leaf_token)
+{
+    uint owner_ret_ty = call_return_type[owner_token];
+    uint leaf_ret_ty = call_return_type[leaf_token];
+    if (concrete_return_type(owner_ret_ty))
+    {
+        call_return_type[leaf_token] = owner_ret_ty;
+    }
+    else if (concrete_return_type(leaf_ret_ty))
+    {
+        call_return_type[owner_token] = leaf_ret_ty;
+    }
+    else if (owner_ret_ty != TY_UNKNOWN)
+    {
+        call_return_type[leaf_token] = owner_ret_ty;
+    }
+    else if (leaf_ret_ty != TY_UNKNOWN)
+    {
+        call_return_type[owner_token] = leaf_ret_ty;
+    }
+}
+
+void mirror_call_return_type_token(uint owner_token, uint leaf_token)
+{
+    uint owner_ret_token = call_return_type_token[owner_token];
+    uint leaf_ret_token = call_return_type_token[leaf_token];
+    if (valid_token(owner_ret_token))
+        call_return_type_token[leaf_token] = owner_ret_token;
+    else if (valid_token(leaf_ret_token))
+        call_return_type_token[owner_token] = leaf_ret_token;
+}
+
+void mirror_generic_slot(uint owner_token, uint leaf_token, uint slot)
+{
+    uint owner_i = owner_token * PARAM_CACHE_STRIDE + slot;
+    uint leaf_i = leaf_token * PARAM_CACHE_STRIDE + slot;
+    uint owner_ty = call_generic_slot_type[owner_i];
+    uint leaf_ty = call_generic_slot_type[leaf_i];
+    uint owner_ordinal = call_generic_slot_ordinal[owner_i];
+    uint leaf_ordinal = call_generic_slot_ordinal[leaf_i];
+
+    if (owner_ty != INVALID)
+    {
+        call_generic_slot_type[leaf_i] = owner_ty;
+        call_generic_slot_ordinal[leaf_i] = owner_ordinal;
+    }
+    else if (leaf_ty != INVALID)
+    {
+        call_generic_slot_type[owner_i] = leaf_ty;
+        call_generic_slot_ordinal[owner_i] = leaf_ordinal;
+    }
+    else if (owner_ordinal != INVALID)
+    {
+        call_generic_slot_ordinal[leaf_i] = owner_ordinal;
+    }
+    else if (leaf_ordinal != INVALID)
+    {
+        call_generic_slot_ordinal[owner_i] = leaf_ordinal;
+    }
+}
+
+void mirror_generic_slots(uint owner_token, uint leaf_token)
+{
+    mirror_generic_slot(owner_token, leaf_token, 0u);
+    mirror_generic_slot(owner_token, leaf_token, 1u);
+    mirror_generic_slot(owner_token, leaf_token, 2u);
+    mirror_generic_slot(owner_token, leaf_token, 3u);
 }
 
 [shader("compute")]
@@ -69,12 +161,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (leaf_token == owner_token)
         return;
 
-    uint fn_token = call_fn_index[owner_token];
-    if (!valid_token(fn_token))
-        return;
-
-    call_fn_index[leaf_token] = fn_token;
-    uint ret_ty = call_return_type[owner_token];
-    if (ret_ty != TY_UNKNOWN)
-        call_return_type[leaf_token] = ret_ty;
+    mirror_call_fn_index(owner_token, leaf_token);
+    mirror_call_return_type(owner_token, leaf_token);
+    mirror_call_return_type_token(owner_token, leaf_token);
+    mirror_generic_slots(owner_token, leaf_token);
 }

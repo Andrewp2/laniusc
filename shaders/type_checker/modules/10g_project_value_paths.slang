@@ -17,8 +17,6 @@
 // - It does not inspect source bytes, hash token text, scan for "::", patch
 //   call outputs, or perform any CPU lookup.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -29,8 +27,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
+StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
@@ -77,34 +75,15 @@ bool valid_node(uint node)
 
 bool predicate_bound_type_path(uint path_i)
 {
-    uint node = path_owner_hir[path_i];
-    [loop]
-    for (uint guard = 0u; guard < 16u && valid_node(node); guard += 1u)
-    {
-        uint kind = node_kind[node];
-        if (kind == PROD_BOUND_TYPE_IDENT ||
-            kind == PROD_BOUND_TYPE_REF ||
-            kind == PROD_BOUND_TYPE_PATH ||
-            kind == PROD_BOUND_TYPE_PATH_IDENT ||
-            kind == PROD_BOUND_TYPE_PATH_MORE ||
-            kind == PROD_BOUND_TYPE_PATH_END ||
-            kind == PROD_BOUND_TYPE_ARGS_NONE ||
-            kind == PROD_BOUND_TYPE_ARGS_SOME ||
-            kind == PROD_BOUND_TYPE_ARGS_MORE ||
-            kind == PROD_BOUND_TYPE_ARGS_END ||
-            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
-            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_TRAILING ||
-            kind == PROD_TYPE_PARAM_BOUND ||
-            kind == PROD_TYPE_PARAM_BOUND_NONE ||
-            kind == PROD_TYPE_PARAM_BOUND_LIST ||
-            kind == PROD_TYPE_PARAM_BOUND_MORE ||
-            kind == PROD_TYPE_PARAM_BOUND_END ||
-            kind == PROD_WHERE_TYPE_BOUND)
-            return true;
+    uint owner = path_owner_hir[path_i];
+    if (!valid_node(owner))
+        return false;
 
-        node = parent[node];
-    }
-    return false;
+    uint leaf = hir_type_path_leaf_node[owner];
+    if (!valid_node(leaf))
+        return false;
+
+    return valid_node(hir_bound_path_owner_by_leaf[leaf]);
 }
 
 [shader("compute")]

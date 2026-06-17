@@ -165,9 +165,7 @@ uint matched_brace_span_end(uint open_i)
 uint function_body_span_end(uint fn_node, uint n)
 {
     uint end_node = min(subtree_end[fn_node], n);
-    for (uint cursor = fn_node + 1u, step = 0u;
-         cursor < end_node && step < 512u;
-         cursor += 1u, step += 1u)
+    for (uint cursor = fn_node + 1u; cursor < end_node; cursor += 1u)
     {
         uint prod = node_kind[cursor];
         if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK)

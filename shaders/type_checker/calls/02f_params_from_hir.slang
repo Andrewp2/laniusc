@@ -44,6 +44,10 @@ RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_param_type;
 RWStructuredBuffer<uint> call_param_ref_tag;
 RWStructuredBuffer<uint> call_param_ref_payload;
+RWStructuredBuffer<uint> call_param_row_flag;
+RWStructuredBuffer<uint> call_param_row_node_type;
+RWStructuredBuffer<uint> call_param_row_node_ref_tag;
+RWStructuredBuffer<uint> call_param_row_node_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -364,6 +368,11 @@ uint param_type_code(uint param_node, uint fn_node)
 
 void publish_param(uint param_node)
 {
+    call_param_row_flag[param_node] = 0u;
+    call_param_row_node_type[param_node] = TY_UNKNOWN;
+    call_param_row_node_ref_tag[param_node] = TYPE_REF_INVALID;
+    call_param_row_node_ref_payload[param_node] = INVALID;
+
     if (!valid_node(param_node) || hir_kind[param_node] != HIR_PARAM)
         return;
 
@@ -378,18 +387,25 @@ void publish_param(uint param_node)
         return;
 
     atomic_u32_max(call_param_count, fn_token, ordinal + 1u);
-    if (ordinal >= PARAM_CACHE_STRIDE)
-        return;
 
     uint tag;
     uint payload;
     param_type_ref(param_node, fn_node, tag, payload);
+    uint type_code = param_type_code(param_node, fn_node);
+    call_param_row_flag[param_node] = 1u;
+    call_param_row_node_type[param_node] = type_code;
+    call_param_row_node_ref_tag[param_node] = tag;
+    call_param_row_node_ref_payload[param_node] = payload;
+
+    if (ordinal >= PARAM_CACHE_STRIDE)
+        return;
+
     row_major_store<uint>(
         call_param_type,
         fn_token,
         PARAM_CACHE_STRIDE,
         ordinal,
-        param_type_code(param_node, fn_node));
+        type_code);
     row_major_store<uint>(
         call_param_ref_tag,
         fn_token,

@@ -1,4 +1,8 @@
-// Pointer-jump function-parameter links to produce owning functions and ranks.
+// Pointer-jump function-parameter links to produce owning functions.
+//
+// Parameter ordinals are assigned later from compact scanned parameter rows.
+// The rank buffers remain in this pass only as temporary ping-pong state; the
+// published parser-visible ordinal is overwritten by param/id_apply.slang.
 
 struct Params
 {

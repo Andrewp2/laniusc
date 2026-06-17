@@ -84,11 +84,9 @@ static const uint TY_GENERIC_BASE = 8192u;
 static const uint X86_DECL_AGG_ARRAY = 1u;
 static const uint X86_DECL_AGG_ENUM = 2u;
 static const uint X86_DECL_AGG_STRUCT = 3u;
-static const uint X86_PARAM_REG_STRIDE = 5u;
-static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
-static const uint X86_PARAM_REG_ORDINAL_MASK = 0x0fu;
+static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
-static const uint X86_PARAM_REG_KIND_BITS = 8u;
+static const uint X86_PARAM_REG_KIND_BITS = 4u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -334,12 +332,11 @@ uint method_receiver_width(uint fn_decl_token, uint decl_token)
         method_decl_receiver_ref_payload[fn_decl_token]);
 }
 
-uint pack_param_reg_info(uint ordinal, uint arg_reg, uint aggregate_kind)
+uint pack_param_reg_info(uint arg_reg, uint aggregate_kind)
 {
-    if (ordinal > X86_PARAM_REG_ORDINAL_MASK || arg_reg > X86_PARAM_REG_ARG_REG_MASK)
+    if (arg_reg > X86_PARAM_REG_ARG_REG_MASK)
         return INVALID;
-    return ordinal |
-           (arg_reg << X86_PARAM_REG_ORDINAL_BITS) |
+    return arg_reg |
            (aggregate_kind << X86_PARAM_REG_KIND_BITS);
 }
 
@@ -418,7 +415,7 @@ void write_param_reg_record_at(
     uint semantic_ty,
     uint aggregate_kind)
 {
-    uint info = pack_param_reg_info(ordinal, arg_reg, aggregate_kind);
+    uint info = pack_param_reg_info(arg_reg, aggregate_kind);
     if (info == INVALID)
         return;
     row_major_store<uint>(x86_param_reg_record, record_key, X86_PARAM_REG_STRIDE, 0u, fn_node);
@@ -429,12 +426,18 @@ void write_param_reg_record_at(
         record_key,
         X86_PARAM_REG_STRIDE,
         3u,
-        semantic_ty);
+        ordinal);
     row_major_store<uint>(
         x86_param_reg_record,
         record_key,
         X86_PARAM_REG_STRIDE,
         4u,
+        semantic_ty);
+    row_major_store<uint>(
+        x86_param_reg_record,
+        record_key,
+        X86_PARAM_REG_STRIDE,
+        5u,
         link);
 }
 

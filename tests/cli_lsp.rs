@@ -65,7 +65,7 @@ fn cli_lsp_capabilities_reports_no_run_diagnostic_contract() {
     assert_eq!(document["diagnostic_source"], "laniusc");
     assert_eq!(
         document["diagnostic_registry"]["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         document["diagnostic_registry"]["no_run_guards"]["source_scanning"],
@@ -282,7 +282,7 @@ fn cli_lsp_serve_handles_initialize_shutdown_without_compiling_source() {
     assert_eq!(laniusc["diagnostic_source"], "laniusc");
     assert_eq!(
         laniusc["diagnostic_registry"]["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         laniusc["diagnostic_registry"]["no_run_guards"]["source_scanning"],
@@ -2099,11 +2099,11 @@ fn cli_lsp_serve_returns_document_diagnostics_for_opened_source() {
     assert_eq!(diagnostic["data"]["category"], "parsing");
     assert_eq!(
         diagnostic["data"]["registry_schema_version"],
-        laniusc::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["schema_version"],
-        laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+        laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
     );
     assert_eq!(
         diagnostic["data"]["explain_command"],
@@ -2928,7 +2928,7 @@ fn assert_lsp_unsupported_method_contract(value: &serde_json::Value) {
 fn assert_lsp_diagnostic_formats(value: &serde_json::Value) {
     assert_eq!(
         value["schema_version"],
-        laniusc::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
+        laniusc_compiler::compiler::DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION
     );
     assert_eq!(value["cli_flag"], "--diagnostic-format");
     assert_eq!(value["default_format"], "text");
@@ -2963,9 +2963,10 @@ fn assert_lsp_diagnostic_formats(value: &serde_json::Value) {
     assert!(formats.iter().any(|format| {
         format["name"] == "lsp-json"
             && format["payload"] == "LSP Diagnostic JSON object"
-            && format["payload_schema_name"] == laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
+            && format["payload_schema_name"]
+                == laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
             && format["payload_schema_version"]
-                == laniusc::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
+                == laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
             && format["payload_schema_location"] == "data"
             && format["position_encoding"] == "utf-16"
             && format["language_server_envelope"] == false

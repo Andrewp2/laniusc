@@ -144,10 +144,9 @@ uint unary_operand_token(uint i)
 {
     uint n_active = active_token_count();
     uint cur = i + 1u;
-    for (uint guard = 0u; guard < 16u; guard += 1u)
+    [loop]
+    while (cur < n_active)
     {
-        if (cur >= n_active)
-            break;
         uint kind = token_kind(cur);
         if (kind == TK_GROUP_LPAREN || kind == TK_PREFIX_PLUS || kind == TK_PREFIX_MINUS ||
             kind == TK_NOT)
@@ -203,10 +202,9 @@ uint binary_left_operand_token(uint i)
 
     uint depth = 0u;
     uint j = cur + 1u;
-    for (uint guard = 0u; guard < 32u; guard += 1u)
+    [loop]
+    while (j > 0u)
     {
-        if (j == 0u)
-            break;
         j -= 1u;
         uint kind = token_kind(j);
         if (kind == TK_GROUP_RPAREN)

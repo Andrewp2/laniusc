@@ -4,10 +4,11 @@
 // - Dispatch after method-call keys are marked and method declaration keys are
 //   sorted/validated.
 // - This pass binary-searches sorted_method_key_order using
-//   (receiver type-ref tag/payload, bounded receiver type-argument refs,
+//   (receiver type-ref tag/payload, receiver type-argument row count/hash,
 //   method name id, module id) and writes the resolved function token plus
 //   return type metadata. Cross-module visibility uses an equal range over the
-//   receiver/name prefix rather than scanning every module.
+//   receiver/name prefix and verifies compact receiver argument rows inside the
+//   candidate range.
 // - It does not inspect source bytes, hash token text, compare names by
 //   spelling, perform CPU lookup, or use a direct method hash table.
 
@@ -29,6 +30,7 @@ StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_site_module_id;
+StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_method_key_order;
 StructuredBuffer<uint> method_key_status;
@@ -44,6 +46,12 @@ StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_hash;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_return_type;
@@ -120,7 +128,7 @@ uint receiver_arg_count(uint receiver_tag, uint receiver_payload)
 {
     if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count())
         return 0u;
-    return min(type_instance_arg_count[receiver_payload], TYPE_INSTANCE_ARG_REF_STRIDE);
+    return type_instance_arg_count[receiver_payload];
 }
 
 bool receiver_instance_resolved(uint receiver_tag, uint receiver_payload)
@@ -142,16 +150,42 @@ uint receiver_arg_ref_index(uint receiver_tag, uint receiver_payload, uint slot)
     return start == INVALID ? INVALID : start + slot;
 }
 
-uint receiver_arg_ref_tag_raw(uint receiver_tag, uint receiver_payload, uint slot)
+uint receiver_arg_row_ref_index(uint receiver_payload, uint ordinal)
 {
-    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-    return arg_i == INVALID ? TYPE_REF_INVALID : type_instance_arg_ref_tag[arg_i];
+    uint start = type_instance_arg_row_start[receiver_payload];
+    uint ref_i = start == INVALID ? INVALID : start + ordinal;
+    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
+        ? ref_i
+        : INVALID;
 }
 
-uint receiver_arg_ref_payload_raw(uint receiver_tag, uint receiver_payload, uint slot)
+bool receiver_arg_ref(uint receiver_tag, uint receiver_payload, uint ordinal, out uint tag, out uint payload)
 {
-    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-    return arg_i == INVALID ? INVALID : type_instance_arg_ref_payload[arg_i];
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count() ||
+        ordinal >= type_instance_arg_count[receiver_payload])
+        return false;
+
+    uint row_ref_i = receiver_arg_row_ref_index(receiver_payload, ordinal);
+    if (row_ref_i != INVALID)
+    {
+        tag = type_instance_arg_row_ref_tag[row_ref_i];
+        payload = type_instance_arg_row_ref_payload[row_ref_i];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+    }
+
+    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
+        return false;
+
+    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, ordinal);
+    if (arg_i == INVALID)
+        return false;
+
+    tag = type_instance_arg_ref_tag[arg_i];
+    payload = type_instance_arg_ref_payload[arg_i];
+    return tag != TYPE_REF_INVALID;
 }
 
 uint type_code_for_ref(uint tag, uint payload)
@@ -175,6 +209,28 @@ uint type_code_for_ref(uint tag, uint payload)
     return TY_UNKNOWN;
 }
 
+uint generic_param_slot_for_payload(uint payload)
+{
+    return payload < active_token_count() ? type_generic_param_slot_by_token[payload] : payload;
+}
+
+uint generic_param_name_for_payload(uint payload)
+{
+    return payload < active_token_count() ? name_id_by_token[payload] : INVALID;
+}
+
+bool same_generic_param_payload(uint left_payload, uint right_payload)
+{
+    uint left_slot = generic_param_slot_for_payload(left_payload);
+    uint right_slot = generic_param_slot_for_payload(right_payload);
+    if (left_slot != INVALID && right_slot != INVALID)
+        return left_slot == right_slot;
+
+    uint left_name = generic_param_name_for_payload(left_payload);
+    uint right_name = generic_param_name_for_payload(right_payload);
+    return left_name != INVALID && left_name == right_name;
+}
+
 bool substituted_receiver_return_type_slot(
     uint receiver_tag,
     uint receiver_payload,
@@ -190,23 +246,30 @@ bool substituted_receiver_return_type_slot(
     if (slot >= decl_arg_count)
         return false;
 
-    uint decl_arg_i = receiver_arg_ref_index(decl_receiver_tag, decl_receiver_payload, slot);
-    if (decl_arg_i == INVALID)
+    uint decl_arg_tag;
+    uint decl_arg_payload;
+    if (!receiver_arg_ref(
+            decl_receiver_tag,
+            decl_receiver_payload,
+            slot,
+            decl_arg_tag,
+            decl_arg_payload))
         return false;
-    if (type_instance_arg_ref_tag[decl_arg_i] != TYPE_REF_GENERIC_PARAM ||
-        type_instance_arg_ref_payload[decl_arg_i] != ret_payload)
+    if (decl_arg_tag != TYPE_REF_GENERIC_PARAM)
         return false;
 
-    uint call_arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-    if (call_arg_i == INVALID)
+    if (!same_generic_param_payload(decl_arg_payload, ret_payload))
+        return false;
+
+    uint call_arg_tag;
+    uint call_arg_payload;
+    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, call_arg_tag, call_arg_payload))
     {
         ty = fallback_ty;
         return true;
     }
 
-    uint resolved_ty = type_code_for_ref(
-        type_instance_arg_ref_tag[call_arg_i],
-        type_instance_arg_ref_payload[call_arg_i]);
+    uint resolved_ty = type_code_for_ref(call_arg_tag, call_arg_payload);
     ty = resolved_ty == TY_UNKNOWN ? fallback_ty : resolved_ty;
     return true;
 }
@@ -227,22 +290,14 @@ uint substituted_receiver_return_type(
             uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
             uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
             uint ty = TY_UNKNOWN;
-            if (substituted_receiver_return_type_slot(
-                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
-                    decl_arg_count, ret_payload, fallback_ty, 0u, ty))
-                return ty;
-            if (substituted_receiver_return_type_slot(
-                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
-                    decl_arg_count, ret_payload, fallback_ty, 1u, ty))
-                return ty;
-            if (substituted_receiver_return_type_slot(
-                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
-                    decl_arg_count, ret_payload, fallback_ty, 2u, ty))
-                return ty;
-            if (substituted_receiver_return_type_slot(
-                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
-                    decl_arg_count, ret_payload, fallback_ty, 3u, ty))
-                return ty;
+            [loop]
+            for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
+            {
+                if (substituted_receiver_return_type_slot(
+                        receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
+                        decl_arg_count, ret_payload, fallback_ty, slot_i, ty))
+                    return ty;
+            }
         }
     }
 
@@ -250,32 +305,31 @@ uint substituted_receiver_return_type(
         return fallback_ty;
 
     uint slot = fallback_ty - TY_GENERIC_BASE;
-    if (slot >= TYPE_INSTANCE_ARG_REF_STRIDE)
+    uint arg_tag;
+    uint arg_payload;
+    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, arg_tag, arg_payload))
         return fallback_ty;
 
-    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-    if (arg_i == INVALID)
-        return fallback_ty;
-
-    uint ty = type_code_for_ref(
-        type_instance_arg_ref_tag[arg_i],
-        type_instance_arg_ref_payload[arg_i]);
+    uint ty = type_code_for_ref(arg_tag, arg_payload);
     return ty == TY_UNKNOWN ? fallback_ty : ty;
 }
 
 uint receiver_arg_ref_tag_key(uint receiver_tag, uint receiver_payload, uint slot)
 {
-    return receiver_arg_ref_tag_raw(receiver_tag, receiver_payload, slot);
+    uint tag;
+    uint payload;
+    return receiver_arg_ref(receiver_tag, receiver_payload, slot, tag, payload)
+        ? tag
+        : TYPE_REF_INVALID;
 }
 
 uint receiver_arg_ref_payload_key(uint receiver_tag, uint receiver_payload, uint slot)
 {
-    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-    if (arg_i == INVALID)
+    uint tag;
+    uint payload;
+    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, tag, payload))
         return INVALID;
-    return type_ref_payload_key(
-        type_instance_arg_ref_tag[arg_i],
-        type_instance_arg_ref_payload[arg_i]);
+    return type_ref_payload_key(tag, payload);
 }
 
 public struct MethodLookupKey
@@ -283,8 +337,44 @@ public struct MethodLookupKey
     uint module_id;
     uint receiver_tag;
     uint receiver_payload;
+    uint receiver_arg_hash;
     uint name_id;
     uint generic_receiver_args;
+}
+
+uint mix_hash(uint hash, uint value)
+{
+    hash ^= value;
+    hash *= 16777619u;
+    hash ^= hash >> 16u;
+    return hash;
+}
+
+uint encoded_hash_value(uint value, uint invalid)
+{
+    return value == invalid ? 0u : value + 1u;
+}
+
+uint generic_receiver_arg_hash(uint count)
+{
+    uint hash = mix_hash(2166136261u, count);
+    [loop]
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        hash = mix_hash(hash, encoded_hash_value(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID));
+        hash = mix_hash(hash, 0u);
+    }
+    return hash;
+}
+
+uint receiver_arg_hash_key(uint receiver_tag, uint receiver_payload, uint generic_receiver_args)
+{
+    uint count = receiver_arg_count(receiver_tag, receiver_payload);
+    if (generic_receiver_args != 0u && count != 0u)
+        return generic_receiver_arg_hash(count);
+    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count())
+        return 0u;
+    return type_instance_arg_hash[receiver_payload];
 }
 
 public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
@@ -310,62 +400,11 @@ public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
                 method_decl_receiver_ref_tag[fn_i],
                 method_decl_receiver_ref_payload[fn_i]) + 1u;
         if (lane == 3u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    0u),
-                TYPE_REF_INVALID);
+            return receiver_arg_hash_key(
+                method_decl_receiver_ref_tag[fn_i],
+                method_decl_receiver_ref_payload[fn_i],
+                0u);
         if (lane == 4u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    0u),
-                INVALID);
-        if (lane == 5u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    1u),
-                TYPE_REF_INVALID);
-        if (lane == 6u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    1u),
-                INVALID);
-        if (lane == 7u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    2u),
-                TYPE_REF_INVALID);
-        if (lane == 8u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    2u),
-                INVALID);
-        if (lane == 9u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    3u),
-                TYPE_REF_INVALID);
-        if (lane == 10u)
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i],
-                    3u),
-                INVALID);
-        if (lane == 11u)
             return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
         return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
     }
@@ -381,78 +420,8 @@ public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
         if (lane == 2u)
             return receiver_arg_count(key.receiver_tag, key.receiver_payload) + 1u;
         if (lane == 3u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                0u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(key.receiver_tag, key.receiver_payload, 0u),
-                TYPE_REF_INVALID);
-        }
+            return key.receiver_arg_hash;
         if (lane == 4u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                0u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(INVALID, INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(key.receiver_tag, key.receiver_payload, 0u),
-                INVALID);
-        }
-        if (lane == 5u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                1u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(key.receiver_tag, key.receiver_payload, 1u),
-                TYPE_REF_INVALID);
-        }
-        if (lane == 6u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                1u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(INVALID, INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(key.receiver_tag, key.receiver_payload, 1u),
-                INVALID);
-        }
-        if (lane == 7u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                2u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(key.receiver_tag, key.receiver_payload, 2u),
-                TYPE_REF_INVALID);
-        }
-        if (lane == 8u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                2u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(INVALID, INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(key.receiver_tag, key.receiver_payload, 2u),
-                INVALID);
-        }
-        if (lane == 9u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                3u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_tag_key(key.receiver_tag, key.receiver_payload, 3u),
-                TYPE_REF_INVALID);
-        }
-        if (lane == 10u)
-        {
-            if (key.generic_receiver_args != 0u &&
-                3u < receiver_arg_count(key.receiver_tag, key.receiver_payload))
-                return fixed_key_encode_nullable_u32(INVALID, INVALID);
-            return fixed_key_encode_nullable_u32(
-                receiver_arg_ref_payload_key(key.receiver_tag, key.receiver_payload, 3u),
-                INVALID);
-        }
-        if (lane == 11u)
             return fixed_key_encode_nullable_u32(key.name_id, INVALID);
         return fixed_key_encode_nullable_u32(key.module_id, INVALID);
     }
@@ -465,7 +434,7 @@ public struct MethodKeyCompare : IRowQueryCompare<MethodLookupKey>
         return fixed_u32_row_key_compare<MethodLookupKey, MethodFixedKey>(
             row,
             key,
-            13u);
+            6u);
     }
 }
 
@@ -476,8 +445,102 @@ public struct MethodPrefixCompare : IRowQueryCompare<MethodLookupKey>
         return fixed_u32_row_key_compare<MethodLookupKey, MethodFixedKey>(
             row,
             key,
-            12u);
+            3u);
     }
+}
+
+bool method_key_identity_matches(uint fn_i, MethodLookupKey key)
+{
+    if (fn_i >= active_token_count())
+        return false;
+    if (method_decl_name_id[fn_i] != key.name_id)
+        return false;
+    return key.module_id == INVALID || method_decl_module_id[fn_i] == key.module_id;
+}
+
+bool same_receiver_arg_ref(uint left_tag, uint left_payload, uint right_tag, uint right_payload)
+{
+    if (left_tag != right_tag)
+        return false;
+    return type_ref_payload_key(left_tag, left_payload) ==
+           type_ref_payload_key(right_tag, right_payload);
+}
+
+bool method_receiver_args_match(uint fn_i, MethodLookupKey key)
+{
+    uint decl_tag = method_decl_receiver_ref_tag[fn_i];
+    uint decl_payload = method_decl_receiver_ref_payload[fn_i];
+    if (decl_tag != key.receiver_tag)
+        return false;
+    if (receiver_payload_key(decl_tag, decl_payload) !=
+        receiver_payload_key(key.receiver_tag, key.receiver_payload))
+        return false;
+
+    uint count = receiver_arg_count(key.receiver_tag, key.receiver_payload);
+    if (receiver_arg_count(decl_tag, decl_payload) != count)
+        return false;
+
+    [loop]
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        uint decl_arg_tag;
+        uint decl_arg_payload;
+        if (!receiver_arg_ref(decl_tag, decl_payload, ordinal, decl_arg_tag, decl_arg_payload))
+            return false;
+
+        if (key.generic_receiver_args != 0u)
+        {
+            if (decl_arg_tag != TYPE_REF_GENERIC_PARAM)
+                return false;
+            continue;
+        }
+
+        uint call_arg_tag;
+        uint call_arg_payload;
+        if (!receiver_arg_ref(
+                key.receiver_tag,
+                key.receiver_payload,
+                ordinal,
+                call_arg_tag,
+                call_arg_payload) ||
+            !same_receiver_arg_ref(
+                decl_arg_tag,
+                decl_arg_payload,
+                call_arg_tag,
+                call_arg_payload))
+            return false;
+    }
+
+    return true;
+}
+
+bool method_status_resolvable(uint fn_i)
+{
+    if (fn_i >= active_token_count())
+        return false;
+    uint status = method_key_status[fn_i];
+    return status == METHOD_KEY_STATUS_PUBLIC_OK || status == METHOD_KEY_STATUS_PRIVATE_OK;
+}
+
+uint matching_method_in_range(QueryRange range, MethodLookupKey key)
+{
+    if (range.end > active_token_count() || range.end < range.begin)
+        return INVALID;
+
+    uint found_fn_i = INVALID;
+    [loop]
+    for (uint row = range.begin; row < range.end; row += 1u)
+    {
+        uint fn_i = sorted_method_key_order[row];
+        if (!method_status_resolvable(fn_i) ||
+            !method_key_identity_matches(fn_i, key) ||
+            !method_receiver_args_match(fn_i, key))
+            continue;
+        if (found_fn_i != INVALID)
+            return INVALID;
+        found_fn_i = fn_i;
+    }
+    return found_fn_i;
 }
 
 uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint name_id)
@@ -492,50 +555,57 @@ uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint 
     key.module_id = module_id;
     key.receiver_tag = receiver_tag;
     key.receiver_payload = receiver_payload;
+    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 0u);
     key.name_id = name_id;
     key.generic_receiver_args = 0u;
 
-    uint exact_row = find_equal_query<MethodLookupKey, MethodKeyCompare>(active_token_count(), key);
-    uint generic_row = INVALID;
+    QueryRange exact_range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
+        active_token_count(),
+        key);
+    uint exact_fn_i = matching_method_in_range(exact_range, key);
+    uint generic_fn_i = INVALID;
     if (receiver_arg_count(receiver_tag, receiver_payload) != 0u)
     {
         key.generic_receiver_args = 1u;
-        generic_row = find_equal_query<MethodLookupKey, MethodKeyCompare>(active_token_count(), key);
+        key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
+        QueryRange generic_range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
+            active_token_count(),
+            key);
+        generic_fn_i = matching_method_in_range(generic_range, key);
     }
 
     // Specialization is not a proven relation yet; overlapping exact/generic
     // receiver keys must fail closed instead of picking one method locally.
-    if (exact_row != INVALID && generic_row != INVALID)
+    if (exact_fn_i != INVALID && generic_fn_i != INVALID)
         return INVALID;
 
-    uint row = exact_row != INVALID ? exact_row : generic_row;
-    if (row == INVALID)
-        return INVALID;
-
-    uint fn_i = sorted_method_key_order[row];
-    if (fn_i >= active_token_count())
-        return INVALID;
-
-    uint status = method_key_status[fn_i];
-    if (status == METHOD_KEY_STATUS_PUBLIC_OK || status == METHOD_KEY_STATUS_PRIVATE_OK)
-        return fn_i;
-    return INVALID;
+    return exact_fn_i != INVALID ? exact_fn_i : generic_fn_i;
 }
 
-bool unique_visible_method_in_range(uint method_i, QueryRange range, out uint visible_fn_i)
+bool unique_visible_method_in_range(
+    uint method_i,
+    QueryRange range,
+    MethodLookupKey key,
+    out uint visible_fn_i)
 {
     visible_fn_i = INVALID;
     if (range.end > active_token_count() || range.end < range.begin)
         return false;
 
-    uint candidate_count = range.end - range.begin;
-    if (candidate_count == 0u)
-        return true;
-    if (candidate_count != 1u)
-        return false;
-
-    uint fn_i = sorted_method_key_order[range.begin];
-    visible_fn_i = visibility_checked_method(method_i, fn_i);
+    [loop]
+    for (uint row = range.begin; row < range.end; row += 1u)
+    {
+        uint fn_i = sorted_method_key_order[row];
+        uint candidate = method_key_identity_matches(fn_i, key) &&
+                         method_receiver_args_match(fn_i, key)
+            ? visibility_checked_method(method_i, fn_i)
+            : INVALID;
+        if (candidate == INVALID)
+            continue;
+        if (visible_fn_i != INVALID)
+            return false;
+        visible_fn_i = candidate;
+    }
     return true;
 }
 
@@ -557,12 +627,13 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
     key.module_id = INVALID;
     key.receiver_tag = receiver_tag;
     key.receiver_payload = receiver_payload;
+    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 0u);
     key.name_id = name_id;
     key.generic_receiver_args = 0u;
     QueryRange range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
         active_token_count(),
         key);
-    if (!unique_visible_method_in_range(method_i, range, exact_fn_i))
+    if (!unique_visible_method_in_range(method_i, range, key, exact_fn_i))
         return INVALID;
 
     if (receiver_arg_count(receiver_tag, receiver_payload) == 0u)
@@ -570,10 +641,11 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
 
     uint generic_fn_i = INVALID;
     key.generic_receiver_args = 1u;
+    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
     range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
         active_token_count(),
         key);
-    if (!unique_visible_method_in_range(method_i, range, generic_fn_i))
+    if (!unique_visible_method_in_range(method_i, range, key, generic_fn_i))
         return INVALID;
 
     if (exact_fn_i != INVALID && generic_fn_i != INVALID)

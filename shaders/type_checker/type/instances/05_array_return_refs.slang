@@ -29,7 +29,9 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
-StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -71,8 +73,6 @@ static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint PARAM_CACHE_STRIDE = 4u;
-
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -253,9 +253,16 @@ uint direct_array_return_call_node(uint return_node)
 
 uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
-    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
+    if (!valid_node(call_node))
         return INVALID;
-    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
+
+    uint start = call_arg_row_start[call_node];
+    uint count = call_arg_row_count[call_node];
+    if (start == INVALID || ordinal >= count)
+        return INVALID;
+
+    uint row = start + ordinal;
+    return row < active_hir_node_count() ? call_arg_row_node[row] : INVALID;
 }
 
 uint returned_call_arg_array_instance(uint return_node)

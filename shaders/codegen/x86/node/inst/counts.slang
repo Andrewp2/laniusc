@@ -129,10 +129,9 @@ static const uint X86_DECL_AGG_ARRAY = 1u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
-static const uint X86_PARAM_REG_STRIDE = 5u;
-static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
+static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
-static const uint X86_PARAM_REG_KIND_BITS = 8u;
+static const uint X86_PARAM_REG_KIND_BITS = 4u;
 static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
@@ -396,7 +395,7 @@ uint param_reg_arg_reg(uint decl_token)
     uint info = param_reg_info(decl_token);
     return info == INVALID
                ? INVALID
-               : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
+               : info & X86_PARAM_REG_ARG_REG_MASK;
 }
 
 uint param_reg_aggregate_kind(uint decl_token)
@@ -407,7 +406,7 @@ uint param_reg_aggregate_kind(uint decl_token)
 
 uint param_reg_link(uint decl_token)
 {
-    return param_reg_word(decl_token, 4u);
+    return param_reg_word(decl_token, 5u);
 }
 
 uint param_node_reg_link(uint param_node)

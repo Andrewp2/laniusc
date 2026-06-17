@@ -19,13 +19,18 @@ RWStructuredBuffer<uint> type_instance_head_token;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
 RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
 RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
-RWStructuredBuffer<uint> type_decl_first_generic_param_row_by_node;
-RWStructuredBuffer<uint> type_decl_first_const_param_row_by_node;
 RWStructuredBuffer<uint> type_decl_hir_node_by_token;
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
+RWStructuredBuffer<uint> type_instance_arg_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_ref_payload;
+RWStructuredBuffer<uint> type_instance_arg_hash;
+RWStructuredBuffer<uint> type_instance_arg_row_start;
+RWStructuredBuffer<uint> type_instance_arg_row_count_out;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_payload;
 RWStructuredBuffer<uint> type_instance_elem_ref_tag;
 RWStructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint> type_instance_len_kind;
@@ -48,6 +53,7 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_INSTANCE_INVALID = 0u;
 static const uint TYPE_INSTANCE_EMPTY = 0u;
 static const uint TYPE_LEN_NONE = 0u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -63,9 +69,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         type_decl_generic_param_count_by_node[i] = 0u;
         type_decl_const_param_count_by_node[i] = 0u;
-        type_decl_first_generic_param_row_by_node[i] = INVALID;
-        type_decl_first_const_param_row_by_node[i] = INVALID;
+        type_instance_arg_row_ref_tag[i] = TYPE_REF_INVALID;
+        type_instance_arg_row_ref_payload[i] = INVALID;
     }
+
+    if (i == 0u)
+        type_instance_arg_row_count_out[0u] = 0u;
 
     if (i >= gParams.n_tokens)
         return;
@@ -80,6 +89,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_const_param_slot_by_token[i] = INVALID;
     type_instance_arg_start[i] = INVALID;
     type_instance_arg_count[i] = 0u;
+    type_instance_arg_hash[i] = 0u;
+    type_instance_arg_row_start[i] = INVALID;
+    uint arg_ref_i = i * TYPE_INSTANCE_ARG_REF_STRIDE;
+    type_instance_arg_ref_tag[arg_ref_i + 0u] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[arg_ref_i + 0u] = INVALID;
+    type_instance_arg_ref_tag[arg_ref_i + 1u] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[arg_ref_i + 1u] = INVALID;
+    type_instance_arg_ref_tag[arg_ref_i + 2u] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[arg_ref_i + 2u] = INVALID;
+    type_instance_arg_ref_tag[arg_ref_i + 3u] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[arg_ref_i + 3u] = INVALID;
     type_instance_elem_ref_tag[i] = TYPE_REF_INVALID;
     type_instance_elem_ref_payload[i] = INVALID;
     type_instance_len_kind[i] = TYPE_LEN_NONE;

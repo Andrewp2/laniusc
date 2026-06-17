@@ -30,11 +30,27 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> call_arg_row_count_out;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_call_node;
+StructuredBuffer<uint> call_arg_row_ordinal;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
+StructuredBuffer<uint> call_arg_param_row;
+StructuredBuffer<uint> call_array_return_arg_instance;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
-StructuredBuffer<uint> call_param_ref_tag;
-StructuredBuffer<uint> call_param_ref_payload;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_ref_tag;
+StructuredBuffer<uint> call_param_row_ref_payload;
+StructuredBuffer<uint> call_generic_slot_type;
+StructuredBuffer<uint> call_const_slot_len;
+StructuredBuffer<uint> call_generic_claim_callee;
+StructuredBuffer<uint> call_generic_claim_slot;
+StructuredBuffer<uint> call_generic_claim_type;
+StructuredBuffer<uint> call_const_claim_callee;
+StructuredBuffer<uint> call_const_claim_slot;
+StructuredBuffer<uint> call_const_claim_len;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -80,8 +96,8 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 static const uint PARAM_CACHE_STRIDE = 4u;
-
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -150,6 +166,10 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
+    uint call_token = hir_token_pos[call_node];
+    if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
+        return call_token;
+
     uint callee_node = hir_call_callee_node[call_node];
     if (!valid_node(callee_node))
         return INVALID;
@@ -160,9 +180,16 @@ uint call_callee_token(uint call_node)
 
 uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
-    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
+    if (!valid_node(call_node))
         return INVALID;
-    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
+
+    uint start = call_arg_row_start[call_node];
+    uint count = call_arg_row_count[call_node];
+    if (start == INVALID || ordinal >= count)
+        return INVALID;
+
+    uint row = start + ordinal;
+    return row < active_hir_node_count() ? call_arg_row_node[row] : INVALID;
 }
 
 uint first_call_arg_name_token(uint callee_token, uint call_node)
@@ -189,7 +216,7 @@ uint call_arg_count_for_callee(uint callee_token, uint call_node)
     uint record_count = call_arg_record[callee_token].w;
     if (!valid_node(call_node))
         return record_count;
-    return max(record_count, hir_call_arg_count[call_node]);
+    return max(max(record_count, hir_call_arg_count[call_node]), call_arg_row_count[call_node]);
 }
 
 bool call_window_fits_cache(uint callee_token, uint call_node)
@@ -200,7 +227,7 @@ bool call_window_fits_cache(uint callee_token, uint call_node)
 
     uint param_count = call_param_count[fn_token];
     uint arg_count = call_arg_count_for_callee(callee_token, call_node);
-    if (param_count <= PARAM_CACHE_STRIDE && arg_count <= PARAM_CACHE_STRIDE)
+    if (param_count == arg_count)
         return true;
 
     call_return_type[callee_token] = TY_UNKNOWN;
@@ -208,7 +235,7 @@ bool call_window_fits_cache(uint callee_token, uint call_node)
         status,
         callee_token,
         ERR_CALL_MISMATCH,
-        param_count * 256u + arg_count);
+        CALL_MISMATCH_ARITY);
     return false;
 }
 
@@ -256,22 +283,13 @@ uint array_instance_from_callee_return(uint callee_token)
         fn_return_ref_payload[decl_token]);
 }
 
-uint param_cache_index(uint fn_token, uint ordinal)
+uint array_instance_from_call_param_row(uint param_row)
 {
-    return fn_token * PARAM_CACHE_STRIDE + ordinal;
-}
-
-uint array_instance_from_call_param(uint callee_token, uint ordinal)
-{
-    if (!valid_token(callee_token) || ordinal >= PARAM_CACHE_STRIDE)
+    if (param_row == INVALID || param_row >= call_param_row_count_out[0u])
         return INVALID;
-    uint fn_token = call_fn_index[callee_token];
-    if (!valid_token(fn_token) || ordinal >= call_param_count[fn_token])
-        return INVALID;
-    uint ref_i = param_cache_index(fn_token, ordinal);
     return bounded_array_instance_from_ref(
-        call_param_ref_tag[ref_i],
-        call_param_ref_payload[ref_i]);
+        call_param_row_ref_tag[param_row],
+        call_param_row_ref_payload[param_row]);
 }
 
 bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
@@ -364,56 +382,108 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
         type_instance_elem_ref_payload[rhs]);
 }
 
-uint prior_matching_generic_array_arg_instance_slot(
+bool array_elem_matches_call_state(
+    uint row,
     uint callee_token,
-    uint call_node,
-    uint ordinal,
     uint expected_instance,
-    uint prior)
+    uint actual_instance)
 {
-    if (prior >= ordinal)
-        return INVALID;
+    uint expected_tag = type_instance_elem_ref_tag[expected_instance];
+    uint expected_payload = type_instance_elem_ref_payload[expected_instance];
+    uint actual_tag = type_instance_elem_ref_tag[actual_instance];
+    uint actual_payload = type_instance_elem_ref_payload[actual_instance];
 
-    uint prior_expected = array_instance_from_call_param(callee_token, prior);
-    if (!same_bounded_array_instance(expected_instance, prior_expected))
-        return INVALID;
+    if (expected_tag == TYPE_REF_SCALAR)
+        return actual_tag == TYPE_REF_SCALAR && actual_payload == expected_payload;
 
-    uint prior_arg_node = call_arg_node_for_call(call_node, prior);
-    uint prior_actual =
-        array_instance_from_name_token(name_token_for_expr(prior_arg_node));
-    return concrete_bounded_array_instance(prior_actual) ? prior_actual : INVALID;
+    if (expected_tag != TYPE_REF_GENERIC_PARAM)
+        return false;
+
+    uint slot = valid_token(expected_payload)
+        ? type_generic_param_slot_by_token[expected_payload]
+        : INVALID;
+    if (slot == INVALID)
+        return false;
+
+    uint actual_ty = type_code_for_ref(actual_tag, actual_payload);
+    if (actual_ty == TY_UNKNOWN)
+        return false;
+
+    if (slot < PARAM_CACHE_STRIDE)
+    {
+        uint inferred = call_generic_slot_type[callee_token * PARAM_CACHE_STRIDE + slot];
+        if (inferred == INVALID || inferred == TY_UNKNOWN)
+            return true;
+        return actual_ty == inferred;
+    }
+
+    return row < call_arg_row_count_out[0] &&
+           call_generic_claim_callee[row] == callee_token &&
+           call_generic_claim_slot[row] == slot &&
+           call_generic_claim_type[row] == actual_ty;
 }
 
-uint prior_matching_generic_array_arg_instance(
+bool array_len_matches_call_state(
+    uint row,
     uint callee_token,
-    uint call_node,
-    uint ordinal,
-    uint expected_instance)
+    uint expected_instance,
+    uint actual_instance)
 {
-    uint prior_actual = prior_matching_generic_array_arg_instance_slot(
-        callee_token, call_node, ordinal, expected_instance, 0u);
-    if (prior_actual != INVALID)
-        return prior_actual;
-    prior_actual = prior_matching_generic_array_arg_instance_slot(
-        callee_token, call_node, ordinal, expected_instance, 1u);
-    if (prior_actual != INVALID)
-        return prior_actual;
-    prior_actual = prior_matching_generic_array_arg_instance_slot(
-        callee_token, call_node, ordinal, expected_instance, 2u);
-    if (prior_actual != INVALID)
-        return prior_actual;
-    prior_actual = prior_matching_generic_array_arg_instance_slot(
-        callee_token, call_node, ordinal, expected_instance, 3u);
-    if (prior_actual != INVALID)
-        return prior_actual;
+    uint expected_kind = type_instance_len_kind[expected_instance];
+    uint expected_payload = type_instance_len_payload[expected_instance];
+    uint actual_kind = type_instance_len_kind[actual_instance];
+    uint actual_payload = type_instance_len_payload[actual_instance];
 
-    return INVALID;
+    if (expected_kind == TYPE_LEN_LITERAL)
+        return actual_kind == TYPE_LEN_LITERAL && actual_payload == expected_payload;
+
+    if (expected_kind != TYPE_LEN_CONST_PARAM)
+        return false;
+
+    uint slot = valid_token(expected_payload)
+        ? type_const_param_slot_by_token[expected_payload]
+        : INVALID;
+    if (slot == INVALID)
+        return false;
+
+    if (slot >= PARAM_CACHE_STRIDE)
+    {
+        return row < call_arg_row_count_out[0] &&
+               call_const_claim_callee[row] == callee_token &&
+               call_const_claim_slot[row] == slot &&
+               call_const_claim_len[row] == actual_payload;
+    }
+
+    uint inferred = call_const_slot_len[callee_token * PARAM_CACHE_STRIDE + slot];
+    if (inferred == INVALID)
+        return true;
+
+    return actual_kind == TYPE_LEN_LITERAL && actual_payload == inferred;
 }
 
-void validate_array_call_arg_slot(uint slot)
+bool array_instance_matches_call_state(
+    uint row,
+    uint callee_token,
+    uint expected_instance,
+    uint actual_instance)
 {
-    uint call_node = slot / PARAM_CACHE_STRIDE;
-    uint ordinal = slot - call_node * PARAM_CACHE_STRIDE;
+    if (!valid_token(expected_instance) || !valid_token(actual_instance))
+        return false;
+    if (type_instance_kind[expected_instance] != TYPE_INSTANCE_ARRAY ||
+        type_instance_kind[actual_instance] != TYPE_INSTANCE_ARRAY)
+        return false;
+    if (!concrete_bounded_array_instance(actual_instance))
+        return false;
+    return array_elem_matches_call_state(row, callee_token, expected_instance, actual_instance) &&
+           array_len_matches_call_state(row, callee_token, expected_instance, actual_instance);
+}
+
+void validate_array_call_arg_row(uint row)
+{
+    if (row >= call_arg_row_count_out[0])
+        return;
+
+    uint call_node = call_arg_row_call_node[row];
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return;
 
@@ -423,36 +493,17 @@ void validate_array_call_arg_slot(uint slot)
     if (method_call_name_id[callee_token] != INVALID)
         return;
 
-    uint expected_instance = array_instance_from_call_param(callee_token, ordinal);
+    uint expected_instance = array_instance_from_call_param_row(call_arg_param_row[row]);
     if (expected_instance == INVALID)
         return;
     if (!call_window_fits_cache(callee_token, call_node))
         return;
 
-    uint arg_node = call_arg_node_for_call(call_node, ordinal);
+    uint arg_node = call_arg_row_node[row];
     uint actual_instance = array_instance_from_name_token(name_token_for_expr(arg_node));
-    if (concrete_bounded_array_instance(expected_instance))
-    {
-        if (same_bounded_array_instance(expected_instance, actual_instance))
-            return;
-
-        record_min_token_error(
-            status,
-            callee_token,
-            ERR_ASSIGN_MISMATCH,
-            TY_ARRAY_BASE * 256u + TY_UNKNOWN);
+    if (!concrete_bounded_array_instance(actual_instance))
         return;
-    }
-
-    uint prior_instance = prior_matching_generic_array_arg_instance(
-        callee_token,
-        call_node,
-        ordinal,
-        expected_instance);
-    if (prior_instance == INVALID)
-        return;
-    if (concrete_bounded_array_instance(actual_instance) &&
-        same_bounded_array_instance(prior_instance, actual_instance))
+    if (array_instance_matches_call_state(row, callee_token, expected_instance, actual_instance))
         return;
 
     record_min_token_error(
@@ -512,11 +563,7 @@ void validate_array_call_let(uint node)
     uint actual_instance = INVALID;
     if (declared_instance != INVALID)
     {
-        actual_instance = prior_matching_generic_array_arg_instance(
-            callee_token,
-            call_node,
-            PARAM_CACHE_STRIDE,
-            declared_instance);
+        actual_instance = call_array_return_arg_instance[call_node];
     }
     else if (specialize_symbolic_result)
     {
@@ -542,5 +589,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     validate_array_call_let(node);
-    validate_array_call_arg_slot(node);
+    validate_array_call_arg_row(node);
 }

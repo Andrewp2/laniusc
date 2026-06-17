@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::type_check_entry_with_stdlib;
+use laniusc_compiler::compiler::type_check_entry_with_stdlib;
 
 #[test]
 fn core_i32_checked_abs_type_checks_through_stdlib_root() {

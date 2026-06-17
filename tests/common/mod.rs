@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use laniusc::compiler::{
+use laniusc_compiler::compiler::{
     CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,

@@ -1739,6 +1739,13 @@ uint call_save_slot_start(uint save_mask, uint slot)
     return countbits(below) + countbits(below & 0xf0u);
 }
 
+uint call_restore_slot_start(uint save_mask, uint slot)
+{
+    uint above_mask = slot < 7u ? (0xffu << (slot + 1u)) : 0u;
+    uint above = save_mask & above_mask & 0xffu;
+    return countbits(above) + countbits(above & 0xf0u);
+}
+
 bool call_save_slot_byte(uint save_mask, uint slot, uint byte_i, out uint byte)
 {
     byte = 0u;
@@ -1759,7 +1766,7 @@ bool call_restore_slot_byte(uint save_mask, uint slot, uint byte_i, out uint byt
     if (!call_save_mask_has_slot(save_mask, slot))
         return false;
     uint reg = call_saved_reg_for_slot(slot);
-    uint start = saved_call_reg_disp(slot, save_mask);
+    uint start = call_restore_slot_start(save_mask, slot);
     uint size = push_pop_reg_size(reg);
     if (byte_i < start || byte_i >= start + size)
         return false;

@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use laniusc_compiler::compiler::CompileError;
 
 fn assert_unresolved_identifier_diagnostic(src: &str) {
     let err = common::type_check_source_with_timeout(src)

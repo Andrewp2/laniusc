@@ -522,6 +522,12 @@ void publish_expr(uint i)
     if (is_direct_result_hir_kind(hir_kind[i]))
         publish_expr_result(i, i);
 
+    if (prod == PROD_FOR_ITER_PATH)
+    {
+        publish_forward(i, child);
+        return;
+    }
+
     if (prod == PROD_IDENT || prod == PROD_RANGE_BOUND_IDENT || prod == PROD_SELF_VALUE ||
         prod == PROD_PATH || prod == PROD_PATTERN_IDENT)
     {

@@ -20,6 +20,10 @@ StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 
 RWStructuredBuffer<uint> visible_type;
@@ -57,16 +61,47 @@ uint arg_ref_index(uint instance_i, uint slot)
     return start == INVALID ? INVALID : start + slot;
 }
 
-bool instance_arg_unsupported_for_field_substitution(uint instance_i, uint slot)
+uint arg_row_ref_index(uint instance_i, uint slot)
 {
+    uint start = type_instance_arg_row_start[instance_i];
+    uint ref_i = start == INVALID ? INVALID : start + slot;
+    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
+        ? ref_i
+        : INVALID;
+}
+
+bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
     if (!valid_token(instance_i) || slot >= type_instance_arg_count[instance_i])
         return false;
 
+    uint row_i = arg_row_ref_index(instance_i, slot);
+    if (row_i != INVALID)
+    {
+        tag = type_instance_arg_row_ref_tag[row_i];
+        payload = type_instance_arg_row_ref_payload[row_i];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+    }
+
     uint ref_i = arg_ref_index(instance_i, slot);
     if (ref_i == INVALID)
+        return false;
+
+    tag = type_instance_arg_ref_tag[ref_i];
+    payload = type_instance_arg_ref_payload[ref_i];
+    return tag != TYPE_REF_INVALID;
+}
+
+bool instance_arg_unsupported_for_field_substitution(uint instance_i, uint slot)
+{
+    uint tag;
+    uint payload;
+    if (!instance_arg_ref(instance_i, slot, tag, payload))
         return true;
 
-    uint tag = type_instance_arg_ref_tag[ref_i];
     return tag == TYPE_REF_GENERIC_PARAM || tag == TYPE_REF_INSTANCE;
 }
 
@@ -78,13 +113,14 @@ bool instance_ref_needs_leaf_rows(uint instance_i)
     uint arg_count = type_instance_arg_count[instance_i];
     if (arg_count == 0u)
         return false;
-    if (arg_count > 4u || type_instance_arg_start[instance_i] == INVALID)
-        return true;
 
-    return instance_arg_unsupported_for_field_substitution(instance_i, 0u) ||
-           instance_arg_unsupported_for_field_substitution(instance_i, 1u) ||
-           instance_arg_unsupported_for_field_substitution(instance_i, 2u) ||
-           instance_arg_unsupported_for_field_substitution(instance_i, 3u);
+    [loop]
+    for (uint slot = 0u; slot < arg_count; slot += 1u)
+    {
+        if (instance_arg_unsupported_for_field_substitution(instance_i, slot))
+            return true;
+    }
+    return false;
 }
 
 uint type_ref_to_type_code(uint tag, uint payload)
@@ -112,14 +148,8 @@ void publish_visible_field_type(uint field_token)
         if (!valid_token(instance_i))
             return;
         uint slot = payload;
-        uint arg_count = type_instance_arg_count[instance_i];
-        uint arg_start = type_instance_arg_start[instance_i];
-        if (slot >= arg_count || arg_start == INVALID)
+        if (!instance_arg_ref(instance_i, slot, tag, payload))
             return;
-
-        uint arg_i = arg_start + slot;
-        tag = type_instance_arg_ref_tag[arg_i];
-        payload = type_instance_arg_ref_payload[arg_i];
         struct_init_field_expected_ref_tag[field_token] = tag;
         struct_init_field_expected_ref_payload[field_token] = payload;
     }

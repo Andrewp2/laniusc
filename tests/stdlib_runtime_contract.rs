@@ -2,7 +2,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use laniusc::{
+use laniusc_compiler::{
     codegen::unit::{SourcePackArtifactTarget, SourcePackJob, SourcePackJobPhase},
     compiler::{
         CompileError,

@@ -38,7 +38,6 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_BLOCK = 6u;
 static const uint HIR_FN = 3u;
-static const uint FALLBACK_CONTEXT_SCAN_LIMIT = 8192u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -84,15 +83,13 @@ uint fallback_nearest_containing(uint row, uint node, uint wanted_kind)
         return INVALID;
 
     [loop]
-    for (uint offset = 1u; offset <= FALLBACK_CONTEXT_SCAN_LIMIT; offset += 1u)
+    for (uint offset = 1u; offset <= row; offset += 1u)
     {
-        if (offset > row)
-            break;
         uint candidate_row = row - offset;
         uint candidate = hir_semantic_dense_node[candidate_row];
-        if (!valid_original_node(candidate))
-            continue;
-        if (hir_kind[candidate] == wanted_kind && contains_span(candidate, node))
+        if (valid_original_node(candidate) &&
+            hir_kind[candidate] == wanted_kind &&
+            contains_span(candidate, node))
             return candidate;
     }
     return INVALID;

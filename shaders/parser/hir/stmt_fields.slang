@@ -2,9 +2,8 @@
 //
 // This pass consumes tree arrays and HIR classifications. It does not inspect
 // token neighborhoods, source bytes, helper names, or stdlib names.
-// Statement-scope ends are derived from the parser's statement-list/block
-// records and fail closed to INVALID when the local grammar shape is not
-// present.
+// Initial statement-scope ends are derived from local parser records. A later
+// context pass finalizes local declaration scopes from nearest-block metadata.
 
 import generated_parse_production_ids;
 
@@ -168,6 +167,12 @@ uint valid_child_or_invalid(uint node)
     return valid_node(child) ? child : INVALID;
 }
 
+uint direct_child_or_invalid(uint node)
+{
+    uint child = valid_child_or_invalid(node);
+    return valid_node(child) && parent[child] == node ? child : INVALID;
+}
+
 uint valid_sibling_or_invalid(uint node)
 {
     if (!valid_node(node))
@@ -176,15 +181,30 @@ uint valid_sibling_or_invalid(uint node)
     return valid_node(sibling) ? sibling : INVALID;
 }
 
+uint direct_next_sibling_or_invalid(uint owner, uint node)
+{
+    if (!valid_node(owner))
+        return INVALID;
+    uint sibling = valid_sibling_or_invalid(node);
+    return valid_node(sibling) &&
+           parent[sibling] == owner &&
+           sibling > node &&
+           sibling < subtree_end[owner]
+        ? sibling
+        : INVALID;
+}
+
 uint child_if_production(uint node, uint prod)
 {
-    uint child = valid_child_or_invalid(node);
+    uint child = direct_child_or_invalid(node);
     return valid_node(child) && node_kind[child] == prod ? child : INVALID;
 }
 
 uint sibling_if_production(uint node, uint prod)
 {
-    uint sibling = valid_sibling_or_invalid(node);
+    if (!valid_node(node))
+        return INVALID;
+    uint sibling = direct_next_sibling_or_invalid(parent[node], node);
     return valid_node(sibling) && node_kind[sibling] == prod ? sibling : INVALID;
 }
 
@@ -223,18 +243,19 @@ bool is_range_expr_form(uint form)
 
 uint direct_expr_child(uint node)
 {
-    uint child = valid_child_or_invalid(node);
+    uint child = direct_child_or_invalid(node);
     return valid_node(child) && is_hir_expression_kind(hir_kind[child]) ? child : INVALID;
 }
 
 uint direct_expr_child_scan(uint node)
 {
-    uint child = valid_child_or_invalid(node);
-    for (uint step = 0u; step < 8u && valid_node(child); step++)
+    uint child = direct_child_or_invalid(node);
+    [loop]
+    while (valid_node(child))
     {
         if (is_hir_expression_kind(hir_kind[child]))
             return child;
-        child = valid_sibling_or_invalid(child);
+        child = direct_next_sibling_or_invalid(node, child);
     }
     return INVALID;
 }
@@ -249,131 +270,15 @@ bool is_for_iterable_production(uint prod)
 
 uint direct_for_iterable_child(uint node)
 {
-    uint child = valid_child_or_invalid(node);
-    for (uint step = 0u; step < 12u && valid_node(child); step++)
+    uint child = direct_child_or_invalid(node);
+    [loop]
+    while (valid_node(child))
     {
         if (is_for_iterable_production(node_kind[child]))
             return child;
-        child = valid_sibling_or_invalid(child);
+        child = direct_next_sibling_or_invalid(node, child);
     }
     return INVALID;
-}
-
-uint bounded_subtree_production_scan(uint node, uint prod, uint after_node)
-{
-    if (!valid_node(node))
-        return INVALID;
-
-    uint end = subtree_end[node];
-    if (!valid_node(end - 1u))
-        return INVALID;
-
-    uint cursor = valid_node(after_node) ? after_node + 1u : node + 1u;
-    for (uint step = 0u; step < 64u && cursor < end; step++, cursor++)
-    {
-        if (valid_node(cursor) && node_kind[cursor] == prod)
-            return cursor;
-    }
-    return INVALID;
-}
-
-uint bounded_subtree_for_iterable_scan(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-
-    uint end = subtree_end[node];
-    if (!valid_node(end - 1u))
-        return INVALID;
-
-    for (uint step = 0u, cursor = node + 1u; step < 64u && cursor < end; step++, cursor++)
-    {
-        if (valid_node(cursor) && is_for_iterable_production(node_kind[cursor]))
-            return cursor;
-    }
-    return INVALID;
-}
-
-uint semantic_for_iterable_scan(uint row, uint node)
-{
-    uint node_end = hir_token_end[node];
-    for (uint step = 1u; step <= 64u; step++)
-    {
-        uint candidate = semantic_row_node(row + step);
-        if (!valid_node(candidate))
-            break;
-        if (!node_has_non_empty_span(candidate))
-            continue;
-        if (hir_token_pos[candidate] >= node_end)
-            break;
-        if (is_for_iterable_production(node_kind[candidate]))
-            return candidate;
-    }
-    return INVALID;
-}
-
-uint semantic_body_block_scan(uint row, uint node, uint after_node)
-{
-    uint node_end = hir_token_end[node];
-    uint after_end = valid_node(after_node) ? hir_token_end[after_node] : hir_token_pos[node];
-    for (uint step = 1u; step <= 64u; step++)
-    {
-        uint candidate = semantic_row_node(row + step);
-        if (!valid_node(candidate))
-            break;
-        if (!node_has_non_empty_span(candidate))
-            continue;
-        if (hir_token_pos[candidate] >= node_end)
-            break;
-        if (hir_kind[candidate] == HIR_BLOCK && hir_token_pos[candidate] >= after_end)
-            return candidate;
-    }
-    return INVALID;
-}
-
-uint nearby_body_block_scan(uint node, uint binding_token)
-{
-    uint node_end = hir_token_end[node];
-    for (uint step = 1u; step <= 128u; step++)
-    {
-        uint candidate = node + step;
-        if (valid_node(candidate) && (hir_kind[candidate] == HIR_BLOCK || node_kind[candidate] == PROD_BLOCK))
-            return candidate;
-
-        candidate = node >= step ? node - step : INVALID;
-        if (valid_node(candidate) && (hir_kind[candidate] == HIR_BLOCK || node_kind[candidate] == PROD_BLOCK) &&
-            node_has_non_empty_span(candidate) &&
-            hir_token_pos[candidate] > binding_token &&
-            hir_token_pos[candidate] < node_end)
-            return candidate;
-    }
-    return INVALID;
-}
-
-uint nearby_range_iterable_scan(uint node, uint binding_token, uint body)
-{
-    uint limit = valid_node(body) ? hir_token_pos[body] : hir_token_end[node];
-    uint first_expr = INVALID;
-    for (uint step = 1u; step <= 128u; step++)
-    {
-        uint candidate = node + step;
-        if (!valid_node(candidate))
-            break;
-        if (!node_has_non_empty_span(candidate))
-            continue;
-        if (hir_token_pos[candidate] >= limit)
-            break;
-        if (hir_token_pos[candidate] <= binding_token)
-            continue;
-        if (is_hir_expression_kind(hir_kind[candidate]))
-        {
-            if (!valid_node(first_expr))
-                first_expr = candidate;
-            if (is_range_expr_form(expr_record_form(candidate)))
-                return candidate;
-        }
-    }
-    return first_expr;
 }
 
 uint direct_production_child_after(uint node, uint prod, uint after_node)
@@ -385,15 +290,16 @@ uint direct_production_child_after(uint node, uint prod, uint after_node)
             return candidate;
     }
 
-    uint child = valid_child_or_invalid(node);
+    uint child = direct_child_or_invalid(node);
     bool after_seen = after_node == INVALID;
-    for (uint step = 0u; step < 8u && valid_node(child); step++)
+    [loop]
+    while (valid_node(child))
     {
         if (child == after_node)
             after_seen = true;
         else if (after_seen && node_kind[child] == prod)
             return child;
-        child = valid_sibling_or_invalid(child);
+        child = direct_next_sibling_or_invalid(node, child);
     }
 
     uint sibling = valid_sibling_or_invalid(node);
@@ -411,8 +317,8 @@ uint let_init_child(uint node)
 
 uint let_type_node(uint node)
 {
-    uint let_type = valid_child_or_invalid(node);
-    uint type_node = valid_child_or_invalid(let_type);
+    uint let_type = direct_child_or_invalid(node);
+    uint type_node = direct_child_or_invalid(let_type);
     return valid_node(type_node) && hir_kind[type_node] == HIR_TYPE ? type_node : INVALID;
 }
 
@@ -459,12 +365,13 @@ uint if_then_block(uint node)
 
 uint else_block_for_if(uint node)
 {
-    uint child = valid_child_or_invalid(node);
-    for (uint guard = 0u; guard < 16u && valid_node(child); guard++)
+    uint child = direct_child_or_invalid(node);
+    [loop]
+    while (valid_node(child))
     {
         if (node_kind[child] == PROD_ELSE_STMT)
             return block_child(child);
-        child = valid_sibling_or_invalid(child);
+        child = direct_next_sibling_or_invalid(node, child);
     }
     return INVALID;
 }
@@ -609,27 +516,15 @@ void publish_while(uint node)
     hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
 }
 
-void publish_for(uint row, uint node)
+void publish_for(uint node)
 {
     uint binding_token = token_after_keyword(node);
     if (binding_token == INVALID)
         return;
 
     uint iterable_owner = direct_for_iterable_child(node);
-    if (!valid_node(iterable_owner))
-        iterable_owner = bounded_subtree_for_iterable_scan(node);
-    if (!valid_node(iterable_owner))
-        iterable_owner = semantic_for_iterable_scan(row, node);
     uint body = direct_production_child_after(node, PROD_BLOCK, iterable_owner);
-    if (!valid_node(body))
-        body = bounded_subtree_production_scan(node, PROD_BLOCK, iterable_owner);
-    if (!valid_node(body))
-        body = semantic_body_block_scan(row, node, iterable_owner);
-    if (!valid_node(body))
-        body = nearby_body_block_scan(node, binding_token);
 
-    if (!valid_node(iterable_owner))
-        iterable_owner = nearby_range_iterable_scan(node, binding_token, body);
     uint iterable = valid_node(iterable_owner) ? hir_expr_result_root_node[iterable_owner] : INVALID;
     if (!valid_node(iterable) && valid_node(iterable_owner) &&
         is_hir_expression_kind(hir_kind[iterable_owner]))
@@ -717,7 +612,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (prod == PROD_WHILE_STMT)
         publish_while(i);
     else if (prod == PROD_FOR_STMT || hir_kind[i] == HIR_FOR_STMT)
-        publish_for(row, i);
+        publish_for(i);
     else if (prod == PROD_BREAK_STMT)
         publish_loop_control(i, STMT_RECORD_KIND_BREAK);
     else if (prod == PROD_CONTINUE_STMT)

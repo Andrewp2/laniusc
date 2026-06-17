@@ -48,8 +48,6 @@ static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_CALL_RECORDS_OK = 1u;
-static const uint X86_ERR_CALL_ARG_COUNT = 56u;
-static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -144,14 +142,6 @@ void clear_call_record(uint call_node)
     write_call_type_record(call_node, INVALID, INVALID, INVALID);
 }
 
-void mark_call_arg_count_error(uint detail)
-{
-    publish_stage_error_min_detail4(
-        call_record_status,
-        X86_ERR_CALL_ARG_COUNT,
-        detail);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -180,18 +170,8 @@ void main(uint3 tid: SV_DispatchThreadID)
             ? 1u
             : 0u;
     uint explicit_arg_count = hir_call_arg_count[node_i];
-    uint arg_count = explicit_arg_count;
-    if (receiver_arg_count != 0u)
-        arg_count = explicit_arg_count < X86_BACKEND_MAX_PACKED_CALL_ARGS
-                        ? explicit_arg_count + 1u
-                        : X86_BACKEND_MAX_PACKED_CALL_ARGS + 1u;
+    uint arg_count = explicit_arg_count + receiver_arg_count;
     uint call_slot = hir_token_pos[node_i];
-    if (arg_count > X86_BACKEND_MAX_PACKED_CALL_ARGS)
-    {
-        clear_call_record(node_i);
-        mark_call_arg_count_error(valid_token(call_slot) ? call_slot : node_i);
-        return;
-    }
 
     x86_call_record[node_i] = uint4(
         owner_fn,

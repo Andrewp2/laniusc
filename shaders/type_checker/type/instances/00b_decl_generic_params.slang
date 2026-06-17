@@ -32,14 +32,13 @@ StructuredBuffer<uint> generic_decl_owner_by_node;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
 RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
 RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
-RWStructuredBuffer<uint> type_decl_first_generic_param_row_by_node;
-RWStructuredBuffer<uint> type_decl_first_const_param_row_by_node;
 RWStructuredBuffer<uint> generic_param_owner_node;
 RWStructuredBuffer<uint> generic_param_name_id;
 RWStructuredBuffer<uint> generic_param_token;
 RWStructuredBuffer<uint> generic_param_node;
 RWStructuredBuffer<uint> generic_param_kind;
 RWStructuredBuffer<uint> generic_param_key_order;
+RWStructuredBuffer<uint> generic_param_slot_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -74,11 +73,11 @@ bool is_generic_param_node(uint node)
 
 bool simple_impl_generic_param_list_node(uint node)
 {
-    if (!valid_node(node) || node_kind[node] != PROD_ENUM_TYPE_PARAMS_SOME)
+    if (!valid_node(node))
         return false;
-    uint start = hir_token_pos[node];
-    uint end = hir_token_end[node];
-    return valid_token(start + 1u) && end == start + 3u;
+    uint kind = node_kind[node];
+    return kind == PROD_ENUM_TYPE_PARAMS_SOME ||
+           kind == PROD_ENUM_TYPE_PARAMS_MORE;
 }
 
 bool const_param_node(uint node)
@@ -131,18 +130,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     generic_param_node[row] = node;
     generic_param_kind[row] = is_const ? GENERIC_PARAM_KIND_CONST : GENERIC_PARAM_KIND_TYPE;
     generic_param_key_order[row] = row;
+    generic_param_slot_order[row] = row;
 
     if (is_const)
     {
         atomic_u32_add(type_decl_const_param_count_by_node, decl_node, 1u);
-        atomic_u32_min(type_decl_first_const_param_row_by_node, decl_node, row);
         return;
     }
 
     uint decl_name_token = hir_item_name_token[decl_node];
     uint decl_head_token = hir_token_pos[decl_node];
     atomic_u32_add(type_decl_generic_param_count_by_node, decl_node, 1u);
-    atomic_u32_min(type_decl_first_generic_param_row_by_node, decl_node, row);
     if (valid_token(decl_name_token))
         atomic_u32_add(type_decl_generic_param_count, decl_name_token, 1u);
     if (valid_token(decl_head_token))

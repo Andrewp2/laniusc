@@ -1,4 +1,4 @@
-use laniusc::parser::{
+use laniusc_compiler::parser::{
     hir_records::INVALID,
     passes::hir::nodes::{HIR_NODE_EXPR, HIR_NODE_MATCH_EXPR, HIR_NODE_NAME_EXPR, HIR_NODE_NONE},
     readback::validate_hir_match_records,

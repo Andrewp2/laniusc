@@ -1,8 +1,9 @@
-// Publish parser-owned function parameter metadata from pointer-jumped links.
+// Publish parser-owned function parameter metadata.
 //
 // Parameter consumers should use these rows instead of deriving parameter
-// identity or ordinal from token neighborhoods. Owner and ordinal are produced
-// by the preceding linked-list passes, not by walking ancestors here.
+// identity or ordinal from token neighborhoods. Owners are resolved by the
+// preceding linked-list pass; ordinals are assigned from compact scanned
+// parameter segments.
 
 import generated_parse_production_ids;
 
@@ -127,9 +128,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (name_token == INVALID)
         return;
 
+    uint ordinal = hir_param_rank_a[node];
+    if (ordinal == INVALID)
+        return;
+
     hir_param_record[node] = uint4(
         fn_node,
-        hir_param_rank_a[node],
+        ordinal,
         name_token,
         node);
     hir_param_type_node[node] = parameter_type_node(node);

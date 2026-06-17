@@ -78,7 +78,7 @@ static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 
 static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
-static const uint X86_PARAM_REG_STRIDE = 5u;
+static const uint X86_PARAM_REG_STRIDE = 6u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -171,7 +171,7 @@ uint param_reg_type(uint decl_token)
         x86_param_reg_record,
         decl_token,
         X86_PARAM_REG_STRIDE,
-        3u,
+        4u,
         INVALID);
 }
 

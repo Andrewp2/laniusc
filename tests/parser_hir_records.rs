@@ -1,6 +1,6 @@
 mod common;
 
-use laniusc::{
+use laniusc_compiler::{
     compiler::CompileError,
     lexer::{Token, driver::GpuLexer, tables::tokens::TokenKind},
     parser::{
@@ -162,6 +162,27 @@ struct RecordedFnReturnReadback {
     readbacks: ParserHirFunctionReturnReadbacks,
 }
 
+fn generated_wide_param_function_source(param_count: usize) -> String {
+    assert!(param_count > 0);
+    let params = (0..param_count)
+        .map(|i| format!("p{i}: i32"))
+        .collect::<Vec<_>>()
+        .join(",\n    ");
+    let return_param = format!("p{}", param_count - 1);
+
+    format!(
+        r#"
+module app::main;
+
+fn generated_wide(
+    {params}
+) -> i32 {{
+    return {return_param};
+}}
+"#
+    )
+}
+
 const TK_AMPERSAND: u32 = 25;
 const TK_ARG_COMMA: u32 = TokenKind::ArgComma as u32;
 const TK_ARRAY_COMMA: u32 = TokenKind::ArrayComma as u32;
@@ -203,7 +224,7 @@ fn parser_syntax_accepts_generic_header_beyond_old_local_window_on_gpu() {
     push(&mut tokens, TokenKind::RBrace);
 
     common::block_on_gpu_with_timeout("long generic syntax header", async move {
-        laniusc::parser::syntax::check_tokens_on_gpu(&tokens)
+        laniusc_compiler::parser::syntax::check_tokens_on_gpu(&tokens)
             .await
             .expect("syntax checker should accept a generic header past one 64-token window");
     });
@@ -218,7 +239,7 @@ fn parser_syntax_rejects_nested_statement_keyword_before_semicolon_on_gpu() {
     ];
 
     let err = common::block_on_gpu_with_timeout("overlapping return syntax", async move {
-        laniusc::parser::syntax::check_tokens_on_gpu(&tokens).await
+        laniusc_compiler::parser::syntax::check_tokens_on_gpu(&tokens).await
     })
     .expect_err("syntax checker should reject a statement keyword before the return semicolon");
 
@@ -692,6 +713,139 @@ fn make_world() {
     ];
 
     assert_eq!(kinds, expected);
+}
+
+#[test]
+fn parser_hir_source_pack_long_associated_call_let_scope_reaches_following_return() {
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module a::b::c::d::e;
+
+pub struct A { value: i32, }
+pub struct B { value: i32, }
+pub struct C { value: i32, }
+pub struct D { value: i32, }
+"#,
+        r#"
+module app;
+
+import a::b::c::d::e;
+
+struct Wide<A, B, C, D> {
+    value: i32,
+}
+
+impl Wide<
+    a::b::c::d::e::A,
+    a::b::c::d::e::B,
+    a::b::c::d::e::C,
+    a::b::c::d::e::D
+> {
+    fn tag() -> i32 {
+        return 7;
+    }
+}
+
+fn main() {
+    let value: i32 = Wide<
+        a::b::c::d::e::A,
+        a::b::c::d::e::B,
+        a::b::c::d::e::C,
+        a::b::c::d::e::D
+    >::tag();
+    return value;
+}
+"#,
+    ]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept long associated call source pack: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let let_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_LET && parsed.hir_kind[node] == HIR_NODE_LET_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish the local declaration");
+    let valid_node = |node: u32, label: &str| {
+        assert_ne!(node, INVALID, "{label} should publish a HIR node");
+        let node = node as usize;
+        assert!(
+            node < parsed.hir_kind.len(),
+            "{label} node {node} should be inside the HIR record table"
+        );
+        node
+    };
+    let init_expr = valid_node(
+        parsed.hir_stmt_record_operand1[let_node],
+        "long associated call initializer",
+    );
+    assert!(
+        parsed.hir_token_pos[let_node] <= parsed.hir_token_pos[init_expr]
+            && parsed.hir_token_end[init_expr] <= parsed.hir_token_end[let_node],
+        "long associated call initializer should stay inside the let statement span"
+    );
+    let init_call = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_NODE_CALL_EXPR
+                && parsed.hir_token_pos[let_node] <= parsed.hir_token_pos[node]
+                && parsed.hir_token_end[node] <= parsed.hir_token_end[let_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish the associated function call inside the let initializer");
+    assert_ne!(
+        parsed.hir_call_callee_node[init_call], INVALID,
+        "associated function call should publish its callee node"
+    );
+    assert_eq!(
+        parsed.hir_kind[init_call], HIR_NODE_CALL_EXPR,
+        "the long qualified associated receiver should still publish a call initializer"
+    );
+
+    let function_block = valid_node(
+        parsed.hir_nearest_block_node[let_node],
+        "long associated call local declaration nearest block",
+    );
+    assert_eq!(
+        parsed.hir_kind[function_block], HIR_NODE_BLOCK,
+        "local declaration should belong to the function body block"
+    );
+    assert_eq!(
+        parsed.hir_stmt_scope_end[let_node], parsed.hir_token_end[function_block],
+        "let visibility should be derived from the containing block, not from local parse-tree depth"
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN
+                && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT
+                && parsed.hir_nearest_block_node[node] as usize == function_block
+                && parsed.hir_token_pos[node] >= parsed.hir_token_end[let_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish the following return in the same function block");
+    let return_value_token = parsed.hir_stmt_record_operand2[return_node];
+    assert_ne!(
+        return_value_token, INVALID,
+        "following return should publish the value token used for local visibility"
+    );
+    assert!(
+        return_value_token < parsed.hir_stmt_scope_end[let_node],
+        "the let declaration should remain visible at the following return value token"
+    );
 }
 
 #[test]
@@ -2560,6 +2714,71 @@ fn take(value: Pair<i32, bool>) -> i32 {
 }
 
 #[test]
+fn parser_hir_generic_type_arguments_link_seventeen_argument_chain() {
+    let arg_count = 17;
+    let params = (0..arg_count)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let args = (0..arg_count)
+        .map(|_| "i32".to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!(
+        r#"
+struct Wide<{params}> {{
+    value: i32,
+}}
+
+fn take(value: Wide<{args}>) -> i32 {{
+    return 0;
+}}
+"#
+    );
+
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let owner = parsed
+        .hir_type_arg_count
+        .iter()
+        .enumerate()
+        .find_map(|(node, &count)| (count == arg_count as u32).then_some(node))
+        .expect("fixture should publish one seventeen-argument generic type instance");
+    assert_eq!(
+        parsed.hir_kind[owner], HIR_NODE_TYPE,
+        "generic instance owner should be a type HIR node"
+    );
+    assert_eq!(
+        parsed.hir_type_form[owner], HIR_TYPE_FORM_PATH,
+        "generic instance owner should be a path type"
+    );
+
+    let mut arg = parsed.hir_type_arg_start[owner];
+    for ordinal in 0..arg_count {
+        assert_ne!(
+            arg, INVALID,
+            "generic type argument chain ended before ordinal {ordinal}"
+        );
+        let arg_node = arg as usize;
+        assert_eq!(
+            parsed.hir_kind[arg_node], HIR_NODE_TYPE,
+            "type argument row {arg_node} should be a type HIR node"
+        );
+        assert_hir_child_span_inside_owner(&parsed, owner, arg_node, "type argument");
+        arg = parsed.hir_type_arg_next[arg_node];
+    }
+    assert_eq!(
+        arg, INVALID,
+        "seventeen-argument chain should terminate after the final argument"
+    );
+}
+
+#[test]
 fn parser_hir_generic_type_arguments_are_source_addressable_in_source_packs() {
     let source_count = 2;
     let parsed = parse_resident_source_pack(&[
@@ -4044,6 +4263,61 @@ fn main() -> i32 {
 }
 
 #[test]
+fn parser_hir_function_parameter_ordinals_cross_scan_boundary() {
+    let source = generated_wide_param_function_source(257);
+    let parsed = parse_resident_source_pack(&[&source]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let function_node = parsed
+        .hir_item_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| (kind == HIR_ITEM_KIND_FN).then_some(node))
+        .expect("generated fixture should publish one function item");
+    assert_eq!(
+        parsed.hir_kind[function_node], HIR_NODE_FN,
+        "function item should attach to a parser-owned function HIR row"
+    );
+
+    let mut params = parsed
+        .hir_param_owner_fn_node
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &owner)| {
+            (owner as usize == function_node && parsed.hir_kind[node] == HIR_NODE_PARAM)
+                .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    params.sort_unstable_by_key(|&node| parsed.hir_param_ordinal[node]);
+    assert_eq!(
+        params.len(),
+        257,
+        "generated function should publish every parser-owned parameter row"
+    );
+
+    for (expected_ordinal, param_node) in params.into_iter().enumerate() {
+        assert_eq!(
+            parsed.hir_param_ordinal[param_node], expected_ordinal as u32,
+            "wide function parameter row should publish a scan-assigned source-order ordinal"
+        );
+        assert_eq!(
+            parsed.hir_param_record_node[param_node] as usize, param_node,
+            "wide function parameter row should self-identify its parser-owned record"
+        );
+        assert_eq!(
+            parsed.hir_param_owner_fn_node[param_node] as usize, function_node,
+            "wide function parameter row should point back to the generated function"
+        );
+    }
+}
+
+#[test]
 fn parser_hir_trait_item_records_are_source_addressable_in_source_packs() {
     let source_count = 2;
     let parsed = parse_resident_source_pack(&[
@@ -5012,11 +5286,11 @@ fn parser_hir_generic_inherent_impl_method_records_attach_to_impl_owner() {
     let parsed = parse_resident_source_pack(&[r#"
 module app::main;
 
-struct Boxed<T> {
-    value: T,
+struct Boxed<A, B, C, D, E> {
+    value: E,
 }
 
-impl<T> Boxed<T> {
+impl<A, B, C, D, E> Boxed<A, B, C, D, E> {
     fn present(self) -> bool {
         return true;
     }
@@ -5070,6 +5344,10 @@ impl<T> Boxed<T> {
         parsed.hir_kind[receiver_type], HIR_NODE_TYPE,
         "generic impl owner should retain its receiver type row"
     );
+    assert_eq!(
+        parsed.hir_type_arg_count[receiver_type], 5,
+        "generic impl receiver type should retain all parser-owned type arguments"
+    );
 
     let method_name_token = parsed.hir_method_name_token[method_node];
     assert_ne!(
@@ -5084,6 +5362,20 @@ impl<T> Boxed<T> {
     assert_eq!(
         parsed.hir_method_receiver_mode[method_node], HIR_METHOD_RECEIVER_SELF,
         "plain self receiver should be published for the generic impl method"
+    );
+
+    let return_type = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_fn_return_type_node[method_node],
+        "generic inherent impl method return type",
+    );
+    assert_eq!(
+        parsed.hir_kind[return_type], HIR_NODE_TYPE,
+        "generic impl method should retain its return type row"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[return_type] as usize, method_node,
+        "generic impl method return type should retain nearest-function context"
     );
 
     let params = parsed

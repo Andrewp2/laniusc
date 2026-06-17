@@ -61,8 +61,7 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_KIND_MASK = 0x0fu;
 static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
-static const uint X86_PARAM_REG_STRIDE = 5u;
-static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
+static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
 static const uint X86_VINST_LOAD_LOCAL = 13u;
@@ -224,7 +223,7 @@ uint param_reg_arg_reg(uint decl_token)
     uint info = param_reg_info(decl_token);
     return info == INVALID
                ? INVALID
-               : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
+               : info & X86_PARAM_REG_ARG_REG_MASK;
 }
 
 uint4 param_reg_record(uint decl_token)
