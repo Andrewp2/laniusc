@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
 };
 
+/// Third DFA pass: applies block prefixes and emits token boundary flags.
 pub struct Dfa03ApplyBlockPrefixPass {
     data: PassData,
 }
@@ -76,7 +77,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
         b: &GpuBuffers,
         dbg: &mut DebugOutput,
     ) {
-        // Keep a useful tap: show which block-prefix (inclusive scan of block δ) was applied.
+        // Keep a useful tap: show which block-prefix (inclusive scan of block delta) was applied.
         let rounds = compute_rounds(b.nb_dfa);
         let last = if (rounds % 2) == 1 {
             &b.dfa_02_pong

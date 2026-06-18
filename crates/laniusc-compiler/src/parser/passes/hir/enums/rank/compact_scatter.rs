@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that compacts ranked enum declarations into library-local ranges.
 pub struct HirEnumRankCompactScatterPass {
     data: PassData,
 }

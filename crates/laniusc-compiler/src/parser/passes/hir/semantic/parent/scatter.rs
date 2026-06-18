@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters propagated semantic parents into dense semantic-node order.
 pub struct HirSemanticParentScatterPass {
     data: PassData,
 }

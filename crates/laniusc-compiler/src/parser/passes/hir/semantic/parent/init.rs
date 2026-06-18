@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds semantic parent propagation from source tree parents and dense IDs.
 pub struct HirSemanticParentInitPass {
     data: PassData,
 }

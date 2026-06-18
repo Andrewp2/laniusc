@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters discovered type-path leaves into path-owner records.
 pub struct HirTypePathLeafScatterPass {
     data: PassData,
 }

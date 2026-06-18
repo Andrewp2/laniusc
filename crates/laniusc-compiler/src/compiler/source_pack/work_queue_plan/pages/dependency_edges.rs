@@ -20,6 +20,7 @@ use super::super::super::{
 };
 use crate::compiler::CompileError;
 
+/// Writes work-queue dependencies from a persisted schedule job page.
 pub(in crate::compiler) fn write_work_queue_dependencies_from_stored_schedule_job(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -43,6 +44,7 @@ pub(in crate::compiler) fn write_work_queue_dependencies_from_stored_schedule_jo
     Ok(())
 }
 
+/// Appends one reverse dependent edge to a dependency item page.
 pub(in crate::compiler) fn work_queue_append_dependent_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -121,6 +123,10 @@ pub(in crate::compiler) fn work_queue_append_dependent_page(
     Ok(())
 }
 
+/// Attempts to append a compact reverse dependent range.
+///
+/// Returns `false` when the range would exceed inline range capacity and callers
+/// should fall back to explicit dependent pages.
 pub(in crate::compiler) fn work_queue_try_append_dependent_range(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -184,6 +190,7 @@ pub(in crate::compiler) fn work_queue_try_append_dependent_range(
     Ok(true)
 }
 
+/// Adds one dependent range to every dependency item in a dependency range.
 pub(in crate::compiler) fn append_work_queue_dependent_range_to_dependency_range(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -245,6 +252,11 @@ pub(in crate::compiler) fn append_work_queue_dependent_range_to_dependency_range
     Ok(())
 }
 
+/// Incremental writer for one work-queue item's dependency sidecars.
+///
+/// The writer records forward dependency pages and, by default, also updates the
+/// reverse dependent edges on dependency items so ready-frontier updates can
+/// walk from completed work to newly unblocked work.
 pub(in crate::compiler) struct WorkQueueDependencyPageWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -259,6 +271,7 @@ pub(in crate::compiler) struct WorkQueueDependencyPageWriter<'a> {
 }
 
 impl<'a> WorkQueueDependencyPageWriter<'a> {
+    /// Creates a dependency writer for one work-queue item.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -281,6 +294,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         }
     }
 
+    /// Pushes one dependency item and records the reverse dependent edge.
     pub(in crate::compiler) fn push(
         &mut self,
         dependency_item_index: usize,
@@ -288,6 +302,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         self.push_impl(dependency_item_index, true)
     }
 
+    /// Pushes one dependency item with optional reverse dependent recording.
     pub(in crate::compiler) fn push_impl(
         &mut self,
         dependency_item_index: usize,
@@ -337,6 +352,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current explicit dependency page, if it has records.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_dependency_item_indices.is_empty() {
             return Ok(());
@@ -369,6 +385,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         Ok(())
     }
 
+    /// Pushes a dependency item range and records reverse dependent edges.
     pub(in crate::compiler) fn push_range(
         &mut self,
         first_item_index: usize,
@@ -377,6 +394,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         self.push_range_impl(first_item_index, item_count, true)
     }
 
+    /// Pushes a dependency item range with optional reverse dependent recording.
     pub(in crate::compiler) fn push_range_impl(
         &mut self,
         first_item_index: usize,
@@ -434,6 +452,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
         Ok(())
     }
 
+    /// Finishes the writer and returns compact dependency metadata.
     pub(in crate::compiler) fn finish(
         mut self,
     ) -> Result<(usize, usize, Vec<SourcePackJobIndexRange>), CompileError> {
@@ -446,6 +465,7 @@ impl<'a> WorkQueueDependencyPageWriter<'a> {
     }
 }
 
+/// Tries to merge a dependency range into compact inline dependency ranges.
 pub(in crate::compiler) fn try_push_dependency_item_range(
     dependency_item_ranges: &mut Vec<SourcePackJobIndexRange>,
     item_index: usize,
@@ -501,6 +521,7 @@ pub(in crate::compiler) fn try_push_dependency_item_range(
     Ok(true)
 }
 
+/// Tries to merge a dependent range into compact inline dependent ranges.
 pub(in crate::compiler) fn try_push_dependent_item_range(
     dependent_item_ranges: &mut Vec<SourcePackJobIndexRange>,
     item_index: usize,
@@ -556,6 +577,7 @@ pub(in crate::compiler) fn try_push_dependent_item_range(
     Ok(true)
 }
 
+/// Stores a work-queue page after writing dependency sidecars.
 pub(in crate::compiler) fn store_work_queue_page_with_dependency_writer<F>(
     store: &FilesystemArtifactStore,
     page: &SourcePackWorkQueuePage,

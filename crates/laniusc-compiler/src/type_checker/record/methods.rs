@@ -4,6 +4,7 @@ use super::*;
 
 const METHOD_CALL_RESULT_RECEIVER_PASSES: usize = 8;
 
+/// Records method declaration collection and receiver metadata binding.
 pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -43,6 +44,7 @@ pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     )
 }
 
+/// Records method key-table seeding, sorting, scattering, and validation.
 pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -96,6 +98,7 @@ pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
     Ok(())
 }
 
+/// Records method-call key marking and fixed-point-like table resolution passes.
 pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

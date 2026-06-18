@@ -1,6 +1,7 @@
 use super::ParserBuffers;
 
 impl ParserBuffers {
+    /// Allocates one-shot parser buffers from already-classified parser token kinds.
     pub fn new(
         device: &wgpu::Device,
         token_kinds_u32: &[u32],
@@ -21,6 +22,7 @@ impl ParserBuffers {
         )
     }
 
+    /// Allocates resident parser buffers sized by lexer token capacity.
     pub fn new_resident_capacity(
         device: &wgpu::Device,
         token_capacity: u32,
@@ -38,6 +40,7 @@ impl ParserBuffers {
         )
     }
 
+    /// Allocates resident parser buffers with an optional tree-capacity override.
     pub fn new_resident_capacity_with_tree_capacity(
         device: &wgpu::Device,
         token_capacity: u32,
@@ -57,6 +60,7 @@ impl ParserBuffers {
         )
     }
 
+    /// Allocates resident parser buffers with optional debug HIR retention.
     pub fn new_resident_capacity_with_tree_capacity_and_debug(
         device: &wgpu::Device,
         token_capacity: u32,

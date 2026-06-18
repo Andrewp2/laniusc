@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates binary-expression span starts.
 pub struct HirBinarySpanStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirBinarySpanStepPass {
+    /// Records binary-span propagation steps with indirect dispatch.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,
@@ -28,6 +30,7 @@ impl HirBinarySpanStepPass {
         self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
     }
 
+    /// Records binary-span propagation steps with direct dispatch.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,

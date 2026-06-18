@@ -1,5 +1,9 @@
 use super::super::*;
 
+/// All bind groups recorded by the module/path pass family.
+///
+/// This carrier preserves creation-time ordering and keeps the resident state
+/// independent from individual constructor helpers.
 pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) mark_records: wgpu::BindGroup,
     pub(in crate::type_checker) extract_path_record_flag: wgpu::BindGroup,
@@ -98,6 +102,11 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) type_match_exprs: wgpu::BindGroup,
 }
 
+/// Resident module/path relation state.
+///
+/// The state owns module/import/declaration/path tables, lookup scratch, radix
+/// scratch, projection outputs, retained uniforms, and the bind groups that
+/// keep those buffers alive across recorded checks.
 #[allow(dead_code)]
 pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) n_blocks: u32,

@@ -3,8 +3,10 @@ mod document;
 mod protocol;
 mod session;
 
+/// Language identifier used by the LSP surface.
 pub(super) const LSP_LANGUAGE_ID: &str = "lanius";
 
+/// Returns the LSP error-data contract metadata used by no-run diagnostics.
 pub(crate) fn error_data_contract_metadata() -> serde_json::Value {
     protocol::error_data_contract_metadata()
 }
@@ -19,6 +21,7 @@ use super::{
     help::print_lsp_help,
 };
 
+/// Runs the LSP capability or stdio-server subcommand.
 pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let args = cli_args_without_diagnostic_format(
         "laniusc lsp",

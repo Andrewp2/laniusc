@@ -13,6 +13,7 @@ pub struct LaniusBuffer<T> {
 }
 
 impl<T> LaniusBuffer<T> {
+    /// Wraps a raw `wgpu::Buffer` plus byte size and logical element count.
     pub fn new((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
         Self {
             buffer,
@@ -48,6 +49,7 @@ where
     LaniusBuffer::new((raw, bytes.len() as u64), 1)
 }
 
+/// Creates a uniform buffer and uploads the encoded value through `queue.write_buffer`.
 pub fn uniform_from_val_with_queue<T>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -149,6 +151,7 @@ pub fn storage_ro_from_u32s(
     storage_ro_from_bytes::<u32>(device, label, &bytes, values.len())
 }
 
+/// Creates read-only `u32` storage and uploads through `queue.write_buffer`.
 pub fn storage_ro_from_u32s_with_queue(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -180,6 +183,7 @@ pub fn storage_ro_from_u32s_with_queue(
     LaniusBuffer::new((raw, byte_size as u64), values.len())
 }
 
+/// Creates a map-readable byte readback buffer.
 pub fn readback_bytes(
     device: &wgpu::Device,
     label: &str,

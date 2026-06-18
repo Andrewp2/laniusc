@@ -1,5 +1,9 @@
 use super::*;
 
+/// Validates the top-level artifact-ref index for a target.
+///
+/// The index must describe dense interface artifacts, object artifacts, and one
+/// final linked-output artifact whose key and source summary match the index.
 pub(in crate::compiler) fn validate_artifact_ref_index(
     index: &SourcePackBuildArtifactRefIndex,
     target: SourcePackArtifactTarget,
@@ -152,6 +156,10 @@ fn parse_artifact_ref_index_key_usize(
     })
 }
 
+/// Validates one artifact-ref page.
+///
+/// Artifact refs are dense by producing job index. The page key, kind, final
+/// slot rules, and source-byte summary are checked against that dense layout.
 pub(in crate::compiler) fn validate_artifact_ref_page(
     page: &SourcePackBuildArtifactRefPage,
     target: SourcePackArtifactTarget,
@@ -379,6 +387,10 @@ fn parse_artifact_ref_page_key_usize(
     })
 }
 
+/// Validates one sidecar page of job input interface refs.
+///
+/// Pages must be dense by page index, non-empty, bounded by the interface input
+/// page size, and contain only library-interface artifact refs.
 pub(in crate::compiler) fn validate_job_artifact_input_interface_page(
     page: &SourcePackJobArtifactInputInterfacePage,
     target: SourcePackArtifactTarget,

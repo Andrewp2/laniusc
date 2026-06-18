@@ -9,34 +9,57 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for filling statement record fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Absence of a statement record kind.
 pub const HIR_STMT_RECORD_KIND_NONE: u32 = 0;
+/// `let` statement record.
 pub const HIR_STMT_RECORD_KIND_LET: u32 = 1;
+/// `return` statement record.
 pub const HIR_STMT_RECORD_KIND_RETURN: u32 = 2;
+/// `if` statement record.
 pub const HIR_STMT_RECORD_KIND_IF: u32 = 3;
+/// Constant item used in statement position.
 pub const HIR_STMT_RECORD_KIND_CONST: u32 = 4;
+/// Assignment statement record.
 pub const HIR_STMT_RECORD_KIND_ASSIGN: u32 = 5;
+/// `while` statement record.
 pub const HIR_STMT_RECORD_KIND_WHILE: u32 = 6;
+/// `for` statement record.
 pub const HIR_STMT_RECORD_KIND_FOR: u32 = 7;
+/// `break` statement record.
 pub const HIR_STMT_RECORD_KIND_BREAK: u32 = 8;
+/// `continue` statement record.
 pub const HIR_STMT_RECORD_KIND_CONTINUE: u32 = 9;
 
+/// Plain assignment operator.
 pub const HIR_ASSIGN_OP_SET: u32 = 1;
+/// Add-assign operator.
 pub const HIR_ASSIGN_OP_ADD: u32 = 2;
+/// Subtract-assign operator.
 pub const HIR_ASSIGN_OP_SUB: u32 = 3;
+/// Multiply-assign operator.
 pub const HIR_ASSIGN_OP_MUL: u32 = 4;
+/// Divide-assign operator.
 pub const HIR_ASSIGN_OP_DIV: u32 = 5;
+/// Remainder-assign operator.
 pub const HIR_ASSIGN_OP_MOD: u32 = 6;
+/// Bitwise-xor-assign operator.
 pub const HIR_ASSIGN_OP_XOR: u32 = 7;
+/// Left-shift-assign operator.
 pub const HIR_ASSIGN_OP_SHL: u32 = 8;
+/// Right-shift-assign operator.
 pub const HIR_ASSIGN_OP_SHR: u32 = 9;
+/// Bitwise-and-assign operator.
 pub const HIR_ASSIGN_OP_BAND: u32 = 10;
+/// Bitwise-or-assign operator.
 pub const HIR_ASSIGN_OP_BOR: u32 = 11;
 
+/// Parser pass that fills statement kind, scope, and assignment records.
 pub struct HirStmtFieldsPass {
     data: PassData,
 }

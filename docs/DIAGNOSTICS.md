@@ -46,6 +46,13 @@ print the combined diagnostic registry JSON directly, without compiling source.
 Use `laniusc diagnostics [--diagnostic-format text|json|lsp-json] codes` to
 print a compact diagnostic code index for wrapper completion, lookup, and
 filter UIs, without compiling source.
+For the generated reader-facing code index, use
+`docs/diagnostics/generated/error-index.md`. Regenerate it with
+`tools/diagnostic_index.py --output docs/diagnostics/generated/error-index.md`
+and check it with
+`tools/diagnostic_index.py --check docs/diagnostics/generated/error-index.md`.
+For maintained user-facing explanations of what each `LNC####` code means and
+what to do next, use `docs/diagnostics/code-explanations.md`.
 Use `laniusc diagnostics [--diagnostic-format text|json|lsp-json] code
 LNC0018` to print one compact diagnostic code row, or a successful `known:
 false` JSON payload for an unknown code, without compiling source.
@@ -272,48 +279,15 @@ protocol classification does not scan source, create a GPU device, or run codege
 
 ## Current Code Registry
 
-| Code | Title | Category | Primary label policy |
-| --- | --- | --- | --- |
-| `LNC0001` | missing source-root module | package/import loading | `required` |
-| `LNC0002` | import cycle | module resolution | `required` |
-| `LNC0003` | ambiguous source-root module | package/import loading | `required` |
-| `LNC0004` | source-root escape | package/import loading | `required` |
-| `LNC0005` | unresolved identifier | name resolution | `required` |
-| `LNC0006` | type mismatch | type checking | `required` |
-| `LNC0007` | unknown type | type checking | `required` |
-| `LNC0008` | unsatisfied trait bound | trait solving | `required` |
-| `LNC0009` | ambiguous trait bound | trait solving | `required` |
-| `LNC0010` | unresolved import | module resolution | `required` |
-| `LNC0011` | unsupported import form | module resolution | `required` |
-| `LNC0012` | import path too deep | module resolution | `required` |
-| `LNC0013` | duplicate module declaration | module resolution | `required` |
-| `LNC0014` | module path too deep | module resolution | `required` |
-| `LNC0015` | invalid module path | module resolution | `required` |
-| `LNC0016` | syntax error | parsing | `required` |
-| `LNC0017` | x86 backend boundary | native codegen | `required` |
-| `LNC0018` | unsupported CLI option value | tooling | `none` |
-| `LNC0019` | formatter check failed | tooling | `required` |
-| `LNC0020` | unknown CLI option | tooling | `none` |
-| `LNC0021` | invalid trait implementation | trait solving | `required` |
-| `LNC0022` | linked-output contract descriptor | native codegen | `required` |
-| `LNC0023` | missing CLI option value | tooling | `none` |
-| `LNC0024` | source-root package boundary | package/import loading | `required` |
-| `LNC0025` | missing CLI subcommand | tooling | `none` |
-| `LNC0026` | missing CLI argument | tooling | `none` |
-| `LNC0027` | call resolution failed | type checking | `required` |
-| `LNC0028` | unsupported LSP method | tooling | `none` |
-| `LNC0029` | invalid LSP message | tooling | `none` |
-| `LNC0030` | non-source source-root module | package/import loading | `required` |
-| `LNC0031` | unexpected CLI argument | tooling | `none` |
-| `LNC0032` | incompatible CLI options | tooling | `none` |
-| `LNC0033` | invalid generic parameter list | type checking | `required` |
-| `LNC0034` | output write failed | tooling | `required` |
-| `LNC0035` | output stream write failed | tooling | `none` |
-| `LNC0036` | WASM backend boundary | target codegen | `required` |
-| `LNC0037` | package metadata invalid | package/import loading | `none` |
-| `LNC0038` | runtime service boundary | runtime binding | `required` |
-| `LNC0039` | unknown CLI subcommand | tooling | `none` |
-| `LNC0040` | input read failed | tooling | `required` |
+The current code registry is generated at
+`docs/diagnostics/generated/error-index.md` from
+`DIAGNOSTIC_CODE_REGISTRY`. Treat that file as the docs-side analogue of
+rustc's error-code index. Do not maintain a second hand-written table here.
+
+```bash
+tools/diagnostic_index.py --output docs/diagnostics/generated/error-index.md
+tools/diagnostic_index.py --check docs/diagnostics/generated/error-index.md
+```
 
 ## Stable Categories
 

@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Loads and validates the compact work-queue index for a target.
     pub fn load_work_queue_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -22,6 +23,11 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores one work-queue item page and any required sidecar pages.
+    ///
+    /// Inline dependency, dependent, frontend-input, and partition lists are
+    /// compacted into counts and paged sidecars so the main item page stays
+    /// bounded for worker discovery.
     pub fn store_work_queue_page(
         &self,
         page: &SourcePackWorkQueuePage,
@@ -77,6 +83,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Splits dependency item indices into fixed-size sidecar pages.
     pub(in crate::compiler) fn store_work_queue_dependency_pages_from_indices(
         &self,
         target: SourcePackArtifactTarget,
@@ -136,6 +143,7 @@ impl FilesystemArtifactStore {
         Ok((dependency_item_count, page_index))
     }
 
+    /// Splits dependent item indices into fixed-size sidecar pages.
     pub(in crate::compiler) fn store_work_queue_dependent_pages_from_indices(
         &self,
         target: SourcePackArtifactTarget,
@@ -195,6 +203,7 @@ impl FilesystemArtifactStore {
         Ok((dependent_item_count, page_index))
     }
 
+    /// Loads and validates one compact work-queue item page.
     pub fn load_work_queue_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -374,6 +383,7 @@ impl FilesystemArtifactStore {
         Ok(())
     }
 
+    /// Stores one dependency sidecar page for a work-queue item.
     pub fn store_work_queue_dependencies_page(
         &self,
         page: &SourcePackWorkQueueDependenciesPage,
@@ -394,6 +404,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one dependency sidecar page.
     pub fn load_work_queue_dependencies_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -420,6 +431,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one dependent sidecar page for a work-queue item.
     pub fn store_work_queue_dependents_page(
         &self,
         page: &SourcePackWorkQueueDependentsPage,
@@ -440,6 +452,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one dependent sidecar page.
     pub fn load_work_queue_dependents_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -464,6 +477,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the compact index for work-queue progress pages.
     pub fn store_work_queue_progress_index(
         &self,
         index: &SourcePackWorkQueueProgressIndex,
@@ -479,6 +493,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the work-queue progress index for a target.
     pub fn load_work_queue_progress_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -501,6 +516,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores one mutable work-queue progress page and its summary.
     pub fn store_work_queue_progress_page(
         &self,
         page: &SourcePackWorkQueueProgressPage,
@@ -521,6 +537,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores the summary file for one work-queue progress page.
     pub fn store_work_queue_progress_page_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -543,6 +560,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Attempts to load a work-queue progress page summary.
     pub fn try_load_work_queue_progress_page_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -570,6 +588,7 @@ impl FilesystemArtifactStore {
         Ok(Some(summary))
     }
 
+    /// Stores one directory page summarizing ranges of progress pages.
     pub fn store_work_queue_progress_directory_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -597,6 +616,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Attempts to load a work-queue progress directory page.
     pub fn try_load_work_queue_progress_directory_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -624,6 +644,7 @@ impl FilesystemArtifactStore {
         Ok(Some(page))
     }
 
+    /// Stores one directory-index page summarizing progress directory pages.
     pub fn store_work_queue_progress_directory_index_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -649,6 +670,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Attempts to load a work-queue progress directory-index page.
     pub fn try_load_progress_directory_index_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -678,6 +700,7 @@ impl FilesystemArtifactStore {
         Ok(Some(page))
     }
 
+    /// Loads and validates one mutable work-queue progress page.
     pub fn load_work_queue_progress_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

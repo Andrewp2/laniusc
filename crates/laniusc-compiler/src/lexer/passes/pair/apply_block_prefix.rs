@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
 };
 
+/// Third pair pass: applies boundary prefixes and writes compact ranks.
 pub struct Pair03ApplyBlockPrefixPass {
     data: PassData,
 }

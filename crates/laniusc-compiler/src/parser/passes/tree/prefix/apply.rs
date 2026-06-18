@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Final tree-prefix pass that applies block prefixes to produce per-node prefix values.
 pub struct TreePrefixApplyPass {
     data: PassData,
 }

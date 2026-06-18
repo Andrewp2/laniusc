@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// First DFA pass: scans byte transitions inside each block.
 pub struct Dfa01ScanInblockPass {
     data: PassData,
 }

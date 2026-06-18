@@ -3,6 +3,7 @@ use std::path::Path;
 use super::{Options, artifact_target_for_emit};
 use crate::{codegen::unit::SourcePackArtifactTarget, compiler::FilesystemArtifactStore};
 
+/// Returns the artifact root required by persisted source-pack operations.
 pub(super) fn require_artifact_root<'a>(
     source_pack: &'a Options,
     message: &str,
@@ -13,6 +14,7 @@ pub(super) fn require_artifact_root<'a>(
         .ok_or_else(|| message.to_string())
 }
 
+/// Checks whether the artifact root already has a prepared build queue.
 pub(super) fn has_prepared_build(artifact_root: &Path, emit: &str) -> bool {
     let store = FilesystemArtifactStore::new(artifact_root);
     store
@@ -20,6 +22,7 @@ pub(super) fn has_prepared_build(artifact_root: &Path, emit: &str) -> bool {
         .is_file()
 }
 
+/// Checks whether the artifact root already has prepared library metadata.
 pub(super) fn has_prepared_metadata(artifact_root: &Path, emit: &str) -> bool {
     let store = FilesystemArtifactStore::new(artifact_root);
     store
@@ -27,6 +30,7 @@ pub(super) fn has_prepared_metadata(artifact_root: &Path, emit: &str) -> bool {
         .is_file()
 }
 
+/// Counts the prepared library prefix available for incremental metadata prep.
 pub(super) fn prepared_library_prefix_count(
     artifact_root: &Path,
     target: SourcePackArtifactTarget,
@@ -49,6 +53,7 @@ pub(super) fn prepared_library_prefix_count(
     partition_count
 }
 
+/// Requires persisted metadata before direct source-pack descriptor compile.
 pub(super) fn require_prepared_metadata_for_direct_compile(
     artifact_root: &Path,
     emit: &str,
@@ -63,6 +68,7 @@ pub(super) fn require_prepared_metadata_for_direct_compile(
     ))
 }
 
+/// Requires persisted metadata before manifest-backed descriptor compile.
 pub(super) fn require_prepared_metadata_for_manifest_compile(
     artifact_root: &Path,
     emit: &str,
@@ -77,6 +83,7 @@ pub(super) fn require_prepared_metadata_for_manifest_compile(
     ))
 }
 
+/// Requires a prepared build queue before descriptor link output is requested.
 pub(super) fn require_prepared_build_for_descriptor_compile(
     artifact_root: &Path,
     emit: &str,

@@ -1,6 +1,7 @@
 use super::*;
 
 impl GpuParser {
+    /// Records indirect dispatch arguments for active recovered-tree rows.
     pub(super) fn record_tree_active_dispatch_args(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -34,6 +35,7 @@ impl GpuParser {
         )
     }
 
+    /// Records feature-specific tree dispatch arguments for enums, matches, and structs.
     pub(super) fn record_tree_feature_dispatch_args(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -79,6 +81,7 @@ impl GpuParser {
         )
     }
 
+    /// Records indirect dispatch arguments for active adjacent parser token pairs.
     pub(super) fn record_active_pair_dispatch_args(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -113,6 +116,7 @@ impl GpuParser {
         )
     }
 
+    /// Records the minimal parser sequence needed to project tree capacity/status.
     pub(super) fn record_resident_projected_status(
         &self,
         encoder: &mut wgpu::CommandEncoder,

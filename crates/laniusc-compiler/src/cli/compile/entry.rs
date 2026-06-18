@@ -18,6 +18,7 @@ use crate::{
     },
 };
 
+/// Compiles or checks one entry file using explicit source roots.
 pub(super) fn compile_source_root(
     input: &Path,
     roots: &EntrySourceRoots,
@@ -41,6 +42,7 @@ pub(super) fn compile_source_root(
     }
 }
 
+/// Compiles or checks one entry file using a stdlib root.
 pub(super) fn compile_stdlib_root(
     input: &Path,
     stdlib_root: &Path,
@@ -64,6 +66,7 @@ pub(super) fn compile_stdlib_root(
     }
 }
 
+/// Compiles or checks one source file in isolation.
 pub(super) fn compile_single_file(
     input: &Path,
     check_only: bool,
@@ -86,6 +89,7 @@ pub(super) fn compile_single_file(
     }
 }
 
+/// Compiles the built-in demo source used when no input file is passed.
 pub(super) fn compile_default_demo(emit: &str) -> Result<CliEmission, CliError> {
     if emit == "wasm" {
         Ok(CliEmission::Bytes(

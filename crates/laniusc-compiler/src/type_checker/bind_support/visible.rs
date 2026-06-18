@@ -4,6 +4,7 @@ use super::{
     scan::create_counted_u32_scan_bind_groups_from_passes,
 };
 
+/// Builds resident visible-declaration bind groups from loaded type-check passes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     passes: &TypeCheckPasses,
@@ -62,6 +63,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     )
 }
 
+/// Builds visible-declaration bind groups from explicit pass handles and rows.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     device: &wgpu::Device,

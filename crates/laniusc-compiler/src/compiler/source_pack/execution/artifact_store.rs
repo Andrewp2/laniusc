@@ -1,5 +1,10 @@
 use super::*;
 
+/// Executes a build plan through an artifact store.
+///
+/// The plan is first converted into a retained artifact manifest using the
+/// requested batch limits, then executed through the manifest-backed artifact
+/// store path.
 pub(in crate::compiler) fn execute_build_plan_with_store<E, S>(
     source_pack: &ExplicitSourcePackPathManifest,
     build_plan: &SourcePackBuildPlan,
@@ -21,6 +26,11 @@ where
     execute_artifact_manifest_build(source_pack, &artifact_manifest, executor, store)
 }
 
+/// Executes every batch in a retained artifact manifest.
+///
+/// The manifest must include execution records. Exactly one link job is expected
+/// to produce the final linked output key; once it does, link input artifacts are
+/// released from the store.
 pub(in crate::compiler) fn execute_artifact_manifest_build<E, S>(
     source_pack: &ExplicitSourcePackPathManifest,
     artifact_manifest: &SourcePackBuildArtifactManifest,
@@ -67,6 +77,7 @@ where
     Ok(ArtifactStoreBuildExecutionResult { linked_output_key })
 }
 
+/// Executes one manifest job batch by batch index.
 pub(in crate::compiler) fn execute_artifact_manifest_batch<E, S>(
     source_pack: &ExplicitSourcePackPathManifest,
     artifact_manifest: &SourcePackBuildArtifactManifest,
@@ -88,6 +99,10 @@ where
     execute_artifact_manifest_batch_ref(source_pack, artifact_manifest, batch, executor, store)
 }
 
+/// Executes the jobs listed by one manifest job-batch record.
+///
+/// The batch result records the linked output key only if the batch contains the
+/// manifest's link job.
 pub(in crate::compiler) fn execute_artifact_manifest_batch_ref<E, S>(
     source_pack: &ExplicitSourcePackPathManifest,
     artifact_manifest: &SourcePackBuildArtifactManifest,
@@ -131,6 +146,11 @@ where
     })
 }
 
+/// Executes one job from a retained artifact manifest.
+///
+/// Frontend and codegen jobs read their source files and interface dependencies,
+/// then store their produced artifacts. Link jobs stream the manifest's
+/// link-interface and link-object batches before storing the linked output.
 pub(in crate::compiler) fn execute_artifact_manifest_job<E, S>(
     source_pack: &ExplicitSourcePackPathManifest,
     artifact_manifest: &SourcePackBuildArtifactManifest,

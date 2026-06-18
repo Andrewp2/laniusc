@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates the locator that maps a library ID to a partition index.
 pub(in crate::compiler) fn validate_library_partition_locator_page(
     page: &SourcePackLibraryPartitionLocatorPage,
     target: SourcePackArtifactTarget,
@@ -28,6 +29,10 @@ pub(in crate::compiler) fn validate_library_partition_locator_page(
     Ok(())
 }
 
+/// Validates a compact or inline source-file page for one partition.
+///
+/// Compact pages may omit inline source files. Inline pages must carry every
+/// source file in order and their byte/line totals must match page summaries.
 pub(in crate::compiler) fn validate_library_source_file_page(
     page: &SourcePackLibrarySourceFilePage,
     target: SourcePackArtifactTarget,
@@ -135,6 +140,11 @@ pub(in crate::compiler) fn validate_library_source_file_page(
     Ok(())
 }
 
+/// Validates one per-source file record page.
+///
+/// Per-source records repeat their owning partition metadata so they can be
+/// loaded independently by global source index and checked against the partition
+/// range.
 pub(in crate::compiler) fn validate_library_source_file_record_page(
     page: &SourcePackLibrarySourceFileRecordPage,
     target: SourcePackArtifactTarget,

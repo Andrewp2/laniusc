@@ -1,5 +1,10 @@
 use super::{super::*, inputs::CreateInputs, layout::Layout};
 
+/// Owned resident buffers for module/path relations before bind-group assembly.
+///
+/// `State` keeps these buffers alive after construction; this intermediate
+/// owner lets creation code wire discovery, indexing, declaration, and
+/// projection bind groups without exposing raw allocation details.
 pub(super) struct Buffers {
     pub(super) record_family_bits: LaniusBuffer<u32>,
     pub(super) record_family_flag: LaniusBuffer<u32>,
@@ -135,6 +140,7 @@ pub(super) struct Buffers {
 }
 
 impl Buffers {
+    /// Allocates module/path storage and aliases dead scratch buffers where safe.
     pub(super) fn new(device: &wgpu::Device, layout: Layout, inputs: &CreateInputs<'_>) -> Self {
         let Layout {
             n_blocks,

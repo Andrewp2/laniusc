@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that computes local match expression rank prefixes.
 pub struct HirMatchRankPrefixLocalPass {
     data: PassData,
 }

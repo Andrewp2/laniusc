@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates nearest semantic parent records.
 pub struct HirSemanticParentStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirSemanticParentStepPass {
+    /// Records all semantic parent propagation steps with direct dispatch sizing.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,

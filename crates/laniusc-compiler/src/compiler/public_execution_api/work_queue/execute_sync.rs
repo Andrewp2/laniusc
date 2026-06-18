@@ -1,5 +1,7 @@
 use super::*;
 
+/// Execute a claimed library-frontend or codegen work item with in-memory
+/// artifact values.
 pub fn execute_claimed_artifact_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -52,6 +54,8 @@ where
     })
 }
 
+/// Execute a claimed library-frontend or codegen work item with path-backed
+/// artifact values.
 pub fn execute_claimed_artifact_path_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -104,6 +108,8 @@ where
     })
 }
 
+/// Execute a claimed work item with in-memory artifacts, dispatching by item
+/// kind to artifact-batch or hierarchical-link execution.
 pub fn execute_claimed_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -197,6 +203,8 @@ where
     }
 }
 
+/// Execute a claimed work item with path-backed artifacts, dispatching by item
+/// kind to artifact-batch or hierarchical-link execution.
 pub fn execute_claimed_path_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -290,6 +298,7 @@ where
     }
 }
 
+/// Execute a claimed hierarchical link work item with in-memory artifacts.
 pub fn execute_claimed_link_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -321,6 +330,7 @@ where
     )
 }
 
+/// Execute a claimed hierarchical link work item with path-backed artifacts.
 pub fn execute_claimed_link_path_work_queue_item<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -352,6 +362,7 @@ where
     )
 }
 
+/// Executes a claimed hierarchical link work item using an explicit artifact store.
 pub(in crate::compiler) fn execute_claimed_link_work_queue_item_with_store<E, S>(
     artifact_root: PathBuf,
     item_index: usize,
@@ -448,6 +459,7 @@ where
     })
 }
 
+/// Returns whether a work item is complete, or verifies it is claimed by a worker.
 pub(in crate::compiler) fn work_queue_item_completed_or_claimed_by(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -465,6 +477,7 @@ pub(in crate::compiler) fn work_queue_item_completed_or_claimed_by(
     Ok(false)
 }
 
+/// Returns the active claim lease expiry for a worker-owned work item.
 pub(in crate::compiler) fn work_queue_item_claim_lease_expires_by(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -478,6 +491,7 @@ pub(in crate::compiler) fn work_queue_item_claim_lease_expires_by(
     progress_page_item_claim_lease_expires_by(&page, item_index, worker_id, now_unix_nanos)
 }
 
+/// Claim and execute at most one work-queue item with in-memory artifacts.
 pub fn step_work_queue<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -531,6 +545,7 @@ where
     })
 }
 
+/// Claim and execute at most one work-queue item with path-backed artifacts.
 pub fn step_path_work_queue<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -584,6 +599,7 @@ where
     })
 }
 
+/// Run in-memory work-queue steps up to `max_items` and return final progress.
 pub fn run_work_queue<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -654,6 +670,8 @@ where
     })
 }
 
+/// Run path-backed work-queue steps up to `max_items` using the current time
+/// for claim pruning.
 pub fn run_path_work_queue<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -683,6 +701,8 @@ where
     )
 }
 
+/// Run path-backed work-queue steps up to `max_items` using an explicit
+/// timestamp for claim pruning.
 pub fn run_path_work_queue_at<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,

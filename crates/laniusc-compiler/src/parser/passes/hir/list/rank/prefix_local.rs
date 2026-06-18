@@ -10,6 +10,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that computes local list ranks for a caller-selected owner link.
 pub struct HirListRankPrefixLocalPass {
     data: PassData,
 }
@@ -21,6 +22,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirListRankPrefixLocalPass {
+    /// Records local rank prefix work for the provided owner-link buffer.
     pub fn record_for_owner_link<P>(
         &self,
         device: &wgpu::Device,

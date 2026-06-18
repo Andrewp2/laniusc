@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Complete target-independent job plan for one source pack.
 pub struct SourcePackJobPlan {
     pub libraries: LibraryUnitPlan,
     pub frontend_units: FrontendUnitPlan,
@@ -13,12 +14,14 @@ pub struct SourcePackJobPlan {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Directed dependency from one source-pack library to another library.
 pub struct SourcePackLibraryDependency {
     pub library_id: u32,
     pub depends_on_library_id: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Phase of a planned source-pack job.
 pub enum SourcePackJobPhase {
     LibraryFrontend,
     Codegen,
@@ -26,6 +29,7 @@ pub enum SourcePackJobPhase {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One scheduled source-pack operation.
 pub struct SourcePackJob {
     pub job_index: usize,
     pub phase: SourcePackJobPhase,
@@ -41,12 +45,14 @@ pub struct SourcePackJob {
 }
 
 impl SourcePackJob {
+    /// Returns the source-index range covered by this job.
     pub fn source_range(&self) -> Range<usize> {
         self.first_source_index..self.first_source_index + self.source_file_count
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered job schedule plus compact dependency ranges.
 pub struct SourcePackJobSchedule {
     pub jobs: Vec<SourcePackJob>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -54,6 +60,7 @@ pub struct SourcePackJobSchedule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Set of jobs that can execute in the same dependency wave.
 pub struct SourcePackJobWave {
     pub wave_index: usize,
     pub job_indices: Vec<usize>,
@@ -64,12 +71,14 @@ pub struct SourcePackJobWave {
 }
 
 impl SourcePackJobWave {
+    /// Returns the number of jobs in this wave.
     pub fn job_count(&self) -> usize {
         self.job_indices.len()
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounds used to group ready source-pack jobs into execution batches.
 pub struct SourcePackJobBatchLimits {
     pub max_jobs_per_batch: usize,
     pub max_source_bytes_per_batch: usize,
@@ -83,6 +92,7 @@ impl Default for SourcePackJobBatchLimits {
 }
 
 impl SourcePackJobBatchLimits {
+    /// Derives batch bounds from codegen unit limits.
     pub fn from_codegen_unit_limits(limits: CodegenUnitLimits) -> Self {
         let limits = limits.normalized();
         Self {
@@ -92,6 +102,7 @@ impl SourcePackJobBatchLimits {
         }
     }
 
+    /// Returns limits clamped to the manifest record capacities.
     pub fn normalized(self) -> Self {
         let record_caps = Self::from_codegen_unit_limits(CodegenUnitLimits::default());
         Self {
@@ -111,6 +122,7 @@ impl SourcePackJobBatchLimits {
     }
 }
 
+/// Returns the compact link-input page size for the provided batch limits.
 pub fn link_batch_input_limit(limits: SourcePackJobBatchLimits) -> usize {
     limits
         .normalized()
@@ -119,6 +131,7 @@ pub fn link_batch_input_limit(limits: SourcePackJobBatchLimits) -> usize {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Batch of jobs selected from a dependency wave.
 pub struct SourcePackJobBatch {
     pub batch_index: usize,
     pub wave_index: usize,
@@ -132,17 +145,20 @@ pub struct SourcePackJobBatch {
 }
 
 impl SourcePackJobBatch {
+    /// Returns the number of jobs in this batch.
     pub fn job_count(&self) -> usize {
         self.job_indices.len()
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered collection of execution batches.
 pub struct SourcePackJobBatchSchedule {
     pub batches: Vec<SourcePackJobBatch>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Aggregate sizing information for a batch schedule.
 pub struct SourcePackJobBatchSummary {
     pub batch_count: usize,
     pub oversized_batch_count: usize,
@@ -152,22 +168,27 @@ pub struct SourcePackJobBatchSummary {
 }
 
 impl SourcePackJobBatchSummary {
+    /// Returns the number of batches observed.
     pub fn batch_count(&self) -> usize {
         self.batch_count
     }
 
+    /// Returns the largest job count in any batch.
     pub fn max_batch_job_count(&self) -> usize {
         self.max_batch_job_count
     }
 
+    /// Returns the largest source-byte total in any batch.
     pub fn max_batch_source_bytes(&self) -> usize {
         self.max_batch_source_bytes
     }
 
+    /// Returns the largest source-file count in any batch.
     pub fn max_batch_source_files(&self) -> usize {
         self.max_batch_source_files
     }
 
+    /// Incorporates one job batch into the aggregate batch summary.
     pub(super) fn record(&mut self, batch: &SourcePackJobBatch) {
         self.batch_count = self.batch_count.saturating_add(1);
         if batch.oversized {
@@ -180,14 +201,17 @@ impl SourcePackJobBatchSummary {
 }
 
 impl SourcePackJobBatchSchedule {
+    /// Returns the number of batches in the schedule.
     pub fn batch_count(&self) -> usize {
         self.batches.len()
     }
 
+    /// Returns the number of batches that exceed normalized limits.
     pub fn oversized_batch_count(&self) -> usize {
         self.batches.iter().filter(|batch| batch.oversized).count()
     }
 
+    /// Returns the largest job count in any scheduled batch.
     pub fn max_batch_job_count(&self) -> usize {
         self.batches
             .iter()
@@ -196,6 +220,7 @@ impl SourcePackJobBatchSchedule {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-byte total in any scheduled batch.
     pub fn max_batch_source_bytes(&self) -> usize {
         self.batches
             .iter()
@@ -204,6 +229,7 @@ impl SourcePackJobBatchSchedule {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count in any scheduled batch.
     pub fn max_batch_source_files(&self) -> usize {
         self.batches
             .iter()
@@ -214,50 +240,60 @@ impl SourcePackJobBatchSchedule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Compact inclusive-start/exclusive-end range of source-pack job indices.
 pub struct SourcePackJobIndexRange {
     pub first_job_index: usize,
     pub job_count: usize,
 }
 
 impl SourcePackJobIndexRange {
+    /// Returns the exclusive end job index, or `None` on overflow.
     pub fn end_job_index(&self) -> Option<usize> {
         self.first_job_index.checked_add(self.job_count)
     }
 
+    /// Returns whether this range has no jobs.
     pub fn is_empty(&self) -> bool {
         self.job_count == 0
     }
 
+    /// Returns whether `job_index` is inside this range.
     pub fn contains(&self, job_index: usize) -> bool {
         self.end_job_index()
             .is_some_and(|end| self.first_job_index <= job_index && job_index < end)
     }
 
+    /// Returns an iterator range when the exclusive end index does not overflow.
     pub fn iter(&self) -> Option<Range<usize>> {
         self.end_job_index().map(|end| self.first_job_index..end)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Compact inclusive-start/exclusive-end range of artifact indices.
 pub struct SourcePackArtifactIndexRange {
     pub first_artifact_index: usize,
     pub artifact_count: usize,
 }
 
 impl SourcePackArtifactIndexRange {
+    /// Returns the exclusive end artifact index, or `None` on overflow.
     pub fn end_artifact_index(&self) -> Option<usize> {
         self.first_artifact_index.checked_add(self.artifact_count)
     }
 
+    /// Returns whether this range has no artifacts.
     pub fn is_empty(&self) -> bool {
         self.artifact_count == 0
     }
 
+    /// Returns whether `artifact_index` is inside this range.
     pub fn contains(&self, artifact_index: usize) -> bool {
         self.end_artifact_index()
             .is_some_and(|end| self.first_artifact_index <= artifact_index && artifact_index < end)
     }
 
+    /// Returns an iterator range when the exclusive end index does not overflow.
     pub fn iter(&self) -> Option<Range<usize>> {
         self.end_artifact_index()
             .map(|end| self.first_artifact_index..end)
@@ -265,25 +301,30 @@ impl SourcePackArtifactIndexRange {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Compact inclusive-start/exclusive-end range of dependency batch indices.
 pub struct SourcePackJobBatchDependencyRange {
     pub first_batch_index: usize,
     pub batch_count: usize,
 }
 
 impl SourcePackJobBatchDependencyRange {
+    /// Returns the exclusive end batch index, or `None` on overflow.
     pub fn end_batch_index(&self) -> Option<usize> {
         self.first_batch_index.checked_add(self.batch_count)
     }
 
+    /// Returns whether this range has no batches.
     pub fn is_empty(&self) -> bool {
         self.batch_count == 0
     }
 
+    /// Returns whether `batch_index` is inside this range.
     pub fn contains(&self, batch_index: usize) -> bool {
         self.end_batch_index()
             .is_some_and(|end| self.first_batch_index <= batch_index && batch_index < end)
     }
 
+    /// Returns an iterator range when the exclusive end index does not overflow.
     pub fn iter(&self) -> Option<Range<usize>> {
         self.end_batch_index()
             .map(|end| self.first_batch_index..end)
@@ -291,6 +332,7 @@ impl SourcePackJobBatchDependencyRange {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Dependency record for one scheduled source-pack job batch.
 pub struct SourcePackJobBatchDependency {
     pub batch_index: usize,
     #[serde(default)]
@@ -310,11 +352,13 @@ pub struct SourcePackJobBatchDependency {
 }
 
 impl SourcePackJobBatchDependency {
+    /// Returns the number of explicit dependency batch indices.
     pub fn explicit_dependency_count(&self) -> usize {
         self.dependency_batch_count
             .max(self.dependency_batch_indices.len())
     }
 
+    /// Returns the number of dependency batches represented by compact ranges.
     pub fn range_dependency_count(&self) -> usize {
         self.dependency_range_batch_count.max(
             self.dependency_batch_ranges
@@ -325,15 +369,18 @@ impl SourcePackJobBatchDependency {
         )
     }
 
+    /// Returns total explicit and ranged dependency count.
     pub fn dependency_count(&self) -> usize {
         self.explicit_dependency_count()
             .saturating_add(self.range_dependency_count())
     }
 
+    /// Returns whether this batch has any dependencies.
     pub fn has_dependencies(&self) -> bool {
         self.explicit_dependency_count() != 0 || self.range_dependency_count() != 0
     }
 
+    /// Returns whether all dependencies are completed by explicit batch index.
     pub fn dependencies_completed(&self, completed_batch_indices: &BTreeSet<usize>) -> bool {
         if self.dependency_batch_indices.len() != self.explicit_dependency_count() {
             return false;
@@ -353,6 +400,7 @@ impl SourcePackJobBatchDependency {
             })
     }
 
+    /// Returns whether all dependencies are completed by compact batch ranges.
     pub fn dependencies_completed_by_ranges(
         &self,
         completed_batch_ranges: &[SourcePackJobBatchDependencyRange],
@@ -373,11 +421,13 @@ impl SourcePackJobBatchDependency {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Dependency records for all scheduled job batches.
 pub struct SourcePackJobBatchDependencyPlan {
     pub batches: Vec<SourcePackJobBatchDependency>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Aggregate sizing information for batch dependency records.
 pub struct SourcePackJobBatchDependencySummary {
     pub batch_count: usize,
     pub dependency_edge_count: usize,
@@ -386,22 +436,27 @@ pub struct SourcePackJobBatchDependencySummary {
 }
 
 impl SourcePackJobBatchDependencySummary {
+    /// Returns the number of batch dependency records observed.
     pub fn batch_count(&self) -> usize {
         self.batch_count
     }
 
+    /// Returns the total number of dependency edges.
     pub fn dependency_edge_count(&self) -> usize {
         self.dependency_edge_count
     }
 
+    /// Returns the largest dependency count of any batch.
     pub fn max_dependency_count(&self) -> usize {
         self.max_dependency_count
     }
 
+    /// Returns the number of batches ready before any dependency completes.
     pub fn initial_ready_batch_count(&self) -> usize {
         self.initial_ready_batch_count
     }
 
+    /// Incorporates one batch dependency count into the aggregate dependency summary.
     pub(super) fn record_dependency_count(&mut self, dependency_count: usize) {
         self.batch_count = self.batch_count.saturating_add(1);
         self.dependency_edge_count = self.dependency_edge_count.saturating_add(dependency_count);
@@ -413,16 +468,19 @@ impl SourcePackJobBatchDependencySummary {
 }
 
 impl SourcePackJobBatchDependencyPlan {
+    /// Returns the number of batch dependency records.
     pub fn batch_count(&self) -> usize {
         self.batches.len()
     }
 
+    /// Returns the total number of dependency edges in the plan.
     pub fn dependency_edge_count(&self) -> usize {
         self.batches.iter().fold(0usize, |count, batch| {
             count.saturating_add(batch.dependency_count())
         })
     }
 
+    /// Returns the largest dependency count of any batch.
     pub fn max_dependency_count(&self) -> usize {
         self.batches
             .iter()
@@ -431,6 +489,7 @@ impl SourcePackJobBatchDependencyPlan {
             .unwrap_or(0)
     }
 
+    /// Counts batches ready after the listed batch indices are completed.
     pub fn ready_batch_count(&self, completed_batch_indices: &[usize]) -> usize {
         let completed = completed_batch_indices
             .iter()
@@ -444,6 +503,7 @@ impl SourcePackJobBatchDependencyPlan {
             .count()
     }
 
+    /// Counts batches ready after the listed completed batch ranges.
     pub fn ready_batch_count_with_completed_ranges(
         &self,
         completed_batch_ranges: &[SourcePackJobBatchDependencyRange],
@@ -457,6 +517,7 @@ impl SourcePackJobBatchDependencyPlan {
             .count()
     }
 
+    /// Returns ready batch indices, optionally capped by `max_batches`.
     pub fn ready_batch_indices_limited(
         &self,
         completed_batch_indices: &[usize],
@@ -482,6 +543,7 @@ impl SourcePackJobBatchDependencyPlan {
         ready_batch_indices
     }
 
+    /// Returns ready batch indices using completed ranges, optionally capped.
     pub fn ready_batch_indices_limited_with_completed_ranges(
         &self,
         completed_batch_ranges: &[SourcePackJobBatchDependencyRange],
@@ -505,6 +567,7 @@ impl SourcePackJobBatchDependencyPlan {
         ready_batch_indices
     }
 
+    /// Returns explicit dependencies for the batch with `batch_index`.
     pub fn dependency_batch_indices(&self, batch_index: usize) -> Option<&[usize]> {
         self.batches
             .iter()
@@ -514,11 +577,13 @@ impl SourcePackJobBatchDependencyPlan {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered dependency waves for a source-pack job schedule.
 pub struct SourcePackJobWaveSchedule {
     pub waves: Vec<SourcePackJobWave>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Aggregate sizing information for dependency waves.
 pub struct SourcePackJobWaveSummary {
     pub wave_count: usize,
     pub max_wave_job_count: usize,
@@ -527,22 +592,27 @@ pub struct SourcePackJobWaveSummary {
 }
 
 impl SourcePackJobWaveSummary {
+    /// Returns the number of dependency waves observed.
     pub fn wave_count(&self) -> usize {
         self.wave_count
     }
 
+    /// Returns the largest job count in any dependency wave.
     pub fn max_wave_job_count(&self) -> usize {
         self.max_wave_job_count
     }
 
+    /// Returns the largest source-byte total in any dependency wave.
     pub fn max_wave_source_bytes(&self) -> usize {
         self.max_wave_source_bytes
     }
 
+    /// Returns the largest source-file count in any dependency wave.
     pub fn max_wave_source_files(&self) -> usize {
         self.max_wave_source_files
     }
 
+    /// Incorporates one dependency wave into the aggregate wave summary.
     pub(super) fn record_wave(
         &mut self,
         job_count: usize,
@@ -557,10 +627,12 @@ impl SourcePackJobWaveSummary {
 }
 
 impl SourcePackJobWaveSchedule {
+    /// Returns the number of dependency waves in the schedule.
     pub fn wave_count(&self) -> usize {
         self.waves.len()
     }
 
+    /// Returns the largest job count in any scheduled wave.
     pub fn max_wave_job_count(&self) -> usize {
         self.waves
             .iter()
@@ -569,6 +641,7 @@ impl SourcePackJobWaveSchedule {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-byte total in any scheduled wave.
     pub fn max_wave_source_bytes(&self) -> usize {
         self.waves
             .iter()
@@ -577,6 +650,7 @@ impl SourcePackJobWaveSchedule {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count in any scheduled wave.
     pub fn max_wave_source_files(&self) -> usize {
         self.waves
             .iter()
@@ -587,11 +661,13 @@ impl SourcePackJobWaveSchedule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Error returned when dependency scheduling cannot emit all jobs.
 pub struct SourcePackScheduleError {
     pub unscheduled_job_indices: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
+/// Mutable accumulator for one source-pack job batch.
 pub(super) struct SourcePackJobBatchBuilder {
     wave_index: usize,
     job_indices: Vec<usize>,
@@ -601,6 +677,7 @@ pub(super) struct SourcePackJobBatchBuilder {
 }
 
 impl SourcePackJobBatchBuilder {
+    /// Starts an empty batch in the given dependency wave.
     pub(super) fn new(wave_index: usize) -> Self {
         Self {
             wave_index,
@@ -612,6 +689,7 @@ impl SourcePackJobBatchBuilder {
         self.job_indices.is_empty()
     }
 
+    /// Returns whether adding `job` would exceed the normalized batch limits.
     pub(super) fn should_flush_before(
         &self,
         job: &SourcePackJob,
@@ -625,6 +703,7 @@ impl SourcePackJobBatchBuilder {
                     > limits.max_source_files_per_batch)
     }
 
+    /// Adds one job to the pending batch.
     pub(super) fn push(&mut self, job: &SourcePackJob) {
         self.job_indices.push(job.job_index);
         self.source_bytes = self.source_bytes.saturating_add(job.source_bytes);
@@ -632,6 +711,7 @@ impl SourcePackJobBatchBuilder {
         self.source_lines = self.source_lines.saturating_add(job.source_lines);
     }
 
+    /// Emits the pending batch and resets the builder, or returns `None` when empty.
     pub(super) fn take_batch(
         &mut self,
         batch_index: usize,

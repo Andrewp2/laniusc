@@ -9,6 +9,7 @@ use super::{
     scan::final_ping_pong_scan_prefix,
 };
 
+/// Bind groups used by final x86 instruction selection, encoding, and ELF emission.
 pub(super) struct EmitBindGroups {
     pub(super) select: wgpu::BindGroup,
     pub(super) inst_size: wgpu::BindGroup,
@@ -24,6 +25,7 @@ pub(super) struct EmitBindGroups {
     pub(super) elf: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by final x86 emit passes.
 pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
@@ -65,6 +67,7 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) status: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 final text, relocation, and ELF output passes.
 pub(super) fn create_emit_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

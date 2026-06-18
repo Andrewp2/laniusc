@@ -32,6 +32,7 @@ const LANGUAGE_SLICE_INVENTORY_PATH: &str = "docs/language_slice_unstable_alpha.
 const LANGUAGE_SLICE_INVENTORY_GATE: &str =
     "tools/compiler_acceptance.sh --tier readiness --check-plan";
 
+/// Builds the `laniusc doctor` readiness report as pretty JSON.
 pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
     let (slangc_status, slangc_check) = if skip_slangc_probe {
         ("skipped", slangc::skipped_probe())

@@ -1,5 +1,9 @@
 use super::super::*;
 
+/// Capacity and workgroup layout for module/path resident storage.
+///
+/// These derived sizes keep the allocation policy in one place while the
+/// constructors only decide which relations to bind.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct Layout {
     pub(in crate::type_checker) n_blocks: u32,
@@ -18,6 +22,7 @@ pub(in crate::type_checker) struct Layout {
 }
 
 impl Layout {
+    /// Derives module/path allocation and dispatch sizes from input capacities.
     pub(in crate::type_checker) fn new(
         source_file_capacity: u32,
         token_capacity: u32,

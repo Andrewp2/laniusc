@@ -44,6 +44,7 @@ impl TablesDisk {
     }
 }
 
+/// Saves the full lexer table representation as JSON.
 pub fn save_tables_json(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
     // Stream to disk to avoid giant intermediate strings.
     let f = std::fs::File::create(path)?;
@@ -52,6 +53,7 @@ pub fn save_tables_json(path: &std::path::Path, t: &Tables) -> std::io::Result<(
     w.flush()
 }
 
+/// Loads the full lexer table representation from JSON bytes.
 pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
     serde_json::from_slice::<TablesDisk>(data)
         .map(|d| d.into_tables())
@@ -63,6 +65,7 @@ pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
 const BIN_MAGIC_V2: &[u8; 8] = b"LXTBLE02";
 const INVALID_TOKEN_U16: u16 = 0xFFFF;
 
+/// Saves the full lexer table representation as the `LXTBLE02` binary format.
 pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
     let instant = Instant::now();
     if t.m > u16::MAX as u32 {
@@ -112,7 +115,7 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
         w.write_all(&buf)?;
     }
 
-    // merge: m*m x u16 — stream in chunks
+    // merge: m*m x u16, streamed in chunks
     const CHUNK: usize = 1 << 20;
     {
         let mut bytes = vec![0u8; CHUNK * 2];
@@ -157,6 +160,7 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
     flush
 }
 
+/// Loads the full lexer table representation from `LXTBLE02` binary bytes.
 pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
     // Header
     if data.len() < 8 + 4 + 4 {

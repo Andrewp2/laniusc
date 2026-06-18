@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links match arm nodes to their owning match expression.
 pub struct HirMatchArmLinksPass {
     data: PassData,
 }

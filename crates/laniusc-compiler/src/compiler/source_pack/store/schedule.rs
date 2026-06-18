@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores the compact index for all scheduled library jobs.
     pub fn store_library_schedule_index(
         &self,
         index: &SourcePackLibraryScheduleIndex,
@@ -16,6 +17,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the library schedule index for a target.
     pub fn load_library_schedule_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -38,6 +40,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores the resumable cursor for library schedule preparation.
     pub fn store_library_schedule_prepare_progress(
         &self,
         progress: &FilesystemLibrarySchedulePrepareProgress,
@@ -57,6 +60,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the library schedule preparation cursor.
     pub fn load_library_schedule_prepare_progress_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -79,6 +83,10 @@ impl FilesystemArtifactStore {
         Ok(progress)
     }
 
+    /// Stores the compact schedule page for one library partition.
+    ///
+    /// Inline frontend/codegen jobs are expanded into job records and locator
+    /// pages before the compact partition page is written.
     pub fn store_library_schedule_page(
         &self,
         page: &SourcePackLibrarySchedulePage,
@@ -149,6 +157,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one schedule job record plus its job-locator page.
     pub(in crate::compiler) fn store_schedule_page_job_record(
         &self,
         job: &SourcePackJob,
@@ -179,6 +188,7 @@ impl FilesystemArtifactStore {
         Ok(())
     }
 
+    /// Loads and validates the compact schedule page for one partition.
     pub fn load_library_schedule_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -202,6 +212,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the locator from library id to frontend job range.
     pub fn store_library_frontend_job_locator_page(
         &self,
         page: &SourcePackLibraryFrontendJobLocatorPage,
@@ -219,6 +230,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the frontend-job locator for one library id.
     pub fn load_library_frontend_job_locator_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -242,6 +254,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the compact index for job-locator pages.
     pub fn store_library_schedule_job_locator_index(
         &self,
         index: &SourcePackLibraryScheduleJobLocatorIndex,
@@ -261,6 +274,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one global job-index locator page.
     pub fn store_library_schedule_job_locator_page(
         &self,
         page: &SourcePackLibraryScheduleJobLocatorPage,
@@ -283,6 +297,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one global job-index locator page.
     pub fn load_library_schedule_job_locator_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -307,6 +322,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one schedule job page, paging dependency lists when necessary.
     pub fn store_library_schedule_job_page(
         &self,
         page: &SourcePackLibraryScheduleJobPage,
@@ -330,6 +346,7 @@ impl FilesystemArtifactStore {
         })
     }
 
+    /// Writes an already-paged schedule job page directly.
     pub(in crate::compiler) fn write_library_schedule_job_page_file(
         &self,
         page: &SourcePackLibraryScheduleJobPage,
@@ -347,6 +364,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one dependency sidecar page for a schedule job.
     pub fn store_library_schedule_job_dependency_page(
         &self,
         page: &SourcePackLibraryScheduleJobDependencyPage,
@@ -378,6 +396,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one schedule-job dependency sidecar page.
     pub fn load_library_schedule_job_dependency_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -404,6 +423,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Loads and validates one schedule job page.
     pub fn load_library_schedule_job_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

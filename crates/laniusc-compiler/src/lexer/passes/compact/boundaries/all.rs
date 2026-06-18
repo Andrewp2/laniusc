@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// Compaction pass for all token boundaries, including skipped tokens.
 pub struct CompactBoundariesAllPass {
     data: PassData,
 }
@@ -69,7 +70,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
             "dbg.end_positions_all",
             b.tok_types.byte_size,
         );
-        // ⬇️ point to the sink buffer you bound for ALL token_count
+        // Point to the sink buffer bound for ALL token_count.
         dbg.gpu.token_count_all.set_from_copy(
             device,
             encoder,

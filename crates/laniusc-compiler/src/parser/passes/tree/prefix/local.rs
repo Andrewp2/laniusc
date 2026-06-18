@@ -9,6 +9,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for local tree-prefix counting.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
@@ -17,6 +18,7 @@ pub struct Params {
     pub scan_step: u32,
 }
 
+/// Pass that locally counts emitted tree nodes per block.
 pub struct TreePrefixLocalPass {
     data: PassData,
 }

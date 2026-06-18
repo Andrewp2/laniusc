@@ -6,6 +6,7 @@ use super::super::{
 };
 use crate::gpu::passes_core::PassData;
 
+/// Buffers and capacities that must be initialized before x86 recording passes run.
 pub(super) struct InitializerInputs<'a> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
@@ -87,6 +88,7 @@ pub(super) struct InitializerInputs<'a> {
     pub status_buf: &'a wgpu::Buffer,
 }
 
+/// Records zero-fill, sentinel-fill, and seed writes for all x86 recording output buffers.
 pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
     let InitializerInputs {
         device,

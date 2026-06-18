@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters ranked match arms into match-local ranges.
 pub struct HirMatchArmScatterPass {
     data: PassData,
 }

@@ -1,5 +1,10 @@
 use super::*;
 
+/// Prepares complete source-library metadata for a source-pack target.
+///
+/// This eager wrapper runs the chunked metadata path with the full-prepare
+/// library limit and requires completion in one call. The result identifies the
+/// compact partition index and the source-file summary pages written to disk.
 pub(in crate::compiler) fn prepare_metadata<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
@@ -39,6 +44,12 @@ where
     })
 }
 
+/// Stores source-library metadata, optionally stopping after a bounded number of libraries.
+///
+/// Existing partition locator pages are treated as a resumable prefix and are
+/// verified against the incoming library stream. New libraries write dependency
+/// pages, source-file records, partition pages, source-file summary pages, and
+/// partition locators before the final compact partition index is emitted.
 pub(in crate::compiler) fn prepare_metadata_chunk<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
@@ -276,6 +287,7 @@ where
     })
 }
 
+/// Creates an empty metadata preparation checkpoint for a target.
 pub(in crate::compiler) fn empty_metadata_prepare_progress(
     target: SourcePackArtifactTarget,
 ) -> FilesystemLibraryMetadataPrepareProgress {
@@ -291,6 +303,10 @@ pub(in crate::compiler) fn empty_metadata_prepare_progress(
     }
 }
 
+/// Loads metadata preparation progress or returns a fresh empty checkpoint.
+///
+/// The progress file exists only while chunked metadata preparation is
+/// incomplete, so absence means preparation has not started for this target.
 pub(in crate::compiler) fn load_metadata_prepare_progress_or_default(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -305,6 +321,11 @@ pub(in crate::compiler) fn load_metadata_prepare_progress_or_default(
     }
 }
 
+/// Validates that a single library can be accepted by chunked metadata preparation.
+///
+/// Chunked metadata preparation requires each input library record to stay below
+/// the source-file cap so a single chunk cannot be forced to process an
+/// unbounded library.
 pub(in crate::compiler) fn validate_metadata_chunk_limits(
     library_id: u32,
     source_file_count: usize,
@@ -318,6 +339,11 @@ pub(in crate::compiler) fn validate_metadata_chunk_limits(
     Ok(())
 }
 
+/// Resumes metadata preparation from a stored progress checkpoint.
+///
+/// Unlike [`prepare_metadata_chunk`], the input stream is expected to begin at
+/// the next unpersisted library. The checkpoint supplies the prefix counters,
+/// and completion writes the compact partition index.
 pub(in crate::compiler) fn resume_metadata_chunk<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
@@ -513,6 +539,11 @@ where
     })
 }
 
+/// Verifies persisted dependency IDs for a library partition.
+///
+/// The stored dependency IDs may be inline on the partition page or paged out.
+/// This function streams both forms and checks them against the manifest's
+/// declared dependency stream.
 pub(in crate::compiler) fn verify_stored_dependency_ids<I>(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
@@ -593,6 +624,11 @@ where
     Ok(())
 }
 
+/// Verifies one stored dependency ID against the next manifest dependency ID.
+///
+/// The expected stream must be strictly sorted, unique, and must not contain the
+/// partition's own library ID. The stored ID must match the expected ID at the
+/// same dependency position.
 pub(in crate::compiler) fn verify_next_stored_dependency_id<I>(
     partition: &SourcePackLibraryPartition,
     expected_dependency_library_ids: &mut I,

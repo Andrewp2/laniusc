@@ -10,11 +10,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for one bracket histogram scan step.
 pub struct Params {
     pub n_layers: u32,
     pub scan_step: u32,
 }
 
+/// Parser pass that prefixes per-layer bracket histogram counts.
 pub struct BracketsScanHistogramsPass {
     data: PassData,
 }
@@ -26,6 +28,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl BracketsScanHistogramsPass {
+    /// Records all bracket histogram scan steps for the resident parse.
     pub fn record_scan(
         &self,
         device: &wgpu::Device,

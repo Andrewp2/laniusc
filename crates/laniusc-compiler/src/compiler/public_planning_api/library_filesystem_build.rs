@@ -1,5 +1,7 @@
 use super::*;
 
+/// Execute explicit library path groups through a caller-provided artifact
+/// store.
 pub fn execute_libraries_store_build<P, E, S>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     limits: CodegenUnitLimits,
@@ -20,6 +22,7 @@ where
         .execute_build_plan_with_artifact_store(limits, batch_limits, executor, store)
 }
 
+/// Prepare a generic-target persisted build from explicit library path groups.
 pub fn prepare_library_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,
@@ -38,6 +41,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from explicit library path groups.
 pub fn prepare_library_paths_for_target<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,
@@ -63,6 +67,7 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from ordered library path groups.
 pub fn prepare_ordered_library_paths<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -82,6 +87,8 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from ordered library path groups
+/// with explicit shard limits.
 pub fn prepare_ordered_library_paths_with_shards<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -103,6 +110,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from ordered library path groups.
 pub fn prepare_ordered_library_paths_for_target<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -124,6 +132,8 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from ordered library path groups
+/// with explicit shard limits.
 pub fn prepare_ordered_library_paths_for_target_with_shards<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -152,6 +162,7 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from ordered library path streams.
 pub fn prepare_ordered_path_streams<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -172,6 +183,8 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from ordered library path streams
+/// with explicit shard limits.
 pub fn prepare_ordered_path_streams_with_shards<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -194,6 +207,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from ordered library path streams.
 pub fn prepare_ordered_path_streams_for_target<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -216,6 +230,8 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from ordered library path streams
+/// with explicit shard limits.
 pub fn prepare_ordered_path_streams_for_target_with_shards<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -245,6 +261,7 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from explicit dependency streams.
 pub fn prepare_dependency_streams<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -266,6 +283,8 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from explicit dependency streams
+/// with explicit shard limits.
 pub fn prepare_dependency_streams_with_shards<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -289,6 +308,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from explicit dependency streams.
 pub fn prepare_dependency_streams_for_target<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -312,6 +332,8 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from explicit dependency streams
+/// with explicit shard limits.
 pub fn prepare_dependency_streams_for_target_with_shards<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,

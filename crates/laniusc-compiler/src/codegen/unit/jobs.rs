@@ -4,6 +4,7 @@ mod model;
 pub use model::*;
 
 impl SourcePackJobSchedule {
+    /// Returns compact dependency job ranges for `job_index`.
     pub fn dependency_job_ranges(&self, job_index: usize) -> &[SourcePackJobIndexRange] {
         self.dependency_job_ranges_by_job_index
             .get(job_index)
@@ -11,10 +12,12 @@ impl SourcePackJobSchedule {
             .unwrap_or(&[])
     }
 
+    /// Returns compact dependency job ranges for a scheduled job.
     pub fn dependency_job_ranges_for_job(&self, job: &SourcePackJob) -> &[SourcePackJobIndexRange] {
         self.dependency_job_ranges(job.job_index)
     }
 
+    /// Counts scheduled library frontend jobs.
     pub fn frontend_job_count(&self) -> usize {
         self.jobs
             .iter()
@@ -22,6 +25,7 @@ impl SourcePackJobSchedule {
             .count()
     }
 
+    /// Counts scheduled backend codegen jobs.
     pub fn codegen_job_count(&self) -> usize {
         self.jobs
             .iter()
@@ -29,6 +33,7 @@ impl SourcePackJobSchedule {
             .count()
     }
 
+    /// Counts scheduled link jobs.
     pub fn link_job_count(&self) -> usize {
         self.jobs
             .iter()
@@ -36,6 +41,7 @@ impl SourcePackJobSchedule {
             .count()
     }
 
+    /// Returns the largest source-byte total of any job.
     pub fn max_job_source_bytes(&self) -> usize {
         self.jobs
             .iter()
@@ -44,6 +50,7 @@ impl SourcePackJobSchedule {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count of any job.
     pub fn max_job_source_files(&self) -> usize {
         self.jobs
             .iter()
@@ -52,6 +59,7 @@ impl SourcePackJobSchedule {
             .unwrap_or(0)
     }
 
+    /// Counts effective dependency edges across all jobs.
     pub fn dependency_edge_count(&self) -> usize {
         self.jobs
             .iter()
@@ -59,6 +67,7 @@ impl SourcePackJobSchedule {
             .sum()
     }
 
+    /// Returns the largest effective dependency count of any job.
     pub fn max_job_dependency_count(&self) -> usize {
         self.jobs
             .iter()
@@ -82,6 +91,7 @@ impl SourcePackJobSchedule {
         }
     }
 
+    /// Builds a dependency-wave schedule for this job graph.
     pub fn try_execution_waves(
         &self,
     ) -> Result<SourcePackJobWaveSchedule, SourcePackScheduleError> {
@@ -96,6 +106,7 @@ impl SourcePackJobSchedule {
         Ok(SourcePackJobWaveSchedule { waves })
     }
 
+    /// Computes aggregate sizing information for dependency waves.
     pub fn try_execution_wave_summary(
         &self,
     ) -> Result<SourcePackJobWaveSummary, SourcePackScheduleError> {
@@ -110,6 +121,7 @@ impl SourcePackJobSchedule {
         Ok(summary)
     }
 
+    /// Streams dependency waves to `visit` without retaining the wave schedule.
     pub fn try_for_each_execution_wave<F, E, M>(
         &self,
         map_schedule_error: M,
@@ -243,6 +255,7 @@ impl SourcePackJobSchedule {
         Ok(wave_count)
     }
 
+    /// Builds a bounded batch schedule from dependency waves.
     pub fn try_execution_batches(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -260,6 +273,7 @@ impl SourcePackJobSchedule {
         Ok(SourcePackJobBatchSchedule { batches })
     }
 
+    /// Computes aggregate sizing information for execution batches.
     pub fn try_execution_batch_summary(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -276,6 +290,7 @@ impl SourcePackJobSchedule {
         Ok(summary)
     }
 
+    /// Streams execution batches to `visit` without retaining the schedule.
     pub fn try_for_each_execution_batch<F, E, M>(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -313,6 +328,7 @@ impl SourcePackJobSchedule {
         Ok(batch_count)
     }
 
+    /// Builds compact dependency records for an execution batch schedule.
     pub fn try_batch_dependency_plan(
         &self,
         batches: &SourcePackJobBatchSchedule,
@@ -332,6 +348,7 @@ impl SourcePackJobSchedule {
         })
     }
 
+    /// Computes aggregate sizing information for batch dependency records.
     pub fn try_execution_batch_dependency_summary(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -437,6 +454,7 @@ impl SourcePackJobSchedule {
         Ok(summary)
     }
 
+    /// Streams batch dependency records for an execution batch schedule.
     pub fn try_for_each_batch_dependency<F, E, M>(
         &self,
         batches: &SourcePackJobBatchSchedule,
@@ -556,6 +574,7 @@ impl SourcePackJobSchedule {
     }
 }
 impl SourcePackJobPlan {
+    /// Builds a single-library source-pack job plan from in-memory sources.
     pub fn from_source_pack<S: AsRef<str>>(sources: &[S], limits: CodegenUnitLimits) -> Self {
         Self::from_file_stream_with_dependencies(
             sources.iter().enumerate().map(|(source_index, source)| {
@@ -566,6 +585,7 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Builds a job plan from sources and explicit library ids.
     pub fn from_source_pack_with_libraries<S, L>(
         sources: &[S],
         library_ids: &[L],
@@ -578,6 +598,7 @@ impl SourcePackJobPlan {
         Self::from_source_pack_with_libraries_and_dependencies(sources, library_ids, &[], limits)
     }
 
+    /// Builds a job plan from sources, library ids, and library dependencies.
     pub fn from_source_pack_with_libraries_and_dependencies<S, L>(
         sources: &[S],
         library_ids: &[L],
@@ -610,10 +631,12 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Builds a job plan from precomputed source-file facts.
     pub fn from_files(files: &[SourceFileUnitInput], limits: CodegenUnitLimits) -> Self {
         Self::from_files_with_dependencies(files, &[], limits)
     }
 
+    /// Builds a job plan from precomputed source-file facts and dependencies.
     pub fn from_files_with_dependencies(
         files: &[SourceFileUnitInput],
         library_dependencies: &[SourcePackLibraryDependency],
@@ -626,6 +649,7 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Builds a job plan from a streaming source-file iterator.
     pub fn from_file_stream_with_dependencies<I>(
         files: I,
         library_dependencies: &[SourcePackLibraryDependency],
@@ -642,6 +666,7 @@ impl SourcePackJobPlan {
         .unwrap_or_else(|()| unreachable!("infallible source-pack job-plan collection failed"))
     }
 
+    /// Builds a job plan from a fallible streaming source-file iterator.
     pub fn try_from_fallible_file_stream_with_dependencies<I, E>(
         files: I,
         library_dependencies: &[SourcePackLibraryDependency],
@@ -657,14 +682,17 @@ impl SourcePackJobPlan {
         Ok(builder.finish(library_dependencies))
     }
 
+    /// Returns whether the source pack must run more than one codegen job.
     pub fn requires_multiple_codegen_jobs(&self) -> bool {
         self.codegen_units.unit_count() > 1
     }
 
+    /// Returns whether any library is split into multiple frontend jobs.
     pub fn requires_multiple_frontend_jobs(&self) -> bool {
         self.frontend_units.unit_count() > self.libraries.library_count()
     }
 
+    /// Builds the default job schedule with one frontend job per library.
     pub fn job_schedule(&self) -> SourcePackJobSchedule {
         let dependency_index = self.library_dependency_index();
         let library_order = self.topological_library_indices(&dependency_index);
@@ -783,6 +811,7 @@ impl SourcePackJobPlan {
         }
     }
 
+    /// Builds a job schedule that honors bounded frontend units.
     pub fn bounded_frontend_job_schedule(&self) -> SourcePackJobSchedule {
         let dependency_index = self.library_dependency_index();
         let library_order = self.topological_library_indices(&dependency_index);
@@ -952,6 +981,7 @@ impl SourcePackJobPlan {
         }
     }
 
+    /// Builds a compact generic artifact manifest with count-only payloads.
     pub fn compact_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -962,6 +992,7 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Builds a compact artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -971,6 +1002,7 @@ impl SourcePackJobPlan {
             .expect("source-pack compact build artifact manifest schedule should be acyclic")
     }
 
+    /// Tries to build a compact generic artifact manifest with count-only payloads.
     pub fn try_compact_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -981,6 +1013,7 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Tries to build a compact artifact manifest for a concrete target.
     pub fn try_compact_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -990,6 +1023,7 @@ impl SourcePackJobPlan {
         self.try_compact_build_artifact_manifest_for_schedule(&schedule, batch_limits, target)
     }
 
+    /// Tries to build a compact artifact manifest from a caller-provided schedule.
     pub fn try_compact_build_artifact_manifest_for_schedule(
         &self,
         schedule: &SourcePackJobSchedule,
@@ -1024,6 +1058,7 @@ impl SourcePackJobPlan {
         })
     }
 
+    /// Estimates artifact, IO, and link-batch counts for the default schedule.
     pub fn build_artifact_estimate_summary(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -1036,6 +1071,7 @@ impl SourcePackJobPlan {
         )
     }
 
+    /// Estimates artifact, IO, and link-batch counts for a caller-provided schedule.
     pub fn build_artifact_estimate_summary_for_schedule(
         &self,
         schedule: &SourcePackJobSchedule,
@@ -1252,10 +1288,12 @@ impl SourcePackJobPlan {
         estimate
     }
 
+    /// Builds a retained artifact plan for the default job schedule.
     pub fn build_plan(&self) -> SourcePackBuildPlan {
         self.build_plan_for_schedule(self.job_schedule())
     }
 
+    /// Builds a retained artifact plan using bounded frontend units.
     pub fn bounded_frontend_build_plan(&self) -> SourcePackBuildPlan {
         self.build_plan_for_schedule(self.bounded_frontend_job_schedule())
     }
@@ -1527,6 +1565,7 @@ struct SourcePackLibraryDependencyIndex {
 }
 
 #[derive(Clone, Debug)]
+/// Streaming builder for a source-pack job plan.
 pub struct SourcePackJobPlanBuilder {
     limits: CodegenUnitLimits,
     library_builder: LibraryBuilder,
@@ -1538,6 +1577,7 @@ pub struct SourcePackJobPlanBuilder {
 }
 
 impl SourcePackJobPlanBuilder {
+    /// Creates a builder that applies normalized codegen unit limits.
     pub fn new(limits: CodegenUnitLimits) -> Self {
         Self {
             limits: limits.normalized(),
@@ -1550,6 +1590,7 @@ impl SourcePackJobPlanBuilder {
         }
     }
 
+    /// Adds one source file to the library, frontend, and codegen unit streams.
     pub fn push(&mut self, file: SourceFileUnitInput) {
         self.push_library_file(file);
         self.push_frontend_file(file);
@@ -1626,6 +1667,7 @@ impl SourcePackJobPlanBuilder {
         }
     }
 
+    /// Finishes the plan and attaches library dependencies.
     pub fn finish(
         mut self,
         library_dependencies: &[SourcePackLibraryDependency],

@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates type-argument owners and ranks through type syntax.
 pub struct HirTypeArgRankStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirTypeArgRankStepPass {
+    /// Records all type-argument rank propagation steps with direct dispatch sizing.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,
@@ -27,6 +29,7 @@ impl HirTypeArgRankStepPass {
         self.record_steps_inner(device, encoder, buffers, None)
     }
 
+    /// Records all type-argument rank propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

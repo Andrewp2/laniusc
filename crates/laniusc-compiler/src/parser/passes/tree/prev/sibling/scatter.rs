@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters reverse sibling links from next-sibling records.
 pub struct TreePrevSiblingScatterPass {
     data: PassData,
 }

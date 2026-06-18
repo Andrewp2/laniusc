@@ -21,6 +21,11 @@ use crate::{
     },
 };
 
+/// Returns the out-of-band capability document for `laniusc lsp capabilities`.
+///
+/// This document is intentionally richer than the LSP initialize response:
+/// scripts can inspect schema versions, no-run boundaries, and unsupported
+/// workspace claims without starting a long-lived JSON-RPC session.
 pub(super) fn capabilities_document() -> serde_json::Value {
     serde_json::json!({
         "schema_name": LANIUS_LSP_CAPABILITIES_SCHEMA_NAME,
@@ -60,6 +65,7 @@ pub(super) fn capabilities_document() -> serde_json::Value {
     })
 }
 
+/// Builds the JSON-RPC `initialize` response for the stdio LSP server.
 pub(super) fn initialize_response(id: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",

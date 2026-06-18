@@ -15,6 +15,7 @@ use super::{
     state::{BindGroups, State},
 };
 
+/// Creates the complete module/path state from loaded passes and typed inputs.
 pub(in crate::type_checker) fn create_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,

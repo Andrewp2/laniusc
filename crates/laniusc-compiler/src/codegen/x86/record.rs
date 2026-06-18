@@ -90,6 +90,7 @@ use timing::HostTimer;
 use virtual_bind_groups::{VirtualBindGroupInputs, VirtualBindGroups, create_virtual_bind_groups};
 
 impl GpuX86CodeGenerator {
+    /// Records GPU passes that lower parser HIR and type-check metadata to ELF output.
     pub fn record_elf_from_hir(
         &self,
         device: &wgpu::Device,

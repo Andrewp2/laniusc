@@ -1,5 +1,7 @@
 use super::*;
 
+/// Claim and execute at most one artifact-manifest batch with a paged in-memory
+/// artifact executor.
 pub fn step_artifact_manifest_worker<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -48,6 +50,8 @@ where
     )
 }
 
+/// Claim and execute at most one artifact-manifest batch with a paged path
+/// artifact executor.
 pub fn step_path_artifact_manifest_worker<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -96,6 +100,8 @@ where
     )
 }
 
+/// Claim and execute at most one artifact-manifest batch with an async paged
+/// in-memory artifact executor.
 pub async fn step_artifact_manifest_worker_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -146,6 +152,8 @@ where
     )
 }
 
+/// Claim and execute at most one artifact-manifest batch with an async paged
+/// path artifact executor.
 pub async fn step_path_artifact_manifest_worker_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -196,6 +204,8 @@ where
     )
 }
 
+/// Claim and execute at most one artifact-manifest batch and return a bounded
+/// progress snapshot.
 pub fn step_artifact_manifest_worker_with_progress<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -254,6 +264,7 @@ where
     })
 }
 
+/// Builds the public result for one artifact-manifest worker step.
 pub(in crate::compiler) fn finish_artifact_manifest_worker_step(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -288,6 +299,8 @@ pub(in crate::compiler) fn finish_artifact_manifest_worker_step(
     })
 }
 
+/// Run artifact-manifest worker steps up to `max_batches` and return the final
+/// bounded progress snapshot.
 pub fn run_artifact_manifest_worker_with_progress<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -349,6 +362,8 @@ where
     })
 }
 
+/// Run artifact-manifest worker steps up to `max_batches` using the current
+/// time for claim pruning.
 pub fn run_artifact_manifest_worker<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -375,6 +390,8 @@ where
     )
 }
 
+/// Run artifact-manifest worker steps up to `max_batches` using an explicit
+/// timestamp for claim pruning.
 pub fn run_artifact_manifest_worker_at<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -442,6 +459,8 @@ where
     })
 }
 
+/// Run path-artifact manifest worker steps up to `max_batches` using the
+/// current time for claim pruning.
 pub fn run_path_artifact_manifest_worker<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -468,6 +487,8 @@ where
     )
 }
 
+/// Run path-artifact manifest worker steps up to `max_batches` using an
+/// explicit timestamp for claim pruning.
 pub fn run_path_artifact_manifest_worker_at<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -535,6 +556,8 @@ where
     })
 }
 
+/// Run async artifact-manifest worker steps up to `max_batches` using an
+/// explicit timestamp for claim pruning.
 pub async fn run_artifact_manifest_worker_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -603,6 +626,8 @@ where
     })
 }
 
+/// Run async path-artifact manifest worker steps up to `max_batches` using an
+/// explicit timestamp for claim pruning.
 pub async fn run_path_artifact_manifest_worker_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,

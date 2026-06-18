@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
+/// Canonicalizes a CLI path and verifies that it names a directory.
 pub(crate) fn canonical_directory_path(label: &str, path: PathBuf) -> Result<PathBuf, String> {
     let canonical = fs::canonicalize(&path)
         .map_err(|err| format!("canonicalize {label} {}: {err}", path.display()))?;
@@ -12,6 +13,7 @@ pub(crate) fn canonical_directory_path(label: &str, path: PathBuf) -> Result<Pat
     Ok(canonical)
 }
 
+/// Canonicalizes, validates, and deduplicates a list of directory paths.
 pub(crate) fn canonical_unique_directory_paths(
     label: &str,
     paths: Vec<PathBuf>,

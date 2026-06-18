@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that propagates type-path leaf ownership through path syntax.
 pub struct HirTypePathLeafLinksPass {
     data: PassData,
 }

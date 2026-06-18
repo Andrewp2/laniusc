@@ -1,5 +1,10 @@
 use super::*;
 
+/// Executes every job in one execution-shard batch with the async paged executor.
+///
+/// The batch is looked up inside the execution shard, each job is dispatched by
+/// phase, and the batch result records the single linked output key if the batch
+/// happened to contain the final link job.
 pub(in crate::compiler) async fn execute_execution_shard_batch_paged_async<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,
@@ -49,6 +54,11 @@ where
     })
 }
 
+/// Executes one job from an artifact execution shard.
+///
+/// Frontend jobs build and store library interfaces, codegen jobs load their
+/// owning interface before storing objects, and link jobs stream link-input
+/// shards before storing the linked output.
 pub(in crate::compiler) async fn execute_execution_shard_job_paged_async<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,
@@ -140,6 +150,11 @@ where
     }
 }
 
+/// Streams library-interface dependency batches into a frontend build handle.
+///
+/// Input interfaces may be inline, paged, job-index ranges, or artifact-index
+/// ranges. The function loads artifacts in bounded batches and verifies that the
+/// number of streamed references matches the job artifact manifest summary.
 pub(in crate::compiler) async fn add_library_interface_dependency_batches_async<E, S>(
     store: &mut S,
     target: SourcePackArtifactTarget,
@@ -317,6 +332,11 @@ where
     Ok(loaded_input_count)
 }
 
+/// Streams library-interface dependency batches into a codegen build handle.
+///
+/// This follows the same manifest forms as frontend dependency loading, but may
+/// exclude the codegen job's owning interface artifact so it is not passed back
+/// to the executor as an ordinary dependency.
 pub(in crate::compiler) async fn add_codegen_object_dependency_batches_async<E, S>(
     store: &mut S,
     target: SourcePackArtifactTarget,
@@ -505,6 +525,11 @@ where
     Ok(loaded_input_count)
 }
 
+/// Executes the async link job for an execution shard.
+///
+/// The link job loads all interface and object input shards listed by the link
+/// input shard index, feeds their batches into the link handle, stores the final
+/// linked output, and verifies that output is declared by the execution shard.
 pub(in crate::compiler) async fn execute_execution_shard_link_job_async<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: &SourcePackBuildLinkInputShardIndex,
@@ -563,6 +588,10 @@ where
     Ok(Some(linked_output_key))
 }
 
+/// Streams all interface-input shards listed for a link job.
+///
+/// The shard index stores the interface shard range compactly; each shard in
+/// the range is loaded and replayed into the active link handle.
 pub(in crate::compiler) async fn execute_link_input_interface_shards_async<E, S>(
     link_input_shard_index: &SourcePackBuildLinkInputShardIndex,
     target: SourcePackArtifactTarget,
@@ -596,6 +625,10 @@ where
     Ok(())
 }
 
+/// Loads one interface-input shard and feeds its batches into the link handle.
+///
+/// The shard kind is checked before any artifacts are loaded so object shards
+/// cannot be consumed through the interface path.
 pub(in crate::compiler) async fn execute_link_input_interface_shard_async<E, S>(
     shard_index: usize,
     target: SourcePackArtifactTarget,
@@ -629,6 +662,10 @@ where
     Ok(())
 }
 
+/// Streams all object-input shards listed for a link job.
+///
+/// The shard index stores the object shard range compactly; each shard in the
+/// range is loaded and replayed into the active link handle.
 pub(in crate::compiler) async fn execute_link_input_object_shards_async<E, S>(
     link_input_shard_index: &SourcePackBuildLinkInputShardIndex,
     target: SourcePackArtifactTarget,
@@ -662,6 +699,10 @@ where
     Ok(())
 }
 
+/// Loads one object-input shard and feeds its batches into the link handle.
+///
+/// The shard kind is checked before any artifacts are loaded so interface shards
+/// cannot be consumed through the object path.
 pub(in crate::compiler) async fn execute_link_input_object_shard_async<E, S>(
     shard_index: usize,
     target: SourcePackArtifactTarget,

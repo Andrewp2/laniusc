@@ -44,6 +44,7 @@ fn build_source_pack<S: AsRef<str>>(sources: &[S]) -> Result<(Vec<u8>, SourceFil
 }
 
 impl GpuLexer {
+    /// Prepares resident buffers and metadata for one source string.
     pub(super) fn prepare_buffers_for_input<'a>(
         &'a self,
         input: &str,
@@ -119,6 +120,7 @@ impl GpuLexer {
         Ok(guard)
     }
 
+    /// Prepares resident buffers and source-file metadata for a source pack.
     pub(super) fn prepare_buffers_for_source_pack<'a, S: AsRef<str>>(
         &'a self,
         sources: &[S],
@@ -275,6 +277,7 @@ impl GpuLexer {
             .write_buffer(&bufs.token_count, 0, &0u32.to_le_bytes());
     }
 
+    /// Writes single-file source metadata into resident buffers.
     pub(super) fn write_current_source_file_metadata(&self, bufs: &buffers::GpuBuffers, n: u32) {
         self.queue
             .write_buffer(&bufs.source_file_count, 0, &1u32.to_le_bytes());

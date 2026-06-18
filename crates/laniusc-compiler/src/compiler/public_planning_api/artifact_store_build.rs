@@ -1,5 +1,7 @@
 use super::*;
 
+/// Load stdlib and user source paths, plan a build, and execute it through a
+/// caller-provided artifact store.
 pub fn execute_pack_paths_store_build<SP, UP, E, S>(
     stdlib_paths: &[SP],
     user_paths: &[UP],

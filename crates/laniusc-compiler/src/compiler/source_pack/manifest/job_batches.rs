@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates a locator from a build batch to its artifact shard.
 pub(in crate::compiler) fn validate_batch_shard_locator(
     locator: &SourcePackBuildBatchShardLocator,
     target: SourcePackArtifactTarget,
@@ -26,6 +27,7 @@ pub(in crate::compiler) fn validate_batch_shard_locator(
     Ok(())
 }
 
+/// Validates the compact index for persisted job-batch pages.
 pub(in crate::compiler) fn validate_job_batch_page_index(
     index: &SourcePackBuildJobBatchPageIndex,
     target: SourcePackArtifactTarget,
@@ -55,6 +57,7 @@ pub(in crate::compiler) fn validate_job_batch_page_index(
     Ok(())
 }
 
+/// Validates a persisted job-batch page.
 pub(in crate::compiler) fn validate_job_batch_page(
     page: &SourcePackBuildJobBatchPage,
     target: SourcePackArtifactTarget,
@@ -68,6 +71,7 @@ pub(in crate::compiler) fn validate_job_batch_page(
     )
 }
 
+/// Validates a job-batch page before store-time sidecar expansion.
 pub(in crate::compiler) fn validate_job_batch_page_store_input(
     page: &SourcePackBuildJobBatchPage,
     target: SourcePackArtifactTarget,
@@ -81,12 +85,16 @@ pub(in crate::compiler) fn validate_job_batch_page_store_input(
     )
 }
 
+/// Validation mode for compact persisted pages versus store inputs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum JobBatchPageValidationMode {
+    /// Validate the compact page that is already persisted.
     Persisted,
+    /// Validate caller-provided data before sidecar pages are split out.
     StoreInput,
 }
 
+/// Validates an inline record count against persisted-page caps.
 pub(in crate::compiler) fn validate_job_batch_inline_record_count(
     page: &SourcePackBuildJobBatchPage,
     label: &str,
@@ -103,6 +111,7 @@ pub(in crate::compiler) fn validate_job_batch_inline_record_count(
     Ok(())
 }
 
+/// Validates a job-batch page using the requested page validation mode.
 pub(in crate::compiler) fn validate_job_batch_page_with_mode(
     page: &SourcePackBuildJobBatchPage,
     target: SourcePackArtifactTarget,
@@ -250,6 +259,7 @@ pub(in crate::compiler) fn validate_job_batch_page_with_mode(
     Ok(())
 }
 
+/// Validates one explicit dependency-batch sidecar page.
 pub(in crate::compiler) fn validate_job_batch_dependency_page(
     page: &SourcePackBuildJobBatchDependencyPage,
     target: SourcePackArtifactTarget,
@@ -334,6 +344,7 @@ pub(in crate::compiler) fn validate_job_batch_dependency_page(
     Ok(())
 }
 
+/// Validates one dependency-batch range sidecar page.
 pub(in crate::compiler) fn validate_job_batch_dependency_range_page(
     page: &SourcePackBuildJobBatchDependencyRangePage,
     target: SourcePackArtifactTarget,
@@ -425,6 +436,7 @@ pub(in crate::compiler) fn validate_job_batch_dependency_range_page(
     Ok(())
 }
 
+/// Validates a locator from a scheduled job to its job batch.
 pub(in crate::compiler) fn validate_job_batch_locator_page(
     page: &SourcePackBuildJobBatchJobLocatorPage,
     target: SourcePackArtifactTarget,
@@ -460,6 +472,7 @@ pub(in crate::compiler) fn validate_job_batch_locator_page(
     Ok(())
 }
 
+/// Validates a persisted dependents page for one job batch.
 pub(in crate::compiler) fn validate_job_batch_dependents_page(
     page: &SourcePackBuildJobBatchDependentsPage,
     target: SourcePackArtifactTarget,
@@ -475,6 +488,7 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page(
     )
 }
 
+/// Validates a dependents page before store-time sidecar expansion.
 pub(in crate::compiler) fn validate_job_batch_dependents_page_store_input(
     page: &SourcePackBuildJobBatchDependentsPage,
     target: SourcePackArtifactTarget,
@@ -490,12 +504,16 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page_store_input(
     )
 }
 
+/// Validation mode for compact persisted dependents pages versus store inputs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum JobBatchDependentsPageValidationMode {
+    /// Validate the compact dependents page that is already persisted.
     Persisted,
+    /// Validate caller-provided dependents before sidecar pages are split out.
     StoreInput,
 }
 
+/// Validates an inline dependents record count against persisted-page caps.
 pub(in crate::compiler) fn validate_job_batch_dependents_inline_record_count(
     page: &SourcePackBuildJobBatchDependentsPage,
     label: &str,
@@ -512,6 +530,7 @@ pub(in crate::compiler) fn validate_job_batch_dependents_inline_record_count(
     Ok(())
 }
 
+/// Validates a job-batch dependents page using the requested validation mode.
 pub(in crate::compiler) fn validate_job_batch_dependents_page_with_mode(
     page: &SourcePackBuildJobBatchDependentsPage,
     target: SourcePackArtifactTarget,
@@ -617,6 +636,7 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page_with_mode(
     Ok(())
 }
 
+/// Validates one dependent-batch sidecar page.
 pub(in crate::compiler) fn validate_job_batch_dependent_batch_page(
     page: &SourcePackBuildJobBatchDependentBatchPage,
     target: SourcePackArtifactTarget,

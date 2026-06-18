@@ -3,6 +3,12 @@ use super::*;
 mod dependencies;
 pub(in crate::compiler) use dependencies::*;
 
+/// Builds all schedule records from explicit source-library streams.
+///
+/// This eager path writes partition metadata, compact source-file pages,
+/// build-unit pages, frontend/codegen schedule pages, job locators, and the
+/// synthetic link job in one pass. The returned paths and counts describe the
+/// stored source-pack schedule for the requested artifact target.
 pub(in crate::compiler) fn prepare_schedule<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
@@ -241,6 +247,11 @@ where
     })
 }
 
+/// Rebuilds schedule pages from already-stored library metadata for tests.
+///
+/// The source-file and partition pages are treated as the source of truth. The
+/// function recomputes build units, schedule pages, locators, and the schedule
+/// index so tests can verify the metadata-driven path matches eager scheduling.
 #[cfg(test)]
 pub(in crate::compiler) fn prepare_schedule_from_metadata(
     store: &FilesystemArtifactStore,
@@ -383,6 +394,12 @@ pub(in crate::compiler) fn prepare_schedule_from_metadata(
     })
 }
 
+/// Advances metadata-driven schedule preparation by a bounded number of libraries.
+///
+/// This resumable path first creates missing build-unit pages, then creates
+/// schedule pages and locators from those build units. It persists prepare
+/// progress between calls so large source packs can be scheduled without a
+/// single long-running preparation step.
 pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -684,6 +701,11 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
     })
 }
 
+/// Verifies that a build-unit page still matches its library partition.
+///
+/// Build-unit pages are derived from partition metadata plus normalized codegen
+/// limits. Any mismatch means the page was generated for a different source set
+/// or different batching constraints.
 pub(in crate::compiler) fn validate_build_unit_partition(
     page: &SourcePackLibraryBuildUnitPage,
     partition: &SourcePackLibraryPartition,
@@ -705,6 +727,11 @@ pub(in crate::compiler) fn validate_build_unit_partition(
     Ok(())
 }
 
+/// Verifies that a stored schedule page matches its derived schedule entry.
+///
+/// The entry supplies the partition-local job ranges expected from the schedule
+/// index. This check catches stale schedule pages before chunked preparation
+/// resumes from them.
 pub(in crate::compiler) fn validate_schedule_entry_page(
     page: &SourcePackLibrarySchedulePage,
     entry: &SourcePackLibraryScheduleIndexEntry,
@@ -725,6 +752,11 @@ pub(in crate::compiler) fn validate_schedule_entry_page(
     Ok(())
 }
 
+/// Stores the locator page for a codegen job.
+///
+/// A codegen locator maps the global job index back to the partition schedule
+/// page and codegen offset that produced it. The job is validated against the
+/// global frontend/codegen ranges before the locator is written.
 pub(in crate::compiler) fn store_codegen_job_locator(
     store: &FilesystemArtifactStore,
     index: &SourcePackLibraryScheduleIndex,
@@ -776,6 +808,10 @@ pub(in crate::compiler) fn store_codegen_job_locator(
     Ok(())
 }
 
+/// Stores the locator and schedule job page for the synthetic link job.
+///
+/// The link job has no partition page or codegen offset, so its locator points
+/// directly at the global link job index.
 pub(in crate::compiler) fn store_link_job_locator(
     store: &FilesystemArtifactStore,
     index: &SourcePackLibraryScheduleIndex,
@@ -795,6 +831,10 @@ pub(in crate::compiler) fn store_link_job_locator(
     Ok(())
 }
 
+/// Stores a schedule job page that has no dependency-page payload.
+///
+/// This is used for the synthetic link job, whose detailed link inputs are
+/// represented by link-plan records rather than schedule dependency ranges.
 pub(in crate::compiler) fn store_schedule_job_page(
     store: &FilesystemArtifactStore,
     index: &SourcePackLibraryScheduleIndex,
@@ -814,6 +854,11 @@ pub(in crate::compiler) fn store_schedule_job_page(
     Ok(())
 }
 
+/// Constructs the synthetic link job for a schedule index.
+///
+/// The link job occupies `link_job_index`, follows every frontend and codegen
+/// job, and has no library-local source range because its inputs are the
+/// artifacts produced by earlier jobs.
 pub(in crate::compiler) fn link_schedule_job(
     index: &SourcePackLibraryScheduleIndex,
 ) -> SourcePackJob {

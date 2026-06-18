@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records module, import, declaration, path, and projection relation passes.
 pub(in crate::type_checker) fn record_module_path_state_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

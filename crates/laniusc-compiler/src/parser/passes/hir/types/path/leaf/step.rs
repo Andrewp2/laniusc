@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that resolves the leaf node for each HIR type path.
 pub struct HirTypePathLeafStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirTypePathLeafStepPass {
+    /// Records all type-path leaf propagation steps with direct dispatch sizing.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,
@@ -27,6 +29,7 @@ impl HirTypePathLeafStepPass {
         self.record_steps_inner(device, encoder, buffers, None)
     }
 
+    /// Records all type-path leaf propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Loads and validates the hierarchical link plan index for a target.
     pub fn load_hierarchical_link_plan_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -24,6 +25,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores one compact hierarchical link group page.
     pub fn store_hierarchical_link_group_page(
         &self,
         group: &SourcePackHierarchicalLinkGroupPage,
@@ -51,6 +53,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one hierarchical link group page.
     pub fn load_hierarchical_link_group_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -75,6 +78,7 @@ impl FilesystemArtifactStore {
         Ok(group)
     }
 
+    /// Loads and validates the hierarchical link execution index for a target.
     pub fn load_hierarchical_link_execution_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -97,6 +101,10 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores one compact hierarchical link execution page and sidecars.
+    ///
+    /// Inline interface, object, and partial-link inputs are split into bounded
+    /// pages before the compact execution page is written.
     pub fn store_hierarchical_link_execution_page(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPage,
@@ -184,6 +192,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Splits interface artifact refs into hierarchical link sidecar pages.
     pub(in crate::compiler) fn store_link_interface_pages_from_refs(
         &self,
         target: SourcePackArtifactTarget,
@@ -214,6 +223,7 @@ impl FilesystemArtifactStore {
             .div_ceil(SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_DEFAULT_PAGE_SIZE))
     }
 
+    /// Splits codegen-object artifact refs into hierarchical link sidecar pages.
     pub(in crate::compiler) fn store_link_object_pages_from_refs(
         &self,
         target: SourcePackArtifactTarget,
@@ -244,6 +254,7 @@ impl FilesystemArtifactStore {
             .div_ceil(SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_DEFAULT_PAGE_SIZE))
     }
 
+    /// Splits partial-link input groups into hierarchical link sidecar pages.
     pub(in crate::compiler) fn store_partial_link_pages_from_inputs(
         &self,
         target: SourcePackArtifactTarget,
@@ -279,6 +290,7 @@ impl FilesystemArtifactStore {
             .div_ceil(SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_DEFAULT_PAGE_SIZE))
     }
 
+    /// Stores one hierarchical link interface-input sidecar page.
     pub fn store_hierarchical_link_execution_interface_page(
         &self,
         page: &SourcePackHierarchicalLinkExecutionInterfacePage,
@@ -308,6 +320,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one hierarchical link object-input sidecar page.
     pub fn store_hierarchical_link_execution_object_page(
         &self,
         page: &SourcePackHierarchicalLinkExecutionObjectPage,
@@ -332,6 +345,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one hierarchical link partial-input sidecar page.
     pub fn store_hierarchical_link_execution_partial_page(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPartialPage,
@@ -356,6 +370,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one compact hierarchical link execution page.
     pub fn load_hierarchical_link_execution_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -379,6 +394,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Loads and validates one hierarchical link interface-input sidecar page.
     pub fn load_hierarchical_link_execution_interface_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -408,6 +424,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Loads and validates one hierarchical link object-input sidecar page.
     pub fn load_hierarchical_link_execution_object_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -436,6 +453,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Loads and validates one hierarchical link partial-input sidecar page.
     pub fn load_hierarchical_link_execution_partial_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

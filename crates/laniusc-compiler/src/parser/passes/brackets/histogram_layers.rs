@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for bracket layer histogramming.
 pub struct Params {
     pub n_sc: u32,
     pub n_layers: u32,
 }
 
+/// Pass that counts bracket pushes and pops by nesting layer.
 pub struct BracketsHistogramLayersPass {
     data: PassData,
 }

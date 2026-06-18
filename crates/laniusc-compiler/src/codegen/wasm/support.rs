@@ -8,12 +8,14 @@ use anyhow::Result;
 use super::{WasmOutputError, WasmParams};
 use crate::gpu::buffers::LaniusBuffer;
 
+/// Emits a WASM backend trace line when `LANIUS_WASM_TRACE` is enabled.
 pub(super) fn trace_wasm_codegen(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
         eprintln!("[laniusc][wasm-codegen] {stage}");
     }
 }
 
+/// Encodes the main WASM parameter uniform using shader layout rules.
 pub(super) fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(params)
@@ -21,18 +23,21 @@ pub(super) fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+/// Returns the initial four-word body status buffer contents.
 pub(super) fn body_status_init_bytes() -> [u8; 16] {
     let mut bytes = [0u8; 16];
     bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes
 }
 
+/// Returns body status bytes initialized to reject unsupported shapes.
 pub(super) fn unsupported_shape_status_init_bytes() -> [u8; 16] {
     let mut bytes = body_status_init_bytes();
     bytes[8..12].copy_from_slice(&1u32.to_le_bytes());
     bytes
 }
 
+/// Encodes one WebGPU indirect-dispatch argument tuple.
 pub(super) fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
     let mut bytes = [0u8; 12];
     bytes[0..4].copy_from_slice(&x.to_le_bytes());
@@ -41,6 +46,7 @@ pub(super) fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
     bytes
 }
 
+/// Reads WASM backend status and exact output bytes from readback buffers.
 pub(super) fn read_wasm_output(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -139,6 +145,7 @@ fn wasm_readback_timeout() -> Duration {
     Duration::from_millis(ms)
 }
 
+/// Estimates a conservative WASM output buffer capacity for one source.
 pub(super) fn estimate_wasm_output_capacity(source_len: usize, token_capacity: u32) -> usize {
     source_len
         .saturating_mul(16)
@@ -147,6 +154,7 @@ pub(super) fn estimate_wasm_output_capacity(source_len: usize, token_capacity: u
         .max(4096)
 }
 
+/// Splits a one-dimensional workgroup count across x/y WebGPU dispatch limits.
 pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     const MAX_X: u32 = 65_535;
     let groups = groups.max(1);
@@ -157,6 +165,7 @@ pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     }
 }
 
+/// Hashes buffer identities that affect WASM resident bind-group reuse.
 pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for buffer in buffers {
@@ -165,6 +174,7 @@ pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
     hasher.finish()
 }
 
+/// Allocates writable WASM `u32` storage with at least one element.
 pub(super) fn storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -181,6 +191,7 @@ pub(super) fn storage_u32_rw(
     LaniusBuffer::new((buffer, (count * 4) as u64), count)
 }
 
+/// Allocates a host-readable readback buffer for `count` `u32` words.
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),

@@ -54,10 +54,12 @@ impl TypeCheckRecordHostTimer {
 }
 
 impl GpuTypeChecker {
+    /// Creates a type checker from the shared compiler GPU device wrapper.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         Self::new(&gpu.device)
     }
 
+    /// Creates a type checker and loads all resident type-check pass pipelines.
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let passes = TypeCheckPasses::new(device)?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
@@ -1326,6 +1328,8 @@ impl GpuTypeChecker {
         Ok(RecordedTypeCheck)
     }
 
+    /// Reads the recorded status buffer and converts GPU status words to an
+    /// accepted result or a typed rejection.
     pub fn finish_recorded_check(
         &self,
         device: &wgpu::Device,
@@ -1348,6 +1352,8 @@ impl GpuTypeChecker {
         })
     }
 
+    /// Borrows the retained visible-value declaration table if a resident check
+    /// has populated it.
     pub fn with_visible_decl_buffer<R>(
         &self,
         consume: impl FnOnce(&wgpu::Buffer) -> R,
@@ -1361,6 +1367,7 @@ impl GpuTypeChecker {
             .map(|bind_groups| consume(&bind_groups.visible_decl))
     }
 
+    /// Borrows the retained visible-type declaration table if available.
     pub fn with_visible_type_buffer<R>(
         &self,
         consume: impl FnOnce(&wgpu::Buffer) -> R,
@@ -1374,6 +1381,7 @@ impl GpuTypeChecker {
             .map(|bind_groups| consume(&bind_groups.visible_type))
     }
 
+    /// Borrows the retained enclosing-function table if available.
     pub fn with_enclosing_fn_buffer<R>(
         &self,
         consume: impl FnOnce(&wgpu::Buffer) -> R,
@@ -1387,6 +1395,11 @@ impl GpuTypeChecker {
             .map(|bind_groups| consume(&bind_groups.enclosing_fn))
     }
 
+    /// Borrows the full retained semantic metadata set for GPU backend
+    /// recording.
+    ///
+    /// The resident cache remains owned by the type checker after the callback
+    /// returns.
     pub fn with_codegen_buffers<R>(
         &self,
         consume: impl FnOnce(GpuCodegenBuffers<'_>) -> R,
@@ -1464,6 +1477,10 @@ impl GpuTypeChecker {
         }))
     }
 
+    /// Moves the full retained semantic metadata set out of the resident cache.
+    ///
+    /// Use this when a later phase must outlive or release the type-checker
+    /// resident state. A successful call empties the resident cache.
     pub fn take_codegen_buffers(&self) -> Option<OwnedGpuCodegenBuffers> {
         let mut guard = self
             .resident_state
@@ -1606,6 +1623,9 @@ impl GpuTypeChecker {
         })
     }
 
+    /// Moves the x86 backend metadata subset out of the resident cache.
+    ///
+    /// A successful call empties the resident cache.
     pub fn take_x86_codegen_buffers(&self) -> Option<OwnedGpuX86CodegenBuffers> {
         let mut guard = self
             .resident_state
@@ -1693,6 +1713,10 @@ impl GpuTypeChecker {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Borrows the retained type-expression and type-instance metadata buffers.
+    ///
+    /// This narrow accessor exists for callers that need type-ref metadata
+    /// without taking the larger backend metadata carrier.
     pub fn with_type_expr_metadata_buffers<R>(
         &self,
         consume: impl FnOnce(

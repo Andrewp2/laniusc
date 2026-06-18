@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds type-alias owner propagation from semantic parent links.
 pub struct HirTypeAliasOwnerInitPass {
     data: PassData,
 }

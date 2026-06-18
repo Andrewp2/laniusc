@@ -12,6 +12,7 @@ use super::{
     bind_helpers::{StepNames, StepPairs, step_pair_groups},
 };
 
+/// Bind groups used to record calls, constants, parameter registers, and call ABI rows.
 pub(super) struct CallRecordBindGroups {
     pub(super) call_records: wgpu::BindGroup,
     pub(super) call_callee_owner_init: wgpu::BindGroup,
@@ -23,6 +24,7 @@ pub(super) struct CallRecordBindGroups {
     pub(super) call_abi: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by x86 call-recording passes.
 pub(super) struct CallRecordInputs<'a> {
     pub(super) params_buf: &'a wgpu::Buffer,
     pub(super) feature_params_buf: &'a wgpu::Buffer,
@@ -66,6 +68,7 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) call_abi_status_buf: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 call metadata recording.
 pub(super) fn create_call_record_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

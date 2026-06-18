@@ -9,19 +9,27 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for filling method declaration records.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Method has no receiver.
 pub const HIR_METHOD_RECEIVER_NONE: u32 = 0;
+/// Method receiver is `self`.
 pub const HIR_METHOD_RECEIVER_SELF: u32 = 1;
+/// Method receiver is `&self`.
 pub const HIR_METHOD_RECEIVER_REF_SELF: u32 = 2;
+/// Method receiver is an explicit typed parameter.
 pub const HIR_METHOD_RECEIVER_EXPLICIT: u32 = 3;
 
+/// Private method visibility.
 pub const HIR_METHOD_VIS_PRIVATE: u32 = 0;
+/// Public method visibility.
 pub const HIR_METHOD_VIS_PUBLIC: u32 = 1;
 
+/// Parser pass that fills method owner, receiver, visibility, and signature records.
 pub struct HirMethodFieldsPass {
     data: PassData,
 }

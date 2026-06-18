@@ -9,12 +9,14 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for generic HIR span extraction.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
     pub token_capacity: u32,
 }
 
+/// Pass that records generic source spans for HIR nodes.
 pub struct HirSpansPass {
     data: PassData,
 }

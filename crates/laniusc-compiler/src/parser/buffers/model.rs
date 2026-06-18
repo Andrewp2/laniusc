@@ -14,6 +14,7 @@ use crate::gpu::buffers::LaniusBuffer;
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType, Default)]
+/// Packed parser action header for one adjacent token-kind pair.
 pub struct ActionHeader {
     pub push_len: u32,
     pub emit_len: u32,
@@ -23,6 +24,7 @@ pub struct ActionHeader {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for parser token-delimiter scans.
 pub struct TokenDelimiterParams {
     pub n_tokens: u32,
     pub n_blocks: u32,
@@ -31,11 +33,15 @@ pub struct TokenDelimiterParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for token brace/delimiter matching passes.
 pub struct TokenBraceMatchParams {
     pub n_tokens: u32,
 }
 
-/// All GPU-side buffers for the parser pipeline (no readbacks/staging here).
+/// All GPU-side buffers for the parser pipeline.
+///
+/// This struct owns resident GPU storage and uniform buffers only; readback and
+/// staging buffers live in driver/result objects.
 pub struct ParserBuffers {
     // sizes
     pub n_tokens: u32,
@@ -54,7 +60,7 @@ pub struct ParserBuffers {
     pub ll1_emit_pos: LaniusBuffer<u32>,
     pub ll1_status: LaniusBuffer<u32>,
 
-    // pair→header
+    // pair-to-header
     pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,
     pub semantic_token_kinds: LaniusBuffer<u32>,
     pub token_delimiter_params: LaniusBuffer<TokenDelimiterParams>,

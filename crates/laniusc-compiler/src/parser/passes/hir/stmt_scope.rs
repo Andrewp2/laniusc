@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that records statement scope ownership for HIR statement nodes.
 pub struct HirStmtScopePass {
     data: PassData,
 }

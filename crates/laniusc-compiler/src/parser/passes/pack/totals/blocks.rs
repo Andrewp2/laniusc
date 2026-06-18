@@ -13,10 +13,12 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for block-level packed stream totals.
 pub struct Params {
     pub n_pairs: u32,
 }
 
+/// Pass that computes per-block stack-change and emit totals for packed parser pairs.
 pub struct PackTotalsBlocksPass {
     data: PassData,
 }
@@ -28,6 +30,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackTotalsBlocksPass {
+    /// Records the block-total pass over parser pair outputs.
     pub fn record_pass(
         &self,
         device: &wgpu::Device,

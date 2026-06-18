@@ -1,19 +1,8 @@
-// src/parser/tables.rs
-// Offline precomputed tables for the LLP parser, matching the VM07 layout.
-//
-// We keep the existing MVP action-header helpers for the current demo,
-// and add the full "3 data structures / 7 arrays" used by the real parser.
-//
-// Arrays produced offline:
-//   1) Stack changes (supersequence)                 : sc_superseq[u32]
-//      Offsets, lengths per (prev_kind, this_kind)   : sc_off[u32], sc_len[u32]
-//      Encoding: push(2*x+1), pop(2*x), where x = stack symbol id.
-//   2) Partial parse (supersequence)                 : pp_superseq[u32]
-//      Offsets, lengths per (prev_kind, this_kind)   : pp_off[u32], pp_len[u32]
-//      Elements are production IDs.
-//   3) Production arity                              : prod_arity[u32] (by production ID)
-//
-// File I/O (compact, little-endian) uses magic "LXPRSE02".
+//! Offline precomputed tables for the LLP/parser pipeline.
+//!
+//! Tables contain stack-change supersequences, projected production streams,
+//! production arity, and full LL(1) prediction/RHS data. File I/O is compact
+//! little-endian data with a versioned magic header.
 
 use std::{fs, io::Write, path::Path};
 
@@ -21,17 +10,13 @@ use crate::{lexer::tables::tokens::TokenKind, parser::buffers::ActionHeader};
 
 // ---------- MVP (already in tree): action headers for bracket sanity ----------
 
-/// Returns a zeroed action table of size (n_kinds * n_kinds) * sizeof(ActionHeader).
+/// Returns a zeroed action table of size `(n_kinds * n_kinds) * sizeof(ActionHeader)`.
 pub fn build_dummy_action_table(n_kinds: u32) -> Vec<u8> {
     let n = (n_kinds as usize) * (n_kinds as usize);
     vec![0u8; n * std::mem::size_of::<ActionHeader>()]
 }
 
-/// Very small MVP table:
-/// - For any prev kind, if `this` is an opening delimiter, record a 1-element push with a tag.
-/// - For any prev kind, if `this` is a closing delimiter, record a 1-element pop (generic tag=0).
-///
-/// This is enough to verify the llp_pairs kernel + readback path end-to-end.
+/// Builds a small delimiter-only action table for parser kernel smoke tests.
 pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
     let mut bytes = build_dummy_action_table(n_kinds);
     let sz = std::mem::size_of::<ActionHeader>();
@@ -166,9 +151,11 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
 
 const MAGIC_V1: &[u8; 8] = b"LXPRSE01";
 const MAGIC_V2: &[u8; 8] = b"LXPRSE02";
+/// Sentinel used by parse tables to represent missing entries.
 pub const INVALID_TABLE_ENTRY: u32 = u32::MAX;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Host-side parse-table oracle error.
 pub struct Ll1ParseError {
     pub pos: usize,
     pub code: Ll1ParseErrorCode,
@@ -176,6 +163,7 @@ pub struct Ll1ParseError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Reason a host-side LL(1) table oracle rejected a token stream.
 pub enum Ll1ParseErrorCode {
     TerminalMismatch,
     NoPrediction,
@@ -197,6 +185,7 @@ impl std::fmt::Display for Ll1ParseError {
 impl std::error::Error for Ll1ParseError {}
 
 #[inline]
+/// Encodes a parser stack push operation for a stack symbol id.
 pub fn encode_push(symbol_id: u32) -> u32 {
     // push = 2*x + 1
     symbol_id
@@ -205,12 +194,14 @@ pub fn encode_push(symbol_id: u32) -> u32 {
         .expect("overflow in push encode")
 }
 #[inline]
+/// Encodes a parser stack pop operation for a stack symbol id.
 pub fn encode_pop(symbol_id: u32) -> u32 {
     // pop = 2*x
     symbol_id.checked_mul(2).expect("overflow in pop encode")
 }
 
 #[derive(Debug, Clone)]
+/// Precomputed parser table data consumed by GPU parser passes.
 pub struct PrecomputedParseTables {
     // basic sizes
     pub n_kinds: u32,
@@ -244,6 +235,7 @@ pub struct PrecomputedParseTables {
 }
 
 impl PrecomputedParseTables {
+    /// Creates empty precomputed tables with the requested token and production counts.
     pub fn new(n_kinds: u32, n_productions: u32) -> Self {
         let cells = (n_kinds as usize) * (n_kinds as usize);
         Self {
@@ -290,6 +282,7 @@ impl PrecomputedParseTables {
         self.pp_superseq.extend_from_slice(seq);
     }
 
+    /// Finalizes stack-symbol and production id bit-width metadata.
     pub fn finalize_bit_widths(&mut self, max_symbol_id: u32) {
         // ceil(log2(max+1)) as a tiny helper
         fn bits_for(x: u32) -> u32 {
@@ -330,6 +323,7 @@ impl PrecomputedParseTables {
         Ok(productions)
     }
 
+    /// Test-only host LL(1) oracle that also returns production source positions.
     pub fn test_cpu_ll1_production_stream_with_positions(
         &self,
         token_kinds: &[u32],
@@ -424,6 +418,7 @@ impl PrecomputedParseTables {
 
     // ---------- Binary I/O ----------
 
+    /// Writes these parse tables in the compact little-endian binary format.
     pub fn save_bin<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let mut f = fs::File::create(path)?;
         f.write_all(MAGIC_V2)?;
@@ -458,6 +453,7 @@ impl PrecomputedParseTables {
         Ok(())
     }
 
+    /// Loads parse tables from compact little-endian binary bytes.
     pub fn load_bin_bytes(mut data: &[u8]) -> Result<Self, String> {
         fn take<const N: usize>(buf: &mut &[u8]) -> Result<[u8; N], String> {
             if buf.len() < N {
@@ -570,12 +566,12 @@ impl PrecomputedParseTables {
 
 // ---------- Generator seed table ----------
 
-/// Build a minimal, *correctly-shaped* set of tables that only handle bracket push/pop.
+/// Builds a minimal, correctly shaped table set for bracket push/pop handling.
 ///
 /// This is used by table-generation tooling as an initial data shape, not as a
 /// runtime parser fallback.
 /// - Stack symbols: 0=Paren, 1=Bracket
-/// - Partial parse: empty everywhere (we’ll fill after we wire real grammar).
+/// - Partial parse: empty everywhere (we will fill after we wire real grammar).
 /// - Production arity: uses `prod_arity` passed in (possibly from a grammar scan).
 pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> PrecomputedParseTables {
     let n_productions = prod_arity.len() as u32;

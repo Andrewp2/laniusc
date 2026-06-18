@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores the compact index for build job-batch pages.
     pub fn store_build_job_batch_page_index(
         &self,
         index: &SourcePackBuildJobBatchPageIndex,
@@ -14,6 +15,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the build job-batch page index for a target.
     pub fn load_build_job_batch_page_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -36,6 +38,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores the resumable cursor for job-batch preparation.
     pub(in crate::compiler) fn store_build_job_batch_prepare_progress(
         &self,
         progress: &JobBatchPrepareProgress,
@@ -56,6 +59,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the job-batch preparation cursor.
     pub(in crate::compiler) fn load_build_job_batch_prepare_progress_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -85,6 +89,7 @@ impl FilesystemArtifactStore {
         Ok(progress)
     }
 
+    /// Stores one job-batch page, paging dependency lists and ranges.
     pub fn store_build_job_batch_page(
         &self,
         page: &SourcePackBuildJobBatchPage,
@@ -118,6 +123,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one job-batch page.
     pub fn load_build_job_batch_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -141,6 +147,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one explicit dependency-batch sidecar page.
     pub fn store_build_job_batch_dependency_page(
         &self,
         page: &SourcePackBuildJobBatchDependencyPage,
@@ -161,6 +168,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one explicit dependency-batch sidecar page.
     pub fn load_build_job_batch_dependency_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -186,6 +194,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one dependency-batch range sidecar page.
     pub fn store_build_job_batch_dependency_range_page(
         &self,
         page: &SourcePackBuildJobBatchDependencyRangePage,
@@ -211,6 +220,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one dependency-batch range sidecar page.
     pub fn load_build_job_batch_dependency_range_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -239,6 +249,10 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the dependent-batch summary page for one job batch.
+    ///
+    /// Inline dependent lists are split into fixed-size dependent-batch pages
+    /// before the compact count page is written.
     pub fn store_build_job_batch_dependents_page(
         &self,
         page: &SourcePackBuildJobBatchDependentsPage,
@@ -283,6 +297,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Splits dependent batch indices into fixed-size sidecar pages.
     pub(in crate::compiler) fn store_build_job_batch_dependent_pages_from_indices(
         &self,
         target: SourcePackArtifactTarget,
@@ -323,6 +338,7 @@ impl FilesystemArtifactStore {
         ))
     }
 
+    /// Loads and validates the dependent-batch summary page for one job batch.
     pub fn load_build_job_batch_dependents_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -361,6 +377,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one dependent-batch sidecar page.
     pub fn store_build_job_batch_dependent_batch_page(
         &self,
         page: &SourcePackBuildJobBatchDependentBatchPage,
@@ -388,6 +405,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one dependent-batch sidecar page.
     pub fn load_build_job_batch_dependent_batch_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -423,6 +441,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the locator mapping one scheduled job to its job batch.
     pub fn store_build_job_batch_job_locator_page(
         &self,
         page: &SourcePackBuildJobBatchJobLocatorPage,
@@ -446,6 +465,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the job-batch locator for one scheduled job.
     pub fn load_build_job_batch_job_locator_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

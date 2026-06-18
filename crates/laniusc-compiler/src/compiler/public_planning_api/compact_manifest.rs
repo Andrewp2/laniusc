@@ -1,5 +1,6 @@
 use super::*;
 
+/// Plans a compact artifact manifest from streamed library paths and dependencies.
 pub(in crate::compiler) fn compact_manifest_from_dependency_streams<I, PI, DI, P>(
     libraries: I,
     limits: CodegenUnitLimits,
@@ -128,6 +129,8 @@ where
         .map_err(schedule_error)
 }
 
+/// Plan a generic-target compact artifact manifest from stdlib and user path
+/// streams.
 pub fn plan_source_pack_streams_compact_manifest<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -152,6 +155,8 @@ where
     )
 }
 
+/// Plan a target-specific compact artifact manifest from stdlib and user path
+/// streams.
 pub fn plan_source_pack_streams_compact_manifest_for_target<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -192,6 +197,8 @@ where
     compact_manifest_from_dependency_streams(libraries, limits, batch_limits, target)
 }
 
+/// Plan a generic-target compact artifact manifest from ordered library path
+/// streams.
 pub fn plan_library_streams_compact_manifest<I, PI, P>(
     libraries: I,
     limits: CodegenUnitLimits,
@@ -210,6 +217,8 @@ where
     )
 }
 
+/// Plan a target-specific compact artifact manifest from ordered library path
+/// streams.
 pub fn plan_library_streams_compact_manifest_for_target<I, PI, P>(
     libraries: I,
     limits: CodegenUnitLimits,
@@ -225,6 +234,8 @@ where
     compact_manifest_from_dependency_streams(dependency_streams, limits, batch_limits, target)
 }
 
+/// Plan a generic-target compact artifact manifest from explicit dependency
+/// streams.
 pub fn plan_dependency_streams_compact_manifest<I, PI, DI, P>(
     libraries: I,
     limits: CodegenUnitLimits,
@@ -244,6 +255,8 @@ where
     )
 }
 
+/// Plan a target-specific compact artifact manifest from explicit dependency
+/// streams.
 pub fn plan_dependency_streams_compact_manifest_for_target<I, PI, DI, P>(
     libraries: I,
     limits: CodegenUnitLimits,

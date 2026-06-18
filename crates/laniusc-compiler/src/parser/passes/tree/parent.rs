@@ -9,6 +9,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for tree parent recovery.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
@@ -16,6 +17,7 @@ pub struct Params {
     pub max_tree_leaf_base: u32,
 }
 
+/// Pass that recovers tree parent links from the production stream.
 pub struct TreeParentPass {
     data: PassData,
 }

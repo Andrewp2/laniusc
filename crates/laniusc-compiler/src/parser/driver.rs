@@ -64,6 +64,7 @@ use crate::{
 
 // ------------ little helpers (match lexer ergonomics) ----------------
 
+/// Resident GPU parser driver and loaded parser pass set.
 pub struct GpuParser {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -98,20 +99,22 @@ pub struct GpuParser {
     tokens_to_identifier_kinds: PassData,
     passes: ParserPasses,
 
-    // Bind group cache so passes don’t recreate BGs every dispatch.
+    // Bind group cache so passes do not recreate BGs every dispatch.
     bg_cache: std::sync::Mutex<BindGroupCache>,
 
-    // Resident lexer→parser buffers reused by the compiler path when the parse
+    // Resident lexer-to-parser buffers reused by the compiler path when the parse
     // table identity is unchanged and the previous allocation is large enough.
     resident_buffers: std::sync::Mutex<Option<ResidentParserBufferCache>>,
     resident_token_kind_bind_groups: std::sync::Mutex<Option<ResidentTokenKindBindGroups>>,
 }
 
 impl GpuParser {
+    /// Builds a parser using the global GPU device.
     pub async fn new() -> Result<Self> {
         Self::new_with_device(device::global()).await
     }
 
+    /// Loads parser compute passes for a specific GPU device.
     pub async fn new_with_device(ctx: &device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
@@ -235,6 +238,7 @@ impl GpuParser {
         })
     }
 
+    /// Records and checks parser work for resident lexer token buffers.
     pub fn check_resident_tokens(
         &self,
         token_capacity: u32,
@@ -252,6 +256,7 @@ impl GpuParser {
         Ok(())
     }
 
+    /// Records parser work and exposes checked resident parser buffers to a callback.
     pub fn with_checked_resident_parse_artifacts<R, E>(
         &self,
         token_capacity: u32,
@@ -325,6 +330,7 @@ impl GpuParser {
         Ok(consume(bufs))
     }
 
+    /// Records LL, tree, and HIR work for resident token buffers.
     pub fn record_checked_resident_ll1_hir_artifacts<R, E>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -358,6 +364,7 @@ impl GpuParser {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Records LL, tree, and HIR work with an explicit tree-capacity override.
     pub fn record_checked_resident_ll1_hir_artifacts_with_tree_capacity<R, E>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -433,6 +440,7 @@ impl GpuParser {
         Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
     }
 
+    /// Records projected-capacity work and reads back the required tree capacity.
     pub fn read_resident_projected_tree_capacity(
         &self,
         token_capacity: u32,
@@ -512,6 +520,7 @@ impl GpuParser {
         Ok(emit_capacity.max(1))
     }
 
+    /// Computes a conservative resident tree capacity from token capacity and tables.
     pub fn projected_resident_tree_capacity(
         &self,
         token_capacity: u32,
@@ -520,6 +529,7 @@ impl GpuParser {
         resident_projected_tree_capacity_for_tables(token_capacity.max(1), tables)
     }
 
+    /// Borrows current resident parser buffers sized for the provided token capacity.
     pub fn with_current_resident_buffers<R>(
         &self,
         token_capacity: u32,
@@ -534,6 +544,7 @@ impl GpuParser {
         consume(bufs)
     }
 
+    /// Borrows current resident parser buffers with an explicit tree capacity.
     pub fn with_current_resident_buffers_with_tree_capacity<R>(
         &self,
         token_capacity: u32,
@@ -554,6 +565,7 @@ impl GpuParser {
         consume(bufs)
     }
 
+    /// Releases resident parser buffers and cached parser bind groups.
     pub fn release_current_resident_buffers(&self) {
         *self
             .resident_buffers
@@ -569,6 +581,7 @@ impl GpuParser {
             .expect("parser.resident_token_kind_bind_groups poisoned") = None;
     }
 
+    /// Parses resident token buffers and reads back the debug parse result.
     pub fn parse_resident_tokens(
         &self,
         token_capacity: u32,
@@ -634,7 +647,7 @@ impl GpuParser {
             None
         };
 
-        // Create an owned debug sink; we’ll hand out a temporary &mut to the passes.
+        // Create an owned debug sink; we will hand out a temporary &mut to the passes.
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = DebugOutput::default();
 

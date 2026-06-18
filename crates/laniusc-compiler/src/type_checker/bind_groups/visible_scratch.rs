@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Scratch buffers for resident visible-declaration scans.
 pub(super) struct ResidentVisibleScratch {
     pub(super) flag: LaniusBuffer<u32>,
     pub(super) prefix: LaniusBuffer<u32>,
@@ -10,6 +11,7 @@ pub(super) struct ResidentVisibleScratch {
 }
 
 impl ResidentVisibleScratch {
+    /// Creates visible-declaration scratch, reusing dead module-path scan storage when possible.
     pub(super) fn new(
         device: &wgpu::Device,
         module_path: Option<&ModulePathState>,
@@ -88,11 +90,13 @@ impl ResidentVisibleScratch {
         }
     }
 
+    /// Registers visible-declaration flag and prefix buffers for reflected bind groups.
     pub(super) fn register_resources<'a>(&'a self, resources: &mut ResourceMap<'a>) {
         resources.buffer("hir_visible_decl_flag", &self.flag);
         resources.buffer("hir_visible_decl_prefix", &self.prefix);
     }
 
+    /// Returns the scan scratch rows used by visible-declaration bind groups.
     pub(super) fn scan_rows(&self) -> ScanRows<'_> {
         ScanRows {
             local_prefix: &self.scan_local_prefix,

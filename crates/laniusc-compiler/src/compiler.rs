@@ -1,3 +1,10 @@
+//! Public compiler orchestration and source-pack APIs.
+//!
+//! This module is the host-side boundary between CLI/package loading and the
+//! GPU-resident compiler phases. It owns public compile/check errors,
+//! diagnostics, source-pack planning/execution records, and `GpuCompiler`, the
+//! coordinator that records lexer, parser, type-check, and backend work.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -115,12 +122,24 @@ use build_progress::*;
 mod diagnostics;
 pub use diagnostics::*;
 
+/// Error returned by public compile/check operations.
+///
+/// `Diagnostic` is the preferred user-facing variant because it carries a
+/// stable diagnostic code and source labels. The phase-specific string variants
+/// are used when the compiler cannot yet map a failure into a structured
+/// diagnostic at the owning boundary.
 #[derive(Debug)]
 pub enum CompileError {
+    /// Structured diagnostic with code, message, and labels.
     Diagnostic(Diagnostic),
+    /// Failure before syntax/type-check/codegen ownership is available.
     GpuFrontend(String),
+    /// Syntax or parser failure that was not mapped into a structured
+    /// diagnostic.
     GpuSyntax(String),
+    /// Type-check failure that was not mapped into a structured diagnostic.
     GpuTypeCheck(String),
+    /// Backend failure that was not mapped into a structured diagnostic.
     GpuCodegen(String),
 }
 
@@ -138,17 +157,28 @@ impl std::fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
+/// Parser benchmark output used by compiler measurement tools.
 pub struct GpuParseBenchmarkResult {
+    /// LL parser status and accepted/rejected details.
     pub ll1: Ll1AcceptResult,
+    /// Number of tokens produced by lexing.
     pub token_count: u32,
+    /// Parser tree capacity selected before HIR recording.
     pub parser_tree_capacity: u32,
+    /// Number of semantic HIR nodes emitted by parser HIR passes.
     pub semantic_hir_count: u32,
 }
 
+/// Live frontend capacity estimate used before recording phases that need
+/// sized GPU buffers.
 pub struct GpuLiveCapacityEstimateResult {
+    /// Number of tokens produced by lexing.
     pub token_count: u32,
+    /// Parser tree capacity required by LL/tree recovery.
     pub parser_tree_capacity: u32,
+    /// Parser emit stream length used while sizing HIR construction.
     pub parser_emit_len: u32,
+    /// Number of semantic HIR nodes expected after compaction.
     pub semantic_hir_count: u32,
 }
 

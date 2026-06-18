@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// First pair pass: counts all and kept token boundaries inside each block.
 pub struct Pair01SumInblockPass {
     data: PassData,
 }

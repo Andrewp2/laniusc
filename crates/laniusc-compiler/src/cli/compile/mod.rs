@@ -11,6 +11,11 @@ use super::{
 };
 use crate::{compiler::EntrySourceRoots, gpu::device};
 
+/// Runs a validated compile/check request.
+///
+/// This selects source-pack versus in-memory compile paths, persists the GPU
+/// pipeline cache after compile work, and writes target output unless the
+/// request is diagnostics-only.
 pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
     let CompileRequest {
         inputs,

@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates the top-level link-batch page index.
 pub(in crate::compiler) fn validate_link_batch_page_index(
     index: &SourcePackBuildLinkBatchPageIndex,
     target: SourcePackArtifactTarget,
@@ -19,6 +20,10 @@ pub(in crate::compiler) fn validate_link_batch_page_index(
     Ok(())
 }
 
+/// Validates one link-interface batch page.
+///
+/// The page must contain a non-empty, sorted, unique, bounded list of interface
+/// artifact indices and its embedded batch record must match the page index.
 pub(in crate::compiler) fn validate_link_interface_batch_page(
     page: &SourcePackBuildLinkInterfaceBatchPage,
     target: SourcePackArtifactTarget,
@@ -78,6 +83,10 @@ pub(in crate::compiler) fn validate_link_interface_batch_page(
     Ok(())
 }
 
+/// Validates one link-object batch page.
+///
+/// The page must contain a non-empty, sorted, unique, bounded list of object
+/// artifact indices and its embedded batch record must match the page index.
 pub(in crate::compiler) fn validate_link_object_batch_page(
     page: &SourcePackBuildLinkObjectBatchPage,
     target: SourcePackArtifactTarget,
@@ -137,6 +146,10 @@ pub(in crate::compiler) fn validate_link_object_batch_page(
     Ok(())
 }
 
+/// Validates the shard ranges used as inputs to the link job.
+///
+/// Interface and object ranges may be absent, but present ranges must be
+/// non-empty, non-overflowing, and non-overlapping.
 pub(in crate::compiler) fn validate_link_input_shard_index(
     index: &SourcePackBuildLinkInputShardIndex,
     target: SourcePackArtifactTarget,
@@ -180,6 +193,7 @@ pub(in crate::compiler) fn validate_link_input_shard_index(
     Ok(())
 }
 
+/// Validates one optional link-input shard range.
 pub(in crate::compiler) fn validate_link_input_shard_range(
     range: Option<&SourcePackLinkInputShardRange>,
     label: &str,
@@ -200,6 +214,10 @@ pub(in crate::compiler) fn validate_link_input_shard_range(
     Ok(())
 }
 
+/// Visits every shard index in the requested link-input shard range.
+///
+/// Only link-interface and link-object shard kinds are valid here; job-batch
+/// shards are not direct inputs to the link job.
 pub(in crate::compiler) fn for_each_link_input_shard_index<F>(
     index: &SourcePackBuildLinkInputShardIndex,
     kind: SourcePackBuildArtifactShardKind,

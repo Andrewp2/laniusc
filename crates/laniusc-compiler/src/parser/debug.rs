@@ -27,6 +27,7 @@ pub struct DebugGpuBuffers {
 }
 
 #[derive(Default)]
+/// Host-visible parser debug output collected from debug readback buffers.
 pub struct DebugOutput {
     pub gpu: DebugGpuBuffers,
 }

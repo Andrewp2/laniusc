@@ -100,6 +100,7 @@ impl TraceState {
     }
 }
 
+/// Returns whether trace output is currently configured.
 pub fn enabled() -> bool {
     match state().lock() {
         Ok(state) => state.enabled(),
@@ -110,10 +111,12 @@ pub fn enabled() -> bool {
     }
 }
 
+/// Records a host-duration span on a trace lane.
 pub fn record_host_span(lane: &str, name: &str, start: Instant, end: Instant) {
     record_span_between("host", lane, name, start, end);
 }
 
+/// Records a GPU-duration span relative to a host anchor instant.
 pub fn record_gpu_span(lane: &str, name: &str, anchor: Instant, start_ms: f64, dur_ms: f64) {
     record_span_at(
         "gpu",
@@ -124,6 +127,7 @@ pub fn record_gpu_span(lane: &str, name: &str, anchor: Instant, start_ms: f64, d
     );
 }
 
+/// Records an instant trace event on a lane.
 pub fn record_instant(lane: &str, name: &str, at: Instant) {
     match state().lock() {
         Ok(mut state) => {
@@ -152,6 +156,7 @@ pub fn record_instant(lane: &str, name: &str, at: Instant) {
     }
 }
 
+/// Records a numeric counter event on a lane.
 pub fn record_counter(lane: &str, name: &str, at: Instant, value: f64) {
     match state().lock() {
         Ok(mut state) => {
@@ -177,6 +182,7 @@ pub fn record_counter(lane: &str, name: &str, at: Instant, value: f64) {
     }
 }
 
+/// Writes the configured trace file, if tracing is enabled.
 pub fn flush() {
     let (path, mut events) = match state().lock() {
         Ok(state) => {

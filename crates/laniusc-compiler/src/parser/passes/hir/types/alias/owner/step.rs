@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates nearest type-alias owner records.
 pub struct HirTypeAliasOwnerStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirTypeAliasOwnerStepPass {
+    /// Records all type-alias owner propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

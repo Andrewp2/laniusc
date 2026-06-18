@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that computes each semantic node's index within its parent.
 pub struct HirSemanticChildIndexRankStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirSemanticChildIndexRankStepPass {
+    /// Records all semantic child-index propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

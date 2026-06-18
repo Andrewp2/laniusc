@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Builds a validated artifact-ref page from an artifact reference and source totals.
 pub(in crate::compiler) fn build_artifact_ref_page(
     target: SourcePackArtifactTarget,
     artifact_ref: SourcePackArtifactRef,
@@ -25,6 +26,7 @@ pub(in crate::compiler) fn build_artifact_ref_page(
     Ok(page)
 }
 
+/// Loads an artifact-ref page after validating the containing index.
 pub(in crate::compiler) fn load_artifact_ref_page_for_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -39,6 +41,7 @@ pub(in crate::compiler) fn load_artifact_ref_page_for_index(
     )
 }
 
+/// Loads one artifact ref by index and verifies its kind.
 pub(in crate::compiler) fn artifact_ref_for_index_from_stored_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -56,6 +59,7 @@ pub(in crate::compiler) fn artifact_ref_for_index_from_stored_pages(
     Ok(page.artifact_ref)
 }
 
+/// Loads artifact refs for a list of artifact indices from stored pages.
 pub(in crate::compiler) fn artifact_refs_for_indices_from_stored_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters propagated context relations into compact HIR records.
 pub struct HirContextRelationsScatterPass {
     data: PassData,
 }

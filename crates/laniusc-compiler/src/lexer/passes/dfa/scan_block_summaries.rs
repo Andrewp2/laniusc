@@ -17,6 +17,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
 };
 
+/// Second DFA pass: prefix-scans block summary functions.
 pub struct Dfa02ScanBlockSummariesPass {
     data: PassData,
 }

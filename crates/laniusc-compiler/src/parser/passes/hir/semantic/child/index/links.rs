@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds sibling links used to rank semantic children under each parent.
 pub struct HirSemanticChildIndexLinksPass {
     data: PassData,
 }

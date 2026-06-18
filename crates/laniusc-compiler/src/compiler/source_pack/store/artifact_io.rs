@@ -459,6 +459,10 @@ fn validate_store_partial_link_key_index(
     Ok(())
 }
 
+/// Resolves an artifact key to a normal relative path under a store root.
+///
+/// Empty keys, absolute paths, parent-directory components, and other
+/// non-normal components are rejected before any filesystem operation occurs.
 pub(in crate::compiler) fn artifact_path(root: &Path, key: &str) -> Result<PathBuf, CompileError> {
     if key.is_empty() {
         return Err(CompileError::GpuFrontend(
@@ -480,6 +484,7 @@ pub(in crate::compiler) fn artifact_path(root: &Path, key: &str) -> Result<PathB
     Ok(path)
 }
 
+/// Reads an artifact payload from the filesystem store.
 pub(in crate::compiler) fn read_artifact(
     root: &Path,
     key: &str,
@@ -494,6 +499,9 @@ pub(in crate::compiler) fn read_artifact(
     })
 }
 
+/// Writes an artifact payload to the filesystem store.
+///
+/// Parent directories are created before the artifact bytes are written.
 pub(in crate::compiler) fn write_artifact(
     root: &Path,
     key: &str,
@@ -517,6 +525,10 @@ pub(in crate::compiler) fn write_artifact(
     })
 }
 
+/// Writes a metadata file by replacing it with a temporary file in the same directory.
+///
+/// The temporary file name includes the process ID and current time so concurrent
+/// attempts do not reuse the same temporary path.
 pub(in crate::compiler) fn write_file_atomic(
     path: &Path,
     bytes: &[u8],
@@ -558,6 +570,10 @@ pub(in crate::compiler) fn write_file_atomic(
     Ok(())
 }
 
+/// Returns a path handle for an existing artifact file.
+///
+/// This is used by stores that pass artifact files by path instead of loading
+/// their bytes into memory.
 pub(in crate::compiler) fn artifact_path_handle(
     root: &Path,
     key: &str,
@@ -576,6 +592,10 @@ pub(in crate::compiler) fn artifact_path_handle(
     })
 }
 
+/// Copies an artifact path handle into the filesystem store atomically.
+///
+/// If the source already points at the destination file, the function verifies
+/// the file exists and returns without copying.
 pub(in crate::compiler) fn copy_artifact_file_atomic(
     root: &Path,
     key: &str,
@@ -638,6 +658,9 @@ pub(in crate::compiler) fn copy_artifact_file_atomic(
     })
 }
 
+/// Removes an artifact file from the filesystem store.
+///
+/// Missing artifacts are treated as already released.
 pub(in crate::compiler) fn remove_artifact(
     root: &Path,
     key: &str,

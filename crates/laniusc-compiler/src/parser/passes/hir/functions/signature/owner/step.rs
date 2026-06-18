@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates function signature owner rows.
 pub struct HirFnSignatureOwnerStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirFnSignatureOwnerStepPass {
+    /// Records signature-owner propagation steps with indirect dispatch.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,
@@ -28,6 +30,7 @@ impl HirFnSignatureOwnerStepPass {
         self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
     }
 
+    /// Records signature-owner propagation steps with direct dispatch.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,

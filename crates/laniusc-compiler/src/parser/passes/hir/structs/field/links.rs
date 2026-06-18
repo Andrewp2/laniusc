@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links struct field nodes to their owning struct declaration.
 pub struct HirStructFieldLinksPass {
     data: PassData,
 }

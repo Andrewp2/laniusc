@@ -1,5 +1,6 @@
 use super::*;
 
+/// Claim the first ready unclaimed artifact-manifest batch for a worker.
 pub fn claim_ready_artifact_manifest_batch(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -58,6 +59,8 @@ pub fn claim_ready_artifact_manifest_batch(
     })
 }
 
+/// Claim the first ready unclaimed artifact-manifest batch and return a bounded
+/// progress snapshot in the same operation.
 pub fn claim_ready_artifact_manifest_batch_with_progress(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,

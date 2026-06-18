@@ -14,40 +14,60 @@ use super::{
 };
 use crate::compiler::{CompileError, SourcePackLibraryDependency};
 
+/// Replay metadata for package imports and coarse library dependencies.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PackageLockfileImportGraph {
+    /// Coarse library dependency edges implied by cross-library imports.
     pub(super) library_dependencies: Vec<SourcePackLibraryDependency>,
+    /// Source-file import edges recorded for replay validation.
     pub(super) imports: Vec<PackageLockfileImportEdge>,
 }
 
+/// One resolved import edge recorded in a package lockfile.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PackageLockfileImportEdge {
+    /// Library id containing the importing source file.
     pub(super) source_library_id: u32,
+    /// Canonical path of the importing source file.
     pub(super) source_path: PathBuf,
+    /// Module path declared by the importing source file.
     pub(super) source_module_path: String,
+    /// Import path written by the importing source file.
     pub(super) import_path: String,
+    /// Library id containing the resolved target source file.
     pub(super) target_library_id: u32,
+    /// Canonical path of the resolved target source file.
     pub(super) target_path: PathBuf,
+    /// Module path declared by the target source file.
     pub(super) target_module_path: String,
 }
 
+/// Search root used while resolving package lockfile imports.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PackageLockfileImportSearchRoot {
+    /// Library id represented by this root.
     pub(super) library_id: u32,
+    /// Diagnostic label for this root.
     pub(super) label: &'static str,
+    /// Canonical root path to search.
     pub(super) root: PathBuf,
 }
 
+/// Result of resolving one package import path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PackageLockfileResolvedImport {
+    /// Library id containing the resolved file.
     pub(super) library_id: u32,
+    /// Diagnostic label for the matched search root.
     pub(super) label: &'static str,
+    /// Canonical path of the resolved file.
     pub(super) path: PathBuf,
 }
 
 impl PackageLockfileImportGraph {
+    /// Validates import graph shape, ordering, uniqueness, and boundaries.
     pub(super) fn validate_shape(&self) -> Result<(), CompileError> {
         let mut seen_dependencies = BTreeSet::new();
         let mut previous_dependency: Option<&SourcePackLibraryDependency> = None;
@@ -340,6 +360,7 @@ fn validate_import_graph_library_id(label: &str, library_id: u32) -> Result<(), 
 }
 
 impl PackageLockfileImportEdge {
+    /// Returns the tuple used for import edge identity and ordering.
     pub(super) fn identity_key(&self) -> (u32, PathBuf, String, u32, PathBuf) {
         (
             self.source_library_id,
@@ -351,6 +372,7 @@ impl PackageLockfileImportEdge {
     }
 }
 
+/// Compares import edges by their canonical identity tuple.
 pub(super) fn compare_import_edge_identity(
     left: &PackageLockfileImportEdge,
     right: &PackageLockfileImportEdge,
@@ -363,6 +385,7 @@ pub(super) fn compare_import_edge_identity(
         .then_with(|| left.target_path.cmp(&right.target_path))
 }
 
+/// Formats a short diagnostic summary of import graph edges.
 pub(super) fn import_graph_edge_summary(imports: &[PackageLockfileImportEdge]) -> String {
     if imports.is_empty() {
         return "none".to_string();
@@ -387,6 +410,7 @@ pub(super) fn import_graph_edge_summary(imports: &[PackageLockfileImportEdge]) -
     edges.join("; ")
 }
 
+/// Returns all files reachable from an entry file through import edges.
 pub(super) fn import_graph_reachable_files_from_entry(
     entry_key: &(u32, PathBuf),
     import_graph: &PackageLockfileImportGraph,
@@ -417,6 +441,7 @@ pub(super) fn import_graph_reachable_files_from_entry(
     reachable
 }
 
+/// Validates that an import edge endpoint matches source identity metadata.
 pub(super) fn validate_import_graph_module_endpoint(
     edge_index: usize,
     endpoint: &str,

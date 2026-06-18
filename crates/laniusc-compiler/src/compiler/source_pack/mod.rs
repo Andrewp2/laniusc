@@ -1,3 +1,12 @@
+//! Source-pack planning, persisted artifact records, and resumable work queues.
+//!
+//! Source packs let the compiler plan and execute multiple source files and
+//! libraries as bounded frontend, codegen, and link jobs. The public re-exports
+//! in this module are the persisted contract for manifests, artifact stores,
+//! worker progress, package metadata, and hierarchical link inputs. The
+//! compiler-author narrative for these records lives in
+//! `docs/compiler/source-packs.md`.
+
 use super::*;
 
 mod records;

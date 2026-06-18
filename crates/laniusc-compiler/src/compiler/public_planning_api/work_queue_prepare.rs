@@ -1,5 +1,6 @@
 use super::*;
 
+/// Builds the error returned when one bounded preparation chunk did not finish the work queue.
 pub(in crate::compiler) fn work_queue_not_prepared_error(
     target: SourcePackArtifactTarget,
     max_new_items: usize,

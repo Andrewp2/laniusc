@@ -1,5 +1,6 @@
 use super::*;
 
+/// Creates a manifest-contract compiler error.
 pub(in crate::compiler) fn manifest_contract_error(message: impl Into<String>) -> CompileError {
     CompileError::GpuFrontend(format!(
         "invalid source-pack artifact manifest: {}",
@@ -7,6 +8,7 @@ pub(in crate::compiler) fn manifest_contract_error(message: impl Into<String>) -
     ))
 }
 
+/// Creates an artifact-shard-contract compiler error.
 pub(in crate::compiler) fn artifact_shard_contract_error(
     message: impl Into<String>,
 ) -> CompileError {
@@ -16,6 +18,7 @@ pub(in crate::compiler) fn artifact_shard_contract_error(
     ))
 }
 
+/// Creates a library-partition-contract compiler error.
 pub(in crate::compiler) fn library_partition_contract_error(
     message: impl Into<String>,
 ) -> CompileError {

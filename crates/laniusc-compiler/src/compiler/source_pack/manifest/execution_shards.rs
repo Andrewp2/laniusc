@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates an execution-shard record count against its cap.
 pub(in crate::compiler) fn validate_execution_shard_record_count(
     shard_index: usize,
     label: &str,
@@ -14,6 +15,10 @@ pub(in crate::compiler) fn validate_execution_shard_record_count(
     Ok(())
 }
 
+/// Validates an execution shard as it should appear after persistence.
+///
+/// Persisted shards must obey inline record caps because they are the durable
+/// pages loaded during execution.
 pub(in crate::compiler) fn validate_execution_shard(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     target: SourcePackArtifactTarget,
@@ -25,6 +30,10 @@ pub(in crate::compiler) fn validate_execution_shard(
     )
 }
 
+/// Validates an execution shard before it is compacted for storage.
+///
+/// Store input may still carry expanded artifact references for ranges that will
+/// be pruned before the shard is persisted.
 pub(in crate::compiler) fn validate_execution_shard_store_input(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     target: SourcePackArtifactTarget,
@@ -36,12 +45,19 @@ pub(in crate::compiler) fn validate_execution_shard_store_input(
     )
 }
 
+/// Selects which execution-shard representation is being validated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum ExecutionShardValidationMode {
+    /// Durable on-disk representation after range-backed refs have been pruned.
     Persisted,
+    /// Pre-store representation that may still include expanded range artifacts.
     StoreInput,
 }
 
+/// Validates inline record counts with mode-specific cap enforcement.
+///
+/// Persisted shards enforce inline caps, while store input can contain expanded
+/// records that will be compacted or pruned during persistence.
 pub(in crate::compiler) fn validate_execution_shard_inline_record_count(
     shard_index: usize,
     label: &str,
@@ -57,6 +73,11 @@ pub(in crate::compiler) fn validate_execution_shard_inline_record_count(
     Ok(())
 }
 
+/// Validates an execution shard under the requested representation mode.
+///
+/// The check covers target/version, shard kind, per-kind record arrays, source
+/// and artifact identities, batch dependency/dependent shapes, job artifact
+/// records, and whether contained artifacts belong to the shard.
 pub(in crate::compiler) fn validate_execution_shard_with_mode(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     target: SourcePackArtifactTarget,
@@ -433,6 +454,11 @@ pub(in crate::compiler) fn validate_execution_shard_with_mode(
     Ok(())
 }
 
+/// Materializes the artifact indices an execution shard should retain.
+///
+/// Persisted mode keeps explicit input and output artifact refs. Store-input
+/// mode also expands compact input ranges because those expanded refs may be
+/// present before persistence prunes them.
 pub(in crate::compiler) fn materialized_execution_shard_artifact_indices(
     shard: &SourcePackBuildArtifactShard,
     mode: ExecutionShardValidationMode,
@@ -457,6 +483,10 @@ pub(in crate::compiler) fn materialized_execution_shard_artifact_indices(
     Ok(artifact_indices)
 }
 
+/// Removes artifact refs that should not be persisted inside an execution shard.
+///
+/// Range-backed input artifacts are represented compactly by the shard range
+/// metadata, so their expanded refs are dropped before the shard is stored.
 pub(in crate::compiler) fn prune_persisted_execution_shard_artifact_refs(
     execution_shard: &mut SourcePackBuildArtifactExecutionShard,
 ) -> Result<(), CompileError> {

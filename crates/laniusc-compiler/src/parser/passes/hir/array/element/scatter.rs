@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters ranked array elements into owner-local ranges.
 pub struct HirArrayElementScatterPass {
     data: PassData,
 }

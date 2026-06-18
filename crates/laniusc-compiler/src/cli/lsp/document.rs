@@ -7,7 +7,9 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
+/// In-memory text for an LSP document that was explicitly opened by the client.
 pub(super) struct OpenDocument {
+    /// Latest full-document source text for the URI.
     pub(super) text: String,
 }
 
@@ -17,6 +19,7 @@ impl OpenDocument {
     }
 }
 
+/// Extracts an opened Lanius document from a `textDocument/didOpen` request.
 pub(super) fn open_from_request(
     request: &serde_json::Value,
 ) -> Result<(String, OpenDocument), String> {
@@ -44,6 +47,10 @@ pub(super) fn open_from_request(
     Ok((uri.to_string(), OpenDocument::new(text)))
 }
 
+/// Extracts a full-document replacement from a `textDocument/didChange` request.
+///
+/// The server intentionally rejects ranged incremental changes so diagnostics
+/// and formatting operate on one coherent text buffer per open URI.
 pub(super) fn change_from_request(
     request: &serde_json::Value,
 ) -> Result<(String, OpenDocument), String> {
@@ -77,6 +84,7 @@ pub(super) fn change_from_request(
     Ok((uri, OpenDocument::new(text)))
 }
 
+/// Extracts `params.textDocument.uri` from an LSP request object.
 pub(super) fn uri_from_request(request: &serde_json::Value) -> Result<String, String> {
     request
         .get("params")
@@ -87,6 +95,7 @@ pub(super) fn uri_from_request(request: &serde_json::Value) -> Result<String, St
         .ok_or_else(|| "request did not include params.textDocument.uri".to_string())
 }
 
+/// Extracts a formatting request URI after validating supported options.
 pub(super) fn formatting_uri_from_request(request: &serde_json::Value) -> Result<String, String> {
     let params = request
         .get("params")
@@ -143,6 +152,10 @@ fn validate_formatting_options(options: Option<&serde_json::Value>) -> Result<()
     Ok(())
 }
 
+/// Produces LSP text edits for full-document formatting.
+///
+/// The formatter contract is lexical and either returns no edits or a single
+/// whole-document replacement.
 pub(super) fn formatting_edits(source: &str) -> Vec<serde_json::Value> {
     let formatted = format_source(source);
     if formatted == source {
@@ -161,6 +174,10 @@ pub(super) fn formatting_edits(source: &str) -> Vec<serde_json::Value> {
     })]
 }
 
+/// Type-checks one open document and returns LSP diagnostic items.
+///
+/// This is the LSP path that may create a GPU device. It does not load source
+/// roots, compile target bytes, or inspect workspace state.
 pub(super) fn diagnostic_items(uri: &str, source: &str) -> Result<Vec<serde_json::Value>, String> {
     match pollster::block_on(type_check_source_with_gpu(source)) {
         Ok(()) => Ok(Vec::new()),

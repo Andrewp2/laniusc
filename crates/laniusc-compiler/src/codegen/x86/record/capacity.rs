@@ -20,6 +20,7 @@ use super::super::{
 const X86_SYSV_INTEGER_REGISTER_SLOTS: usize = 6;
 const X86_AGGREGATE_RETURN_POINTER_REGISTER_SLOTS: usize = 1;
 
+/// Capacity plan for x86 recording buffers derived from HIR size and feature counts.
 pub(super) struct RecordCapacity {
     pub(super) hir_words: usize,
     pub(super) inst_capacity: usize,
@@ -52,6 +53,7 @@ pub(super) struct RecordCapacity {
 }
 
 impl RecordCapacity {
+    /// Computes buffer capacities, scan steps, and dispatch parameter limits for one x86 record.
     pub(super) fn for_hir(
         source_len: u32,
         token_capacity: u32,

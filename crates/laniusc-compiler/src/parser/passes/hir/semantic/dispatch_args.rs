@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that writes indirect dispatch arguments for semantic HIR work.
 pub struct HirSemanticDispatchArgsPass {
     data: PassData,
 }

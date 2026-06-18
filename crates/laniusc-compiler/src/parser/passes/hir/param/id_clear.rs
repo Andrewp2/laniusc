@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that clears intermediate parameter ID/rank rows before assignment.
 pub struct HirParamIdClearPass {
     data: PassData,
 }

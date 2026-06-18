@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records the primary call relation collection passes.
 pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -115,6 +116,7 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
     )
 }
 
+/// Clears generic parameter cache rows before later call-resolution passes refill them.
 pub(in crate::type_checker) fn record_call_erase_generic_params_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -132,6 +134,7 @@ pub(in crate::type_checker) fn record_call_erase_generic_params_with_passes(
     )
 }
 
+/// Records logarithmic argument-to-parameter row matching passes.
 pub(in crate::type_checker) fn record_call_arg_param_matching_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -177,6 +180,7 @@ pub(in crate::type_checker) fn record_call_arg_param_matching_with_passes(
     Ok(())
 }
 
+/// Matches argument rows to parameter rows, then collects row-argument metadata.
 pub(in crate::type_checker) fn record_call_arg_matching_and_collect_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -194,6 +198,7 @@ pub(in crate::type_checker) fn record_call_arg_matching_and_collect_with_passes(
     )
 }
 
+/// Sorts and validates generic and const-generic claims emitted by call rows.
 pub(in crate::type_checker) fn record_call_generic_claim_validation_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

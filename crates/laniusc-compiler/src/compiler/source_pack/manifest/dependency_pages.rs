@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates compact dependency-batch ranges against explicit dependencies.
 pub(in crate::compiler) fn validate_job_batch_dependency_ranges<F>(
     dependency: &SourcePackJobBatchDependency,
     explicit_dependencies: &BTreeSet<usize>,
@@ -60,6 +61,7 @@ where
     Ok(())
 }
 
+/// Validates dependency-range counts and page counts for a batch dependency.
 pub(in crate::compiler) fn validate_job_batch_dependency_range_metadata<F>(
     dependency: &SourcePackJobBatchDependency,
     context: &str,
@@ -130,6 +132,7 @@ where
     Ok(())
 }
 
+/// Visits dependency batch indices that are stored inline on a dependency.
 pub(in crate::compiler) fn for_each_job_batch_dependency_index<F>(
     dependency: &SourcePackJobBatchDependency,
     mut visit: F,
@@ -166,6 +169,7 @@ where
     Ok(())
 }
 
+/// Splits explicit dependency batch indices into sidecar pages.
 pub(in crate::compiler) fn store_job_batch_dependency_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -215,6 +219,7 @@ pub(in crate::compiler) fn store_job_batch_dependency_pages(
     Ok((dependency_batch_count, dependency_page_count))
 }
 
+/// Splits dependency batch ranges into sidecar pages.
 pub(in crate::compiler) fn store_job_batch_dependency_range_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -266,6 +271,7 @@ pub(in crate::compiler) fn store_job_batch_dependency_range_pages(
     ))
 }
 
+/// Incremental writer for explicit dependency batch sidecar pages.
 pub(in crate::compiler) struct JobBatchDependencyPageWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -278,6 +284,7 @@ pub(in crate::compiler) struct JobBatchDependencyPageWriter<'a> {
 }
 
 impl<'a> JobBatchDependencyPageWriter<'a> {
+    /// Creates a dependency batch writer for one job batch.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -297,6 +304,7 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
         }
     }
 
+    /// Records one dependency batch index if it has not already been seen.
     pub(in crate::compiler) fn push(
         &mut self,
         dependency_batch_index: usize,
@@ -316,6 +324,7 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current dependency sidecar page, if it has records.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_dependency_batch_indices.is_empty() {
             return Ok(());
@@ -342,6 +351,7 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
         Ok(())
     }
 
+    /// Finishes the writer and returns dependency count/page count metadata.
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
         let dependency_batch_indices = self
             .seen_dependency_batch_indices
@@ -358,6 +368,7 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
     }
 }
 
+/// Visits all dependency batch indices, loading sidecar pages as needed.
 pub(in crate::compiler) fn for_each_stored_job_batch_dependency_index<F>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

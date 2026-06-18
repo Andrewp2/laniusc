@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates context relations through HIR parents.
 pub struct HirContextRelationsStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirContextRelationsStepPass {
+    /// Records all context relation propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

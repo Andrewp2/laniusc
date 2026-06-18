@@ -39,6 +39,7 @@ use crate::compiler::{
     diagnostic_registry_json_pretty,
 };
 
+/// Runs the no-run diagnostics metadata subcommand family.
 pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let args = cli_args_without_diagnostic_format(
         "laniusc diagnostics",

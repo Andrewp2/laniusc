@@ -6,6 +6,12 @@ use crate::{
     compiler::{GpuSourcePackArtifactDescriptor, GpuSourcePackArtifactStage},
 };
 
+/// Reads and validates a source-pack linked-output contract descriptor.
+///
+/// Descriptor output is deliberately separate from target bytes. This guard
+/// catches the common failure mode where a source-pack descriptor path points
+/// at an ELF or Wasm payload, then validates the JSON contract against the
+/// requested emit target before the CLI writes it to stdout or `-o/--out`.
 pub(super) fn read_linked_output_contract_descriptor(
     path: &Path,
     emit: &str,

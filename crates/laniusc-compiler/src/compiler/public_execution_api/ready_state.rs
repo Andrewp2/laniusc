@@ -20,6 +20,7 @@ fn validate_completed_batch_artifacts(
     Ok(())
 }
 
+/// Validates that every ready batch's dependency artifacts are complete and present.
 pub(in crate::compiler) fn validate_ready_batch_dependency_artifacts(
     store: &FilesystemArtifactStore,
     job_batch_count: usize,
@@ -80,6 +81,7 @@ fn validate_ready_batch_dependency_artifact(
     Ok(())
 }
 
+/// Return ready unclaimed generic-target artifact-manifest batch indices.
 pub fn artifact_manifest_ready_batch_indices(
     artifact_root: impl Into<PathBuf>,
 ) -> Result<Vec<usize>, CompileError> {
@@ -89,6 +91,7 @@ pub fn artifact_manifest_ready_batch_indices(
     )
 }
 
+/// Return ready unclaimed artifact-manifest batch indices for a target.
 pub fn artifact_manifest_ready_batch_indices_for_target(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -100,6 +103,8 @@ pub fn artifact_manifest_ready_batch_indices_for_target(
     )
 }
 
+/// Return at most `max_batches` ready unclaimed generic-target
+/// artifact-manifest batch indices.
 pub fn artifact_manifest_ready_batch_indices_limited(
     artifact_root: impl Into<PathBuf>,
     max_batches: usize,
@@ -111,6 +116,8 @@ pub fn artifact_manifest_ready_batch_indices_limited(
     )
 }
 
+/// Return at most `max_batches` ready unclaimed artifact-manifest batch indices
+/// for a target.
 pub fn artifact_manifest_ready_batch_indices_limited_for_target(
     artifact_root: impl Into<PathBuf>,
     max_batches: usize,

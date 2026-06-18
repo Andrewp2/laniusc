@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 
+/// Decodes exactly `N` little-endian `u32` words from readback bytes.
 pub fn read_u32_words<const N: usize>(bytes: &[u8], context: &str) -> Result<[u32; N]> {
     let expected = N * 4;
     if bytes.len() < expected {
@@ -17,6 +18,7 @@ pub fn read_u32_words<const N: usize>(bytes: &[u8], context: &str) -> Result<[u3
     Ok(out)
 }
 
+/// Decodes exactly `N` little-endian `i32` words from readback bytes.
 pub fn read_i32_words<const N: usize>(bytes: &[u8], context: &str) -> Result<[i32; N]> {
     let expected = N * 4;
     if bytes.len() < expected {

@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that clears base HIR record buffers before reconstruction.
 pub struct HirRecordClearBasePass {
     data: PassData,
 }

@@ -147,6 +147,7 @@ mod tests {
     }
 }
 
+/// Scan wiring for compact call-row families such as params, args, and claims.
 pub(in crate::type_checker) struct CompactCallRowScanInput<'a> {
     pub(in crate::type_checker) scan_steps: &'a [NameScanStep],
     pub(in crate::type_checker) scan_count: &'a wgpu::Buffer,
@@ -160,6 +161,7 @@ pub(in crate::type_checker) struct CompactCallRowScanInput<'a> {
     pub(in crate::type_checker) n_blocks: u32,
 }
 
+/// Builds bind groups for call collection, argument matching, and claim validation.
 pub(in crate::type_checker) fn create_call_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,

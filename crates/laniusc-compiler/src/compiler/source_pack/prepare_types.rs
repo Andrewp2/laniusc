@@ -1,5 +1,10 @@
 use super::*;
 
+/// Final summary returned after persisted source-pack preparation completes.
+///
+/// This is the cross-stage receipt for the files and counts written under the
+/// artifact root. It is intentionally broad so callers can report a prepared
+/// build without reopening every index file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrepareResult {
     pub target: SourcePackArtifactTarget,
@@ -36,24 +41,40 @@ pub struct PrepareResult {
     pub build_state_path: PathBuf,
 }
 
+/// Current stage in resumable artifact-build preparation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildPrepareStage {
+    /// Preparing library metadata, build units, and schedule pages.
     LibrarySchedule,
+    /// Preparing artifact references for all planned jobs.
     ArtifactRefs,
+    /// Preparing executable job-batch pages.
     JobBatches,
+    /// Preparing link-batch pages.
     LinkBatches,
+    /// Preparing reverse dependency pages for job batches.
     JobBatchDependents,
+    /// Preparing artifact shards and their initial progress shards.
     ArtifactShards,
+    /// Preparing leaf groups in the hierarchical link plan.
     HierarchicalLinkLeafGroups,
+    /// Preparing reduce groups in the hierarchical link plan.
     HierarchicalLinkPlanReduceGroups,
+    /// Preparing executable hierarchical link pages.
     HierarchicalLinkExecution,
+    /// Preparing claimable work-queue item pages.
     WorkQueuePages,
+    /// Preparing work-queue progress pages.
     WorkQueueProgress,
+    /// Preparing final build and artifact manifests.
     BuildManifests,
+    /// Preparing initial mutable build state.
     BuildState,
+    /// Preparation has completed.
     Complete,
 }
 
+/// Result returned by one bounded artifact-build preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuildPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -64,6 +85,7 @@ pub struct BuildPrepareStepResult {
     pub prepared: Option<PrepareResult>,
 }
 
+/// Summary of an already prepared build plus current work-queue progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedBuildSummary {
     pub target: SourcePackArtifactTarget,
@@ -88,6 +110,7 @@ pub struct PreparedBuildSummary {
     pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
+/// Handle to a prepared source-pack build stored under an artifact root.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedBuild {
     pub(in crate::compiler) artifact_root: PathBuf,
@@ -95,6 +118,7 @@ pub struct PreparedBuild {
 }
 
 impl PreparedBuild {
+    /// Creates a prepared-build handle for an artifact root and target.
     pub fn new(artifact_root: impl Into<PathBuf>, target: SourcePackArtifactTarget) -> Self {
         Self {
             artifact_root: artifact_root.into(),
@@ -102,18 +126,22 @@ impl PreparedBuild {
         }
     }
 
+    /// Creates a prepared-build handle for the generic target.
     pub fn generic(artifact_root: impl Into<PathBuf>) -> Self {
         Self::new(artifact_root, SourcePackArtifactTarget::Generic)
     }
 
+    /// Returns the artifact root containing the prepared build.
     pub fn artifact_root(&self) -> &Path {
         &self.artifact_root
     }
 
+    /// Returns the artifact target represented by this prepared build.
     pub fn target(&self) -> SourcePackArtifactTarget {
         self.target
     }
 
+    /// Loads a bounded summary of the prepared build and ready work items.
     pub fn bounded_summary(
         &self,
         max_ready_items: usize,
@@ -200,6 +228,7 @@ impl PreparedBuild {
         })
     }
 
+    /// Runs up to `max_items` path-backed work-queue items synchronously.
     pub fn submit_path_artifact_work_queue_chunk<E>(
         &self,
         worker_id: impl Into<String>,
@@ -227,6 +256,7 @@ impl PreparedBuild {
         )
     }
 
+    /// Claims and executes at most one path-backed work-queue item synchronously.
     pub fn submit_path_artifact_work_queue_step<E>(
         &self,
         worker_id: impl Into<String>,
@@ -253,6 +283,7 @@ impl PreparedBuild {
         )
     }
 
+    /// Runs up to `max_items` path-backed work-queue items asynchronously.
     pub async fn submit_path_artifact_work_queue_chunk_async<E>(
         &self,
         worker_id: impl Into<String>,
@@ -281,6 +312,7 @@ impl PreparedBuild {
         .await
     }
 
+    /// Claims and executes at most one path-backed work-queue item asynchronously.
     pub async fn submit_path_artifact_work_queue_step_async<E>(
         &self,
         worker_id: impl Into<String>,
@@ -308,6 +340,7 @@ impl PreparedBuild {
         .await
     }
 
+    /// Loads a bounded work-queue progress snapshot for this prepared build.
     pub fn work_queue_progress_snapshot(
         &self,
         max_ready_items: usize,
@@ -315,6 +348,7 @@ impl PreparedBuild {
         work_queue_progress_snapshot(&self.artifact_root, self.target, max_ready_items)
     }
 
+    /// Runs up to `max_items` GPU descriptor work-queue items.
     pub async fn submit_gpu_descriptor_work_queue_chunk(
         &self,
         worker_id: impl Into<String>,
@@ -335,6 +369,7 @@ impl PreparedBuild {
             .await
     }
 
+    /// Claims and executes at most one GPU descriptor work-queue item.
     pub async fn submit_gpu_descriptor_work_queue_step(
         &self,
         worker_id: impl Into<String>,
@@ -355,11 +390,13 @@ impl PreparedBuild {
 }
 
 impl PrepareResult {
+    /// Returns a handle for executing or inspecting this prepared build.
     pub fn prepared_build(&self) -> PreparedBuild {
         PreparedBuild::new(&self.artifact_root, self.target)
     }
 }
 
+/// Summary returned after library metadata preparation completes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibraryMetadataPrepareResult {
     pub target: SourcePackArtifactTarget,
@@ -372,6 +409,7 @@ pub struct FilesystemLibraryMetadataPrepareResult {
     pub library_source_file_page_count: usize,
 }
 
+/// Result returned by one bounded library metadata preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibraryMetadataPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -386,6 +424,7 @@ pub struct FilesystemLibraryMetadataPrepareStepResult {
     pub library_source_file_page_count: usize,
 }
 
+/// Persisted progress for library metadata preparation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilesystemLibraryMetadataPrepareProgress {
     pub version: u32,
@@ -398,13 +437,18 @@ pub struct FilesystemLibraryMetadataPrepareProgress {
     pub library_source_file_page_count: usize,
 }
 
+/// Sub-stage of library schedule preparation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FilesystemLibrarySchedulePreparePhase {
+    /// Build-unit pages are being prepared.
     BuildUnitPages,
+    /// Schedule pages are being prepared.
     SchedulePages,
+    /// Library schedule preparation has completed.
     Complete,
 }
 
+/// Persisted progress for library schedule preparation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilesystemLibrarySchedulePrepareProgress {
     pub version: u32,
@@ -425,6 +469,7 @@ pub struct FilesystemLibrarySchedulePrepareProgress {
     pub next_codegen_job_index: usize,
 }
 
+/// Result returned by one bounded library schedule preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibrarySchedulePrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -445,6 +490,7 @@ pub struct FilesystemLibrarySchedulePrepareStepResult {
     pub scheduled_job_count: usize,
 }
 
+/// Result returned by one bounded artifact-reference preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactRefPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -462,6 +508,7 @@ pub struct FilesystemArtifactRefPrepareStepResult {
     pub total_source_line_count: usize,
 }
 
+/// Internal persisted progress for artifact-reference preparation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct ArtifactRefPrepareProgress {
     pub(in crate::compiler) version: u32,
@@ -477,6 +524,7 @@ pub(in crate::compiler) struct ArtifactRefPrepareProgress {
     pub(in crate::compiler) total_source_line_count: usize,
 }
 
+/// Result returned by one bounded job-batch preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemJobBatchPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -489,6 +537,7 @@ pub struct FilesystemJobBatchPrepareStepResult {
     pub job_batch_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded job-batch dependents preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemJobBatchDependentsPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -499,6 +548,7 @@ pub struct FilesystemJobBatchDependentsPrepareStepResult {
     pub dependent_edge_count: usize,
 }
 
+/// Result returned by one bounded artifact-shard preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactShardPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -524,6 +574,7 @@ pub struct FilesystemArtifactShardPrepareStepResult {
     pub link_input_shard_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded link-batch preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLinkBatchPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -536,6 +587,7 @@ pub struct FilesystemLinkBatchPrepareStepResult {
     pub link_batch_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded hierarchical-link leaf preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemHierarchicalLinkLeafPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -546,6 +598,7 @@ pub struct FilesystemHierarchicalLinkLeafPrepareStepResult {
     pub new_leaf_group_count: usize,
 }
 
+/// Result returned by one bounded hierarchical-link reduce planning step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemHierarchicalLinkPlanPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -561,6 +614,7 @@ pub struct FilesystemHierarchicalLinkPlanPrepareStepResult {
     pub hierarchical_link_plan_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded hierarchical-link execution-page step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemHierarchicalLinkExecutionPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -573,6 +627,7 @@ pub struct FilesystemHierarchicalLinkExecutionPrepareStepResult {
     pub hierarchical_link_execution_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded work-queue item-page preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueuePrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -584,6 +639,7 @@ pub struct FilesystemWorkQueuePrepareStepResult {
     pub work_queue_index_path: Option<PathBuf>,
 }
 
+/// Result returned by one bounded work-queue progress preparation step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueProgressPrepareStepResult {
     pub target: SourcePackArtifactTarget,
@@ -601,22 +657,26 @@ pub struct FilesystemWorkQueueProgressPrepareStepResult {
     pub work_queue_progress_index_path: Option<PathBuf>,
 }
 
+/// Result returned after storing library partition index/pages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibraryPartitionStoreResult {
     pub library_partition_index_path: PathBuf,
     pub library_partition_count: usize,
 }
 
+/// Result returned after storing library source-file pages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibrarySourceFilePageStoreResult {
     pub library_source_file_page_count: usize,
 }
 
+/// Result returned after storing library schedule pages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemLibrarySchedulePageStoreResult {
     pub library_schedule_page_count: usize,
 }
 
+/// Result returned after storing artifact shard indexes/pages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactShardStoreResult {
     pub artifact_shard_index_path: PathBuf,
@@ -626,11 +686,13 @@ pub struct FilesystemArtifactShardStoreResult {
     pub batch_shard_locator_count: usize,
 }
 
+/// Result returned after storing executable artifact shards.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactExecutionShardStoreResult {
     pub artifact_execution_shard_count: usize,
 }
 
+/// Result returned after storing build-progress shards.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemBuildProgressShardStoreResult {
     pub build_progress_shard_count: usize,

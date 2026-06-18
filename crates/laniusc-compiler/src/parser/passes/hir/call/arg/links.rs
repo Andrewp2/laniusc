@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links call argument nodes to their owning call expression.
 pub struct HirCallArgLinksPass {
     data: PassData,
 }

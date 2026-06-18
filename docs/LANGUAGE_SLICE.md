@@ -12,6 +12,11 @@ tooling contracts a binary claims to support. Source compatibility, diagnostic
 wording, package metadata, stdlib APIs, and backend coverage may change between
 compiler releases until a stable edition is introduced.
 
+For a reader-oriented entry point into the current public language surface, see
+`docs/language/README.md`. For a generated row-by-row reference to the current
+slice, see `docs/language/generated/unstable-alpha-slice.md`. This file remains
+the policy and inventory contract.
+
 ## Version Surface
 
 `laniusc --version` is the supported machine-checkable summary for the local
@@ -225,8 +230,17 @@ The first production language edition needs a conformance matrix that names:
 - stable diagnostic codes for unsupported forms
 - acceptance tests and performance gates required for release
 
-The current machine-readable inventory for the documented alpha slice is
-`docs/language_slice_unstable_alpha.tsv`. It is intentionally conservative:
+The current machine-readable inventory source for the documented alpha slice is
+`docs/language_slice_unstable_alpha.tsv`. The reader-facing generated reference
+is `docs/language/generated/unstable-alpha-slice.md`; regenerate and check it
+with:
+
+```bash
+tools/language_slice_summary.py --output docs/language/generated/unstable-alpha-slice.md
+tools/language_slice_summary.py --check docs/language/generated/unstable-alpha-slice.md
+```
+
+The inventory is intentionally conservative:
 `supported` and `bounded` rows must point at behavior or durable record tests,
 and must name a behavior-facing `evidence_contract` class rather than relying on
 source-string or helper-name checks. Allowed evidence classes are

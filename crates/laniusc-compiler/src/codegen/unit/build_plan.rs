@@ -1,6 +1,7 @@
 use super::{build_manifest::*, *};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Retained source-pack job schedule plus artifact and link plans.
 pub struct SourcePackBuildPlan {
     pub schedule: SourcePackJobSchedule,
     pub artifacts: Vec<SourcePackArtifactPlan>,
@@ -8,6 +9,7 @@ pub struct SourcePackBuildPlan {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Aggregate estimate for artifact manifests, job IO, and link batches.
 pub struct SourcePackBuildArtifactEstimateSummary {
     pub artifact_manifest: SourcePackArtifactManifestSummary,
     pub artifact_lifetimes: SourcePackArtifactLifetimeSummary,
@@ -24,6 +26,7 @@ pub struct SourcePackBuildArtifactEstimateSummary {
     pub artifact_use_count: usize,
 }
 impl SourcePackBuildPlan {
+    /// Counts library-interface artifacts in the retained plan.
     pub fn interface_artifact_count(&self) -> usize {
         self.artifacts
             .iter()
@@ -31,6 +34,7 @@ impl SourcePackBuildPlan {
             .count()
     }
 
+    /// Counts codegen-object artifacts in the retained plan.
     pub fn object_artifact_count(&self) -> usize {
         self.artifacts
             .iter()
@@ -38,6 +42,7 @@ impl SourcePackBuildPlan {
             .count()
     }
 
+    /// Counts linked-output artifacts in the retained plan.
     pub fn linked_output_artifact_count(&self) -> usize {
         self.artifacts
             .iter()
@@ -45,6 +50,7 @@ impl SourcePackBuildPlan {
             .count()
     }
 
+    /// Builds a compact generic artifact manifest.
     pub fn build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -55,6 +61,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Builds a compact artifact manifest for a concrete target.
     pub fn build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -63,6 +70,7 @@ impl SourcePackBuildPlan {
         self.compact_build_artifact_manifest_for_target(batch_limits, target)
     }
 
+    /// Tries to build a compact generic artifact manifest.
     pub fn try_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -73,6 +81,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Builds and retains the full generic artifact manifest.
     pub fn retained_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -83,6 +92,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Builds and retains the full artifact manifest for a concrete target.
     pub fn retained_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -92,6 +102,7 @@ impl SourcePackBuildPlan {
             .expect("source-pack retained build artifact manifest schedule should be acyclic")
     }
 
+    /// Tries to build and retain the full generic artifact manifest.
     pub fn try_retained_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -102,6 +113,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Builds a compact generic artifact manifest with count-only payloads.
     pub fn compact_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -112,6 +124,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Builds a compact count-only artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -121,6 +134,7 @@ impl SourcePackBuildPlan {
             .expect("source-pack compact build artifact manifest schedule should be acyclic")
     }
 
+    /// Tries to build a compact generic artifact manifest with count-only payloads.
     pub fn try_compact_build_artifact_manifest(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -131,6 +145,7 @@ impl SourcePackBuildPlan {
         )
     }
 
+    /// Tries to build a compact count-only artifact manifest for a concrete target.
     pub fn try_compact_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -172,6 +187,7 @@ impl SourcePackBuildPlan {
         })
     }
 
+    /// Tries to build a compact artifact manifest for a concrete target.
     pub fn try_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -180,6 +196,7 @@ impl SourcePackBuildPlan {
         self.try_compact_build_artifact_manifest_for_target(batch_limits, target)
     }
 
+    /// Tries to build and retain the full artifact manifest for a concrete target.
     pub fn try_retained_build_artifact_manifest_for_target(
         &self,
         batch_limits: SourcePackJobBatchLimits,
@@ -217,6 +234,7 @@ impl SourcePackBuildPlan {
         })
     }
 
+    /// Builds artifact consumer lists and last-use information.
     pub fn artifact_use_plan(&self) -> SourcePackArtifactUsePlan {
         let mut uses = self
             .artifacts
@@ -306,6 +324,7 @@ impl SourcePackBuildPlan {
         SourcePackArtifactUsePlan { uses }
     }
 
+    /// Builds one last-use record per artifact.
     pub fn artifact_last_use_plan(&self) -> SourcePackArtifactLastUsePlan {
         let index = self.artifact_last_use_index();
         let artifacts = self
@@ -324,6 +343,7 @@ impl SourcePackBuildPlan {
         SourcePackArtifactLastUsePlan { artifacts }
     }
 
+    /// Builds an index from artifact index to last consuming job.
     pub fn artifact_last_use_index(&self) -> SourcePackArtifactLastUseIndex {
         let mut last_consumer_job_indices = vec![None; self.artifacts.len()];
         let artifact_indices_by_job = self.artifact_indices_by_producing_job();
@@ -406,6 +426,7 @@ impl SourcePackBuildPlan {
         }
     }
 
+    /// Computes aggregate last-use information for retained artifacts.
     pub fn artifact_lifetime_summary(&self) -> SourcePackArtifactLifetimeSummary {
         SourcePackArtifactLifetimeSummary {
             artifact_count: self.artifacts.len(),
@@ -417,10 +438,12 @@ impl SourcePackBuildPlan {
         }
     }
 
+    /// Builds a generic artifact manifest with stable artifact keys.
     pub fn artifact_manifest(&self) -> SourcePackArtifactManifest {
         self.artifact_manifest_for_target(SourcePackArtifactTarget::Generic)
     }
 
+    /// Builds an artifact manifest with target-prefixed stable keys.
     pub fn artifact_manifest_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -444,10 +467,12 @@ impl SourcePackBuildPlan {
         }
     }
 
+    /// Computes aggregate sizing information for the generic artifact manifest.
     pub fn artifact_manifest_summary(&self) -> SourcePackArtifactManifestSummary {
         self.artifact_manifest_summary_for_target(SourcePackArtifactTarget::Generic)
     }
 
+    /// Computes aggregate sizing information for a target artifact manifest.
     pub fn artifact_manifest_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -464,6 +489,7 @@ impl SourcePackBuildPlan {
         summary
     }
 
+    /// Builds artifact input/output rows for every scheduled job.
     pub fn job_artifact_io_plan(&self) -> SourcePackJobArtifactIoPlan {
         let mut jobs = Vec::new();
         self.try_for_each_job_artifact_io(|job| {
@@ -474,6 +500,7 @@ impl SourcePackBuildPlan {
         SourcePackJobArtifactIoPlan { jobs }
     }
 
+    /// Computes aggregate sizing information for job artifact IO rows.
     pub fn job_artifact_io_summary(&self) -> SourcePackJobArtifactIoSummary {
         let mut summary = SourcePackJobArtifactIoSummary::default();
         self.try_for_each_job_artifact_io(|job| {
@@ -484,6 +511,7 @@ impl SourcePackBuildPlan {
         summary
     }
 
+    /// Streams artifact input/output rows for every scheduled job.
     pub fn try_for_each_job_artifact_io<F, E>(&self, mut visit: F) -> Result<usize, E>
     where
         F: FnMut(SourcePackJobArtifactIo) -> Result<(), E>,
@@ -558,10 +586,12 @@ impl SourcePackBuildPlan {
         Ok(job_count)
     }
 
+    /// Builds per-job artifact manifests with generic artifact keys.
     pub fn job_artifact_manifest_plan(&self) -> SourcePackJobArtifactManifestPlan {
         self.job_artifact_manifest_plan_for_target(SourcePackArtifactTarget::Generic)
     }
 
+    /// Builds per-job artifact manifests with target-prefixed artifact keys.
     pub fn job_artifact_manifest_plan_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -575,6 +605,7 @@ impl SourcePackBuildPlan {
         SourcePackJobArtifactManifestPlan { jobs }
     }
 
+    /// Computes aggregate sizing information for per-job artifact manifests.
     pub fn job_artifact_manifest_summary(&self) -> SourcePackJobArtifactManifestSummary {
         let io_summary = self.job_artifact_io_summary();
         SourcePackJobArtifactManifestSummary {
@@ -583,6 +614,7 @@ impl SourcePackBuildPlan {
         }
     }
 
+    /// Streams per-job artifact manifests for a concrete target.
     pub fn try_for_each_job_artifact_manifest_for_target<F, E>(
         &self,
         target: SourcePackArtifactTarget,
@@ -722,6 +754,7 @@ impl SourcePackBuildPlan {
         artifact_indices_by_job
     }
 
+    /// Builds interface-artifact batches consumed by the link job.
     pub fn link_interface_batches(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -735,6 +768,7 @@ impl SourcePackBuildPlan {
         SourcePackLinkInterfaceBatchPlan { batches }
     }
 
+    /// Computes aggregate sizing information for interface-artifact link batches.
     pub fn link_interface_batch_summary(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -748,6 +782,7 @@ impl SourcePackBuildPlan {
         summary
     }
 
+    /// Streams interface-artifact link batches.
     pub fn try_for_each_link_interface_batch<F, E>(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -810,6 +845,7 @@ impl SourcePackBuildPlan {
         Ok(batch_count)
     }
 
+    /// Builds object-artifact batches consumed by the link job.
     pub fn link_object_batches(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -823,6 +859,7 @@ impl SourcePackBuildPlan {
         SourcePackLinkObjectBatchPlan { batches }
     }
 
+    /// Computes aggregate sizing information for object-artifact link batches.
     pub fn link_object_batch_summary(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -836,6 +873,7 @@ impl SourcePackBuildPlan {
         summary
     }
 
+    /// Streams object-artifact link batches.
     pub fn try_for_each_link_object_batch<F, E>(
         &self,
         limits: SourcePackJobBatchLimits,
@@ -899,6 +937,7 @@ impl SourcePackBuildPlan {
     }
 }
 
+/// Converts artifact indices to stable artifact references for a target manifest.
 pub(in crate::codegen::unit) fn artifact_refs_from_indices(
     artifacts: &[SourcePackArtifactPlan],
     artifact_indices: &[usize],
@@ -911,6 +950,7 @@ pub(in crate::codegen::unit) fn artifact_refs_from_indices(
         .collect()
 }
 
+/// Converts one artifact plan row to the public artifact reference recorded in job IO.
 pub(in crate::codegen::unit) fn artifact_ref_for_plan(
     artifact: &SourcePackArtifactPlan,
     target: SourcePackArtifactTarget,
@@ -923,6 +963,7 @@ pub(in crate::codegen::unit) fn artifact_ref_for_plan(
     }
 }
 
+/// Creates the artifact plan row emitted by a job for the requested artifact kind.
 pub(in crate::codegen::unit) fn artifact_plan_for_job(
     artifact_index: usize,
     job: &SourcePackJob,
@@ -940,6 +981,7 @@ pub(in crate::codegen::unit) fn artifact_plan_for_job(
     }
 }
 
+/// Updates manifest sizing estimates with one artifact key and row.
 pub(in crate::codegen::unit) fn record_artifact_manifest_estimate(
     summary: &mut SourcePackArtifactManifestSummary,
     artifact: &SourcePackArtifactPlan,
@@ -951,6 +993,7 @@ pub(in crate::codegen::unit) fn record_artifact_manifest_estimate(
         .max(artifact_key_for_target(artifact, target).len());
 }
 
+/// Builds a sparse job-index lookup table for job phases.
 pub(in crate::codegen::unit) fn job_phase_by_index(
     schedule: &SourcePackJobSchedule,
 ) -> Vec<Option<SourcePackJobPhase>> {
@@ -966,6 +1009,7 @@ pub(in crate::codegen::unit) fn job_phase_by_index(
     phases
 }
 
+/// Updates job artifact-IO sizing estimates from already-counted input and output totals.
 pub(in crate::codegen::unit) fn record_job_artifact_io_estimate(
     summary: &mut SourcePackJobArtifactIoSummary,
     input_interface_count: usize,
@@ -983,6 +1027,7 @@ pub(in crate::codegen::unit) fn record_job_artifact_io_estimate(
         summary.max_output_artifact_count.max(output_artifact_count);
 }
 
+/// Returns whether an artifact index falls inside an optional contiguous artifact range.
 pub(in crate::codegen::unit) fn artifact_index_in_range(
     artifact_range: &Option<Range<usize>>,
     artifact_index: usize,
@@ -993,6 +1038,7 @@ pub(in crate::codegen::unit) fn artifact_index_in_range(
     }
 }
 
+/// Adds one link input artifact to the current summary batch, flushing first if limits require it.
 pub(in crate::codegen::unit) fn record_link_input_batch_summary<F>(
     current_artifact_count: &mut usize,
     current_source_bytes: &mut usize,
@@ -1026,6 +1072,7 @@ pub(in crate::codegen::unit) fn record_link_input_batch_summary<F>(
     *current_source_file_count = (*current_source_file_count).saturating_add(source_file_count);
 }
 
+/// Flushes the final pending link input summary batch, if any.
 pub(in crate::codegen::unit) fn finish_link_input_batch_summary<F>(
     current_artifact_count: &mut usize,
     current_source_bytes: &mut usize,
@@ -1047,6 +1094,7 @@ pub(in crate::codegen::unit) fn finish_link_input_batch_summary<F>(
     *current_source_file_count = 0;
 }
 
+/// Records the greatest job index that consumes an artifact.
 pub(in crate::codegen::unit) fn record_artifact_last_consumer(
     last_consumer_job_indices: &mut [Option<usize>],
     artifact_index: usize,
@@ -1059,6 +1107,7 @@ pub(in crate::codegen::unit) fn record_artifact_last_consumer(
     }
 }
 
+/// Builds the stable artifact key for a planned artifact and target.
 pub(in crate::codegen::unit) fn artifact_key_for_target(
     artifact: &SourcePackArtifactPlan,
     target: SourcePackArtifactTarget,
@@ -1073,6 +1122,7 @@ pub(in crate::codegen::unit) fn artifact_key_for_target(
     )
 }
 
+/// Builds the stable artifact key for a target, kind, library, and source range.
 pub fn artifact_key_for_output(
     target: SourcePackArtifactTarget,
     kind: SourcePackArtifactKind,

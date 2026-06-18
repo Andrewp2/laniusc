@@ -1,6 +1,7 @@
 use super::*;
 
 impl TypeCheckPasses {
+    /// Loads every compute pass used by the resident type-check pipeline.
     pub(super) fn new(device: &wgpu::Device) -> Result<Self> {
         macro_rules! pass {
             ($label:literal, $file:literal) => {{

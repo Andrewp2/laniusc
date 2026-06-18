@@ -1,5 +1,9 @@
 use super::*;
 
+/// Validates compact dependency job ranges against explicit dependency indices.
+///
+/// Ranges must be non-empty, sorted, non-overlapping, within the dependency
+/// bound, and disjoint from explicitly listed dependencies.
 pub(in crate::compiler) fn validate_job_dependency_ranges<F>(
     dependency_job_ranges: &[SourcePackJobIndexRange],
     explicit_dependencies: &BTreeSet<usize>,
@@ -51,6 +55,10 @@ where
     Ok(())
 }
 
+/// Validates compact dependent job ranges against explicit dependent indices.
+///
+/// Ranges must be non-empty, sorted, non-overlapping, strictly after the owning
+/// item, and disjoint from explicitly listed dependents.
 pub(in crate::compiler) fn validate_job_dependent_ranges<F>(
     dependent_job_ranges: &[SourcePackJobIndexRange],
     explicit_dependents: &BTreeSet<usize>,
@@ -102,6 +110,10 @@ where
     Ok(())
 }
 
+/// Validates phase-specific job payload shape.
+///
+/// Frontend and codegen jobs must have source input; link jobs must not carry
+/// source, dependency, or library-owner payload.
 pub(in crate::compiler) fn validate_job_shape<F>(
     job: &SourcePackJob,
     context: &str,

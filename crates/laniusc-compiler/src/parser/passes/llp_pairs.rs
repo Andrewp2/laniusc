@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for adjacent-token pair table lookup.
 pub struct LLPParams {
     pub n_tokens: u32,
     pub n_kinds: u32,
 }
 
+/// Pass that converts adjacent parser token pairs into action headers.
 pub struct LLPPairsPass {
     data: PassData,
 }

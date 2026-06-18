@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds semantic depth propagation from semantic parent links.
 pub struct HirSemanticDepthInitPass {
     data: PassData,
 }

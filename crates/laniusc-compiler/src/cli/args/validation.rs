@@ -17,18 +17,21 @@ use crate::cli::{
     source_pack,
 };
 
+/// Parses an optional numeric value for a CLI limit flag.
 pub(super) fn parse_usize_cli_arg(flag: &str, value: Option<String>) -> Result<usize, CliError> {
     let value =
         value.ok_or_else(|| missing_cli_option_value_error(flag, "a non-negative integer"))?;
     parse_usize_cli_value(flag, &value)
 }
 
+/// Parses a numeric CLI limit flag from a string value.
 pub(super) fn parse_usize_cli_value(flag: &str, value: &str) -> Result<usize, CliError> {
     parse_usize_value(flag, value).map_err(|err| {
         unsupported_cli_option_value_error(flag, value, "a non-negative integer", Some(err))
     })
 }
 
+/// Validates `--emit` and `--target` compatibility.
 pub(super) fn validate_emit_and_target(
     emit: &str,
     target_triple: Option<&str>,
@@ -64,6 +67,7 @@ pub(super) fn validate_emit_and_target(
     Ok(())
 }
 
+/// Validates the requested language edition.
 pub(super) fn validate_language_edition(language_edition: &str) -> Result<(), CliError> {
     if language_edition == LANIUS_LANGUAGE_EDITION {
         return Ok(());
@@ -78,6 +82,7 @@ pub(super) fn validate_language_edition(language_edition: &str) -> Result<(), Cl
     ))
 }
 
+/// Validates source-pack mode flags that are mutually exclusive by shape.
 pub(super) fn validate_source_pack_options(
     source_pack: &source_pack::Options,
 ) -> Result<(), CliError> {
@@ -92,6 +97,7 @@ pub(super) fn validate_source_pack_options(
     Ok(())
 }
 
+/// Validates package manifest/lockfile mode against explicit source inputs.
 pub(super) fn validate_package_mode(
     inputs: &[PathBuf],
     stdlib_paths: &[PathBuf],
@@ -149,6 +155,7 @@ pub(super) fn validate_package_mode(
     Ok(())
 }
 
+/// Validates source-pack preparation and persisted-build option combinations.
 pub(super) fn validate_source_pack_prepare_options(
     inputs: &[PathBuf],
     stdlib_paths: &[PathBuf],
@@ -275,6 +282,7 @@ pub(super) fn validate_source_pack_prepare_options(
     Ok(())
 }
 
+/// Validates diagnostics-only `check` mode constraints.
 pub(super) fn validate_check_mode(
     check_only: bool,
     output: Option<&Path>,
@@ -311,6 +319,8 @@ pub(super) fn validate_check_mode(
     Ok(())
 }
 
+/// Validates that descriptor-producing source-pack modes are requested
+/// explicitly as contract output.
 pub(super) fn validate_descriptor_output(
     uses_source_pack: bool,
     source_pack: &source_pack::Options,

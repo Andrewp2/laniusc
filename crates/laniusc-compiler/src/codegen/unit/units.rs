@@ -1,6 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// User-facing bounds for splitting a source pack into bounded compiler units.
 pub struct CodegenUnitLimits {
     pub max_source_bytes: usize,
     pub max_source_files: usize,
@@ -16,6 +17,7 @@ impl Default for CodegenUnitLimits {
 }
 
 impl CodegenUnitLimits {
+    /// Returns limits clamped to at least one byte and one source file.
     pub fn normalized(self) -> Self {
         Self {
             max_source_bytes: self.max_source_bytes.max(1),
@@ -25,6 +27,7 @@ impl CodegenUnitLimits {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Lightweight source-file facts used by unit planners.
 pub struct SourceFileUnitInput {
     pub library_id: u32,
     pub source_index: usize,
@@ -33,6 +36,7 @@ pub struct SourceFileUnitInput {
 }
 
 impl SourceFileUnitInput {
+    /// Builds unit-planning input from an in-memory source string.
     pub fn from_source(library_id: u32, source_index: usize, source: &str) -> Self {
         Self {
             library_id,
@@ -44,6 +48,7 @@ impl SourceFileUnitInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounded frontend/type-check unit produced from contiguous source files.
 pub struct FrontendUnit {
     pub unit_index: usize,
     pub library_id: u32,
@@ -55,12 +60,14 @@ pub struct FrontendUnit {
 }
 
 impl FrontendUnit {
+    /// Returns the source-index range covered by this unit.
     pub fn source_range(&self) -> Range<usize> {
         self.first_source_index..self.first_source_index + self.source_file_count
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounded backend codegen unit produced from contiguous source files.
 pub struct CodegenUnit {
     pub unit_index: usize,
     pub library_id: u32,
@@ -72,12 +79,14 @@ pub struct CodegenUnit {
 }
 
 impl CodegenUnit {
+    /// Returns the source-index range covered by this unit.
     pub fn source_range(&self) -> Range<usize> {
         self.first_source_index..self.first_source_index + self.source_file_count
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Contiguous files belonging to one source-pack library.
 pub struct LibraryUnit {
     pub library_index: usize,
     pub library_id: u32,
@@ -88,17 +97,20 @@ pub struct LibraryUnit {
 }
 
 impl LibraryUnit {
+    /// Returns the source-index range covered by this library unit.
     pub fn source_range(&self) -> Range<usize> {
         self.first_source_index..self.first_source_index + self.source_file_count
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Collected library units for a source pack.
 pub struct LibraryUnitPlan {
     pub libraries: Vec<LibraryUnit>,
 }
 
 impl LibraryUnitPlan {
+    /// Builds a single-library plan from in-memory source strings.
     pub fn from_source_pack<S: AsRef<str>>(sources: &[S]) -> Self {
         let mut libraries = Vec::new();
         Self::try_for_each_from_files(
@@ -114,6 +126,7 @@ impl LibraryUnitPlan {
         Self { libraries }
     }
 
+    /// Builds a plan from in-memory source strings and explicit library ids.
     pub fn from_source_pack_with_libraries<S, L>(sources: &[S], library_ids: &[L]) -> Self
     where
         S: AsRef<str>,
@@ -146,6 +159,7 @@ impl LibraryUnitPlan {
         Self { libraries }
     }
 
+    /// Builds a plan from precomputed source-file facts.
     pub fn from_files(files: &[SourceFileUnitInput]) -> Self {
         let mut libraries = Vec::new();
         Self::try_for_each_from_files(files.iter().copied(), |library| {
@@ -156,6 +170,7 @@ impl LibraryUnitPlan {
         Self { libraries }
     }
 
+    /// Streams library units to a visitor without retaining the full plan.
     pub fn try_for_each_from_files<I, F, E>(files: I, visit: F) -> Result<usize, E>
     where
         I: IntoIterator<Item = SourceFileUnitInput>,
@@ -164,6 +179,7 @@ impl LibraryUnitPlan {
         Self::try_for_each_from_fallible_files(files.into_iter().map(Ok), visit)
     }
 
+    /// Streams library units from a fallible source-file iterator.
     pub fn try_for_each_from_fallible_files<I, F, E>(files: I, mut visit: F) -> Result<usize, E>
     where
         I: IntoIterator<Item = Result<SourceFileUnitInput, E>>,
@@ -190,10 +206,12 @@ impl LibraryUnitPlan {
         Ok(library_count)
     }
 
+    /// Returns the number of libraries represented by the plan.
     pub fn library_count(&self) -> usize {
         self.libraries.len()
     }
 
+    /// Returns the largest source-byte total among planned libraries.
     pub fn max_library_source_bytes(&self) -> usize {
         self.libraries
             .iter()
@@ -202,6 +220,7 @@ impl LibraryUnitPlan {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count among planned libraries.
     pub fn max_library_source_files(&self) -> usize {
         self.libraries
             .iter()
@@ -212,11 +231,13 @@ impl LibraryUnitPlan {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Collected frontend units for a source pack.
 pub struct FrontendUnitPlan {
     pub units: Vec<FrontendUnit>,
 }
 
 impl FrontendUnitPlan {
+    /// Builds bounded frontend units for a single-library in-memory source pack.
     pub fn from_source_pack<S: AsRef<str>>(sources: &[S], limits: CodegenUnitLimits) -> Self {
         let mut units = Vec::new();
         Self::try_for_each_from_files(
@@ -233,6 +254,7 @@ impl FrontendUnitPlan {
         Self { units }
     }
 
+    /// Builds bounded frontend units from sources and explicit library ids.
     pub fn from_source_pack_with_libraries<S, L>(
         sources: &[S],
         library_ids: &[L],
@@ -270,6 +292,7 @@ impl FrontendUnitPlan {
         Self { units }
     }
 
+    /// Builds bounded frontend units from precomputed source-file facts.
     pub fn from_files(files: &[SourceFileUnitInput], limits: CodegenUnitLimits) -> Self {
         let mut units = Vec::new();
         Self::try_for_each_from_files(files.iter().copied(), limits, |unit| {
@@ -280,6 +303,7 @@ impl FrontendUnitPlan {
         Self { units }
     }
 
+    /// Streams frontend units to a visitor without retaining the full plan.
     pub fn try_for_each_from_files<I, F, E>(
         files: I,
         limits: CodegenUnitLimits,
@@ -292,6 +316,7 @@ impl FrontendUnitPlan {
         Self::try_for_each_from_fallible_files(files.into_iter().map(Ok), limits, visit)
     }
 
+    /// Streams frontend units from a fallible source-file iterator.
     pub fn try_for_each_from_fallible_files<I, F, E>(
         files: I,
         limits: CodegenUnitLimits,
@@ -342,10 +367,12 @@ impl FrontendUnitPlan {
         Ok(unit_count)
     }
 
+    /// Returns the number of frontend units in this plan.
     pub fn unit_count(&self) -> usize {
         self.units.len()
     }
 
+    /// Returns the number of one-file units that exceed the configured byte limit.
     pub fn oversized_unit_count(&self) -> usize {
         self.units
             .iter()
@@ -353,6 +380,7 @@ impl FrontendUnitPlan {
             .count()
     }
 
+    /// Returns the largest source-byte total among planned frontend units.
     pub fn max_unit_source_bytes(&self) -> usize {
         self.units
             .iter()
@@ -361,6 +389,7 @@ impl FrontendUnitPlan {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count among planned frontend units.
     pub fn max_unit_source_files(&self) -> usize {
         self.units
             .iter()
@@ -371,11 +400,13 @@ impl FrontendUnitPlan {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Collected backend codegen units for a source pack.
 pub struct CodegenUnitPlan {
     pub units: Vec<CodegenUnit>,
 }
 
 impl CodegenUnitPlan {
+    /// Builds bounded codegen units for a single-library in-memory source pack.
     pub fn from_source_pack<S: AsRef<str>>(sources: &[S], limits: CodegenUnitLimits) -> Self {
         let mut units = Vec::new();
         Self::try_for_each_from_files(
@@ -392,6 +423,7 @@ impl CodegenUnitPlan {
         Self { units }
     }
 
+    /// Builds bounded codegen units from sources and explicit library ids.
     pub fn from_source_pack_with_libraries<S, L>(
         sources: &[S],
         library_ids: &[L],
@@ -429,6 +461,7 @@ impl CodegenUnitPlan {
         Self { units }
     }
 
+    /// Builds bounded codegen units from precomputed source-file facts.
     pub fn from_files(files: &[SourceFileUnitInput], limits: CodegenUnitLimits) -> Self {
         let mut units = Vec::new();
         Self::try_for_each_from_files(files.iter().copied(), limits, |unit| {
@@ -439,6 +472,7 @@ impl CodegenUnitPlan {
         Self { units }
     }
 
+    /// Streams codegen units to a visitor without retaining the full plan.
     pub fn try_for_each_from_files<I, F, E>(
         files: I,
         limits: CodegenUnitLimits,
@@ -451,6 +485,7 @@ impl CodegenUnitPlan {
         Self::try_for_each_from_fallible_files(files.into_iter().map(Ok), limits, visit)
     }
 
+    /// Streams codegen units from a fallible source-file iterator.
     pub fn try_for_each_from_fallible_files<I, F, E>(
         files: I,
         limits: CodegenUnitLimits,
@@ -501,10 +536,12 @@ impl CodegenUnitPlan {
         Ok(unit_count)
     }
 
+    /// Returns the number of codegen units in this plan.
     pub fn unit_count(&self) -> usize {
         self.units.len()
     }
 
+    /// Returns the number of one-file units that exceed the configured byte limit.
     pub fn oversized_unit_count(&self) -> usize {
         self.units
             .iter()
@@ -512,6 +549,7 @@ impl CodegenUnitPlan {
             .count()
     }
 
+    /// Returns the largest source-byte total among planned codegen units.
     pub fn max_unit_source_bytes(&self) -> usize {
         self.units
             .iter()
@@ -520,6 +558,7 @@ impl CodegenUnitPlan {
             .unwrap_or(0)
     }
 
+    /// Returns the largest source-file count among planned codegen units.
     pub fn max_unit_source_files(&self) -> usize {
         self.units
             .iter()
@@ -530,6 +569,7 @@ impl CodegenUnitPlan {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+/// Mutable accumulator for one codegen or frontend unit within a single library.
 pub(in crate::codegen::unit) struct UnitBuilder {
     library_id: u32,
     first_source_index: usize,
@@ -539,6 +579,7 @@ pub(in crate::codegen::unit) struct UnitBuilder {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+/// Mutable accumulator for one library unit spanning contiguous source files.
 pub(in crate::codegen::unit) struct LibraryBuilder {
     library_id: u32,
     first_source_index: usize,
@@ -552,10 +593,12 @@ impl LibraryBuilder {
         self.source_file_count == 0
     }
 
+    /// Returns whether the current library unit must finish before `file`.
     pub(in crate::codegen::unit) fn should_flush_before(self, file: SourceFileUnitInput) -> bool {
         !self.is_empty() && self.library_id != file.library_id
     }
 
+    /// Adds one source file to the pending library unit.
     pub(in crate::codegen::unit) fn push(&mut self, file: SourceFileUnitInput) {
         if self.is_empty() {
             self.library_id = file.library_id;
@@ -566,6 +609,7 @@ impl LibraryBuilder {
         self.source_lines = self.source_lines.saturating_add(file.line_count);
     }
 
+    /// Emits the pending library unit and resets the builder, or returns `None` when empty.
     pub(in crate::codegen::unit) fn take(&mut self, library_index: usize) -> Option<LibraryUnit> {
         if self.is_empty() {
             return None;
@@ -588,6 +632,7 @@ impl UnitBuilder {
         self.source_file_count == 0
     }
 
+    /// Returns whether the current codegen unit must finish before `file`.
     pub(in crate::codegen::unit) fn should_flush_before(
         self,
         file: SourceFileUnitInput,
@@ -601,6 +646,7 @@ impl UnitBuilder {
             || self.source_bytes.saturating_add(file.byte_len) > limits.max_source_bytes
     }
 
+    /// Adds one source file to the pending codegen unit.
     pub(in crate::codegen::unit) fn push(&mut self, file: SourceFileUnitInput) {
         if self.is_empty() {
             self.library_id = file.library_id;
@@ -611,6 +657,7 @@ impl UnitBuilder {
         self.source_lines = self.source_lines.saturating_add(file.line_count);
     }
 
+    /// Emits the pending codegen unit and resets the builder, or returns `None` when empty.
     pub(in crate::codegen::unit) fn take(
         &mut self,
         unit_index: usize,
@@ -632,6 +679,7 @@ impl UnitBuilder {
         Some(unit)
     }
 
+    /// Emits the pending frontend unit and resets the builder, or returns `None` when empty.
     pub(in crate::codegen::unit) fn take_frontend(
         &mut self,
         unit_index: usize,

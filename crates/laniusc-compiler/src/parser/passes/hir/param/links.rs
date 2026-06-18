@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links parameter nodes into owner-local parameter lists.
 pub struct HirParamLinksPass {
     data: PassData,
 }

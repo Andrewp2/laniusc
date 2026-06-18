@@ -15,6 +15,7 @@ use super::super::{
 };
 
 impl GpuX86CodeGenerator {
+    /// Counts HIR features that control x86 buffer sizing and optional pass execution.
     pub fn measure_features(
         &self,
         device: &wgpu::Device,

@@ -1,3 +1,13 @@
+//! GPU-resident type checking and semantic metadata retention.
+//!
+//! The type checker records compute passes over token and parser HIR buffers
+//! rather than walking an AST on the host. It builds module, name,
+//! type-instance, call, method, visibility, predicate, and backend metadata
+//! relations on the GPU, then exposes retained buffers to backend phases only
+//! through explicit wrapper structs. The maintainer guide for pass-family
+//! ownership and resident cache invariants lives in
+//! `docs/compiler/type-checker.md`.
+
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -29,6 +39,11 @@ use crate::gpu::{
     passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
 };
 
+/// Semantic rejection classes reported by GPU type-check status words.
+///
+/// The numeric mapping is owned by GPU status buffers and shader constants.
+/// Host diagnostics should preserve the source token or HIR row that made the
+/// rejection user-visible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuTypeCheckCode {
     UnknownType,
@@ -82,16 +97,26 @@ impl GpuTypeCheckCode {
     }
 }
 
+/// Error returned after a recorded type-check pass sequence is finished.
 #[derive(Debug)]
 pub enum GpuTypeCheckError {
+    /// The GPU status buffer rejected the program and supplied a token/code
+    /// tuple for host-side diagnostic mapping.
     Rejected {
         token: u32,
         code: GpuTypeCheckCode,
         detail: u32,
     },
+    /// GPU setup, submission, or readback failed before semantic status could
+    /// be decoded.
     Gpu(anyhow::Error),
 }
 
+/// Parser HIR buffers consumed by type-check recording.
+///
+/// These are borrowed for the duration of a recorded check. Any value required
+/// after parser resident buffers are released must be cloned into an owned
+/// retained wrapper before this struct is constructed.
 #[derive(Clone, Copy)]
 pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub node_kind: &'a wgpu::Buffer,
@@ -187,6 +212,12 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub semantic_count: &'a wgpu::Buffer,
 }
 
+/// Scratch and metadata buffers supplied by the caller after earlier phase data
+/// has been proven dead or intentionally retained.
+///
+/// Buffer identity is part of the resident type-check cache contract whenever a
+/// pass binds one of these buffers. Add new bind-group-affecting buffers to the
+/// resident fingerprint instead of relying on the raw `wgpu::Buffer` handle.
 #[derive(Clone, Copy)]
 pub struct GpuTypeCheckExternalScratchBuffers<'a> {
     pub fn_entrypoint_tag: &'a wgpu::Buffer,
@@ -296,6 +327,11 @@ impl From<anyhow::Error> for GpuTypeCheckError {
     }
 }
 
+/// GPU type-check driver and resident state cache.
+///
+/// A `GpuTypeChecker` owns pass pipelines, the main status buffer, and reusable
+/// resident bind groups/scratch storage. Callers record type-check work into an
+/// existing command encoder and finish it after submission/readback.
 pub struct GpuTypeChecker {
     passes: TypeCheckPasses,
     params_buf: LaniusBuffer<TypeCheckParams>,
@@ -304,6 +340,8 @@ pub struct GpuTypeChecker {
     resident_state: Mutex<Option<ResidentTypeCheckState>>,
 }
 
+/// Marker returned when type-check work has been recorded into a command
+/// encoder and must still be submitted/read back by the caller.
 pub struct RecordedTypeCheck;
 
 #[derive(Clone, Copy)]
@@ -883,6 +921,11 @@ impl ResidentTypeCheckState {
     }
 }
 
+/// Borrowed semantic metadata produced by type checking for backend consumers.
+///
+/// Backends should use this view rather than reaching into resident type-check
+/// state directly. The fields are borrowed from retained buffers whose lifetime
+/// is owned by `OwnedGpuCodegenBuffers`.
 pub struct GpuCodegenBuffers<'a> {
     pub name_id_by_token: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
@@ -948,6 +991,10 @@ pub struct GpuCodegenBuffers<'a> {
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
 }
 
+/// Owned copy of generic backend semantic metadata produced by type checking.
+///
+/// This wrapper is the lifetime boundary between the type-check resident cache
+/// and later backend recording.
 pub struct OwnedGpuCodegenBuffers {
     name_id_by_token: LaniusBuffer<u32>,
     enclosing_fn: LaniusBuffer<u32>,
@@ -1013,6 +1060,10 @@ pub struct OwnedGpuCodegenBuffers {
     struct_init_field_ordinal_by_node: LaniusBuffer<u32>,
 }
 
+/// Borrowed x86-specific semantic metadata produced by type checking.
+///
+/// This is a narrowed view of the type-check outputs needed by the current x86
+/// backend.
 #[derive(Clone, Copy)]
 pub struct GpuX86CodegenBuffers<'a> {
     pub enclosing_fn: &'a wgpu::Buffer,
@@ -1051,6 +1102,7 @@ pub struct GpuX86CodegenBuffers<'a> {
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
 }
 
+/// Owned copy of x86 backend semantic metadata produced by type checking.
 pub struct OwnedGpuX86CodegenBuffers {
     enclosing_fn: LaniusBuffer<u32>,
     visible_decl: LaniusBuffer<u32>,
@@ -1089,6 +1141,7 @@ pub struct OwnedGpuX86CodegenBuffers {
 }
 
 impl OwnedGpuX86CodegenBuffers {
+    /// Borrows the owned x86 metadata as the backend-facing view.
     pub fn as_ref(&self) -> GpuX86CodegenBuffers<'_> {
         GpuX86CodegenBuffers {
             enclosing_fn: &self.enclosing_fn,
@@ -1130,6 +1183,7 @@ impl OwnedGpuX86CodegenBuffers {
 }
 
 impl OwnedGpuCodegenBuffers {
+    /// Borrows the owned metadata as the full backend-facing view.
     pub fn as_ref(&self) -> GpuCodegenBuffers<'_> {
         GpuCodegenBuffers {
             name_id_by_token: &self.name_id_by_token,

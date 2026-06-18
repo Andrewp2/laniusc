@@ -1,5 +1,6 @@
 use super::*;
 
+/// Finds the first ready work item using the bounded progress-directory index.
 pub(in crate::compiler) fn progress_first_ready_item_index_from_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -105,6 +106,7 @@ pub(in crate::compiler) fn progress_first_ready_item_index_from_index(
     Ok(None)
 }
 
+/// Finds the first ready artifact-backed work item using the directory index.
 pub(in crate::compiler) fn progress_first_ready_artifact_item_index_from_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -215,6 +217,7 @@ pub(in crate::compiler) fn progress_first_ready_artifact_item_index_from_index(
     Ok(None)
 }
 
+/// Applies changed progress pages to the root index and refreshed directory pages.
 pub(in crate::compiler) fn progress_refresh_index_from_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -329,6 +332,7 @@ pub(in crate::compiler) fn progress_refresh_index_from_pages(
     Ok(())
 }
 
+/// Finds ready, unclaimed work items up to an optional caller limit.
 pub(in crate::compiler) fn progress_ready_unclaimed_item_indices_from_index_limited(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -443,6 +447,7 @@ pub(in crate::compiler) fn progress_ready_unclaimed_item_indices_from_index_limi
     Ok(ready_item_indices)
 }
 
+/// Finds the first ready, unclaimed work item for a worker claim attempt.
 pub(in crate::compiler) fn progress_first_ready_unclaimed_item_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

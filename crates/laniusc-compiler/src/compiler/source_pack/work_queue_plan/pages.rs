@@ -3,14 +3,23 @@ use super::*;
 mod dependency_edges;
 pub(in crate::compiler) use dependency_edges::*;
 
+/// Resumable checkpoint for deriving work-queue item pages.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct WorkQueuePrepareProgress {
+    /// Serialization version for this checkpoint.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose work queue is being prepared.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Total number of work items expected from schedule and link-plan records.
     pub(in crate::compiler) work_item_count: usize,
+    /// Next work item index to materialize.
     pub(in crate::compiler) next_item_index: usize,
 }
 
+/// Validates a work-queue preparation checkpoint.
+///
+/// The checkpoint is tied to the target and total work-item count, and its next
+/// cursor must remain within that count.
 pub(in crate::compiler) fn validate_work_queue_prepare_progress(
     progress: &WorkQueuePrepareProgress,
     target: SourcePackArtifactTarget,
@@ -43,6 +52,11 @@ pub(in crate::compiler) fn validate_work_queue_prepare_progress(
     Ok(())
 }
 
+/// Stores a bounded chunk of work-queue pages from schedule and link-plan records.
+///
+/// Scheduled frontend/codegen jobs become artifact-backed queue items, and
+/// hierarchical link groups become link queue items. The final work-queue index
+/// is written only after every item page has been materialized.
 pub(in crate::compiler) fn store_work_queue_pages_from_schedule_chunk(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -149,6 +163,12 @@ pub(in crate::compiler) fn store_work_queue_pages_from_schedule_chunk(
     })
 }
 
+/// Builds and stores the work-queue page for one global item index.
+///
+/// Item indices before the link-job range are reconstructed from schedule job
+/// pages. Link-range items are reconstructed from hierarchical link group pages.
+/// Dependencies are streamed through the dependency writer so oversized lists can
+/// spill to sidecar pages.
 pub(in crate::compiler) fn store_work_queue_page_for_stored_item_index(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -326,6 +346,7 @@ pub(in crate::compiler) fn store_work_queue_page_for_stored_item_index(
     })
 }
 
+/// Stores the resumable work-queue preparation checkpoint.
 pub(in crate::compiler) fn store_work_queue_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &WorkQueuePrepareProgress,
@@ -341,6 +362,7 @@ pub(in crate::compiler) fn store_work_queue_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates work-queue preparation progress for a target.
 pub(in crate::compiler) fn load_work_queue_prepare_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -363,6 +385,11 @@ pub(in crate::compiler) fn load_work_queue_prepare_progress(
     Ok(progress)
 }
 
+/// Returns the singleton batch that contains a job, if the job is alone in its batch.
+///
+/// Work-queue pages can point directly at singleton artifact batches. Multi-job
+/// batches return `None` because they cannot be represented as a single job's
+/// artifact batch.
 pub(in crate::compiler) fn singleton_batch_for_job(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

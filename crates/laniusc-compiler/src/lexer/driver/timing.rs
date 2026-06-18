@@ -1,5 +1,6 @@
 use crate::gpu::timer::MINIMUM_TIME_TO_NOT_ELIDE_MS;
 
+/// Prints and records GPU timing spans for combined lexer/compile submissions.
 pub(super) fn print_timer_trace(
     stamps: &[(String, u64)],
     period_ns: f32,
@@ -33,6 +34,7 @@ pub(super) fn print_timer_trace(
     }
 }
 
+/// Host-side timer used around lexer count-boundary compile paths.
 pub(super) struct HostCompileTimer {
     print_enabled: bool,
     trace_enabled: bool,
@@ -41,6 +43,7 @@ pub(super) struct HostCompileTimer {
 }
 
 impl HostCompileTimer {
+    /// Starts a host timer for compile paths that cross a lexer count boundary.
     pub(super) fn new() -> Self {
         let now = std::time::Instant::now();
         Self {
@@ -54,6 +57,7 @@ impl HostCompileTimer {
         }
     }
 
+    /// Records a labeled host timing span.
     pub(super) fn stamp(&mut self, label: &str) {
         if !self.print_enabled && !self.trace_enabled {
             return;

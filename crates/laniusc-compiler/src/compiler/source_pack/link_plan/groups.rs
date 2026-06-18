@@ -8,6 +8,11 @@ use super::{
     validate_link_plan_prepare_progress,
 };
 
+/// Stores a bounded chunk of leaf groups for the hierarchical link plan.
+///
+/// Leaf groups are created from per-partition schedule pages and contain the
+/// codegen jobs whose artifacts will be linked together before reduce groups
+/// combine larger batches.
 pub(in crate::compiler) fn store_link_leaf_group_chunk(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -109,6 +114,12 @@ pub(in crate::compiler) fn store_link_leaf_group_chunk(
     })
 }
 
+/// Splits one schedule page's codegen jobs into leaf link groups.
+///
+/// Jobs are accumulated until the normalized batch limits would be exceeded,
+/// then the current batch is stored as a leaf group. Each leaf group records the
+/// owning partition, codegen job indices, source totals, and frontend-input
+/// count needed by later execution.
 pub(in crate::compiler) fn store_leaf_groups_for_schedule_page(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -200,6 +211,11 @@ pub(in crate::compiler) fn store_leaf_groups_for_schedule_page(
     Ok(created_group_count)
 }
 
+/// Stores a bounded chunk of reduce groups for the hierarchical link plan.
+///
+/// Reduce groups form a fanout-limited tree over the previously written leaf
+/// groups. When the tree has collapsed to one group, this function writes the
+/// final link-plan index.
 pub(in crate::compiler) fn store_link_reduce_group_chunk(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -353,6 +369,10 @@ pub(in crate::compiler) fn store_link_reduce_group_chunk(
     })
 }
 
+/// Advances reduce progress across any fully consumed tree levels.
+///
+/// When all groups in the current level have been used as inputs, the next
+/// level becomes the current level and reduction continues from its first group.
 pub(in crate::compiler) fn advance_completed_reduce_levels(
     store: &FilesystemArtifactStore,
     progress: &mut HierarchicalLinkPlanPrepareProgress,
@@ -387,6 +407,11 @@ pub(in crate::compiler) fn advance_completed_reduce_levels(
     Ok(())
 }
 
+/// Builds one reduce group from a contiguous range of input link groups.
+///
+/// The returned group summarizes source totals and input partition counts from
+/// its children, records the child group indices, and receives a link job index
+/// derived from the schedule's global link-job base plus the group index.
 pub(in crate::compiler) fn reduce_link_group(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -503,6 +528,11 @@ pub(in crate::compiler) fn reduce_link_group(
     Ok(group)
 }
 
+/// Builds one leaf group from codegen jobs in a schedule page.
+///
+/// Leaf groups anchor the link tree to a source partition. They record the
+/// partition index, input codegen jobs, source totals, and whether the group
+/// exceeds normalized batching limits.
 pub(in crate::compiler) fn leaf_link_group(
     group_index: usize,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -554,6 +584,10 @@ pub(in crate::compiler) fn leaf_link_group(
     Ok(group)
 }
 
+/// Loads the number of frontend dependencies for a codegen job.
+///
+/// Leaf group construction uses this count to record how many frontend inputs
+/// must be available before the grouped codegen artifacts can be linked.
 pub(in crate::compiler) fn load_codegen_job_dependency_count(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -567,6 +601,10 @@ pub(in crate::compiler) fn load_codegen_job_dependency_count(
     Ok(schedule_job_page_dependency_count(&job_page))
 }
 
+/// Returns the effective partition-input count for a hierarchical link group.
+///
+/// Older and compact records may carry either a scalar count or explicit input
+/// indices; this helper uses the larger value as the conservative summary.
 pub(in crate::compiler) fn hierarchical_link_group_input_partition_count(
     group: &SourcePackHierarchicalLinkGroupPage,
 ) -> usize {
@@ -575,6 +613,10 @@ pub(in crate::compiler) fn hierarchical_link_group_input_partition_count(
         .max(group.input_partition_indices.len())
 }
 
+/// Returns the effective frontend-input count for a hierarchical link group.
+///
+/// The scalar count and explicit frontend job index list are both considered so
+/// compact and expanded group records summarize to the same value.
 pub(in crate::compiler) fn hierarchical_link_group_input_frontend_job_count(
     group: &SourcePackHierarchicalLinkGroupPage,
 ) -> usize {

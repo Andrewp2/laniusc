@@ -4,6 +4,7 @@ use super::{GpuParser, support::read_u32_words};
 use crate::parser::tables::PrecomputedParseTables;
 
 impl GpuParser {
+    /// Reads semantic token-kind words after resident token classification for debug checks.
     #[doc(hidden)]
     pub fn debug_semantic_token_kinds_for_resident_tokens(
         &self,
@@ -85,6 +86,7 @@ impl GpuParser {
         Ok(words)
     }
 
+    /// Reads parser token feature flags after resident token classification for debug checks.
     #[doc(hidden)]
     pub fn debug_token_feature_flags_for_resident_tokens(
         &self,

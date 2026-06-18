@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters ranked enum variants into enum-local ranges.
 pub struct HirEnumVariantScatterPass {
     data: PassData,
 }

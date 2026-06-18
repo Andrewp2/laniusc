@@ -1,20 +1,42 @@
 use super::*;
 
+/// Resumable checkpoint for creating the initial work-queue progress pages.
+///
+/// The final [`SourcePackWorkQueueProgressIndex`] cannot be written until every
+/// work-queue item has been scanned and every progress page has been stored.
+/// This record keeps the partial scan state on disk so large source packs can
+/// initialize progress in bounded chunks.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct InitialWorkQueueProgressPrepareProgress {
+    /// Serialization version for this checkpoint record.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose work queue is being summarized.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Total number of work-queue item pages that must be scanned.
     pub(in crate::compiler) work_item_count: usize,
+    /// Number of work-queue items summarized by each progress page.
     pub(in crate::compiler) page_size: usize,
+    /// Number of progress pages required for `work_item_count`.
     pub(in crate::compiler) page_count: usize,
+    /// Next progress page to derive from stored work-queue item pages.
     pub(in crate::compiler) next_page_index: usize,
+    /// Number of artifact-backed work items seen in completed progress pages.
     pub(in crate::compiler) artifact_item_count: usize,
+    /// Number of dependency-free work items seen in completed progress pages.
     pub(in crate::compiler) ready_item_count: usize,
+    /// Number of ready items that also produce persisted artifacts.
     pub(in crate::compiler) ready_artifact_item_count: usize,
+    /// First dependency-free work item, if any completed page has one.
     pub(in crate::compiler) first_ready_item_index: Option<usize>,
+    /// First dependency-free artifact-backed item, if any completed page has one.
     pub(in crate::compiler) first_ready_artifact_item_index: Option<usize>,
 }
 
+/// Verifies that an initial-progress checkpoint still matches the queue shape.
+///
+/// The checkpoint is only valid for the same target, page size, queue item
+/// count, and bounded summary counts. This prevents resuming a chunked prepare
+/// after the work-queue records have been regenerated with a different shape.
 pub(in crate::compiler) fn validate_initial_work_queue_progress_prepare_progress(
     progress: &InitialWorkQueueProgressPrepareProgress,
     queue: &SourcePackWorkQueueIndex,
@@ -108,6 +130,11 @@ pub(in crate::compiler) fn validate_initial_work_queue_progress_prepare_progress
     Ok(())
 }
 
+/// Converts a validated initial-progress checkpoint into the final progress index.
+///
+/// Initial progress has no completed or claimed items, so the generated index
+/// carries only queue shape and ready-item summaries accumulated from the
+/// progress pages.
 pub(in crate::compiler) fn initial_progress_index_from_prepare(
     progress: &InitialWorkQueueProgressPrepareProgress,
 ) -> SourcePackWorkQueueProgressIndex {
@@ -127,6 +154,10 @@ pub(in crate::compiler) fn initial_progress_index_from_prepare(
     }
 }
 
+/// Advances an initial-progress checkpoint after a progress page is stored.
+///
+/// The page must be the next expected page for the checkpoint. Its summary is
+/// folded into the aggregate counts before `next_page_index` is incremented.
 pub(in crate::compiler) fn update_prepare_progress_from_page(
     progress: &mut InitialWorkQueueProgressPrepareProgress,
     page: &SourcePackWorkQueueProgressPage,
@@ -160,6 +191,11 @@ pub(in crate::compiler) fn update_prepare_progress_from_page(
     Ok(())
 }
 
+/// Builds one initial progress page by reading the corresponding work-queue items.
+///
+/// Dependency-free items become initially ready. Artifact-backed items are
+/// tracked separately so the execution layer can identify ready artifact work
+/// without scanning every work item again.
 pub(in crate::compiler) fn initial_progress_page_from_queue_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -235,6 +271,11 @@ pub(in crate::compiler) fn initial_progress_page_from_queue_pages(
     Ok(page)
 }
 
+/// Writes completed progress directory rollups after a progress page lands.
+///
+/// Directory pages are emitted only when the just-written progress page closes
+/// its directory span. Directory-index pages are emitted with the same boundary
+/// rule one level higher.
 pub(in crate::compiler) fn store_directory_pages_after_progress_page(
     store: &FilesystemArtifactStore,
     index: &SourcePackWorkQueueProgressIndex,
@@ -278,6 +319,12 @@ pub(in crate::compiler) fn store_directory_pages_after_progress_page(
     Ok(())
 }
 
+/// Stores a bounded chunk of initial work-queue progress pages.
+///
+/// The function is resumable and idempotent: if the final progress index already
+/// exists, it reports completion without rewriting pages. Otherwise it resumes
+/// from the checkpoint, stores at most `max_new_pages`, and writes the final
+/// index when the last progress page has been generated.
 pub(in crate::compiler) fn store_initial_progress_chunk(
     store: &FilesystemArtifactStore,
     queue: &SourcePackWorkQueueIndex,
@@ -399,6 +446,11 @@ pub(in crate::compiler) fn store_initial_progress_chunk(
     })
 }
 
+/// Persists the resumable initial-progress checkpoint atomically.
+///
+/// The checkpoint is validated against its own recorded shape before it is
+/// written, catching corrupted or internally inconsistent counters before the
+/// next chunk attempts to resume.
 pub(in crate::compiler) fn store_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &InitialWorkQueueProgressPrepareProgress,
@@ -430,6 +482,11 @@ pub(in crate::compiler) fn store_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates the resumable initial-progress checkpoint for a queue.
+///
+/// Callers provide the current queue index and page size so stale checkpoints
+/// from a previous queue shape are rejected before any new progress pages are
+/// derived.
 pub(in crate::compiler) fn load_initial_work_queue_progress_prepare_progress(
     store: &FilesystemArtifactStore,
     queue: &SourcePackWorkQueueIndex,

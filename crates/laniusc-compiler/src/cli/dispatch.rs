@@ -10,6 +10,7 @@ use super::{
     package,
 };
 
+/// Parses raw CLI arguments and routes the resulting command to its owner.
 pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
     match args::parse_args(raw_args)? {
         Command::Help => {

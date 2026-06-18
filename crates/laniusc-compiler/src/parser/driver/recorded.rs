@@ -13,6 +13,7 @@ use crate::{
 };
 
 impl GpuParser {
+    /// Records readback of semantic-HIR block counts for later capacity planning.
     pub fn record_hir_semantic_count_readback(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -41,6 +42,7 @@ impl GpuParser {
         })
     }
 
+    /// Finishes a recorded semantic-HIR count readback.
     pub fn finish_recorded_hir_semantic_count(
         &self,
         recorded: &RecordedHirSemanticCount,
@@ -58,6 +60,7 @@ impl GpuParser {
         Ok(words.into_iter().fold(0u32, u32::saturating_add))
     }
 
+    /// Records parser/HIR work plus caller work, submits it, then checks parser status.
     pub fn with_recorded_checked_resident_ll1_hir_artifacts<S, R, E>(
         &self,
         token_capacity: u32,
@@ -117,6 +120,7 @@ impl GpuParser {
         Ok(consume_after_submit(bufs, recorded_more))
     }
 
+    /// Finishes deferred LL/HIR parser status and returns an error on rejection.
     pub fn finish_recorded_resident_ll1_hir_check(
         &self,
         recorded: &RecordedResidentLl1HirCheck,
@@ -125,6 +129,7 @@ impl GpuParser {
             .map(|_| ())
     }
 
+    /// Finishes deferred LL/HIR parser status and returns the decoded status.
     pub fn finish_recorded_resident_ll1_hir_check_result(
         &self,
         recorded: &RecordedResidentLl1HirCheck,

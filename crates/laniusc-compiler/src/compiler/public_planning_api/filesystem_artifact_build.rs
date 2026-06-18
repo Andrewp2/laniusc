@@ -1,5 +1,6 @@
 use super::*;
 
+/// Prepare a generic-target persisted build from stdlib and user path streams.
 pub fn prepare_pack_path_streams<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -26,6 +27,8 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from stdlib and user path streams
+/// with explicit shard limits.
 pub fn prepare_pack_path_streams_with_shards<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -54,6 +57,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from stdlib and user path streams.
 pub fn prepare_pack_path_streams_for_target<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -82,6 +86,8 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from stdlib and user path streams
+/// with explicit shard limits.
 pub fn prepare_pack_path_streams_for_target_with_shards<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -131,6 +137,7 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from stdlib and user path slices.
 pub fn prepare_pack_paths<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -152,6 +159,8 @@ where
     )
 }
 
+/// Prepare a generic-target persisted build from stdlib and user path slices
+/// with explicit shard limits.
 pub fn prepare_pack_paths_with_shards<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -175,6 +184,7 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from stdlib and user path slices.
 pub fn prepare_pack_paths_for_target<'a, SP, UP>(
     stdlib_paths: &'a [SP],
     user_paths: &'a [UP],
@@ -198,6 +208,8 @@ where
     )
 }
 
+/// Prepare a target-specific persisted build from stdlib and user path slices
+/// with explicit shard limits.
 pub fn prepare_pack_paths_for_target_with_shards<'a, SP, UP>(
     stdlib_paths: &'a [SP],
     user_paths: &'a [UP],
@@ -224,6 +236,8 @@ where
     )
 }
 
+/// Prepare and fully execute a generic-target artifact build from stdlib and
+/// user path slices.
 pub fn execute_pack_paths<SP, UP, E>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -252,6 +266,8 @@ where
     )
 }
 
+/// Prepare and fully execute a generic-target artifact build from stdlib and
+/// user path streams.
 pub fn execute_pack_path_streams<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -285,6 +301,8 @@ where
     )
 }
 
+/// Prepare and fully execute a generic-target artifact build from stdlib and
+/// user path streams with explicit shard limits.
 pub fn execute_pack_path_streams_with_shards<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -320,6 +338,8 @@ where
     )
 }
 
+/// Prepare and fully execute a target-specific artifact build from stdlib and
+/// user path streams.
 pub fn execute_pack_path_streams_for_target<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -355,6 +375,8 @@ where
     )
 }
 
+/// Prepare stdlib/user path streams if needed, then run artifact-manifest
+/// worker batches for a target.
 pub fn run_pack_path_stream_worker<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -396,6 +418,8 @@ where
     )
 }
 
+/// Prepare and fully execute a target-specific artifact build from stdlib and
+/// user path streams with explicit shard limits.
 pub fn execute_pack_path_streams_for_target_with_shards<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -433,6 +457,8 @@ where
     execute_artifact_manifest_build_for_target(artifact_root, target, executor)
 }
 
+/// Prepare stdlib/user path streams if needed, then run artifact-manifest
+/// worker batches for a target with explicit shard limits.
 pub fn run_pack_path_stream_worker_with_shards<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -485,6 +511,8 @@ where
     )
 }
 
+/// Prepare stdlib/user path streams if needed, then run path-artifact manifest
+/// worker batches for a target.
 pub fn run_pack_path_stream_path_worker<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -526,6 +554,8 @@ where
     )
 }
 
+/// Prepare stdlib/user path streams if needed, then run path-artifact manifest
+/// worker batches for a target with explicit shard limits.
 pub fn run_pack_path_stream_path_worker_with_shards<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -578,6 +608,8 @@ where
     )
 }
 
+/// Prepare stdlib/user path streams if needed, then run async path-backed
+/// work-queue items for a target.
 pub async fn run_pack_path_stream_work_queue_async<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -623,6 +655,8 @@ where
     .await
 }
 
+/// Prepare stdlib/user path streams if needed, then run async path-backed
+/// work-queue items for a target with explicit shard limits.
 pub async fn run_pack_path_stream_work_queue_with_shards_async<'a, SI, UI, P, E>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -679,6 +713,8 @@ where
     .await
 }
 
+/// Prepare stdlib/user path slices if needed, then run async path-backed
+/// work-queue items for a target.
 pub async fn run_pack_paths_work_queue_async<'a, SP, UP, E>(
     stdlib_paths: &'a [SP],
     user_paths: &'a [UP],
@@ -719,6 +755,8 @@ where
     .await
 }
 
+/// Prepare stdlib/user path slices if needed, then run async path-backed
+/// work-queue items for a target with explicit shard limits.
 pub async fn run_pack_paths_work_queue_with_shards_async<'a, SP, UP, E>(
     stdlib_paths: &'a [SP],
     user_paths: &'a [UP],
@@ -762,6 +800,8 @@ where
     .await
 }
 
+/// Prepare and fully execute a generic-target artifact build from stdlib and
+/// user path slices with explicit shard limits.
 pub fn execute_pack_paths_with_shards<SP, UP, E>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -792,6 +832,8 @@ where
     )
 }
 
+/// Prepare and fully execute a target-specific artifact build from stdlib and
+/// user path slices.
 pub fn execute_pack_paths_for_target<SP, UP, E>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -822,6 +864,8 @@ where
     )
 }
 
+/// Prepare and fully execute a target-specific artifact build from stdlib and
+/// user path slices with explicit shard limits.
 pub fn execute_pack_paths_for_target_with_shards<SP, UP, E>(
     stdlib_paths: &[SP],
     user_paths: &[UP],

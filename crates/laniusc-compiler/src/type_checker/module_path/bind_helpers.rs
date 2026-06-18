@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Creates the bind group that extracts one record-family bit into scan flags.
 pub(super) fn create_record_flag_extract(
     device: &wgpu::Device,
     pass: &PassData,
@@ -34,6 +35,7 @@ pub(super) fn create_record_flag_extract(
     Ok((params, bind_group))
 }
 
+/// Creates a one-dispatch bind group that writes radix dispatch arguments.
 pub(super) fn create_radix_dispatch(
     device: &wgpu::Device,
     pass: &PassData,
@@ -55,6 +57,7 @@ pub(super) fn create_radix_dispatch(
     )
 }
 
+/// Creates a one-dispatch bind group that expands a count into dispatch args.
 pub(super) fn create_count_dispatch(
     device: &wgpu::Device,
     pass: &PassData,
@@ -89,6 +92,7 @@ pub(super) fn create_count_dispatch(
     Ok((params, bind_group))
 }
 
+/// Creates a dispatch-argument bind group sized by the larger of two counts.
 pub(super) fn create_pair_max_dispatch(
     device: &wgpu::Device,
     pass: &PassData,
@@ -125,6 +129,7 @@ pub(super) fn create_pair_max_dispatch(
     Ok((params, bind_group))
 }
 
+/// Creates a bind group for prefixing per-block radix bucket histograms.
 pub(super) fn create_radix_bucket_prefix(
     device: &wgpu::Device,
     pass: &PassData,
@@ -153,6 +158,7 @@ pub(super) fn create_radix_bucket_prefix(
     )
 }
 
+/// Creates a bind group for converting radix bucket totals into bucket bases.
 pub(super) fn create_radix_bucket_bases(
     device: &wgpu::Device,
     pass: &PassData,

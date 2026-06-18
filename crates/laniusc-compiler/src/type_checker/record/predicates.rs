@@ -1,5 +1,6 @@
 use super::*;
 
+/// Records predicate method-contract and method-parameter key tables.
 pub(in crate::type_checker) fn record_predicate_method_contract_keys_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -91,6 +92,7 @@ pub(in crate::type_checker) fn record_predicate_method_contract_keys_with_passes
     Ok(())
 }
 
+/// Records predicate owner, impl, obligation, and validation passes.
 pub(in crate::type_checker) fn record_predicate_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

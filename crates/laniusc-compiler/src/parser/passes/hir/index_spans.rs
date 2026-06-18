@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for extracting index expression spans.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records source spans for index expressions.
 pub struct HirIndexSpansPass {
     data: PassData,
 }

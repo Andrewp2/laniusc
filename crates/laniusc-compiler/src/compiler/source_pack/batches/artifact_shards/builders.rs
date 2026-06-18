@@ -1,20 +1,36 @@
 use super::*;
 
+/// Accumulates batch and artifact references before a build-artifact shard is written.
+///
+/// Builders use sets while collecting records so adjacent batches can be merged
+/// without duplicating job or artifact indices. [`Self::finish`] converts those
+/// sets into the serialized shard layout and compacts input artifact ranges.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct ArtifactShardBuilder {
+    /// Kind of batch records represented by the shard being built.
     pub(in crate::compiler) kind: SourcePackBuildArtifactShardKind,
+    /// Batch indices included in insertion order.
     pub(in crate::compiler) batch_indices: Vec<usize>,
+    /// Unique schedule job indices touched by the batches.
     pub(in crate::compiler) job_indices: BTreeSet<usize>,
+    /// Explicit input artifact indices not represented by a range.
     pub(in crate::compiler) input_artifact_indices: BTreeSet<usize>,
+    /// Input artifact ranges gathered from batch-level dependency records.
     pub(in crate::compiler) input_artifact_ranges: Vec<SourcePackArtifactIndexRange>,
+    /// Artifact indices produced by the batches.
     pub(in crate::compiler) output_artifact_indices: BTreeSet<usize>,
+    /// Combined source byte count for the shard.
     pub(in crate::compiler) source_bytes: usize,
+    /// Combined source file count for the shard.
     pub(in crate::compiler) source_file_count: usize,
+    /// Combined source line count for the shard.
     pub(in crate::compiler) source_lines: usize,
+    /// Whether any absorbed batch was already oversized before sharding.
     pub(in crate::compiler) oversized_batch: bool,
 }
 
 impl ArtifactShardBuilder {
+    /// Creates an empty builder for a shard kind.
     pub(in crate::compiler) fn new(kind: SourcePackBuildArtifactShardKind) -> Self {
         Self {
             kind,
@@ -30,10 +46,16 @@ impl ArtifactShardBuilder {
         }
     }
 
+    /// Returns whether no batch has been absorbed yet.
     pub(in crate::compiler) fn is_empty(&self) -> bool {
         self.batch_indices.is_empty()
     }
 
+    /// Returns whether absorbing `next` would exceed normalized shard limits.
+    ///
+    /// The comparison is based on merged batch count, unique job count, and the
+    /// compact artifact-record count that would be emitted after range
+    /// compaction.
     pub(in crate::compiler) fn would_exceed(
         &self,
         next: &ArtifactShardBuilder,
@@ -53,6 +75,10 @@ impl ArtifactShardBuilder {
             || artifact_count > limits.max_artifacts_per_shard
     }
 
+    /// Merges another builder into this shard candidate.
+    ///
+    /// Source totals are saturating summaries, while record identities are kept
+    /// in sets so duplicate jobs and artifacts collapse before serialization.
     pub(in crate::compiler) fn absorb(&mut self, next: ArtifactShardBuilder) {
         self.batch_indices.extend(next.batch_indices);
         self.job_indices.extend(next.job_indices);
@@ -70,6 +96,11 @@ impl ArtifactShardBuilder {
         self.oversized_batch |= next.oversized_batch;
     }
 
+    /// Converts a non-empty builder into a serialized artifact-shard record.
+    ///
+    /// Input ranges are compacted first, then any explicit input artifact
+    /// already covered by a range is removed. The resulting shard is marked
+    /// oversized if its final compact record counts exceed the shard limits.
     pub(in crate::compiler) fn finish(
         mut self,
         shard_index: usize,
@@ -142,6 +173,11 @@ fn record_union_count(left: &ArtifactShardBuilder, right: &ArtifactShardBuilder)
         .saturating_add(output_artifact_count)
 }
 
+/// Builds a shard candidate from one job batch and its schedule jobs.
+///
+/// Each job in the batch contributes a schedule job index and an output artifact
+/// index. The batch source totals are copied into the builder so adjacent job
+/// batches can be merged into a larger artifact shard.
 pub(in crate::compiler) fn job_batch_shard_builder_from_schedule_page(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -162,6 +198,11 @@ pub(in crate::compiler) fn job_batch_shard_builder_from_schedule_page(
     Ok(builder)
 }
 
+/// Builds a shard candidate from one link-interface batch page.
+///
+/// Interface batches consume interface artifacts and do not create schedule-job
+/// outputs directly, so the builder records only input artifacts and source
+/// totals for later shard aggregation.
 pub(in crate::compiler) fn link_interface_batch_shard_builder_from_page(
     page: &SourcePackBuildLinkInterfaceBatchPage,
 ) -> Result<ArtifactShardBuilder, CompileError> {
@@ -179,6 +220,10 @@ pub(in crate::compiler) fn link_interface_batch_shard_builder_from_page(
     Ok(builder)
 }
 
+/// Builds a shard candidate from one link-object batch page.
+///
+/// Object batches consume object artifacts. Their builder shape mirrors
+/// interface batches but records object artifact indices as the shard inputs.
 pub(in crate::compiler) fn link_object_batch_shard_builder_from_page(
     page: &SourcePackBuildLinkObjectBatchPage,
 ) -> Result<ArtifactShardBuilder, CompileError> {

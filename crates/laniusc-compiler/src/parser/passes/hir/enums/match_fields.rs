@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for extracting enum match fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records enum-match subject and arm metadata.
 pub struct HirEnumMatchFieldsPass {
     data: PassData,
 }

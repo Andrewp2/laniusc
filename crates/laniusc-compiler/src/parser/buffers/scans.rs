@@ -15,6 +15,7 @@ use crate::gpu::{
     scan::{ScanFinalize, ping_pong_scan_steps},
 };
 
+/// Creates prefix-scan steps for variable-length parser pack offsets.
 pub(super) fn make_pack_offset_scan_steps(
     device: &wgpu::Device,
     n_pairs: u32,
@@ -45,6 +46,7 @@ pub(super) fn make_pack_offset_scan_steps(
         .collect()
 }
 
+/// Creates reduction steps that collapse per-block pack totals to one total.
 pub(super) fn make_pack_total_reduce_steps(
     device: &wgpu::Device,
     n_pairs: u32,
@@ -72,6 +74,7 @@ pub(super) fn make_pack_total_reduce_steps(
     steps
 }
 
+/// Creates delimiter-depth scan steps over resident token blocks.
 pub(super) fn make_token_delimiter_scan_steps(
     device: &wgpu::Device,
     n_tokens: u32,
@@ -108,6 +111,7 @@ pub(super) fn make_token_delimiter_scan_steps(
         .collect()
 }
 
+/// Creates scan steps for prefixing bracket pair counts by block.
 pub(super) fn make_brackets_block_prefix_scan_steps(
     device: &wgpu::Device,
     n_blocks: u32,
@@ -138,6 +142,7 @@ pub(super) fn make_brackets_block_prefix_scan_steps(
         .collect()
 }
 
+/// Creates scan steps for prefixing bracket histogram counts by layer.
 pub(super) fn make_brackets_histogram_scan_steps(
     device: &wgpu::Device,
     n_layers: u32,
@@ -168,6 +173,7 @@ pub(super) fn make_brackets_histogram_scan_steps(
         .collect()
 }
 
+/// Creates tree-prefix scan steps over emitted production stream blocks.
 pub(super) fn make_tree_prefix_scan_steps(
     device: &wgpu::Device,
     base: super::super::passes::tree::prefix::local::Params,
@@ -199,6 +205,7 @@ pub(super) fn make_tree_prefix_scan_steps(
         .collect()
 }
 
+/// Creates semantic-HIR prefix scan steps over tree blocks.
 pub(super) fn make_hir_semantic_prefix_scan_steps(
     device: &wgpu::Device,
     n_blocks: u32,
@@ -229,6 +236,7 @@ pub(super) fn make_hir_semantic_prefix_scan_steps(
         .collect()
 }
 
+/// Creates the bottom-up max tree used to bound recovered tree prefix values.
 pub(super) fn make_tree_prefix_max_build_steps(
     device: &wgpu::Device,
     n_blocks: u32,
@@ -282,6 +290,7 @@ pub(super) fn make_tree_prefix_max_build_steps(
     steps
 }
 
+/// Returns the next power of two, saturating at the largest supported tree base.
 pub(super) fn next_power_of_two_u32(value: u32) -> u32 {
     value.checked_next_power_of_two().unwrap_or_else(|| {
         warn!(

@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that assigns call-argument ordinals within each call.
 pub struct HirCallArgOrdinalStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirCallArgOrdinalStepPass {
+    /// Records all call-argument ordinal propagation steps with direct dispatch.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,
@@ -27,6 +29,7 @@ impl HirCallArgOrdinalStepPass {
         self.record_steps_inner(device, encoder, buffers, None)
     }
 
+    /// Records all call-argument ordinal propagation steps with indirect dispatch.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

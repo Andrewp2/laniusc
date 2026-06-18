@@ -1,7 +1,13 @@
 use super::*;
 
+/// Version for persisted source-pack path build manifests.
 pub const SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION: u32 = 1;
 
+/// Persisted build manifest for path-backed source-pack compilation.
+///
+/// A compact manifest may omit inline source files and rely on source-file pages,
+/// but it still records source totals and the artifact manifest needed to replay
+/// execution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackPathBuildManifest {
     pub version: u32,
@@ -18,10 +24,12 @@ pub struct SourcePackPathBuildManifest {
 }
 
 impl SourcePackPathBuildManifest {
+    /// Validates this manifest against the source-pack path manifest contract.
     pub fn validate_contract(&self) -> Result<(), CompileError> {
         validate_path_manifest(self)
     }
 
+    /// Returns the inline path manifest represented by this build manifest.
     pub fn path_manifest(&self) -> Result<ExplicitSourcePackPathManifest, CompileError> {
         validate_path_manifest(self)?;
         if self.source_files.is_empty() {
@@ -35,6 +43,7 @@ impl SourcePackPathBuildManifest {
         })
     }
 
+    /// Executes all artifact-manifest batches against an artifact store.
     pub fn execute_with_artifact_store<E, S>(
         &self,
         executor: &mut E,
@@ -52,6 +61,7 @@ impl SourcePackPathBuildManifest {
         execute_artifact_manifest_build(&source_pack, &self.artifacts, executor, store)
     }
 
+    /// Executes one artifact-manifest batch against an artifact store.
     pub fn execute_batch_with_artifact_store<E, S>(
         &self,
         batch_index: usize,
@@ -70,6 +80,7 @@ impl SourcePackPathBuildManifest {
         execute_artifact_manifest_batch(&source_pack, &self.artifacts, batch_index, executor, store)
     }
 
+    /// Returns ready batch indices using inline dependency records.
     pub fn ready_batch_indices_limited(
         &self,
         completed_batch_indices: &[usize],
@@ -83,6 +94,7 @@ impl SourcePackPathBuildManifest {
             .ready_batch_indices_limited(completed_batch_indices, max_batches))
     }
 
+    /// Returns ready batch indices for a compact build state when possible.
     pub fn ready_batch_indices_from_state_limited(
         &self,
         state: &SourcePackBuildState,
@@ -100,6 +112,7 @@ impl SourcePackPathBuildManifest {
         ))
     }
 
+    /// Returns ready and unclaimed batch indices for a compact build state.
     pub fn ready_unclaimed_batch_indices_from_state_limited(
         &self,
         state: &SourcePackBuildState,
@@ -127,12 +140,14 @@ impl SourcePackPathBuildManifest {
         ))
     }
 
+    /// Returns whether a compact build state has completed every job batch.
     pub fn is_state_complete(&self, state: &SourcePackBuildState) -> Result<bool, CompileError> {
         validate_path_manifest(self)?;
         validate_build_state_version(state)?;
         Ok(state.completed_batch_count() == self.artifacts.job_batch_count)
     }
 
+    /// Ensures ready-batch queries can use inline batch-dependency records.
     pub(in crate::compiler) fn ensure_inline_batch_dependency_records_for_ready_query(
         &self,
     ) -> Result<(), CompileError> {
@@ -147,6 +162,7 @@ impl SourcePackPathBuildManifest {
     }
 }
 
+/// Validates a path build manifest and its embedded artifact manifest.
 pub(in crate::compiler) fn validate_path_manifest(
     manifest: &SourcePackPathBuildManifest,
 ) -> Result<(), CompileError> {
@@ -161,6 +177,7 @@ pub(in crate::compiler) fn validate_path_manifest(
     Ok(())
 }
 
+/// Validates source-file totals and job/artifact source ranges.
 pub(in crate::compiler) fn validate_path_manifest_source_ranges(
     manifest: &SourcePackPathBuildManifest,
 ) -> Result<(), CompileError> {

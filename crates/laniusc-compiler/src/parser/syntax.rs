@@ -1,3 +1,5 @@
+//! Standalone GPU syntax checks over lexer token buffers.
+
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
@@ -53,21 +55,25 @@ struct MinTreeBuildStep {
     work_items: u32,
 }
 
+/// Reusable GPU syntax checker with a resident buffer cache.
 pub struct GpuSyntaxChecker {
     buffers: Mutex<Option<SyntaxBufferCache>>,
 }
 
+/// Deferred syntax-check status readback.
 pub struct RecordedSyntaxCheck {
     readback: wgpu::Buffer,
 }
 
 impl GpuSyntaxChecker {
+    /// Creates a syntax checker with an empty resident buffer cache.
     pub fn new() -> Self {
         Self {
             buffers: Mutex::new(None),
         }
     }
 
+    /// Checks a token buffer on the GPU and reads status before returning.
     pub fn check_token_buffer_on_gpu(
         &self,
         device: &wgpu::Device,
@@ -87,6 +93,7 @@ impl GpuSyntaxChecker {
         )
     }
 
+    /// Checks a token buffer with source-file ids on the GPU.
     pub fn check_token_buffer_on_gpu_with_file_ids(
         &self,
         device: &wgpu::Device,
@@ -108,6 +115,7 @@ impl GpuSyntaxChecker {
         )
     }
 
+    /// Records a syntax check into an existing command encoder.
     pub fn record_token_buffer_check(
         &self,
         device: &wgpu::Device,
@@ -129,6 +137,7 @@ impl GpuSyntaxChecker {
         )
     }
 
+    /// Records a syntax check with source-file ids into an existing command encoder.
     pub fn record_token_buffer_check_with_file_ids(
         &self,
         device: &wgpu::Device,
@@ -152,6 +161,7 @@ impl GpuSyntaxChecker {
         )
     }
 
+    /// Finishes a recorded syntax check and returns an error on rejection.
     pub fn finish_recorded_check(
         device: &wgpu::Device,
         recorded: &RecordedSyntaxCheck,
@@ -595,6 +605,7 @@ impl SyntaxBufferCache {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// GPU syntax status code decoded from the syntax status buffer.
 pub enum GpuSyntaxCode {
     UnexpectedToken,
     ExpectedToken,
@@ -618,6 +629,7 @@ impl GpuSyntaxCode {
 }
 
 #[derive(Debug)]
+/// Error returned by standalone GPU syntax checking.
 pub enum GpuSyntaxError {
     Rejected {
         token: u32,
@@ -651,6 +663,7 @@ impl From<anyhow::Error> for GpuSyntaxError {
     }
 }
 
+/// Checks an in-memory token slice with the global GPU device.
 pub async fn check_tokens_on_gpu(tokens: &[Token]) -> Result<(), GpuSyntaxError> {
     check_tokens_on_gpu_inner(tokens).await
 }
@@ -675,6 +688,7 @@ async fn check_tokens_on_gpu_inner(tokens: &[Token]) -> Result<(), GpuSyntaxErro
     )
 }
 
+/// Checks an existing token buffer without reusing a checker cache.
 pub fn check_token_buffer_on_gpu(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -693,6 +707,7 @@ pub fn check_token_buffer_on_gpu(
     )
 }
 
+/// Checks an existing token buffer plus source-file ids without reusing a checker cache.
 pub fn check_token_buffer_on_gpu_with_file_ids(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

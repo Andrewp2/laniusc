@@ -1,4 +1,5 @@
-// Parser passes use the shared Pass trait from gpu::passes_core.
+//! Parser compute pass bundle and debug recording entry point.
+
 use anyhow::Result;
 
 use crate::{
@@ -6,14 +7,20 @@ use crate::{
     parser::{buffers::ParserBuffers, debug::DebugOutput},
 };
 
+/// Delimiter pairing and bracket-layer passes.
 pub mod brackets;
+/// HIR classification, topology, and typed record passes.
 pub mod hir;
+/// Active adjacent-pair parse table pass.
 pub mod llp_pairs;
+/// Variable-length parse stream packing passes.
 pub mod pack;
+/// Source-file token boundary pass.
 pub mod source_file_token_end;
+/// Parser tree recovery passes.
 pub mod tree;
 
-/// Bundle of all parser passes.
+/// Loaded compute passes for the parser pipeline.
 pub struct ParserPasses {
     pub llp_pairs: llp_pairs::LLPPairsPass,
     pub pack_offsets: pack::offsets::PackOffsetsScanPass,
@@ -144,6 +151,7 @@ pub struct ParserPasses {
 }
 
 impl ParserPasses {
+    /// Loads every parser compute pass for a GPU device.
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
             llp_pairs: llp_pairs::LLPPairsPass::new(device)?,
@@ -328,7 +336,7 @@ impl ParserPasses {
     }
 }
 
-/// Record the whole pipeline in order.
+/// Records the debug parser pipeline in pass order.
 pub fn record_all_passes(
     mut ctx: PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,

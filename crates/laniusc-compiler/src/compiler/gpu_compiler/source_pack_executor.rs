@@ -1,11 +1,17 @@
 use super::*;
 
+/// Source-pack executor that emits GPU artifact descriptors into a filesystem store.
+///
+/// This executor is used by descriptor-mode source-pack builds. It validates
+/// source/job metadata, checks that dependency artifacts exist, and writes
+/// JSON descriptor artifacts that describe each stage's contract.
 pub struct GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
     pub(super) compiler: &'compiler GpuCompiler<'gpu>,
     pub(super) artifact_root: PathBuf,
     pub(super) target: SourcePackArtifactTarget,
 }
 
+/// In-flight library-interface descriptor build state.
 #[derive(Clone, Debug)]
 pub struct GpuSourcePackLibraryInterfaceBuildHandle {
     pub(super) job: SourcePackJob,
@@ -13,6 +19,7 @@ pub struct GpuSourcePackLibraryInterfaceBuildHandle {
     pub(super) dependency_interfaces: GpuSourcePackDependencyInterfaceSummary,
 }
 
+/// In-flight codegen-object descriptor build state.
 #[derive(Clone, Debug)]
 pub struct GpuSourcePackCodegenObjectBuildHandle {
     pub(super) job: SourcePackJob,
@@ -21,6 +28,7 @@ pub struct GpuSourcePackCodegenObjectBuildHandle {
     pub(super) dependency_interfaces: GpuSourcePackDependencyInterfaceSummary,
 }
 
+/// Accumulated input counts for a source-pack link descriptor.
 #[derive(Clone, Debug, Default)]
 pub struct GpuSourcePackLinkHandle {
     pub(super) interface_count: usize,
@@ -29,6 +37,7 @@ pub struct GpuSourcePackLinkHandle {
 }
 
 impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
+    /// Creates a descriptor executor for one compiler, artifact root, and target.
     pub fn new(
         compiler: &'compiler GpuCompiler<'gpu>,
         artifact_root: impl Into<PathBuf>,
@@ -41,18 +50,22 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         }
     }
 
+    /// Returns the GPU compiler used to validate frontend interface jobs.
     pub fn compiler(&self) -> &'compiler GpuCompiler<'gpu> {
         self.compiler
     }
 
+    /// Returns the filesystem root where descriptor artifacts are written.
     pub fn artifact_root(&self) -> &Path {
         &self.artifact_root
     }
 
+    /// Returns the source-pack artifact target this executor emits for.
     pub fn target(&self) -> SourcePackArtifactTarget {
         self.target
     }
 
+    /// Finishes a library-interface job by type-checking its sources and writing a descriptor.
     pub(super) async fn finish_library_interface_artifact(
         &self,
         handle: GpuSourcePackLibraryInterfaceBuildHandle,
@@ -79,6 +92,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
+    /// Finishes a codegen-object job by validating its owning interface and writing a descriptor.
     pub(super) fn finish_codegen_object_artifact(
         &self,
         handle: GpuSourcePackCodegenObjectBuildHandle,
@@ -103,6 +117,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
+    /// Finishes a direct link job by writing a linked-output descriptor.
     pub(super) fn finish_linked_output_artifact(
         &self,
         job: &SourcePackJob,
@@ -117,6 +132,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         self.write_descriptor_artifact(GpuSourcePackArtifactStage::LinkedOutput, job, &descriptor)
     }
 
+    /// Finishes a hierarchical partial-link group by writing a partial-link descriptor.
     pub(super) fn finish_hierarchical_partial_link_artifact(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPage,
@@ -135,6 +151,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
+    /// Finishes a hierarchical final-link group by writing a linked-output descriptor.
     pub(super) fn finish_hierarchical_linked_output_artifact(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPage,
@@ -154,6 +171,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
+    /// Writes a job-scoped descriptor artifact using the standard job key suffix.
     pub(super) fn write_descriptor_artifact(
         &self,
         stage: GpuSourcePackArtifactStage,
@@ -167,6 +185,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
+    /// Serializes and writes a descriptor artifact using an explicit key suffix.
     pub(super) fn write_descriptor_artifact_for_suffix(
         &self,
         stage: GpuSourcePackArtifactStage,
@@ -194,6 +213,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok(ArtifactPath { key, path })
     }
 
+    /// Validates that source-file metadata still matches a job record.
     pub(super) fn validate_job_source_file_records(
         &self,
         stage: &str,
@@ -272,6 +292,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok(())
     }
 
+    /// Validates that every dependency artifact in a batch exists on disk.
     pub(super) fn validate_existing_path_artifact_batch(
         &self,
         stage: &str,
@@ -292,6 +313,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
     }
 }
 
+/// Builds the artifact key for a GPU source-pack descriptor artifact.
 pub(super) fn gpu_source_pack_descriptor_artifact_key(
     target: SourcePackArtifactTarget,
     stage: GpuSourcePackArtifactStage,

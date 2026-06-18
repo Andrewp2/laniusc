@@ -17,6 +17,7 @@ use super::common::{
 };
 use crate::shader_artifacts;
 
+/// Prints the full top-level CLI help text.
 pub(crate) fn print_help() {
     eprintln!(
         "Usage: laniusc [-h|--help] [-V|--version] [--edition unstable-alpha] [--emit x86_64|wasm] [--target triple] [--diagnostic-format text|json|lsp-json] [--package-manifest path] [--package-lockfile path] [--stdlib path]... [--stdlib-root dir] [--source-root dir] [-o output] [--source-pack-descriptors] [--source-pack-manifest path] [--source-pack-library-manifest path] [--source-pack-artifact-root path] [--source-pack-metadata-only] [--source-pack-prepare-only] [--source-pack-metadata-max-libraries N] [--source-pack-metadata-max-source-files N] [--source-pack-build-from-metadata] [--source-pack-build-prepare-only] [--source-pack-build-max-items N] [--source-pack-max-items N] [--source-pack-max-ready-items N] <input.lani> [more-input.lani...]\n\
@@ -76,6 +77,7 @@ pub(crate) fn print_help() {
     );
 }
 
+/// Prints help for `laniusc package`.
 pub(crate) fn print_package_help() {
     eprintln!(
         "Usage: laniusc package lock [--diagnostic-format text|json|lsp-json] --manifest path -o path\n\
@@ -85,6 +87,7 @@ pub(crate) fn print_package_help() {
     );
 }
 
+/// Prints help for `laniusc package lock`.
 pub(crate) fn print_package_lock_help() {
     eprintln!(
         "Usage: laniusc package lock [--diagnostic-format text|json|lsp-json] --manifest path -o path\n\
@@ -93,6 +96,7 @@ pub(crate) fn print_package_lock_help() {
     );
 }
 
+/// Prints help for `laniusc lsp`.
 pub(crate) fn print_lsp_help() {
     eprintln!(
         "Usage: laniusc lsp [--diagnostic-format text|json|lsp-json] capabilities\n\
@@ -103,6 +107,7 @@ pub(crate) fn print_lsp_help() {
     );
 }
 
+/// Prints help for `laniusc diagnostics`.
 pub(crate) fn print_diagnostics_help() {
     eprintln!(
         "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] registry\n\
@@ -140,6 +145,7 @@ pub(crate) fn print_diagnostics_help() {
     );
 }
 
+/// Prints help for `laniusc diagnostics code`.
 pub(crate) fn print_diagnostics_code_help() {
     eprintln!(
         "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] code CODE\n\
@@ -150,6 +156,7 @@ pub(crate) fn print_diagnostics_code_help() {
     );
 }
 
+/// Prints help for `laniusc diagnostics explain`.
 pub(crate) fn print_diagnostics_explain_help() {
     eprintln!(
         "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] explain CODE\n\
@@ -160,6 +167,7 @@ pub(crate) fn print_diagnostics_explain_help() {
     );
 }
 
+/// Prints help for `laniusc doctor`.
 pub(crate) fn print_doctor_help() {
     eprintln!(
         "Usage: laniusc doctor [--skip-slangc-probe] [--diagnostic-format text|json|lsp-json]\n\
@@ -168,6 +176,7 @@ pub(crate) fn print_doctor_help() {
     );
 }
 
+/// Prints help for `laniusc fmt`.
 pub(crate) fn print_fmt_help() {
     eprintln!(
         "Usage: laniusc fmt [--check] [--diagnostic-format text|json|lsp-json] (<input.lani> [more-input.lani...]|--stdin|-)\n\
@@ -177,6 +186,7 @@ pub(crate) fn print_fmt_help() {
     );
 }
 
+/// Prints compiler and tooling version metadata.
 pub(crate) fn print_version() {
     println!(
         "laniusc {}\n\

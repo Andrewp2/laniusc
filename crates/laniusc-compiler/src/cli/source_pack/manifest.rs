@@ -9,23 +9,34 @@ use crate::{
     compiler::ExplicitSourceLibraryPathDependencyStream,
 };
 
+/// Maximum UTF-8 bytes accepted for one JSONL library-manifest record.
 pub(super) const LIBRARY_MANIFEST_MAX_LINE_BYTES: usize = 4096;
+/// Maximum blank manifest lines skipped by one bounded metadata chunk.
 pub(super) const LIBRARY_MANIFEST_MAX_BLANK_LINES_PER_CHUNK: usize = 64;
+/// Maximum UTF-8 bytes accepted for one source path-list line.
 pub(super) const PATH_LIST_MAX_LINE_BYTES: usize = 4096;
+/// Maximum blank path-list lines skipped before the next source path.
 pub(super) const PATH_LIST_MAX_BLANK_LINES_PER_ITEM: usize = 64;
 
 const PROGRESS_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+/// Persistent cursor for chunked source-pack library-manifest preparation.
 pub(super) struct Progress {
+    /// Progress schema version.
     pub(super) version: u32,
+    /// Target whose artifact files own this progress cursor.
     pub(super) target: SourcePackArtifactTarget,
+    /// Canonical manifest path associated with this cursor.
     pub(super) manifest_path: PathBuf,
+    /// Libraries already persisted before `next_byte_offset`.
     pub(super) library_count: usize,
+    /// Byte offset where the next metadata-preparation chunk should begin.
     pub(super) next_byte_offset: u64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
+/// One JSONL library record from a source-pack library manifest.
 pub(super) struct LibraryPathEntry {
     library_id: u32,
     source_file_count: usize,
@@ -55,6 +66,7 @@ fn read_path_list_line(
     )
 }
 
+/// Loads the source files referenced by one library-manifest path list.
 pub(super) fn load_path_list(
     path: &Path,
     expected_source_file_count: usize,
@@ -118,6 +130,7 @@ pub(super) fn load_path_list(
     Ok(paths)
 }
 
+/// Returns the target-specific manifest-progress file path.
 pub(super) fn progress_path(artifact_root: &Path, target: SourcePackArtifactTarget) -> PathBuf {
     let file_name = target.key_prefix().map_or_else(
         || "source-pack-library-manifest-progress.json".to_string(),
@@ -135,6 +148,7 @@ fn manifest_identity_path(manifest_path: &Path) -> Result<PathBuf, String> {
     })
 }
 
+/// Loads existing manifest progress or derives a cursor from stored metadata.
 pub(super) fn load_progress_or_default(
     artifact_root: &Path,
     target: SourcePackArtifactTarget,
@@ -197,6 +211,7 @@ fn validate_progress(
     Ok(())
 }
 
+/// Stores a validated manifest-progress cursor under the artifact root.
 pub(super) fn store_progress(artifact_root: &Path, progress: &Progress) -> Result<(), String> {
     validate_progress(progress, progress.target, &progress.manifest_path)?;
     let path = progress_path(artifact_root, progress.target);
@@ -218,6 +233,7 @@ pub(super) fn store_progress(artifact_root: &Path, progress: &Progress) -> Resul
     })
 }
 
+/// Finds the manifest byte offset immediately after a library-count prefix.
 pub(super) fn offset_after_entry_count(
     manifest_path: &Path,
     expected_entry_count: usize,
@@ -268,9 +284,13 @@ pub(super) fn offset_after_entry_count(
     }
 }
 
+/// Bounded chunk of library-manifest entries ready for metadata preparation.
 pub(super) struct EntryChunk {
+    /// Library entries selected for this chunk.
     pub(super) entries: Vec<LibraryPathEntry>,
+    /// Byte offset where the next chunk should resume.
     pub(super) next_byte_offset: u64,
+    /// Whether the manifest ended after this chunk's input was consumed.
     pub(super) manifest_complete_after_input: bool,
 }
 
@@ -339,6 +359,7 @@ fn read_manifest_line(
     )
 }
 
+/// Loads a bounded source-pack library-manifest chunk from a byte offset.
 pub(super) fn load_entries_chunk_from_offset(
     manifest_path: &Path,
     start_byte_offset: u64,
@@ -471,6 +492,7 @@ pub(super) fn load_entries_chunk_from_offset(
     })
 }
 
+/// Converts manifest entries into dependency streams consumed by compiler APIs.
 pub(super) fn path_dependency_streams(
     entries: Vec<LibraryPathEntry>,
 ) -> Result<Vec<ExplicitSourceLibraryPathDependencyStream<Vec<PathBuf>, Vec<u32>>>, String> {

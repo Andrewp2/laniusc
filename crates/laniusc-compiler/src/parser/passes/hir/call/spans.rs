@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for extracting call expression spans.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records source spans for call expressions.
 pub struct HirCallSpansPass {
     data: PassData,
 }

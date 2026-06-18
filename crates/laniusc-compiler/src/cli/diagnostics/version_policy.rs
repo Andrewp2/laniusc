@@ -34,6 +34,7 @@ const VERSION_POLICY_SCHEMA_VERSION: u32 = 6;
 const COMMAND_DISCOVERY_SCHEMA_NAME: &str = "laniusc.diagnostics.command-discovery";
 const COMMAND_DISCOVERY_SCHEMA_VERSION: u32 = 3;
 
+/// Returns version, schema, target, and compatibility policy metadata.
 pub(super) fn diagnostic_version_policy_json_pretty() -> Result<String, serde_json::Error> {
     let document = serde_json::json!({
         "schema_version": VERSION_POLICY_SCHEMA_VERSION,
@@ -91,10 +92,12 @@ pub(super) fn diagnostic_version_policy_json_pretty() -> Result<String, serde_js
     serde_json::to_string_pretty(&document)
 }
 
+/// Returns machine-readable discovery metadata for diagnostics subcommands.
 pub(super) fn diagnostic_command_discovery_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&diagnostic_command_discovery_json())
 }
 
+/// Returns the formatter policy document shared by CLI and LSP surfaces.
 pub(super) fn diagnostic_formatter_policy_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&formatter_policy_metadata())
 }

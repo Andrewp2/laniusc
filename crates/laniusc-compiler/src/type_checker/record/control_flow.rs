@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records the resident loop-depth passes from the cached type-check state.
 pub(in crate::type_checker) fn record_loop_depth_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -17,6 +18,7 @@ pub(in crate::type_checker) fn record_loop_depth_passes_with_passes(
     )
 }
 
+/// Records enclosing-function context clear, mark, scan, and apply passes.
 pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -64,6 +66,7 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     )
 }
 
+/// Records loop-depth clear, mark, scan, and apply passes.
 pub(in crate::type_checker) fn record_loop_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

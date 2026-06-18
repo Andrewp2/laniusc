@@ -6,6 +6,10 @@ use super::{
     layout::Layout,
 };
 
+/// Bind groups for discovering path/module/import/declaration records in HIR.
+///
+/// These passes mark record-family bits, extract one family at a time, scan the
+/// flags, and scatter compacted row ids consumed by later module passes.
 pub(in crate::type_checker) struct RecordDiscovery {
     pub(in crate::type_checker) mark_records: wgpu::BindGroup,
     pub(in crate::type_checker) extract_path_record_flag_params:
@@ -34,6 +38,7 @@ pub(in crate::type_checker) struct RecordDiscovery {
     pub(in crate::type_checker) decl_scan: U32ScanBindGroups,
 }
 
+/// Creates bind groups for the record-discovery portion of module/path state.
 pub(in crate::type_checker) fn create_record_discovery(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,

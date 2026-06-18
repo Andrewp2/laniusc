@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::{ParserBuffers, TreePrefixScanStep},
 };
 
+/// Pass that scans per-block tree-prefix sums.
 pub struct TreePrefixScanBlocksPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl TreePrefixScanBlocksPass {
+    /// Records all configured tree-prefix block scan steps.
     pub fn record_scan(
         &self,
         device: &wgpu::Device,

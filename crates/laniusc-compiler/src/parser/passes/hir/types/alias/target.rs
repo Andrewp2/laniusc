@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that records the target type node for each type alias item.
 pub struct HirTypeAliasTargetPass {
     data: PassData,
 }

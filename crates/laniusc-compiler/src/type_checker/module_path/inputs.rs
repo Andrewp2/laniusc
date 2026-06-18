@@ -1,5 +1,10 @@
 use super::super::*;
 
+/// Borrowed inputs used to build the resident module/path state.
+///
+/// The constructor groups parser HIR rows, name rows, type rows, call rows, and
+/// optional scratch aliases here so module-path bind-group creation remains
+/// explicit about every buffer identity it captures.
 pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) params: &'a LaniusBuffer<TypeCheckParams>,
     pub(in crate::type_checker) source_file_capacity: u32,

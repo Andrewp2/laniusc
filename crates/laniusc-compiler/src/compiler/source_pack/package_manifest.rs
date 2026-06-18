@@ -14,8 +14,11 @@ use crate::compiler::{
     ExplicitSourcePackPathManifest,
 };
 
+/// Maximum number of source roots a package manifest may declare.
 pub const PACKAGE_MANIFEST_MAX_ROOTS: usize = 64;
+/// Maximum number of module path segments derived from a package-relative path.
 pub(super) const PACKAGE_MODULE_PATH_SEGMENT_LIMIT: usize = 8;
+/// Human-readable package name validation rule used in diagnostics.
 pub(super) const PACKAGE_NAME_RULES: &str = "use dot-separated ASCII package segments; each segment must start and end with a letter or digit and contain only letters, digits, '_' or '-'";
 
 /// Control-plane package metadata. Manifest paths are package-relative so the
@@ -24,9 +27,13 @@ pub(super) const PACKAGE_NAME_RULES: &str = "use dot-separated ASCII package seg
 /// comes from GPU-parsed `module` and `import` records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackageManifest {
+    /// Dot-separated package name used for package identity.
     pub package: String,
+    /// Package-relative directories that contain user source files.
     pub roots: Vec<PathBuf>,
+    /// Optional package-relative standard-library source root.
     pub stdlib_root: Option<PathBuf>,
+    /// Package-relative `.lani` entry source file.
     pub entry: PathBuf,
 }
 
@@ -41,10 +48,15 @@ struct PackageManifestDocument {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Package manifest resolved against a concrete manifest directory.
 pub struct ResolvedPackageManifest {
+    /// Dot-separated package name from the manifest.
     pub package: String,
+    /// Canonical absolute source roots.
     pub roots: Vec<PathBuf>,
+    /// Canonical absolute standard-library root, when configured.
     pub stdlib_root: Option<PathBuf>,
+    /// Canonical absolute entry source path.
     pub entry: PathBuf,
 }
 
@@ -70,6 +82,7 @@ impl Serialize for PackageManifest {
 }
 
 impl PackageManifest {
+    /// Parses and validates a package manifest from JSON text.
     pub fn parse_json(source: &str) -> Result<Self, CompileError> {
         let document = serde_json::from_str::<PackageManifestDocument>(source).map_err(|err| {
             let mut message = format!("parse package manifest JSON: {err}");
@@ -83,6 +96,7 @@ impl PackageManifest {
         document.to_validated_manifest()
     }
 
+    /// Loads a JSON manifest file and resolves paths relative to its directory.
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<ResolvedPackageManifest, CompileError> {
         let path = path.as_ref();
         let source = fs::read_to_string(path).map_err(|err| {
@@ -92,6 +106,10 @@ impl PackageManifest {
         Self::parse_json(&source)?.resolve_from_dir(base_dir)
     }
 
+    /// Resolves package-relative manifest paths against a base directory.
+    ///
+    /// Resolution canonicalizes roots and entry paths, rejects overlaps and
+    /// symlink escapes, and verifies that the entry maps to a valid module path.
     pub fn resolve_from_dir(
         &self,
         base_dir: impl AsRef<Path>,
@@ -295,6 +313,7 @@ impl PackageManifestDocument {
 }
 
 impl ResolvedPackageManifest {
+    /// Converts resolved package roots into the entry-root structure used by loading.
     pub fn to_entry_source_roots(&self) -> EntrySourceRoots {
         EntrySourceRoots {
             stdlib_root: self.stdlib_root.clone(),
@@ -302,10 +321,12 @@ impl ResolvedPackageManifest {
         }
     }
 
+    /// Loads an in-memory source pack from this resolved manifest.
     pub fn load_source_pack(&self) -> Result<ExplicitSourcePack, CompileError> {
         PackageLockfile::from_resolved_manifest(self)?.load_source_pack()
     }
 
+    /// Loads a path-backed source-pack manifest from this resolved manifest.
     pub fn load_path_manifest(&self) -> Result<ExplicitSourcePackPathManifest, CompileError> {
         PackageLockfile::from_resolved_manifest(self)?.load_path_manifest()
     }
@@ -464,6 +485,7 @@ fn validate_package_relative_path(label: &str, path: &Path) -> Result<(), Compil
     Ok(())
 }
 
+/// Returns whether a package name follows manifest package-name rules.
 pub(super) fn valid_package_name(name: &str) -> bool {
     !name.is_empty()
         && name.split('.').all(|segment| {
@@ -482,14 +504,17 @@ pub(super) fn valid_package_name(name: &str) -> bool {
         })
 }
 
+/// Returns whether two resolved filesystem paths overlap.
 pub(super) fn resolved_paths_overlap(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
+/// Returns whether a path names a `.lani` source file.
 pub(super) fn is_lani_source_path(path: &Path) -> bool {
     path.extension().and_then(|extension| extension.to_str()) == Some("lani")
 }
 
+/// Converts a source-root-relative file path into a module path string.
 pub(super) fn package_source_root_relative_module_path_with_label(
     label: &str,
     relative_path: &Path,
@@ -544,10 +569,12 @@ pub(super) fn package_source_root_relative_module_path_with_label(
     Ok(segments.join("::"))
 }
 
+/// Returns whether a segment is a valid package-derived module path segment.
 pub(super) fn valid_package_module_path_segment(segment: &str) -> bool {
     valid_package_module_ident_segment(segment) && !is_package_module_reserved_segment(segment)
 }
 
+/// Returns whether a segment is syntactically valid as a module identifier.
 pub(super) fn valid_package_module_ident_segment(segment: &str) -> bool {
     let Some(first) = segment.bytes().next() else {
         return false;
@@ -559,6 +586,7 @@ pub(super) fn valid_package_module_ident_segment(segment: &str) -> bool {
             .all(is_package_module_ident_continue)
 }
 
+/// Returns whether a package-derived module segment is reserved by the language.
 pub(super) fn is_package_module_reserved_segment(segment: &str) -> bool {
     matches!(
         segment,

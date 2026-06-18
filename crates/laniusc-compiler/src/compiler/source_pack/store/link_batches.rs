@@ -1,6 +1,10 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores the top-level link-batch page index.
+    ///
+    /// The index records how many interface and object link-batch pages were
+    /// produced for a target.
     pub fn store_build_link_batch_page_index(
         &self,
         index: &SourcePackBuildLinkBatchPageIndex,
@@ -16,6 +20,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the link-batch page index for a target.
     pub fn load_build_link_batch_page_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -38,6 +43,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores the resumable link-batch preparation checkpoint.
     pub(in crate::compiler) fn store_build_link_batch_prepare_progress(
         &self,
         progress: &LinkBatchPrepareProgress,
@@ -52,6 +58,10 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates link-batch preparation progress for a target.
+    ///
+    /// The progress record is checked against the current artifact-ref index and
+    /// batch limits before preparation resumes.
     pub(in crate::compiler) fn load_build_link_batch_prepare_progress_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -81,6 +91,10 @@ impl FilesystemArtifactStore {
         Ok(progress)
     }
 
+    /// Stores one link-interface batch page.
+    ///
+    /// Interface batches list library-interface artifacts that should be streamed
+    /// into the final link job together.
     pub fn store_build_link_interface_batch_page(
         &self,
         page: &SourcePackBuildLinkInterfaceBatchPage,
@@ -98,6 +112,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one link-interface batch page by batch index.
     pub fn load_build_link_interface_batch_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -121,6 +136,10 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one link-object batch page.
+    ///
+    /// Object batches list codegen-object artifacts that should be streamed into
+    /// the final link job together.
     pub fn store_build_link_object_batch_page(
         &self,
         page: &SourcePackBuildLinkObjectBatchPage,
@@ -137,6 +156,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one link-object batch page by batch index.
     pub fn load_build_link_object_batch_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

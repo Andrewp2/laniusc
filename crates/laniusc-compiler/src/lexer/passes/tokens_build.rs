@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// Builds final `GpuToken` records and token source-file ids.
 pub struct TokensBuildPass {
     data: PassData,
 }

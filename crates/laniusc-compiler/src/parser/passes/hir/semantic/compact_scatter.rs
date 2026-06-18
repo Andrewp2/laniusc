@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that compacts semantic HIR nodes into dense semantic-node arrays.
 pub struct HirSemanticCompactScatterPass {
     data: PassData,
 }

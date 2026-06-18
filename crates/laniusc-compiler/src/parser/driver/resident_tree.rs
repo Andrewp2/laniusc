@@ -1434,6 +1434,7 @@ impl ResidentTreeReadbacks {
 }
 
 impl GpuParser {
+    /// Submits a resident tree encoder, maps readbacks, and assembles the parse result.
     pub(super) fn finish_resident_tree_readback(
         &self,
         mut encoder: wgpu::CommandEncoder,

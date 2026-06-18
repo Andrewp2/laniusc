@@ -18,10 +18,12 @@ use crate::reflection::{
     slang_category_and_type_to_wgpu,
 };
 
+/// Returns whether selected GPU operations should use wgpu validation scopes.
 pub fn validation_scopes_enabled() -> bool {
     crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false)
 }
 
+/// Returns whether compatible compute passes may share one `wgpu::ComputePass`.
 pub fn compute_pass_batching_enabled() -> bool {
     match std::env::var("LANIUS_BATCH_COMPUTE_PASSES") {
         Ok(value) => !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false"),
@@ -29,6 +31,7 @@ pub fn compute_pass_batching_enabled() -> bool {
     }
 }
 
+/// Pushes a validation scope when `enabled` is true.
 pub(crate) fn validation_scope(
     device: &wgpu::Device,
     enabled: bool,
@@ -36,15 +39,19 @@ pub(crate) fn validation_scope(
     enabled.then(|| device.push_error_scope(wgpu::ErrorFilter::Validation))
 }
 
+/// Pops an optional validation scope and returns any captured wgpu error.
 pub(crate) fn pop_validation_scope(scope: Option<wgpu::ErrorScopeGuard>) -> Option<wgpu::Error> {
     scope.and_then(|scope| pollster::block_on(scope.pop()))
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Host timing metadata returned by command-buffer submission helpers.
 pub(crate) struct SubmitTiming {
+    /// Instant used as the anchor for later GPU trace spans.
     pub gpu_anchor: Instant,
 }
 
+/// Submits a command buffer and reports validation errors when enabled.
 pub(crate) fn submit_with_optional_validation(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -61,26 +68,39 @@ pub(crate) fn submit_with_optional_validation(
     timing
 }
 
+/// Reflected compute-pipeline data shared by pass wrappers.
 pub struct PassData {
+    /// Compiled compute pipeline.
     pub pipeline: Arc<wgpu::ComputePipeline>,
+    /// Bind group layouts derived from Slang reflection.
     pub bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
+    /// Stable shader/pass id used for cache keys and diagnostics.
     pub shader_id: String,
+    /// Reflected compute thread-group size.
     pub thread_group_size: [u32; 3],
+    /// Parsed Slang reflection used for bind groups.
     pub reflection: Arc<SlangReflection>,
 }
 
 #[derive(Copy, Clone, Debug)]
+/// Dispatch dimensionality expected by a pass wrapper.
 pub enum DispatchDim {
+    /// One-dimensional logical input.
     D1,
+    /// Two-dimensional logical input.
     D2,
 }
 
 #[derive(Copy, Clone, Debug)]
+/// Logical input size supplied to dispatch planning.
 pub enum InputElements {
+    /// One-dimensional element count.
     Elements1D(u32),
+    /// Two-dimensional width and height.
     Elements2D(u32, u32),
 }
 
+/// Creates bind group layouts from Slang reflection metadata.
 pub fn bgls_from_reflection(
     device: &wgpu::Device,
     reflection: &SlangReflection,
@@ -141,6 +161,7 @@ pub fn bgls_from_reflection(
     )])
 }
 
+/// Creates a compute pipeline from SPIR-V and reflected bind group layouts.
 pub fn pipeline_from_spirv_and_bgls(
     device: &wgpu::Device,
     label: &str,
@@ -203,6 +224,7 @@ fn is_env_truthy(name: &str) -> bool {
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "True" | "on" | "ON"))
 }
 
+/// Emits coarse GPU progress logging when progress tracing is enabled.
 pub(crate) fn trace_gpu_progress(label: &str) {
     if gpu_pipeline_progress_enabled() {
         if log::log_enabled!(log::Level::Info) {
@@ -213,6 +235,7 @@ pub(crate) fn trace_gpu_progress(label: &str) {
     }
 }
 
+/// Submits one command buffer and records host-side submit timing.
 pub(crate) fn submit_with_progress(
     queue: &wgpu::Queue,
     label: &str,
@@ -227,6 +250,7 @@ pub(crate) fn submit_with_progress(
     SubmitTiming { gpu_anchor: end }
 }
 
+/// Queues a readback map request and records progress/trace events.
 pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &str) {
     trace_gpu_progress(&format!("map.start :: {label}"));
     slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -238,12 +262,14 @@ pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &s
     trace_gpu_progress(&format!("map.queued :: {label}"));
 }
 
+/// Polls a device while emitting progress messages for a pending map.
 pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_type: wgpu::PollType) {
     trace_gpu_progress(&format!("poll.start :: {label}"));
     let _ = device.poll(poll_type);
     trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
+/// Blocks until a readback map completes or the configured timeout expires.
 pub(crate) fn map_readback_blocking(
     device: &wgpu::Device,
     slice: &wgpu::BufferSlice<'_>,
@@ -256,6 +282,7 @@ pub(crate) fn map_readback_blocking(
     wait_for_readback_map(device, slice, label, timeout)
 }
 
+/// Waits for a readback map callback with explicit timeout and progress output.
 pub(crate) fn wait_for_readback_map(
     device: &wgpu::Device,
     slice: &wgpu::BufferSlice<'_>,
@@ -312,6 +339,7 @@ pub(crate) fn wait_for_readback_map(
     }
 }
 
+/// Builds `PassData` from SPIR-V bytes and Slang reflection JSON.
 pub fn make_pass_data(
     device: &wgpu::Device,
     label: &str,
@@ -355,6 +383,7 @@ pub fn make_pass_data(
 }
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+/// Builds `PassData` from debug artifact files on disk.
 pub fn make_pass_data_from_artifact_files<P, R>(
     device: &wgpu::Device,
     label: &str,
@@ -379,6 +408,7 @@ where
     make_pass_data(device, label, entry, &spirv, &reflection_json)
 }
 
+/// Builds `PassData` from a shader artifact key without extensions.
 pub fn make_pass_data_from_shader_key(
     device: &wgpu::Device,
     label: &str,
@@ -394,6 +424,7 @@ pub fn make_pass_data_from_shader_key(
     )
 }
 
+/// Builds `PassData` from explicit SPIR-V and reflection artifact names.
 pub fn make_pass_data_from_shader_artifacts(
     device: &wgpu::Device,
     label: &str,
@@ -485,6 +516,7 @@ macro_rules! make_traced_main_pass {
 macro_rules! impl_static_shader_pass {
     ($pass:ident, label: $label:expr, entry: $entry:expr, shader: $shader:literal) => {
         impl $pass {
+            /// Creates this static shader pass for `device`.
             pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
                 let data = $crate::gpu::passes_core::make_shader_pass!(
                     device,
@@ -506,6 +538,7 @@ macro_rules! impl_static_shader_pass {
     };
     ($pass:ident, label: $label:expr, entry: $entry:expr, artifacts: ($spv:literal, $reflection:literal)) => {
         impl $pass {
+            /// Creates this static shader pass for `device`.
             pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
                 let data = $crate::gpu::passes_core::make_shader_pass!(
                     device,
@@ -524,6 +557,7 @@ pub(crate) use make_main_pass;
 pub(crate) use make_shader_pass;
 pub(crate) use make_traced_main_pass;
 
+/// Helpers for creating bind groups from reflected Slang parameter names.
 pub mod bind_group {
     use std::collections::HashMap;
 
@@ -552,6 +586,7 @@ pub mod bind_group {
         reflection.parameters.as_slice()
     }
 
+    /// Creates a bind group by looking up resources by reflected parameter name.
     pub fn create_bind_group_from_reflection<'a>(
         device: &wgpu::Device,
         label: Option<&str>,
@@ -585,6 +620,7 @@ pub mod bind_group {
         }))
     }
 
+    /// Creates a bind group from named resources, preferring reflected order.
     pub fn create_bind_group_from_bindings<'a>(
         device: &wgpu::Device,
         label: Option<&str>,
@@ -705,10 +741,11 @@ pub mod bind_group {
     }
 }
 
+/// WebGPU maximum workgroup count per dispatch dimension used by the planner.
 pub const MAX_GROUPS_PER_DIM: u32 = 65_535;
 
 /// Compute (gx, gy, gz) for a pass, reusing the same rules everywhere.
-/// This is the *only* place that knows about the 65_535 limit and D1→D2 tiling.
+/// This is the *only* place that knows about the 65_535 limit and D1-to-D2 tiling.
 pub fn plan_workgroups(
     dim: DispatchDim,
     input: InputElements,
@@ -761,21 +798,25 @@ pub struct PassContext<'a, B, D> {
 }
 
 #[derive(Default)]
+/// Cache of reflected bind groups keyed by shader id.
 pub struct BindGroupCache {
     // Keyed by shader id (label) to its vector of bind groups (per set index)
     map: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
 }
 
 impl BindGroupCache {
+    /// Creates an empty bind group cache.
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
         }
     }
+    /// Clears all cached bind groups.
     pub fn clear(&mut self) {
         self.map.clear();
     }
 
+    /// Removes cached bind groups for one shader id.
     pub fn remove(&mut self, shader_id: &str) {
         self.map.remove(shader_id);
     }
@@ -821,12 +862,14 @@ where
     Ok(bind_groups)
 }
 
+/// Records multiple compatible passes into one compute pass.
 pub struct ComputePassBatch<'encoder> {
     pass: wgpu::ComputePass<'encoder>,
     retained_bind_groups: Vec<Vec<Arc<wgpu::BindGroup>>>,
 }
 
 impl<'encoder> ComputePassBatch<'encoder> {
+    /// Begins a batched compute pass.
     pub fn begin(encoder: &'encoder mut wgpu::CommandEncoder, label: &'static str) -> Self {
         let pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
@@ -838,6 +881,7 @@ impl<'encoder> ComputePassBatch<'encoder> {
         }
     }
 
+    /// Records one reflected pass using cached bind groups.
     pub fn record_pass_cached<P, Buffers, DebugOutput>(
         &mut self,
         device: &wgpu::Device,
@@ -870,6 +914,7 @@ impl<'encoder> ComputePassBatch<'encoder> {
         Ok(())
     }
 
+    /// Records one indirect-dispatch pass using cached bind groups.
     pub fn record_pass_indirect_cached<P, Buffers, DebugOutput>(
         &mut self,
         device: &wgpu::Device,
@@ -895,24 +940,34 @@ impl<'encoder> ComputePassBatch<'encoder> {
     }
 }
 
+/// Reflected compute-pass wrapper that can bind phase buffers and record dispatches.
+///
+/// Generated shader pass structs implement this trait to connect static pass
+/// metadata with runtime GPU resources. `Buffers` is the resident buffer bundle
+/// owned by the compiler phase, while `DebugOutput` is the optional phase-specific
+/// readback sink populated after dispatch.
 pub trait Pass<Buffers, DebugOutput> {
+    /// Stable pass label used for validation scopes, tracing, and timing output.
     const NAME: &'static str;
 
+    /// Logical input shape used to translate an element count into workgroups.
     const DIM: DispatchDim;
 
+    /// Builds the wrapper from precompiled pipeline and reflection data.
     fn from_data(data: PassData) -> Self
     where
         Self: Sized;
 
+    /// Returns the reflected pipeline data shared by all dispatch paths.
     fn data(&self) -> &PassData;
 
+    /// Maps shader binding names to the resident buffers used by this pass.
     fn create_resource_map<'a>(
         &self,
         buffers: &'a Buffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>>;
 
-    /// New, context-based API: pass fewer args via a shared struct.
-    /// Default implementation forwards to the same logic as `record_pass`.
+    /// Records a direct dispatch for this pass into the shared pass context.
     fn record_pass<'a>(
         &self,
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
@@ -967,6 +1022,7 @@ pub trait Pass<Buffers, DebugOutput> {
         Ok(())
     }
 
+    /// Records an indirect dispatch whose workgroup counts are read from a GPU buffer.
     fn record_pass_indirect<'a>(
         &self,
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
@@ -1011,6 +1067,7 @@ pub trait Pass<Buffers, DebugOutput> {
         Ok(())
     }
 
+    /// Records any phase-specific debug readback work after the main dispatch.
     fn record_debug(
         &self,
         _device: &wgpu::Device,

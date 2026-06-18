@@ -1,5 +1,6 @@
 use super::*;
 
+/// Returns the job batch embedded in an execution shard.
 pub(in crate::compiler) fn execution_shard_job_batch(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     batch_index: usize,
@@ -16,6 +17,7 @@ pub(in crate::compiler) fn execution_shard_job_batch(
         })
 }
 
+/// Returns the dependency summary for a batch embedded in an execution shard.
 pub(in crate::compiler) fn execution_shard_batch_dependency(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     batch_index: usize,
@@ -32,6 +34,7 @@ pub(in crate::compiler) fn execution_shard_batch_dependency(
         })
 }
 
+/// Returns one job record embedded in an execution shard.
 pub(in crate::compiler) fn execution_shard_job(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     job_index: usize,
@@ -48,6 +51,7 @@ pub(in crate::compiler) fn execution_shard_job(
         })
 }
 
+/// Returns the artifact manifest entry for a job embedded in an execution shard.
 pub(in crate::compiler) fn execution_shard_job_artifact(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     job_index: usize,
@@ -64,6 +68,11 @@ pub(in crate::compiler) fn execution_shard_job_artifact(
         })
 }
 
+/// Returns the source files for a job in an execution shard.
+///
+/// Shards may either embed their source-file records directly or store only the
+/// source range and rely on an execution-shard loader. Both forms use the same
+/// metadata validation before a worker compiles the job.
 pub(in crate::compiler) fn execution_shard_source_files_for_job<S>(
     store: &S,
     execution_shard: &SourcePackBuildArtifactExecutionShard,
@@ -100,6 +109,7 @@ where
     Ok(files)
 }
 
+/// Visits execution-shard artifact references by artifact index.
 pub(in crate::compiler) fn for_each_execution_shard_artifact_ref_for_indices<F>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     artifact_indices: &[usize],
@@ -119,6 +129,7 @@ where
     Ok(artifact_count)
 }
 
+/// Returns an artifact reference embedded in an execution shard.
 pub(in crate::compiler) fn execution_shard_artifact_ref_for_index(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     artifact_index: usize,
@@ -135,6 +146,7 @@ pub(in crate::compiler) fn execution_shard_artifact_ref_for_index(
         })
 }
 
+/// Loads library-interface artifacts referenced by an execution shard.
 pub(in crate::compiler) fn load_interface_artifacts_from_shards<S>(
     store: &mut S,
     execution_shard: &SourcePackBuildArtifactExecutionShard,
@@ -155,6 +167,7 @@ where
     Ok(artifacts)
 }
 
+/// Loads codegen-object artifacts referenced by an execution shard.
 pub(in crate::compiler) fn load_codegen_objects_from_shard<S>(
     store: &mut S,
     execution_shard: &SourcePackBuildArtifactExecutionShard,
@@ -175,6 +188,11 @@ where
     Ok(artifacts)
 }
 
+/// Returns a job batch from a compact artifact manifest.
+///
+/// Dense manifests normally allow direct indexing by `batch_index`; the scan
+/// fallback preserves the manifest contract when records are present but not
+/// stored at their dense position.
 pub(in crate::compiler) fn artifact_manifest_batch(
     manifest: &SourcePackBuildArtifactManifest,
     batch_index: usize,
@@ -196,8 +214,8 @@ pub(in crate::compiler) fn artifact_manifest_batch(
         })
 }
 
+/// Test helper returning a batch dependency from a dense plan.
 #[cfg(test)]
-
 pub(in crate::compiler) fn job_batch_dependency(
     plan: &crate::codegen::unit::SourcePackJobBatchDependencyPlan,
     batch_index: usize,
@@ -217,8 +235,8 @@ pub(in crate::compiler) fn job_batch_dependency(
         })
 }
 
+/// Test helper returning a link-interface batch from a dense plan.
 #[cfg(test)]
-
 pub(in crate::compiler) fn link_interface_batch(
     plan: &crate::codegen::unit::SourcePackLinkInterfaceBatchPlan,
     batch_index: usize,
@@ -238,8 +256,8 @@ pub(in crate::compiler) fn link_interface_batch(
         })
 }
 
+/// Test helper returning a link-object batch from a dense plan.
 #[cfg(test)]
-
 pub(in crate::compiler) fn link_object_batch(
     plan: &crate::codegen::unit::SourcePackLinkObjectBatchPlan,
     batch_index: usize,
@@ -259,6 +277,7 @@ pub(in crate::compiler) fn link_object_batch(
         })
 }
 
+/// Returns the source-file slice owned by a path manifest job.
 pub(in crate::compiler) fn path_manifest_source_files_for_job<'a>(
     source_pack: &'a ExplicitSourcePackPathManifest,
     job: &SourcePackJob,
@@ -278,6 +297,7 @@ pub(in crate::compiler) fn path_manifest_source_files_for_job<'a>(
     Ok(source_files)
 }
 
+/// Returns one job artifact manifest from a compact job-artifact plan.
 pub(in crate::compiler) fn job_artifact_manifest(
     manifest: &SourcePackJobArtifactManifestPlan,
     job_index: usize,
@@ -298,6 +318,12 @@ pub(in crate::compiler) fn job_artifact_manifest(
         })
 }
 
+/// Expands every library-interface input required by a job manifest.
+///
+/// Inputs may be stored directly, represented as dependency-job ranges, or
+/// represented as artifact-index ranges. This helper normalizes those encodings
+/// into concrete artifact references and validates that the recorded count and
+/// artifact kinds still match the manifest contract.
 pub(in crate::compiler) fn manifest_job_input_interface_refs(
     manifest: &SourcePackBuildArtifactManifest,
     job_manifest: &SourcePackJobArtifactManifest,
@@ -358,6 +384,7 @@ pub(in crate::compiler) fn manifest_job_input_interface_refs(
     Ok(input_interfaces)
 }
 
+/// Returns the single output artifact of a requested kind for one job.
 pub(in crate::compiler) fn single_output_artifact_ref(
     job_manifest: &SourcePackJobArtifactManifest,
     kind: SourcePackArtifactKind,
@@ -381,8 +408,8 @@ pub(in crate::compiler) fn single_output_artifact_ref(
     Ok(output)
 }
 
+/// Test helper materializing artifact references by index.
 #[cfg(test)]
-
 pub(in crate::compiler) fn artifact_refs_for_indices(
     manifest: &SourcePackArtifactManifest,
     artifact_indices: &[usize],
@@ -395,6 +422,7 @@ pub(in crate::compiler) fn artifact_refs_for_indices(
     Ok(refs)
 }
 
+/// Visits manifest artifact references by artifact index.
 pub(in crate::compiler) fn for_each_artifact_ref_for_indices<F>(
     manifest: &SourcePackArtifactManifest,
     artifact_indices: &[usize],
@@ -411,6 +439,7 @@ where
     Ok(artifact_count)
 }
 
+/// Converts one manifest artifact entry into a loadable artifact reference.
 pub(in crate::compiler) fn artifact_ref_for_index(
     manifest: &SourcePackArtifactManifest,
     artifact_index: usize,
@@ -428,6 +457,7 @@ pub(in crate::compiler) fn artifact_ref_for_index(
     })
 }
 
+/// Loads library-interface artifacts from a manifest by artifact index.
 pub(in crate::compiler) fn load_library_interface_artifacts_for_indices<S>(
     store: &mut S,
     manifest: &SourcePackArtifactManifest,
@@ -444,6 +474,7 @@ where
     Ok(artifacts)
 }
 
+/// Loads codegen-object artifacts from a manifest by artifact index.
 pub(in crate::compiler) fn load_codegen_object_artifacts_for_indices<S>(
     store: &mut S,
     manifest: &SourcePackArtifactManifest,
@@ -460,6 +491,7 @@ where
     Ok(artifacts)
 }
 
+/// Loads library-interface artifacts while skipping one artifact index.
 pub(in crate::compiler) fn load_library_interface_artifacts_excluding<S>(
     store: &mut S,
     artifact_refs: &[SourcePackArtifactRef],
@@ -475,6 +507,7 @@ where
     )
 }
 
+/// Loads a library-interface artifact batch with an optional skipped artifact.
 pub(in crate::compiler) fn load_library_interface_artifact_batch_excluding<S>(
     store: &mut S,
     artifact_refs: &[SourcePackArtifactRef],
@@ -490,6 +523,7 @@ where
         .collect()
 }
 
+/// Loads all library-interface artifacts in a reference list.
 pub(in crate::compiler) fn load_library_interface_artifacts<S>(
     store: &mut S,
     artifacts: &[SourcePackArtifactRef],
@@ -503,6 +537,7 @@ where
         .collect()
 }
 
+/// Loads all codegen-object artifacts in a reference list.
 pub(in crate::compiler) fn load_codegen_object_artifacts<S>(
     store: &mut S,
     artifacts: &[SourcePackArtifactRef],
@@ -516,6 +551,7 @@ where
         .collect()
 }
 
+/// Loads partial-link outputs by key for hierarchical link execution.
 pub(in crate::compiler) fn load_partial_link_outputs<S>(
     store: &mut S,
     keys: &[String],
@@ -528,6 +564,10 @@ where
         .collect()
 }
 
+/// Releases link-input artifacts after manifest link batches consume them.
+///
+/// Interface and object inputs can appear in more than one link batch, so the
+/// release pass deduplicates by artifact index before calling the store.
 pub(in crate::compiler) fn release_link_input_artifacts<S>(
     artifact_manifest: &SourcePackBuildArtifactManifest,
     store: &mut S,
@@ -566,6 +606,11 @@ where
     Ok(())
 }
 
+/// Computes the execution result summary for one execution-shard batch.
+///
+/// Non-link batches report only the batch index and job count. Link batches also
+/// record the linked-output key and reject batches that would produce multiple
+/// final linked outputs.
 pub(in crate::compiler) fn execution_shard_batch_result(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     batch_index: usize,
@@ -594,6 +639,7 @@ pub(in crate::compiler) fn execution_shard_batch_result(
     })
 }
 
+/// Returns whether an execution-shard batch contains any link job.
 pub(in crate::compiler) fn execution_shard_batch_contains_link_job(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     batch_index: usize,

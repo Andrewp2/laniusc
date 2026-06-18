@@ -1,5 +1,10 @@
 use super::*;
 
+/// Executes the link job for a materialized execution shard.
+///
+/// The link-input shard index identifies interface and object shards to replay
+/// into the link executor. The linked output is stored only if the execution
+/// shard declares that output artifact.
 pub(in crate::compiler) fn execute_execution_shard_link_job<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: &SourcePackBuildLinkInputShardIndex,
@@ -89,6 +94,11 @@ where
     Ok(Some(linked_output_key))
 }
 
+/// Executes one hierarchical link execution page synchronously.
+///
+/// Leaf pages stream library-interface and codegen-object inputs, while reduce
+/// pages stream partial-link outputs from earlier groups. The page decides
+/// whether the finished output is partial or final.
 pub(in crate::compiler) fn execute_hierarchical_link_page<E, S>(
     page: &SourcePackHierarchicalLinkExecutionPage,
     executor: &mut E,
@@ -379,6 +389,10 @@ where
     Ok(())
 }
 
+/// Executes one hierarchical link execution page asynchronously.
+///
+/// This mirrors [`execute_hierarchical_link_page`] but awaits the paged
+/// hierarchical link executor at each begin, input-stream, and finish step.
 pub(in crate::compiler) async fn execute_hierarchical_link_page_async<E, S>(
     page: &SourcePackHierarchicalLinkExecutionPage,
     executor: &mut E,

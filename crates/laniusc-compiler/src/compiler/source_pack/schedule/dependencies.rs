@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Incremental writer for one schedule job's dependency pages.
 pub(in crate::compiler) struct JobDependencyWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -13,6 +14,7 @@ pub(in crate::compiler) struct JobDependencyWriter<'a> {
 }
 
 impl<'a> JobDependencyWriter<'a> {
+    /// Creates a dependency writer for one schedule job.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -34,6 +36,7 @@ impl<'a> JobDependencyWriter<'a> {
         }
     }
 
+    /// Pushes one explicit dependency job index.
     pub(in crate::compiler) fn push(
         &mut self,
         dependency_job_index: usize,
@@ -54,6 +57,7 @@ impl<'a> JobDependencyWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current explicit dependency page, if it has records.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_dependency_job_indices.is_empty() {
             return Ok(());
@@ -87,6 +91,7 @@ impl<'a> JobDependencyWriter<'a> {
         Ok(())
     }
 
+    /// Pushes a dependency job range, compacting it when possible.
     pub(in crate::compiler) fn push_range(
         &mut self,
         first_job_index: usize,
@@ -122,6 +127,7 @@ impl<'a> JobDependencyWriter<'a> {
         Ok(())
     }
 
+    /// Finishes the writer and returns compact dependency metadata.
     pub(in crate::compiler) fn finish(
         mut self,
     ) -> Result<(usize, usize, Vec<SourcePackJobIndexRange>), CompileError> {
@@ -134,6 +140,7 @@ impl<'a> JobDependencyWriter<'a> {
     }
 }
 
+/// Attempts to merge a job dependency range into compact inline ranges.
 pub(in crate::compiler) fn try_compact_dependency_range(
     dependency_job_ranges: &mut Vec<SourcePackJobIndexRange>,
     job_index: usize,
@@ -189,6 +196,7 @@ pub(in crate::compiler) fn try_compact_dependency_range(
     Ok(true)
 }
 
+/// Stores one schedule job page after writing dependency sidecars.
 pub(in crate::compiler) fn store_schedule_job_with_dependencies<F>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -216,6 +224,7 @@ where
     store.write_library_schedule_job_page_file(&page, job_count)
 }
 
+/// Writes frontend-job dependency ranges for all dependency libraries.
 pub(in crate::compiler) fn write_dependency_frontend_job_ranges(
     writer: &mut JobDependencyWriter<'_>,
     store: &FilesystemArtifactStore,
@@ -279,6 +288,7 @@ pub(in crate::compiler) fn write_dependency_frontend_job_ranges(
     Ok(())
 }
 
+/// Writes the frontend-job range for one dependency library.
 pub(in crate::compiler) fn write_dependency_frontend_job_range(
     writer: &mut JobDependencyWriter<'_>,
     store: &FilesystemArtifactStore,
@@ -310,6 +320,7 @@ pub(in crate::compiler) fn write_dependency_frontend_job_range(
     )
 }
 
+/// Stores sorted dependency library ids into fixed-size pages.
 pub(in crate::compiler) fn store_partition_dependency_ids<I>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -408,6 +419,7 @@ where
     Ok((dependency_library_count, dependency_page_count))
 }
 
+/// Stores one dependency-library id page for a partition.
 pub(in crate::compiler) fn store_partition_dependency_id_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

@@ -15,6 +15,7 @@ use crate::{
     },
 };
 
+/// Compiles or checks using a package manifest as the source-root descriptor.
 pub(super) fn compile_manifest(
     manifest_path: &Path,
     check_only: bool,
@@ -46,6 +47,7 @@ pub(super) fn compile_manifest(
     }
 }
 
+/// Compiles or checks using a resolved package lockfile.
 pub(super) fn compile_lockfile(
     lockfile_path: &Path,
     check_only: bool,
@@ -77,6 +79,7 @@ pub(super) fn compile_lockfile(
     }
 }
 
+/// Prepares one package-manifest metadata chunk for source-pack execution.
 pub(super) fn prepare_manifest_metadata_only(
     emit: &str,
     manifest_path: &Path,
@@ -98,6 +101,7 @@ pub(super) fn prepare_manifest_metadata_only(
     .map_err(CliError::from)
 }
 
+/// Prepares one package-lockfile metadata chunk for source-pack execution.
 pub(super) fn prepare_lockfile_metadata_only(
     emit: &str,
     lockfile_path: &Path,

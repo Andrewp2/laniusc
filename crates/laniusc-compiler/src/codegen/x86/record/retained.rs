@@ -6,6 +6,7 @@ use super::{
     timing::HostTimer,
 };
 
+/// Buffers and bind groups retained after x86 recording until output readback finishes.
 pub(super) struct RetainedRecording {
     output_capacity: usize,
     output_status_offset: u64,
@@ -17,6 +18,7 @@ pub(super) struct RetainedRecording {
 }
 
 impl RetainedRecording {
+    /// Creates a retained recording bundle from output and lifetime-owned resources.
     pub(super) fn new(
         output_capacity: usize,
         output_status_offset: u64,
@@ -37,6 +39,7 @@ impl RetainedRecording {
         }
     }
 
+    /// Converts retained recording resources into the public recorded-codegen handle.
     pub(super) fn into_recorded(self, host_timer: &mut HostTimer) -> RecordedX86Codegen {
         host_timer.stamp("recorded_result_ready");
         RecordedX86Codegen {

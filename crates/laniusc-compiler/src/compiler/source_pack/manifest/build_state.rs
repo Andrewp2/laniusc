@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates the serialized build-state version.
 pub(in crate::compiler) fn validate_build_state_version(
     state: &SourcePackBuildState,
 ) -> Result<(), CompileError> {

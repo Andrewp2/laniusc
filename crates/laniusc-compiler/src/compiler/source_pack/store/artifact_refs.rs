@@ -1,6 +1,10 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores the resumable artifact-ref preparation checkpoint.
+    ///
+    /// The checkpoint is validated against the schedule and partition indices
+    /// before it is written so stale progress cannot be resumed silently.
     pub(in crate::compiler) fn store_build_artifact_ref_prepare_progress(
         &self,
         progress: &ArtifactRefPrepareProgress,
@@ -22,6 +26,10 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates artifact-ref preparation progress for a target.
+    ///
+    /// Validation ties the checkpoint back to the current schedule and library
+    /// partition indices before callers continue writing artifact refs.
     pub(in crate::compiler) fn load_build_artifact_ref_prepare_progress_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -50,6 +58,10 @@ impl FilesystemArtifactStore {
         Ok(progress)
     }
 
+    /// Stores the top-level artifact-ref index.
+    ///
+    /// The index summarizes how many artifacts exist and how they split across
+    /// interface, object, and linked-output kinds.
     pub fn store_build_artifact_ref_index(
         &self,
         index: &SourcePackBuildArtifactRefIndex,
@@ -63,6 +75,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads the top-level artifact-ref index for a target.
     pub fn load_build_artifact_ref_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -85,6 +98,10 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores one artifact-ref page by artifact index.
+    ///
+    /// Artifact-ref pages are the durable mapping from artifact index to key,
+    /// kind, producing job, and source provenance.
     pub fn store_build_artifact_ref_page(
         &self,
         page: &SourcePackBuildArtifactRefPage,
@@ -102,6 +119,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one artifact-ref page by artifact index.
     pub fn load_build_artifact_ref_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -126,6 +144,10 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores a paged chunk of library-interface inputs for a job artifact manifest.
+    ///
+    /// These sidecar pages are used when a job has too many interface inputs to
+    /// keep inline in its manifest row.
     pub fn store_job_artifact_input_interface_page(
         &self,
         page: &SourcePackJobArtifactInputInterfacePage,
@@ -155,6 +177,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads a paged chunk of library-interface inputs for a job artifact manifest.
     pub fn load_job_artifact_input_interface_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

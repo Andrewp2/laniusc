@@ -1,5 +1,6 @@
 use super::*;
 
+/// Advances persisted job-batch preparation by a bounded number of batches.
 pub(in crate::compiler) fn store_build_job_batch_pages_from_schedule_chunk(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -177,6 +178,7 @@ pub(in crate::compiler) fn store_build_job_batch_pages_from_schedule_chunk(
     })
 }
 
+/// Persisted cursor for resumable job-batch preparation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct JobBatchPrepareProgress {
     pub(in crate::compiler) version: u32,
@@ -188,6 +190,7 @@ pub(in crate::compiler) struct JobBatchPrepareProgress {
     pub(in crate::compiler) dependency_edge_count: usize,
 }
 
+/// Validates persisted job-batch preparation progress.
 pub(in crate::compiler) fn validate_build_job_batch_prepare_progress(
     progress: &JobBatchPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -226,6 +229,7 @@ pub(in crate::compiler) fn validate_build_job_batch_prepare_progress(
     Ok(())
 }
 
+/// Accumulates scheduled jobs into one bounded persisted job batch.
 pub(in crate::compiler) struct StoredJobBatchBuilder {
     pub(in crate::compiler) limits: SourcePackJobBatchLimits,
     pub(in crate::compiler) next_batch_index: usize,
@@ -236,6 +240,7 @@ pub(in crate::compiler) struct StoredJobBatchBuilder {
 }
 
 impl StoredJobBatchBuilder {
+    /// Creates an empty job-batch builder.
     pub(in crate::compiler) fn new(limits: SourcePackJobBatchLimits) -> Self {
         Self {
             limits: limits.normalized(),
@@ -247,6 +252,7 @@ impl StoredJobBatchBuilder {
         }
     }
 
+    /// Returns whether the current batch should be flushed before adding `job`.
     pub(in crate::compiler) fn should_flush_before(&self, job: &SourcePackJob) -> bool {
         !self.current_jobs.is_empty()
             && (self.current_jobs.len() >= self.limits.max_jobs_per_batch
@@ -258,6 +264,7 @@ impl StoredJobBatchBuilder {
                     > self.limits.max_source_files_per_batch)
     }
 
+    /// Emits the current batch and resets the builder.
     pub(in crate::compiler) fn flush<F>(
         &mut self,
         emit: &mut F,
@@ -298,6 +305,7 @@ impl StoredJobBatchBuilder {
     }
 }
 
+/// Stores one job-batch page and returns its dependency summary.
 pub(in crate::compiler) fn store_job_batch_page_from_jobs(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -357,6 +365,7 @@ pub(in crate::compiler) fn store_job_batch_page_from_jobs(
     Ok(dependency)
 }
 
+/// Computes the dependency batch summary for a persisted job batch.
 pub(in crate::compiler) fn stored_job_batch_dependency(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -471,6 +480,7 @@ pub(in crate::compiler) fn stored_job_batch_dependency(
     Ok(dependency)
 }
 
+/// Inserts dependency batch ranges covering a dependency job range.
 pub(in crate::compiler) fn insert_dependency_batch_range_for_jobs(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -517,6 +527,7 @@ pub(in crate::compiler) fn insert_dependency_batch_range_for_jobs(
     Ok(())
 }
 
+/// Inserts and compacts one dependency batch range.
 pub(in crate::compiler) fn push_dependency_batch_range(
     dependency_batch_ranges: &mut Vec<SourcePackJobBatchDependencyRange>,
     first_batch_index: usize,
@@ -563,6 +574,7 @@ pub(in crate::compiler) fn push_dependency_batch_range(
     Ok(())
 }
 
+/// Writes one explicit dependency batch for a dependency job.
 pub(in crate::compiler) fn write_dependency_batch_for_job(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,

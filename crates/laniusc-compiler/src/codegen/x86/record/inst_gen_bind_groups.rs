@@ -9,6 +9,7 @@ use super::super::{
     support::reflected_bind_group,
 };
 
+/// Bind groups used to generate virtual x86 instruction records from HIR nodes.
 pub(super) struct InstGenBindGroups {
     pub(super) input_status: wgpu::BindGroup,
     pub(super) clear_dispatch_args: wgpu::BindGroup,
@@ -19,6 +20,7 @@ pub(super) struct InstGenBindGroups {
     pub(super) aggregate_copy: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by x86 virtual-instruction generation passes.
 pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) feature_params: &'a wgpu::Buffer,
@@ -81,6 +83,7 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) virtual_inst_status: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 virtual-instruction generation.
 pub(super) fn create_inst_gen_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

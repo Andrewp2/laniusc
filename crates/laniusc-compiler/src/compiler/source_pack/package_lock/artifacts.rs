@@ -51,14 +51,21 @@ pub struct PackageLockfileArtifact {
     pub digest: String,
 }
 
+/// Sorted artifact evidence section in a package lockfile.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PackageLockfileArtifacts {
+    /// Stable digest algorithm used for every artifact file entry.
     pub(super) digest_algorithm: String,
+    /// Produced artifact files sorted by target, kind, and canonical path.
     pub(super) files: Vec<PackageLockfileArtifact>,
 }
 
 impl PackageLockfileArtifact {
+    /// Creates artifact evidence from an existing produced file.
+    ///
+    /// The file path is canonicalized and the digest is computed from the file
+    /// bytes before the artifact identity is validated.
     pub fn from_existing_file(
         target: impl Into<String>,
         kind: impl Into<String>,
@@ -131,6 +138,10 @@ fn validate_artifact_evidence_label(label: &str, value: &str) -> Result<(), Comp
 }
 
 impl PackageLockfileArtifacts {
+    /// Builds the optional lockfile artifact section from produced file entries.
+    ///
+    /// Empty input omits the section. Non-empty input is sorted into canonical
+    /// lockfile order before validation.
     pub(super) fn from_files(
         mut files: Vec<PackageLockfileArtifact>,
     ) -> Result<Option<Self>, CompileError> {
@@ -146,6 +157,10 @@ impl PackageLockfileArtifacts {
         Ok(Some(artifacts))
     }
 
+    /// Validates the artifact evidence section shape and canonical ordering.
+    ///
+    /// Every artifact path and identity must be unique, and entries must already
+    /// be sorted by target, kind, and canonical path.
     pub(super) fn validate_shape(&self) -> Result<(), CompileError> {
         if self.digest_algorithm != PACKAGE_LOCKFILE_DIGEST_ALGORITHM {
             return Err(package_lockfile_error(format!(

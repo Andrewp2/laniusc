@@ -5,32 +5,56 @@ use serde::{Deserialize, Serialize};
 use super::{SourcePackHierarchicalLinkExecutionPage, SourcePackLinkDescriptorSummary};
 use crate::codegen::unit::{SourcePackArtifactTarget, SourcePackJob, SourcePackJobPhase};
 
+/// Version of the persisted source-pack artifact descriptor JSON contract.
 pub const GPU_SOURCE_PACK_ARTIFACT_DESCRIPTOR_VERSION: u32 = 1;
+/// Version of runtime ABI metadata embedded in artifact descriptors.
 pub const GPU_SOURCE_PACK_RUNTIME_ABI_METADATA_VERSION: u32 = 1;
+/// Sentinel ABI version used when no runtime ABI has been selected.
 pub const GPU_SOURCE_PACK_UNKNOWN_RUNTIME_ABI_VERSION: u32 = 0;
+/// Current runtime ABI version required by runtime-bound artifact descriptors.
 pub const GPU_SOURCE_PACK_RUNTIME_ABI_VERSION: u32 = 1;
+/// Runtime service id for allocation APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID: u32 = 1;
+/// Runtime service id for filesystem APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_FILESYSTEM_ID: u32 = 2;
+/// Runtime service id for standard input/output APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID: u32 = 3;
+/// Runtime service id for clock and time APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_CLOCK_ID: u32 = 4;
+/// Runtime service id for networking APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_NETWORK_ID: u32 = 5;
+/// Runtime service id for panic hook APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_PANIC_HOOK_ID: u32 = 6;
+/// Runtime service id for generic host-service APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_HOST_SERVICES_ID: u32 = 7;
+/// Runtime service id for threading APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_THREADS_ID: u32 = 8;
+/// Runtime service id for secure random-number APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_SECURE_RNG_ID: u32 = 9;
+/// Runtime service id for host GPU APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_GPU_ID: u32 = 10;
+/// Runtime service id for process APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_PROCESS_ID: u32 = 11;
+/// Runtime service id for environment-variable APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_ENV_ID: u32 = 12;
+/// Runtime service id for test-harness APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID: u32 = 13;
+/// Number of runtime services known by the descriptor contract.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT: usize = 13;
+/// Runtime service status used when availability has not been determined.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNKNOWN: u32 = 0;
+/// Runtime service status used when a required service has no executable binding.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE: u32 = 1;
+/// Runtime service status used when a required service has an executable binding.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_AVAILABLE: u32 = 2;
+/// First valid runtime service id in the contiguous service id range.
 pub const GPU_SOURCE_PACK_FIRST_RUNTIME_SERVICE_ID: u32 =
     GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID;
+/// Last valid runtime service id in the contiguous service id range.
 pub const GPU_SOURCE_PACK_LAST_RUNTIME_SERVICE_ID: u32 =
     GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID;
 const GPU_SOURCE_PACK_RUNTIME_SERVICE_REQUIREMENT_ROW_BYTE_LEN: usize = 12;
+/// Ordered runtime service ids known by the source-pack descriptor contract.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS: [u32; GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT] = [
     GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID,
     GPU_SOURCE_PACK_RUNTIME_SERVICE_FILESYSTEM_ID,
@@ -83,15 +107,21 @@ const GPU_SOURCE_PACK_RUNTIME_SERVICE_REQUIREMENT_RECORD_ARRAY: &str =
 const GPU_SOURCE_PACK_RUNTIME_SERVICE_REQUIREMENT_DESCRIPTOR_RECORD: &str =
     "runtime_service_requirements";
 
+/// Stage that produced or will consume a source-pack artifact descriptor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GpuSourcePackArtifactStage {
+    /// Library frontend interface artifact.
     LibraryInterface,
+    /// Target codegen object artifact.
     CodegenObject,
+    /// Intermediate hierarchical-link artifact.
     PartialLink,
+    /// Final linked output artifact.
     LinkedOutput,
 }
 
 impl GpuSourcePackArtifactStage {
+    /// Returns the source-pack job phase that is valid for this artifact stage.
     pub fn expected_phase(self) -> SourcePackJobPhase {
         match self {
             Self::LibraryInterface => SourcePackJobPhase::LibraryFrontend,
@@ -110,113 +140,182 @@ impl GpuSourcePackArtifactStage {
     }
 }
 
+/// Descriptor for one named record array carried by an artifact.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuSourcePackRecordArrayDescriptor {
+    /// Stable logical array name.
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Number of records, if known when the descriptor is written.
     pub element_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Number of bytes, if known when the descriptor is written.
     pub byte_len: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Store key for arrays persisted separately from the descriptor.
     pub storage_key: Option<String>,
 }
 
+/// Semantic domain for a descriptor record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum GpuSourcePackDescriptorRecordDomain {
+    /// Library-interface symbol/metadata records.
     Interface,
+    /// Codegen object records.
     Object,
+    /// Intermediate hierarchical-link records.
     PartialLink,
+    /// Final linked-output records.
     LinkedOutput,
 }
 
+/// Semantic kind for a descriptor record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum GpuSourcePackDescriptorRecordKind {
+    /// Section or segment record.
     Section,
+    /// Symbol record.
     Symbol,
+    /// Unresolved-symbol record.
     UnresolvedSymbol,
+    /// Relocation record.
     Relocation,
+    /// Runtime-service requirement record.
     RuntimeService,
 }
 
+/// Direction of a descriptor record relative to artifact execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum GpuSourcePackDescriptorRecordFlow {
+    /// Record array consumed as an input.
     Input,
+    /// Record array produced as an output.
     Output,
 }
 
+/// Semantic row that maps a record array to a domain/kind/flow contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuSourcePackDescriptorRecord {
+    /// Stable record name within the descriptor.
     pub name: String,
+    /// Semantic record domain.
     pub domain: GpuSourcePackDescriptorRecordDomain,
+    /// Semantic record kind.
     pub kind: GpuSourcePackDescriptorRecordKind,
+    /// Input/output flow for artifact execution.
     pub flow: GpuSourcePackDescriptorRecordFlow,
+    /// Name of the record array that stores this record family.
     pub record_array: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Number of records for this semantic row, when known.
     pub element_count: Option<usize>,
 }
 
+/// Requirement row for one runtime service used by a source-pack artifact.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuSourcePackRuntimeServiceRequirement {
+    /// Stable runtime service id.
     pub service_id: u32,
+    /// Runtime ABI version required by the artifact.
     pub required_abi_version: u32,
+    /// Current service status encoded in the descriptor.
     pub service_status: u32,
 }
 
+/// Runtime ABI summary embedded when an artifact requires runtime services.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuSourcePackRuntimeAbiMetadata {
+    /// Runtime ABI metadata schema version.
     pub metadata_version: u32,
+    /// Runtime ABI version required by the descriptor.
     pub abi_version: u32,
+    /// Number of services known by this ABI.
     pub service_count: u32,
+    /// First valid service id.
     pub first_service_id: u32,
+    /// Last valid service id.
     pub last_service_id: u32,
 }
 
+/// Counts dependency library-interface inputs across direct descriptor batches.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GpuSourcePackDependencyInterfaceSummary {
+    /// Number of dependency interface artifacts.
     pub interface_count: usize,
+    /// Number of batches that contributed those interfaces.
     pub batch_count: usize,
 }
 
+/// JSON descriptor for a source-pack artifact contract.
+///
+/// Descriptors are emitted for library-interface, codegen-object, partial-link,
+/// and linked-output artifacts. They let CLI output validation, source-pack
+/// workers, and downstream tools check the artifact shape without interpreting
+/// backend-specific bytes directly.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuSourcePackArtifactDescriptor {
+    /// Descriptor schema version.
     pub version: u32,
+    /// Artifact target.
     pub target: SourcePackArtifactTarget,
+    /// Descriptor stage.
     pub stage: GpuSourcePackArtifactStage,
+    /// Global source-pack job index.
     pub job_index: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Hierarchical link group index, when this descriptor belongs to a group.
     pub group_index: Option<usize>,
+    /// Source-pack job phase expected for `stage`.
     pub phase: SourcePackJobPhase,
+    /// Owning library id for job-backed descriptors.
     pub library_id: u32,
+    /// First source index covered by the artifact.
     pub first_source_index: usize,
+    /// Number of source files covered by the artifact.
     pub source_file_count: usize,
+    /// Number of source bytes covered by the artifact.
     pub source_bytes: usize,
     #[serde(default)]
+    /// Number of source lines covered by the artifact.
     pub source_lines: usize,
+    /// Number of dependency interface artifacts consumed.
     pub dependency_interface_count: usize,
     #[serde(default)]
+    /// Number of dependency codegen-object artifacts consumed.
     pub dependency_codegen_object_count: usize,
     #[serde(default)]
+    /// Number of dependency partial-link artifacts consumed.
     pub dependency_partial_link_count: usize,
     #[serde(default)]
+    /// Number of interface-input batches consumed.
     pub dependency_interface_batch_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Record arrays consumed by the artifact.
     pub input_record_arrays: Vec<GpuSourcePackRecordArrayDescriptor>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Record arrays produced by the artifact.
     pub output_record_arrays: Vec<GpuSourcePackRecordArrayDescriptor>,
+    /// Input arrays followed by output arrays.
     pub record_arrays: Vec<GpuSourcePackRecordArrayDescriptor>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Semantic records that describe important arrays.
     pub descriptor_records: Vec<GpuSourcePackDescriptorRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Runtime ABI version required by this artifact, if any.
     pub required_runtime_abi_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Sorted runtime service ids required by this artifact.
     pub required_runtime_service_ids: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Runtime service requirement rows required by this artifact.
     pub required_runtime_services: Vec<GpuSourcePackRuntimeServiceRequirement>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Runtime ABI metadata, present only when runtime services are required.
     pub runtime_abi: Option<GpuSourcePackRuntimeAbiMetadata>,
 }
 
 impl GpuSourcePackRecordArrayDescriptor {
+    /// Creates a descriptor for an array whose final size is not known yet.
     pub fn pending(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -226,6 +325,7 @@ impl GpuSourcePackRecordArrayDescriptor {
         }
     }
 
+    /// Creates a descriptor for an array with a known element count and byte length.
     pub fn bounded(name: impl Into<String>, element_count: usize, byte_len: usize) -> Self {
         Self {
             name: name.into(),
@@ -237,6 +337,7 @@ impl GpuSourcePackRecordArrayDescriptor {
 }
 
 impl GpuSourcePackDescriptorRecord {
+    /// Creates a descriptor-record row without an attached element count.
     pub fn new(
         name: impl Into<String>,
         domain: GpuSourcePackDescriptorRecordDomain,
@@ -256,6 +357,10 @@ impl GpuSourcePackDescriptorRecord {
 }
 
 impl GpuSourcePackRuntimeServiceRequirement {
+    /// Creates a fail-closed runtime requirement for a known service id.
+    ///
+    /// The service starts as unavailable because the descriptor records the
+    /// contract requirement, not proof that the runtime binding has been supplied.
     pub fn contract_only(service_id: u32) -> Self {
         Self {
             service_id,
@@ -266,6 +371,7 @@ impl GpuSourcePackRuntimeServiceRequirement {
 }
 
 impl GpuSourcePackRuntimeAbiMetadata {
+    /// Returns metadata for the runtime ABI version understood by this compiler.
     pub fn current() -> Self {
         Self {
             metadata_version: GPU_SOURCE_PACK_RUNTIME_ABI_METADATA_VERSION,
@@ -278,6 +384,7 @@ impl GpuSourcePackRuntimeAbiMetadata {
 }
 
 impl GpuSourcePackDependencyInterfaceSummary {
+    /// Creates a summary from explicit interface and batch counts.
     pub fn counted(interface_count: usize, batch_count: usize) -> Self {
         Self {
             interface_count,
@@ -285,6 +392,7 @@ impl GpuSourcePackDependencyInterfaceSummary {
         }
     }
 
+    /// Adds one nonempty dependency-interface batch to the summary.
     pub fn add_batch(&mut self, interface_count: usize) {
         if interface_count == 0 {
             return;
@@ -295,6 +403,11 @@ impl GpuSourcePackDependencyInterfaceSummary {
 }
 
 impl GpuSourcePackArtifactDescriptor {
+    /// Validates the internal consistency of this descriptor.
+    ///
+    /// This checks the descriptor version, stage/phase pairing, link-group
+    /// requirements, record-array references, runtime-service rows, and linked
+    /// output target-byte policy.
     pub fn validate_contract(&self) -> Result<(), String> {
         if self.version != GPU_SOURCE_PACK_ARTIFACT_DESCRIPTOR_VERSION {
             return Err(format!(
@@ -380,6 +493,7 @@ impl GpuSourcePackArtifactDescriptor {
         Ok(())
     }
 
+    /// Replaces runtime-service requirements with a sorted, deduplicated service id list.
     pub fn set_required_runtime_services<I>(&mut self, service_ids: I)
     where
         I: IntoIterator<Item = u32>,
@@ -406,6 +520,7 @@ impl GpuSourcePackArtifactDescriptor {
         self.sync_runtime_service_requirement_record_contract();
     }
 
+    /// Returns this descriptor after setting runtime-service requirements.
     pub fn with_required_runtime_services<I>(mut self, service_ids: I) -> Self
     where
         I: IntoIterator<Item = u32>,
@@ -414,6 +529,7 @@ impl GpuSourcePackArtifactDescriptor {
         self
     }
 
+    /// Validates the descriptor and then checks the expected stage and target.
     pub fn validate_contract_for(
         &self,
         expected_stage: GpuSourcePackArtifactStage,
@@ -437,6 +553,7 @@ impl GpuSourcePackArtifactDescriptor {
         Ok(())
     }
 
+    /// Concatenates input record arrays followed by output record arrays.
     pub(super) fn combined_record_arrays(
         input_record_arrays: &[GpuSourcePackRecordArrayDescriptor],
         output_record_arrays: &[GpuSourcePackRecordArrayDescriptor],
@@ -1112,6 +1229,7 @@ impl GpuSourcePackArtifactDescriptor {
             .collect()
     }
 
+    /// Builds the expected descriptor for a library-interface artifact job.
     pub fn library_interface_for_job(
         target: SourcePackArtifactTarget,
         job: &SourcePackJob,
@@ -1178,6 +1296,7 @@ impl GpuSourcePackArtifactDescriptor {
         }
     }
 
+    /// Builds the expected descriptor for a codegen-object artifact job.
     pub fn codegen_object_contract_for_job(
         target: SourcePackArtifactTarget,
         job: &SourcePackJob,
@@ -1258,6 +1377,10 @@ impl GpuSourcePackArtifactDescriptor {
         }
     }
 
+    /// Builds the expected descriptor for a direct linked-output artifact job.
+    ///
+    /// This form is used when link execution is represented by a source-pack
+    /// job rather than a hierarchical link execution page.
     pub fn linked_output_contract_for_job(
         target: SourcePackArtifactTarget,
         job: &SourcePackJob,
@@ -1326,6 +1449,7 @@ impl GpuSourcePackArtifactDescriptor {
         }
     }
 
+    /// Builds the expected descriptor for one hierarchical partial-link page.
     pub fn partial_link_contract_for_page(
         page: &SourcePackHierarchicalLinkExecutionPage,
         dependency_interface_count: usize,
@@ -1416,6 +1540,10 @@ impl GpuSourcePackArtifactDescriptor {
         descriptor
     }
 
+    /// Builds the expected descriptor for one hierarchical linked-output page.
+    ///
+    /// The resulting descriptor carries the page's link group and any runtime
+    /// service requirements propagated through the page descriptor summary.
     pub fn hierarchical_linked_output_contract_for_page(
         page: &SourcePackHierarchicalLinkExecutionPage,
         dependency_interface_count: usize,

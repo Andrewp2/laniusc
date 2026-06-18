@@ -1,5 +1,6 @@
 use super::*;
 
+/// Returns whether `outer` fully covers `inner`.
 pub(in crate::codegen::unit) fn range_contains_range(
     outer: Range<usize>,
     inner: Range<usize>,
@@ -7,6 +8,7 @@ pub(in crate::codegen::unit) fn range_contains_range(
     outer.start <= inner.start && inner.end <= outer.end
 }
 
+/// Returns the effective artifact count from explicit indices and compact ranges.
 pub(in crate::codegen::unit) fn artifact_index_count(
     recorded_count: usize,
     explicit_indices: &[usize],
@@ -19,6 +21,7 @@ pub(in crate::codegen::unit) fn artifact_index_count(
     )
 }
 
+/// Counts artifact indices represented by compact artifact ranges.
 pub(in crate::codegen::unit) fn artifact_index_range_count(
     ranges: &[SourcePackArtifactIndexRange],
 ) -> usize {
@@ -27,6 +30,7 @@ pub(in crate::codegen::unit) fn artifact_index_range_count(
     })
 }
 
+/// Returns whether an artifact index is covered by any compact artifact range.
 pub(in crate::codegen::unit) fn artifact_index_covered_by_ranges(
     artifact_index: usize,
     ranges: &[SourcePackArtifactIndexRange],
@@ -34,6 +38,7 @@ pub(in crate::codegen::unit) fn artifact_index_covered_by_ranges(
     ranges.iter().any(|range| range.contains(artifact_index))
 }
 
+/// Sorts and merges overlapping or adjacent artifact index ranges.
 pub(in crate::codegen::unit) fn compact_artifact_index_ranges(
     ranges: Vec<SourcePackArtifactIndexRange>,
 ) -> Vec<SourcePackArtifactIndexRange> {
@@ -62,6 +67,7 @@ pub(in crate::codegen::unit) fn compact_artifact_index_ranges(
     compact_ranges
 }
 
+/// Counts job indices represented by compact job dependency ranges.
 pub(in crate::codegen::unit) fn job_index_range_dependency_count(
     ranges: &[SourcePackJobIndexRange],
 ) -> usize {
@@ -70,6 +76,7 @@ pub(in crate::codegen::unit) fn job_index_range_dependency_count(
         .fold(0usize, |count, range| count.saturating_add(range.job_count))
 }
 
+/// Returns whether completed job ranges fully cover one dependency range.
 pub(in crate::codegen::unit) fn job_range_covered_by_ranges(
     dependency_range: &SourcePackJobIndexRange,
     completed_ranges: &[SourcePackJobIndexRange],
@@ -101,6 +108,7 @@ pub(in crate::codegen::unit) fn job_range_covered_by_ranges(
     true
 }
 
+/// Appends one completed job index, extending the last range when contiguous.
 pub(in crate::codegen::unit) fn push_completed_job_range(
     completed_ranges: &mut Vec<SourcePackJobIndexRange>,
     job_index: usize,
@@ -117,6 +125,7 @@ pub(in crate::codegen::unit) fn push_completed_job_range(
     });
 }
 
+/// Returns whether all explicit and ranged dependencies for a job are complete.
 pub(in crate::codegen::unit) fn job_dependencies_satisfied(
     job: &SourcePackJob,
     dependency_job_ranges: &[SourcePackJobIndexRange],
@@ -149,6 +158,7 @@ pub(in crate::codegen::unit) fn job_dependencies_satisfied(
             .all(|range| job_range_covered_by_ranges(range, completed_job_ranges))
 }
 
+/// Converts an optional first/count artifact pair into a compact range list.
 pub(in crate::codegen::unit) fn artifact_index_ranges_from_first_count(
     first_artifact_index: Option<usize>,
     artifact_count: usize,
@@ -164,6 +174,7 @@ pub(in crate::codegen::unit) fn artifact_index_ranges_from_first_count(
     }
 }
 
+/// Visits explicit artifact indices and expanded artifact ranges in order.
 pub(in crate::codegen::unit) fn try_for_each_artifact_index<F, E>(
     explicit_indices: &[usize],
     ranges: &[SourcePackArtifactIndexRange],
@@ -188,12 +199,14 @@ where
     Ok(count)
 }
 
+/// Pushes a value only when it is not already present.
 pub(in crate::codegen::unit) fn push_unique(values: &mut Vec<usize>, value: usize) {
     if !values.contains(&value) {
         values.push(value);
     }
 }
 
+/// Appends dependency batch indices as compact contiguous ranges.
 pub(in crate::codegen::unit) fn push_dependency_batch_indices_as_ranges<I>(
     dependency_batch_ranges: &mut Vec<SourcePackJobBatchDependencyRange>,
     dependency_batch_indices: I,
@@ -214,6 +227,7 @@ pub(in crate::codegen::unit) fn push_dependency_batch_indices_as_ranges<I>(
     }
 }
 
+/// Appends dependency batch ranges while removing one excluded batch.
 pub(in crate::codegen::unit) fn push_dependency_batch_ranges_excluding_batch(
     dependency_batch_ranges: &mut Vec<SourcePackJobBatchDependencyRange>,
     ranges: &[SourcePackJobBatchDependencyRange],
@@ -243,6 +257,7 @@ pub(in crate::codegen::unit) fn push_dependency_batch_ranges_excluding_batch(
     }
 }
 
+/// Appends one dependency batch range while removing multiple excluded batches.
 pub(in crate::codegen::unit) fn push_dependency_batch_range_excluding_batches(
     dependency_batch_ranges: &mut Vec<SourcePackJobBatchDependencyRange>,
     first_batch_index: usize,
@@ -273,6 +288,7 @@ pub(in crate::codegen::unit) fn push_dependency_batch_range_excluding_batches(
     }
 }
 
+/// Maps a dependency job range to dependency batch ranges for one current batch.
 pub(in crate::codegen::unit) fn push_dependency_batch_range_for_job_range(
     dependency_batch_ranges: &mut Vec<SourcePackJobBatchDependencyRange>,
     dependency_batch_indices: &BTreeSet<usize>,
@@ -320,6 +336,7 @@ pub(in crate::codegen::unit) fn push_dependency_batch_range_for_job_range(
     Ok(())
 }
 
+/// Returns whether a batch index is covered by any dependency batch range.
 pub(in crate::codegen::unit) fn job_batch_index_covered_by_ranges(
     batch_index: usize,
     ranges: &[SourcePackJobBatchDependencyRange],
@@ -327,6 +344,7 @@ pub(in crate::codegen::unit) fn job_batch_index_covered_by_ranges(
     ranges.iter().any(|range| range.contains(batch_index))
 }
 
+/// Returns whether completed batch ranges fully cover one dependency batch range.
 pub(in crate::codegen::unit) fn job_batch_range_covered_by_ranges(
     dependency_range: &SourcePackJobBatchDependencyRange,
     completed_ranges: &[SourcePackJobBatchDependencyRange],

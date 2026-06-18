@@ -3,13 +3,18 @@ use super::{
     error::{CliError, unsupported_cli_option_value_error},
 };
 
+/// CLI diagnostic rendering mode selected by `--diagnostic-format`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DiagnosticFormat {
+    /// Human-readable text diagnostics.
     Text,
+    /// Pretty JSON diagnostic payload.
     Json,
+    /// Pretty LSP Diagnostic-shaped JSON payload.
     LspJson,
 }
 
+/// Extracts the first diagnostic-format selector from raw CLI arguments.
 pub(crate) fn diagnostic_format_from_args(
     args: impl IntoIterator<Item = String>,
 ) -> DiagnosticFormat {
@@ -30,6 +35,7 @@ pub(crate) fn diagnostic_format_from_args(
     DiagnosticFormat::Text
 }
 
+/// Validates a user-provided diagnostic-format value.
 pub(crate) fn validate_diagnostic_format(value: &str) -> Result<(), CliError> {
     if diagnostic_format_from_value(value).is_some() {
         Ok(())

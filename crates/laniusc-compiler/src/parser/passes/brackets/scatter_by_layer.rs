@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for bracket layer scatter.
 pub struct Params {
     pub n_sc: u32,
     pub n_layers: u32,
 }
 
+/// Pass that scatters bracket pushes and pops into per-layer streams.
 pub struct BracketsScatterByLayerPass {
     data: PassData,
 }

@@ -41,6 +41,7 @@ struct PooledStorageBufferKey {
     usage_bits: u64,
 }
 
+/// Storage buffer returned to the x86 pool when dropped.
 pub(super) struct PooledStorageBuffer {
     buffer: Option<wgpu::Buffer>,
     key: PooledStorageBufferKey,
@@ -83,6 +84,7 @@ impl Drop for PooledStorageBuffer {
     }
 }
 
+/// Readback buffer returned to the x86 pool when dropped.
 pub(super) struct PooledReadbackBuffer {
     buffer: Option<wgpu::Buffer>,
     key: PooledStorageBufferKey,
@@ -126,8 +128,11 @@ impl Drop for PooledReadbackBuffer {
 }
 
 #[allow(dead_code)]
+/// Buffer retained across x86 recording that may or may not come from the pool.
 pub(super) enum RetainedX86Buffer {
+    /// Owned WGPU buffer with ordinary drop behavior.
     Plain(wgpu::Buffer),
+    /// Storage buffer that returns to the x86 pool when dropped.
     Pooled(PooledStorageBuffer),
 }
 
@@ -149,6 +154,7 @@ impl<T> From<LaniusBuffer<T>> for RetainedX86Buffer {
     }
 }
 
+/// Uniform buffer containing fixed-stride items addressable by dynamic offsets.
 pub(super) struct UniformBindingArray {
     buffer: wgpu::Buffer,
     item_size: u64,
@@ -156,10 +162,12 @@ pub(super) struct UniformBindingArray {
 }
 
 impl UniformBindingArray {
+    /// Returns the number of logical uniform items in the array.
     pub(super) fn len(&self) -> usize {
         self.len
     }
 
+    /// Returns a binding resource for one fixed-stride uniform item.
     pub(super) fn binding(&self, index: usize) -> wgpu::BindingResource<'_> {
         let offset = uniform_binding_array_offset(index);
         wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -169,11 +177,13 @@ impl UniformBindingArray {
         })
     }
 
+    /// Returns the dynamic offset for one fixed-stride uniform item.
     pub(super) fn dynamic_offset(&self, index: usize) -> u32 {
         let offset = uniform_binding_array_offset(index);
         u32::try_from(offset).expect("x86 uniform dynamic offset exceeded u32")
     }
 
+    /// Consumes the wrapper and returns the underlying uniform buffer.
     pub(super) fn into_buffer(self) -> wgpu::Buffer {
         self.buffer
     }
@@ -194,12 +204,14 @@ fn trace_x86_codegen_event(stage: &str, event: &str) {
     }
 }
 
+/// Emits an x86 backend trace event when `LANIUS_X86_TRACE` is enabled.
 pub(super) fn trace_x86_codegen(stage: &str) {
     if x86_trace_enabled() {
         eprintln!("[laniusc][x86-codegen] {stage}");
     }
 }
 
+/// Encodes the main x86 parameter uniform using shader layout rules.
 pub(super) fn x86_params_bytes(params: &X86Params) -> Vec<u8> {
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(params)
@@ -207,12 +219,14 @@ pub(super) fn x86_params_bytes(params: &X86Params) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+/// Encodes an x86 scan parameter uniform using shader layout rules.
 pub(super) fn x86_scan_params_bytes(params: &X86ScanParams) -> Vec<u8> {
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(params).expect("failed to encode x86 scan params");
     ub.as_ref().to_vec()
 }
 
+/// Encodes an x86 register-allocation parameter uniform.
 pub(super) fn x86_regalloc_params_bytes(params: &X86RegallocParams) -> Vec<u8> {
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(params)
@@ -220,6 +234,7 @@ pub(super) fn x86_regalloc_params_bytes(params: &X86RegallocParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+/// Encodes little-endian `u32` words for storage or uniform initialization.
 pub(super) fn u32_words_bytes(words: &[u32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(words.len() * 4);
     for word in words {
@@ -228,10 +243,12 @@ pub(super) fn u32_words_bytes(words: &[u32]) -> Vec<u8> {
     out
 }
 
+/// Writes little-endian `u32` words to the start of a WGPU buffer.
 pub(super) fn write_u32_words(queue: &wgpu::Queue, buffer: &wgpu::Buffer, words: &[u32]) {
     queue.write_buffer(buffer, 0, &u32_words_bytes(words));
 }
 
+/// Initializes a buffer with a repeated `u32` pattern through the GPU fill pass.
 pub(super) fn init_repeated_u32_words(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -251,6 +268,7 @@ pub(super) fn init_repeated_u32_words(
     )
 }
 
+/// Records the GPU pass that writes a repeated `u32` pattern.
 pub(super) fn fill_repeated_u32_words_gpu(
     device: &wgpu::Device,
     _queue: &wgpu::Queue,
@@ -308,6 +326,7 @@ pub(super) fn fill_repeated_u32_words_gpu(
     Ok(())
 }
 
+/// Clears the first `words` `u32` slots of a buffer.
 pub(super) fn zero_u32_words(
     _queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
@@ -319,6 +338,7 @@ pub(super) fn zero_u32_words(
     encoder.clear_buffer(buffer, 0, Some(bytes as u64));
 }
 
+/// Creates a uniform buffer from already-encoded struct bytes.
 pub(super) fn uniform_u32_struct(
     device: &wgpu::Device,
     label: &str,
@@ -334,6 +354,7 @@ pub(super) fn uniform_u32_struct(
     LaniusBuffer::new((buffer, contents.len() as u64), count)
 }
 
+/// Creates a uniform buffer from little-endian `u32` words.
 pub(super) fn uniform_u32_words(
     device: &wgpu::Device,
     label: &str,
@@ -342,6 +363,7 @@ pub(super) fn uniform_u32_words(
     uniform_u32_struct(device, label, &u32_words_bytes(words))
 }
 
+/// Creates a fixed-stride uniform array for dynamic-offset dispatch loops.
 pub(super) fn uniform_u32_struct_array(
     device: &wgpu::Device,
     label: &str,
@@ -378,6 +400,7 @@ pub(super) fn uniform_u32_struct_array(
     }
 }
 
+/// Allocates writable x86 storage for `u32` rows.
 pub(super) fn storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -394,6 +417,7 @@ pub(super) fn storage_u32_rw(
     LaniusBuffer::new((buffer, (count * 4) as u64), count)
 }
 
+/// Allocates writable x86 `u32` storage that can also be copied from.
 pub(super) fn storage_u32_copy(
     device: &wgpu::Device,
     label: &str,
@@ -402,6 +426,7 @@ pub(super) fn storage_u32_copy(
     storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
 }
 
+/// Wraps an external storage buffer or allocates copy-readable `u32` storage.
 pub(super) fn external_or_storage_u32_copy(
     device: &wgpu::Device,
     label: &str,
@@ -415,10 +440,12 @@ pub(super) fn external_or_storage_u32_copy(
         .unwrap_or_else(|| storage_u32_copy(device, label, count))
 }
 
+/// Opens a WGPU out-of-memory error scope around backend buffer allocation.
 pub(super) fn push_allocation_error_scope(device: &wgpu::Device) -> wgpu::ErrorScopeGuard {
     device.push_error_scope(wgpu::ErrorFilter::OutOfMemory)
 }
 
+/// Closes an x86 allocation error scope and turns allocation failure into `Result`.
 pub(super) fn pop_allocation_error_scope(scope: wgpu::ErrorScopeGuard, stage: &str) -> Result<()> {
     if let Some(err) = pollster::block_on(scope.pop()) {
         bail!("GPU x86 buffer allocation failed during {stage}: {err}");
@@ -426,6 +453,7 @@ pub(super) fn pop_allocation_error_scope(scope: wgpu::ErrorScopeGuard, stage: &s
     Ok(())
 }
 
+/// Takes or allocates pooled writable x86 storage for `u32` rows.
 pub(super) fn pooled_storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -457,6 +485,7 @@ pub(super) fn pooled_storage_u32_rw(
     PooledStorageBuffer::new(buffer, key)
 }
 
+/// Takes or allocates pooled copy-readable x86 storage for `u32` rows.
 pub(super) fn pooled_storage_u32_copy(
     device: &wgpu::Device,
     label: &str,
@@ -465,6 +494,7 @@ pub(super) fn pooled_storage_u32_copy(
     pooled_storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
 }
 
+/// Takes or allocates a pooled readback buffer for `bytes` bytes.
 pub(super) fn pooled_readback_bytes(
     device: &wgpu::Device,
     label: &str,
@@ -501,6 +531,7 @@ fn storage_buffer_pool() -> &'static Mutex<HashMap<PooledStorageBufferKey, Vec<w
     POOL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Allocates a host-readable readback buffer for `count` `u32` words.
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
@@ -510,6 +541,7 @@ pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) ->
     })
 }
 
+/// Splits a one-dimensional workgroup count across x/y WebGPU dispatch limits.
 pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     const MAX_X: u32 = 65_535;
     let groups = groups.max(1);
@@ -520,10 +552,12 @@ pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     }
 }
 
+/// Returns scan-step values for an x86 block-prefix scan.
 pub(super) fn scan_steps_for_blocks(n_blocks: usize) -> Vec<u32> {
     crate::gpu::scan::scan_step_values(n_blocks as u32)
 }
 
+/// Returns pointer-jump step numbers needed to cover `n_items` linked rows.
 pub(super) fn pointer_jump_steps_for_items(n_items: usize) -> Vec<u32> {
     let mut value = n_items.max(1) as u32;
     let mut steps = Vec::new();
@@ -591,6 +625,7 @@ mod tests {
     }
 }
 
+/// Records one direct x86 compute pass and emits optional trace events.
 pub(super) fn dispatch_compute_pass(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -612,6 +647,7 @@ pub(super) fn dispatch_compute_pass(
     trace_x86_codegen_event(trace_stage, "record.done");
 }
 
+/// Records one indirect x86 compute pass from offset zero.
 pub(super) fn dispatch_compute_pass_indirect(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -631,6 +667,7 @@ pub(super) fn dispatch_compute_pass_indirect(
     );
 }
 
+/// Records one indirect x86 compute pass from a specific dispatch-args offset.
 pub(super) fn dispatch_compute_pass_indirect_offset(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -652,6 +689,7 @@ pub(super) fn dispatch_compute_pass_indirect_offset(
     );
 }
 
+/// Records one indirect x86 compute pass with bind-group dynamic offsets.
 pub(super) fn dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -675,6 +713,7 @@ pub(super) fn dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
     trace_x86_codegen_event(trace_stage, "record.done");
 }
 
+/// Records repeated indirect dispatches sharing one bind group and uniform array.
 pub(super) fn dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -707,6 +746,7 @@ pub(super) fn dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offset
     trace_x86_codegen_event(trace_stage, "record.done");
 }
 
+/// Records a sequence of indirect dispatches with per-step bind groups and uniforms.
 pub(super) fn dispatch_indirect_dynamic_sequence(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -746,6 +786,7 @@ pub(super) fn dispatch_indirect_dynamic_sequence(
     trace_x86_codegen_event(trace_stage, "record.done");
 }
 
+/// Records ping-pong scan steps with alternating bind groups and dynamic uniforms.
 pub(super) fn dispatch_compute_pass_indirect_ping_pong_scan_steps(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -780,6 +821,7 @@ pub(super) fn dispatch_compute_pass_indirect_ping_pong_scan_steps(
     );
 }
 
+/// Records an indirect dispatch for each bind group in a step sequence.
 pub(super) fn dispatch_compute_pass_indirect_bind_group_steps(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage_prefix: &str,
@@ -805,6 +847,7 @@ pub(super) fn dispatch_compute_pass_indirect_bind_group_steps(
     }
 }
 
+/// Records several direct x86 stages in one compute pass.
 pub(super) fn dispatch_x86_stages(
     encoder: &mut wgpu::CommandEncoder,
     stages: &[(&'static str, &PassData, &wgpu::BindGroup)],
@@ -831,6 +874,7 @@ pub(super) fn dispatch_x86_stages(
     }
 }
 
+/// Records one named direct x86 stage.
 pub(super) fn dispatch_x86_stage(
     encoder: &mut wgpu::CommandEncoder,
     stage: &'static str,
@@ -842,6 +886,7 @@ pub(super) fn dispatch_x86_stage(
     dispatch_compute_pass(encoder, stage, &label, pass, bind_group, groups);
 }
 
+/// Records several indirect x86 stages in one compute pass.
 pub(super) fn dispatch_x86_stages_indirect(
     encoder: &mut wgpu::CommandEncoder,
     stages: &[(&'static str, &PassData, &wgpu::BindGroup)],
@@ -868,6 +913,7 @@ pub(super) fn dispatch_x86_stages_indirect(
     }
 }
 
+/// Records one named indirect x86 stage.
 pub(super) fn dispatch_x86_stage_indirect(
     encoder: &mut wgpu::CommandEncoder,
     stage: &'static str,
@@ -879,6 +925,7 @@ pub(super) fn dispatch_x86_stage_indirect(
     dispatch_compute_pass_indirect(encoder, stage, &label, pass, bind_group, indirect_buffer);
 }
 
+/// Builds a bind group and wraps reflection errors with the backend label.
 pub(super) fn reflected_bind_group(
     device: &wgpu::Device,
     label: Option<&'static str>,
@@ -896,6 +943,7 @@ pub(super) fn reflected_bind_group(
     )
 }
 
+/// Reads x86 backend status and output bytes from the recorded readback buffer.
 pub(super) fn read_x86_output(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

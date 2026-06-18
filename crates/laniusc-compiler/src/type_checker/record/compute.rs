@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Emits a GPU timer stamp when type-check timing is enabled.
 pub(in crate::type_checker) fn stamp_typecheck_timer(
     timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
     encoder: &mut wgpu::CommandEncoder,
@@ -12,6 +13,7 @@ pub(in crate::type_checker) fn stamp_typecheck_timer(
     }
 }
 
+/// Records a direct one-dimensional compute dispatch for a type-check pass.
 pub(in crate::type_checker) fn record_compute(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,
@@ -35,6 +37,7 @@ pub(in crate::type_checker) fn record_compute(
     Ok(())
 }
 
+/// Records an indirect compute dispatch whose workgroup count lives in a buffer.
 pub(in crate::type_checker) fn record_compute_indirect(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,
@@ -52,6 +55,7 @@ pub(in crate::type_checker) fn record_compute_indirect(
     Ok(())
 }
 
+/// Records an indirect compute dispatch from a nonzero dispatch-args offset.
 pub(in crate::type_checker) fn record_compute_indirect_offset(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,

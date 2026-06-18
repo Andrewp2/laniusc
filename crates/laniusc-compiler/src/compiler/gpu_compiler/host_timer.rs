@@ -1,14 +1,21 @@
 use super::*;
 
+/// Host-side timing helper for GPU compiler orchestration.
 pub(super) struct CompilerHostTimer {
+    /// Prefix used for emitted timing labels.
     pub(super) label: &'static str,
+    /// Whether timing should be printed to stdout.
     pub(super) print_enabled: bool,
+    /// Whether timing spans should be written to the GPU trace recorder.
     pub(super) trace_enabled: bool,
+    /// Start time for total elapsed duration.
     pub(super) start: std::time::Instant,
+    /// Timestamp of the previous stage marker.
     pub(super) last: std::time::Instant,
 }
 
 impl CompilerHostTimer {
+    /// Creates a timer whose output is controlled by compiler tracing environment variables.
     pub(super) fn new(label: &'static str) -> Self {
         let now = std::time::Instant::now();
         Self {
@@ -23,6 +30,7 @@ impl CompilerHostTimer {
         }
     }
 
+    /// Records elapsed time for one named compiler stage.
     pub(super) fn stamp(&mut self, stage: &str) {
         if !self.print_enabled && !self.trace_enabled {
             return;
@@ -40,6 +48,7 @@ impl CompilerHostTimer {
         self.last = now;
     }
 
+    /// Samples and optionally traces the backend pipeline-cache byte size.
     pub(super) fn pipeline_cache_size(&self, gpu: &GpuDevice, stage: &str) {
         if !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_BREAKDOWN", false) {
             return;

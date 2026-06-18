@@ -16,12 +16,17 @@ use crate::cli::{
     },
 };
 
+/// Compile dispatch result for source-pack mode selection.
 pub(super) enum Action {
+    /// The requested source-pack preparation step completed without target bytes.
     Done,
+    /// A source-pack path produced CLI output.
     Emit(CliEmission),
+    /// Source-pack mode was not requested; fall back to in-memory compile.
     NotRequested,
 }
 
+/// Selects the source-pack CLI action for a validated compile request.
 pub(super) fn dispatch(
     emit: &str,
     stdlib_paths: &[PathBuf],

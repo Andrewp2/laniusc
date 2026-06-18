@@ -31,6 +31,11 @@ pub use source_pack_executor::{
     GpuSourcePackLinkHandle,
 };
 
+/// GPU-resident compiler instance for frontend checks and backend compilation.
+///
+/// A compiler owns phase drivers and resident caches tied to one `GpuDevice`.
+/// Public methods serialize resident pipeline use through `resident_pipeline_lock`
+/// because lexer/parser/type-check/backend buffers are reused across operations.
 pub struct GpuCompiler<'gpu> {
     pub(super) gpu: &'gpu GpuDevice,
     pub(super) lexer: GpuLexer,
@@ -43,16 +48,23 @@ pub struct GpuCompiler<'gpu> {
 }
 
 impl GpuCompiler<'static> {
+    /// Create a compiler backed by the process-global GPU device.
     pub async fn new() -> Result<Self, CompileError> {
         Self::new_with_device(device::global()).await
     }
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Create a compiler for an existing GPU device with all backend families
+    /// initialized.
     pub async fn new_with_device(gpu: &'gpu GpuDevice) -> Result<Self, CompileError> {
         Self::new_with_device_and_backends(gpu, GpuCompilerBackends::all()).await
     }
 
+    /// Create a compiler for an existing GPU device and a selected backend set.
+    ///
+    /// Frontend phases are always initialized. Disabled or failed backends are
+    /// stored as deferred errors so frontend-only operations can still run.
     pub async fn new_with_device_and_backends(
         gpu: &'gpu GpuDevice,
         backends: GpuCompilerBackends,
@@ -125,6 +137,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         })
     }
 
+    /// Return the GPU device used by this compiler and all resident phase
+    /// drivers.
     pub fn gpu(&self) -> &'gpu GpuDevice {
         self.gpu
     }

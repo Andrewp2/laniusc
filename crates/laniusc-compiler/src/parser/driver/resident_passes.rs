@@ -3,6 +3,7 @@
 use super::*;
 
 impl GpuParser {
+    /// Records the resident LL(1) parser pipeline over already-resident token buffers.
     pub(super) fn record_ll1_resident_passes(
         &self,
         encoder: &mut wgpu::CommandEncoder,

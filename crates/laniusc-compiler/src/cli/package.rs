@@ -21,6 +21,7 @@ use super::{
 };
 use crate::compiler::{Diagnostic, PackageLockfile, PackageManifest};
 
+/// Runs package tooling subcommands.
 pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let mut args = args.into_iter().peekable();
     loop {

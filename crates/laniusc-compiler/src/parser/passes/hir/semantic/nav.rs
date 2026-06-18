@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that builds parent, first-child, and next-sibling navigation for semantic HIR nodes.
 pub struct HirSemanticNavPass {
     data: PassData,
 }

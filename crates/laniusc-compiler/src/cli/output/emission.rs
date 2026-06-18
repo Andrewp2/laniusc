@@ -10,11 +10,15 @@ use super::{
     stream::write_stdout_bytes,
 };
 
+/// Output produced by a compile/source-pack command before final CLI writing.
 pub(crate) enum CliEmission {
+    /// In-memory target bytes.
     Bytes(Vec<u8>),
+    /// Path to a linked-output contract descriptor produced by source-pack mode.
     ContractDescriptorFile(PathBuf),
 }
 
+/// Writes CLI emission to `-o/--out` or stdout.
 pub(crate) fn write_cli_emission(
     emitted: CliEmission,
     output: Option<PathBuf>,

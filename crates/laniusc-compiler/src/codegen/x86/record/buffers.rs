@@ -25,6 +25,7 @@ use super::{
 };
 use crate::gpu::buffers::LaniusBuffer;
 
+/// Buffers allocated before x86 metadata discovery and feature-specific records.
 pub(super) struct InitialRecordBuffers {
     pub(super) params_buf: LaniusBuffer<u32>,
     pub(super) feature_params_buf: LaniusBuffer<u32>,
@@ -55,6 +56,7 @@ pub(super) struct InitialRecordBuffers {
     pub(super) node_inst_same_end_link_b_buf: LaniusBuffer<u32>,
 }
 
+/// Inputs used to allocate the initial x86 record buffers.
 pub(super) struct InitialRecordBufferInputs<'a, 'scratch> {
     pub(super) params: &'a X86Params,
     pub(super) feature_summary: X86FeatureSummary,
@@ -67,6 +69,7 @@ pub(super) struct InitialRecordBufferInputs<'a, 'scratch> {
     pub(super) external_scratch: &'a GpuX86ExternalScratchBuffers<'scratch>,
 }
 
+/// Buffers allocated for x86 semantic metadata and call/aggregate planning.
 pub(super) struct MetadataRecordBuffers {
     pub(super) match_pattern_first_use_node_buf: LaniusBuffer<u32>,
     pub(super) needs_enclosing_return_records: bool,
@@ -112,6 +115,7 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) postfix_operand_owner_buf: LaniusBuffer<u32>,
 }
 
+/// Inputs used to allocate metadata-stage x86 record buffers.
 pub(super) struct MetadataRecordBufferInputs<'a, 'scratch> {
     pub(super) feature_summary: X86FeatureSummary,
     pub(super) hir_words: usize,
@@ -122,6 +126,7 @@ pub(super) struct MetadataRecordBufferInputs<'a, 'scratch> {
     pub(super) external_scratch: &'a GpuX86ExternalScratchBuffers<'scratch>,
 }
 
+/// Buffers allocated for instruction planning, virtual lowering, and output emission.
 pub(super) struct InstructionRecordBuffers {
     pub(super) node_inst_count_status_buf: PooledStorageBuffer,
     pub(super) node_inst_order_status_buf: PooledStorageBuffer,
@@ -179,6 +184,7 @@ pub(super) struct InstructionRecordBuffers {
     pub(super) output_readback: PooledReadbackBuffer,
 }
 
+/// Inputs used to allocate instruction-stage x86 record buffers.
 pub(super) struct InstructionRecordBufferInputs<'a, 'scratch> {
     pub(super) hir_words: usize,
     pub(super) node_inst_scan_words: usize,
@@ -189,6 +195,7 @@ pub(super) struct InstructionRecordBufferInputs<'a, 'scratch> {
     pub(super) external_scratch: &'a GpuX86ExternalScratchBuffers<'scratch>,
 }
 
+/// Allocates the first x86 record buffer group and reuses external scratch where valid.
 pub(super) fn create_initial_record_buffers(
     device: &wgpu::Device,
     allocation_scope: &mut AllocationScope<'_>,
@@ -356,6 +363,7 @@ pub(super) fn create_initial_record_buffers(
     })
 }
 
+/// Allocates x86 metadata, aggregate, call, and declaration-layout buffers.
 pub(super) fn create_metadata_record_buffers(
     device: &wgpu::Device,
     allocation_scope: &mut AllocationScope<'_>,
@@ -613,6 +621,7 @@ pub(super) fn create_metadata_record_buffers(
     })
 }
 
+/// Allocates x86 instruction, register-allocation, relocation, and output buffers.
 pub(super) fn create_instruction_record_buffers(
     device: &wgpu::Device,
     mut allocation_scope: AllocationScope<'_>,

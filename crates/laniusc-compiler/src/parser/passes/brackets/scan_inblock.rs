@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for bracket in-block depth scanning.
 pub struct Params {
     pub n_sc: u32,
     pub wg_size: u32,
 }
 
+/// Pass that computes in-block bracket depth summaries.
 pub struct BracketsScanInblockPass {
     data: PassData,
 }

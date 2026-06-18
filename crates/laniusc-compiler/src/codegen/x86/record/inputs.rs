@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Borrowed parser, type-check, feature, and scratch inputs for one x86 recording.
 pub struct RecordElfInputs<'a, 'timer> {
     pub source_len: u32,
     pub token_capacity: u32,

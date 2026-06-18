@@ -1,8 +1,10 @@
 use super::*;
 
+/// Current schema version for retained source-pack artifact manifests.
 pub const SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Target namespace used when emitting source-pack artifact keys.
 pub enum SourcePackArtifactTarget {
     #[default]
     Generic,
@@ -11,6 +13,7 @@ pub enum SourcePackArtifactTarget {
 }
 
 impl SourcePackArtifactTarget {
+    /// Returns the optional target prefix used in artifact keys.
     pub fn key_prefix(self) -> Option<&'static str> {
         match self {
             Self::Generic => None,
@@ -21,6 +24,7 @@ impl SourcePackArtifactTarget {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Retained serializable manifest for source-pack jobs, batches, artifacts, and link inputs.
 pub struct SourcePackBuildArtifactManifest {
     pub version: u32,
     #[serde(default)]
@@ -45,13 +49,18 @@ pub struct SourcePackBuildArtifactManifest {
     pub link_object_batches: SourcePackLinkObjectBatchPlan,
 }
 
+/// Current schema version for source-pack artifact shard indexes.
 pub const SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION: u32 = 1;
 
+/// Default maximum job/link batches retained in one manifest shard.
 pub const DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES: usize = 64;
+/// Default maximum job records retained in one manifest shard.
 pub const DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_JOBS: usize = 256;
+/// Default maximum artifact records retained in one manifest shard.
 pub const DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_ARTIFACTS: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Record-count bounds for splitting retained manifests into shards.
 pub struct SourcePackBuildShardLimits {
     pub max_batches_per_shard: usize,
     pub max_jobs_per_shard: usize,
@@ -69,6 +78,7 @@ impl Default for SourcePackBuildShardLimits {
 }
 
 impl SourcePackBuildShardLimits {
+    /// Returns shard limits clamped to supported record capacities.
     pub fn normalized(self) -> Self {
         let record_caps = Self::default();
         Self {
@@ -89,6 +99,7 @@ impl SourcePackBuildShardLimits {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Kind of retained manifest data carried by a build artifact shard.
 pub enum SourcePackBuildArtifactShardKind {
     JobBatches,
     LinkInterfaceBatches,
@@ -96,6 +107,7 @@ pub enum SourcePackBuildArtifactShardKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounded retained manifest slice for a group of jobs or link batches.
 pub struct SourcePackBuildArtifactShard {
     pub version: u32,
     pub target: SourcePackArtifactTarget,
@@ -116,14 +128,17 @@ pub struct SourcePackBuildArtifactShard {
 }
 
 impl SourcePackBuildArtifactShard {
+    /// Returns the number of job/link batches represented by this shard.
     pub fn batch_count(&self) -> usize {
         self.batch_indices.len()
     }
 
+    /// Returns the number of jobs referenced by this shard.
     pub fn job_count(&self) -> usize {
         self.job_indices.len()
     }
 
+    /// Returns total input and output artifact count represented by this shard.
     pub fn artifact_count(&self) -> usize {
         self.input_artifact_indices
             .len()
@@ -131,6 +146,7 @@ impl SourcePackBuildArtifactShard {
             .saturating_add(self.output_artifact_indices.len())
     }
 
+    /// Returns the number of artifact records stored after range compaction.
     pub fn artifact_record_count(&self) -> usize {
         self.input_artifact_indices
             .len()
@@ -140,6 +156,7 @@ impl SourcePackBuildArtifactShard {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Summary index for all retained build artifact shards.
 pub struct SourcePackBuildArtifactShardIndex {
     pub version: u32,
     pub target: SourcePackArtifactTarget,
@@ -153,22 +170,26 @@ pub struct SourcePackBuildArtifactShardIndex {
 }
 
 impl SourcePackBuildArtifactShardIndex {
+    /// Returns the number of shards described by this index.
     pub fn shard_count(&self) -> usize {
         self.shard_count
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// In-memory shard index plus retained shard records.
 pub struct SourcePackBuildArtifactShardPlan {
     pub index: SourcePackBuildArtifactShardIndex,
     pub shards: Vec<SourcePackBuildArtifactShard>,
 }
 
 impl SourcePackBuildArtifactShardPlan {
+    /// Returns the number of shards in the plan.
     pub fn shard_count(&self) -> usize {
         self.index.shard_count()
     }
 
+    /// Returns the largest batch count of any shard.
     pub fn max_shard_batch_count(&self) -> usize {
         self.shards
             .iter()
@@ -177,6 +198,7 @@ impl SourcePackBuildArtifactShardPlan {
             .unwrap_or(0)
     }
 
+    /// Returns the largest job count of any shard.
     pub fn max_shard_job_count(&self) -> usize {
         self.shards
             .iter()
@@ -185,6 +207,7 @@ impl SourcePackBuildArtifactShardPlan {
             .unwrap_or(0)
     }
 
+    /// Returns the largest artifact-record count of any shard.
     pub fn max_shard_artifact_count(&self) -> usize {
         self.shards
             .iter()
@@ -193,12 +216,14 @@ impl SourcePackBuildArtifactShardPlan {
             .unwrap_or(0)
     }
 
+    /// Counts shards that exceed normalized limits.
     pub fn oversized_shard_count(&self) -> usize {
         self.shards.iter().filter(|shard| shard.oversized).count()
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Per-job artifact indices split by artifact kind for shard and dependency planning.
 pub(in crate::codegen::unit) struct SourcePackArtifactIndicesByKind {
     pub(in crate::codegen::unit) library_interfaces: Vec<usize>,
     pub(in crate::codegen::unit) codegen_objects: Vec<usize>,
@@ -206,6 +231,7 @@ pub(in crate::codegen::unit) struct SourcePackArtifactIndicesByKind {
 }
 
 #[derive(Clone, Debug)]
+/// Incremental builder for one source-pack build artifact shard.
 pub(in crate::codegen::unit) struct SourcePackBuildArtifactShardBuilder {
     kind: SourcePackBuildArtifactShardKind,
     batch_indices: Vec<usize>,
@@ -320,6 +346,7 @@ impl SourcePackBuildArtifactShardBuilder {
     }
 }
 
+/// Returns artifact indices for one job and artifact kind, or an empty slice if absent.
 pub(in crate::codegen::unit) fn artifact_indices_for_job_kind(
     artifact_indices_by_job_and_kind: &[SourcePackArtifactIndicesByKind],
     job_index: usize,
@@ -335,6 +362,7 @@ pub(in crate::codegen::unit) fn artifact_indices_for_job_kind(
     }
 }
 
+/// Returns a compact interface-artifact range when a dependency job range is contiguous.
 pub(in crate::codegen::unit) fn interface_artifact_range_for_job_range(
     artifact_indices_by_job_and_kind: &[SourcePackArtifactIndicesByKind],
     dependency_job_range: &SourcePackJobIndexRange,
@@ -366,6 +394,7 @@ pub(in crate::codegen::unit) fn interface_artifact_range_for_job_range(
     })
 }
 
+/// Pushes interface inputs for a dependency job range as either one range or unique indices.
 pub(in crate::codegen::unit) fn push_interface_artifact_inputs_for_job_range(
     artifact_indices_by_job_and_kind: &[SourcePackArtifactIndicesByKind],
     dependency_job_range: &SourcePackJobIndexRange,
@@ -394,6 +423,7 @@ pub(in crate::codegen::unit) fn push_interface_artifact_inputs_for_job_range(
 }
 
 impl SourcePackBuildArtifactManifest {
+    /// Builds only the shard index, without retaining individual shard records.
     pub fn build_artifact_shard_index(
         &self,
         limits: SourcePackBuildShardLimits,
@@ -443,6 +473,7 @@ impl SourcePackBuildArtifactManifest {
         }
     }
 
+    /// Streams retained build artifact shards and returns the resulting shard index.
     pub fn try_for_each_build_artifact_shard<E, F>(
         &self,
         limits: SourcePackBuildShardLimits,
@@ -507,6 +538,7 @@ impl SourcePackBuildArtifactManifest {
         })
     }
 
+    /// Builds and retains all artifact shards in memory.
     pub fn build_artifact_shard_plan(
         &self,
         limits: SourcePackBuildShardLimits,
@@ -610,6 +642,7 @@ impl SourcePackBuildArtifactManifest {
     }
 }
 
+/// Appends normalized build shards for a stream of same-kind shard builders.
 pub(in crate::codegen::unit) fn append_build_shards<I>(
     shards: &mut Vec<SourcePackBuildArtifactShard>,
     target: SourcePackArtifactTarget,
@@ -634,6 +667,7 @@ pub(in crate::codegen::unit) fn append_build_shards<I>(
     }
 }
 
+/// Visits normalized build shards without retaining the shard records in memory.
 pub(in crate::codegen::unit) fn try_emit_build_shards<I, F, E>(
     next_shard_index: &mut usize,
     target: SourcePackArtifactTarget,
@@ -664,6 +698,7 @@ where
     Ok(())
 }
 
+/// Counts the shards that would be emitted for a stream of same-kind shard builders.
 pub(in crate::codegen::unit) fn count_build_shards<I>(
     kind: SourcePackBuildArtifactShardKind,
     limits: SourcePackBuildShardLimits,
@@ -689,6 +724,7 @@ where
     shard_count
 }
 
+/// Builds a shard contribution record for one interface-link batch.
 pub(in crate::codegen::unit) fn link_interface_batch_shard_builder(
     batch: &SourcePackLinkInterfaceBatch,
     link_job_index: Option<usize>,
@@ -709,6 +745,7 @@ pub(in crate::codegen::unit) fn link_interface_batch_shard_builder(
     builder
 }
 
+/// Builds a shard contribution record for one object-link batch.
 pub(in crate::codegen::unit) fn link_object_batch_shard_builder(
     batch: &SourcePackLinkObjectBatch,
     link_job_index: Option<usize>,
@@ -729,6 +766,7 @@ pub(in crate::codegen::unit) fn link_object_batch_shard_builder(
     builder
 }
 
+/// Counts the compact artifact record union of two shard builders.
 pub(in crate::codegen::unit) fn build_shard_artifact_union_count(
     left: &SourcePackBuildArtifactShardBuilder,
     right: &SourcePackBuildArtifactShardBuilder,

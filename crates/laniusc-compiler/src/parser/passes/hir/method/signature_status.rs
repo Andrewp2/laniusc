@@ -5,11 +5,14 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that records whether method signatures contain generic or where clauses.
 pub struct HirMethodSignatureStatusPass {
     data: PassData,
 }
 
+/// Status bit set when a method signature contains generic parameters.
 pub const HIR_METHOD_SIGNATURE_HAS_GENERICS: u32 = 1;
+/// Status bit set when a method signature contains a where clause.
 pub const HIR_METHOD_SIGNATURE_HAS_WHERE: u32 = 2;
 
 crate::gpu::passes_core::impl_static_shader_pass!(

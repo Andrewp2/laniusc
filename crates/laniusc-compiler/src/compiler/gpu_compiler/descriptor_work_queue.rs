@@ -1,6 +1,8 @@
 use super::*;
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Run ready descriptor work-queue items from an already prepared artifact
+    /// root using this compiler as the GPU executor.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_descriptor_work_queue(
         &self,
@@ -25,6 +27,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Claim and execute one ready descriptor work-queue item from an already
+    /// prepared artifact root using this compiler as the GPU executor.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_descriptor_work_queue(
         &self,
@@ -48,6 +52,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare library path inputs if needed, then claim and execute one
+    /// descriptor work-queue item for the requested target.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_library_path_worker<I, P>(
         &self,
@@ -80,6 +86,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare library path inputs if needed, then claim and execute one WASM
+    /// descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_library_path_worker_to_wasm<I, P>(
         &self,
@@ -110,6 +118,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare library path inputs if needed, then claim and execute one x86_64
+    /// descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_library_path_worker_to_x86_64<I, P>(
         &self,
@@ -140,6 +150,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then run ready descriptor
+    /// work-queue items for the requested target.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_path_stream_worker<I, PI, P>(
         &self,
@@ -177,6 +189,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then claim and execute one
+    /// descriptor work-queue item for the requested target.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_path_stream_worker<I, PI, P>(
         &self,
@@ -222,6 +236,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then run ready WASM
+    /// descriptor work-queue items.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_path_stream_worker_to_wasm<I, PI, P>(
         &self,
@@ -255,6 +271,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then claim and execute one
+    /// WASM descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_path_stream_worker_to_wasm<I, PI, P>(
         &self,
@@ -286,6 +304,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then run ready x86_64
+    /// descriptor work-queue items.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_path_stream_worker_to_x86_64<I, PI, P>(
         &self,
@@ -319,6 +339,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare ordered path-stream inputs if needed, then claim and execute one
+    /// x86_64 descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_path_stream_worker_to_x86_64<I, PI, P>(
         &self,
@@ -350,6 +372,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then run ready descriptor
+    /// work-queue items for the requested target.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_dependency_stream_worker<I, PI, DI, P>(
         &self,
@@ -395,6 +419,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then claim and execute one
+    /// descriptor work-queue item for the requested target.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_dependency_stream_worker<I, PI, DI, P>(
         &self,
@@ -440,6 +466,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then run ready WASM
+    /// descriptor work-queue items.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_dependency_stream_worker_to_wasm<I, PI, DI, P>(
         &self,
@@ -474,6 +502,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then claim and execute one
+    /// WASM descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_dependency_stream_worker_to_wasm<I, PI, DI, P>(
         &self,
@@ -506,6 +536,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then run ready x86_64
+    /// descriptor work-queue items.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
         &self,
@@ -540,6 +572,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await
     }
 
+    /// Prepare dependency-stream inputs if needed, then claim and execute one
+    /// x86_64 descriptor work-queue item.
     #[allow(clippy::too_many_arguments)]
     pub async fn step_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
         &self,

@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds HIR context relation propagation.
 pub struct HirContextRelationsInitPass {
     data: PassData,
 }

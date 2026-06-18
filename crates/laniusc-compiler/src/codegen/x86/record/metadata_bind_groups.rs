@@ -10,6 +10,7 @@ use super::{
     bind_helpers::{StepNames, StepPairs, scan_block_groups, step_pair_groups},
 };
 
+/// Bind groups used by x86 dispatch-argument setup passes.
 pub(super) struct DispatchSetupBindGroups {
     pub(super) active_scan_dispatch_args: wgpu::BindGroup,
     pub(super) node_inst_scan_input_clear: wgpu::BindGroup,
@@ -19,6 +20,7 @@ pub(super) struct DispatchSetupBindGroups {
     pub(super) output_dispatch_args: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed to create x86 dispatch-setup bind groups.
 pub(super) struct DispatchSetupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) hir_status: &'a wgpu::Buffer,
@@ -43,6 +45,7 @@ pub(super) struct DispatchSetupInputs<'a> {
     pub(super) elf_header_word: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 active-work and output-dispatch setup.
 pub(super) fn create_dispatch_setup_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,
@@ -178,6 +181,7 @@ pub(super) fn create_dispatch_setup_bind_groups(
     })
 }
 
+/// Bind groups used while discovering x86 functions and expression roots.
 pub(super) struct FunctionDiscoveryBindGroups {
     pub(super) node_tree_info: wgpu::BindGroup,
     pub(super) func: wgpu::BindGroup,
@@ -191,6 +195,7 @@ pub(super) struct FunctionDiscoveryBindGroups {
     pub(super) expr_resolve_step: Vec<wgpu::BindGroup>,
 }
 
+/// Buffer inputs needed by x86 function-discovery recording passes.
 pub(super) struct FunctionDiscoveryInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) hir_status: &'a wgpu::Buffer,
@@ -227,6 +232,7 @@ pub(super) struct FunctionDiscoveryInputs<'a> {
     pub(super) expr_resolve_link_b: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 function discovery and owner scans.
 pub(super) fn create_function_discovery_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

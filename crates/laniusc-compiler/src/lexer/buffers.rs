@@ -10,41 +10,76 @@ use crate::{
     lexer::tables::dfa::N_STATES,
 };
 
+/// Resident GPU buffers used by one lexer instance.
+///
+/// These buffers are reused across lexing calls when capacity permits. The
+/// driver updates runtime sizes and input metadata before recording passes.
 pub struct GpuBuffers {
+    /// Current byte length, not including word-alignment padding.
     pub n: u32,
+    /// Number of 256-byte DFA blocks for the current input.
     pub nb_dfa: u32,
+    /// Number of 256-byte pair-scan blocks for the current input.
     pub nb_sum: u32,
 
+    /// Uniform parameters shared by lexer shaders.
     pub params: LaniusBuffer<super::LexParams>,
 
+    /// Uploaded source bytes, padded to a word boundary.
     pub in_bytes: LaniusBuffer<u8>,
+    /// Packed DFA transition and emit table, two `u16` entries per `u32`.
     pub next_emit: LaniusBuffer<u32>,
+    /// Packed byte-indexed DFA transition table, four states per `u32`.
     pub next_u8: LaniusBuffer<u32>,
+    /// Map from DFA accepting state to token kind or `INVALID_TOKEN`.
     pub token_map: LaniusBuffer<u32>,
 
+    /// Ping buffer for DFA block-prefix scans.
     pub dfa_02_ping: LaniusBuffer<u32>,
+    /// Pong buffer for DFA block-prefix scans.
     pub dfa_02_pong: LaniusBuffer<u32>,
+    /// Per-block DFA summaries retained for prefix application.
     pub dfa_chunk_summaries: LaniusBuffer<u32>,
+    /// Raw token kinds by byte boundary; also reused by all-boundary compaction.
     pub tok_types: LaniusBuffer<u32>,
+    /// Packed boundary and keep flags emitted by DFA prefix application.
     pub flags_packed: LaniusBuffer<u32>,
+    /// Compact rank for every token boundary, including skipped tokens.
     pub s_all_final: LaniusBuffer<u32>,
+    /// Compact rank for kept token boundaries.
     pub s_keep_final: LaniusBuffer<u32>,
 
+    /// End positions for kept tokens.
     pub end_positions: LaniusBuffer<u32>,
+    /// Token kinds compacted to kept-token order.
     pub types_compact: LaniusBuffer<u32>,
+    /// Index from kept tokens back to the all-boundary stream.
     pub all_index_compact: LaniusBuffer<u32>,
+    /// Number of kept tokens produced by the current input.
     pub token_count: LaniusBuffer<u32>,
 
+    /// Final resident token records consumed by parser and readback paths.
     pub tokens_out: LaniusBuffer<super::GpuToken>,
+    /// Number of source files represented in the current input.
     pub source_file_count: LaniusBuffer<u32>,
+    /// Concatenated-input start byte for each source file.
     pub source_file_start: LaniusBuffer<u32>,
+    /// Byte length for each source file.
     pub source_file_len: LaniusBuffer<u32>,
+    /// Per-byte flag marking source-file starts.
     pub source_file_start_flags: LaniusBuffer<u32>,
+    /// Per-byte flag marking source-file ends.
     pub source_file_end_flags: LaniusBuffer<u32>,
+    /// Source-file index for each final token.
     pub token_file_id: LaniusBuffer<u32>,
 }
 
 impl GpuBuffers {
+    /// Allocates lexer buffers for a byte capacity and source-file capacity.
+    ///
+    /// The returned buffers are sized for capacity. The driver sets `n`,
+    /// `nb_dfa`, `nb_sum`, input bytes, source-file metadata, and `LexParams`
+    /// before each pass recording.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,

@@ -1,4 +1,5 @@
 use super::*;
+/// Validates the compact hierarchical link execution index.
 pub(in crate::compiler) fn validate_link_execution_index(
     index: &SourcePackHierarchicalLinkExecutionIndex,
     target: SourcePackArtifactTarget,
@@ -74,6 +75,7 @@ pub(in crate::compiler) fn validate_link_execution_index(
     Ok(())
 }
 
+/// Validates that a link execution index still matches its link plan.
 pub(in crate::compiler) fn validate_link_execution_index_for_plan(
     index: &SourcePackHierarchicalLinkExecutionIndex,
     plan: &SourcePackHierarchicalLinkPlanIndex,
@@ -161,12 +163,16 @@ fn parse_linked_output_key(
     Ok((producer_job_index, first_source_index, source_end))
 }
 
+/// Validation mode for persisted link pages versus store inputs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::compiler) enum LinkExecutionPageValidationMode {
+    /// Validate the compact page that is already persisted.
     Persisted,
+    /// Validate caller-provided data before sidecar pages are split out.
     StoreInput,
 }
 
+/// Validates a persisted hierarchical link execution page.
 pub(in crate::compiler) fn validate_link_execution_page(
     page: &SourcePackHierarchicalLinkExecutionPage,
     target: SourcePackArtifactTarget,
@@ -180,6 +186,7 @@ pub(in crate::compiler) fn validate_link_execution_page(
     )
 }
 
+/// Validates a link execution page before store-time sidecar expansion.
 pub(in crate::compiler) fn validate_link_execution_page_store_input(
     page: &SourcePackHierarchicalLinkExecutionPage,
     target: SourcePackArtifactTarget,
@@ -193,6 +200,7 @@ pub(in crate::compiler) fn validate_link_execution_page_store_input(
     )
 }
 
+/// Validates a hierarchical link execution page with the requested mode.
 pub(in crate::compiler) fn validate_link_execution_page_with_mode(
     page: &SourcePackHierarchicalLinkExecutionPage,
     target: SourcePackArtifactTarget,
@@ -1843,6 +1851,7 @@ fn validate_link_descriptor_contract(
     })
 }
 
+/// Validates artifact refs used by a hierarchical link execution page.
 pub(in crate::compiler) fn validate_link_execution_artifact_refs(
     artifacts: &[SourcePackArtifactRef],
     expected_kind: SourcePackArtifactKind,
@@ -1998,6 +2007,7 @@ fn parse_canonical_artifact_key_usize(
     })
 }
 
+/// Validates one hierarchical link interface-input sidecar page.
 pub(in crate::compiler) fn validate_link_execution_interface_page(
     page: &SourcePackHierarchicalLinkExecutionInterfacePage,
     target: SourcePackArtifactTarget,
@@ -2084,6 +2094,7 @@ pub(in crate::compiler) fn validate_link_execution_interface_page(
     Ok(())
 }
 
+/// Validates one hierarchical link object-input sidecar page.
 pub(in crate::compiler) fn validate_link_execution_object_page(
     page: &SourcePackHierarchicalLinkExecutionObjectPage,
     target: SourcePackArtifactTarget,
@@ -2170,6 +2181,7 @@ pub(in crate::compiler) fn validate_link_execution_object_page(
     Ok(())
 }
 
+/// Validates one hierarchical link partial-input sidecar page.
 pub(in crate::compiler) fn validate_link_execution_partial_page(
     page: &SourcePackHierarchicalLinkExecutionPartialPage,
     target: SourcePackArtifactTarget,

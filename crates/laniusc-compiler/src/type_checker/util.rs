@@ -1,5 +1,6 @@
 use super::*;
 
+/// Encodes the accepted sentinel used to initialize the type-check status word.
 pub(super) fn status_init_bytes() -> Vec<u8> {
     [1u32, u32::MAX, 0, 0]
         .into_iter()
@@ -7,6 +8,7 @@ pub(super) fn status_init_bytes() -> Vec<u8> {
         .collect()
 }
 
+/// Encodes a `TypeCheckParams` uniform packet with the same layout shaders read.
 pub(super) fn type_check_params_bytes(params: &TypeCheckParams) -> Vec<u8> {
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(params)
@@ -14,6 +16,7 @@ pub(super) fn type_check_params_bytes(params: &TypeCheckParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+/// Allocates a valid zero-value type-check params uniform before real inputs arrive.
 pub(super) fn zeroed_type_check_params_buffer(
     device: &wgpu::Device,
     label: &str,
@@ -34,10 +37,12 @@ pub(super) fn zeroed_type_check_params_buffer(
     LaniusBuffer::new((raw, byte_len as u64), 1)
 }
 
+/// Decodes the four-word type-check status readback buffer.
 pub(super) fn read_status_words(bytes: &[u8]) -> Result<[u32; 4]> {
     crate::gpu::readback::read_u32_words(bytes, "type checker status")
 }
 
+/// Hashes buffer identities that affect resident bind-group reuse.
 pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for buffer in buffers {
@@ -46,6 +51,7 @@ pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
     hasher.finish()
 }
 
+/// Allocates a writable typed `u32` storage buffer with at least one element.
 pub(super) fn typed_storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -62,10 +68,12 @@ pub(super) fn typed_storage_u32_rw(
     LaniusBuffer::new((raw, byte_size), count)
 }
 
+/// Wraps an existing `wgpu::Buffer` as typed `u32` storage without allocating.
 pub(super) fn typed_alias_storage_u32(source: &wgpu::Buffer, count: usize) -> LaniusBuffer<u32> {
     LaniusBuffer::new((source.clone(), source.size()), count)
 }
 
+/// Reuses a candidate `u32` storage buffer only when it is large enough.
 pub(super) fn typed_reuse_storage_u32(
     device: &wgpu::Device,
     label: &str,
@@ -80,6 +88,7 @@ pub(super) fn typed_reuse_storage_u32(
     }
 }
 
+/// Uses a candidate `u32` storage buffer when supplied, otherwise allocates one.
 pub(super) fn typed_alias_or_storage_u32(
     device: &wgpu::Device,
     label: &str,
@@ -93,6 +102,7 @@ pub(super) fn typed_alias_or_storage_u32(
     }
 }
 
+/// Allocates a writable typed `u32` storage buffer initialized to one repeated value.
 pub(super) fn typed_storage_u32_fill_rw(
     device: &wgpu::Device,
     label: &str,
@@ -113,6 +123,7 @@ pub(super) fn typed_storage_u32_fill_rw(
     LaniusBuffer::new((raw, bytes.len() as u64), count)
 }
 
+/// Allocates a writable typed `i32` storage buffer with at least one element.
 pub(super) fn typed_storage_i32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -129,6 +140,7 @@ pub(super) fn typed_storage_i32_rw(
     LaniusBuffer::new((raw, byte_size), count)
 }
 
+/// Allocates a host-readable `u32` readback buffer sized for `count` words.
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),

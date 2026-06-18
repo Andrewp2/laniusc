@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Converts type-checker buffer wrappers into WGPU binding resources.
 pub(in crate::type_checker) trait ResourceBinding<'a> {
     fn binding(self) -> wgpu::BindingResource<'a>;
 }
@@ -22,17 +23,20 @@ impl<'a, T> ResourceBinding<'a> for &'a LaniusBuffer<T> {
     }
 }
 
+/// Name-keyed binding resource map used by reflection-based bind-group builders.
 pub(in crate::type_checker) struct ResourceMap<'a> {
     resources: HashMap<String, wgpu::BindingResource<'a>>,
 }
 
 impl<'a> ResourceMap<'a> {
+    /// Creates an empty resource map for one bind-group construction phase.
     pub(in crate::type_checker) fn new() -> Self {
         Self {
             resources: HashMap::new(),
         }
     }
 
+    /// Inserts a prebuilt binding resource under the shader resource name.
     pub(in crate::type_checker) fn add(
         &mut self,
         name: &'static str,
@@ -41,6 +45,7 @@ impl<'a> ResourceMap<'a> {
         self.resources.insert(name.to_owned(), resource);
     }
 
+    /// Inserts a buffer-like value under the shader resource name.
     pub(in crate::type_checker) fn buffer<B>(&mut self, name: &'static str, buffer: B)
     where
         B: ResourceBinding<'a>,
@@ -57,6 +62,7 @@ impl<'a> std::ops::Deref for ResourceMap<'a> {
     }
 }
 
+/// Builds a reflected bind group from the first layout in a loaded pass.
 pub(in crate::type_checker) fn reflected_bind_group_from_resources(
     device: &wgpu::Device,
     label: &'static str,

@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// Marks source-file start and end offsets in a concatenated source pack.
 pub struct SourceFileBoundariesPass {
     data: PassData,
 }

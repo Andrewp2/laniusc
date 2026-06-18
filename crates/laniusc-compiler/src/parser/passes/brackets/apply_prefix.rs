@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for applying bracket block prefixes.
 pub struct Params {
     pub n_sc: u32,
     pub wg_size: u32,
 }
 
+/// Pass that applies bracket depth prefixes and assigns bracket layers.
 pub struct BracketsApplyPrefixPass {
     data: PassData,
 }

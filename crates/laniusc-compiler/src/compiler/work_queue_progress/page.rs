@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Returns whether a progress page owns a work item index.
 pub(in crate::compiler) fn progress_page_contains_item(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -10,6 +11,7 @@ pub(in crate::compiler) fn progress_page_contains_item(
     item_index >= page.first_item_index && item_index < item_end
 }
 
+/// Returns whether a work item is recorded as completed in this page.
 pub(in crate::compiler) fn progress_page_item_is_completed(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -17,6 +19,7 @@ pub(in crate::compiler) fn progress_page_item_is_completed(
     page.completed_item_indices.contains(&item_index)
 }
 
+/// Returns whether a work item is recorded as ready in this page.
 pub(in crate::compiler) fn progress_page_item_is_ready(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -24,6 +27,7 @@ pub(in crate::compiler) fn progress_page_item_is_ready(
     page.ready_item_indices.contains(&item_index)
 }
 
+/// Returns whether a work item produces or owns an artifact record.
 pub(in crate::compiler) fn progress_page_item_is_artifact_backed(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -31,6 +35,7 @@ pub(in crate::compiler) fn progress_page_item_is_artifact_backed(
     page.artifact_item_indices.contains(&item_index)
 }
 
+/// Finds the remaining-dependency counter row for a work item.
 pub(in crate::compiler) fn progress_page_remaining_dependency_count_position(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -40,6 +45,7 @@ pub(in crate::compiler) fn progress_page_remaining_dependency_count_position(
         .position(|remaining| remaining.item_index == item_index)
 }
 
+/// Finds the remaining-dependent counter row for a work item.
 pub(in crate::compiler) fn progress_page_remaining_dependent_count_position(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -49,6 +55,7 @@ pub(in crate::compiler) fn progress_page_remaining_dependent_count_position(
         .position(|remaining| remaining.item_index == item_index)
 }
 
+/// Removes a remaining-dependency counter row for a work item.
 pub(in crate::compiler) fn progress_page_remove_remaining_dependency_count(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -59,6 +66,7 @@ pub(in crate::compiler) fn progress_page_remove_remaining_dependency_count(
     before != page.remaining_dependency_counts.len()
 }
 
+/// Returns whether a completed work item still has dependent work to notify.
 pub(in crate::compiler) fn progress_page_item_has_remaining_dependents(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -66,6 +74,7 @@ pub(in crate::compiler) fn progress_page_item_has_remaining_dependents(
     progress_page_remaining_dependent_count_position(page, item_index).is_some()
 }
 
+/// Returns whether a work item has a non-expired claim.
 pub(in crate::compiler) fn progress_page_item_is_claimed(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -76,6 +85,7 @@ pub(in crate::compiler) fn progress_page_item_is_claimed(
         .any(|claim| claim.item_index == item_index && !claim.is_expired(now_unix_nanos))
 }
 
+/// Drops expired, completed, and duplicate claims from a progress page.
 pub(in crate::compiler) fn progress_page_prune_inactive_claims(
     page: &mut SourcePackWorkQueueProgressPage,
     now_unix_nanos: Option<u128>,
@@ -97,6 +107,7 @@ pub(in crate::compiler) fn progress_page_prune_inactive_claims(
     before != page.claimed_items
 }
 
+/// Records or refreshes a worker claim for a ready work item.
 pub(in crate::compiler) fn progress_page_record_item_claim(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -158,6 +169,7 @@ pub(in crate::compiler) fn progress_page_record_item_claim(
     Ok(())
 }
 
+/// Requires a work item to be actively claimed by the supplied worker.
 pub(in crate::compiler) fn progress_page_require_item_claimed_by(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -182,6 +194,7 @@ pub(in crate::compiler) fn progress_page_require_item_claimed_by(
     Ok(())
 }
 
+/// Returns the active claim lease expiry for a worker-owned work item.
 pub(in crate::compiler) fn progress_page_item_claim_lease_expires_by(
     page: &SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -206,6 +219,7 @@ pub(in crate::compiler) fn progress_page_item_claim_lease_expires_by(
     Ok(claim.lease_expires_unix_nanos)
 }
 
+/// Marks a work item ready and updates artifact-ready indexes as needed.
 pub(in crate::compiler) fn progress_page_record_item_ready(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -242,6 +256,7 @@ pub(in crate::compiler) fn progress_page_record_item_ready(
     Ok(true)
 }
 
+/// Records completion of one dependency edge for a blocked work item.
 pub(in crate::compiler) fn progress_page_record_dependency_completed(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -272,6 +287,7 @@ pub(in crate::compiler) fn progress_page_record_dependency_completed(
     progress_page_record_item_ready(page, item_index).map(|became_ready| (true, became_ready))
 }
 
+/// Records one completed dependency edge for every item in an intersecting range.
 pub(in crate::compiler) fn progress_page_record_dependency_range_completed(
     page: &mut SourcePackWorkQueueProgressPage,
     first_item_index: usize,
@@ -352,6 +368,7 @@ pub(in crate::compiler) fn progress_page_record_dependency_range_completed(
     Ok((page_changed, newly_ready_item_count))
 }
 
+/// Records that one dependent of a completed work item has been notified.
 pub(in crate::compiler) fn progress_page_record_dependent_completed(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -377,6 +394,7 @@ pub(in crate::compiler) fn progress_page_record_dependent_completed(
     Ok(true)
 }
 
+/// Records dependent completion for every item in an intersecting range.
 pub(in crate::compiler) fn progress_page_record_dependent_range_completed(
     page: &mut SourcePackWorkQueueProgressPage,
     first_item_index: usize,
@@ -443,6 +461,7 @@ pub(in crate::compiler) fn progress_page_record_dependent_range_completed(
     Ok((page_changed, no_remaining_dependent_item_indices))
 }
 
+/// Removes a work item from normal and artifact-ready queues.
 pub(in crate::compiler) fn progress_page_remove_ready_item(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -457,6 +476,7 @@ pub(in crate::compiler) fn progress_page_remove_ready_item(
     ready_changed || before_artifact != page.ready_artifact_item_indices.len()
 }
 
+/// Marks a claimed work item complete and removes it from claim/ready state.
 pub(in crate::compiler) fn progress_page_record_item_completed(
     page: &mut SourcePackWorkQueueProgressPage,
     item_index: usize,
@@ -488,6 +508,7 @@ pub(in crate::compiler) fn progress_page_record_item_completed(
     Ok(true)
 }
 
+/// Returns the progress-page index that owns a work item.
 pub(in crate::compiler) fn progress_page_index_for_item(
     index: &SourcePackWorkQueueProgressIndex,
     item_index: usize,

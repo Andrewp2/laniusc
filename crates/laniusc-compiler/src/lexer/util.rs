@@ -6,6 +6,7 @@ use crate::{
 };
 
 /// Read a little-endian u32 from the first 4 bytes.
+/// Decodes the first four bytes of a mapped readback range as little-endian `u32`.
 pub fn u32_from_first_4(bytes: &[u8]) -> u32 {
     let mut le = [0u8; 4];
     le.copy_from_slice(&bytes[..4]);
@@ -13,16 +14,19 @@ pub fn u32_from_first_4(bytes: &[u8]) -> u32 {
 }
 
 /// Treat any value other than "0"/"false" (case-insensitive) as true.
+/// Reads a truthy environment flag with a default value.
 pub fn env_flag_true(var: &str, default: bool) -> bool {
     gpu::env::env_bool_truthy(var, default)
 }
 
 /// Gate for host readback of token payloads (can be turned off in perf runs).
+/// Returns whether lexer token readback should run for `GpuLexer::lex`.
 pub fn readback_enabled() -> bool {
     env_flag_true("LANIUS_READBACK", true) && env_flag_true("PERF_ONE_READBACK", true)
 }
 
 /// Convert a mapped `[GpuToken]` byte slice into a `Vec<Token>`.
+/// Decodes mapped `GpuToken` bytes into host `Token` records.
 pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Result<Vec<Token>, String> {
     use std::mem::size_of;
 
@@ -52,6 +56,7 @@ pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Result<Vec<Token>,
     Ok(out)
 }
 
+/// Returns the number of power-of-two prefix-scan rounds for `val` elements.
 pub fn compute_rounds(val: u32) -> u32 {
     let mut r = 0u32;
     let mut s = 1u32;

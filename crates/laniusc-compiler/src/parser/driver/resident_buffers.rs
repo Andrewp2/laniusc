@@ -2,6 +2,7 @@ use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
 use crate::parser::{buffers::ParserBuffers, tables::PrecomputedParseTables};
 
 impl GpuParser {
+    /// Returns cached resident parser buffers sized for the current token/table pair.
     pub(in crate::parser::driver) fn resident_buffers_for<'a>(
         &self,
         slot: &'a mut Option<ResidentParserBufferCache>,
@@ -17,6 +18,7 @@ impl GpuParser {
         )
     }
 
+    /// Returns resident parser buffers that retain extra HIR debug readback storage.
     pub(in crate::parser::driver) fn resident_debug_buffers_for<'a>(
         &self,
         slot: &'a mut Option<ResidentParserBufferCache>,
@@ -32,6 +34,7 @@ impl GpuParser {
         )
     }
 
+    /// Returns resident parser buffers with an explicit recovered-tree capacity.
     pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity<'a>(
         &self,
         slot: &'a mut Option<ResidentParserBufferCache>,

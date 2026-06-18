@@ -12,6 +12,11 @@ use crate::cli::common::{
     validate_diagnostic_format,
 };
 
+/// Parses top-level CLI arguments into a command or validated compile request.
+///
+/// Leading diagnostic-format selectors are consumed before forwarded
+/// subcommands so invocation errors across the CLI share the same format
+/// selection behavior.
 pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, CliError> {
     let mut args = args.into_iter().peekable();
     consume_leading_diagnostic_format_args(&mut args)?;

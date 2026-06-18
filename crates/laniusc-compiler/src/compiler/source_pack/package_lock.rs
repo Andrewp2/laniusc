@@ -54,7 +54,9 @@ use crate::compiler::{
     load_entry_with_source_roots,
 };
 
+/// Version for package lockfile JSON documents.
 pub const PACKAGE_LOCKFILE_VERSION: u32 = 1;
+/// Language edition recorded by package lockfiles.
 pub const PACKAGE_LOCKFILE_LANGUAGE_EDITION: &str = "unstable-alpha";
 const PACKAGE_LOCKFILE_COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
 const PACKAGE_LOCKFILE_DIGEST_ALGORITHM: &str = "lanius-fnv1a64-v1";
@@ -67,13 +69,21 @@ const PACKAGE_LOCKFILE_USER_LIBRARY_ID: u32 = 1;
 /// module/import records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackageLockfile {
+    /// Lockfile document version.
     pub version: u32,
+    /// Package name copied from the resolved manifest.
     pub package: String,
+    /// Language edition used for replay validation.
     pub language_edition: String,
+    /// Compiler crate version used to generate the lockfile.
     pub compiler_version: String,
+    /// Canonical absolute user source roots.
     pub roots: Vec<PathBuf>,
+    /// Canonical absolute standard-library source root, when configured.
     pub stdlib_root: Option<PathBuf>,
+    /// Canonical absolute package entry source path.
     pub entry: PathBuf,
+    /// Produced package artifacts recorded in the lockfile.
     pub artifacts: Vec<PackageLockfileArtifact>,
     replay_integrity: Option<PackageLockfileReplayIntegrity>,
 }
@@ -163,6 +173,7 @@ struct PackageLockfileDocument {
 }
 
 impl PackageLockfile {
+    /// Creates a lockfile from a resolved package manifest.
     pub fn from_resolved_manifest(
         manifest: &ResolvedPackageManifest,
     ) -> Result<Self, CompileError> {
@@ -181,10 +192,12 @@ impl PackageLockfile {
         Ok(lockfile)
     }
 
+    /// Parses and validates a lockfile from JSON text.
     pub fn parse_json(source: &str) -> Result<Self, CompileError> {
         Self::parse_document(source)?.to_validated_lockfile()
     }
 
+    /// Loads and validates a lockfile JSON file.
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<Self, CompileError> {
         let path = path.as_ref();
         let source = fs::read_to_string(path).map_err(|err| {
@@ -205,6 +218,7 @@ impl PackageLockfile {
             .map_err(|err| CompileError::GpuFrontend(format!("parse package lockfile JSON: {err}")))
     }
 
+    /// Serializes the lockfile as pretty JSON after replay validation.
     pub fn to_json_pretty(&self) -> Result<String, CompileError> {
         let document = self.to_document_for_serialization()?;
         serde_json::to_string_pretty(&document).map_err(|err| {
@@ -212,6 +226,7 @@ impl PackageLockfile {
         })
     }
 
+    /// Writes the lockfile JSON to a control-plane path.
     pub fn write_json_file(&self, path: impl AsRef<Path>) -> Result<(), CompileError> {
         let path = path.as_ref();
         self.validate_control_plane_path_is_outside_source_roots("lockfile output path", path)?;
@@ -382,6 +397,7 @@ fn apply_missing_output_tail(mut base: PathBuf, tail: &Path) -> Option<PathBuf> 
 }
 
 impl PackageLockfile {
+    /// Validates lockfile shape, replay metadata, and recorded artifacts.
     pub fn validate(&self) -> Result<(), CompileError> {
         self.validate_shape_and_existing_source_state()?;
         self.validate_replay_integrity()?;
@@ -1573,6 +1589,7 @@ impl PackageLockfile {
         }
     }
 
+    /// Converts lockfile roots into entry source-root loading inputs.
     pub fn to_entry_source_roots(&self) -> EntrySourceRoots {
         EntrySourceRoots {
             stdlib_root: self.stdlib_root.clone(),
@@ -1580,6 +1597,7 @@ impl PackageLockfile {
         }
     }
 
+    /// Loads an in-memory source pack after lockfile replay validation.
     pub fn load_source_pack(&self) -> Result<ExplicitSourcePack, CompileError> {
         self.validate_shape_and_existing_source_state()?;
         self.validate_replay_integrity()?;
@@ -1589,6 +1607,7 @@ impl PackageLockfile {
         load_entry_with_source_roots(&self.entry, &self.to_entry_source_roots())
     }
 
+    /// Loads a path-backed source-pack manifest after lockfile replay validation.
     pub fn load_path_manifest(&self) -> Result<ExplicitSourcePackPathManifest, CompileError> {
         self.validate_shape_and_existing_source_state()?;
         self.validate_replay_integrity()?;

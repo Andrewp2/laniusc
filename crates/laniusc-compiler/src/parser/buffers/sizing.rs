@@ -1,5 +1,6 @@
 use crate::parser::tables::PrecomputedParseTables;
 
+/// Projects resident tree capacity from token count and parse-table emit width.
 pub(crate) fn resident_projected_tree_capacity_for_tables(
     n_tokens: u32,
     tables: &PrecomputedParseTables,
@@ -10,6 +11,7 @@ pub(crate) fn resident_projected_tree_capacity_for_tables(
     resident_projected_tree_capacity(total_emit)
 }
 
+/// Normalizes resident tree capacity to at least one row.
 pub(super) fn resident_projected_tree_capacity(total_emit: u32) -> u32 {
     total_emit.max(1)
 }

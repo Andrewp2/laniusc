@@ -28,6 +28,11 @@ use crate::{
     },
 };
 
+/// GPU lexer instance with loaded DFA tables, shader passes, and resident buffers.
+///
+/// One instance can be reused across lexing calls. Resident buffers are resized
+/// only when the input capacity, block count, or source-pack file capacity
+/// changes.
 pub struct GpuLexer {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -46,11 +51,17 @@ pub struct GpuLexer {
     bg_cache: std::sync::Mutex<crate::gpu::passes_core::BindGroupCache>,
 }
 
+/// Cloned buffer handles needed by parser after the lexer guard is released.
 pub struct ResidentLexerParserInputs {
+    /// Current source byte length.
     pub source_len: u32,
+    /// Resident source byte buffer.
     pub in_bytes: LaniusBuffer<u8>,
+    /// Resident token record buffer.
     pub tokens_out: LaniusBuffer<GpuToken>,
+    /// Resident token-count buffer.
     pub token_count: LaniusBuffer<u32>,
+    /// Resident source-file id for each token.
     pub token_file_id: LaniusBuffer<u32>,
 }
 
@@ -67,10 +78,12 @@ impl ResidentLexerParserInputs {
 }
 
 impl GpuLexer {
+    /// Creates a lexer on the process-global GPU device.
     pub async fn new() -> Result<Self> {
         Self::new_with_device(crate::gpu::device::global()).await
     }
 
+    /// Creates a lexer on an existing GPU device and loads compact DFA tables.
     pub async fn new_with_device(ctx: &crate::gpu::device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
@@ -168,6 +181,10 @@ impl GpuLexer {
         })
     }
 
+    /// Lexes one source string and reads kept tokens back to the host.
+    ///
+    /// If lexer readback is disabled by environment, this still records and
+    /// submits the GPU work but returns an empty vector.
     pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
         #[cfg(feature = "graphics_debugger")]
         unsafe {
@@ -407,6 +424,10 @@ impl GpuLexer {
         Ok(tokens)
     }
 
+    /// Lexes one source string and exposes resident buffers to a continuation.
+    ///
+    /// The continuation runs after lexer work has been submitted and before the
+    /// lexer buffer guard is released.
     pub async fn with_resident_tokens<R>(
         &self,
         input: &str,
@@ -481,11 +502,16 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Lexes a source pack and reads kept tokens back to the host.
     pub async fn lex_source_pack<S: AsRef<str>>(&self, sources: &[S]) -> Result<Vec<Token>> {
         self.with_resident_source_pack_tokens(sources, read_resident_tokens)
             .await?
     }
 
+    /// Lexes a source pack and exposes resident buffers to a continuation.
+    ///
+    /// Source strings are concatenated for GPU work; source-file metadata
+    /// buffers preserve file ownership for each final token.
     pub async fn with_resident_source_pack_tokens<S: AsRef<str>, R>(
         &self,
         sources: &[S],
@@ -560,6 +586,11 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Records source-pack lexing and caller-provided GPU work in one command stream.
+    ///
+    /// This variant does not read back token count before `record_more`; callers
+    /// should use byte-capacity-sized downstream buffers or perform their own
+    /// bounded sizing.
     pub async fn with_recorded_resident_source_pack_tokens<S, T, R, E>(
         &self,
         sources: &[S],
@@ -688,6 +719,10 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Lexes a source pack, reads token count, then records caller GPU work.
+    ///
+    /// The count boundary is a deliberate synchronization point for downstream
+    /// phases that need exact token counts before recording their dispatches.
     pub async fn with_recorded_resident_source_pack_tokens_after_count<S, T, R, E>(
         &self,
         sources: &[S],
@@ -869,6 +904,7 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Records single-source lexing and caller-provided GPU work in one command stream.
     pub async fn with_recorded_resident_tokens<S, R, E>(
         &self,
         input: &str,
@@ -994,6 +1030,7 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Lexes one source, reads token count, then records caller GPU work.
     pub async fn with_recorded_resident_tokens_after_count<S, R, E>(
         &self,
         input: &str,
@@ -1167,6 +1204,10 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Lexes one source, reads token count, releases lexer buffers, then records parser work.
+    ///
+    /// The parser receives cloned handles in `ResidentLexerParserInputs`. This
+    /// reduces resident memory pressure before downstream buffers are allocated.
     pub async fn with_recorded_resident_parser_inputs_after_count_releasing_lexer<S, R, E>(
         &self,
         input: &str,
@@ -1351,6 +1392,10 @@ impl GpuLexer {
         Ok(result)
     }
 
+    /// Lexes one source, reads token count, records work, and releases lexer buffers.
+    ///
+    /// Unlike the parser-input variant, `record_more` still receives `GpuBuffers`
+    /// before the guard is dropped. The buffers must not be used after submit.
     pub async fn with_recorded_resident_tokens_after_count_releasing_lexer<S, R, E>(
         &self,
         input: &str,

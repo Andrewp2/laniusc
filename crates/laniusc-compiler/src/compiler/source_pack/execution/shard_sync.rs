@@ -1,5 +1,9 @@
 use super::*;
 
+/// Executes one job batch from a materialized execution shard.
+///
+/// This sync path requires all dependency interface refs for each job to be
+/// available inline in the shard records.
 pub(in crate::compiler) fn execute_artifact_execution_shard_batch<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,
@@ -47,6 +51,11 @@ where
     })
 }
 
+/// Executes one inline-input job from a materialized execution shard.
+///
+/// Frontend and codegen jobs use inline input refs loaded from the execution
+/// shard. Link jobs delegate to the shard link path and require a link-input
+/// shard index.
 pub(in crate::compiler) fn execute_execution_shard_job<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,
@@ -142,6 +151,10 @@ where
     }
 }
 
+/// Executes one job batch from a materialized execution shard using paged inputs.
+///
+/// This path supports job manifests whose interface inputs are inline, paged, or
+/// represented by compact ranges.
 pub(in crate::compiler) fn execute_execution_shard_batch_paged<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,
@@ -189,6 +202,10 @@ where
     })
 }
 
+/// Executes one paged-input job from a materialized execution shard.
+///
+/// Dependency interfaces are streamed into executor handles in bounded batches,
+/// avoiding the inline-input restriction used by the simpler sync shard path.
 pub(in crate::compiler) fn execute_execution_shard_job_paged<E, S>(
     execution_shard: &SourcePackBuildArtifactExecutionShard,
     link_input_shard_index: Option<&SourcePackBuildLinkInputShardIndex>,

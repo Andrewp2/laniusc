@@ -1,5 +1,6 @@
 use super::*;
 
+/// Collects cloned interface handles for a job's dependencies.
 pub(in crate::compiler) fn collect_interface_handle_clones<T: Clone>(
     library_interfaces: &[Option<T>],
     schedule: &SourcePackJobSchedule,
@@ -8,6 +9,7 @@ pub(in crate::compiler) fn collect_interface_handle_clones<T: Clone>(
     collect_interface_handle_clones_excluding(library_interfaces, schedule, job, None)
 }
 
+/// Collects cloned interface handles while skipping one dependency job.
 pub(in crate::compiler) fn collect_interface_handle_clones_excluding<T: Clone>(
     library_interfaces: &[Option<T>],
     schedule: &SourcePackJobSchedule,
@@ -37,6 +39,7 @@ pub(in crate::compiler) fn collect_interface_handle_clones_excluding<T: Clone>(
     Ok(handles)
 }
 
+/// Collects cloned interface handles consumed by the full link step.
 pub(in crate::compiler) fn collect_link_interface_handle_clones<T: Clone>(
     library_interfaces: &[Option<T>],
     build_plan: &SourcePackBuildPlan,
@@ -66,6 +69,7 @@ pub(in crate::compiler) fn collect_link_interface_handle_clones<T: Clone>(
     Ok(handles)
 }
 
+/// Collects cloned interface handles consumed by one link-interface batch.
 pub(in crate::compiler) fn collect_link_interface_handle_clones_for_batch<T: Clone>(
     library_interfaces: &[Option<T>],
     build_plan: &SourcePackBuildPlan,
@@ -93,6 +97,7 @@ pub(in crate::compiler) fn collect_link_interface_handle_clones_for_batch<T: Clo
     Ok(handles)
 }
 
+/// Collects cloned codegen-object handles consumed by the full link step.
 pub(in crate::compiler) fn collect_link_object_handle_clones<T: Clone>(
     codegen_objects: &[Option<T>],
     build_plan: &SourcePackBuildPlan,
@@ -122,6 +127,7 @@ pub(in crate::compiler) fn collect_link_object_handle_clones<T: Clone>(
     Ok(handles)
 }
 
+/// Collects cloned codegen-object handles consumed by one link-object batch.
 pub(in crate::compiler) fn collect_link_object_handle_clones_for_batch<T: Clone>(
     codegen_objects: &[Option<T>],
     build_plan: &SourcePackBuildPlan,
@@ -149,6 +155,7 @@ pub(in crate::compiler) fn collect_link_object_handle_clones_for_batch<T: Clone>
     Ok(handles)
 }
 
+/// Releases all interface/object handles consumed by a full link step.
 pub(in crate::compiler) fn release_link_input_handles<E>(
     build_plan: &SourcePackBuildPlan,
     library_interfaces: &mut [Option<E::LibraryInterfaceHandle>],
@@ -205,6 +212,7 @@ where
     Ok(())
 }
 
+/// Releases codegen-object handles consumed by one link-object batch.
 pub(in crate::compiler) fn release_codegen_object_handles_for_link_batch<E>(
     build_plan: &SourcePackBuildPlan,
     batch: &SourcePackLinkObjectBatch,
@@ -231,6 +239,7 @@ where
     Ok(())
 }
 
+/// Releases library-interface handles consumed by one link-interface batch.
 pub(in crate::compiler) fn release_library_interface_handles_for_link_batch<E>(
     build_plan: &SourcePackBuildPlan,
     batch: &SourcePackLinkInterfaceBatch,
@@ -257,6 +266,7 @@ where
     Ok(())
 }
 
+/// Collects borrowed interface values for a job's dependencies.
 pub(in crate::compiler) fn collect_interface_refs<'a, T>(
     library_interfaces: &'a [T],
     interface_by_job: &[Option<usize>],
@@ -266,6 +276,7 @@ pub(in crate::compiler) fn collect_interface_refs<'a, T>(
     collect_interface_refs_excluding(library_interfaces, interface_by_job, schedule, job, None)
 }
 
+/// Collects borrowed interface values while skipping one dependency job.
 pub(in crate::compiler) fn collect_interface_refs_excluding<'a, T>(
     library_interfaces: &'a [T],
     interface_by_job: &[Option<usize>],
@@ -295,6 +306,7 @@ pub(in crate::compiler) fn collect_interface_refs_excluding<'a, T>(
     Ok(refs)
 }
 
+/// Visits each unique interface dependency job for a source-pack job.
 pub(in crate::compiler) fn for_each_interface_dependency_job_index<F>(
     schedule: &SourcePackJobSchedule,
     job: &SourcePackJob,
@@ -327,6 +339,7 @@ where
     Ok(())
 }
 
+/// Collects borrowed interface values consumed by the full link step.
 pub(in crate::compiler) fn collect_link_interface_refs<'a, T>(
     library_interfaces: &'a [T],
     interface_by_job: &[Option<usize>],
@@ -356,6 +369,7 @@ pub(in crate::compiler) fn collect_link_interface_refs<'a, T>(
     Ok(refs)
 }
 
+/// Collects borrowed codegen-object values consumed by the full link step.
 pub(in crate::compiler) fn collect_link_object_refs<'a, T>(
     codegen_objects: &'a [T],
     object_by_job: &[Option<usize>],

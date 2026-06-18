@@ -10,10 +10,12 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for one packed-total reduction step.
 pub struct Params {
     pub item_count: u32,
 }
 
+/// Pass that reduces packed stream totals across scan blocks.
 pub struct PackTotalsReducePass {
     data: PassData,
 }
@@ -25,6 +27,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackTotalsReducePass {
+    /// Records all configured packed-total reduction steps.
     pub fn record_reduce(
         &self,
         device: &wgpu::Device,

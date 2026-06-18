@@ -1,5 +1,7 @@
 use super::*;
 
+/// Read stdlib and user source files into an in-memory two-library source-pack
+/// manifest.
 pub fn load_explicit_source_pack_manifest_from_paths<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -42,6 +44,8 @@ where
     ExplicitSourcePack::from_libraries(libraries)?.with_source_paths(source_paths)
 }
 
+/// Discover sources for an entry file plus a standard-library root and load
+/// them into an in-memory source pack.
 pub fn load_entry_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -57,6 +61,8 @@ where
     load_entry_with_source_roots(entry_path, &roots)
 }
 
+/// Discover sources for an entry file plus one user source root and load them
+/// into an in-memory source pack.
 pub fn load_entry_with_source_root<EP, RP>(
     entry_path: EP,
     source_root: RP,
@@ -72,6 +78,8 @@ where
     load_entry_with_source_roots(entry_path, &roots)
 }
 
+/// Discover sources for an entry file plus explicit roots and load them into an
+/// in-memory source pack.
 pub fn load_entry_with_source_roots<EP>(
     entry_path: EP,
     roots: &EntrySourceRoots,
@@ -83,6 +91,8 @@ where
     load_explicit_source_pack_manifest_from_paths(&stdlib_paths, &user_paths)
 }
 
+/// Discover sources for an entry file, one user source root, and a
+/// standard-library root, then load them into an in-memory source pack.
 pub fn load_entry_with_source_root_and_stdlib<EP, UP, SP>(
     entry_path: EP,
     source_root: UP,
@@ -100,6 +110,8 @@ where
     load_entry_with_source_roots(entry_path, &roots)
 }
 
+/// Discover sources for an entry file, one user source root, and an optional
+/// standard-library root, then load them into an in-memory source pack.
 pub fn load_entry_with_source_root_and_optional_stdlib<EP, UP, SP>(
     entry_path: EP,
     source_root: UP,
@@ -118,6 +130,8 @@ where
     load_explicit_source_pack_manifest_from_paths(&stdlib_paths, &user_paths)
 }
 
+/// Build a path-only two-library source-pack manifest from stdlib and user
+/// source paths.
 pub fn load_explicit_source_pack_path_manifest_from_paths<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -155,6 +169,8 @@ where
     ExplicitSourcePackPathManifest::from_libraries(libraries)
 }
 
+/// Discover paths for an entry file plus a standard-library root and build a
+/// path-only source-pack manifest.
 pub fn load_entry_path_manifest_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -170,6 +186,8 @@ where
     load_entry_path_manifest_with_source_roots(entry_path, &roots)
 }
 
+/// Discover paths for an entry file plus one user source root and build a
+/// path-only source-pack manifest.
 pub fn load_entry_path_manifest_with_source_root<EP, RP>(
     entry_path: EP,
     source_root: RP,
@@ -185,6 +203,8 @@ where
     load_entry_path_manifest_with_source_roots(entry_path, &roots)
 }
 
+/// Discover paths for an entry file plus explicit roots and build a path-only
+/// source-pack manifest.
 pub fn load_entry_path_manifest_with_source_roots<EP>(
     entry_path: EP,
     roots: &EntrySourceRoots,
@@ -196,6 +216,8 @@ where
     load_explicit_source_pack_path_manifest_from_paths(&stdlib_paths, &user_paths)
 }
 
+/// Discover paths for an entry file, one user source root, and a
+/// standard-library root, then build a path-only source-pack manifest.
 pub fn load_entry_path_manifest_with_source_root_and_stdlib<EP, UP, SP>(
     entry_path: EP,
     source_root: UP,
@@ -213,6 +235,8 @@ where
     load_entry_path_manifest_with_source_roots(entry_path, &roots)
 }
 
+/// Discover paths for an entry file, one user source root, and an optional
+/// standard-library root, then build a path-only source-pack manifest.
 pub fn load_entry_path_manifest_with_source_root_and_optional_stdlib<EP, UP, SP>(
     entry_path: EP,
     source_root: UP,
@@ -231,6 +255,8 @@ where
     load_explicit_source_pack_path_manifest_from_paths(&stdlib_paths, &user_paths)
 }
 
+/// Read explicit library path groups into an in-memory source pack while
+/// preserving per-source diagnostic paths.
 pub fn load_explicit_source_libraries_from_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
 ) -> Result<ExplicitSourcePack, CompileError>
@@ -278,9 +304,12 @@ where
 const SOURCE_ROOT_IMPORT_FILE_LIMIT: usize = 1024;
 const SOURCE_ROOT_IMPORT_PATH_SEGMENT_LIMIT: usize = 8;
 
+/// Explicit source roots used when loading an entry file with optional stdlib roots.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EntrySourceRoots {
+    /// Optional standard-library source root.
     pub stdlib_root: Option<PathBuf>,
+    /// User/package source roots searched for imports.
     pub user_roots: Vec<PathBuf>,
 }
 

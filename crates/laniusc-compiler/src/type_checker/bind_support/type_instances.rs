@@ -5,6 +5,7 @@ const GENERIC_PARAM_KEY_MAX_RADIX_STEPS: u32 = 12;
 const STRUCT_FIELD_KEY_FIELD_COUNT: u32 = 3;
 const STRUCT_FIELD_KEY_MAX_RADIX_STEPS: u32 = 12;
 
+/// Returns the byte width needed for each generic-parameter key field.
 pub(in crate::type_checker) fn generic_param_key_radix_bytes(
     param_capacity: u32,
     hir_node_capacity: u32,
@@ -25,6 +26,7 @@ pub(in crate::type_checker) fn generic_param_key_radix_bytes(
     }
 }
 
+/// Returns the even radix step count for sorting generic-parameter keys.
 pub(in crate::type_checker) fn generic_param_key_radix_steps(
     param_capacity: u32,
     hir_node_capacity: u32,
@@ -35,6 +37,7 @@ pub(in crate::type_checker) fn generic_param_key_radix_steps(
     even_steps.min(GENERIC_PARAM_KEY_MAX_RADIX_STEPS)
 }
 
+/// Returns the byte width needed for each struct-field key field.
 pub(in crate::type_checker) fn struct_field_key_radix_bytes(
     hir_node_capacity: u32,
     token_capacity: u32,
@@ -54,6 +57,7 @@ pub(in crate::type_checker) fn struct_field_key_radix_bytes(
     }
 }
 
+/// Returns the even radix step count for sorting struct-field keys.
 pub(in crate::type_checker) fn struct_field_key_radix_steps(
     hir_node_capacity: u32,
     token_capacity: u32,
@@ -64,6 +68,7 @@ pub(in crate::type_checker) fn struct_field_key_radix_steps(
     even_steps.min(STRUCT_FIELD_KEY_MAX_RADIX_STEPS)
 }
 
+/// Returns the propagation passes needed to attach generic params to owners.
 pub(in crate::type_checker) fn generic_decl_owner_step_count(hir_node_capacity: u32) -> u32 {
     let mut covered_depth = 1u32;
     let mut steps = 0u32;
@@ -79,6 +84,7 @@ pub(in crate::type_checker) fn generic_decl_owner_step_count(hir_node_capacity: 
     }
 }
 
+/// Builds bind groups for collecting, sorting, and projecting type instances.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_type_instance_bind_groups(
     device: &wgpu::Device,

@@ -1,5 +1,6 @@
 use super::{super::*, common::reflected_bind_group_from_resources};
 
+/// Builds method declaration and method-call resolution bind groups.
 pub(in crate::type_checker) fn create_method_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,

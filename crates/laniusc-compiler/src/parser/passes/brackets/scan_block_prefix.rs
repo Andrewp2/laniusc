@@ -10,11 +10,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for one bracket block-prefix scan step.
 pub struct Params {
     pub n_blocks: u32,
     pub scan_step: u32,
 }
 
+/// Parser pass that scans bracket block sums and minimum prefixes.
 pub struct BracketsScanBlockPrefixPass {
     data: PassData,
 }
@@ -26,6 +28,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl BracketsScanBlockPrefixPass {
+    /// Records all bracket block-prefix scan steps for the resident parse.
     pub fn record_scan(
         &self,
         device: &wgpu::Device,

@@ -23,6 +23,10 @@ use crate::cli::{
     source_pack,
 };
 
+/// Mutable builder used while parsing compile/check flags.
+///
+/// The builder accepts options in CLI order and performs cross-option
+/// validation only in `finish`, once all positional files and flags are known.
 pub(super) struct CompileRequestBuilder {
     pub(super) inputs: Vec<PathBuf>,
     pub(super) stdlib_paths: Vec<PathBuf>,
@@ -58,6 +62,7 @@ impl Default for CompileRequestBuilder {
 }
 
 impl CompileRequestBuilder {
+    /// Validates cross-option constraints and returns the immutable request.
     pub(super) fn finish(self) -> Result<CompileRequest, CliError> {
         let Self {
             inputs,

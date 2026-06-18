@@ -1,5 +1,6 @@
 use super::*;
 
+/// Store generic-target filesystem metadata for stdlib and user source paths.
 pub fn prepare_pack_paths_metadata<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
@@ -17,6 +18,7 @@ where
     )
 }
 
+/// Store generic-target filesystem metadata from stdlib and user path streams.
 pub fn prepare_pack_path_stream_metadata<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -39,6 +41,7 @@ where
     )
 }
 
+/// Store target-specific filesystem metadata from stdlib and user path streams.
 pub fn prepare_pack_path_stream_metadata_for_target<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,
@@ -78,6 +81,7 @@ where
     prepare_dependency_stream_metadata_for_target(libraries, artifact_root, target)
 }
 
+/// Store target-specific filesystem metadata for stdlib and user source paths.
 pub fn prepare_pack_paths_metadata_for_target<'a, SP, UP>(
     stdlib_paths: &'a [SP],
     user_paths: &'a [UP],
@@ -98,6 +102,7 @@ where
     )
 }
 
+/// Store generic-target filesystem metadata from ordered library path groups.
 pub fn prepare_ordered_library_path_metadata<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -113,6 +118,7 @@ where
     )
 }
 
+/// Store target-specific filesystem metadata from ordered library path groups.
 pub fn prepare_ordered_library_path_metadata_for_target<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -127,6 +133,7 @@ where
     prepare_metadata(dependency_streams, &store, target)
 }
 
+/// Store generic-target filesystem metadata from explicit dependency streams.
 pub fn prepare_dependency_stream_metadata<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -144,6 +151,7 @@ where
     )
 }
 
+/// Store target-specific filesystem metadata from explicit dependency streams.
 pub fn prepare_dependency_stream_metadata_for_target<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -159,6 +167,7 @@ where
     prepare_metadata(libraries, &store, target)
 }
 
+/// Store a bounded target-specific chunk of filesystem metadata.
 pub fn prepare_metadata_chunk_for_target<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -182,6 +191,8 @@ where
     prepare_metadata_chunk(libraries, &store, target, Some(max_new_libraries))
 }
 
+/// Resume a bounded target-specific filesystem metadata chunk after prior input
+/// progress.
 pub fn resume_metadata_chunk_for_target<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -212,6 +223,7 @@ where
     )
 }
 
+/// Store generic-target filesystem metadata from explicit library path groups.
 pub fn prepare_library_path_metadata<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,
@@ -226,6 +238,7 @@ where
     )
 }
 
+/// Store target-specific filesystem metadata from explicit library path groups.
 pub fn prepare_library_path_metadata_for_target<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,

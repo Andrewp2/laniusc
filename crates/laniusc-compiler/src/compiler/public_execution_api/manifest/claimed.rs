@@ -1,5 +1,7 @@
 use super::*;
 
+/// Execute an already claimed artifact-manifest batch with a paged in-memory
+/// artifact executor.
 pub fn execute_claimed_artifact_manifest_batch<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -25,6 +27,7 @@ where
     )
 }
 
+/// Execute an already claimed shard batch with an in-memory artifact executor.
 pub fn execute_claimed_shard_batch<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -126,6 +129,8 @@ where
     })
 }
 
+/// Execute an already claimed shard batch with a paged in-memory artifact
+/// executor.
 pub fn execute_claimed_shard_batch_paged<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -153,6 +158,7 @@ where
     )
 }
 
+/// Execute an already claimed shard batch with a paged path artifact executor.
 pub fn execute_claimed_path_shard_batch_paged<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -180,6 +186,8 @@ where
     )
 }
 
+/// Execute an already claimed shard batch with an async paged in-memory
+/// artifact executor.
 pub async fn execute_claimed_shard_batch_paged_async<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -208,6 +216,8 @@ where
     .await
 }
 
+/// Execute an already claimed shard batch with an async paged path artifact
+/// executor.
 pub async fn execute_claimed_path_shard_batch_paged_async<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -236,6 +246,7 @@ where
     .await
 }
 
+/// Executes a claimed shard batch using an async executor and explicit artifact store.
 pub(in crate::compiler) async fn execute_claimed_shard_batch_paged_with_store_async<E, S>(
     batch_index: usize,
     target: SourcePackArtifactTarget,
@@ -347,6 +358,7 @@ where
     })
 }
 
+/// Executes a claimed shard batch using a sync executor and explicit artifact store.
 pub(in crate::compiler) fn execute_claimed_shard_batch_paged_with_store<E, S>(
     batch_index: usize,
     target: SourcePackArtifactTarget,

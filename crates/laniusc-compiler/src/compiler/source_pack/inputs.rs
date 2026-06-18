@@ -1,5 +1,9 @@
 use super::*;
 
+/// In-memory library input used to build an [`ExplicitSourcePack`].
+///
+/// Dependencies are expressed by library id and are validated before the pack is
+/// accepted. Source order within a library is preserved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExplicitSourceLibrary {
     pub library_id: u32,
@@ -7,6 +11,11 @@ pub struct ExplicitSourceLibrary {
     pub dependency_library_ids: Vec<u32>,
 }
 
+/// Path-backed library input used when all source paths are already materialized.
+///
+/// This shape is convenient for API callers that can provide a `Vec` of paths
+/// for each library. Streaming variants below avoid requiring all paths or
+/// dependency ids to be collected into vectors first.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExplicitSourceLibraryPaths<P> {
     pub library_id: u32,
@@ -14,6 +23,10 @@ pub struct ExplicitSourceLibraryPaths<P> {
     pub dependency_library_ids: Vec<u32>,
 }
 
+/// Streaming path-backed library input with vector-backed dependency ids.
+///
+/// `source_file_count` must match the number of paths yielded by `paths`; it is
+/// used by planning code before the iterator is consumed.
 #[derive(Debug)]
 pub struct ExplicitSourceLibraryPathStream<I> {
     pub library_id: u32,
@@ -22,6 +35,11 @@ pub struct ExplicitSourceLibraryPathStream<I> {
     pub dependency_library_ids: Vec<u32>,
 }
 
+/// Fully streaming path-backed library input.
+///
+/// This is the lowest-allocation caller input shape for persisted planning:
+/// paths and dependency ids can both arrive from iterators while counts remain
+/// available to validation and scheduling code.
 #[derive(Debug)]
 pub struct ExplicitSourceLibraryPathDependencyStream<PI, DI> {
     pub library_id: u32,
@@ -31,6 +49,11 @@ pub struct ExplicitSourceLibraryPathDependencyStream<PI, DI> {
     pub dependency_library_ids: DI,
 }
 
+/// File metadata captured for a persisted source-pack input.
+///
+/// The planner records stable metadata up front so later preparation stages can
+/// resume without rescanning all source files. `line_count == None` means the
+/// file was not read while collecting metadata.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplicitSourcePathFile {
     pub library_id: u32,
@@ -41,12 +64,22 @@ pub struct ExplicitSourcePathFile {
     pub line_count: Option<usize>,
 }
 
+/// Path-backed source-pack manifest used by persisted artifact builds.
+///
+/// This is the persisted-planning input equivalent of [`ExplicitSourcePack`]:
+/// it stores file metadata rather than source strings, plus the validated
+/// library dependency graph.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplicitSourcePackPathManifest {
     pub files: Vec<ExplicitSourcePathFile>,
     pub library_dependencies: Vec<SourcePackLibraryDependency>,
 }
 
+/// In-memory source-pack input for planning and executing multi-library builds.
+///
+/// Each source has a library id at the same index in `library_ids`. Optional
+/// source paths are diagnostic/provenance metadata; compilation still reads the
+/// source text from `sources`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExplicitSourcePack {
     pub sources: Vec<String>,
@@ -56,6 +89,10 @@ pub struct ExplicitSourcePack {
 }
 
 impl ExplicitSourcePack {
+    /// Creates a pack from source strings and per-source library ids.
+    ///
+    /// The pack must contain at least one source and the two input vectors must
+    /// have identical lengths.
     pub fn new(sources: Vec<String>, library_ids: Vec<u32>) -> Result<Self, CompileError> {
         if sources.is_empty() {
             return Err(CompileError::GpuFrontend(
@@ -77,6 +114,7 @@ impl ExplicitSourcePack {
         })
     }
 
+    /// Attaches optional provenance paths to an existing in-memory pack.
     pub fn with_source_paths(
         mut self,
         source_paths: Vec<Option<PathBuf>>,
@@ -92,6 +130,7 @@ impl ExplicitSourcePack {
         Ok(self)
     }
 
+    /// Creates a pack that places every source in library id `0`.
     pub fn in_single_library(sources: Vec<String>) -> Result<Self, CompileError> {
         Self::from_libraries(vec![ExplicitSourceLibrary {
             library_id: 0,
@@ -100,6 +139,10 @@ impl ExplicitSourcePack {
         }])
     }
 
+    /// Flattens validated library inputs into a source-indexed pack.
+    ///
+    /// Libraries are accepted only when ids are unique, dependencies reference
+    /// present libraries, and the dependency graph is acyclic.
     pub fn from_libraries(libraries: Vec<ExplicitSourceLibrary>) -> Result<Self, CompileError> {
         let library_entries = libraries
             .iter()
@@ -129,6 +172,10 @@ impl ExplicitSourcePack {
         Ok(pack)
     }
 
+    /// Replaces the pack's dependency edges after validating them.
+    ///
+    /// This is useful when source strings are already flattened but library
+    /// dependencies are discovered by a separate caller.
     pub fn with_library_dependencies(
         mut self,
         library_dependencies: Vec<SourcePackLibraryDependency>,
@@ -169,14 +216,17 @@ impl ExplicitSourcePack {
         Ok(self)
     }
 
+    /// Plans backend codegen units over this in-memory pack.
     pub fn codegen_unit_plan(&self, limits: CodegenUnitLimits) -> CodegenUnitPlan {
         CodegenUnitPlan::from_source_pack_with_libraries(&self.sources, &self.library_ids, limits)
     }
 
+    /// Plans frontend library-interface units over this in-memory pack.
     pub fn frontend_unit_plan(&self, limits: CodegenUnitLimits) -> FrontendUnitPlan {
         FrontendUnitPlan::from_source_pack_with_libraries(&self.sources, &self.library_ids, limits)
     }
 
+    /// Builds the full source-pack job graph for the configured limits.
     pub fn job_plan(&self, limits: CodegenUnitLimits) -> SourcePackJobPlan {
         SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
             &self.sources,
@@ -186,10 +236,12 @@ impl ExplicitSourcePack {
         )
     }
 
+    /// Produces a topological job schedule for the full job graph.
     pub fn job_schedule(&self, limits: CodegenUnitLimits) -> SourcePackJobSchedule {
         self.job_plan(limits).job_schedule()
     }
 
+    /// Produces a job schedule that keeps frontend jobs bounded by unit limits.
     pub fn bounded_frontend_job_schedule(
         &self,
         limits: CodegenUnitLimits,
@@ -197,10 +249,12 @@ impl ExplicitSourcePack {
         self.job_plan(limits).bounded_frontend_job_schedule()
     }
 
+    /// Builds the default bounded-frontend artifact plan.
     pub fn build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
         self.bounded_frontend_build_plan(limits)
     }
 
+    /// Builds an artifact plan with one frontend job per whole library.
     pub fn whole_library_frontend_build_plan(
         &self,
         limits: CodegenUnitLimits,
@@ -208,10 +262,12 @@ impl ExplicitSourcePack {
         self.job_plan(limits).build_plan()
     }
 
+    /// Builds an artifact plan whose frontend and codegen work respect limits.
     pub fn bounded_frontend_build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
         self.job_plan(limits).bounded_frontend_build_plan()
     }
 
+    /// Builds a compact generic-target artifact manifest for this pack.
     pub fn compact_build_artifact_manifest(
         &self,
         limits: CodegenUnitLimits,
@@ -224,6 +280,7 @@ impl ExplicitSourcePack {
         )
     }
 
+    /// Builds a compact artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
         limits: CodegenUnitLimits,
@@ -236,18 +293,22 @@ impl ExplicitSourcePack {
             .expect("source-pack compact build artifact manifest schedule should be acyclic")
     }
 
+    /// Returns the source strings covered by a codegen unit.
     pub fn source_slice_for_unit(&self, unit: &CodegenUnit) -> &[String] {
         &self.sources[unit.source_range()]
     }
 
+    /// Returns the source strings covered by a source-pack job.
     pub fn source_slice_for_job(&self, job: &SourcePackJob) -> &[String] {
         &self.sources[job.source_range()]
     }
 
+    /// Returns the source strings covered by an artifact plan entry.
     pub fn source_slice_for_artifact(&self, artifact: &SourcePackArtifactPlan) -> &[String] {
         &self.sources[artifact.source_range()]
     }
 
+    /// Executes the default bounded-frontend build plan with an in-memory executor.
     pub fn execute_build_plan<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -268,6 +329,7 @@ impl ExplicitSourcePack {
         )
     }
 
+    /// Executes the bounded-frontend build plan with explicit batch limits.
     pub fn execute_build_plan_with_batch_limits<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -286,6 +348,10 @@ impl ExplicitSourcePack {
 }
 
 impl ExplicitSourcePackPathManifest {
+    /// Collects path metadata from library path inputs in dependency order.
+    ///
+    /// The returned manifest validates the library graph and then records file
+    /// metadata without loading source contents into memory.
     pub fn from_libraries<P>(
         libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     ) -> Result<Self, CompileError>
@@ -338,10 +404,12 @@ impl ExplicitSourcePackPathManifest {
         })
     }
 
+    /// Materializes source-file planning inputs from the stored metadata.
     pub fn source_file_inputs(&self) -> Vec<SourceFileUnitInput> {
         self.source_file_input_iter().collect()
     }
 
+    /// Iterates source-file planning inputs without allocating a new vector.
     pub fn source_file_input_iter(&self) -> impl Iterator<Item = SourceFileUnitInput> + '_ {
         self.files
             .iter()
@@ -354,6 +422,7 @@ impl ExplicitSourcePackPathManifest {
             })
     }
 
+    /// Plans backend codegen units over path-backed source metadata.
     pub fn codegen_unit_plan(&self, limits: CodegenUnitLimits) -> CodegenUnitPlan {
         let mut units = Vec::new();
         CodegenUnitPlan::try_for_each_from_files(self.source_file_input_iter(), limits, |unit| {
@@ -364,6 +433,7 @@ impl ExplicitSourcePackPathManifest {
         CodegenUnitPlan { units }
     }
 
+    /// Plans frontend library-interface units over path-backed source metadata.
     pub fn frontend_unit_plan(&self, limits: CodegenUnitLimits) -> FrontendUnitPlan {
         let mut units = Vec::new();
         FrontendUnitPlan::try_for_each_from_files(self.source_file_input_iter(), limits, |unit| {
@@ -374,6 +444,7 @@ impl ExplicitSourcePackPathManifest {
         FrontendUnitPlan { units }
     }
 
+    /// Builds the full source-pack job graph from path-backed source metadata.
     pub fn job_plan(&self, limits: CodegenUnitLimits) -> SourcePackJobPlan {
         SourcePackJobPlan::from_file_stream_with_dependencies(
             self.source_file_input_iter(),
@@ -382,10 +453,12 @@ impl ExplicitSourcePackPathManifest {
         )
     }
 
+    /// Produces a topological job schedule for the path-backed job graph.
     pub fn job_schedule(&self, limits: CodegenUnitLimits) -> SourcePackJobSchedule {
         self.job_plan(limits).job_schedule()
     }
 
+    /// Produces a path-backed schedule that keeps frontend jobs bounded by limits.
     pub fn bounded_frontend_job_schedule(
         &self,
         limits: CodegenUnitLimits,
@@ -393,10 +466,12 @@ impl ExplicitSourcePackPathManifest {
         self.job_plan(limits).bounded_frontend_job_schedule()
     }
 
+    /// Builds the default bounded-frontend artifact plan.
     pub fn build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
         self.bounded_frontend_build_plan(limits)
     }
 
+    /// Builds an artifact plan with one frontend job per whole library.
     pub fn whole_library_frontend_build_plan(
         &self,
         limits: CodegenUnitLimits,
@@ -404,10 +479,12 @@ impl ExplicitSourcePackPathManifest {
         self.job_plan(limits).build_plan()
     }
 
+    /// Builds an artifact plan whose frontend and codegen work respect limits.
     pub fn bounded_frontend_build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
         self.job_plan(limits).bounded_frontend_build_plan()
     }
 
+    /// Builds a compact generic-target artifact manifest for this path manifest.
     pub fn compact_build_artifact_manifest(
         &self,
         limits: CodegenUnitLimits,
@@ -420,6 +497,7 @@ impl ExplicitSourcePackPathManifest {
         )
     }
 
+    /// Builds a compact artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
         limits: CodegenUnitLimits,
@@ -432,6 +510,7 @@ impl ExplicitSourcePackPathManifest {
             .expect("source-pack compact build artifact manifest schedule should be acyclic")
     }
 
+    /// Returns the persisted library partition index for a concrete target.
     pub fn library_partition_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -439,10 +518,12 @@ impl ExplicitSourcePackPathManifest {
         Ok(library_partition_plan(self, target)?.index)
     }
 
+    /// Returns the source-file metadata covered by a job.
     pub fn source_files_for_job(&self, job: &SourcePackJob) -> &[ExplicitSourcePathFile] {
         &self.files[job.source_range()]
     }
 
+    /// Returns the source-file metadata covered by an artifact plan entry.
     pub fn source_files_for_artifact(
         &self,
         artifact: &SourcePackArtifactPlan,
@@ -450,10 +531,12 @@ impl ExplicitSourcePackPathManifest {
         &self.files[artifact.source_range()]
     }
 
+    /// Loads source strings for a job from the paths recorded in the manifest.
     pub fn load_sources_for_job(&self, job: &SourcePackJob) -> Result<Vec<String>, CompileError> {
         read_explicit_source_path_files("source-pack job", self.source_files_for_job(job))
     }
 
+    /// Executes the default bounded-frontend path-backed build plan.
     pub fn execute_build_plan<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -474,6 +557,7 @@ impl ExplicitSourcePackPathManifest {
         )
     }
 
+    /// Executes the path-backed build plan with explicit batch limits.
     pub fn execute_build_plan_with_batch_limits<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -490,6 +574,7 @@ impl ExplicitSourcePackPathManifest {
         execute_path_build(self, &build_plan, batch_limits, executor)
     }
 
+    /// Executes the path-backed build plan while returning executor handles.
     pub fn execute_build_plan_with_handles<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -503,6 +588,7 @@ impl ExplicitSourcePackPathManifest {
         execute_path_handle_build(self, &build_plan, batch_limits, executor)
     }
 
+    /// Executes path-backed artifact batches and batched link work with handles.
     pub fn execute_build_plan_with_batched_link_handles<E>(
         &self,
         limits: CodegenUnitLimits,
@@ -516,6 +602,7 @@ impl ExplicitSourcePackPathManifest {
         execute_path_batched_link_build(self, &build_plan, batch_limits, executor)
     }
 
+    /// Executes a path-backed build through an external artifact store.
     pub fn execute_build_plan_with_artifact_store<E, S>(
         &self,
         limits: CodegenUnitLimits,
@@ -536,6 +623,7 @@ impl ExplicitSourcePackPathManifest {
     }
 }
 
+/// Validates library entries and returns topologically ordered ids plus edges.
 pub(in crate::compiler) fn validate_explicit_source_library_entries(
     libraries: &[ExplicitSourceLibraryManifestEntry],
 ) -> Result<(Vec<u32>, Vec<SourcePackLibraryDependency>), CompileError> {
@@ -598,6 +686,7 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
     Ok((topological_library_ids, library_dependencies))
 }
 
+/// Converts vector path inputs into path streams without reordering libraries.
 pub(in crate::compiler) fn path_streams_from_library_paths<I, P>(
     libraries: I,
 ) -> impl Iterator<Item = ExplicitSourceLibraryPathStream<Vec<P>>>
@@ -614,6 +703,7 @@ where
         })
 }
 
+/// Converts path streams into dependency streams with sorted dependency ids.
 pub(in crate::compiler) fn dependency_streams_from_path_streams<I, PI>(
     libraries: I,
 ) -> impl Iterator<Item = ExplicitSourceLibraryPathDependencyStream<PI, Vec<u32>>>
@@ -633,6 +723,7 @@ where
     })
 }
 
+/// Converts vector path inputs directly into dependency streams.
 pub(in crate::compiler) fn dependency_streams_from_library_paths<I, P>(
     libraries: I,
 ) -> impl Iterator<Item = ExplicitSourceLibraryPathDependencyStream<Vec<P>, Vec<u32>>>
@@ -642,6 +733,7 @@ where
     dependency_streams_from_path_streams(path_streams_from_library_paths(libraries))
 }
 
+/// Validates and orders path-backed libraries by dependency topology.
 pub(in crate::compiler) fn ordered_dependency_streams_from_library_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
 ) -> Result<
@@ -692,6 +784,7 @@ pub(in crate::compiler) fn ordered_dependency_streams_from_library_paths<P>(
     }))
 }
 
+/// Returns library ids in first-seen source order.
 pub(in crate::compiler) fn first_seen_library_ids(library_ids: &[u32]) -> Vec<u32> {
     let mut unique_ids = Vec::new();
     let mut seen_ids = BTreeSet::new();
@@ -703,6 +796,7 @@ pub(in crate::compiler) fn first_seen_library_ids(library_ids: &[u32]) -> Vec<u3
     unique_ids
 }
 
+/// Orders library ids so dependencies are emitted before dependents.
 pub(in crate::compiler) fn topologically_order_library_ids(
     library_ids: &[u32],
     library_dependencies: &[SourcePackLibraryDependency],

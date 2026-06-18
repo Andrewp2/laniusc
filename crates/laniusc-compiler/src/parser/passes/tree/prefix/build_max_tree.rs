@@ -10,6 +10,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for one tree-prefix max-tree build step.
 pub struct Params {
     pub n_blocks: u32,
     pub leaf_base: u32,
@@ -21,6 +22,7 @@ pub struct Params {
     pub _pad2: u32,
 }
 
+/// Pass that builds the auxiliary max tree used by tree-prefix traversal.
 pub struct TreePrefixMaxBuildPass {
     data: PassData,
 }
@@ -32,6 +34,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl TreePrefixMaxBuildPass {
+    /// Records all configured tree-prefix max-tree build steps.
     pub fn record_build(
         &self,
         device: &wgpu::Device,

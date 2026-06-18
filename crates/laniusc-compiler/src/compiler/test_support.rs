@@ -1,6 +1,7 @@
 use super::*;
 
 #[derive(Default)]
+/// Test executor that records source-pack byte-artifact execution events.
 pub(super) struct RecordingSourcePackByteArtifactExecutor {
     pub(super) events: Vec<String>,
     pub(super) fail_library_interface_calls: usize,
@@ -8,12 +9,14 @@ pub(super) struct RecordingSourcePackByteArtifactExecutor {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Test link handle that counts interface and object artifacts.
 pub(super) struct TestByteLinkHandle {
     interface_count: usize,
     object_count: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Test build handle that records frontend/codegen source metadata.
 pub(super) struct TestByteBuildHandle {
     library_id: u32,
     first_source_index: usize,

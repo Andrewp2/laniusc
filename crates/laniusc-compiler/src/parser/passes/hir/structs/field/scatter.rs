@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters ranked struct fields into struct-local ranges.
 pub struct HirStructFieldScatterPass {
     data: PassData,
 }

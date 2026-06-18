@@ -10,9 +10,13 @@ use crate::lexer::tables::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Token record produced by the CPU lexer oracle used in tests.
 pub struct TestCpuToken {
+    /// Token kind after lexer-owned keyword/range repairs.
     pub kind: TokenKind,
+    /// Start byte offset.
     pub start: usize,
+    /// Token byte length.
     pub len: usize,
 }
 
@@ -130,7 +134,7 @@ fn slice_dbg(src: &[u8], i: usize) -> (usize, String) {
             if b.is_ascii_graphic() || b == b' ' || b == b'\n' || b == b'\t' || b == b'\r' {
                 b as char
             } else {
-                '·'
+                '.'
             },
         );
     }
@@ -207,7 +211,7 @@ fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
         return Err("ended in REJECT".into());
     }
 
-    // Non-accepting but not reject (e.g., unterminated block comment) — surface it clearly.
+    // Non-accepting but not reject (e.g., unterminated block comment): surface it clearly.
     Err(format!(
         "ended in non-accepting state={state} (unterminated token?)"
     ))

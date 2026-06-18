@@ -1,5 +1,9 @@
 use super::*;
 
+/// Executes a source-pack build entirely in memory.
+///
+/// Library interfaces and codegen objects are retained in vectors indexed from
+/// the schedule while execution batches are visited in dependency order.
 pub(in crate::compiler) fn execute_build<E>(
     source_pack: &ExplicitSourcePack,
     build_plan: &SourcePackBuildPlan,
@@ -102,6 +106,10 @@ where
     })
 }
 
+/// Executes a path-backed source-pack build while retaining artifacts in memory.
+///
+/// Source files are passed to the executor as path metadata, but produced
+/// interfaces and objects are kept in memory until the final link job runs.
 pub(in crate::compiler) fn execute_path_build<E>(
     source_pack: &ExplicitSourcePackPathManifest,
     build_plan: &SourcePackBuildPlan,
@@ -204,6 +212,10 @@ where
     })
 }
 
+/// Executes a path-backed build where intermediate artifacts are handles.
+///
+/// Interface and object handles are stored by job index. After the link job
+/// consumes them, link input handles are released through the executor.
 pub(in crate::compiler) fn execute_path_handle_build<E>(
     source_pack: &ExplicitSourcePackPathManifest,
     build_plan: &SourcePackBuildPlan,
@@ -296,6 +308,11 @@ where
     Ok(HandleBuildExecutionResult { linked_output })
 }
 
+/// Executes a path-backed build with batched link input streaming.
+///
+/// Frontend and codegen phases produce path handles, then the link phase streams
+/// interface and object batches to the executor and releases handles batch by
+/// batch.
 pub(in crate::compiler) fn execute_path_batched_link_build<E>(
     source_pack: &ExplicitSourcePackPathManifest,
     build_plan: &SourcePackBuildPlan,

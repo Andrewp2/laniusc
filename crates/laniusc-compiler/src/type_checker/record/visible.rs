@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records resident visible-declaration collection, sorting, and scope tree passes.
 pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

@@ -10,10 +10,12 @@ macro_rules! define_token_kinds {
         }
 
         impl TokenKind {
+            /// All valid token kinds in discriminant order.
             pub const ALL: &'static [Self] = &[
                 $(Self::$name,)+
             ];
 
+            /// Converts a generated token id into a `TokenKind`.
             pub fn from_u32(v: u32) -> Option<Self> {
                 let index = usize::try_from(v).ok()?.checked_sub(1)?;
                 Self::ALL
@@ -22,6 +24,7 @@ macro_rules! define_token_kinds {
                     .filter(|kind| *kind as u32 == v)
             }
 
+            /// Resolves a grammar terminal name to its token kind.
             pub fn from_name(name: &str) -> Option<Self> {
                 let k = match name {
                     $(stringify!($name) => Self::$name,)+
@@ -259,8 +262,9 @@ impl core::convert::TryFrom<u32> for TokenKind {
     }
 }
 
-// used on GPU side too
+/// Sentinel used by Rust and shaders for non-token DFA states.
 pub const INVALID_TOKEN: u32 = u32::MAX;
+/// Number of token ids including the invalid zero slot used by generated tables.
 pub const N_KINDS: u32 = TokenKind::ALL.len() as u32 + 1;
 
 #[cfg(test)]

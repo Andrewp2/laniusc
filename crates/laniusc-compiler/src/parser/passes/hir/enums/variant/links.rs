@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links enum variant nodes to their owning enum declaration.
 pub struct HirEnumVariantLinksPass {
     data: PassData,
 }

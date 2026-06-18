@@ -1,5 +1,9 @@
 use super::*;
 
+/// Validates the compact library partition index for a target.
+///
+/// The index must describe at least one source file and one partition, and its
+/// source-byte summary must prove real source metadata was scanned.
 pub(in crate::compiler) fn validate_library_partition_index(
     index: &SourcePackLibraryPartitionIndex,
     target: SourcePackArtifactTarget,
@@ -40,6 +44,11 @@ pub(in crate::compiler) fn validate_library_partition_index(
     Ok(())
 }
 
+/// Validates the resumable library-metadata preparation checkpoint.
+///
+/// The checkpoint's library, partition, and source-file page counts must stay in
+/// lockstep because each prepared library produces exactly one partition page
+/// and one compact source-file page.
 pub(in crate::compiler) fn validate_library_metadata_prepare_progress(
     progress: &FilesystemLibraryMetadataPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -80,6 +89,7 @@ pub(in crate::compiler) fn validate_library_metadata_prepare_progress(
     Ok(())
 }
 
+/// Validates an in-memory library partition plan.
 pub(in crate::compiler) fn validate_library_partition_plan(
     plan: &SourcePackLibraryPartitionPlan,
     target: SourcePackArtifactTarget,
@@ -87,6 +97,10 @@ pub(in crate::compiler) fn validate_library_partition_plan(
     validate_library_partition_records(&plan.index, &plan.partitions, target)
 }
 
+/// Validates the partition records against their compact index.
+///
+/// Partitions must be dense by index, cover the source-file range without gaps,
+/// sum to the index totals, and depend only on libraries in earlier partitions.
 pub(in crate::compiler) fn validate_library_partition_records(
     index: &SourcePackLibraryPartitionIndex,
     partitions: &[SourcePackLibraryPartition],
@@ -210,6 +224,10 @@ fn validate_library_dependency_ids_strictly_ascending(
     Ok(())
 }
 
+/// Validates one library partition page.
+///
+/// A partition must carry source files, non-empty source-byte evidence, and
+/// either inline or paged dependency IDs, but not both.
 pub(in crate::compiler) fn validate_library_partition(
     partition: &SourcePackLibraryPartition,
     target: SourcePackArtifactTarget,
@@ -331,6 +349,10 @@ fn validate_source_byte_summary(
     Ok(())
 }
 
+/// Validates one sidecar page of library dependency IDs.
+///
+/// Dependency pages must be dense by page position and contain sorted, unique
+/// dependency library IDs within the configured page size.
 pub(in crate::compiler) fn validate_library_dependency_page(
     page: &SourcePackLibraryDependencyPage,
     target: SourcePackArtifactTarget,

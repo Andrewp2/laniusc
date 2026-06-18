@@ -1,17 +1,26 @@
+/// One ping/pong prefix-scan recording step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PingPongScanStep {
+    /// Scan stride or final-copy marker consumed by the shader.
     pub scan_step: u32,
+    /// Whether this step reads from the first buffer.
     pub read_from_a: bool,
+    /// Whether this step writes to the first buffer.
     pub write_to_a: bool,
 }
 
+/// Policy for adding a final ping/pong scan step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScanFinalize {
+    /// Do not add a final step.
     None,
+    /// Always append a final step with this marker/stride.
     Always(u32),
+    /// Append a final copy-to-A step only when the last writer is B.
     CopyToAIfNeeded(u32),
 }
 
+/// Returns scan stride values for a simple ping/pong scan.
 pub fn scan_step_values(n_blocks: u32) -> Vec<u32> {
     ping_pong_scan_steps(n_blocks, ScanFinalize::None)
         .into_iter()
@@ -19,6 +28,7 @@ pub fn scan_step_values(n_blocks: u32) -> Vec<u32> {
         .collect()
 }
 
+/// Plans ping/pong scan buffer roles for `n_blocks`.
 pub fn ping_pong_scan_steps(n_blocks: u32, finalize: ScanFinalize) -> Vec<PingPongScanStep> {
     let mut steps = Vec::new();
     steps.push(PingPongScanStep {

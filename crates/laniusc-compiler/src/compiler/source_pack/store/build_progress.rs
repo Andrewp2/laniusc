@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores a progress shard and refreshes its aggregate summary pages.
     pub fn store_build_progress_shard(
         &self,
         shard: &SourcePackBuildProgressShard,
@@ -19,6 +20,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Writes a progress shard file and its per-shard summary.
     pub(in crate::compiler) fn write_build_progress_shard_file(
         &self,
         shard: &SourcePackBuildProgressShard,
@@ -39,6 +41,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores the summary file for one build-progress shard.
     pub fn store_build_progress_shard_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -62,6 +65,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one build-progress directory page.
     pub fn store_build_progress_directory_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -83,6 +87,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Attempts to load one build-progress directory page.
     pub fn try_load_build_progress_directory_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -127,6 +132,7 @@ impl FilesystemArtifactStore {
         Ok(Some(directory_page))
     }
 
+    /// Stores one build-progress directory-index page.
     pub fn store_build_progress_directory_index_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -152,6 +158,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Attempts to load one build-progress directory-index page.
     pub fn try_load_build_progress_directory_index_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -202,6 +209,7 @@ impl FilesystemArtifactStore {
         Ok(Some(directory_index_page))
     }
 
+    /// Refreshes the directory page and directory-index page containing a shard.
     pub(in crate::compiler) fn store_progress_directory_page_for_shard(
         &self,
         summary: &SourcePackBuildProgressSummary,
@@ -238,6 +246,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Rebuilds all progress directory and directory-index pages for a summary.
     pub(in crate::compiler) fn store_progress_directory_pages_for_summary(
         &self,
         summary: &SourcePackBuildProgressSummary,
@@ -270,6 +279,7 @@ impl FilesystemArtifactStore {
         Ok(())
     }
 
+    /// Stores the aggregate build-progress summary.
     pub fn store_build_progress_summary(
         &self,
         summary: &SourcePackBuildProgressSummary,
@@ -287,6 +297,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the aggregate build-progress summary for a target.
     pub fn load_build_progress_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -317,6 +328,7 @@ impl FilesystemArtifactStore {
         Ok(summary)
     }
 
+    /// Attempts to load the summary file for one build-progress shard.
     pub fn try_load_build_progress_shard_summary_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -354,6 +366,11 @@ impl FilesystemArtifactStore {
         Ok(Some(summary))
     }
 
+    /// Updates the aggregate progress summary after one shard is stored.
+    ///
+    /// The update preserves shard identity, adjusts completed/ready/claimed
+    /// counts by delta, and recomputes first-ready or earliest-lease values when
+    /// the changed shard previously supplied the aggregate value.
     pub(in crate::compiler) fn update_summary_after_shard_store(
         &self,
         old_shard: Option<&SourcePackBuildProgressShard>,
@@ -528,6 +545,7 @@ impl FilesystemArtifactStore {
         Ok(summary)
     }
 
+    /// Loads and validates one build-progress shard.
     pub fn load_build_progress_shard_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -561,6 +579,7 @@ impl FilesystemArtifactStore {
         Ok(shard)
     }
 
+    /// Loads an existing progress shard or initializes it from an artifact shard.
     pub(in crate::compiler) fn load_or_init_build_progress_shard_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -576,6 +595,7 @@ impl FilesystemArtifactStore {
         Ok(shard)
     }
 
+    /// Stores initial progress shards for every job-batch artifact shard.
     pub fn store_initial_build_progress_shards(
         &self,
         index: &SourcePackBuildArtifactShardIndex,
@@ -625,6 +645,10 @@ impl FilesystemArtifactStore {
     }
 }
 
+/// Updates ready batches that depend on a completed batch.
+///
+/// This follows reverse dependency pages, prunes expired claims, and marks a
+/// dependent batch ready only after all of its dependency batches are completed.
 pub(in crate::compiler) fn update_ready_frontier_after_batch_completion(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

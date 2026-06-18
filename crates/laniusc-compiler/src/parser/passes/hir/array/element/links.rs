@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links array element nodes to their owning array expression.
 pub struct HirArrayElementLinksPass {
     data: PassData,
 }

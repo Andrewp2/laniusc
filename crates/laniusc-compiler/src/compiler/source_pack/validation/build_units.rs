@@ -1,5 +1,10 @@
 use super::*;
 
+/// Validates the build-unit summary page for one library partition.
+///
+/// The page must match its partition identity, use normalized limits, carry
+/// frontend and codegen coverage for the whole source range, and keep inline
+/// dependency/unit records within their caps.
 pub(in crate::compiler) fn validate_library_build_unit_page(
     page: &SourcePackLibraryBuildUnitPage,
     target: SourcePackArtifactTarget,
@@ -276,6 +281,11 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
     Ok(())
 }
 
+/// Validates one frontend unit embedded in or referenced by a build-unit page.
+///
+/// A non-oversized unit must fit the normalized source-file and source-byte
+/// limits. Oversized units are allowed only for the explicit oversized-source
+/// path.
 pub(in crate::compiler) fn validate_frontend_unit_shape(
     unit: &FrontendUnit,
     _target: SourcePackArtifactTarget,
@@ -314,6 +324,10 @@ pub(in crate::compiler) fn validate_frontend_unit_shape(
     Ok(())
 }
 
+/// Validates a standalone frontend-unit page.
+///
+/// Standalone pages are used when build-unit pages cannot carry all units
+/// inline, so the page identity and embedded unit shape must agree.
 pub(in crate::compiler) fn validate_frontend_unit_page(
     page: &SourcePackLibraryFrontendUnitPage,
     target: SourcePackArtifactTarget,
@@ -371,6 +385,10 @@ pub(in crate::compiler) fn validate_frontend_unit_page(
     Ok(())
 }
 
+/// Validates one codegen unit embedded in or referenced by a build-unit page.
+///
+/// Codegen units follow the same source range and limit contract as frontend
+/// units, but represent the codegen phase's partitioning.
 pub(in crate::compiler) fn validate_codegen_unit_shape(
     unit: &CodegenUnit,
     _target: SourcePackArtifactTarget,
@@ -409,6 +427,10 @@ pub(in crate::compiler) fn validate_codegen_unit_shape(
     Ok(())
 }
 
+/// Validates a standalone codegen-unit page.
+///
+/// Standalone pages are used when build-unit pages cannot carry all codegen
+/// units inline, so the page identity and embedded unit shape must agree.
 pub(in crate::compiler) fn validate_codegen_unit_page(
     page: &SourcePackLibraryCodegenUnitPage,
     target: SourcePackArtifactTarget,

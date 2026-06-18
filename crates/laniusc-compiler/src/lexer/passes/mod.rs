@@ -11,34 +11,54 @@ use crate::{
     lexer::{Pass, buffers::GpuBuffers},
 };
 
+/// Boundary compaction passes.
 pub mod compact;
+/// DFA scanning passes.
 pub mod dfa;
+/// Token-boundary prefix-sum passes.
 pub mod pair;
+/// Source-pack source-file boundary pass.
 pub mod source_file_boundaries;
+/// Final token-record construction pass.
 pub mod tokens_build;
 
 #[derive(ShaderType, Debug, Clone, Copy)]
+/// Uniform parameters for one prefix-scan round.
 pub(super) struct ScanParams {
+    /// Prefix-scan stride for this round.
     pub stride: u32,
+    /// Whether the ping buffer is the source for this round.
     pub use_ping_as_src: u32,
 }
 
+/// All GPU passes that make up one lexer pipeline.
 pub struct LexerPasses {
+    /// Scans DFA state transitions inside each byte block.
     pub dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass,
+    /// Prefix-scans DFA block summaries.
     pub dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass,
+    /// Applies DFA block prefixes and emits boundary flags.
     pub dfa_03: dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass,
+    /// Marks source-pack file start/end byte offsets.
     pub source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass,
 
+    /// Counts all/kept token boundaries inside each block.
     pub pair_01: pair::sum_inblock::Pair01SumInblockPass,
+    /// Prefix-scans per-block token-boundary totals.
     pub pair_02: pair::scan_block_totals::Pair02ScanBlockTotalsPass,
+    /// Applies pair prefixes to produce compacted token ranks.
     pub pair_03: pair::apply_block_prefix::Pair03ApplyBlockPrefixPass,
 
+    /// Compacts all token boundaries, including skipped tokens.
     pub compact_all: compact::boundaries::all::CompactBoundariesAllPass,
+    /// Compacts kept token boundaries.
     pub compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass,
+    /// Builds final resident token records.
     pub tokens_build: tokens_build::TokensBuildPass,
 }
 
 impl LexerPasses {
+    /// Creates every lexer shader pass for a device.
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
             dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass::new(&device)?,
@@ -55,6 +75,7 @@ impl LexerPasses {
     }
 }
 
+/// Records the full lexer pass sequence for the current resident buffers.
 pub fn record_all_passes(
     n: u32,
     nb_dfa: u32,

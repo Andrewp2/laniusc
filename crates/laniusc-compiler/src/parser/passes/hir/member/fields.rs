@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for member expression field extraction.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records base and member-name fields for member expressions.
 pub struct HirMemberFieldsPass {
     data: PassData,
 }

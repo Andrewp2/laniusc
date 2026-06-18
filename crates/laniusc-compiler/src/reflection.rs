@@ -2,115 +2,169 @@ use std::{collections::HashMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
+/// Root of the Slang JSON reflection payload consumed by GPU pass loading.
+///
+/// The compiler uses this structure to derive bind group layouts, dynamic
+/// uniform-buffer offsets, texture formats, and compute thread-group sizes from
+/// `.reflect.json` files generated alongside SPIR-V artifacts.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SlangReflection {
+    /// Top-level reflected shader parameters.
     #[serde(default)]
     pub parameters: Vec<ParameterReflection>,
+    /// Reflected entry points, including compute stage metadata.
     #[serde(default)]
     pub entry_points: Vec<EntryPointReflection>,
+    /// Named type layouts emitted by Slang for user-defined types.
     #[serde(default)]
     pub type_layouts: HashMap<String, TypeLayout>,
 }
 
+/// Custom Slang attribute attached to a reflected parameter.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UserAttribute {
+    /// Attribute name without arguments.
     pub name: String,
 
+    /// Raw string arguments supplied to the attribute.
     #[serde(default)]
     pub arguments: Vec<String>,
 }
 
+/// Reflected shader parameter that may become a wgpu binding entry.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ParameterReflection {
+    /// Source-level parameter name.
     pub name: String,
+    /// Descriptor binding metadata.
     pub binding: BindingInfo,
+    /// Reflected Slang type layout for this parameter.
     #[serde(rename = "type")]
     pub ty: TypeLayout,
 
+    /// Custom attributes used to fill gaps in Slang's reflected type data.
     #[serde(default)]
     pub user_attribs: Vec<UserAttribute>,
 }
 
+/// Descriptor binding information emitted by Slang reflection.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BindingInfo {
+    /// Slang binding category, such as `descriptorTableSlot`.
     pub kind: String,
+    /// Binding index inside the reflected set.
     #[serde(default)]
     pub index: Option<u32>,
+    /// Byte offset for aggregate binding records when Slang provides one.
     #[serde(default)]
     pub offset: Option<u32>,
+    /// Reflected binding size in bytes when available.
     #[serde(default)]
     pub size: Option<u32>,
 }
 
+/// Reflected shader entry point.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EntryPointReflection {
+    /// Entry point name.
     pub name: Option<String>,
+    /// Shader stage name, expected to be `compute` for compiler passes.
     pub stage: Option<String>,
+    /// Entry point parameters that are not represented as descriptor sets.
     #[serde(default)]
     pub parameters: Vec<EntryPointParameterReflection>,
+    /// Program layout containing reflected descriptor sets.
     #[serde(default, rename = "layout")]
     pub program_layout: Option<ProgramLayoutReflection>,
+    /// Workgroup size declared on the compute entry point.
     pub thread_group_size: Option<[u32; 3]>,
 }
 
+/// Reflected non-descriptor entry point parameter.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EntryPointParameterReflection {
+    /// Parameter name.
     pub name: String,
+    /// Semantic name, when Slang emits one.
     pub semantic_name: Option<String>,
+    /// Semantic index, when Slang emits one.
     pub semantic_index: Option<u32>,
+    /// Reflected Slang type layout.
     #[serde(rename = "type")]
     pub ty: TypeLayout,
 }
 
+/// Program layout containing descriptor-set parameter lists.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgramLayoutReflection {
+    /// Reflected descriptor sets, indexed by `space`.
     #[serde(default)]
     pub parameters: Vec<ParameterSetReflection>,
 }
 
+/// Reflected descriptor-set contents for one Slang parameter space.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ParameterSetReflection {
+    /// Parameters in the reflected binding order for this space.
     #[serde(default)]
     pub parameters: Vec<ParameterReflection>,
+    /// Slang parameter space, mapped to the wgpu bind-group index.
     #[serde(default)]
     pub space: u32,
 }
 
+/// Reflected Slang type layout used to classify wgpu binding types.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeLayout {
+    /// Slang type kind, such as `resource` or `constantBuffer`.
     pub kind: Option<String>,
+    /// Resource base shape, such as `structuredBuffer` or `texture2D`.
     pub base_shape: Option<String>,
+    /// Whether the type is an array resource.
     pub array: Option<bool>,
+    /// Whether a constant buffer should be treated as a uniform buffer.
     #[serde(default, rename = "uniformScale")]
     pub uniform_scale: bool,
+    /// Element type for arrays or aggregate resources.
     pub element_type: Option<Box<TypeLayout>>,
+    /// Field layouts for aggregate types.
     pub fields: Option<Vec<FieldLayout>>,
+    /// Reflected size in bytes.
     pub size_in_bytes: Option<usize>,
+    /// Static array element count when Slang emits it.
     pub array_element_count: Option<usize>,
+    /// Resource access mode, such as `Read`, `Write`, or `ReadWrite`.
     pub access: Option<String>,
+    /// Texture format string, when Slang emits one.
     pub format: Option<String>,
+    /// Result type used by some Slang resource wrappers.
     pub result_type: Option<Box<TypeLayout>>,
 }
 
+/// Reflected field inside an aggregate Slang type.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldLayout {
+    /// Field name.
     pub name: String,
+    /// Field type layout.
     #[serde(rename = "type")]
     pub ty: TypeLayout,
+    /// Binding metadata for fields that carry resource bindings.
     pub binding: Option<BindingInfo>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Parses a Slang reflection JSON file from disk.
 pub fn parse_reflection_from_file(path: impl AsRef<Path>) -> Result<SlangReflection, String> {
     let path_ref = path.as_ref();
     log::debug!("Parsing reflection from: {}", path_ref.display());
@@ -120,12 +174,18 @@ pub fn parse_reflection_from_file(path: impl AsRef<Path>) -> Result<SlangReflect
         .map_err(|e| format!("Failed to parse reflection JSON {path_ref:?}: {e}"))
 }
 
+/// Parses embedded or externally loaded Slang reflection JSON bytes.
 pub fn parse_reflection_from_bytes(data: &[u8]) -> Result<SlangReflection, String> {
     log::debug!("Parsing reflection from embedded bytes");
     serde_json::from_slice(data)
         .map_err(|e| format!("Failed to parse reflection JSON from bytes: {e}"))
 }
 
+/// Converts one reflected Slang parameter/type pair to a wgpu binding type.
+///
+/// The conversion encodes the compiler's shader ABI: storage buffers are
+/// storage bindings, uniform-scale constant buffers are uniform bindings, and
+/// select uniforms use dynamic offsets when reflected or known by fallback name.
 pub fn slang_category_and_type_to_wgpu(
     param_info: &ParameterReflection,
     type_layout: &TypeLayout,
@@ -383,6 +443,7 @@ fn slang_format_to_wgpu(format_str: &str) -> Option<wgpu::TextureFormat> {
     }
 }
 
+/// Returns the compute entry point thread-group size from reflection metadata.
 pub fn get_thread_group_size(reflection: &SlangReflection) -> Option<[u32; 3]> {
     reflection
         .entry_points

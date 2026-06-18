@@ -13,12 +13,14 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for literal value extraction.
 pub struct Params {
     pub n: u32,
     pub source_len: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records literal token ranges and value-source references.
 pub struct HirLiteralValuesPass {
     data: PassData,
 }
@@ -30,6 +32,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirLiteralValuesPass {
+    /// Records literal value extraction using the original source buffer.
     pub fn record_with_source(
         &self,
         device: &wgpu::Device,

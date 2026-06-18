@@ -70,6 +70,7 @@ pub(crate) use numbers::parse_usize_value;
 pub(crate) use package::{package_compile_cli_error, package_metadata_cli_error};
 pub(crate) use paths::{canonical_directory_path, canonical_unique_directory_paths};
 
+/// Returns the LSP JSON-RPC error-data contract metadata.
 pub(crate) fn lsp_error_data_metadata() -> serde_json::Value {
     serde_json::json!({
         "schema_name": LANIUS_LSP_ERROR_DATA_SCHEMA_NAME,
@@ -93,6 +94,7 @@ pub(crate) fn lsp_error_data_metadata() -> serde_json::Value {
     })
 }
 
+/// Returns the formatter policy metadata shared by diagnostics and LSP output.
 pub(crate) fn formatter_policy_metadata() -> serde_json::Value {
     serde_json::json!({
         "schema_name": LANIUS_FORMATTER_POLICY_SCHEMA_NAME,

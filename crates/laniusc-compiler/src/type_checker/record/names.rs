@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records lexeme marking, compaction, radix sorting, deduping, and name-id assignment.
 pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -132,6 +133,7 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     )
 }
 
+/// Records builtin language-name table initialization.
 pub(in crate::type_checker) fn record_language_name_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -147,6 +149,7 @@ pub(in crate::type_checker) fn record_language_name_bind_groups_with_passes(
     )
 }
 
+/// Records builtin declaration materialization from language-name ids.
 pub(in crate::type_checker) fn record_language_decl_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

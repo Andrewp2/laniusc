@@ -1,6 +1,7 @@
 use super::*;
 
 #[cfg(test)]
+/// Builds a path-backed source-pack manifest for test assertions.
 pub(super) fn source_pack_path_build_manifest(
     manifest: &ExplicitSourcePackPathManifest,
     limits: CodegenUnitLimits,
@@ -24,6 +25,7 @@ pub(super) fn source_pack_path_build_manifest(
     }
 }
 
+/// Reads explicit source paths into source strings with path-labeled errors.
 pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
     label: &str,
     paths: &[P],
@@ -42,6 +44,7 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
     Ok(sources)
 }
 
+/// Reads file metadata for one explicit source path.
 pub(super) fn read_explicit_source_path_metadata(
     label: &str,
     path_index: usize,
@@ -76,6 +79,7 @@ pub(super) fn read_explicit_source_path_metadata(
     })
 }
 
+/// Converts file modification time to Unix nanoseconds when the platform exposes it.
 pub(super) fn source_file_modified_unix_nanos(metadata: &fs::Metadata) -> Option<u128> {
     metadata
         .modified()
@@ -84,6 +88,7 @@ pub(super) fn source_file_modified_unix_nanos(metadata: &fs::Metadata) -> Option
         .map(|duration| duration.as_nanos())
 }
 
+/// Validates that one source file still matches its planned path metadata.
 pub(super) fn validate_explicit_source_path_file_metadata(
     label: &str,
     path_index: usize,
@@ -128,6 +133,7 @@ pub(super) fn validate_explicit_source_path_file_metadata(
     Ok(())
 }
 
+/// Validates that all source files still match their planned path metadata.
 pub(super) fn validate_explicit_source_path_files_metadata(
     label: &str,
     files: &[ExplicitSourcePathFile],
@@ -138,6 +144,7 @@ pub(super) fn validate_explicit_source_path_files_metadata(
     Ok(())
 }
 
+/// Validates and reads explicit source-path file records.
 pub(super) fn read_explicit_source_path_files(
     label: &str,
     files: &[ExplicitSourcePathFile],
@@ -156,6 +163,7 @@ pub(super) fn read_explicit_source_path_files(
     Ok(sources)
 }
 
+/// Initializes or returns a process-global GPU compiler for one backend set.
 pub(super) fn global_gpu_compiler_for(
     compiler: &'static OnceLock<Result<GpuCompiler<'static>, String>>,
     backends: GpuCompilerBackends,
@@ -173,6 +181,7 @@ pub(super) fn global_gpu_compiler_for(
         .map_err(|err| CompileError::GpuFrontend(format!("initialize {label} GPU compiler: {err}")))
 }
 
+/// Returns the process-global frontend-only GPU compiler.
 pub(super) fn global_frontend_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError>
 {
     static GPU_FRONTEND_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
@@ -183,16 +192,19 @@ pub(super) fn global_frontend_gpu_compiler() -> Result<&'static GpuCompiler<'sta
     )
 }
 
+/// Returns the process-global WASM GPU compiler.
 pub(super) fn global_wasm_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
     static GPU_WASM_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
     global_gpu_compiler_for(&GPU_WASM_COMPILER, GpuCompilerBackends::wasm_only(), "WASM")
 }
 
+/// Returns the process-global x86 GPU compiler.
 pub(super) fn global_x86_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
     static GPU_X86_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
     global_gpu_compiler_for(&GPU_X86_COMPILER, GpuCompilerBackends::x86_only(), "x86")
 }
 
+/// Validates that an in-memory source pack fits the default bounded codegen unit.
 pub(super) fn validate_in_memory_source_pack_fits_default_codegen_unit<S: AsRef<str>>(
     operation: &str,
     sources: &[S],
@@ -230,6 +242,8 @@ pub(super) fn validate_in_memory_source_pack_fits_default_codegen_unit<S: AsRef<
     Ok(())
 }
 
+/// Compile one in-memory source string to WASM with the process-global GPU
+/// compiler.
 pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu(src)?;
     global_wasm_gpu_compiler()?
@@ -237,6 +251,8 @@ pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8
         .await
 }
 
+/// Type-check one in-memory source string with the process-global frontend GPU
+/// compiler.
 pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
     let src = prepare_source_for_gpu(src)?;
     global_frontend_gpu_compiler()?
@@ -244,6 +260,8 @@ pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
         .await
 }
 
+/// Type-check an in-memory source pack with the process-global frontend GPU
+/// compiler.
 pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<(), CompileError> {
@@ -252,6 +270,8 @@ pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
         .await
 }
 
+/// Type-check an explicit in-memory source-pack manifest with the global
+/// frontend GPU compiler.
 pub async fn type_check_source_pack_manifest_with_gpu(
     source_pack: &ExplicitSourcePack,
 ) -> Result<(), CompileError> {
@@ -260,6 +280,8 @@ pub async fn type_check_source_pack_manifest_with_gpu(
         .await
 }
 
+/// Load an entry file plus standard-library root into a source pack and
+/// type-check it with the global frontend GPU compiler.
 pub async fn type_check_entry_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -274,6 +296,8 @@ where
         .await
 }
 
+/// Load an entry file plus one user source root into a source pack and
+/// type-check it with the global frontend GPU compiler.
 pub async fn type_check_entry_with_source_root<EP, RP>(
     entry_path: EP,
     source_root: RP,
@@ -288,6 +312,8 @@ where
         .await
 }
 
+/// Load an entry file plus explicit source roots into a source pack and
+/// type-check it with the global frontend GPU compiler.
 pub async fn type_check_entry_with_source_roots<EP>(
     entry_path: EP,
     roots: &EntrySourceRoots,
@@ -301,6 +327,8 @@ where
         .await
 }
 
+/// Read one source file from disk and type-check it with path-labeled
+/// diagnostics.
 pub async fn type_check_source_with_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<(), CompileError> {
@@ -309,6 +337,8 @@ pub async fn type_check_source_with_gpu_from_path(
         .await
 }
 
+/// Compile an in-memory source pack to WASM with the process-global GPU
+/// compiler.
 pub async fn compile_source_pack_to_wasm_with_gpu_codegen<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<Vec<u8>, CompileError> {
@@ -317,6 +347,8 @@ pub async fn compile_source_pack_to_wasm_with_gpu_codegen<S: AsRef<str>>(
         .await
 }
 
+/// Compile an explicit in-memory source-pack manifest to WASM with the
+/// process-global GPU compiler.
 pub async fn compile_source_pack_manifest_to_wasm_with_gpu_codegen(
     source_pack: &ExplicitSourcePack,
 ) -> Result<Vec<u8>, CompileError> {
@@ -325,6 +357,8 @@ pub async fn compile_source_pack_manifest_to_wasm_with_gpu_codegen(
         .await
 }
 
+/// Load an entry file plus standard-library root into a source pack and compile
+/// it to WASM.
 pub async fn compile_entry_to_wasm_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -339,6 +373,8 @@ where
         .await
 }
 
+/// Load an entry file plus one user source root into a source pack and compile
+/// it to WASM.
 pub async fn compile_entry_to_wasm_with_source_root<EP, RP>(
     entry_path: EP,
     source_root: RP,
@@ -353,6 +389,8 @@ where
         .await
 }
 
+/// Load an entry file plus explicit source roots into a source pack and compile
+/// it to WASM.
 pub async fn compile_entry_to_wasm_with_source_roots<EP>(
     entry_path: EP,
     roots: &EntrySourceRoots,
@@ -366,6 +404,8 @@ where
         .await
 }
 
+/// Read one source file from disk and compile it to WASM with path-labeled
+/// diagnostics.
 pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
@@ -374,6 +414,8 @@ pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
         .await
 }
 
+/// Compile one in-memory source string to x86_64 output with the process-global
+/// GPU compiler.
 pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu(src)?;
     global_x86_gpu_compiler()?
@@ -381,6 +423,8 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<
         .await
 }
 
+/// Read one source file from disk and compile it to x86_64 output with
+/// path-labeled diagnostics.
 pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
@@ -389,6 +433,8 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
         .await
 }
 
+/// Compile an in-memory source pack to x86_64 output with the process-global
+/// GPU compiler.
 pub async fn compile_source_pack_to_x86_64_with_gpu_codegen<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<Vec<u8>, CompileError> {
@@ -397,6 +443,8 @@ pub async fn compile_source_pack_to_x86_64_with_gpu_codegen<S: AsRef<str>>(
         .await
 }
 
+/// Compile an explicit in-memory source-pack manifest to x86_64 output with the
+/// process-global GPU compiler.
 pub async fn compile_source_pack_manifest_to_x86_64_with_gpu_codegen(
     source_pack: &ExplicitSourcePack,
 ) -> Result<Vec<u8>, CompileError> {
@@ -405,6 +453,8 @@ pub async fn compile_source_pack_manifest_to_x86_64_with_gpu_codegen(
         .await
 }
 
+/// Load an entry file plus standard-library root into a source pack and compile
+/// it to x86_64 output.
 pub async fn compile_entry_to_x86_64_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -419,6 +469,8 @@ where
         .await
 }
 
+/// Load an entry file plus one user source root into a source pack and compile
+/// it to x86_64 output.
 pub async fn compile_entry_to_x86_64_with_source_root<EP, RP>(
     entry_path: EP,
     source_root: RP,
@@ -433,6 +485,8 @@ where
         .await
 }
 
+/// Load an entry file plus explicit source roots into a source pack and compile
+/// it to x86_64 output.
 pub async fn compile_entry_to_x86_64_with_source_roots<EP>(
     entry_path: EP,
     roots: &EntrySourceRoots,
@@ -446,6 +500,8 @@ where
         .await
 }
 
+/// Run descriptor work-queue items for an already prepared artifact root until
+/// `max_items` is reached or no ready work remains.
 pub async fn run_prepared_descriptor_worker_for_target(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -475,6 +531,8 @@ pub async fn run_prepared_descriptor_worker_for_target(
         .await
 }
 
+/// Claim and execute at most one descriptor work-queue item for an already
+/// prepared artifact root.
 pub async fn step_prepared_descriptor_worker_for_target(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -501,6 +559,8 @@ pub async fn step_prepared_descriptor_worker_for_target(
         )
         .await
 }
+/// Prepare library path inputs if needed, then execute one WASM descriptor work
+/// item.
 pub async fn step_library_path_worker_to_wasm<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -528,6 +588,8 @@ where
         )
         .await
 }
+/// Prepare library path inputs if needed, then execute one x86_64 descriptor
+/// work item.
 pub async fn step_library_path_worker_to_x86_64<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -556,6 +618,8 @@ where
         .await
 }
 
+/// Prepare path-stream inputs if needed, then run WASM descriptor work items
+/// until `max_items` is reached or no ready work remains.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_path_stream_worker_to_wasm<I, PI, P>(
     libraries: I,
@@ -588,6 +652,8 @@ where
         .await
 }
 
+/// Prepare path-stream inputs if needed, then execute one WASM descriptor work
+/// item.
 #[allow(clippy::too_many_arguments)]
 pub async fn step_path_stream_worker_to_wasm<I, PI, P>(
     libraries: I,
@@ -618,6 +684,8 @@ where
         .await
 }
 
+/// Prepare path-stream inputs if needed, then run x86_64 descriptor work items
+/// until `max_items` is reached or no ready work remains.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_path_stream_worker_to_x86_64<I, PI, P>(
     libraries: I,
@@ -650,6 +718,8 @@ where
         .await
 }
 
+/// Prepare path-stream inputs if needed, then execute one x86_64 descriptor
+/// work item.
 #[allow(clippy::too_many_arguments)]
 pub async fn step_path_stream_worker_to_x86_64<I, PI, P>(
     libraries: I,
@@ -680,6 +750,8 @@ where
         .await
 }
 
+/// Prepare dependency-stream inputs if needed, then run WASM descriptor work
+/// items until `max_items` is reached or no ready work remains.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_dependency_stream_worker_to_wasm<I, PI, DI, P>(
     libraries: I,
@@ -713,6 +785,8 @@ where
         .await
 }
 
+/// Prepare dependency-stream inputs if needed, then execute one WASM descriptor
+/// work item.
 #[allow(clippy::too_many_arguments)]
 pub async fn step_dependency_stream_worker_to_wasm<I, PI, DI, P>(
     libraries: I,
@@ -744,6 +818,8 @@ where
         .await
 }
 
+/// Prepare dependency-stream inputs if needed, then run x86_64 descriptor work
+/// items until `max_items` is reached or no ready work remains.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
     libraries: I,
@@ -777,6 +853,8 @@ where
         .await
 }
 
+/// Prepare dependency-stream inputs if needed, then execute one x86_64
+/// descriptor work item.
 #[allow(clippy::too_many_arguments)]
 pub async fn step_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
     libraries: I,

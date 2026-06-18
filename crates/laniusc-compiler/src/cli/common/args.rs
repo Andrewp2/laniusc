@@ -4,6 +4,7 @@ use super::{
     error::{CliError, missing_cli_option_value_error, unknown_cli_option_error},
 };
 
+/// Removes `--diagnostic-format` selectors from subcommand-local argument lists.
 pub(crate) fn cli_args_without_diagnostic_format(
     command: &str,
     args: impl IntoIterator<Item = String>,

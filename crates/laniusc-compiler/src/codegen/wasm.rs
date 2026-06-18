@@ -1,3 +1,9 @@
+//! GPU WASM backend boundary.
+//!
+//! The WASM backend consumes the same parser HIR and retained type-check
+//! metadata shape as other backends. It records target-specific GPU passes and
+//! reports fail-closed backend status for unsupported shapes.
+
 use std::{fmt, sync::Mutex};
 
 use anyhow::Result;
@@ -23,12 +29,14 @@ struct WasmParams {
     n_hir_nodes: u32,
 }
 
+/// Recorded WASM backend work and retained capacity metadata for readback.
 pub struct RecordedWasmCodegen {
     output_capacity: usize,
     token_capacity: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Declared read/write boundary for one WASM recording stage.
 pub struct WasmRecordBoundary {
     pub stage: &'static str,
     pub reads: &'static [&'static str],
@@ -88,11 +96,13 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
 ];
 
+/// Returns the current WASM recording stages and their buffer read/write roles.
 pub fn wasm_record_boundaries() -> &'static [WasmRecordBoundary] {
     WASM_RECORD_BOUNDARIES
 }
 
 #[derive(Debug)]
+/// Target-level error reported by the GPU WASM emitter.
 pub struct WasmOutputError {
     error_name: &'static str,
     error_code: u32,
@@ -100,6 +110,7 @@ pub struct WasmOutputError {
 }
 
 impl WasmOutputError {
+    /// Creates a target-level WASM output error from backend status fields.
     pub(super) fn new(error_name: &'static str, error_code: u32, error_detail: u32) -> Self {
         Self {
             error_name,
@@ -108,18 +119,22 @@ impl WasmOutputError {
         }
     }
 
+    /// Returns the backend status name associated with this error.
     pub fn error_name(&self) -> &'static str {
         self.error_name
     }
 
+    /// Returns the numeric backend status code.
     pub fn error_code(&self) -> u32 {
         self.error_code
     }
 
+    /// Returns the status detail word reported by the backend.
     pub fn error_detail(&self) -> u32 {
         self.error_detail
     }
 
+    /// Returns whether `error_detail` should be interpreted as a token index.
     pub fn detail_is_token(&self) -> bool {
         self.error_detail != u32::MAX
             && (self.error_code == 2
@@ -141,6 +156,7 @@ impl fmt::Display for WasmOutputError {
 impl std::error::Error for WasmOutputError {}
 
 #[derive(Clone, Copy)]
+/// Struct declaration/member metadata buffers needed by WASM lowering.
 pub struct GpuWasmStructMetadataBuffers<'a> {
     pub lit_field_parent_lit: &'a wgpu::Buffer,
     pub member_name_token: &'a wgpu::Buffer,
@@ -149,6 +165,7 @@ pub struct GpuWasmStructMetadataBuffers<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// Enum-match metadata buffers needed by WASM lowering.
 pub struct GpuWasmEnumMatchMetadataBuffers<'a> {
     pub variant_ordinal: &'a wgpu::Buffer,
     pub match_scrutinee_node: &'a wgpu::Buffer,
@@ -162,6 +179,7 @@ pub struct GpuWasmEnumMatchMetadataBuffers<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// Call and call-argument metadata buffers needed by WASM lowering.
 pub struct GpuWasmCallMetadataBuffers<'a> {
     pub callee_node: &'a wgpu::Buffer,
     pub context_stmt: &'a wgpu::Buffer,
@@ -173,6 +191,7 @@ pub struct GpuWasmCallMetadataBuffers<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// Expression and statement metadata buffers needed by WASM lowering.
 pub struct GpuWasmExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
     pub result_root_node: &'a wgpu::Buffer,
@@ -220,6 +239,7 @@ struct ResidentWasmBuffers {
     pack_bind_group: wgpu::BindGroup,
 }
 
+/// GPU WASM code generator with loaded compute passes and resident buffers.
 pub struct GpuWasmCodeGenerator {
     agg_layout_clear_pass: PassData,
     agg_layout_pass: PassData,
@@ -234,6 +254,7 @@ pub struct GpuWasmCodeGenerator {
 }
 
 impl GpuWasmCodeGenerator {
+    /// Loads all WASM backend compute passes for a GPU device.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         macro_rules! wasm_pass {
             ($stage:literal, $label:literal, $spv:literal, $reflection:literal) => {
@@ -315,6 +336,7 @@ impl GpuWasmCodeGenerator {
         })
     }
 
+    /// Records WASM backend passes from resident frontend and type-check buffers.
     pub fn record_wasm_from_gpu_token_buffer(
         &self,
         device: &wgpu::Device,
@@ -655,6 +677,7 @@ impl GpuWasmCodeGenerator {
         })
     }
 
+    /// Reads and validates the output bytes produced by a recorded WASM backend run.
     pub fn finish_recorded_wasm(
         &self,
         device: &wgpu::Device,

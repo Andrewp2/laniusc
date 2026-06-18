@@ -1,22 +1,45 @@
 use super::super::*;
 
+/// Resumable checkpoint for hierarchical link-plan construction.
+///
+/// Leaf groups are prepared from schedule partitions first. Once every leaf is
+/// written, reduce progress tracks the current tree level, the next input group
+/// to consume, and the next output group index to assign.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct HierarchicalLinkPlanPrepareProgress {
+    /// Serialization version for this checkpoint.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose link plan is being prepared.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Normalized batching limits used to build leaf and reduce groups.
     pub(in crate::compiler) limits: SourcePackJobBatchLimits,
+    /// Number of schedule partitions that must produce leaf groups.
     pub(in crate::compiler) schedule_partition_count: usize,
+    /// Next schedule partition to scan for leaf groups.
     pub(in crate::compiler) next_partition_index: usize,
+    /// Number of leaf groups recorded before reduce processing began.
     pub(in crate::compiler) leaf_group_count: usize,
+    /// Current reduce tree level, with zero meaning reduce state is not initialized.
     pub(in crate::compiler) reduce_level: usize,
+    /// First group index in the current reduce level.
     pub(in crate::compiler) current_level_first_group_index: usize,
+    /// Number of groups in the current reduce level.
     pub(in crate::compiler) current_level_group_count: usize,
+    /// Next current-level group to consume into a reduce group.
     pub(in crate::compiler) next_input_group_index: usize,
+    /// First group index reserved for the next reduce level.
     pub(in crate::compiler) next_level_first_group_index: usize,
+    /// Number of groups already written into the next reduce level.
     pub(in crate::compiler) next_level_group_count: usize,
+    /// Next link group index to assign.
     pub(in crate::compiler) next_group_index: usize,
 }
 
+/// Validates hierarchical link-plan preparation progress.
+///
+/// Before leaf groups are complete, reduce state must be empty. After leaf
+/// completion, the current-level and next-level ranges must form a consistent
+/// prefix of the written group table.
 pub(in crate::compiler) fn validate_link_plan_prepare_progress(
     progress: &HierarchicalLinkPlanPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -137,6 +160,10 @@ pub(in crate::compiler) fn validate_link_plan_prepare_progress(
     Ok(())
 }
 
+/// Initializes reduce-tree progress after all leaf groups are written.
+///
+/// The first reduce level consumes the complete leaf range and writes output
+/// groups starting at the next unused group index.
 pub(in crate::compiler) fn initialize_reduce_progress(
     progress: &mut HierarchicalLinkPlanPrepareProgress,
 ) -> Result<(), CompileError> {
@@ -160,6 +187,7 @@ pub(in crate::compiler) fn initialize_reduce_progress(
     Ok(())
 }
 
+/// Stores the resumable hierarchical link-plan checkpoint.
 pub(in crate::compiler) fn store_link_plan_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &HierarchicalLinkPlanPrepareProgress,
@@ -184,6 +212,7 @@ pub(in crate::compiler) fn store_link_plan_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates hierarchical link-plan preparation progress.
 pub(in crate::compiler) fn load_link_plan_prepare_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -208,6 +237,10 @@ pub(in crate::compiler) fn load_link_plan_prepare_progress(
     Ok(progress)
 }
 
+/// Stores the final hierarchical link-plan index.
+///
+/// The index identifies the first link job, final link group/job, and total
+/// number of link groups used by the execution plan.
 pub(in crate::compiler) fn store_link_plan_index(
     store: &FilesystemArtifactStore,
     index: &SourcePackHierarchicalLinkPlanIndex,

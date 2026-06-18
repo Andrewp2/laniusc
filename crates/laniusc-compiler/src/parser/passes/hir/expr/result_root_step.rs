@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates expression result-root nodes.
 pub struct HirExprResultRootStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirExprResultRootStepPass {
+    /// Records expression result-root propagation steps with indirect dispatch.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,
@@ -28,6 +30,7 @@ impl HirExprResultRootStepPass {
         self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
     }
 
+    /// Records expression result-root propagation steps with direct dispatch.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,

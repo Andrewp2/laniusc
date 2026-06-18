@@ -1,4 +1,5 @@
-// src/parser/buffers.rs
+//! GPU buffer allocation for parser token facts, pair streams, tree rows, and HIR rows.
+
 mod constructors;
 mod model;
 mod scan_steps;
@@ -83,7 +84,7 @@ impl ParserBuffers {
             dispatch_args_buffer(device, "parser.active_pair_thread_dispatch_args");
         let active_pair_group_dispatch_args =
             dispatch_args_buffer(device, "parser.active_pair_group_dispatch_args");
-        // ---------- Pair→Header ----------
+        // ---------- Pair-to-header ----------
         let semantic_token_kinds = if let Some(kinds) = token_kinds_u32 {
             // Test/debug one-shot parsing receives already-classified parser
             // token kinds. Resident compilation fills this buffer on the GPU
@@ -551,7 +552,7 @@ impl ParserBuffers {
             },
         );
 
-        // layers upper bound = #pushes ≤ total_sc; +2 for safety. Resident mode
+        // layers upper bound = #pushes <= total_sc; +2 for safety. Resident mode
         // does not record bracket passes, so one layer is enough for bindings.
         let n_layers = if resident_projected_capacity {
             1

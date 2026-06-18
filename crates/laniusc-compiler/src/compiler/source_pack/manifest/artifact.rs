@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates an artifact manifest version and full consistency contract.
 pub(in crate::compiler) fn validate_artifact_manifest(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {
@@ -7,6 +8,11 @@ pub(in crate::compiler) fn validate_artifact_manifest(
     validate_artifact_manifest_contract(manifest)
 }
 
+/// Returns a count-only artifact manifest with inline execution records removed.
+///
+/// Compact manifests are suitable as durable summaries, but execution paths that
+/// need inline job, artifact, and batch rows must call
+/// [`ensure_manifest_execution_records`].
 pub(in crate::compiler) fn compact_artifact_manifest(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError> {
@@ -37,6 +43,7 @@ pub(in crate::compiler) fn compact_artifact_manifest(
     Ok(compact)
 }
 
+/// Ensures an artifact manifest carries every inline record required for execution.
 pub(in crate::compiler) fn ensure_manifest_execution_records(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {
@@ -98,6 +105,7 @@ pub(in crate::compiler) fn ensure_manifest_execution_records(
     Ok(())
 }
 
+/// Validates the serialized artifact-manifest version.
 pub(in crate::compiler) fn validate_artifact_manifest_version(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {

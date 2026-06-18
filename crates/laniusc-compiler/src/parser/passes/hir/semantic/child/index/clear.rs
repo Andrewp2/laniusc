@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that clears semantic child-index intermediate and output rows.
 pub struct HirSemanticChildIndexClearPass {
     data: PassData,
 }

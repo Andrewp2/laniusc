@@ -3,17 +3,26 @@ use super::*;
 mod source_files;
 pub(in crate::compiler) use source_files::*;
 
+/// Accumulates partition-wide source totals while replaying codegen units.
 pub(in crate::compiler) struct BuildUnitSummaryAccumulator<'a> {
+    /// Partition whose source range and metadata are being summarized.
     pub(in crate::compiler) partition: &'a SourcePackLibraryPartition,
+    /// Normalized unit limits used to rebuild frontend and codegen units.
     pub(in crate::compiler) limits: CodegenUnitLimits,
+    /// Dense codegen-unit index expected for the next replayed unit.
     pub(in crate::compiler) expected_codegen_unit_index: usize,
+    /// Next source index the replayed codegen units must start at.
     pub(in crate::compiler) next_source_index: usize,
+    /// Number of source files covered by replayed codegen units.
     pub(in crate::compiler) source_file_count: usize,
+    /// Number of source bytes covered by replayed codegen units.
     pub(in crate::compiler) source_byte_count: usize,
+    /// Number of source lines covered by replayed codegen units.
     pub(in crate::compiler) source_lines: usize,
 }
 
 impl<'a> BuildUnitSummaryAccumulator<'a> {
+    /// Starts a build-unit summary for one library partition.
     pub(in crate::compiler) fn new(
         partition: &'a SourcePackLibraryPartition,
         limits: CodegenUnitLimits,
@@ -29,6 +38,7 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
         }
     }
 
+    /// Records one replayed codegen unit and validates contiguous coverage.
     pub(in crate::compiler) fn record_codegen_unit(
         &mut self,
         unit: &CodegenUnit,
@@ -98,6 +108,7 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
         Ok(())
     }
 
+    /// Finishes the summary after all codegen units have been replayed.
     pub(in crate::compiler) fn finish(
         self,
         codegen_unit_count: usize,
@@ -167,12 +178,17 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
     }
 }
 
+/// Summary used to create a compact library build-unit page.
 pub(in crate::compiler) struct BuildUnitSummary {
+    /// Single frontend unit covering the partition's whole source range.
     pub(in crate::compiler) frontend_unit: LibraryUnit,
+    /// Number of frontend units that page expansion will emit.
     pub(in crate::compiler) frontend_unit_count: usize,
+    /// Number of codegen units that page expansion will emit.
     pub(in crate::compiler) codegen_unit_count: usize,
 }
 
+/// Replays stored source-file records to summarize frontend/codegen unit counts.
 pub(in crate::compiler) fn summarize_build_units(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
@@ -195,6 +211,7 @@ pub(in crate::compiler) fn summarize_build_units(
     Ok(summary)
 }
 
+/// Creates the compact build-unit page for one library partition.
 pub(in crate::compiler) fn compact_build_unit_page(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
@@ -223,12 +240,14 @@ pub(in crate::compiler) fn compact_build_unit_page(
     Ok(page)
 }
 
+/// Returns the effective number of codegen-unit pages for a build-unit page.
 pub(in crate::compiler) fn library_build_unit_page_codegen_unit_count(
     page: &SourcePackLibraryBuildUnitPage,
 ) -> usize {
     page.codegen_unit_count.max(page.codegen_units.len())
 }
 
+/// Returns the effective number of frontend-unit pages for a build-unit page.
 pub(in crate::compiler) fn library_build_unit_page_frontend_unit_count(
     page: &SourcePackLibraryBuildUnitPage,
 ) -> usize {
@@ -237,30 +256,35 @@ pub(in crate::compiler) fn library_build_unit_page_frontend_unit_count(
         .max(usize::from(page.frontend_unit.source_file_count != 0))
 }
 
+/// Returns the effective total frontend-job count for a schedule index.
 pub(in crate::compiler) fn library_schedule_index_frontend_job_count(
     index: &SourcePackLibraryScheduleIndex,
 ) -> usize {
     index.frontend_job_count.max(index.partition_count)
 }
 
+/// Returns the effective frontend-job count for one schedule entry.
 pub(in crate::compiler) fn library_schedule_entry_frontend_job_count(
     entry: &SourcePackLibraryScheduleIndexEntry,
 ) -> usize {
     entry.frontend_job_count.max(1)
 }
 
+/// Returns the first frontend-job index encoded by a schedule entry.
 pub(in crate::compiler) fn library_schedule_entry_first_frontend_job_index(
     entry: &SourcePackLibraryScheduleIndexEntry,
 ) -> usize {
     entry.first_frontend_job_index.max(entry.frontend_job_index)
 }
 
+/// Returns the effective frontend-job count recorded by a locator page.
 pub(in crate::compiler) fn library_frontend_job_locator_count(
     page: &SourcePackLibraryFrontendJobLocatorPage,
 ) -> usize {
     page.frontend_job_count.max(1)
 }
 
+/// Returns the effective frontend-job count recorded by a schedule page.
 pub(in crate::compiler) fn library_schedule_page_frontend_job_count(
     page: &SourcePackLibrarySchedulePage,
 ) -> usize {
@@ -269,6 +293,7 @@ pub(in crate::compiler) fn library_schedule_page_frontend_job_count(
         .max(usize::from(page.frontend_job.source_file_count != 0))
 }
 
+/// Returns the first frontend phase-unit index recorded by a schedule page.
 pub(in crate::compiler) fn library_schedule_page_first_frontend_unit_index(
     page: &SourcePackLibrarySchedulePage,
 ) -> usize {
@@ -276,6 +301,7 @@ pub(in crate::compiler) fn library_schedule_page_first_frontend_unit_index(
         .max(page.frontend_job.phase_unit_index)
 }
 
+/// Returns the exclusive frontend-job end index for a schedule page.
 pub(in crate::compiler) fn library_schedule_page_frontend_job_end(
     page: &SourcePackLibrarySchedulePage,
 ) -> Result<usize, CompileError> {
@@ -289,6 +315,7 @@ pub(in crate::compiler) fn library_schedule_page_frontend_job_end(
         })
 }
 
+/// Returns whether a schedule page owns the given frontend job.
 pub(in crate::compiler) fn library_schedule_page_contains_frontend_job(
     page: &SourcePackLibrarySchedulePage,
     job_index: usize,
@@ -297,6 +324,7 @@ pub(in crate::compiler) fn library_schedule_page_contains_frontend_job(
         && job_index < library_schedule_page_frontend_job_end(page)?)
 }
 
+/// Builds a persisted frontend-unit page from a compact build-unit page.
 pub(in crate::compiler) fn library_frontend_unit_page(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
     unit: FrontendUnit,
@@ -326,6 +354,7 @@ pub(in crate::compiler) fn library_frontend_unit_page(
     Ok(page)
 }
 
+/// Builds a persisted codegen-unit page from a compact build-unit page.
 pub(in crate::compiler) fn library_codegen_unit_page(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
     unit: CodegenUnit,
@@ -355,6 +384,7 @@ pub(in crate::compiler) fn library_codegen_unit_page(
     Ok(page)
 }
 
+/// Expands and stores frontend-unit pages from persisted source records.
 pub(in crate::compiler) fn store_frontend_unit_pages_from_source_records(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
     partition: &SourcePackLibraryPartition,
@@ -406,6 +436,7 @@ pub(in crate::compiler) fn store_frontend_unit_pages_from_source_records(
     Ok(())
 }
 
+/// Expands and stores codegen-unit pages from persisted source records.
 pub(in crate::compiler) fn store_codegen_unit_pages_from_source_records(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
     partition: &SourcePackLibraryPartition,
@@ -457,6 +488,7 @@ pub(in crate::compiler) fn store_codegen_unit_pages_from_source_records(
     Ok(())
 }
 
+/// Test helper loading all dependency library ids for a partition.
 #[cfg(test)]
 pub(in crate::compiler) fn load_library_dependency_ids(
     store: &FilesystemArtifactStore,
@@ -552,6 +584,11 @@ pub(in crate::compiler) fn load_library_dependency_ids(
     Ok(dependencies)
 }
 
+/// Prepares and stores the schedule page for one library partition.
+///
+/// The page maps frontend and codegen units to global source-pack jobs, writes
+/// job locator pages, and stores dependency information in the compact schedule
+/// representation used by later artifact-manifest planning.
 pub(in crate::compiler) fn prepare_partition_schedule_page(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
@@ -729,6 +766,7 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
     Ok(page)
 }
 
+/// Converts one frontend unit into a source-pack library-frontend job.
 pub(in crate::compiler) fn frontend_job_from_unit(
     library_id: u32,
     unit: &FrontendUnit,
@@ -750,6 +788,7 @@ pub(in crate::compiler) fn frontend_job_from_unit(
     }
 }
 
+/// Converts one codegen unit into a source-pack codegen job.
 pub(in crate::compiler) fn codegen_job_from_unit(
     page: &SourcePackLibrarySchedulePage,
     unit: &CodegenUnit,

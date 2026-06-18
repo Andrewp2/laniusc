@@ -1,5 +1,6 @@
 use super::super::support::{PooledStorageBuffer, pooled_storage_u32_rw};
 
+/// Indirect-dispatch argument buffers shared by active x86 recording stages.
 pub(super) struct ActiveDispatchArgBuffers {
     pub(super) hir_count: PooledStorageBuffer,
     pub(super) hir_plus_one: PooledStorageBuffer,
@@ -17,6 +18,7 @@ pub(super) struct ActiveDispatchArgBuffers {
 }
 
 impl ActiveDispatchArgBuffers {
+    /// Allocates dispatch argument buffers for HIR, instruction, virtual, and output worklists.
     pub(super) fn create(
         device: &wgpu::Device,
         virtual_next_call_step_count: usize,

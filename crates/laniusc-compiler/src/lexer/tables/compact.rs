@@ -32,7 +32,10 @@ fn take_u16(buf: &mut &[u8]) -> Result<u16, String> {
     Ok(u16::from_le_bytes(le))
 }
 
-/// Returns: (n_states, next_emit_packed_u32, token_map_u32)
+/// Loads the compact runtime DFA table.
+///
+/// Returns `(n_states, next_emit_packed_u32, token_map_u32)`. `next_emit` is
+/// packed as two reflected `u16` transitions per `u32`, matching shader input.
 pub fn load_compact_tables_from_bytes(
     mut data: &[u8],
 ) -> Result<(usize, Vec<u32>, Vec<u32>), String> {

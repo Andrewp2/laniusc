@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters ranked type arguments into owner-local compact ranges.
 pub struct HirTypeArgScatterPass {
     data: PassData,
 }

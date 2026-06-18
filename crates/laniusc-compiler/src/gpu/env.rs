@@ -10,6 +10,7 @@ fn warn_invalid_env(var: &str, value: &str, default: &str) {
     warn!("{var} has invalid value '{value}'; using default '{default}'");
 }
 
+/// Reads a string environment variable, warning and returning `default` if unset.
 pub(crate) fn env_string(name: &str, default: &str) -> String {
     match std::env::var(name) {
         Ok(value) => value,
@@ -20,6 +21,7 @@ pub(crate) fn env_string(name: &str, default: &str) -> String {
     }
 }
 
+/// Reads a path environment variable, warning and returning `default` if unset.
 pub(crate) fn env_path(name: &str, default: PathBuf) -> PathBuf {
     let default_display = default.display().to_string();
     match std::env::var_os(name) {
@@ -31,6 +33,7 @@ pub(crate) fn env_path(name: &str, default: PathBuf) -> PathBuf {
     }
 }
 
+/// Reads a positive `u64` environment variable with warnings on invalid input.
 pub(crate) fn env_u64(name: &str, default: u64) -> u64 {
     let default_display = default.to_string();
     match std::env::var(name) {

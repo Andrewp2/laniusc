@@ -22,6 +22,7 @@ use crate::{
     },
 };
 
+/// Returns one runtime-bound stdlib API diagnostic record.
 pub(super) fn diagnostic_runtime_api_json_pretty(
     api_name: &str,
 ) -> Result<String, serde_json::Error> {
@@ -87,6 +88,7 @@ fn runtime_api_leaf_name(api_name: &str) -> &str {
         .unwrap_or(api_name)
 }
 
+/// Returns all known runtime-bound stdlib API diagnostic records.
 pub(super) fn diagnostic_runtime_apis_json_pretty() -> Result<String, serde_json::Error> {
     let registry = diagnostic_registry();
     let document = serde_json::json!({
@@ -115,6 +117,7 @@ pub(super) fn diagnostic_runtime_apis_json_pretty() -> Result<String, serde_json
     serde_json::to_string_pretty(&document)
 }
 
+/// Returns one runtime service boundary selected by id, module, API, or probe.
 pub(super) fn diagnostic_runtime_service_json_pretty(
     service_selector: &str,
 ) -> Result<String, serde_json::Error> {
@@ -200,6 +203,7 @@ fn diagnostic_runtime_service_boundary_for_selector(
     (None, None)
 }
 
+/// Returns all runtime-bound APIs associated with one runtime service.
 pub(super) fn diagnostic_runtime_service_apis_json_pretty(
     service_selector: &str,
 ) -> Result<String, serde_json::Error> {
@@ -243,6 +247,7 @@ pub(super) fn diagnostic_runtime_service_apis_json_pretty(
     serde_json::to_string_pretty(&document)
 }
 
+/// Returns every runtime service boundary known to the diagnostics registry.
 pub(super) fn diagnostic_runtime_services_json_pretty() -> Result<String, serde_json::Error> {
     let registry = diagnostic_registry();
     let document = serde_json::json!({

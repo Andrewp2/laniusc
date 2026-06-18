@@ -1,5 +1,9 @@
 use super::*;
 
+/// Validates the top-level work-queue index for a target.
+///
+/// The index must identify a non-empty queue, keep artifact-backed item counts
+/// within the total item count, and use the same final item/job index.
 pub(in crate::compiler) fn validate_work_queue_index(
     index: &SourcePackWorkQueueIndex,
     target: SourcePackArtifactTarget,
@@ -43,6 +47,10 @@ pub(in crate::compiler) fn validate_work_queue_index(
     Ok(())
 }
 
+/// Validates a persisted work-queue page.
+///
+/// Persisted pages must obey inline record caps because overflow data should be
+/// stored in sidecar dependency/dependent/input pages.
 pub(in crate::compiler) fn validate_work_queue_page(
     page: &SourcePackWorkQueuePage,
     target: SourcePackArtifactTarget,
@@ -56,6 +64,10 @@ pub(in crate::compiler) fn validate_work_queue_page(
     )
 }
 
+/// Validates a work-queue page before it is compacted for storage.
+///
+/// Store-input validation permits some expanded inline records that the store
+/// path may split into sidecar pages before persistence.
 pub(in crate::compiler) fn validate_work_queue_page_store_input(
     page: &SourcePackWorkQueuePage,
     target: SourcePackArtifactTarget,
@@ -69,12 +81,20 @@ pub(in crate::compiler) fn validate_work_queue_page_store_input(
     )
 }
 
+/// Selects which work-queue page representation is being validated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum WorkQueuePageValidationMode {
+    /// Durable on-disk page after oversized inline records have been paged out.
     Persisted,
+    /// Pre-store page that may still contain expanded inline records.
     StoreInput,
 }
 
+/// Validates an inline work-queue record count.
+///
+/// Returns `false` instead of an error when the caller allows unbounded store
+/// input, signaling that deeper validation of those inline records should be
+/// skipped until after compaction.
 pub(in crate::compiler) fn validate_work_queue_inline_record_count(
     page: &SourcePackWorkQueuePage,
     label: &str,
@@ -94,6 +114,10 @@ pub(in crate::compiler) fn validate_work_queue_inline_record_count(
     Ok(true)
 }
 
+/// Validates a work-queue page under the requested representation mode.
+///
+/// The check covers identity, dependency ordering, dependent ordering, sidecar
+/// page counts, input summaries, and the shape required by each work item kind.
 pub(in crate::compiler) fn validate_work_queue_page_with_mode(
     page: &SourcePackWorkQueuePage,
     target: SourcePackArtifactTarget,
@@ -471,6 +495,10 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
     Ok(())
 }
 
+/// Validates one sidecar page of work-queue dependencies.
+///
+/// Dependency pages must be dense by page position, non-empty, bounded by the
+/// dependency page size, sorted, unique, and point only to prior work items.
 pub(in crate::compiler) fn validate_work_queue_dependencies_page(
     page: &SourcePackWorkQueueDependenciesPage,
     target: SourcePackArtifactTarget,
@@ -560,6 +588,10 @@ pub(in crate::compiler) fn validate_work_queue_dependencies_page(
     Ok(())
 }
 
+/// Validates one sidecar page of work-queue dependents.
+///
+/// Dependent pages must be dense by page position, non-empty, bounded by the
+/// dependent page size, sorted, unique, and point only to later work items.
 pub(in crate::compiler) fn validate_work_queue_dependents_page(
     page: &SourcePackWorkQueueDependentsPage,
     target: SourcePackArtifactTarget,

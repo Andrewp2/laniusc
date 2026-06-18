@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds function-signature owner links from HIR function syntax.
 pub struct HirFnSignatureOwnerInitPass {
     data: PassData,
 }

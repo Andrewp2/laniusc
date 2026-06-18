@@ -6,6 +6,7 @@ use super::{
 };
 use crate::cli::common::{CliError, missing_cli_option_value_error};
 
+/// Parses one source-pack option, returning whether the argument was consumed.
 pub(super) fn parse_arg<I>(
     arg: &str,
     args: &mut I,

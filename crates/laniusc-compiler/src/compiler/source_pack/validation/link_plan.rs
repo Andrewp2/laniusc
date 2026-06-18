@@ -1,5 +1,9 @@
 use super::*;
 
+/// Validates the hierarchical link-plan index.
+///
+/// The plan must have normalized limits, at least one input partition and group,
+/// and a dense final group/job mapping at the end of the link-group range.
 pub(in crate::compiler) fn validate_link_plan_index(
     index: &SourcePackHierarchicalLinkPlanIndex,
     target: SourcePackArtifactTarget,
@@ -68,6 +72,11 @@ pub(in crate::compiler) fn validate_link_plan_index(
     Ok(())
 }
 
+/// Validates one hierarchical link group page.
+///
+/// Leaf groups must reference source partitions and prior frontend/codegen jobs.
+/// Reduce groups must reference prior link groups. All inline input lists must
+/// be sorted, unique, bounded, and consistent with their scalar counts.
 pub(in crate::compiler) fn validate_link_group_page(
     group: &SourcePackHierarchicalLinkGroupPage,
     target: SourcePackArtifactTarget,
@@ -289,6 +298,10 @@ fn validate_link_group_source_summary(
     Ok(())
 }
 
+/// Validates a link group against the containing hierarchical link-plan index.
+///
+/// The group's dense job index must match `first_link_job_index + group_index`,
+/// and the final group must cover the plan's complete input partition count.
 pub(in crate::compiler) fn validate_link_group_page_for_plan(
     group: &SourcePackHierarchicalLinkGroupPage,
     index: &SourcePackHierarchicalLinkPlanIndex,

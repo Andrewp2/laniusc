@@ -10,11 +10,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for one semantic-HIR prefix block scan step.
 pub struct Params {
     pub n_blocks: u32,
     pub scan_step: u32,
 }
 
+/// Reusable block-prefix scanner for semantic HIR and HIR list-rank scans.
 pub struct HirSemanticPrefixBlocksPass {
     data: PassData,
 }
@@ -26,6 +28,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirSemanticPrefixBlocksPass {
+    /// Records the semantic-HIR compaction block-prefix scan.
     pub fn record_scan(
         &self,
         device: &wgpu::Device,
@@ -43,6 +46,7 @@ impl HirSemanticPrefixBlocksPass {
         )
     }
 
+    /// Records the struct-field rank block-prefix scan.
     pub fn record_struct_rank_scan(
         &self,
         device: &wgpu::Device,
@@ -60,6 +64,7 @@ impl HirSemanticPrefixBlocksPass {
         )
     }
 
+    /// Records the generic list-rank block-prefix scan.
     pub fn record_list_rank_scan(
         &self,
         device: &wgpu::Device,
@@ -77,6 +82,7 @@ impl HirSemanticPrefixBlocksPass {
         )
     }
 
+    /// Records the enum-variant rank block-prefix scan.
     pub fn record_enum_rank_scan(
         &self,
         device: &wgpu::Device,
@@ -94,6 +100,7 @@ impl HirSemanticPrefixBlocksPass {
         )
     }
 
+    /// Records the match-arm rank block-prefix scan.
     pub fn record_match_rank_scan(
         &self,
         device: &wgpu::Device,

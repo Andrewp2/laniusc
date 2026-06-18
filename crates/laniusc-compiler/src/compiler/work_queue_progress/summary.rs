@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Builds a compact summary for one work-queue progress page.
 pub(in crate::compiler) fn progress_page_summary(
     page: &SourcePackWorkQueueProgressPage,
 ) -> SourcePackWorkQueueProgressPageSummary {
@@ -42,6 +43,7 @@ pub(in crate::compiler) fn progress_page_summary(
     }
 }
 
+/// Returns whether every ready item in a page summary is currently claimed.
 pub(in crate::compiler) fn progress_page_ready_items_are_claimed(
     summary: &SourcePackWorkQueueProgressPageSummary,
     now_unix_nanos: Option<u128>,
@@ -59,6 +61,7 @@ pub(in crate::compiler) fn progress_page_ready_items_are_claimed(
     }
 }
 
+/// Returns whether every ready artifact item in a page summary is claimed.
 pub(in crate::compiler) fn progress_page_ready_artifact_items_are_claimed(
     summary: &SourcePackWorkQueueProgressPageSummary,
     now_unix_nanos: Option<u128>,
@@ -77,6 +80,7 @@ pub(in crate::compiler) fn progress_page_ready_artifact_items_are_claimed(
     }
 }
 
+/// Replaces one page contribution inside an aggregate progress count.
 pub(in crate::compiler) fn progress_adjust_count(
     total: usize,
     old_count: usize,
@@ -93,6 +97,7 @@ pub(in crate::compiler) fn progress_adjust_count(
         })
 }
 
+/// Loads a stored page summary or derives one from the stored progress page.
 pub(in crate::compiler) fn progress_page_summary_from_index_or_store(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -112,6 +117,7 @@ pub(in crate::compiler) fn progress_page_summary_from_index_or_store(
     Ok(summary)
 }
 
+/// Returns a page summary from changed pages before falling back to stored data.
 pub(in crate::compiler) fn progress_page_summary_from_changes_or_store(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

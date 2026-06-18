@@ -24,6 +24,7 @@ use crate::{
 
 const SOURCE_PACK_PROGRESS_SCHEMA_NAME: &str = "laniusc.diagnostics.source-pack-progress";
 
+/// Reads persisted source-pack work-queue progress without compiling source.
 pub(super) fn diagnostic_source_pack_progress_json_pretty(
     args: impl IntoIterator<Item = String>,
 ) -> Result<String, CliError> {

@@ -7,6 +7,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pointer-jump pass that propagates struct field ranks through field lists.
 pub struct HirStructFieldRankStepPass {
     data: PassData,
 }
@@ -18,6 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirStructFieldRankStepPass {
+    /// Records all struct field rank propagation steps with direct dispatch sizing.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,
@@ -27,6 +29,7 @@ impl HirStructFieldRankStepPass {
         self.record_steps_inner(device, encoder, buffers, None)
     }
 
+    /// Records all struct field rank propagation steps with indirect dispatch sizing.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,

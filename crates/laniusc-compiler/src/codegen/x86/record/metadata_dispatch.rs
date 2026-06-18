@@ -17,6 +17,7 @@ use super::{
     timing::stamp_timer,
 };
 
+/// Inputs for recording x86 metadata, ownership, layout, and call-analysis passes.
 pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) device: &'a wgpu::Device,
     pub(super) queue: &'a wgpu::Queue,
@@ -102,6 +103,7 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) call_callee_owner_step_bind_groups: &'a [wgpu::BindGroup],
 }
 
+/// Records metadata and call-analysis dispatches before instruction generation starts.
 pub(super) fn record_metadata_and_call_dispatches(
     generator: &GpuX86CodeGenerator,
     inputs: MetadataCallDispatchInputs<'_, '_>,

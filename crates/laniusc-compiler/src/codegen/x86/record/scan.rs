@@ -11,6 +11,7 @@ use super::super::{
     },
 };
 
+/// Builds scan parameter uniforms for a block-count-derived step sequence.
 pub(super) fn scan_params(
     device: &wgpu::Device,
     label: &str,
@@ -22,6 +23,7 @@ pub(super) fn scan_params(
     scan_params_for_steps(device, label, &steps, n_items, n_blocks, inst_capacity)
 }
 
+/// Builds scan parameter uniforms for an explicit step sequence.
 pub(super) fn scan_params_for_steps(
     device: &wgpu::Device,
     label: &str,
@@ -45,6 +47,7 @@ pub(super) fn scan_params_for_steps(
     uniform_u32_struct_array(device, label, &param_bytes)
 }
 
+/// Builds register-allocation chunk parameter uniforms.
 pub(super) fn regalloc_params(
     device: &wgpu::Device,
     label: &str,
@@ -68,6 +71,7 @@ pub(super) fn regalloc_params(
     uniform_u32_struct_array(device, label, &param_bytes)
 }
 
+/// Returns the ping-pong prefix buffer holding the final scan result.
 pub(super) fn final_ping_pong_scan_prefix<'a>(
     params: &UniformBindingArray,
     prefix_a: &'a wgpu::Buffer,

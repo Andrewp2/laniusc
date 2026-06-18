@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that links type-argument nodes to their owning type path or generic list.
 pub struct HirTypeArgLinksPass {
     data: PassData,
 }

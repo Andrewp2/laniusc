@@ -30,6 +30,7 @@ use crate::{
     },
 };
 
+/// Prepares one source-pack metadata chunk and exits without target output.
 pub(crate) fn prepare_metadata_only(
     emit: &str,
     stdlib_paths: &[PathBuf],
@@ -93,6 +94,7 @@ pub(crate) fn prepare_metadata_only(
     )
 }
 
+/// Prepares one metadata chunk from package/path-manifest inputs.
 pub(crate) fn prepare_path_manifest_metadata_only(
     emit: &str,
     path_manifest: ExplicitSourcePackPathManifest,
@@ -153,6 +155,7 @@ pub(crate) fn prepare_path_manifest_metadata_only(
     Ok(())
 }
 
+/// Prepares one build-work chunk from metadata persisted under the artifact root.
 pub(crate) fn prepare_build_from_metadata_chunk_only(
     emit: &str,
     source_pack: &Options,
@@ -198,6 +201,10 @@ pub(crate) fn prepare_build_from_metadata_chunk_only(
     Ok(())
 }
 
+/// Advances one bounded source-pack preparation chunk.
+///
+/// Metadata is prepared first; once metadata exists, this delegates to
+/// build-preparation.
 pub(crate) fn prepare_inputs_chunk_only(
     emit: &str,
     stdlib_paths: &[PathBuf],

@@ -13,11 +13,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for validating packed stream totals against capacity.
 pub struct Params {
     pub n_pairs: u32,
     pub emit_capacity: u32,
 }
 
+/// Pass that writes parser pack-total status words.
 pub struct PackTotalsStatusPass {
     data: PassData,
 }
@@ -29,6 +31,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackTotalsStatusPass {
+    /// Records the final packed-total status pass.
     pub fn record_pass(
         &self,
         device: &wgpu::Device,

@@ -21,6 +21,7 @@ use super::{
     },
 };
 
+/// Bind groups used to plan x86 instruction counts, ordering, and worklists.
 pub(super) struct InstPlanBindGroups {
     pub(super) for_iterable_nodes: wgpu::BindGroup,
     pub(super) control_padding: wgpu::BindGroup,
@@ -47,6 +48,7 @@ pub(super) struct InstPlanBindGroups {
     pub(super) index_source_owner_step: Vec<wgpu::BindGroup>,
 }
 
+/// Buffer inputs needed by x86 instruction-planning passes.
 pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) feature_params: &'a wgpu::Buffer,
@@ -142,6 +144,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) index_source_owner_steps: &'a [u32],
 }
 
+/// Creates bind groups for x86 instruction planning and node worklist construction.
 pub(super) fn create_inst_plan_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

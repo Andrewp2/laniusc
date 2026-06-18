@@ -10,6 +10,7 @@ use std::{
 const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
 const PROBE_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
+/// Returns the `doctor` payload used when the user opts out of probing `slangc`.
 pub(super) fn skipped_probe() -> serde_json::Value {
     let build_version = option_env!("LANIUS_SLANGC_VERSION").unwrap_or("unknown");
     let (source, command) = configured_command();
@@ -24,6 +25,7 @@ pub(super) fn skipped_probe() -> serde_json::Value {
     })
 }
 
+/// Probes the configured `slangc` binary and returns status plus JSON metadata.
 pub(super) fn check() -> (&'static str, serde_json::Value) {
     let build_version = option_env!("LANIUS_SLANGC_VERSION").unwrap_or("unknown");
     let (source, command) = configured_command();

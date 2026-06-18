@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Builds counted `u32` scan bind groups using the standard type-check passes.
 pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
@@ -32,6 +33,7 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_with_passes(
     )
 }
 
+/// Builds counted `u32` scan bind groups from explicitly supplied passes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_from_passes(
     counted_scan_local: &PassData,
@@ -120,6 +122,7 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_from_passes(
     })
 }
 
+/// Creates ping-pong scan parameter packets for loop-depth propagation.
 pub(in crate::type_checker) fn make_loop_depth_scan_steps(
     device: &wgpu::Device,
     base: LoopDepthParams,
@@ -153,6 +156,7 @@ pub(in crate::type_checker) fn make_loop_depth_scan_steps(
     .collect()
 }
 
+/// Creates ping-pong scan parameter packets for name-like counted scans.
 pub(in crate::type_checker) fn make_name_scan_steps(
     device: &wgpu::Device,
     base: NameScanParams,
@@ -181,6 +185,7 @@ pub(in crate::type_checker) fn make_name_scan_steps(
         .collect()
 }
 
+/// Creates ping-pong scan parameter packets for enclosing-function context.
 pub(in crate::type_checker) fn make_fn_context_scan_steps(
     device: &wgpu::Device,
     base: FnContextParams,

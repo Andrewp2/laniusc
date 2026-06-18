@@ -11,6 +11,7 @@ use empty_hir_bindings::{
 use visible_scratch::ResidentVisibleScratch;
 
 impl GpuTypeChecker {
+    /// Allocates or wires all resident buffers and bind groups for one cache key.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn create_resident_state(
         &self,

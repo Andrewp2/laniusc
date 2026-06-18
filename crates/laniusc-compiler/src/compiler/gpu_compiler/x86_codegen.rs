@@ -7,6 +7,7 @@ use crate::{
 };
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Returns the initialized x86 code generator or a backend initialization error.
     pub(super) fn x86_generator(&self) -> Result<&x86::GpuX86CodeGenerator, CompileError> {
         self.x86_generator.as_deref().map_err(|err| {
             CompileError::GpuCodegen(format!("initialize GPU x86 code generator: {err}"))
@@ -212,11 +213,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             ),
         }
     }
+    /// Compile one in-memory source string through the x86_64 backend using
+    /// `<source>` as the diagnostic path.
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = prepare_source_for_gpu(src)?;
         self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, PathBuf::from("<source>"))
             .await
     }
+    /// Read a source file from disk and compile it through the x86_64 backend
+    /// with diagnostics labeled by that path.
     pub async fn compile_source_to_x86_64_from_path(
         &self,
         path: impl AsRef<Path>,
@@ -226,6 +231,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, path.to_path_buf())
             .await
     }
+    /// Compile an in-memory source pack through the x86_64 backend after
+    /// bounded codegen-unit validation.
     pub async fn compile_source_pack_to_x86_64<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -459,6 +466,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex source pack: {err}")))?
     }
+    /// Compile an explicit in-memory source-pack manifest through the x86_64
+    /// backend and preserve manifest source paths for diagnostics.
     pub async fn compile_source_pack_manifest_to_x86_64(
         &self,
         source_pack: &ExplicitSourcePack,
@@ -469,6 +478,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         )
         .await
     }
+    /// Compiles prepared source text to x86_64 output using a synthetic path.
     pub(in crate::compiler) async fn compile_expanded_source_to_x86_64(
         &self,
         src: &str,

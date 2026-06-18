@@ -1,12 +1,17 @@
 use crate::compiler::{CompileError, Diagnostic};
 
+/// CLI error wrapper that preserves structured compiler diagnostics when
+/// possible.
 #[derive(Debug)]
 pub(crate) enum CliError {
+    /// Structured diagnostic that can render as text, JSON, or LSP JSON.
     Diagnostic(Diagnostic),
+    /// Plain control-plane error string.
     Message(String),
 }
 
 impl CliError {
+    /// Converts compiler errors while preserving diagnostic payloads.
     pub(crate) fn from_compile_error(err: CompileError) -> Self {
         match err {
             CompileError::Diagnostic(diagnostic) => CliError::Diagnostic(diagnostic),
@@ -47,6 +52,7 @@ impl From<crate::cli::output::CliOutputError> for CliError {
     }
 }
 
+/// Builds the stable diagnostic for an unsupported option value.
 pub(crate) fn unsupported_cli_option_value_error(
     option: &str,
     value: &str,
@@ -62,6 +68,7 @@ pub(crate) fn unsupported_cli_option_value_error(
     CliError::Diagnostic(diagnostic)
 }
 
+/// Builds the stable diagnostic for a missing option value.
 pub(crate) fn missing_cli_option_value_error(
     option: &str,
     expected: impl Into<String>,
@@ -72,6 +79,7 @@ pub(crate) fn missing_cli_option_value_error(
     )
 }
 
+/// Builds the stable diagnostic for an unknown option flag.
 pub(crate) fn unknown_cli_option_error(command: &str, flag: &str, accepted: &str) -> CliError {
     CliError::Diagnostic(
         Diagnostic::error("LNC0020", "unknown CLI option")
@@ -83,6 +91,7 @@ pub(crate) fn unknown_cli_option_error(command: &str, flag: &str, accepted: &str
     )
 }
 
+/// Builds the stable diagnostic for an unknown subcommand.
 pub(crate) fn unknown_cli_subcommand_error(
     command: &str,
     subcommand: &str,
@@ -100,6 +109,7 @@ pub(crate) fn unknown_cli_subcommand_error(
     )
 }
 
+/// Builds the stable diagnostic for a missing subcommand.
 pub(crate) fn missing_cli_subcommand_error(command: &str, accepted: &str) -> CliError {
     CliError::Diagnostic(
         Diagnostic::error("LNC0025", "missing CLI subcommand")
@@ -111,6 +121,7 @@ pub(crate) fn missing_cli_subcommand_error(command: &str, accepted: &str) -> Cli
     )
 }
 
+/// Builds the stable diagnostic for a missing positional argument.
 pub(crate) fn missing_cli_argument_error(command: &str, expected: &str) -> CliError {
     CliError::Diagnostic(
         Diagnostic::error("LNC0026", "missing CLI argument")
@@ -121,6 +132,7 @@ pub(crate) fn missing_cli_argument_error(command: &str, expected: &str) -> CliEr
     )
 }
 
+/// Builds an option or positional diagnostic for an unexpected argument.
 pub(crate) fn extra_cli_argument_error(command: &str, argument: &str, accepted: &str) -> CliError {
     if argument.starts_with('-') {
         unknown_cli_option_error(command, argument, accepted)
@@ -135,6 +147,7 @@ pub(crate) fn extra_cli_argument_error(command: &str, argument: &str, accepted: 
     }
 }
 
+/// Builds the stable diagnostic for incompatible option combinations.
 pub(crate) fn incompatible_cli_options_error(
     command: &str,
     option: &str,

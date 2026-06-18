@@ -12,6 +12,7 @@ pub(in crate::compiler) use groups::*;
 pub(in crate::compiler) use progress::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Persisted cursor for resumable hierarchical link execution-page preparation.
 pub(in crate::compiler) struct HierarchicalLinkExecutionPrepareProgress {
     pub(in crate::compiler) version: u32,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -20,6 +21,7 @@ pub(in crate::compiler) struct HierarchicalLinkExecutionPrepareProgress {
     pub(in crate::compiler) final_output_seen: bool,
 }
 
+/// Validates resumable hierarchical link execution preparation progress.
 pub(in crate::compiler) fn validate_link_execution_prepare_progress(
     progress: &HierarchicalLinkExecutionPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -63,6 +65,7 @@ pub(in crate::compiler) fn validate_link_execution_prepare_progress(
     Ok(())
 }
 
+/// Stores a bounded chunk of hierarchical link execution pages from a link plan.
 pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -240,6 +243,7 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
     })
 }
 
+/// Persists hierarchical link execution preparation progress.
 pub(in crate::compiler) fn store_link_execution_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &HierarchicalLinkExecutionPrepareProgress,
@@ -259,6 +263,7 @@ pub(in crate::compiler) fn store_link_execution_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates hierarchical link execution preparation progress.
 pub(in crate::compiler) fn load_link_execution_prepare_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -282,6 +287,7 @@ pub(in crate::compiler) fn load_link_execution_prepare_progress(
     Ok(progress)
 }
 
+/// Builds one executable hierarchical link page from stored artifact references.
 pub(in crate::compiler) fn execution_page_from_artifact_refs(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -387,6 +393,7 @@ pub(in crate::compiler) fn execution_page_from_artifact_refs(
     Ok(page)
 }
 
+/// Writer that spills leaf-group interface inputs into execution sidecar pages.
 pub(in crate::compiler) struct ExecutionInterfacePageWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -400,6 +407,7 @@ pub(in crate::compiler) struct ExecutionInterfacePageWriter<'a> {
 }
 
 impl<'a> ExecutionInterfacePageWriter<'a> {
+    /// Creates an empty interface-input page writer.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -422,6 +430,7 @@ impl<'a> ExecutionInterfacePageWriter<'a> {
         }
     }
 
+    /// Adds the interface artifact produced by a dependency job.
     pub(in crate::compiler) fn push_job(&mut self, job_index: usize) -> Result<(), CompileError> {
         let artifact_ref = artifact_ref_for_index_from_stored_pages(
             self.store,
@@ -439,6 +448,7 @@ impl<'a> ExecutionInterfacePageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current interface-input page if it contains any inputs.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_input_interfaces.is_empty() {
             return Ok(());
@@ -468,12 +478,14 @@ impl<'a> ExecutionInterfacePageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes remaining inputs and returns total input/page counts.
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
         self.flush()?;
         Ok((self.input_count, self.page_index))
     }
 }
 
+/// Stores paged library-interface inputs for a leaf link group.
 pub(in crate::compiler) fn store_leaf_interface_pages(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -539,6 +551,7 @@ pub(in crate::compiler) fn store_leaf_interface_pages(
     ))
 }
 
+/// Writer that spills leaf-group object inputs into execution sidecar pages.
 pub(in crate::compiler) struct ExecutionObjectPageWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -552,6 +565,7 @@ pub(in crate::compiler) struct ExecutionObjectPageWriter<'a> {
 }
 
 impl<'a> ExecutionObjectPageWriter<'a> {
+    /// Creates an empty object-input page writer.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -574,6 +588,7 @@ impl<'a> ExecutionObjectPageWriter<'a> {
         }
     }
 
+    /// Adds the object artifact produced by a codegen job.
     pub(in crate::compiler) fn push_job(&mut self, job_index: usize) -> Result<(), CompileError> {
         let artifact_ref = artifact_ref_for_index_from_stored_pages(
             self.store,
@@ -591,6 +606,7 @@ impl<'a> ExecutionObjectPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current object-input page if it contains any inputs.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_input_objects.is_empty() {
             return Ok(());
@@ -615,12 +631,14 @@ impl<'a> ExecutionObjectPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes remaining inputs and returns total input/page counts.
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
         self.flush()?;
         Ok((self.input_count, self.page_index))
     }
 }
 
+/// Stores paged codegen-object inputs for a leaf link group.
 pub(in crate::compiler) fn store_leaf_object_pages(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -656,6 +674,7 @@ pub(in crate::compiler) fn store_leaf_object_pages(
     Ok((input_object_count, input_object_page_count))
 }
 
+/// Writer that spills reduce-group partial-link inputs into execution sidecars.
 pub(in crate::compiler) struct ExecutionPartialPageWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
@@ -671,6 +690,7 @@ pub(in crate::compiler) struct ExecutionPartialPageWriter<'a> {
 }
 
 impl<'a> ExecutionPartialPageWriter<'a> {
+    /// Creates an empty partial-link input page writer.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -698,6 +718,7 @@ impl<'a> ExecutionPartialPageWriter<'a> {
         }
     }
 
+    /// Adds the output of a prior hierarchical link group as a reduce input.
     pub(in crate::compiler) fn push_group(
         &mut self,
         input_group_index: usize,
@@ -718,6 +739,7 @@ impl<'a> ExecutionPartialPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the current partial-link input page if it contains inputs.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_input_group_indices.is_empty() {
             return Ok(());
@@ -749,12 +771,14 @@ impl<'a> ExecutionPartialPageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes remaining inputs and returns total input/page counts.
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
         self.flush()?;
         Ok((self.input_count, self.page_index))
     }
 }
 
+/// Stores paged partial-link inputs for a reduce link group.
 pub(in crate::compiler) fn store_reduce_partial_pages(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -792,6 +816,7 @@ pub(in crate::compiler) fn store_reduce_partial_pages(
     Ok((input_group_count, input_group_page_count))
 }
 
+/// Validates that a reduce-group summary matches its input groups.
 pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -887,6 +912,7 @@ pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
     Ok(())
 }
 
+/// Returns the artifact output key for a hierarchical link group.
 pub(in crate::compiler) fn hierarchical_link_execution_output_key_for_group(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -1733,6 +1759,7 @@ fn link_execution_page_input_group_indices_from_artifacts(
     Ok(input_group_indices)
 }
 
+/// Stores the completed hierarchical link execution index.
 pub(in crate::compiler) fn store_hierarchical_link_execution_index(
     store: &FilesystemArtifactStore,
     index: &SourcePackHierarchicalLinkExecutionIndex,
@@ -1855,6 +1882,7 @@ fn validate_completed_link_execution_final_page_matches_plan_group(
     )
 }
 
+/// Validates that a completed link execution index is backed by final-page evidence.
 pub(in crate::compiler) fn validate_completed_link_execution_index_evidence(
     store: &FilesystemArtifactStore,
     index: &SourcePackHierarchicalLinkExecutionIndex,
@@ -2782,6 +2810,7 @@ fn validate_completed_link_sidecar_input_count(
     Ok(())
 }
 
+/// Builds the artifact reference produced by a scheduled frontend or codegen job.
 pub(in crate::compiler) fn scheduled_job_output_ref(
     job: &SourcePackJob,
     kind: SourcePackArtifactKind,
@@ -2818,6 +2847,7 @@ pub(in crate::compiler) fn scheduled_job_output_ref(
     })
 }
 
+/// Validates resumable artifact-reference preparation progress.
 pub(in crate::compiler) fn validate_build_artifact_ref_prepare_progress(
     progress: &ArtifactRefPrepareProgress,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -2901,6 +2931,7 @@ pub(in crate::compiler) fn validate_build_artifact_ref_prepare_progress(
     Ok(())
 }
 
+/// Stores a bounded chunk of artifact-reference pages from the library schedule.
 pub(in crate::compiler) fn store_artifact_ref_pages_from_schedule_chunk(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -3241,6 +3272,7 @@ fn validate_completed_artifact_ref_index_final_page_evidence(
     Ok(())
 }
 
+/// Stores artifact-reference pages for all jobs owned by one schedule partition.
 pub(in crate::compiler) fn store_artifact_ref_pages_for_schedule_partition(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,

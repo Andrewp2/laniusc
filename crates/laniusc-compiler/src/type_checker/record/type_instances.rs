@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Records scalar, named, aggregate-reference, and aggregate-detail type collection.
 pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -46,6 +47,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     Ok(())
 }
 
+/// Records generic-parameter discovery, owner propagation, scans, and key sorts.
 pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -204,6 +206,7 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
     Ok(())
 }
 
+/// Records struct-field key seeding and radix sorting for aggregate lookup.
 pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -270,6 +273,7 @@ pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
     Ok(())
 }
 
+/// Records the local, block-prefix, and apply stages of a counted `u32` scan.
 pub(in crate::type_checker) fn record_counted_u32_scan_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

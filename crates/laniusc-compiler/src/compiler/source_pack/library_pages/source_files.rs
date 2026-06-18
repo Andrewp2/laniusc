@@ -1,5 +1,10 @@
 use super::super::*;
 
+/// Builds the library partition plan implied by an explicit path manifest.
+///
+/// Source files must be grouped contiguously by library ID. Dependency records
+/// are checked against the libraries that actually own files, then copied into
+/// the partition records for later metadata storage.
 pub(in crate::compiler) fn library_partition_plan(
     manifest: &ExplicitSourcePackPathManifest,
     target: SourcePackArtifactTarget,
@@ -109,6 +114,11 @@ pub(in crate::compiler) fn library_partition_plan(
     Ok(plan)
 }
 
+/// Expands a partition plan into source-file pages for tests.
+///
+/// This test helper keeps the full file records inline on each page so callers
+/// can validate the partition/source-file mapping without reading from the
+/// filesystem store.
 #[cfg(test)]
 pub(in crate::compiler) fn library_source_file_pages(
     manifest: &ExplicitSourcePackPathManifest,
@@ -165,6 +175,11 @@ pub(in crate::compiler) fn library_source_file_pages(
     Ok(pages)
 }
 
+/// Checks that one source-file record belongs to its library partition.
+///
+/// The per-source record repeats partition metadata so execution shards can be
+/// loaded by source index. This validator rejects records from a different
+/// partition shape.
 pub(in crate::compiler) fn validate_source_file_record_partition(
     partition: &SourcePackLibraryPartition,
     record: &SourcePackLibrarySourceFileRecordPage,
@@ -184,6 +199,10 @@ pub(in crate::compiler) fn validate_source_file_record_partition(
     Ok(())
 }
 
+/// Checks that a compact source-file page summarizes its library partition.
+///
+/// Compact pages may omit inline source records, but their partition identity
+/// and source totals must match the partition index page exactly.
 pub(in crate::compiler) fn validate_source_file_page_partition(
     partition: &SourcePackLibraryPartition,
     page: &SourcePackLibrarySourceFilePage,
@@ -205,6 +224,10 @@ pub(in crate::compiler) fn validate_source_file_page_partition(
     Ok(())
 }
 
+/// Streams source-unit inputs from stored per-source records for a partition.
+///
+/// Each record is loaded by global source index and revalidated against the
+/// partition before being converted into the compact codegen input shape.
 pub(in crate::compiler) fn source_unit_inputs_from_records<'a>(
     store: &'a FilesystemArtifactStore,
     partition: &'a SourcePackLibraryPartition,
@@ -225,12 +248,20 @@ pub(in crate::compiler) fn source_unit_inputs_from_records<'a>(
     })
 }
 
+/// Aggregate source totals produced while storing source-file records.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::compiler) struct SourceFileRecordTotals {
+    /// Sum of source byte lengths for records written in the partition.
     pub(in crate::compiler) source_byte_count: usize,
+    /// Sum of source line counts for records written in the partition.
     pub(in crate::compiler) source_line_count: usize,
 }
 
+/// Stores one per-source record page for every path in a library partition.
+///
+/// The function reads source metadata from each explicit path, writes records by
+/// global source index, and returns the aggregate byte and line totals used by
+/// the partition and source-file summary pages.
 pub(in crate::compiler) fn store_source_file_records<I, P>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -305,6 +336,10 @@ where
     })
 }
 
+/// Builds a compact source-file summary page for a partition.
+///
+/// The returned page carries partition totals but no inline `source_files`
+/// payload; individual source records remain in their per-source pages.
 pub(in crate::compiler) fn compact_source_file_page(
     partition: &SourcePackLibraryPartition,
 ) -> Result<SourcePackLibrarySourceFilePage, CompileError> {

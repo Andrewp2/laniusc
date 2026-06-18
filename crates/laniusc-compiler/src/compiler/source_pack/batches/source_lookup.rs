@@ -1,5 +1,9 @@
 use super::*;
 
+/// Loads one source file by global source index from stored source-file pages.
+///
+/// The function caches partition and source-file summary pages. If the summary
+/// page is compact, it falls back to the per-source record page.
 pub(in crate::compiler) fn stored_source_file_for_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -54,6 +58,10 @@ pub(in crate::compiler) fn stored_source_file_for_index(
         })
 }
 
+/// Finds the library partition that owns a global source index.
+///
+/// Cached partitions are checked first, then the partition index is searched with
+/// binary search over stored partition pages.
 pub(in crate::compiler) fn library_partition_for_source_index_from_stored_pages(
     store: &FilesystemArtifactStore,
     index: &SourcePackLibraryPartitionIndex,

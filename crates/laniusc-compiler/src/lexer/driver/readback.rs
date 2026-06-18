@@ -6,6 +6,7 @@ use crate::lexer::{
     util::{read_tokens_from_mapped, u32_from_first_4},
 };
 
+/// Reads resident source-pack token buffers back to host `Token` records.
 pub(super) fn read_resident_tokens(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

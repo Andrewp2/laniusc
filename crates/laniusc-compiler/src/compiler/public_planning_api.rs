@@ -78,6 +78,7 @@ pub use artifact_build_stages::{
     prepare_work_queue_progress_chunk,
 };
 
+/// Reconstructs a completed preparation summary from persisted indexes.
 pub(super) fn artifact_prepare_result_from_indexes(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -163,6 +164,7 @@ pub(super) fn artifact_prepare_result_from_indexes(
     })
 }
 
+/// Stores compact build manifests after all planning indexes have been prepared.
 pub(super) fn store_compact_build_manifests_from_indexes(
     store: &FilesystemArtifactStore,
     limits: CodegenUnitLimits,
@@ -192,6 +194,7 @@ pub(super) fn store_compact_build_manifests_from_indexes(
     Ok((build_manifest_path, artifact_manifest_path))
 }
 
+/// Returns whether job-batch dependent preparation has reached the final batch.
 pub(super) fn job_batch_dependents_complete(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -205,6 +208,7 @@ pub(super) fn job_batch_dependents_complete(
     Ok(progress.next_batch_index == batch_count)
 }
 
+/// Returns whether hierarchical link leaf-group preparation has completed.
 pub(super) fn hierarchical_link_leaf_groups_complete(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -224,6 +228,7 @@ pub(super) fn hierarchical_link_leaf_groups_complete(
     Ok(progress.next_partition_index == schedule_index.partition_count)
 }
 
+/// Builds an incomplete artifact-preparation step result.
 pub(super) fn artifact_prepare_step(
     target: SourcePackArtifactTarget,
     stage: BuildPrepareStage,
@@ -240,6 +245,8 @@ pub(super) fn artifact_prepare_step(
     }
 }
 
+/// Advance persisted artifact-build preparation by a bounded number of new
+/// items and report the current preparation stage.
 pub fn prepare_artifact_build_chunk(
     artifact_root: impl Into<PathBuf>,
     limits: CodegenUnitLimits,
@@ -536,6 +543,8 @@ pub fn prepare_artifact_build_chunk(
     })
 }
 
+/// Repeatedly prepare persisted artifact-build chunks until preparation
+/// completes or the full-prepare step limit is reached.
 pub fn prepare_artifact_build(
     artifact_root: impl Into<PathBuf>,
     limits: CodegenUnitLimits,
@@ -566,6 +575,7 @@ pub fn prepare_artifact_build(
     )))
 }
 
+/// Advances metadata and artifact preparation for dependency-stream inputs.
 pub(super) fn prepare_dependency_stream_work_queue_chunk<I, PI, DI, P>(
     libraries: I,
     artifact_root: &Path,
@@ -614,6 +624,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Advances metadata and artifact preparation for stdlib/user path streams.
 pub(super) fn prepare_path_stream_work_queue_chunk<'a, SI, UI, P>(
     stdlib_source_file_count: usize,
     stdlib_paths: SI,

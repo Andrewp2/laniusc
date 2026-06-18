@@ -1,5 +1,10 @@
 use super::*;
 
+/// Builds a per-job artifact manifest from stored schedule and artifact-ref pages.
+///
+/// The job phase determines which output artifact is selected. Frontend and
+/// codegen jobs also materialize interface dependency inputs from the stored
+/// schedule dependency pages.
 pub(in crate::compiler) fn job_artifact_manifest_from_stored_artifact_refs(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -97,18 +102,31 @@ pub(in crate::compiler) fn job_artifact_manifest_from_stored_artifact_refs(
     })
 }
 
+/// Buffered writer for paged library-interface input refs of one job.
+///
+/// The writer converts dependency job indices into interface artifact refs and
+/// flushes fixed-size sidecar pages when the inline page capacity is reached.
 pub(in crate::compiler) struct JobInputInterfacePageWriter<'a> {
+    /// Store receiving the sidecar pages.
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
+    /// Artifact target for the pages.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Job whose input-interface pages are being written.
     pub(in crate::compiler) job_index: usize,
+    /// Artifact-ref index used to resolve dependency jobs into interface refs.
     pub(in crate::compiler) artifact_ref_index: &'a SourcePackBuildArtifactRefIndex,
+    /// Next input-interface page index to write.
     pub(in crate::compiler) page_index: usize,
+    /// First input position represented by the buffered page.
     pub(in crate::compiler) first_input_position: usize,
+    /// Total number of input refs flushed so far.
     pub(in crate::compiler) input_count: usize,
+    /// Buffered interface refs waiting for the next page flush.
     pub(in crate::compiler) current_input_interfaces: Vec<SourcePackArtifactRef>,
 }
 
 impl<'a> JobInputInterfacePageWriter<'a> {
+    /// Creates an empty input-interface page writer for one job.
     pub(in crate::compiler) fn new(
         store: &'a FilesystemArtifactStore,
         target: SourcePackArtifactTarget,
@@ -129,6 +147,10 @@ impl<'a> JobInputInterfacePageWriter<'a> {
         }
     }
 
+    /// Adds the interface artifact produced by one dependency job.
+    ///
+    /// The artifact ref is loaded from the stored artifact-ref pages and the
+    /// current page is flushed automatically when it reaches the configured cap.
     pub(in crate::compiler) fn push_job(
         &mut self,
         input_job_index: usize,
@@ -149,6 +171,7 @@ impl<'a> JobInputInterfacePageWriter<'a> {
         Ok(())
     }
 
+    /// Writes the currently buffered input-interface refs as one sidecar page.
     pub(in crate::compiler) fn flush(&mut self) -> Result<(), CompileError> {
         if self.current_input_interfaces.is_empty() {
             return Ok(());
@@ -176,12 +199,18 @@ impl<'a> JobInputInterfacePageWriter<'a> {
         Ok(())
     }
 
+    /// Flushes the final page and returns total input count and page count.
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
         self.flush()?;
         Ok((self.input_count, self.page_index))
     }
 }
 
+/// Stores paged explicit interface inputs for one scheduled job.
+///
+/// Explicit dependency jobs are resolved and written to sidecar pages. Compact
+/// dependency ranges are returned on the manifest instead of being expanded into
+/// pages here.
 pub(in crate::compiler) fn store_job_input_interface_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

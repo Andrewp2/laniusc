@@ -1,5 +1,10 @@
 use super::*;
 
+/// Converts a schedule-topology failure into a compiler error.
+///
+/// The scheduling algorithm reports unscheduled jobs when dependency waves
+/// cannot make progress. This helper formats that state for the source-pack
+/// execution path.
 pub(in crate::compiler) fn schedule_error(err: SourcePackScheduleError) -> CompileError {
     CompileError::GpuFrontend(format!(
         "source-pack job schedule has no dependency-ready wave for jobs {:?}",
@@ -7,6 +12,10 @@ pub(in crate::compiler) fn schedule_error(err: SourcePackScheduleError) -> Compi
     ))
 }
 
+/// Finds a job by global job index in an in-memory schedule.
+///
+/// Fast-path lookup uses the index as a vector position, then falls back to a
+/// scan for schedules whose jobs are not stored at their global index.
 pub(in crate::compiler) fn schedule_job(
     schedule: &SourcePackJobSchedule,
     job_index: usize,
@@ -27,6 +36,10 @@ pub(in crate::compiler) fn schedule_job(
         })
 }
 
+/// Streams explicit dependency job indices for a stored schedule job page.
+///
+/// Inline dependencies are visited directly. Paged dependencies are validated
+/// for contiguous positions and expected page sizes while they are streamed.
 pub(in crate::compiler) fn for_each_schedule_job_explicit_dependency_index<F>(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -113,6 +126,11 @@ where
     Ok(dependency_count)
 }
 
+/// Returns the first dependency index for a stored schedule job, if one exists.
+///
+/// The lookup handles inline dependencies, ranged dependencies, and paged
+/// dependencies. It also checks that every discovered dependency refers to an
+/// earlier job, preserving the schedule's acyclic ordering contract.
 pub(in crate::compiler) fn schedule_job_first_dependency_index(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -172,6 +190,10 @@ pub(in crate::compiler) fn schedule_job_first_dependency_index(
     Ok(Some(dependency_job_index))
 }
 
+/// Loads schedule job metadata without its expanded dependency payload.
+///
+/// The job page and locator are loaded together, cross-checked, and returned
+/// with inline dependency indices cleared so callers receive compact metadata.
 pub(in crate::compiler) fn stored_schedule_job_metadata(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -194,6 +216,11 @@ pub(in crate::compiler) fn stored_schedule_job_metadata(
     Ok(job)
 }
 
+/// Validates consistency between a job locator and its schedule job metadata.
+///
+/// The locator determines the expected phase and partition position. The job
+/// page must agree with that phase-specific location and remain inside the
+/// frontend, codegen, or link range recorded by the schedule index.
 pub(in crate::compiler) fn validate_stored_schedule_job_metadata(
     schedule_index: &SourcePackLibraryScheduleIndex,
     job_index: usize,
@@ -276,6 +303,10 @@ pub(in crate::compiler) fn validate_stored_schedule_job_metadata(
     }
 }
 
+/// Returns the total dependency count recorded by a schedule job page.
+///
+/// The total combines explicit dependency records with compact contiguous job
+/// ranges so callers can compare summary counts without expanding every range.
 pub(in crate::compiler) fn schedule_job_page_dependency_count(
     page: &SourcePackLibraryScheduleJobPage,
 ) -> usize {
@@ -284,6 +315,11 @@ pub(in crate::compiler) fn schedule_job_page_dependency_count(
     ))
 }
 
+/// Visits all frontend jobs represented by a stored schedule page.
+///
+/// Compact pages may store jobs inline or only by locator/job pages. This
+/// iterator normalizes both forms, validates each job against the page range,
+/// and reports the dependency count with each visited job.
 pub(in crate::compiler) fn for_each_stored_schedule_frontend_job<F>(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,
@@ -339,6 +375,11 @@ where
     Ok(())
 }
 
+/// Visits all codegen jobs represented by a stored schedule page.
+///
+/// The iterator supports inline and locator-backed jobs. For locator-backed
+/// jobs it also checks the first dependency and owning frontend job to confirm
+/// the codegen job belongs to the schedule page being streamed.
 pub(in crate::compiler) fn for_each_stored_schedule_codegen_job<F>(
     store: &FilesystemArtifactStore,
     schedule_index: &SourcePackLibraryScheduleIndex,

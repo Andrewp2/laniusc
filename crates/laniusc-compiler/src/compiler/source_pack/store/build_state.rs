@@ -1,7 +1,13 @@
 use super::*;
 
+/// File-backed advisory lock for source-pack build-state updates.
+///
+/// The lock is represented by a marker file and removed on drop. It is used to
+/// avoid concurrent writers racing while compact build state and progress
+/// summaries are being reconciled.
 #[derive(Debug)]
 pub(in crate::compiler) struct BuildStateLock {
+    /// Path of the marker file removed when the lock is dropped.
     pub(in crate::compiler) path: PathBuf,
 }
 
@@ -11,6 +17,11 @@ impl Drop for BuildStateLock {
     }
 }
 
+/// Checks that compact build state agrees with the persisted progress summary.
+///
+/// When a progress summary exists, it is the authoritative state for completed
+/// and claimed batch counts. Compact build state may mirror that summary, but it
+/// cannot introduce a linked output key without the corresponding progress shard.
 pub(in crate::compiler) fn validate_build_state_progress_summary(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -52,6 +63,10 @@ pub(in crate::compiler) fn validate_build_state_progress_summary(
 }
 
 impl FilesystemArtifactStore {
+    /// Attempts to acquire the per-target build-state writer lock.
+    ///
+    /// The lock creation uses `create_new` so an existing marker is treated as
+    /// an active writer rather than being overwritten.
     pub(in crate::compiler) fn try_lock_build_state_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -84,6 +99,10 @@ impl FilesystemArtifactStore {
         }
     }
 
+    /// Returns whether the target has the newer progress-summary state file.
+    ///
+    /// Callers use this to decide whether compact build state should be loaded
+    /// directly or reconstructed from progress-summary records.
     pub(in crate::compiler) fn progress_summary_available_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -92,6 +111,10 @@ impl FilesystemArtifactStore {
             .is_file()
     }
 
+    /// Stores compact build state for a target after reconciling progress summary state.
+    ///
+    /// If a progress summary has already been written, the compact state must
+    /// match it before the root build-state marker is persisted.
     pub fn store_build_state_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -105,6 +128,10 @@ impl FilesystemArtifactStore {
         self.store_build_state_file_for_target(target, &stored_state)
     }
 
+    /// Stores only the root build-state marker for a target.
+    ///
+    /// This helper skips progress-summary reconciliation and is used by internal
+    /// paths that have already established the marker state they need to write.
     pub(in crate::compiler) fn store_build_state_marker_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -114,6 +141,10 @@ impl FilesystemArtifactStore {
         self.store_build_state_file_for_target(target, &root_build_state_marker(state))
     }
 
+    /// Writes the build-state JSON file atomically for a target.
+    ///
+    /// The state is version-checked before serialization so invalid records do
+    /// not reach the source-pack store.
     pub(in crate::compiler) fn store_build_state_file_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -137,6 +168,11 @@ impl FilesystemArtifactStore {
     }
 
     #[cfg(test)]
+    /// Loads persisted build state for tests.
+    ///
+    /// Tests exercise both storage forms: direct compact state when no summary
+    /// exists, and summary-derived state once progress summaries have been
+    /// introduced.
     pub(in crate::compiler) fn load_build_state_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -161,6 +197,11 @@ impl FilesystemArtifactStore {
         Ok(state)
     }
 
+    /// Loads the target build state or returns a fresh empty state.
+    ///
+    /// Progress summaries take precedence over compact state because they carry
+    /// the current execution progress. A missing compact state file means no
+    /// work has been persisted yet.
     pub fn load_or_init_build_state_for_target(
         &self,
         target: SourcePackArtifactTarget,

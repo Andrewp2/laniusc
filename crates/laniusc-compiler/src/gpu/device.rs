@@ -15,9 +15,13 @@ const PIPELINE_CACHE_HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 8;
 
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
+    /// Shared wgpu device.
     pub device: Arc<wgpu::Device>,
+    /// Shared wgpu queue.
     pub queue: Arc<wgpu::Queue>,
+    /// Whether timestamp queries were requested successfully.
     pub timers_supported: bool,
+    /// Pipeline cache associated with this device, when supported.
     pub pipeline_cache: Option<Arc<wgpu::PipelineCache>>,
     pipeline_cache_path: Option<PathBuf>,
     pipeline_cache_identity_hash: Option<u64>,
@@ -30,6 +34,7 @@ impl GpuDevice {
         create_context()
     }
 
+    /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
         let timer = PipelineCachePersistTimer::new();
         let Some(cache) = self.pipeline_cache.as_ref() else {
@@ -103,6 +108,7 @@ impl GpuDevice {
         timer.span("total", total_start, end);
     }
 
+    /// Returns current pipeline-cache payload length, if cache data is available.
     pub fn pipeline_cache_data_len(&self) -> Option<usize> {
         self.pipeline_cache
             .as_ref()
@@ -306,10 +312,12 @@ pub fn global() -> &'static GpuDevice {
     CTX.get_or_init(GpuDevice::new)
 }
 
+/// Persists the process-global device's pipeline cache.
 pub fn persist_pipeline_cache() {
     global().persist_pipeline_cache();
 }
 
+/// Returns the pipeline cache registered for a wgpu device.
 pub fn pipeline_cache_for(device: &wgpu::Device) -> Option<Arc<wgpu::PipelineCache>> {
     let key = device as *const wgpu::Device as usize;
     match pipeline_cache_registry().lock() {

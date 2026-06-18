@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Minimal HIR buffers used when type checking runs without parser item tables.
 pub(super) struct EmptyHirBindings {
     node_kind: LaniusBuffer<u32>,
     parent: LaniusBuffer<u32>,
@@ -9,6 +10,7 @@ pub(super) struct EmptyHirBindings {
 }
 
 impl EmptyHirBindings {
+    /// Creates placeholder HIR resources that satisfy every reflected binding.
     pub(super) fn new(device: &wgpu::Device, uses_hir_items: bool, hir_node_capacity: u32) -> Self {
         let empty_hir_len = if uses_hir_items {
             1
@@ -52,6 +54,7 @@ impl EmptyHirBindings {
     }
 }
 
+/// Registers real parser HIR item buffers under the shader resource names.
 pub(super) fn register_hir_item_resources<'a>(
     resources: &mut ResourceMap<'a>,
     hir_items: GpuTypeCheckHirItemBuffers<'a>,
@@ -221,6 +224,7 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_semantic_count", &hir_items.semantic_count);
 }
 
+/// Registers placeholder HIR resources for modes without parser item metadata.
 pub(super) fn register_empty_hir_resources<'a>(
     resources: &mut ResourceMap<'a>,
     empty_hir: &'a EmptyHirBindings,

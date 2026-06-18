@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for applying binary expression spans.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that writes final binary expression spans after propagation.
 pub struct HirBinarySpanApplyPass {
     data: PassData,
 }

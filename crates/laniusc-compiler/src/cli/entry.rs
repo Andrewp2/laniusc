@@ -5,6 +5,10 @@ use super::{
     dispatch,
 };
 
+/// Runs the CLI from process arguments and returns the process exit code.
+///
+/// Error rendering is selected before dispatch so subcommand parsing errors can
+/// still honor `--diagnostic-format`.
 pub fn run_from_env() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
     let diagnostic_format = diagnostic_format_from_args(args.iter().cloned());

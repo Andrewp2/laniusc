@@ -1,20 +1,40 @@
 use super::*;
 use crate::codegen::unit::link_batch_input_limit;
 
+/// Resumable checkpoint for deriving link-input batches from artifact refs.
+///
+/// Interface artifacts are batched first, then object artifacts. The checkpoint
+/// stores the next artifact and batch indices for both streams so link-batch
+/// preparation can stop after a bounded number of new batches and resume later.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct LinkBatchPrepareProgress {
+    /// Serialization version for this checkpoint.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose link batches are being prepared.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Normalized batch limits used when the checkpoint was created.
     pub(in crate::compiler) batch_limits: SourcePackJobBatchLimits,
+    /// Total artifact-ref records in the source artifact index.
     pub(in crate::compiler) artifact_count: usize,
+    /// Number of library-interface artifacts expected at the start of the index.
     pub(in crate::compiler) interface_artifact_count: usize,
+    /// Number of codegen-object artifacts expected after interface artifacts.
     pub(in crate::compiler) object_artifact_count: usize,
+    /// Next interface artifact index to include in a link-interface batch.
     pub(in crate::compiler) next_interface_artifact_index: usize,
+    /// Next link-interface batch index to assign.
     pub(in crate::compiler) next_interface_batch_index: usize,
+    /// Next object artifact index to include in a link-object batch.
     pub(in crate::compiler) next_object_artifact_index: usize,
+    /// Next link-object batch index to assign.
     pub(in crate::compiler) next_object_batch_index: usize,
 }
 
+/// Validates a link-batch preparation checkpoint against the current artifact index.
+///
+/// The checkpoint is reusable only if the target, normalized batch limits, and
+/// artifact counts still match the current artifact-ref index. Cursor positions
+/// must also stay within the interface and object artifact ranges.
 pub(in crate::compiler) fn validate_build_link_batch_prepare_progress(
     progress: &LinkBatchPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -67,6 +87,11 @@ pub(in crate::compiler) fn validate_build_link_batch_prepare_progress(
     Ok(())
 }
 
+/// Stores a bounded chunk of link-interface and link-object batch pages.
+///
+/// This resumable entry point reads artifact refs in schedule order, writes
+/// link-interface batches before link-object batches, persists progress after
+/// each chunk, and writes the final link-batch index when both streams finish.
 pub(in crate::compiler) fn store_build_link_batch_pages_from_artifact_refs_chunk(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -248,13 +273,22 @@ pub(in crate::compiler) fn store_build_link_batch_pages_from_artifact_refs_chunk
     })
 }
 
+/// Result of one link-batch substream chunk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) struct LinkBatchChunkStep {
+    /// Next artifact index to scan when the substream resumes.
     pub(in crate::compiler) next_artifact_index: usize,
+    /// Next batch index to assign when the substream resumes.
     pub(in crate::compiler) next_batch_index: usize,
+    /// Number of batches stored by this chunk.
     pub(in crate::compiler) new_batch_count: usize,
 }
 
+/// Stores a bounded chunk of link-interface batch pages.
+///
+/// Interface artifacts are grouped until adding another artifact would exceed
+/// the input-artifact, source-byte, or source-file batch limit. The returned
+/// cursor points at the first unbatched interface artifact.
 pub(in crate::compiler) fn store_link_interface_batch_pages_chunk(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -335,6 +369,10 @@ pub(in crate::compiler) fn store_link_interface_batch_pages_chunk(
     })
 }
 
+/// Flushes the current interface-artifact accumulator into one stored batch page.
+///
+/// The accumulator vectors and source counters are drained, leaving them ready
+/// for the next batch.
 pub(in crate::compiler) fn store_link_interface_batch_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -361,6 +399,11 @@ pub(in crate::compiler) fn store_link_interface_batch_page(
     Ok(())
 }
 
+/// Stores a bounded chunk of link-object batch pages.
+///
+/// Object artifacts are grouped with the same input and source-size limits used
+/// for interface batches. The returned cursor points at the first unbatched
+/// object artifact.
 pub(in crate::compiler) fn store_link_object_batch_pages_from_artifact_refs_chunk(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -441,6 +484,10 @@ pub(in crate::compiler) fn store_link_object_batch_pages_from_artifact_refs_chun
     })
 }
 
+/// Flushes the current object-artifact accumulator into one stored batch page.
+///
+/// The accumulator vectors and source counters are drained, leaving them ready
+/// for the next batch.
 pub(in crate::compiler) fn store_link_object_batch_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

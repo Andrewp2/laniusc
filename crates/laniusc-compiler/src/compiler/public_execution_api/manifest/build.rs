@@ -1,5 +1,7 @@
 use super::*;
 
+/// Execute ready artifact-manifest batches for a target until the persisted
+/// build completes or the bounded full-build step limit is reached.
 pub fn execute_artifact_manifest_build_for_target<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -66,6 +68,8 @@ where
     })
 }
 
+/// Execute one ready artifact-manifest batch for a target without first
+/// recording an explicit worker claim.
 pub fn execute_artifact_manifest_batch_for_target<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,
@@ -88,6 +92,7 @@ where
     )
 }
 
+/// Executes one artifact-manifest shard batch for a concrete target.
 pub(in crate::compiler) fn execute_shard_batch_for_target<E>(
     artifact_root: impl Into<PathBuf>,
     batch_index: usize,

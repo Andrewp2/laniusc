@@ -8,12 +8,14 @@ use super::super::{
     support::reflected_bind_group,
 };
 
+/// Bind groups used to record enum and match metadata for x86 lowering.
 pub(super) struct EnumMatchBindGroups {
     pub(super) enum_records: wgpu::BindGroup,
     pub(super) match_records: wgpu::BindGroup,
     pub(super) match_patterns: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by enum and match metadata recording.
 pub(super) struct EnumMatchBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) feature_params: &'a wgpu::Buffer,
@@ -38,6 +40,7 @@ pub(super) struct EnumMatchBindGroupInputs<'a> {
     pub(super) match_pattern_first_payload_node: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for enum records and match pattern records.
 pub(super) fn create_enum_match_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

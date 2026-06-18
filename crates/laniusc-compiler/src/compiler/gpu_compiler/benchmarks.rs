@@ -3,6 +3,8 @@
 use super::*;
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Record and run the lexer pipeline for a source string without recording
+    /// parser, type-check, or backend work.
     pub async fn benchmark_lex_source(&self, src: &str) -> Result<(), CompileError> {
         let src = prepare_source_for_gpu(src)?;
         let _resident_guard = self.resident_pipeline_lock.lock().await;
@@ -15,6 +17,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex benchmark: {err}")))?
     }
+    /// Estimate the live frontend capacities produced by lexing and parsing a
+    /// source string.
     pub async fn benchmark_live_capacity_estimate(
         &self,
         src: &str,
@@ -27,6 +31,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             semantic_hir_count: parse.semantic_hir_count,
         })
     }
+    /// Record and run lexing plus parser LL/HIR construction for a source
+    /// string and return the parser status and emitted capacity counts.
     pub async fn benchmark_parse_source(
         &self,
         src: &str,

@@ -9,10 +9,12 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for source-file token-end propagation.
 pub struct Params {
     pub token_capacity: u32,
 }
 
+/// Pass that computes the end token index for each source file.
 pub struct SourceFileTokenEndPass {
     data: PassData,
 }

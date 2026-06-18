@@ -1,5 +1,7 @@
 use super::*;
 
+/// Execute a claimed library-frontend or codegen work item with an async
+/// path-backed artifact executor.
 pub async fn execute_claimed_artifact_path_work_queue_item_async<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -55,6 +57,8 @@ where
     })
 }
 
+/// Execute a claimed hierarchical link work item with an async path-backed
+/// artifact executor.
 pub async fn execute_claimed_link_path_work_queue_item_async<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -87,6 +91,7 @@ where
     .await
 }
 
+/// Executes a claimed hierarchical link work item using an async executor and explicit store.
 pub(in crate::compiler) async fn execute_claimed_link_work_queue_item_with_store_async<E, S>(
     artifact_root: PathBuf,
     item_index: usize,
@@ -183,6 +188,8 @@ where
     })
 }
 
+/// Execute a claimed path-backed work item asynchronously, dispatching by item
+/// kind to artifact-batch or hierarchical-link execution.
 pub async fn execute_claimed_path_work_queue_item_async<E>(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,
@@ -278,6 +285,7 @@ where
     }
 }
 
+/// Claim and execute at most one path-backed work-queue item asynchronously.
 pub async fn step_path_work_queue_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -333,6 +341,8 @@ where
     })
 }
 
+/// Run async path-backed work-queue steps up to `max_items` using an explicit
+/// timestamp for claim pruning.
 pub async fn run_path_work_queue_async_at<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -403,6 +413,8 @@ where
     })
 }
 
+/// Run async path-backed work-queue steps up to `max_items` using the current
+/// time for claim pruning.
 pub async fn run_path_work_queue_async<E>(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,

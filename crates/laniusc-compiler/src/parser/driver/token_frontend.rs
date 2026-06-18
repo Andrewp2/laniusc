@@ -19,10 +19,12 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for token-to-parser-kind frontend passes.
 pub(super) struct TokensToKindsParams {
     token_capacity: u32,
 }
 
+/// Cached bind groups for token-kind and identifier-kind frontend passes.
 pub(in crate::parser::driver) struct ResidentTokenKindBindGroups {
     pub(super) input_fingerprint: u64,
     pub(super) tokens_to_kinds_params: LaniusBuffer<TokensToKindsParams>,
@@ -31,6 +33,7 @@ pub(in crate::parser::driver) struct ResidentTokenKindBindGroups {
 }
 
 impl GpuParser {
+    /// Records token frontend passes without GPU timing labels.
     pub(in crate::parser::driver) fn record_tokens_to_kinds(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -50,6 +53,7 @@ impl GpuParser {
         )
     }
 
+    /// Records token frontend passes and emits timer stamps for each phase.
     pub(in crate::parser::driver) fn record_tokens_to_kinds_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,

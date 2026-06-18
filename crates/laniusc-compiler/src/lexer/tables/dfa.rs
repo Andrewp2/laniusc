@@ -1,7 +1,7 @@
 // src/lexer/tables/dfa.rs
 use super::tokens::{INVALID_TOKEN, TokenKind};
 
-// DFA states (small hand-built DFA).
+/// Hand-built lexer DFA state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum S {
     Start,
@@ -111,14 +111,18 @@ pub enum S {
     Reject,
 }
 impl S {
+    /// Returns the table index for this DFA state.
     #[inline]
     pub fn idx(self) -> usize {
         self as usize
     }
 }
 
+/// Number of DFA states expected by Rust tables and generated shader constants.
 pub const N_STATES: usize = 82;
+/// Start state for normal lexing.
 pub const START: S = S::Start;
+/// Reject state for failed transitions.
 pub const REJECT: S = S::Reject;
 
 const ALL_STATES: &[S] = &[
@@ -223,21 +227,28 @@ fn is_white(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\r' | b'\n')
 }
 
-/// A transition with an 'emit' flag (meaning: the edge emits a token when taken).
+/// DFA transition with an emit flag.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Next {
+    /// Destination DFA state.
     pub state: u16,
+    /// Whether taking this edge emits a token boundary.
     pub emit: bool,
 }
 
 /// Fully materialized streaming DFA.
 pub struct StreamingDfa {
-    pub next: [[Next; 256]; N_STATES], // [state][byte] -> (next, emit)
-    pub token_map: [u32; N_STATES],    // token kind per state (or INVALID_TOKEN)
+    /// Transition table indexed by `[state][byte]`.
+    pub next: [[Next; 256]; N_STATES],
+    /// Token kind per state or `INVALID_TOKEN`.
+    pub token_map: [u32; N_STATES],
+    /// Start state index.
     pub start: u16,
+    /// Reject state index.
     pub reject: u16,
 }
 
+/// Returns the token kind accepted by a DFA state, when the state is accepting.
 pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
     use S::*;
     match s {
@@ -333,6 +344,7 @@ impl Default for StreamingDfa {
 }
 
 impl StreamingDfa {
+    /// Builds the full host DFA transition table.
     pub fn new() -> Self {
         let mut next = [[Next {
             state: S::Reject.idx() as u16,

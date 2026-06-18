@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that maps source-tree subtree ends into dense semantic-node ranges.
 pub struct HirSemanticSubtreeEndPass {
     data: PassData,
 }

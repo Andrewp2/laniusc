@@ -41,6 +41,7 @@ impl DebugBuffer {
         })
     }
 
+    /// Allocates a staging buffer and records a copy from `src` into it.
     pub fn set_from_copy(
         &mut self,
         device: &wgpu::Device,

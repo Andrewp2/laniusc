@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that computes local enum declaration rank prefixes.
 pub struct HirEnumRankPrefixLocalPass {
     data: PassData,
 }

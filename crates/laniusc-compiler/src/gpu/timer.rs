@@ -3,6 +3,7 @@
 use log::warn;
 use wgpu;
 
+/// Default minimum span duration printed by timing helpers.
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
 
 /// A timer for measuring GPU execution time.
@@ -13,6 +14,7 @@ pub struct GpuTimer {
     readback_buffer: wgpu::Buffer,
     next: u32,
     capacity: u32,
+    /// Labels recorded for each timestamp query.
     pub stamp_labels: Vec<String>,
 }
 

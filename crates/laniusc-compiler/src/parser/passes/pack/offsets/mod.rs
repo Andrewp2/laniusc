@@ -1,3 +1,6 @@
+//! Prefix-scan passes for packed parser pair streams.
+
+/// Status validation for packed parser offset scans.
 pub mod status;
 
 use std::collections::HashMap;
@@ -12,11 +15,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for packed stream offset scans.
 pub struct Params {
     pub n_pairs: u32,
     pub scan_step: u32,
 }
 
+/// Pass that scans stack-change and emit lengths into packed stream offsets.
 pub struct PackOffsetsScanPass {
     data: PassData,
 }
@@ -28,6 +33,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackOffsetsScanPass {
+    /// Records all configured offset scan steps.
     pub fn record_scan(
         &self,
         device: &wgpu::Device,
@@ -40,6 +46,7 @@ impl PackOffsetsScanPass {
         Ok(())
     }
 
+    /// Records all offset scan steps with indirect dispatch arguments.
     pub fn record_scan_indirect(
         &self,
         device: &wgpu::Device,

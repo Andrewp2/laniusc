@@ -3,6 +3,7 @@ use anyhow::Result;
 use super::super::support::{UniformBindingArray, reflected_bind_group};
 use crate::gpu::passes_core::PassData;
 
+/// Shader resource names for a ping-pong step with two row families.
 pub(super) struct StepNames {
     pub(super) first_in: &'static str,
     pub(super) second_in: &'static str,
@@ -10,6 +11,7 @@ pub(super) struct StepNames {
     pub(super) second_out: &'static str,
 }
 
+/// Ping-pong buffer pair for a step with two row families.
 pub(super) struct StepPairs<'a> {
     pub(super) first_a: &'a wgpu::Buffer,
     pub(super) first_b: &'a wgpu::Buffer,
@@ -17,16 +19,19 @@ pub(super) struct StepPairs<'a> {
     pub(super) second_b: &'a wgpu::Buffer,
 }
 
+/// Shader resource names for a ping-pong step with one row family.
 pub(super) struct StepOneNames {
     pub(super) in_name: &'static str,
     pub(super) out_name: &'static str,
 }
 
+/// Ping-pong buffer pair for a step with one row family.
 pub(super) struct StepOne<'a> {
     pub(super) a: &'a wgpu::Buffer,
     pub(super) b: &'a wgpu::Buffer,
 }
 
+/// Builds bind groups for all two-row-family ping-pong steps.
 pub(super) fn step_pair_groups(
     device: &wgpu::Device,
     label: &'static str,
@@ -66,6 +71,7 @@ pub(super) fn step_pair_groups(
         .collect()
 }
 
+/// Builds bind groups for all one-row-family ping-pong steps.
 pub(super) fn step_one_groups(
     device: &wgpu::Device,
     label: &'static str,
@@ -101,6 +107,7 @@ pub(super) fn step_one_groups(
         .collect()
 }
 
+/// Builds the two alternating bind groups used by block-prefix scan steps.
 pub(super) fn scan_block_groups(
     device: &wgpu::Device,
     labels: [&'static str; 2],

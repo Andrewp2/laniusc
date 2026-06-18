@@ -5,6 +5,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
+/// Compaction pass for kept token boundaries.
 pub struct CompactBoundariesKeptPass {
     data: PassData,
 }

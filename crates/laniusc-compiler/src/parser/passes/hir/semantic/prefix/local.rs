@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that marks semantic HIR nodes and computes local per-block prefix counts.
 pub struct HirSemanticPrefixLocalPass {
     data: PassData,
 }

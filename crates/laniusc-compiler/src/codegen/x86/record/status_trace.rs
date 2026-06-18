@@ -1,5 +1,6 @@
 use super::super::support::readback_u32s;
 
+/// Status buffers that can be copied into the x86 status trace readback.
 pub(super) struct StatusTraceSources<'a> {
     pub(super) hir_status: &'a wgpu::Buffer,
     pub(super) hir_count: &'a wgpu::Buffer,
@@ -30,6 +31,7 @@ pub(super) struct StatusTraceSources<'a> {
     pub(super) status: &'a wgpu::Buffer,
 }
 
+/// Allocates and records a status trace readback when x86 status tracing is enabled.
 pub(super) fn record_status_trace_readback(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
@@ -69,6 +71,7 @@ pub(super) fn record_status_trace_readback(
     readback
 }
 
+/// Allocates the status trace readback buffer when requested by environment.
 pub(super) fn status_trace_readback(
     device: &wgpu::Device,
     entries: &[(&wgpu::Buffer, u64)],
@@ -88,6 +91,7 @@ pub(super) fn status_trace_readback(
     }
 }
 
+/// Copies status trace entries into a contiguous readback buffer.
 pub(super) fn copy_status_trace(
     encoder: &mut wgpu::CommandEncoder,
     readback: &Option<wgpu::Buffer>,

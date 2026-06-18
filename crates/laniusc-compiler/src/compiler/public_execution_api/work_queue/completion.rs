@@ -1,5 +1,6 @@
 use super::*;
 
+/// Returns the singleton artifact batch backing a frontend or codegen work item.
 pub(in crate::compiler) fn work_queue_singleton_artifact_batch_index_for_item(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -100,12 +101,14 @@ fn work_queue_item_output_key_for_release(
     }
 }
 
+/// In-memory batch of changed progress pages flushed together with index refreshes.
 pub(in crate::compiler) struct ChangedProgressPages {
     pages: Vec<SourcePackWorkQueueProgressPage>,
     page_limit: usize,
 }
 
 impl ChangedProgressPages {
+    /// Creates a changed-page batch with a bounded page capacity.
     pub(in crate::compiler) fn new(page_limit: usize) -> Self {
         Self {
             pages: Vec::new(),
@@ -124,6 +127,7 @@ impl ChangedProgressPages {
         self.page_for_index_mut(store, target, index, page_index)
     }
 
+    /// Loads or returns a mutable changed progress page by page index.
     pub(in crate::compiler) fn page_for_index_mut(
         &mut self,
         store: &FilesystemArtifactStore,
@@ -154,6 +158,7 @@ impl ChangedProgressPages {
         Ok(&mut self.pages[position])
     }
 
+    /// Stores changed pages and refreshes the root/directory progress indexes.
     pub(in crate::compiler) fn flush(
         &mut self,
         store: &FilesystemArtifactStore,
@@ -274,6 +279,7 @@ fn work_queue_record_dependent_range_dependency_completed(
     Ok(newly_ready_item_count)
 }
 
+/// Records dependency completion for every dependent of a completed work item.
 pub(in crate::compiler) fn record_work_item_dependents_completed(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -460,6 +466,7 @@ fn release_work_queue_item_output(
     Ok(Some(key))
 }
 
+/// Releases dependency artifacts whose final dependent completed.
 pub(in crate::compiler) fn release_work_queue_consumed_outputs_after_completion(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

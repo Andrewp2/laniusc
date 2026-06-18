@@ -1,11 +1,13 @@
 use super::*;
 
+/// Load or initialize the generic-target artifact-manifest build state.
 pub fn artifact_manifest_build_state(
     artifact_root: impl Into<PathBuf>,
 ) -> Result<SourcePackBuildState, CompileError> {
     artifact_manifest_build_state_for_target(artifact_root, SourcePackArtifactTarget::Generic)
 }
 
+/// Load or initialize the artifact-manifest build state for a target.
 pub fn artifact_manifest_build_state_for_target(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -13,12 +15,14 @@ pub fn artifact_manifest_build_state_for_target(
     FilesystemArtifactStore::new(artifact_root).load_or_init_build_state_for_target(target)
 }
 
+/// Load the generic-target artifact-manifest progress summary.
 pub fn artifact_manifest_progress_summary(
     artifact_root: impl Into<PathBuf>,
 ) -> Result<SourcePackBuildProgressSummary, CompileError> {
     artifact_manifest_progress_summary_for_target(artifact_root, SourcePackArtifactTarget::Generic)
 }
 
+/// Load the artifact-manifest progress summary for a target.
 pub fn artifact_manifest_progress_summary_for_target(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -27,6 +31,8 @@ pub fn artifact_manifest_progress_summary_for_target(
     store.load_build_progress_summary_for_target(target)
 }
 
+/// Build a progress snapshot with ready unclaimed batches evaluated at the
+/// supplied time.
 pub fn artifact_manifest_progress_snapshot_at(
     artifact_root: impl Into<PathBuf>,
     max_ready_batches: usize,
@@ -74,6 +80,8 @@ pub fn artifact_manifest_progress_snapshot_at(
     })
 }
 
+/// Load one artifact-manifest progress page and derive its active claim list at
+/// the supplied time.
 pub fn artifact_manifest_progress_page_at(
     artifact_root: impl Into<PathBuf>,
     shard_index: usize,

@@ -1,5 +1,9 @@
 use super::*;
 
+/// Returns inline interface input refs for a shard job.
+///
+/// Inline execution rejects paged or ranged input forms so callers do not
+/// silently ignore dependency interfaces that require the paged execution path.
 pub(in crate::compiler) fn execution_shard_job_input_interface_refs<S>(
     _execution_shard: &SourcePackBuildArtifactExecutionShard,
     _store: &S,
@@ -30,6 +34,10 @@ where
     Ok(input_interfaces)
 }
 
+/// Finds the interface artifact ref produced by a specific job.
+///
+/// The lookup checks inline refs, paged input pages, job-index ranges, and
+/// artifact-index ranges, loading artifact-ref pages for ranged forms.
 pub(in crate::compiler) fn execution_shard_job_input_interface_ref<S>(
     store: &S,
     target: SourcePackArtifactTarget,
@@ -105,6 +113,11 @@ where
     )))
 }
 
+/// Streams interface dependency artifacts for a shard job in bounded batches.
+///
+/// Inputs may be inline, paged, or compact ranges. `excluded_artifact_index`
+/// lets codegen skip its owning library interface while still streaming ordinary
+/// interface dependencies.
 pub(in crate::compiler) fn for_each_execution_shard_job_input_interface_batch<S, F>(
     store: &mut S,
     target: SourcePackArtifactTarget,

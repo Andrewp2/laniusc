@@ -1,6 +1,7 @@
 use super::*;
 use crate::gpu::buffers::LaniusBuffer;
 
+/// Owned parser buffers retained for x86 codegen after parser driver scopes end.
 pub(super) struct OwnedX86ParserBuffers {
     pub(super) ll1_status: LaniusBuffer<u32>,
     pub(super) tree_active_dispatch_args: LaniusBuffer<u32>,
@@ -70,12 +71,14 @@ pub(super) struct OwnedX86ParserBuffers {
     pub(super) hir_struct_lit_field_next: LaniusBuffer<u32>,
 }
 
+/// Owned lexer buffers retained for x86 diagnostic mapping.
 pub(super) struct OwnedX86DiagnosticBuffers {
     pub(super) source_len: u32,
     pub(super) tokens_out: LaniusBuffer<crate::lexer::GpuToken>,
 }
 
 impl OwnedX86DiagnosticBuffers {
+    /// Clones the lexer buffers needed by x86 diagnostics.
     pub(super) fn from_lexer_buffers(bufs: &LexerBuffers) -> Self {
         Self {
             source_len: bufs.n,
@@ -85,6 +88,7 @@ impl OwnedX86DiagnosticBuffers {
 }
 
 impl OwnedX86ParserBuffers {
+    /// Clones parser buffers needed by x86 codegen.
     pub(super) fn from_parser_buffers(bufs: &ParserBuffers) -> Self {
         Self {
             ll1_status: bufs.ll1_status.clone(),
@@ -158,6 +162,7 @@ impl OwnedX86ParserBuffers {
 }
 
 #[allow(dead_code)]
+/// Owned parser buffers retained for type-check recording and diagnostics.
 pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) ll1_status: LaniusBuffer<u32>,
     pub(super) node_kind: LaniusBuffer<u32>,
@@ -307,6 +312,7 @@ pub(super) struct OwnedTypecheckParserBuffers {
 }
 
 impl OwnedTypecheckParserBuffers {
+    /// Clones parser buffers needed by type-check recording.
     pub(super) fn from_parser_buffers(bufs: &ParserBuffers) -> Self {
         Self {
             ll1_status: bufs.ll1_status.clone(),
@@ -457,6 +463,7 @@ impl OwnedTypecheckParserBuffers {
         }
     }
 
+    /// Builds the borrowed HIR-item buffer view expected by type-check kernels.
     pub(super) fn hir_item_buffers(&self) -> gpu_type_checker::GpuTypeCheckHirItemBuffers<'_> {
         gpu_type_checker::GpuTypeCheckHirItemBuffers {
             node_kind: &self.node_kind,

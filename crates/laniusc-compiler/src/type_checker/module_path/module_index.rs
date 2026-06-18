@@ -6,6 +6,10 @@ use super::{
     layout::Layout,
 };
 
+/// Bind groups for module identity, import resolution, and import-cycle checks.
+///
+/// The module index sorts module keys, resolves imports into module ids, and
+/// validates the import graph before declaration lookup consumes it.
 pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) scatter_module_records: wgpu::BindGroup,
     pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
@@ -29,6 +33,7 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) retained_key_params: Vec<ModuleKeyRadixStep>,
 }
 
+/// Creates bind groups for module indexing and import-edge validation.
 pub(in crate::type_checker) fn create_module_index(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,

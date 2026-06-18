@@ -9,35 +9,57 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for filling item record fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Absence of an item kind.
 pub const HIR_ITEM_KIND_NONE: u32 = 0;
+/// Module declaration item.
 pub const HIR_ITEM_KIND_MODULE: u32 = 1;
+/// Import declaration item.
 pub const HIR_ITEM_KIND_IMPORT: u32 = 2;
+/// Constant declaration item.
 pub const HIR_ITEM_KIND_CONST: u32 = 3;
+/// Function declaration item.
 pub const HIR_ITEM_KIND_FN: u32 = 4;
+/// Extern function declaration item.
 pub const HIR_ITEM_KIND_EXTERN_FN: u32 = 5;
+/// Struct declaration item.
 pub const HIR_ITEM_KIND_STRUCT: u32 = 6;
+/// Enum declaration item.
 pub const HIR_ITEM_KIND_ENUM: u32 = 7;
+/// Type alias declaration item.
 pub const HIR_ITEM_KIND_TYPE_ALIAS: u32 = 8;
+/// Enum variant declaration item.
 pub const HIR_ITEM_KIND_ENUM_VARIANT: u32 = 9;
+/// Trait declaration item.
 pub const HIR_ITEM_KIND_TRAIT: u32 = 10;
 
+/// Absence of an item namespace.
 pub const HIR_ITEM_NAMESPACE_NONE: u32 = 0;
+/// Module namespace.
 pub const HIR_ITEM_NAMESPACE_MODULE: u32 = 1;
+/// Value namespace.
 pub const HIR_ITEM_NAMESPACE_VALUE: u32 = 2;
+/// Type namespace.
 pub const HIR_ITEM_NAMESPACE_TYPE: u32 = 3;
 
+/// Private item visibility.
 pub const HIR_ITEM_VIS_PRIVATE: u32 = 0;
+/// Public item visibility.
 pub const HIR_ITEM_VIS_PUBLIC: u32 = 1;
 
+/// Import without a resolved target payload.
 pub const HIR_ITEM_IMPORT_TARGET_NONE: u32 = 0;
+/// Import target expressed as a path.
 pub const HIR_ITEM_IMPORT_TARGET_PATH: u32 = 1;
+/// Import target expressed as a string literal.
 pub const HIR_ITEM_IMPORT_TARGET_STRING: u32 = 2;
 
+/// Parser pass that fills item kind, namespace, visibility, and import records.
 pub struct HirItemFieldsPass {
     data: PassData,
 }

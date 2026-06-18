@@ -1,5 +1,6 @@
 use super::*;
 
+/// Debug readback for delimiter-pair validation.
 pub struct BracketsMatchResult {
     pub valid: bool,
     pub final_depth: i32,
@@ -8,6 +9,7 @@ pub struct BracketsMatchResult {
 }
 
 #[derive(Clone, Debug)]
+/// Six-word LL/parser status decoded into host fields.
 pub struct Ll1AcceptResult {
     pub accepted: bool,
     pub error_pos: u32,
@@ -17,6 +19,7 @@ pub struct Ll1AcceptResult {
     pub emit_len: u32,
 }
 
+/// Full one-shot parser debug readback result.
 pub struct ParseResult {
     pub ll1: Ll1AcceptResult,
     pub ll1_emit_stream: Vec<u32>,
@@ -115,6 +118,7 @@ pub struct ParseResult {
 }
 
 #[derive(Clone, Debug)]
+/// Resident parser debug readback result from compiler-owned token buffers.
 pub struct ResidentParseResult {
     pub ll1: Ll1AcceptResult,
     pub ll1_emit_stream: Vec<u32>,
@@ -215,11 +219,13 @@ pub struct ResidentParseResult {
     pub hir_struct_lit_field_next: Vec<u32>,
 }
 
+/// Recorded parser status readback for deferred LL/HIR validation.
 pub struct RecordedResidentLl1HirCheck {
     pub(super) status_readback: wgpu::Buffer,
 }
 
 impl RecordedResidentLl1HirCheck {
+    /// Reads the recorded parser status buffer into a host status result.
     pub(crate) fn read_status_result(
         &self,
         device: &wgpu::Device,
@@ -247,11 +253,13 @@ impl RecordedResidentLl1HirCheck {
     }
 }
 
+/// Recorded semantic-HIR count readback used by backend capacity planning.
 pub struct RecordedHirSemanticCount {
     pub(super) block_count_readback: wgpu::Buffer,
     pub(super) block_count_words: usize,
 }
 
+/// Cached resident parser buffers keyed by capacity, tables, and debug mode.
 pub(super) struct ResidentParserBufferCache {
     pub(super) token_capacity: u32,
     pub(super) tree_capacity_override: Option<u32>,

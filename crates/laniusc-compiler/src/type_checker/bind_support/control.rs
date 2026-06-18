@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Builds enclosing-function context bind groups from loaded type-check passes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
@@ -47,6 +48,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     )
 }
 
+/// Builds enclosing-function context bind groups from explicit pass handles.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     device: &wgpu::Device,
@@ -172,6 +174,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     })
 }
 
+/// Builds loop-depth bind groups from loaded type-check passes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
@@ -217,6 +220,7 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
     )
 }
 
+/// Builds loop-depth bind groups from explicit pass handles.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
     device: &wgpu::Device,

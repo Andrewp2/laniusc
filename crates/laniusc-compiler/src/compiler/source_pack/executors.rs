@@ -1,5 +1,9 @@
 use super::*;
 
+/// In-memory executor for source-pack builds that own source strings.
+///
+/// This is the simplest executor shape: callers receive source text and hold
+/// concrete interface/object values in memory until final linking.
 pub trait BuildExecutor {
     type LibraryInterface;
     type CodegenObject;
@@ -28,6 +32,10 @@ pub trait BuildExecutor {
     ) -> Result<Self::LinkedOutput, CompileError>;
 }
 
+/// Executor for builds that load source metadata from path manifests.
+///
+/// Implementors receive `ExplicitSourcePathFile` records instead of source
+/// strings, allowing execution to defer file reads or stream source data.
 pub trait PathBuildExecutor {
     type LibraryInterface;
     type CodegenObject;
@@ -56,6 +64,11 @@ pub trait PathBuildExecutor {
     ) -> Result<Self::LinkedOutput, CompileError>;
 }
 
+/// Path-backed executor that returns cloneable handles for intermediate outputs.
+///
+/// Handles allow the execution driver to avoid retaining full library-interface
+/// or codegen-object payloads in memory. Release hooks let implementations drop
+/// external resources once a handle is no longer needed.
 pub trait PathHandleBuildExecutor {
     type LibraryInterfaceHandle: Clone;
     type CodegenObjectHandle: Clone;
@@ -98,6 +111,11 @@ pub trait PathHandleBuildExecutor {
     }
 }
 
+/// Handle-backed executor whose final link consumes interface/object batches.
+///
+/// This trait exists for linkers that cannot or should not receive every input
+/// at once. The driver begins a link handle, feeds interface and object batches,
+/// and then asks the executor to finish the linked output.
 pub trait PathHandleBatchedLinkBuildExecutor {
     type LibraryInterfaceHandle: Clone;
     type CodegenObjectHandle: Clone;
@@ -161,6 +179,10 @@ pub trait PathHandleBatchedLinkBuildExecutor {
     }
 }
 
+/// Executor for persisted artifact builds.
+///
+/// Jobs receive source metadata and loaded dependency artifacts, then return
+/// artifacts that an `ArtifactStore` can persist by manifest key.
 pub trait ArtifactBuildExecutor {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
@@ -210,6 +232,11 @@ pub trait ArtifactBuildExecutor {
     ) -> Result<Self::LinkedOutputArtifact, CompileError>;
 }
 
+/// Artifact executor that can build frontend/codegen outputs in dependency pages.
+///
+/// Paged execution keeps dependency fan-in bounded by opening a build handle,
+/// feeding dependency batches, and finishing the artifact after all pages have
+/// been processed.
 pub trait PagedArtifactBuildExecutor: ArtifactBuildExecutor {
     type LibraryInterfaceBuildHandle;
     type CodegenObjectBuildHandle;
@@ -254,9 +281,14 @@ pub trait PagedArtifactBuildExecutor: ArtifactBuildExecutor {
     ) -> Result<Self::CodegenObjectArtifact, CompileError>;
 }
 
+/// Boxed future result type used by async source-pack executor traits.
 pub type SourcePackBoxFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, CompileError>> + 'a>>;
 
+/// Async variant of `PagedArtifactBuildExecutor`.
+///
+/// The method set mirrors the synchronous paged artifact executor while letting
+/// GPU, filesystem, or remote workers suspend between dependency batches.
 pub trait AsyncPagedArtifactBuildExecutor {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
@@ -332,6 +364,10 @@ pub trait AsyncPagedArtifactBuildExecutor {
     ) -> SourcePackBoxFuture<'a, Self::LinkedOutputArtifact>;
 }
 
+/// Executor extension for hierarchical link groups.
+///
+/// Hierarchical linking produces partial-link artifacts for intermediate groups
+/// and one linked-output artifact for the final group.
 pub trait HierarchicalLinkExecutor: ArtifactBuildExecutor {
     type PartialLinkArtifact;
 
@@ -374,6 +410,7 @@ pub trait HierarchicalLinkExecutor: ArtifactBuildExecutor {
     ) -> Result<Self::LinkedOutputArtifact, CompileError>;
 }
 
+/// Synchronous executor that supports both paged artifacts and hierarchical links.
 pub trait PagedHierarchicalLinkExecutor:
     PagedArtifactBuildExecutor + HierarchicalLinkExecutor
 {
@@ -384,6 +421,7 @@ impl<T> PagedHierarchicalLinkExecutor for T where
 {
 }
 
+/// Async executor extension for hierarchical link groups.
 pub trait AsyncHierarchicalLinkExecutor: AsyncPagedArtifactBuildExecutor {
     type PartialLinkArtifact;
 
@@ -426,6 +464,7 @@ pub trait AsyncHierarchicalLinkExecutor: AsyncPagedArtifactBuildExecutor {
     ) -> SourcePackBoxFuture<'a, Self::LinkedOutputArtifact>;
 }
 
+/// Async executor that supports both paged artifacts and hierarchical links.
 pub trait AsyncPagedHierarchicalLinkExecutor:
     AsyncPagedArtifactBuildExecutor + AsyncHierarchicalLinkExecutor
 {
@@ -436,6 +475,10 @@ impl<T> AsyncPagedHierarchicalLinkExecutor for T where
 {
 }
 
+/// Storage backend for persisted source-pack artifacts.
+///
+/// The store boundary owns loading, storing, and releasing manifest-addressed
+/// interface/object artifacts plus the final linked output artifact.
 pub trait ArtifactStore {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
@@ -480,6 +523,7 @@ pub trait ArtifactStore {
     ) -> Result<(), CompileError>;
 }
 
+/// Artifact store extension for hierarchical partial-link outputs.
 pub trait HierarchicalLinkArtifactStore: ArtifactStore {
     type PartialLinkArtifact;
 
@@ -501,6 +545,11 @@ pub trait HierarchicalLinkArtifactStore: ArtifactStore {
     ) -> Result<(), CompileError>;
 }
 
+/// Loader for execution shards and paged source-pack execution inputs.
+///
+/// Execution shards may embed small inputs directly, but large jobs spill source
+/// files, artifact refs, and hierarchical link inputs into pages loaded through
+/// this trait.
 pub trait ExecutionShardLoader {
     fn load_execution_shard(
         &self,
@@ -576,26 +625,38 @@ pub trait ExecutionShardLoader {
     }
 }
 
+/// Result of an in-memory source-pack build.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuildExecutionResult<LibraryInterface, CodegenObject, LinkedOutput> {
+    /// Library-interface outputs produced during the build.
     pub library_interfaces: Vec<LibraryInterface>,
+    /// Codegen-object outputs produced during the build.
     pub codegen_objects: Vec<CodegenObject>,
+    /// Final linked output.
     pub linked_output: LinkedOutput,
 }
 
+/// Result of a handle-backed source-pack build.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandleBuildExecutionResult<LinkedOutput> {
+    /// Final linked output produced after intermediate handles were released.
     pub linked_output: LinkedOutput,
 }
 
+/// Result of a persisted artifact-store source-pack build.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtifactStoreBuildExecutionResult {
+    /// Artifact key for the final linked output.
     pub linked_output_key: String,
 }
 
+/// Result summary for one persisted artifact batch execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtifactStoreBatchExecutionResult {
+    /// Batch index that was executed.
     pub batch_index: usize,
+    /// Number of jobs in the executed batch.
     pub job_count: usize,
+    /// Linked-output key produced by this batch, if it contained the link job.
     pub linked_output_key: Option<String>,
 }

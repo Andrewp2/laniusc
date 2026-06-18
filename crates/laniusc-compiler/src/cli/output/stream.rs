@@ -2,6 +2,7 @@ use std::io::Write;
 
 use super::{CliOutputError, diagnostics::output_stream_write_diagnostic};
 
+/// Writes bytes to stdout and reports stream failures as CLI output diagnostics.
 pub(crate) fn write_stdout_bytes(
     emit: &str,
     operation: impl Into<String>,
@@ -12,6 +13,7 @@ pub(crate) fn write_stdout_bytes(
     write_output_stream_bytes("stdout", emit, &operation, &mut stdout, bytes)
 }
 
+/// Writes bytes to a stream and flushes it with contextual diagnostics.
 pub(crate) fn write_output_stream_bytes<W: Write>(
     stream: &str,
     emit: &str,

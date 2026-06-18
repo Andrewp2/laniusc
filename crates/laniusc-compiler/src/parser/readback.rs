@@ -1,3 +1,5 @@
+//! Parser debug/readback buffers and parser-owned HIR validators.
+
 use anyhow::{Result, anyhow};
 use wgpu;
 
@@ -235,6 +237,7 @@ pub struct ParserReadbacks {
 }
 
 impl ParserReadbacks {
+    /// Creates staging buffers for a full parser debug readback.
     pub fn create(device: &wgpu::Device, bufs: &ParserBuffers) -> Self {
         // Helper to make a MAP_READ + COPY_DST buffer of given size.
         let mk = |label: &str, size: u64| {
@@ -660,6 +663,7 @@ impl ParserReadbacks {
     }
 
     /// Record copy commands from device-local outputs into staging buffers.
+    /// Encodes copies from parser GPU buffers into the staging readback buffers.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
@@ -1390,6 +1394,7 @@ pub struct ParserHirItemReadbacks {
     pub hir_struct_lit_field_next: wgpu::Buffer,
 }
 
+/// Decoded parser-owned HIR item/type/member/call/aggregate readback data.
 pub struct DecodedParserHirItemReadbacks {
     pub ll1_status: [u32; 6],
     pub node_kind: Vec<u32>,
@@ -1518,6 +1523,7 @@ pub struct ParserHirFunctionReturnReadbacks {
     pub hir_item_file_id: wgpu::Buffer,
 }
 
+/// Decoded parser-owned function return-type readback data.
 pub struct DecodedParserHirFunctionReturnReadbacks {
     pub ll1_status: [u32; 6],
     pub hir_kind: Vec<u32>,
@@ -1535,6 +1541,7 @@ pub struct DecodedParserHirFunctionReturnReadbacks {
 }
 
 impl ParserHirFunctionReturnReadbacks {
+    /// Creates staging buffers for function return-type record readback.
     pub fn create(device: &wgpu::Device, bufs: &ParserBuffers) -> Self {
         let mk = |label: &str, size: u64| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -1601,6 +1608,7 @@ impl ParserHirFunctionReturnReadbacks {
         }
     }
 
+    /// Encodes copies for function return-type record readback.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
@@ -1695,6 +1703,7 @@ impl ParserHirFunctionReturnReadbacks {
         );
     }
 
+    /// Maps and decodes function return-type record readback data.
     pub fn map_and_decode(
         self,
         device: &wgpu::Device,
@@ -1782,6 +1791,7 @@ impl ParserHirFunctionReturnReadbacks {
 }
 
 impl ParserHirItemReadbacks {
+    /// Creates staging buffers for parser-owned HIR item and aggregate readback.
     pub fn create(device: &wgpu::Device, bufs: &ParserBuffers) -> Self {
         let mk = |label: &str, size: u64| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -2176,6 +2186,7 @@ impl ParserHirItemReadbacks {
         }
     }
 
+    /// Encodes copies for parser-owned HIR item and aggregate readback.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
@@ -2844,6 +2855,7 @@ impl ParserHirItemReadbacks {
         );
     }
 
+    /// Maps and decodes parser-owned HIR item and aggregate readback data.
     pub fn map_and_decode(
         self,
         device: &wgpu::Device,
@@ -3479,6 +3491,7 @@ impl ParserHirItemReadbacks {
 }
 
 /// Decoded results from the staging buffers.
+/// Decoded full parser debug readback data.
 pub struct DecodedParserReadbacks {
     pub ll1_status: [u32; 6],
     pub ll1_emit_stream: Vec<u32>,
@@ -4027,6 +4040,7 @@ fn bounded_readback_len(label: &str, requested: usize, capacity: usize) -> Resul
     Ok(requested)
 }
 
+/// Validates enum variant ownership, ordinal, and payload rows.
 pub fn validate_hir_enum_variant_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -4249,6 +4263,7 @@ pub fn validate_hir_enum_variant_records(
     Ok(())
 }
 
+/// Validates semantic HIR parent, sibling, depth, and child-index records.
 pub fn validate_hir_semantic_tree_records(
     kinds: &[u32],
     parse_subtree_end: &[u32],
@@ -4437,6 +4452,7 @@ pub fn validate_hir_semantic_tree_records(
     Ok(())
 }
 
+/// Validates parser-owned type argument owner/count/next chains.
 pub fn validate_hir_type_argument_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -4609,6 +4625,7 @@ pub fn validate_hir_type_argument_records(
     Ok(())
 }
 
+/// Validates function parameter owner, ordinal, name, and type records.
 pub fn validate_hir_parameter_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -4802,6 +4819,7 @@ pub fn validate_hir_parameter_records(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Validates method owner, receiver, visibility, and signature records.
 pub fn validate_hir_method_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -5213,6 +5231,7 @@ fn is_hir_expr_range_form(form: u32) -> bool {
     )
 }
 
+/// Validates expression form, operand, and literal value-token records.
 pub fn validate_hir_expression_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -5480,6 +5499,7 @@ pub fn validate_hir_expression_records(
     Ok(())
 }
 
+/// Validates expression result-root records.
 pub fn validate_hir_expression_result_root_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -5572,6 +5592,7 @@ fn expected_statement_record_kind_for_hir_kind(kind: u32) -> Option<u32> {
     }
 }
 
+/// Validates call callee, argument owner, ordinal, and span records.
 pub fn validate_hir_call_argument_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -5824,6 +5845,7 @@ pub fn validate_hir_call_argument_records(
     Ok(())
 }
 
+/// Validates array literal element owner, ordinal, and context records.
 pub fn validate_hir_array_literal_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -6029,6 +6051,7 @@ pub fn validate_hir_array_literal_records(
     Ok(())
 }
 
+/// Validates member receiver/name token records.
 pub fn validate_hir_member_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -6147,6 +6170,7 @@ pub fn validate_hir_member_records(
     Ok(())
 }
 
+/// Validates match scrutinee, arm, payload, and result records.
 pub fn validate_hir_match_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -6553,6 +6577,7 @@ pub fn validate_hir_match_records(
     Ok(())
 }
 
+/// Validates statement record kind, operands, and scope-end records.
 pub fn validate_hir_statement_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -6888,6 +6913,7 @@ pub fn validate_hir_statement_records(
     Ok(())
 }
 
+/// Validates const item statement ownership records.
 pub fn validate_hir_const_item_statement_records(
     kinds: &[u32],
     item_kinds: &[u32],
@@ -6947,6 +6973,7 @@ pub fn validate_hir_const_item_statement_records(
     Ok(())
 }
 
+/// Validates nearest statement, block, control, loop, and function relations.
 pub fn validate_hir_context_relation_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -7557,6 +7584,7 @@ fn is_known_item_visibility(visibility: u32) -> bool {
     matches!(visibility, HIR_ITEM_VIS_PRIVATE | HIR_ITEM_VIS_PUBLIC)
 }
 
+/// Validates HIR token position, token end, and file-id source addresses.
 pub fn validate_hir_source_address_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -7673,6 +7701,7 @@ pub fn validate_hir_source_address_records(
     Ok(())
 }
 
+/// Validates item kind, namespace, visibility, name, declaration, and file rows.
 pub fn validate_hir_item_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -7788,6 +7817,7 @@ pub fn validate_hir_item_records(
     Ok(())
 }
 
+/// Validates type-alias target-node records.
 pub fn validate_hir_type_alias_target_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -7911,6 +7941,7 @@ pub fn validate_hir_type_alias_target_records(
     Ok(())
 }
 
+/// Validates parser-owned type form and type payload records.
 pub fn validate_hir_type_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -7939,6 +7970,7 @@ pub fn validate_hir_type_records(
     )
 }
 
+/// Validates type records using tree node kinds as an additional shape oracle.
 pub fn validate_hir_type_records_with_node_kinds(
     node_kinds: &[u32],
     kinds: &[u32],
@@ -8188,6 +8220,7 @@ fn is_hir_function_return_owner(kind: u32, item_kind: u32) -> bool {
     kind == HIR_NODE_FN && (item_kind == HIR_ITEM_KIND_NONE || is_hir_function_item_kind(item_kind))
 }
 
+/// Validates function and method return-type records.
 pub fn validate_hir_function_return_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -8365,6 +8398,7 @@ pub fn validate_hir_function_return_records(
     Ok(())
 }
 
+/// Validates struct declaration field owner, ordinal, and type records.
 pub fn validate_hir_struct_declaration_field_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -8606,6 +8640,7 @@ pub fn validate_hir_struct_declaration_field_records(
     Ok(())
 }
 
+/// Validates struct literal field owner, value, count, and next-link records.
 pub fn validate_hir_struct_literal_field_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -8879,6 +8914,7 @@ pub fn validate_hir_struct_literal_field_records(
     Ok(())
 }
 
+/// Validates parser-owned item path span and owner records.
 pub fn validate_hir_item_path_records(
     kinds: &[u32],
     token_pos: &[u32],

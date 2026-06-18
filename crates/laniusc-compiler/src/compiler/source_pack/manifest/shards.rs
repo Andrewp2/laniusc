@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates the top-level artifact-shard index.
 pub(in crate::compiler) fn validate_artifact_shard_index(
     index: &SourcePackBuildArtifactShardIndex,
 ) -> Result<(), CompileError> {
@@ -17,6 +18,11 @@ pub(in crate::compiler) fn validate_artifact_shard_index(
     Ok(())
 }
 
+/// Validates one artifact shard against its target and shard limits.
+///
+/// The shard must carry bounded unique batch, job, and artifact records. Compact
+/// input artifact ranges are validated against explicit input artifacts so the
+/// two representations do not overlap.
 pub(in crate::compiler) fn validate_artifact_shard(
     shard: &SourcePackBuildArtifactShard,
     target: SourcePackArtifactTarget,
@@ -113,6 +119,7 @@ pub(in crate::compiler) fn validate_artifact_shard(
     Ok(())
 }
 
+/// Visits each stored artifact shard listed by an index.
 pub(in crate::compiler) fn for_each_artifact_shard_from_index<F>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -136,6 +143,7 @@ where
     Ok(())
 }
 
+/// Visits only job-batch artifact shards listed by an index.
 pub(in crate::compiler) fn for_each_job_batch_artifact_shard<F>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Returns whether every ready progress page in a directory page is claimed.
 pub(in crate::compiler) fn progress_directory_ready_pages_are_claimed(
     page: &SourcePackWorkQueueProgressDirectoryPage,
     now_unix_nanos: Option<u128>,
@@ -15,6 +16,7 @@ pub(in crate::compiler) fn progress_directory_ready_pages_are_claimed(
     }
 }
 
+/// Returns whether every ready artifact page in a directory page is claimed.
 pub(in crate::compiler) fn progress_directory_ready_artifact_pages_are_claimed(
     page: &SourcePackWorkQueueProgressDirectoryPage,
     now_unix_nanos: Option<u128>,
@@ -30,6 +32,7 @@ pub(in crate::compiler) fn progress_directory_ready_artifact_pages_are_claimed(
     }
 }
 
+/// Returns whether every ready directory page in an index page is fully claimed.
 pub(in crate::compiler) fn progress_directory_index_ready_pages_are_claimed(
     page: &SourcePackWorkQueueProgressDirectoryIndexPage,
     now_unix_nanos: Option<u128>,
@@ -45,6 +48,7 @@ pub(in crate::compiler) fn progress_directory_index_ready_pages_are_claimed(
     }
 }
 
+/// Returns whether every ready artifact directory page in an index page is claimed.
 pub(in crate::compiler) fn progress_directory_index_ready_artifacts_are_claimed(
     page: &SourcePackWorkQueueProgressDirectoryIndexPage,
     now_unix_nanos: Option<u128>,
@@ -61,12 +65,14 @@ pub(in crate::compiler) fn progress_directory_index_ready_artifacts_are_claimed(
     }
 }
 
+/// Returns the directory page that owns a progress-page index.
 pub(in crate::compiler) fn progress_directory_page_index_for_progress_page(
     progress_page_index: usize,
 ) -> usize {
     progress_page_index / SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_DEFAULT_PAGE_SIZE
 }
 
+/// Returns the number of progress-directory pages implied by an index.
 pub(in crate::compiler) fn progress_directory_page_count(
     index: &SourcePackWorkQueueProgressIndex,
 ) -> Result<usize, CompileError> {
@@ -76,6 +82,7 @@ pub(in crate::compiler) fn progress_directory_page_count(
         .div_ceil(SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_DEFAULT_PAGE_SIZE))
 }
 
+/// Returns the progress-page range covered by a directory page.
 pub(in crate::compiler) fn progress_directory_page_range(
     index: &SourcePackWorkQueueProgressIndex,
     directory_page_index: usize,
@@ -98,12 +105,14 @@ pub(in crate::compiler) fn progress_directory_page_range(
     Ok((first_progress_page_index, progress_page_count))
 }
 
+/// Returns the directory-index page that owns a directory-page index.
 pub(in crate::compiler) fn progress_directory_index_page_index_for_directory_page(
     directory_page_index: usize,
 ) -> usize {
     directory_page_index / SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_INDEX_DEFAULT_PAGE_SIZE
 }
 
+/// Returns the number of directory-index pages implied by an index.
 pub(in crate::compiler) fn progress_directory_index_page_count(
     index: &SourcePackWorkQueueProgressIndex,
 ) -> Result<usize, CompileError> {
@@ -112,6 +121,7 @@ pub(in crate::compiler) fn progress_directory_index_page_count(
         .div_ceil(SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_INDEX_DEFAULT_PAGE_SIZE))
 }
 
+/// Returns the directory-page range covered by a directory-index page.
 pub(in crate::compiler) fn progress_directory_index_page_range(
     index: &SourcePackWorkQueueProgressIndex,
     directory_index_page_index: usize,
@@ -134,6 +144,7 @@ pub(in crate::compiler) fn progress_directory_index_page_range(
     Ok((first_directory_page_index, directory_page_count))
 }
 
+/// Builds one progress-directory page from progress-page summaries.
 pub(in crate::compiler) fn progress_directory_page_from_summaries(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -201,6 +212,7 @@ pub(in crate::compiler) fn progress_directory_page_from_summaries(
     Ok(page)
 }
 
+/// Loads a progress-directory page or rebuilds it when changed pages overlap it.
 pub(in crate::compiler) fn progress_directory_page_from_changes_or_store(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -234,6 +246,7 @@ pub(in crate::compiler) fn progress_directory_page_from_changes_or_store(
     )
 }
 
+/// Builds one directory-index page from directory pages.
 pub(in crate::compiler) fn progress_directory_index_page_from_directory_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -318,6 +331,7 @@ pub(in crate::compiler) fn progress_directory_index_page_from_directory_pages(
     Ok(page)
 }
 
+/// Loads a directory-index page or rebuilds it when changed pages overlap it.
 pub(in crate::compiler) fn progress_directory_index_page_from_changes_or_store(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

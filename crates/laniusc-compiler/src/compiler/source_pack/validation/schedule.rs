@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates the compact schedule index for library frontend/codegen jobs.
 pub(in crate::compiler) fn validate_library_schedule_index(
     index: &SourcePackLibraryScheduleIndex,
     target: SourcePackArtifactTarget,
@@ -56,6 +57,7 @@ pub(in crate::compiler) fn validate_library_schedule_index(
     Ok(())
 }
 
+/// Validates resumable library-schedule preparation progress.
 pub(in crate::compiler) fn validate_library_schedule_prepare_progress(
     progress: &FilesystemLibrarySchedulePrepareProgress,
     target: SourcePackArtifactTarget,
@@ -153,6 +155,7 @@ pub(in crate::compiler) fn validate_library_schedule_prepare_progress(
     Ok(())
 }
 
+/// Validates that inline job dependencies fit the persisted record cap.
 pub(in crate::compiler) fn validate_schedule_job_inline_dependency_count(
     job: &SourcePackJob,
     context: &str,
@@ -169,6 +172,7 @@ pub(in crate::compiler) fn validate_schedule_job_inline_dependency_count(
     Ok(())
 }
 
+/// Validates the compact schedule page for one library partition.
 pub(in crate::compiler) fn validate_library_schedule_page(
     page: &SourcePackLibrarySchedulePage,
     target: SourcePackArtifactTarget,
@@ -397,6 +401,7 @@ pub(in crate::compiler) fn validate_library_schedule_page(
     Ok(())
 }
 
+/// Validates a schedule page against its owning schedule index.
 pub(in crate::compiler) fn validate_library_schedule_page_for_index(
     page: &SourcePackLibrarySchedulePage,
     index: &SourcePackLibraryScheduleIndex,
@@ -468,6 +473,7 @@ pub(in crate::compiler) fn validate_library_schedule_page_for_index(
     Ok(())
 }
 
+/// Validates the compact index for schedule job-locator pages.
 pub(in crate::compiler) fn validate_schedule_job_locator_index(
     index: &SourcePackLibraryScheduleJobLocatorIndex,
     target: SourcePackArtifactTarget,
@@ -498,6 +504,7 @@ pub(in crate::compiler) fn validate_schedule_job_locator_index(
     Ok(())
 }
 
+/// Validates the locator from a library id to its frontend job range.
 pub(in crate::compiler) fn validate_frontend_job_locator_page(
     page: &SourcePackLibraryFrontendJobLocatorPage,
     target: SourcePackArtifactTarget,
@@ -532,6 +539,7 @@ pub(in crate::compiler) fn validate_frontend_job_locator_page(
     Ok(())
 }
 
+/// Validates a locator from global job index to schedule partition metadata.
 pub(in crate::compiler) fn validate_schedule_job_locator_page(
     page: &SourcePackLibraryScheduleJobLocatorPage,
     target: SourcePackArtifactTarget,
@@ -593,6 +601,7 @@ pub(in crate::compiler) fn validate_schedule_job_locator_page(
     Ok(())
 }
 
+/// Validates one persisted schedule job page.
 pub(in crate::compiler) fn validate_schedule_job_page(
     page: &SourcePackLibraryScheduleJobPage,
     target: SourcePackArtifactTarget,
@@ -723,6 +732,7 @@ pub(in crate::compiler) fn validate_schedule_job_page(
     Ok(())
 }
 
+/// Validates one schedule job dependency sidecar page.
 pub(in crate::compiler) fn validate_schedule_job_dependency_page(
     page: &SourcePackLibraryScheduleJobDependencyPage,
     target: SourcePackArtifactTarget,

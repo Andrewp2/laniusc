@@ -1,41 +1,70 @@
 use super::*;
 
+/// Version for persisted artifact execution shard records.
 pub const SOURCE_PACK_BUILD_ARTIFACT_EXECUTION_SHARD_VERSION: u32 = 1;
+/// Version for batch-to-shard locator records.
 pub const SOURCE_PACK_BUILD_BATCH_SHARD_LOCATOR_VERSION: u32 = 1;
+/// Version for artifact-shard preparation progress records.
 pub const SOURCE_PACK_BUILD_ARTIFACT_SHARD_PREPARE_PROGRESS_VERSION: u32 = 1;
+/// Version for persisted job-batch pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_PAGE_VERSION: u32 = 1;
+/// Version for persisted job-batch page indexes.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION: u32 = 1;
+/// Version for job-batch preparation progress records.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_PREPARE_PROGRESS_VERSION: u32 = 1;
+/// Version for job-to-batch locator pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_JOB_LOCATOR_PAGE_VERSION: u32 = 1;
+/// Version for explicit job-batch dependency pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION: u32 = 1;
+/// Version for compact job-batch dependency-range pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION: u32 = 1;
+/// Version for job-batch dependent summary pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION: u32 = 1;
+/// Version for paged job-batch dependent lists.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION: u32 = 1;
+/// Inline job cap used before job-batch records spill into separate pages.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_INLINE_JOB_DEFAULT_RECORD_CAP: usize =
     DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
+/// Default page size for explicit job-batch dependency lists.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE: usize = 64;
+/// Default page size for compact job-batch dependency ranges.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_DEFAULT_PAGE_SIZE: usize = 64;
+/// Default page size for job-batch dependent lists.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_DEFAULT_PAGE_SIZE: usize = 64;
+/// Version for job-batch dependents preparation progress records.
 pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PREPARE_PROGRESS_VERSION: u32 = 1;
+/// Version for persisted artifact-reference indexes.
 pub const SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION: u32 = 1;
+/// Version for persisted artifact-reference pages.
 pub const SOURCE_PACK_BUILD_ARTIFACT_REF_PAGE_VERSION: u32 = 1;
+/// Version for artifact-reference preparation progress records.
 pub const SOURCE_PACK_BUILD_ARTIFACT_REF_PREPARE_PROGRESS_VERSION: u32 = 1;
+/// Version for link-batch page indexes.
 pub const SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION: u32 = 1;
+/// Version for link-batch preparation progress records.
 pub const SOURCE_PACK_BUILD_LINK_BATCH_PREPARE_PROGRESS_VERSION: u32 = 1;
+/// Version for interface-link batch pages.
 pub const SOURCE_PACK_BUILD_LINK_INTERFACE_BATCH_PAGE_VERSION: u32 = 1;
+/// Version for object-link batch pages.
 pub const SOURCE_PACK_BUILD_LINK_OBJECT_BATCH_PAGE_VERSION: u32 = 1;
+/// Version for link-input shard indexes.
 pub const SOURCE_PACK_BUILD_LINK_INPUT_SHARD_INDEX_VERSION: u32 = 1;
+/// Version for paged interface inputs consumed by a job artifact.
 pub const SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_PAGE_VERSION: u32 = 1;
+/// Default page size for paged interface inputs consumed by a job artifact.
 pub const SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_DEFAULT_PAGE_SIZE: usize = 64;
+/// Default source-file record cap for one artifact execution shard.
 pub const SOURCE_PACK_EXECUTION_SHARD_SOURCE_FILE_DEFAULT_RECORD_CAP: usize =
     DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES * DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
 
+/// Source-file metadata stored inside an artifact execution shard.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackShardSourceFile {
     pub source_index: usize,
     pub file: ExplicitSourcePathFile,
 }
 
+/// Locator from a job batch to the artifact execution shard containing it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildBatchShardLocator {
     pub version: u32,
@@ -44,6 +73,7 @@ pub struct SourcePackBuildBatchShardLocator {
     pub shard_index: usize,
 }
 
+/// Summary index for all persisted job-batch pages in a build.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchPageIndex {
     pub version: u32,
@@ -53,6 +83,7 @@ pub struct SourcePackBuildJobBatchPageIndex {
     pub dependency_edge_count: usize,
 }
 
+/// Persisted page for one executable job batch and its batch dependency summary.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchPage {
     pub version: u32,
@@ -62,6 +93,7 @@ pub struct SourcePackBuildJobBatchPage {
     pub dependency: SourcePackJobBatchDependency,
 }
 
+/// Paged explicit dependency list for one job batch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchDependencyPage {
     pub version: u32,
@@ -73,6 +105,10 @@ pub struct SourcePackBuildJobBatchDependencyPage {
     pub dependency_batch_indices: Vec<usize>,
 }
 
+/// Paged dependency ranges for one job batch.
+///
+/// Range pages are used when dependencies can be represented more compactly
+/// than an explicit batch-index list.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchDependencyRangePage {
     pub version: u32,
@@ -85,6 +121,7 @@ pub struct SourcePackBuildJobBatchDependencyRangePage {
     pub dependency_batch_ranges: Vec<SourcePackJobBatchDependencyRange>,
 }
 
+/// Locator from a source-pack job index to the batch that executes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchJobLocatorPage {
     pub version: u32,
@@ -93,6 +130,7 @@ pub struct SourcePackBuildJobBatchJobLocatorPage {
     pub batch_index: usize,
 }
 
+/// Summary index for all artifact references produced by a build plan.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildArtifactRefIndex {
     pub version: u32,
@@ -108,6 +146,7 @@ pub struct SourcePackBuildArtifactRefIndex {
     pub total_source_line_count: usize,
 }
 
+/// Persisted artifact reference plus source-size metadata for one output.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildArtifactRefPage {
     pub version: u32,
@@ -120,6 +159,7 @@ pub struct SourcePackBuildArtifactRefPage {
     pub source_lines: usize,
 }
 
+/// Summary index for persisted link-batch pages.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildLinkBatchPageIndex {
     pub version: u32,
@@ -128,6 +168,7 @@ pub struct SourcePackBuildLinkBatchPageIndex {
     pub link_object_batch_count: usize,
 }
 
+/// Persisted batch of interface artifacts consumed by linking.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildLinkInterfaceBatchPage {
     pub version: u32,
@@ -136,6 +177,7 @@ pub struct SourcePackBuildLinkInterfaceBatchPage {
     pub batch: SourcePackLinkInterfaceBatch,
 }
 
+/// Persisted batch of object artifacts consumed by linking.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildLinkObjectBatchPage {
     pub version: u32,
@@ -144,6 +186,7 @@ pub struct SourcePackBuildLinkObjectBatchPage {
     pub batch: SourcePackLinkObjectBatch,
 }
 
+/// Inclusive-start, exclusive-end shard range in the link-input shard index.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackLinkInputShardRange {
     pub first_shard_index: usize,
@@ -151,21 +194,25 @@ pub struct SourcePackLinkInputShardRange {
 }
 
 impl SourcePackLinkInputShardRange {
+    /// Returns the exclusive end shard index, or `None` on overflow.
     pub fn end_shard_index(&self) -> Option<usize> {
         self.first_shard_index.checked_add(self.shard_count)
     }
 
+    /// Returns whether `shard_index` falls inside this range.
     pub fn contains(&self, shard_index: usize) -> bool {
         self.end_shard_index()
             .is_some_and(|end| self.first_shard_index <= shard_index && shard_index < end)
     }
 
+    /// Returns an iterator range over shard indices, or `None` on overflow.
     pub fn iter(&self) -> Option<std::ops::Range<usize>> {
         self.end_shard_index()
             .map(|end| self.first_shard_index..end)
     }
 }
 
+/// Index pointing to interface/object shard ranges used as link inputs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildLinkInputShardIndex {
     pub version: u32,
@@ -176,12 +223,14 @@ pub struct SourcePackBuildLinkInputShardIndex {
     pub link_object_shard_range: Option<SourcePackLinkInputShardRange>,
 }
 
+/// Dependent batches that become closer to ready after one batch completes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackJobBatchDependents {
     pub batch_index: usize,
     pub dependent_batch_indices: Vec<usize>,
 }
 
+/// Persisted dependent-batch summary for one job batch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchDependentsPage {
     pub version: u32,
@@ -195,6 +244,7 @@ pub struct SourcePackBuildJobBatchDependentsPage {
     pub dependent_page_count: usize,
 }
 
+/// Paged dependent-batch list for one job batch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildJobBatchDependentBatchPage {
     pub version: u32,
@@ -207,6 +257,10 @@ pub struct SourcePackBuildJobBatchDependentBatchPage {
     pub dependent_batch_indices: Vec<usize>,
 }
 
+/// Self-contained executable shard for artifact-manifest execution.
+///
+/// Shards copy the source files, job batches, dependency summaries, artifacts,
+/// and link batches needed by a bounded worker step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildArtifactExecutionShard {
     pub version: u32,
@@ -224,6 +278,7 @@ pub struct SourcePackBuildArtifactExecutionShard {
     pub link_object_batches: Vec<SourcePackLinkObjectBatch>,
 }
 
+/// Paged interface artifact inputs required by one job artifact.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackJobArtifactInputInterfacePage {
     pub version: u32,
@@ -235,6 +290,7 @@ pub struct SourcePackJobArtifactInputInterfacePage {
     pub input_interfaces: Vec<SourcePackArtifactRef>,
 }
 
+/// Result returned after a filesystem artifact build completes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactBuildExecutionResult {
     pub linked_output_key: String,
@@ -244,6 +300,7 @@ pub struct FilesystemArtifactBuildExecutionResult {
     pub build_state_path: PathBuf,
 }
 
+/// Result returned after executing one artifact-manifest job batch.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactBatchExecutionResult {
     pub batch_index: usize,
@@ -255,6 +312,7 @@ pub struct FilesystemArtifactBatchExecutionResult {
     pub build_state_path: PathBuf,
 }
 
+/// Result returned after attempting to claim a ready artifact batch.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactBatchClaimResult {
     pub claimed_batch_index: Option<usize>,
@@ -266,6 +324,7 @@ pub struct FilesystemArtifactBatchClaimResult {
     pub build_state_path: PathBuf,
 }
 
+/// Point-in-time summary of artifact-manifest execution progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactProgressSnapshot {
     pub target: SourcePackArtifactTarget,
@@ -286,6 +345,7 @@ pub struct FilesystemArtifactProgressSnapshot {
     pub progress_summary_path: PathBuf,
 }
 
+/// Progress details for one persisted artifact progress shard.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactProgressPage {
     pub target: SourcePackArtifactTarget,
@@ -300,6 +360,7 @@ pub struct FilesystemArtifactProgressPage {
     pub progress_summary_path: PathBuf,
 }
 
+/// Batch-claim result bundled with the current progress snapshot.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactBatchClaimProgressResult {
     pub claimed_batch_index: Option<usize>,
@@ -307,6 +368,7 @@ pub struct FilesystemArtifactBatchClaimProgressResult {
     pub progress: FilesystemArtifactProgressSnapshot,
 }
 
+/// Result returned by one artifact-manifest worker step with progress details.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactWorkerStepProgressExecutionResult {
     pub worker_id: String,
@@ -315,6 +377,7 @@ pub struct FilesystemArtifactWorkerStepProgressExecutionResult {
     pub progress: FilesystemArtifactProgressSnapshot,
 }
 
+/// Result returned by a bounded artifact-manifest worker run with progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactWorkerRunProgressExecutionResult {
     pub worker_id: String,
@@ -322,6 +385,7 @@ pub struct FilesystemArtifactWorkerRunProgressExecutionResult {
     pub progress: FilesystemArtifactProgressSnapshot,
 }
 
+/// Result returned by one artifact-manifest worker step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactWorkerStepExecutionResult {
     pub worker_id: String,
@@ -337,6 +401,7 @@ pub struct FilesystemArtifactWorkerStepExecutionResult {
     pub build_state_path: PathBuf,
 }
 
+/// Result returned by a bounded artifact-manifest worker run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactWorkerRunExecutionResult {
     pub worker_id: String,
@@ -351,6 +416,7 @@ pub struct FilesystemArtifactWorkerRunExecutionResult {
     pub build_state_path: PathBuf,
 }
 
+/// Result returned after resuming artifact-manifest execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemArtifactResumeExecutionResult {
     pub executed_batch_count: usize,
@@ -364,6 +430,7 @@ pub struct FilesystemArtifactResumeExecutionResult {
     pub build_state_path: PathBuf,
 }
 
+/// Point-in-time summary of work-queue execution progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueProgressSnapshot {
     pub target: SourcePackArtifactTarget,
@@ -378,6 +445,7 @@ pub struct FilesystemWorkQueueProgressSnapshot {
     pub progress_index_path: PathBuf,
 }
 
+/// Result returned after attempting to claim a ready work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueItemClaimResult {
     pub claimed_item_index: Option<usize>,
@@ -385,6 +453,7 @@ pub struct FilesystemWorkQueueItemClaimResult {
     pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
+/// Result returned after completing a claimed work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueItemCompletionResult {
     pub completed_item_index: usize,
@@ -394,6 +463,7 @@ pub struct FilesystemWorkQueueItemCompletionResult {
     pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
+/// Result returned after executing an artifact-backed work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueArtifactItemExecutionResult {
     pub item_index: usize,
@@ -402,6 +472,7 @@ pub struct FilesystemWorkQueueArtifactItemExecutionResult {
     pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
+/// Result returned after executing one hierarchical link group.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemHierarchicalLinkGroupExecutionResult {
     pub group_index: usize,
@@ -418,6 +489,7 @@ pub struct FilesystemHierarchicalLinkGroupExecutionResult {
     pub linked_output_path: Option<PathBuf>,
 }
 
+/// Result returned after executing a link-backed work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueLinkItemExecutionResult {
     pub item_index: usize,
@@ -426,12 +498,16 @@ pub struct FilesystemWorkQueueLinkItemExecutionResult {
     pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
+/// Work payload executed by a work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FilesystemWorkQueueExecutedItem {
+    /// A library-interface or codegen artifact batch.
     ArtifactBatch(FilesystemArtifactBatchExecutionResult),
+    /// A hierarchical link leaf or reduce group.
     HierarchicalLinkGroup(FilesystemHierarchicalLinkGroupExecutionResult),
 }
 
+/// Result returned after executing and completing one work-queue item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueItemExecutionResult {
     pub item_index: usize,
@@ -440,6 +516,7 @@ pub struct FilesystemWorkQueueItemExecutionResult {
     pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
+/// Result returned by one work-queue worker step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueWorkerStepExecutionResult {
     pub worker_id: String,
@@ -448,6 +525,7 @@ pub struct FilesystemWorkQueueWorkerStepExecutionResult {
     pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
+/// Result returned by a bounded work-queue worker run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesystemWorkQueueWorkerRunExecutionResult {
     pub worker_id: String,

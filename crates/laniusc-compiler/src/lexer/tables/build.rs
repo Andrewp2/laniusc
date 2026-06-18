@@ -39,7 +39,7 @@ fn closure_fixpoint_parallel(funcs: &mut Vec<UFunc>, map: &mut HashMap<Vec<Next>
         }
         let all_idxs: Vec<usize> = (0..cur_len).collect();
 
-        // new × all
+        // new x all
         let set1: HashSet<Vec<Next>> = new_idxs
             .par_iter()
             .fold(HashSet::new, |mut local, &i| {
@@ -58,7 +58,7 @@ fn closure_fixpoint_parallel(funcs: &mut Vec<UFunc>, map: &mut HashMap<Vec<Next>
                 a
             });
 
-        // all × new
+        // all x new
         let set2: HashSet<Vec<Next>> = all_idxs
             .par_iter()
             .fold(HashSet::new, |mut local, &i| {

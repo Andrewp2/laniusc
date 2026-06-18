@@ -21,6 +21,7 @@ use crate::cli::{
     help::print_lsp_help,
 };
 
+/// Runs the stdio LSP server after validating `laniusc lsp serve` options.
 pub(super) fn run_serve(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let mut saw_stdio = false;
     for arg in args {

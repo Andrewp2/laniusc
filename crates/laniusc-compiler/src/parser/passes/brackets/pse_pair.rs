@@ -9,12 +9,14 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for bracket pairing by layer/rank.
 pub struct Params {
     pub n_sc: u32,
     pub n_layers: u32,
     pub typed_check: u32,
 }
 
+/// Pass that pairs bracket pushes and pops by layer/rank.
 pub struct BracketsPsePairPass {
     data: PassData,
 }

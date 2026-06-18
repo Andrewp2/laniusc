@@ -9,6 +9,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for variable-length stream packing.
 pub struct PackParams {
     pub n_tokens: u32,
     pub n_kinds: u32,
@@ -26,6 +27,7 @@ pub struct PackParams {
     pub pp_len_off: u32,
 }
 
+/// Pass that packs stack-change and production streams from pair headers.
 pub struct PackVarlenPass {
     data: PassData,
 }

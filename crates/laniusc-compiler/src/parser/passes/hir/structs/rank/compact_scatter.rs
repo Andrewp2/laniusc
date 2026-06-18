@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that compacts ranked struct declarations into library-local ranges.
 pub struct HirStructRankCompactScatterPass {
     data: PassData,
 }

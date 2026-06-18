@@ -6,6 +6,7 @@ use super::{
     help::print_doctor_help,
 };
 
+/// Runs the no-run toolchain/readiness report command.
 pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let args = cli_args_without_diagnostic_format(
         "laniusc doctor",

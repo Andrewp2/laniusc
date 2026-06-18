@@ -1,5 +1,9 @@
 use super::*;
 
+/// Stores the final compact work-queue index.
+///
+/// The index is validated and written atomically after every work-queue item
+/// page has been materialized.
 pub(in crate::compiler) fn store_work_queue_compact_index(
     store: &FilesystemArtifactStore,
     index: &SourcePackWorkQueueIndex,

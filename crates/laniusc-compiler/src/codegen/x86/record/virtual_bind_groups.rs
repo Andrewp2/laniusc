@@ -9,6 +9,7 @@ use super::{
     scan::final_ping_pong_scan_prefix,
 };
 
+/// Bind groups used for virtual instruction liveness and register allocation.
 pub(super) struct VirtualBindGroups {
     pub(super) liveness_init: wgpu::BindGroup,
     pub(super) liveness: wgpu::BindGroup,
@@ -26,6 +27,7 @@ pub(super) struct VirtualBindGroups {
     pub(super) regalloc_dispatch_args: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by x86 virtual-register and liveness passes.
 pub(super) struct VirtualBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
@@ -65,6 +67,7 @@ pub(super) struct VirtualBindGroupInputs<'a> {
     pub(super) virtual_regalloc_dispatch_args: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for virtual liveness, value definition compaction, and regalloc.
 pub(super) fn create_virtual_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

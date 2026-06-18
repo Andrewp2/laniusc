@@ -13,11 +13,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for packed stream status validation.
 pub struct Params {
     pub n_pairs: u32,
     pub emit_capacity: u32,
 }
 
+/// Pass that validates projected packed stream capacity and status.
 pub struct PackOffsetsStatusPass {
     data: PassData,
 }
@@ -29,6 +31,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackOffsetsStatusPass {
+    /// Records direct status validation for packed stream offsets.
     pub fn record_pass(
         &self,
         device: &wgpu::Device,
@@ -38,6 +41,7 @@ impl PackOffsetsStatusPass {
         self.record_pass_inner(device, encoder, buffers, None)
     }
 
+    /// Records indirect status validation for packed stream offsets.
     pub fn record_pass_indirect(
         &self,
         device: &wgpu::Device,

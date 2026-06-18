@@ -40,7 +40,11 @@ Performance is essential, but Lanius is not looking to be the fastest possible l
 
 Lanius is in an early alpha. The only documented language edition accepted by
 the compiler today is `unstable-alpha`; it is not a stable compatibility
-promise yet. The policy is documented in `docs/LANGUAGE_SLICE.md`. Run
+promise yet. The reader-facing language reference starts at
+`docs/language/README.md`; the generated language-slice reference is
+`docs/language/generated/unstable-alpha-slice.md`; the policy and
+machine-readable slice source are documented in `docs/LANGUAGE_SLICE.md` and
+`docs/language_slice_unstable_alpha.tsv`. Run
 `laniusc --version` to see the compiler version, edition policy, supported emit
 targets, target triples, formatter contract, LSP schema versions, Slang compiler
 version, `wgpu` version, build profile, and shader artifact digest for the local
@@ -104,20 +108,38 @@ or linker rpaths. Local installations should use shell environment, a wrapper
 script, or untracked per-machine config rather than committing absolute tool
 paths.
 
+## Documentation
+
+Start at `docs/README.md` for the maintained documentation stack: language
+reference, `laniusc` invocation, tooling/editor integration, target/output
+support, package/source-root workflow, compiler internals, generated references,
+diagnostics, stdlib, and production-readiness notes.
+Start with `docs/getting-started.md` for the first-run path from source
+checkout to `doctor`, `check`, `fmt`, and bounded native compile commands. The
+command reference is `docs/invocation.md`, the package/source-root reference is
+`docs/packages.md`, the tooling reference is `docs/tooling.md`, and the
+target/output reference is `docs/targets.md`. Run `tools/docs_check.py` after
+docs-only changes to check generated-reference freshness, local Markdown links
+and anchors, ASCII text, and trailing whitespace for maintained docs.
+
+## Compiler Internals
+
+Internal compiler-author notes live in `docs/compiler/`. Start with
+`docs/compiler/README.md` for the current architecture, GPU-resident data flow,
+pass/shader model, algorithms, authoring guide, documentation model, generated
+compiler reference, and generated relationship-map command.
+
 ## Standard Library
 
-An initial source-level standard library lives in `stdlib/`. For the current
-small source-pack path, `--source-root src` can load user module-path imports
-and `--stdlib-root stdlib` can load stdlib module-path imports such as
-`import core::i32;` into the source pack before GPU type-checking. A minimal
-package manifest can be compiled with `--package-manifest`, locked with
-`laniusc package lock --manifest lanius.package.json -o lanius.lock.json`, and
-compiled later with `--package-lockfile`. Package names and paths are
-control-plane loading metadata only; semantic module identity still comes from
-GPU-parsed module/import records. This is not a full package system yet:
-quoted imports are unsupported and rejected before lockfile write, broad
-package discovery is incomplete, and most runtime-backed stdlib APIs are
-contract-only rather than executable host APIs.
+An initial source-level standard library lives in `stdlib/`. The user-facing
+overview is `docs/stdlib/README.md`, and the generated declaration reference is
+`docs/stdlib/generated/reference.md`. For the current small source-pack path,
+`--source-root src` can load user module-path imports and `--stdlib-root stdlib`
+can load stdlib module-path imports such as `import core::i32;` into the source
+pack before GPU type-checking. Package names and paths are control-plane loading
+metadata only; semantic module identity still comes from GPU-parsed
+module/import records. Most runtime-backed stdlib APIs are contract-only rather
+than executable host APIs.
 
 ## Benchmarks
 

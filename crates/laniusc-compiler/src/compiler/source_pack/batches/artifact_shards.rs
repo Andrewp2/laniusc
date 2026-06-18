@@ -3,17 +3,29 @@ use super::*;
 mod builders;
 pub(in crate::compiler) use builders::*;
 
+/// Stage of resumable artifact-shard preparation.
+///
+/// Artifact-shard preparation first groups job/link batches into bounded
+/// execution shards, then derives the progress directory pages workers use to
+/// find ready work without scanning every shard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) enum ArtifactShardPreparePhase {
+    /// Group normal job batches into job-batch artifact shards.
     JobBatches,
+    /// Group link-interface batches into link-input artifact shards.
     LinkInterfaceBatches,
+    /// Group link-object batches into link-input artifact shards.
     LinkObjectBatches,
+    /// Write progress-directory pages from generated job-batch shards.
     BuildProgressDirectoryPages,
+    /// Write progress-directory index pages from generated directory pages.
     BuildProgressDirectoryIndexPages,
+    /// Preparation is complete and compact indexes can be loaded directly.
     Complete,
 }
 
 impl ArtifactShardPreparePhase {
+    /// Returns the artifact-shard kind produced by this phase, if any.
     pub(in crate::compiler) fn kind(self) -> Option<SourcePackBuildArtifactShardKind> {
         match self {
             Self::JobBatches => Some(SourcePackBuildArtifactShardKind::JobBatches),
@@ -27,6 +39,7 @@ impl ArtifactShardPreparePhase {
         }
     }
 
+    /// Returns the next phase in the artifact-shard preparation state machine.
     pub(in crate::compiler) fn next(self) -> Self {
         match self {
             Self::JobBatches => Self::LinkInterfaceBatches,
@@ -38,27 +51,46 @@ impl ArtifactShardPreparePhase {
     }
 }
 
+/// Persisted cursor for resumable artifact-shard preparation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct ArtifactShardPrepareProgress {
+    /// Progress record format version.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose pages are being prepared.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Normalized shard limits used for this preparation run.
     pub(in crate::compiler) limits: SourcePackBuildShardLimits,
+    /// Total scheduled job count captured from the schedule index.
     pub(in crate::compiler) job_count: usize,
+    /// Total normal job-batch count captured from the job-batch index.
     pub(in crate::compiler) job_batch_count: usize,
+    /// Total artifact-ref count captured from the artifact-ref index.
     pub(in crate::compiler) artifact_count: usize,
+    /// Total link-interface batch count captured from the link-batch index.
     pub(in crate::compiler) link_interface_batch_count: usize,
+    /// Total link-object batch count captured from the link-batch index.
     pub(in crate::compiler) link_object_batch_count: usize,
+    /// Current preparation phase.
     pub(in crate::compiler) phase: ArtifactShardPreparePhase,
+    /// Next input batch or directory page index to process in the current phase.
     pub(in crate::compiler) next_batch_index: usize,
+    /// Index that will be assigned to the next stored artifact shard.
     pub(in crate::compiler) next_shard_index: usize,
+    /// Pending shard builder for phases that group input batches.
     pub(in crate::compiler) current_builder: Option<ArtifactShardBuilder>,
+    /// Number of generated shards that contain normal job batches.
     pub(in crate::compiler) job_batch_shard_count: usize,
+    /// Contiguous shard range containing link-interface input batches.
     pub(in crate::compiler) link_interface_shard_range: Option<SourcePackLinkInputShardRange>,
+    /// Contiguous shard range containing link-object input batches.
     pub(in crate::compiler) link_object_shard_range: Option<SourcePackLinkInputShardRange>,
+    /// Initial count of ready job batches across generated progress shards.
     pub(in crate::compiler) ready_batch_count: usize,
+    /// Lowest initially ready job-batch index, if any batch is ready.
     pub(in crate::compiler) first_ready_batch_index: Option<usize>,
 }
 
+/// Returns the total number of input units in the current preparation phase.
 pub(in crate::compiler) fn artifact_shard_prepare_phase_batch_count(
     progress: &ArtifactShardPrepareProgress,
 ) -> usize {
@@ -77,6 +109,7 @@ pub(in crate::compiler) fn artifact_shard_prepare_phase_batch_count(
     }
 }
 
+/// Returns the number of build-progress directory pages for prepared shards.
 pub(in crate::compiler) fn shard_progress_directory_page_count(
     progress: &ArtifactShardPrepareProgress,
 ) -> usize {
@@ -85,6 +118,7 @@ pub(in crate::compiler) fn shard_progress_directory_page_count(
         .div_ceil(SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_DEFAULT_PAGE_SIZE)
 }
 
+/// Returns the number of build-progress directory index pages.
 pub(in crate::compiler) fn shard_progress_directory_index_page_count(
     progress: &ArtifactShardPrepareProgress,
 ) -> usize {
@@ -92,6 +126,7 @@ pub(in crate::compiler) fn shard_progress_directory_index_page_count(
         .div_ceil(SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_DEFAULT_PAGE_SIZE)
 }
 
+/// Builds the initial progress summary represented by shard preparation state.
 pub(in crate::compiler) fn progress_summary_from_shard_prepare(
     progress: &ArtifactShardPrepareProgress,
 ) -> SourcePackBuildProgressSummary {
@@ -110,6 +145,7 @@ pub(in crate::compiler) fn progress_summary_from_shard_prepare(
     }
 }
 
+/// Validates persisted artifact-shard preparation progress against source indexes.
 pub(in crate::compiler) fn validate_artifact_shard_prepare_progress(
     progress: &ArtifactShardPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -209,6 +245,7 @@ pub(in crate::compiler) fn validate_artifact_shard_prepare_progress(
     Ok(())
 }
 
+/// Creates a shard builder for one input batch in a shard-producing phase.
 pub(in crate::compiler) fn artifact_shard_builder_for_phase_batch(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -243,6 +280,7 @@ pub(in crate::compiler) fn artifact_shard_builder_for_phase_batch(
     }
 }
 
+/// Stores one completed shard and all derived execution/progress metadata.
 pub(in crate::compiler) fn store_artifact_shard_from_page_metadata(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -299,6 +337,7 @@ pub(in crate::compiler) fn store_artifact_shard_from_page_metadata(
     Ok(())
 }
 
+/// Flushes the pending shard builder in preparation progress, if it is complete.
 pub(in crate::compiler) fn store_pending_artifact_shard_prepare_builder(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -338,6 +377,7 @@ pub(in crate::compiler) fn store_pending_artifact_shard_prepare_builder(
     Ok(true)
 }
 
+/// Stores one build-progress directory page after shard preparation.
 pub(in crate::compiler) fn store_progress_directory_page_from_shard(
     store: &FilesystemArtifactStore,
     progress: &ArtifactShardPrepareProgress,
@@ -358,6 +398,7 @@ pub(in crate::compiler) fn store_progress_directory_page_from_shard(
     )
 }
 
+/// Stores one build-progress directory index page after shard preparation.
 pub(in crate::compiler) fn store_progress_directory_index_from_shard(
     store: &FilesystemArtifactStore,
     progress: &ArtifactShardPrepareProgress,
@@ -379,6 +420,11 @@ pub(in crate::compiler) fn store_progress_directory_index_from_shard(
     )
 }
 
+/// Advances artifact-shard preparation by a bounded number of input units.
+///
+/// This is the resumable entry point for converting stored job/link batch pages
+/// into bounded execution shards, progress shards, progress directory pages, and
+/// compact shard indexes.
 pub(in crate::compiler) fn store_build_artifact_shards_from_metadata_chunk(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -713,6 +759,7 @@ pub(in crate::compiler) fn store_build_artifact_shards_from_metadata_chunk(
     })
 }
 
+/// Stores the persisted artifact-shard preparation cursor.
 pub(in crate::compiler) fn store_artifact_shard_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &ArtifactShardPrepareProgress,
@@ -727,6 +774,7 @@ pub(in crate::compiler) fn store_artifact_shard_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates the persisted artifact-shard preparation cursor.
 pub(in crate::compiler) fn load_artifact_shard_prepare_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -762,6 +810,7 @@ pub(in crate::compiler) fn load_artifact_shard_prepare_progress(
     Ok(progress)
 }
 
+/// Extends a contiguous link-input shard range with the next shard index.
 pub(in crate::compiler) fn extend_link_input_shard_range(
     range: &mut Option<SourcePackLinkInputShardRange>,
     shard_index: usize,
@@ -788,6 +837,7 @@ pub(in crate::compiler) fn extend_link_input_shard_range(
     Ok(())
 }
 
+/// Serializes one artifact-shard page.
 pub(in crate::compiler) fn store_artifact_shard_page(
     store: &FilesystemArtifactStore,
     shard: &SourcePackBuildArtifactShard,
@@ -804,6 +854,7 @@ pub(in crate::compiler) fn store_artifact_shard_page(
     Ok(path)
 }
 
+/// Stores batch-to-shard locator pages for job-batch shards.
 pub(in crate::compiler) fn store_batch_shard_locators(
     store: &FilesystemArtifactStore,
     shard: &SourcePackBuildArtifactShard,
@@ -832,6 +883,7 @@ pub(in crate::compiler) fn store_batch_shard_locators(
     Ok(batch_shard_locator_count)
 }
 
+/// Stores the compact shard indexes that mark shard preparation complete.
 pub(in crate::compiler) fn store_artifact_shard_compact_indexes(
     store: &FilesystemArtifactStore,
     index: &SourcePackBuildArtifactShardIndex,
@@ -864,6 +916,7 @@ pub(in crate::compiler) fn store_artifact_shard_compact_indexes(
     Ok(())
 }
 
+/// Builds the initial progress shard for a generated execution shard.
 pub(in crate::compiler) fn initial_progress_shard_from_execution_shard(
     target: SourcePackArtifactTarget,
     execution_shard: &SourcePackBuildArtifactExecutionShard,
@@ -878,6 +931,7 @@ pub(in crate::compiler) fn initial_progress_shard_from_execution_shard(
     Ok(progress)
 }
 
+/// Materializes an execution shard from persisted schedule, batch, and artifact pages.
 pub(in crate::compiler) fn build_artifact_execution_shard_from_stored_pages(
     store: &FilesystemArtifactStore,
     shard: &SourcePackBuildArtifactShard,

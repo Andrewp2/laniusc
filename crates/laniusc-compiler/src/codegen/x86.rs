@@ -1,3 +1,10 @@
+//! GPU x86_64 backend lowering.
+//!
+//! This module records backend passes that lower parser HIR and retained
+//! type-check metadata to ELF bytes. Public helpers expose target status,
+//! feature/capacity estimates, and pass contracts used by tests and compiler
+//! authors to reason about bounded backend behavior.
+
 use std::fmt;
 
 use anyhow::Result;
@@ -15,6 +22,7 @@ mod support;
 pub use record::RecordElfInputs;
 use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
 
+/// Target-level error reported by the GPU x86_64 emitter.
 #[derive(Debug)]
 pub struct X86OutputError {
     error_name: &'static str,
@@ -31,18 +39,22 @@ impl X86OutputError {
         }
     }
 
+    /// Returns the backend status name associated with this error.
     pub fn error_name(&self) -> &'static str {
         self.error_name
     }
 
+    /// Returns the numeric backend status code.
     pub fn error_code(&self) -> u32 {
         self.error_code
     }
 
+    /// Returns the status detail word reported by the backend.
     pub fn error_detail(&self) -> u32 {
         self.error_detail
     }
 
+    /// Returns whether `error_detail` should be interpreted as a HIR node id.
     pub fn detail_is_hir_node(&self) -> bool {
         matches!(
             self.error_code,
@@ -89,6 +101,7 @@ impl X86OutputError {
         )
     }
 
+    /// Returns whether `error_detail` should be interpreted as a token index.
     pub fn detail_is_token(&self) -> bool {
         matches!(self.error_code, 9 | 25 | 56)
     }
@@ -138,22 +151,38 @@ struct X86RegallocParams {
     reserved: u32,
 }
 
+/// Feature-mask bit for enum lowering.
 pub const X86_FEATURE_ENUM: u32 = 1 << 0;
+/// Feature-mask bit for match lowering.
 pub const X86_FEATURE_MATCH: u32 = 1 << 1;
+/// Feature-mask bit for aggregate literal/member lowering.
 pub const X86_FEATURE_AGGREGATE: u32 = 1 << 2;
+/// Feature-mask bit for function or intrinsic call lowering.
 pub const X86_FEATURE_CALL: u32 = 1 << 3;
+/// Status code for unsupported per-node instruction count planning.
 pub(super) const X86_ERR_NODE_INST_COUNTS: u32 = 10;
+/// Status code for unsupported virtual register liveness propagation.
 pub(super) const X86_ERR_VIRTUAL_LIVENESS: u32 = 14;
+/// Status code for unsupported instruction location assignment.
 pub(super) const X86_ERR_NODE_INST_LOCATIONS: u32 = 16;
+/// Status code for unsupported intrinsic call lowering.
 pub(super) const X86_ERR_INTRINSIC_CALLS: u32 = 21;
+/// Status code for unsupported struct or aggregate record lowering.
 pub(super) const X86_ERR_STRUCT_RECORDS: u32 = 28;
+/// Status code for register-allocation boundary failures.
 pub(super) const X86_ERR_REGALLOC_BOUNDARY: u32 = 48;
+/// Status code for unsupported HIR tree shapes.
 pub(super) const X86_ERR_HIR_TREE_SHAPE: u32 = 57;
+/// Status code for signed division overflow or zero-divisor checks.
 pub(super) const X86_ERR_SIGNED_DIV_OVERFLOW: u32 = 59;
+/// Status code for literal expressions not supported by x86 lowering.
 pub(super) const X86_ERR_UNSUPPORTED_LITERAL_EXPR: u32 = 60;
+/// Status code for nested aggregate member lowering that is not supported.
 pub(super) const X86_ERR_NESTED_AGGREGATE_MEMBER: u32 = 61;
+/// Status code for programs with more than one x86 main entrypoint.
 pub(super) const X86_ERR_MULTIPLE_MAIN: u32 = 62;
 
+/// Measured backend feature usage used for x86_64 capacity and pass selection.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct X86FeatureSummary {
     pub mask: u32,
@@ -191,23 +220,28 @@ impl X86FeatureSummary {
         ]
     }
 
+    /// Returns whether enum lowering is required.
     pub fn has_enum(self) -> bool {
         self.mask & X86_FEATURE_ENUM != 0
     }
 
+    /// Returns whether match lowering is required.
     pub fn has_match(self) -> bool {
         self.mask & X86_FEATURE_MATCH != 0
     }
 
     #[allow(dead_code)]
+    /// Returns whether aggregate lowering is required.
     pub fn has_aggregate(self) -> bool {
         self.mask & X86_FEATURE_AGGREGATE != 0
     }
 
+    /// Returns whether call lowering is required.
     pub fn has_call(self) -> bool {
         self.mask & X86_FEATURE_CALL != 0
     }
 
+    /// Returns whether any function parameters were observed.
     pub fn has_param(self) -> bool {
         self.param_count != 0
     }
@@ -229,6 +263,7 @@ impl X86FeatureSummary {
     }
 }
 
+/// Type-check and parser metadata buffers needed by x86 expression lowering.
 pub struct GpuX86ExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
     pub expr_result_root_node: &'a wgpu::Buffer,
@@ -238,6 +273,7 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub type_len_value: &'a wgpu::Buffer,
 }
 
+/// Function and parameter metadata buffers needed by x86 lowering.
 pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub node_decl_token: &'a wgpu::Buffer,
     pub node_name_token: &'a wgpu::Buffer,
@@ -250,6 +286,7 @@ pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
 }
 
+/// Call and call-argument metadata buffers needed by x86 lowering.
 pub struct GpuX86CallMetadataBuffers<'a> {
     pub callee_node: &'a wgpu::Buffer,
     pub arg_start: &'a wgpu::Buffer,
@@ -269,6 +306,7 @@ pub struct GpuX86CallMetadataBuffers<'a> {
     pub call_param_type: &'a wgpu::Buffer,
 }
 
+/// Array literal metadata buffers needed by x86 aggregate lowering.
 pub struct GpuX86ArrayMetadataBuffers<'a> {
     pub lit_first_element: &'a wgpu::Buffer,
     pub lit_element_count: &'a wgpu::Buffer,
@@ -277,6 +315,7 @@ pub struct GpuX86ArrayMetadataBuffers<'a> {
     pub element_next: &'a wgpu::Buffer,
 }
 
+/// Enum, variant, path, and match metadata buffers needed by x86 lowering.
 pub struct GpuX86EnumMetadataBuffers<'a> {
     pub item_decl_token: &'a wgpu::Buffer,
     pub variant_parent_enum: &'a wgpu::Buffer,
@@ -303,6 +342,7 @@ pub struct GpuX86EnumMetadataBuffers<'a> {
     pub decl_parent_type_decl: &'a wgpu::Buffer,
 }
 
+/// Struct declaration, literal, and member metadata buffers needed by x86 lowering.
 pub struct GpuX86StructMetadataBuffers<'a> {
     pub item_name_token: &'a wgpu::Buffer,
     pub decl_hir_node: &'a wgpu::Buffer,
@@ -319,6 +359,7 @@ pub struct GpuX86StructMetadataBuffers<'a> {
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
 }
 
+/// Type reference and type-instance metadata buffers needed by x86 lowering.
 pub struct GpuX86TypeMetadataBuffers<'a> {
     pub decl_type_ref_tag: &'a wgpu::Buffer,
     pub decl_type_ref_payload: &'a wgpu::Buffer,
@@ -329,6 +370,7 @@ pub struct GpuX86TypeMetadataBuffers<'a> {
     pub type_instance_len_payload: &'a wgpu::Buffer,
 }
 
+/// Optional caller-owned scratch buffers reused by one x86 recording.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuX86ExternalScratchBuffers<'a> {
     pub expr_resolved_final: Option<&'a wgpu::Buffer>,
@@ -361,6 +403,7 @@ pub struct GpuX86ExternalScratchBuffers<'a> {
 }
 
 impl GpuX86ExternalScratchBuffers<'_> {
+    /// Counts scratch buffers borrowed by this recording.
     pub fn borrowed_buffer_count(&self) -> usize {
         [
             self.expr_resolved_final,
@@ -470,6 +513,7 @@ const X86_LOWERING_REQUIRED_REPLACEMENT: &str =
 const X86_LOWERING_RECORD_ORDERING: &str =
     "record_semantic_rows,prefix_instruction_counts,scatter_virtual_rows,encode_from_virtual_rows";
 
+/// Documentation contract for the x86 byte encoding passes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86EncodePassContract {
     pub schema: &'static str,
@@ -483,6 +527,7 @@ pub struct X86EncodePassContract {
     pub guards: &'static str,
 }
 
+/// Returns the byte-encoding pass contract used by audits and tests.
 pub fn x86_encode_pass_contract() -> X86EncodePassContract {
     X86EncodePassContract {
         schema: X86_ENCODE_PASS_CONTRACT_SCHEMA,
@@ -497,6 +542,7 @@ pub fn x86_encode_pass_contract() -> X86EncodePassContract {
     }
 }
 
+/// Documentation contract for the current x86 register-allocation passes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86RegallocPassContract {
     pub schema: &'static str,
@@ -510,6 +556,7 @@ pub struct X86RegallocPassContract {
     pub rows_per_chunk: usize,
 }
 
+/// Returns the register-allocation pass contract used by audits and tests.
 pub fn x86_regalloc_pass_contract() -> X86RegallocPassContract {
     X86RegallocPassContract {
         schema: X86_REGALLOC_PASS_CONTRACT_SCHEMA,
@@ -524,6 +571,7 @@ pub fn x86_regalloc_pass_contract() -> X86RegallocPassContract {
     }
 }
 
+/// Documentation contract for the current x86 control-flow bridge passes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86ControlFlowBridgePassContract {
     pub schema: &'static str,
@@ -537,6 +585,7 @@ pub struct X86ControlFlowBridgePassContract {
     pub record_ordering: &'static str,
 }
 
+/// Returns the control-flow bridge pass contract used by audits and tests.
 pub fn x86_control_flow_bridge_pass_contract() -> X86ControlFlowBridgePassContract {
     X86ControlFlowBridgePassContract {
         schema: X86_CONTROL_FLOW_BRIDGE_PASS_CONTRACT_SCHEMA,
@@ -551,6 +600,7 @@ pub fn x86_control_flow_bridge_pass_contract() -> X86ControlFlowBridgePassContra
     }
 }
 
+/// Documentation contract for the current x86 lowering passes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86LoweringPassContract {
     pub schema: &'static str,
@@ -566,6 +616,7 @@ pub struct X86LoweringPassContract {
     pub record_ordering: &'static str,
 }
 
+/// Returns the lowering pass contract used by audits and tests.
 pub fn x86_lowering_pass_contract() -> X86LoweringPassContract {
     X86LoweringPassContract {
         schema: X86_LOWERING_PASS_CONTRACT_SCHEMA,
@@ -582,6 +633,7 @@ pub fn x86_lowering_pass_contract() -> X86LoweringPassContract {
     }
 }
 
+/// Conservative x86 backend capacity estimate for one recording.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86CapacityEstimate {
     pub hir_words: usize,
@@ -592,10 +644,12 @@ pub struct X86CapacityEstimate {
     pub output_capacity: usize,
 }
 
+/// Estimates x86 capacities from HIR size alone.
 pub fn x86_capacity_estimate_for_hir(hir_words: usize) -> X86CapacityEstimate {
     x86_capacity_estimate_for_hir_with_limit(hir_words, X86_INST_CAPACITY_HIR_ESTIMATE_CAP)
 }
 
+/// Estimates x86 capacities from HIR size and token capacity.
 pub fn x86_capacity_estimate_for_hir_and_tokens(
     hir_words: usize,
     token_capacity: usize,
@@ -603,6 +657,7 @@ pub fn x86_capacity_estimate_for_hir_and_tokens(
     x86_capacity_estimate_for_hir_tokens_and_inst_basis(hir_words, token_capacity, hir_words)
 }
 
+/// Estimates x86 capacities from HIR, token, and instruction-basis counts.
 pub fn x86_capacity_estimate_for_hir_tokens_and_inst_basis(
     hir_words: usize,
     token_capacity: usize,
@@ -616,6 +671,7 @@ pub fn x86_capacity_estimate_for_hir_tokens_and_inst_basis(
     )
 }
 
+/// Estimates x86 capacities using measured backend feature usage when available.
 pub fn x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
     hir_words: usize,
     token_capacity: usize,
@@ -718,14 +774,17 @@ fn x86_initial_output_readback_bytes(output_capacity: usize, source_len: usize) 
         .saturating_mul(4)
 }
 
+/// Returns rows needed by compact node-instruction ordering.
 pub fn x86_node_inst_order_rows(hir_words: usize, inst_capacity: usize) -> usize {
     inst_capacity.min(hir_words.max(1)).saturating_add(1)
 }
 
+/// Returns rows needed by the node-instruction worklist.
 pub fn x86_node_inst_worklist_rows(hir_words: usize, inst_capacity: usize) -> usize {
     inst_capacity.max(1).min(hir_words.max(1))
 }
 
+/// Returns words needed for call type records.
 pub fn x86_call_type_record_words(hir_words: usize, has_call: bool) -> usize {
     if has_call {
         hir_words.saturating_mul(3)
@@ -734,14 +793,17 @@ pub fn x86_call_type_record_words(hir_words: usize, has_call: bool) -> usize {
     }
 }
 
+/// Returns words needed for node instruction-count records.
 pub fn x86_node_inst_count_record_words(hir_words: usize) -> usize {
     hir_words.saturating_mul(2)
 }
 
+/// Returns words needed for instruction-generation node records.
 pub fn x86_node_inst_gen_node_record_words(hir_words: usize, inst_capacity: usize) -> usize {
     x86_node_inst_worklist_rows(hir_words, inst_capacity).saturating_mul(2)
 }
 
+/// Returns words needed for instruction ordering plus function-slot fallback rows.
 pub fn x86_node_inst_order_record_words(
     hir_words: usize,
     inst_capacity: usize,
@@ -753,6 +815,7 @@ pub fn x86_node_inst_order_record_words(
         .max(function_slot_capacity.max(1).saturating_mul(14))
 }
 
+/// Returns a conservative function-slot capacity bound for one recording.
 pub fn x86_function_slot_capacity(
     inst_hir_node_count: usize,
     hir_words: usize,
@@ -772,24 +835,29 @@ pub fn x86_function_slot_capacity(
     structural_limit.min(token_density_bound).max(1)
 }
 
+/// Returns the number of recorded register-allocation steps.
 pub fn regalloc_recorded_step_count(inst_capacity: usize) -> usize {
     inst_capacity.max(1)
 }
 
+/// Returns the number of fixed register-allocation chunks.
 pub fn regalloc_recorded_chunk_count(inst_capacity: usize) -> usize {
     regalloc_recorded_step_count(inst_capacity)
         .div_ceil(X86_REGALLOC_ROWS_PER_CHUNK)
         .max(1)
 }
 
+/// Returns the total recorded register-allocation row span.
 pub fn regalloc_recorded_span_rows(inst_capacity: usize) -> usize {
     regalloc_recorded_chunk_count(inst_capacity).saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK)
 }
 
+/// Returns whether the recorded register-allocation span covers instruction capacity.
 pub fn regalloc_recorded_span_covers_inst_capacity(inst_capacity: usize) -> bool {
     regalloc_recorded_span_rows(inst_capacity) >= inst_capacity.max(1)
 }
 
+/// Recorded x86 backend work and retained buffers required for output readback.
 pub struct RecordedX86Codegen {
     output_capacity: usize,
     output_status_offset: u64,
@@ -800,6 +868,7 @@ pub struct RecordedX86Codegen {
     status_trace_readback: Option<wgpu::Buffer>,
 }
 
+/// GPU x86_64 code generator with loaded compute passes.
 pub struct GpuX86CodeGenerator {
     fill_u32_pass: PassData,
     active_clear_u32_pass: PassData,
@@ -901,6 +970,7 @@ pub struct GpuX86CodeGenerator {
 }
 
 impl GpuX86CodeGenerator {
+    /// Loads all x86 backend compute passes for a GPU device.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         macro_rules! load_x86_pass {
             ($name:literal, $spv:literal, $reflection:literal) => {{

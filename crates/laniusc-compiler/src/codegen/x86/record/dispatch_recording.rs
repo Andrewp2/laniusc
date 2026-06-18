@@ -19,6 +19,7 @@ use super::{
     timing::stamp_timer,
 };
 
+/// Bind groups, buffers, and timers needed to record instruction planning and generation passes.
 pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) encoder: &'a mut wgpu::CommandEncoder,
     pub(super) timer: &'a mut Option<&'timer mut crate::gpu::timer::GpuTimer>,
@@ -63,6 +64,7 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) aggregate_literal_return_copy: &'a wgpu::BindGroup,
 }
 
+/// Records the x86 instruction planning pipeline, ending with virtual instruction rows.
 pub(super) fn record_instruction_dispatches(
     generator: &GpuX86CodeGenerator,
     inputs: InstructionDispatchInputs<'_, '_>,
@@ -401,6 +403,7 @@ pub(super) fn record_instruction_dispatches(
     stamp_timer(timer, encoder, "x86.inst_gen.done");
 }
 
+/// Bind groups, buffers, and scan parameters needed to emit selected virtual instructions.
 pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) encoder: &'a mut wgpu::CommandEncoder,
     pub(super) timer: &'a mut Option<&'timer mut crate::gpu::timer::GpuTimer>,
@@ -445,6 +448,7 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) elf: &'a wgpu::BindGroup,
 }
 
+/// Records virtual instruction selection, layout, encoding, relocation, and ELF emission passes.
 pub(super) fn record_virtual_emit_dispatches(
     generator: &GpuX86CodeGenerator,
     inputs: VirtualEmitDispatchInputs<'_, '_>,

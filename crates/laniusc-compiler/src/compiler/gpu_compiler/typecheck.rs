@@ -11,11 +11,15 @@ use crate::{
 };
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Type-check one in-memory source string using `<source>` as the diagnostic
+    /// path.
     pub async fn type_check_source(&self, src: &str) -> Result<(), CompileError> {
         let src = prepare_source_for_gpu(src)?;
         self.type_check_expanded_source_with_diagnostic_path(&src, PathBuf::from("<source>"))
             .await
     }
+    /// Read a source file from disk and type-check it with diagnostics labeled
+    /// by that path.
     pub async fn type_check_source_from_path(
         &self,
         path: impl AsRef<Path>,
@@ -25,6 +29,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.type_check_expanded_source_with_diagnostic_path(&src, path.to_path_buf())
             .await
     }
+    /// Type-check an in-memory source pack after validating it fits the bounded
+    /// default codegen-unit limits.
     pub async fn type_check_source_pack<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -35,6 +41,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         )?;
         self.type_check_explicit_source_pack(sources).await
     }
+    /// Type-check an explicit in-memory source-pack manifest and preserve any
+    /// manifest source paths for diagnostics.
     pub async fn type_check_source_pack_manifest(
         &self,
         source_pack: &ExplicitSourcePack,
@@ -49,6 +57,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         )
         .await
     }
+    /// Type-checks already-prepared source text using the default synthetic path.
     pub(in crate::compiler) async fn type_check_expanded_source(
         &self,
         src: &str,
@@ -56,6 +65,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.type_check_expanded_source_with_diagnostic_path(src, PathBuf::from("<source>"))
             .await
     }
+    /// Type-checks one prepared source string while preserving a diagnostic path.
     pub(super) async fn type_check_expanded_source_with_diagnostic_path(
         &self,
         src: &str,
@@ -170,6 +180,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
     }
+    /// Type-checks source-pack text without explicit diagnostic paths.
     pub(super) async fn type_check_explicit_source_pack<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -178,6 +189,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
+    /// Type-checks source-pack text with optional file paths for diagnostics.
     pub(super) async fn type_check_explicit_source_pack_with_paths<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -295,6 +307,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .map_err(|err| CompileError::GpuFrontend(format!("lex source pack: {err}")))?
     }
     #[allow(clippy::too_many_arguments)]
+    /// Records type-check GPU work from retained lexer/parser buffers.
     pub(in crate::compiler::gpu_compiler) fn record_typecheck_from_parse_buffers(
         &self,
         device: &wgpu::Device,
@@ -470,6 +483,7 @@ impl DiagnosticTokenBuffer {
     }
 }
 
+/// Maps one GPU type-check error for a single source file into a compiler error.
 pub(super) fn type_check_error_to_compile_error_for_source(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

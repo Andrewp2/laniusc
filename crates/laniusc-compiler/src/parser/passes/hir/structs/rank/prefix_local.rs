@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that computes local struct declaration rank prefixes.
 pub struct HirStructRankPrefixLocalPass {
     data: PassData,
 }

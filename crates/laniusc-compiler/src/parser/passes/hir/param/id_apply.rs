@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that writes final dense parameter IDs after list ranks have been assigned.
 pub struct HirParamIdApplyPass {
     data: PassData,
 }

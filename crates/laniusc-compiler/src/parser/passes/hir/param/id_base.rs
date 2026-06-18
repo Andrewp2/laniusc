@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that seeds base parameter IDs for each parameter-owning list.
 pub struct HirParamIdBasePass {
     data: PassData,
 }

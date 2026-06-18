@@ -1,3 +1,4 @@
+/// Host-side timer for optional x86 recording trace and console timing output.
 pub(super) struct HostTimer {
     print_enabled: bool,
     trace_enabled: bool,
@@ -6,6 +7,7 @@ pub(super) struct HostTimer {
 }
 
 impl HostTimer {
+    /// Creates a timer using the current environment-controlled timing and tracing settings.
     pub(super) fn new() -> Self {
         let now = std::time::Instant::now();
         Self {
@@ -19,6 +21,7 @@ impl HostTimer {
         }
     }
 
+    /// Records a named host stage boundary when host timing or tracing is enabled.
     pub(super) fn stamp(&mut self, stage: &str) {
         if !self.print_enabled && !self.trace_enabled {
             return;
@@ -37,6 +40,7 @@ impl HostTimer {
     }
 }
 
+/// Emits a GPU timer stamp when the caller provided a timer for the current recording run.
 pub(super) fn stamp_timer(
     timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
     encoder: &mut wgpu::CommandEncoder,

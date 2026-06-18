@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for extracting HIR parameter fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that extracts parameter owner, rank, and type nodes from HIR parameter syntax.
 pub struct HirParamFieldsPass {
     data: PassData,
 }

@@ -4,11 +4,15 @@ use super::{typecheck::type_check_error_to_compile_error_for_source, *};
 use crate::gpu::buffers::LaniusBuffer;
 
 impl<'gpu> GpuCompiler<'gpu> {
+    /// Compile one in-memory source string through the WASM backend using
+    /// `<source>` as the diagnostic path.
     pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = prepare_source_for_gpu(src)?;
         self.compile_expanded_source_to_wasm_with_diagnostic_path(&src, PathBuf::from("<source>"))
             .await
     }
+    /// Read a source file from disk and compile it through the WASM backend with
+    /// diagnostics labeled by that path.
     pub async fn compile_source_to_wasm_from_path(
         &self,
         path: impl AsRef<Path>,
@@ -18,6 +22,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.compile_expanded_source_to_wasm_with_diagnostic_path(&src, path.to_path_buf())
             .await
     }
+    /// Compile an in-memory source pack through the WASM backend after bounded
+    /// codegen-unit validation.
     pub async fn compile_source_pack_to_wasm<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -388,12 +394,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex source pack: {err}")))?
     }
+    /// Compile an explicit in-memory source-pack manifest through the WASM
+    /// backend and preserve manifest source paths for diagnostics.
     pub async fn compile_source_pack_manifest_to_wasm(
         &self,
         source_pack: &ExplicitSourcePack,
     ) -> Result<Vec<u8>, CompileError> {
         self.compile_source_pack_to_wasm(&source_pack.sources).await
     }
+    /// Compiles prepared source text to WASM output using a synthetic path.
     pub(in crate::compiler) async fn compile_expanded_source_to_wasm(
         &self,
         src: &str,
@@ -781,6 +790,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
     }
+    /// Returns the initialized WASM code generator or a backend initialization error.
     pub(super) fn wasm_generator(&self) -> Result<&wasm::GpuWasmCodeGenerator, CompileError> {
         trace_wasm_compile("wasm.generator");
         self.wasm_generator.as_deref().map_err(|err| {

@@ -3,6 +3,15 @@
 This directory contains the initial Lanius standard library as plain `.lani`
 source files.
 
+For a generated source-level module and declaration inventory, see
+[`docs/stdlib/generated/reference.md`](../docs/stdlib/generated/reference.md).
+Regenerate and check it with:
+
+```bash
+tools/stdlib_inventory.py --output docs/stdlib/generated/reference.md
+tools/stdlib_inventory.py --check docs/stdlib/generated/reference.md
+```
+
 The full desired standard library surface is tracked in
 [STANDARD_LIBRARY_SPEC.md](STANDARD_LIBRARY_SPEC.md). The long-term roadmap is
 tracked in [PLAN.md](PLAN.md). Compiler and runtime prerequisites for

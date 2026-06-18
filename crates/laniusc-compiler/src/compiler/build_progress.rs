@@ -1,5 +1,6 @@
 use super::*;
 
+/// Validates one mutable progress shard for a bounded artifact-shard page.
 pub(super) fn validate_build_progress_shard(
     shard: &SourcePackBuildProgressShard,
 ) -> Result<(), CompileError> {
@@ -106,6 +107,7 @@ pub(super) fn validate_build_progress_shard(
     Ok(())
 }
 
+/// Validates the compact summary derived from one progress shard.
 pub(super) fn validate_build_progress_shard_summary(
     summary: &SourcePackBuildProgressShardSummary,
 ) -> Result<(), CompileError> {
@@ -166,6 +168,7 @@ pub(super) fn validate_build_progress_shard_summary(
     Ok(())
 }
 
+/// Validates the root progress summary for a target's source-pack build.
 pub(super) fn validate_build_progress_summary(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<(), CompileError> {
@@ -233,10 +236,12 @@ pub(super) fn validate_build_progress_summary(
     Ok(())
 }
 
+/// Returns the directory-page index that owns a progress shard index.
 pub(super) fn directory_page_index_for_shard(shard_index: usize) -> usize {
     shard_index / SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_DEFAULT_PAGE_SIZE
 }
 
+/// Returns the number of progress-directory pages implied by the summary.
 pub(super) fn directory_page_count(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<usize, CompileError> {
@@ -246,6 +251,7 @@ pub(super) fn directory_page_count(
         .div_ceil(SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_DEFAULT_PAGE_SIZE))
 }
 
+/// Returns the shard range covered by one progress-directory page.
 pub(super) fn directory_page_range(
     summary: &SourcePackBuildProgressSummary,
     directory_page_index: usize,
@@ -269,6 +275,7 @@ pub(super) fn directory_page_range(
     Ok((first_shard_index, shard_count))
 }
 
+/// Validates a progress-directory page against the target and root summary.
 pub(super) fn validate_build_progress_directory_page(
     page: &SourcePackBuildProgressDirectoryPage,
     target: SourcePackArtifactTarget,
@@ -353,10 +360,12 @@ pub(super) fn validate_build_progress_directory_page(
     Ok(())
 }
 
+/// Returns the directory-index page that owns a directory-page index.
 pub(super) fn directory_index_page_index_for_page(directory_page_index: usize) -> usize {
     directory_page_index / SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_DEFAULT_PAGE_SIZE
 }
 
+/// Returns the number of directory-index pages implied by the summary.
 pub(super) fn directory_index_page_count(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<usize, CompileError> {
@@ -364,6 +373,7 @@ pub(super) fn directory_index_page_count(
     Ok(directory_page_count.div_ceil(SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_DEFAULT_PAGE_SIZE))
 }
 
+/// Returns the directory-page range covered by one directory-index page.
 pub(super) fn directory_index_page_range(
     summary: &SourcePackBuildProgressSummary,
     directory_index_page_index: usize,
@@ -386,6 +396,7 @@ pub(super) fn directory_index_page_range(
     Ok((first_directory_page_index, directory_page_count))
 }
 
+/// Validates a directory-index page against the target and root summary.
 pub(super) fn validate_directory_index_page(
     page: &SourcePackBuildProgressDirectoryIndexPage,
     target: SourcePackArtifactTarget,
@@ -478,6 +489,7 @@ pub(super) fn validate_directory_index_page(
     Ok(())
 }
 
+/// Builds a compact summary from a mutable progress shard.
 pub(super) fn build_progress_shard_summary(
     shard: &SourcePackBuildProgressShard,
 ) -> Result<SourcePackBuildProgressShardSummary, CompileError> {
@@ -517,6 +529,7 @@ pub(super) fn build_progress_shard_summary(
     Ok(summary)
 }
 
+/// Returns whether every ready batch in a shard is currently claimed.
 pub(super) fn shard_ready_batches_claimed(
     summary: &SourcePackBuildProgressShardSummary,
     now_unix_nanos: Option<u128>,
@@ -535,6 +548,7 @@ pub(super) fn shard_ready_batches_claimed(
     }
 }
 
+/// Returns whether every ready batch in the root summary is currently claimed.
 pub(super) fn summary_ready_batches_claimed(
     summary: &SourcePackBuildProgressSummary,
     now_unix_nanos: Option<u128>,
@@ -553,6 +567,7 @@ pub(super) fn summary_ready_batches_claimed(
     }
 }
 
+/// Returns whether every ready shard in a directory page is fully claimed.
 pub(super) fn directory_ready_shards_claimed(
     page: &SourcePackBuildProgressDirectoryPage,
     now_unix_nanos: Option<u128>,
@@ -567,6 +582,7 @@ pub(super) fn directory_ready_shards_claimed(
     }
 }
 
+/// Returns whether every ready directory page in an index page is fully claimed.
 pub(super) fn directory_index_ready_pages_claimed(
     page: &SourcePackBuildProgressDirectoryIndexPage,
     now_unix_nanos: Option<u128>,
@@ -582,6 +598,7 @@ pub(super) fn directory_index_ready_pages_claimed(
     }
 }
 
+/// Validates that a progress shard tracks the matching job-batch artifact shard.
 pub(super) fn validate_progress_shard_matches_artifact_shard(
     progress: &SourcePackBuildProgressShard,
     shard: &SourcePackBuildArtifactShard,
@@ -611,6 +628,7 @@ pub(super) fn validate_progress_shard_matches_artifact_shard(
     Ok(())
 }
 
+/// Loads the persisted progress summary and converts it to root build state.
 pub(super) fn load_build_state_from_progress_summary(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -619,6 +637,7 @@ pub(super) fn load_build_state_from_progress_summary(
     build_state_from_progress_summary(&summary)
 }
 
+/// Converts a validated progress summary into the compact root build-state record.
 pub(super) fn build_state_from_progress_summary(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<SourcePackBuildState, CompileError> {
@@ -633,6 +652,7 @@ pub(super) fn build_state_from_progress_summary(
     Ok(state)
 }
 
+/// Validates that a complete progress summary points at an existing linked output.
 pub(super) fn validate_progress_summary_complete_output(
     store: &FilesystemArtifactStore,
     summary: &SourcePackBuildProgressSummary,
@@ -656,6 +676,7 @@ pub(super) fn validate_progress_summary_complete_output(
     Ok(())
 }
 
+/// Builds the root build-state marker persisted after progress-state updates.
 pub(super) fn root_build_state_marker(state: &SourcePackBuildState) -> SourcePackBuildState {
     SourcePackBuildState {
         version: SOURCE_PACK_BUILD_STATE_VERSION,
@@ -665,6 +686,7 @@ pub(super) fn root_build_state_marker(state: &SourcePackBuildState) -> SourcePac
     }
 }
 
+/// Loads the execution shard containing a job batch through its persisted locator.
 pub(super) fn execution_shard_for_batch_locator(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -688,6 +710,7 @@ pub(super) fn execution_shard_for_batch_locator(
     Ok(execution_shard)
 }
 
+/// Loads the progress shard containing a job batch through its persisted locator.
 pub(super) fn progress_shard_for_batch_locator(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -704,6 +727,7 @@ pub(super) fn progress_shard_for_batch_locator(
     Ok(progress)
 }
 
+/// Returns whether a job batch is completed according to its progress shard.
 pub(super) fn batch_completed_from_locator(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -713,6 +737,7 @@ pub(super) fn batch_completed_from_locator(
     Ok(progress.is_batch_completed(batch_index))
 }
 
+/// Returns whether a job batch is ready and not claimed at the supplied time.
 pub(super) fn batch_ready_unclaimed_from_locator(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -725,6 +750,7 @@ pub(super) fn batch_ready_unclaimed_from_locator(
         && !progress.is_batch_claimed(batch_index, now_unix_nanos)?)
 }
 
+/// Loads a stored shard summary or derives one from the mutable shard.
 pub(super) fn shard_summary_from_store(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -738,6 +764,7 @@ pub(super) fn shard_summary_from_store(
     build_progress_shard_summary(&store.load_build_progress_shard_for_target(target, shard_index)?)
 }
 
+/// Builds one progress-directory page from shard summaries.
 pub(super) fn directory_page_from_summaries(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -791,6 +818,7 @@ pub(super) fn directory_page_from_summaries(
     Ok(directory_page)
 }
 
+/// Loads a directory page or rebuilds it from shard summaries.
 pub(super) fn directory_page_from_store_or_summaries(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -806,6 +834,7 @@ pub(super) fn directory_page_from_store_or_summaries(
     directory_page_from_summaries(store, target, summary, directory_page_index)
 }
 
+/// Builds one directory-index page from directory pages.
 pub(super) fn directory_index_page_from_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -875,6 +904,7 @@ pub(super) fn directory_index_page_from_pages(
     Ok(page)
 }
 
+/// Loads a directory-index page or rebuilds it from directory pages.
 pub(super) fn directory_index_page_from_store_or_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -911,6 +941,7 @@ pub(super) fn directory_index_page_from_store_or_pages(
     )
 }
 
+/// Returns the earliest active claim lease across bounded progress directories.
 pub(super) fn earliest_claim_lease_bounded(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -945,6 +976,7 @@ pub(super) fn earliest_claim_lease_bounded(
     Ok(earliest)
 }
 
+/// Loads the root progress summary used as the bounded frontier index.
 pub(super) fn summary_for_frontier_bounded(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -952,6 +984,7 @@ pub(super) fn summary_for_frontier_bounded(
     store.load_build_progress_summary_for_target(target)
 }
 
+/// Finds the first ready batch by walking the bounded progress-directory index.
 pub(super) fn first_ready_batch_from_summary_pages(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -1070,6 +1103,7 @@ pub(super) fn first_ready_batch_from_summary_pages(
     Ok(None)
 }
 
+/// Finds ready, unclaimed batch indices up to an optional caller-supplied limit.
 pub(super) fn ready_unclaimed_batch_indices_limited(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -1229,6 +1263,7 @@ pub(super) fn ready_unclaimed_batch_indices_limited(
     Ok(ready_batch_indices)
 }
 
+/// Finds the first ready, unclaimed batch index for a worker claim attempt.
 pub(super) fn first_ready_unclaimed_batch_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

@@ -1,5 +1,6 @@
 use super::{super::*, common::reflected_bind_group_from_resources};
 
+/// Builds bind groups for builtin language names and builtin declarations.
 pub(in crate::type_checker) fn create_language_name_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,

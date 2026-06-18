@@ -1,5 +1,6 @@
 use super::super::*;
 
+/// Builds method-key bind groups from the typed method-key input model.
 pub(in crate::type_checker) fn create_method_key_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,
@@ -48,6 +49,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups(
     )
 }
 
+/// Builds method-key bind groups from explicit pass handles and relation buffers.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
     device: &wgpu::Device,

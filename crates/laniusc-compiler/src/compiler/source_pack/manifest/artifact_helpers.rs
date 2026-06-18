@@ -1,5 +1,6 @@
 use super::*;
 
+/// Returns a manifest artifact entry by logical artifact index.
 pub(in crate::compiler) fn manifest_artifact_entry<'a>(
     manifest: &'a SourcePackArtifactManifest,
     artifact_index: usize,
@@ -19,6 +20,7 @@ pub(in crate::compiler) fn manifest_artifact_entry<'a>(
     Ok(artifact)
 }
 
+/// Returns the unique library-interface artifact produced by a job.
 pub(in crate::compiler) fn library_interface_artifact_for_job<'a>(
     manifest: &'a SourcePackArtifactManifest,
     producing_job_index: usize,
@@ -49,6 +51,7 @@ pub(in crate::compiler) fn library_interface_artifact_for_job<'a>(
     Ok(artifact)
 }
 
+/// Converts a manifest artifact entry into a loadable artifact reference.
 pub(in crate::compiler) fn artifact_ref_from_manifest_entry(
     artifact: &SourcePackArtifactManifestEntry,
 ) -> SourcePackArtifactRef {
@@ -60,6 +63,7 @@ pub(in crate::compiler) fn artifact_ref_from_manifest_entry(
     }
 }
 
+/// Inserts artifact indices for library-interface outputs from job ranges.
 pub(in crate::compiler) fn insert_interface_job_range_indices(
     manifest: &SourcePackArtifactManifest,
     job_ranges: &[SourcePackJobIndexRange],
@@ -87,6 +91,7 @@ pub(in crate::compiler) fn insert_interface_job_range_indices(
     Ok(())
 }
 
+/// Validates that a stored artifact reference still matches its manifest entry.
 pub(in crate::compiler) fn validate_artifact_ref_matches_entry(
     manifest: &SourcePackArtifactManifest,
     artifact_ref: &SourcePackArtifactRef,
@@ -111,6 +116,7 @@ pub(in crate::compiler) fn validate_artifact_ref_matches_entry(
     Ok(())
 }
 
+/// Builds a set of unique artifact indices from explicit artifact references.
 pub(in crate::compiler) fn artifact_ref_index_set(
     artifact_refs: &[SourcePackArtifactRef],
     label: &str,
@@ -127,6 +133,7 @@ pub(in crate::compiler) fn artifact_ref_index_set(
     Ok(values)
 }
 
+/// Builds a unique artifact-index set from explicit refs and compact ranges.
 pub(in crate::compiler) fn artifact_ref_and_range_index_set(
     artifact_refs: &[SourcePackArtifactRef],
     artifact_ranges: &[SourcePackArtifactIndexRange],
@@ -143,6 +150,7 @@ pub(in crate::compiler) fn artifact_ref_and_range_index_set(
     Ok(values)
 }
 
+/// Builds a unique set from `usize` values and rejects duplicates.
 pub(in crate::compiler) fn unique_usize_set(
     values: &[usize],
     label: &str,
@@ -158,6 +166,7 @@ pub(in crate::compiler) fn unique_usize_set(
     Ok(unique_values)
 }
 
+/// Validates that a list of `usize` values is strictly ascending.
 pub(in crate::compiler) fn validate_usize_values_strictly_ascending<F>(
     values: &[usize],
     label: &str,
@@ -180,6 +189,7 @@ where
     Ok(())
 }
 
+/// Builds a unique set from explicit indexes plus artifact-index ranges.
 pub(in crate::compiler) fn unique_usize_and_artifact_range_set(
     values: &[usize],
     artifact_ranges: &[SourcePackArtifactIndexRange],
@@ -196,6 +206,7 @@ pub(in crate::compiler) fn unique_usize_and_artifact_range_set(
     Ok(unique_values)
 }
 
+/// Expands artifact-index ranges into a unique index set.
 pub(in crate::compiler) fn artifact_index_range_set(
     artifact_ranges: &[SourcePackArtifactIndexRange],
     label: &str,
@@ -219,6 +230,7 @@ pub(in crate::compiler) fn artifact_index_range_set(
     Ok(unique_values)
 }
 
+/// Returns the saturated total number of artifacts covered by ranges.
 pub(in crate::compiler) fn artifact_index_range_count(
     ranges: &[SourcePackArtifactIndexRange],
 ) -> usize {
@@ -227,6 +239,7 @@ pub(in crate::compiler) fn artifact_index_range_count(
     })
 }
 
+/// Returns whether an artifact index appears in any compact range.
 pub(in crate::compiler) fn artifact_index_covered_by_ranges(
     artifact_index: usize,
     ranges: &[SourcePackArtifactIndexRange],
@@ -234,6 +247,7 @@ pub(in crate::compiler) fn artifact_index_covered_by_ranges(
     ranges.iter().any(|range| range.contains(artifact_index))
 }
 
+/// Sorts and merges overlapping or adjacent artifact-index ranges.
 pub(in crate::compiler) fn compact_artifact_index_ranges(
     ranges: Vec<SourcePackArtifactIndexRange>,
 ) -> Vec<SourcePackArtifactIndexRange> {
@@ -262,6 +276,7 @@ pub(in crate::compiler) fn compact_artifact_index_ranges(
     compact_ranges
 }
 
+/// Validates compact artifact ranges against explicit artifact indices.
 pub(in crate::compiler) fn validate_artifact_index_ranges<F>(
     artifact_ranges: &[SourcePackArtifactIndexRange],
     explicit_artifact_indices: &BTreeSet<usize>,
@@ -306,6 +321,7 @@ where
     Ok(())
 }
 
+/// Builds a unique set from `u32` values and rejects duplicates.
 pub(in crate::compiler) fn unique_u32_set(
     values: &[u32],
     label: &str,
@@ -321,6 +337,7 @@ pub(in crate::compiler) fn unique_u32_set(
     Ok(unique_values)
 }
 
+/// Validates a manifest artifact key with manifest-contract errors.
 pub(in crate::compiler) fn validate_manifest_artifact_key(
     target: SourcePackArtifactTarget,
     key: &str,
@@ -329,6 +346,7 @@ pub(in crate::compiler) fn validate_manifest_artifact_key(
     validate_artifact_key(target, key, label, manifest_contract_error)
 }
 
+/// Validates an artifact key's path shape and target prefix.
 pub(in crate::compiler) fn validate_artifact_key<F>(
     target: SourcePackArtifactTarget,
     key: &str,
@@ -351,6 +369,7 @@ where
     Ok(())
 }
 
+/// Validates a manifest artifact key for a specific artifact kind.
 pub(in crate::compiler) fn validate_manifest_artifact_key_kind(
     target: SourcePackArtifactTarget,
     key: &str,
@@ -360,6 +379,7 @@ pub(in crate::compiler) fn validate_manifest_artifact_key_kind(
     validate_artifact_key_kind(target, key, kind, label, manifest_contract_error)
 }
 
+/// Validates an artifact key's target prefix and kind-specific path segment.
 pub(in crate::compiler) fn validate_artifact_key_kind<F>(
     target: SourcePackArtifactTarget,
     key: &str,

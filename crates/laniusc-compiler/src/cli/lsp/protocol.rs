@@ -15,20 +15,35 @@ use crate::{
     compiler::Diagnostic,
 };
 
+/// Failure boundary for malformed JSON-RPC frames or request objects.
 pub(super) const LSP_FAILURE_BOUNDARY_MESSAGE_VALIDATION: &str = "lsp-protocol-message-validation";
+/// Failure boundary for requests received before initialization completes.
 pub(super) const LSP_FAILURE_BOUNDARY_PRE_INITIALIZE: &str = "lsp-lifecycle-pre-initialize";
+/// Failure boundary for requests received after shutdown.
 pub(super) const LSP_FAILURE_BOUNDARY_POST_SHUTDOWN: &str = "lsp-lifecycle-post-shutdown";
+/// Failure boundary for repeated initialize requests.
 pub(super) const LSP_FAILURE_BOUNDARY_REINITIALIZE: &str = "lsp-lifecycle-reinitialize";
+/// Failure boundary for unsupported or unknown LSP methods.
 pub(super) const LSP_FAILURE_BOUNDARY_METHOD_DISPATCH: &str = "lsp-method-dispatch";
+/// Failure boundary for pull-diagnostic requests that reach the compiler.
 pub(super) const LSP_FAILURE_BOUNDARY_DOCUMENT_DIAGNOSTICS: &str = "lsp-open-document-diagnostics";
 
 #[derive(Debug)]
+/// Result of reading one stdio-framed LSP message.
 pub(super) enum FrameRead {
+    /// A complete JSON-RPC body with exactly the advertised byte length.
     Body(Vec<u8>),
+    /// A syntactically invalid frame that should be reported as JSON-RPC parse failure.
     InvalidFrame(String),
+    /// Clean end-of-input before any partial frame was observed.
     EndOfInput,
 }
 
+/// Reads one `Content-Length` framed LSP body from stdin.
+///
+/// Invalid frames are returned as data instead of hard I/O failures whenever
+/// the stream can be resynchronized. This lets the session loop return a normal
+/// JSON-RPC error response and continue serving later frames.
 pub(super) fn read_framed_body(input: &mut impl BufRead) -> Result<FrameRead, CliError> {
     let mut content_length = None;
     let mut frame_error: Option<String> = None;
@@ -102,6 +117,7 @@ pub(super) fn read_framed_body(input: &mut impl BufRead) -> Result<FrameRead, Cl
     }
 }
 
+/// Builds a JSON-RPC success response whose result is `null`.
 pub(super) fn null_result_response(id: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",
@@ -110,6 +126,7 @@ pub(super) fn null_result_response(id: serde_json::Value) -> serde_json::Value {
     })
 }
 
+/// Writes one JSON-RPC response using LSP `Content-Length` framing.
 pub(super) fn write_response(
     output: &mut impl Write,
     response: &serde_json::Value,
@@ -127,6 +144,7 @@ pub(super) fn write_response(
     Ok(())
 }
 
+/// Builds a JSON-RPC error response and stamps the Lanius error-data schema.
 pub(super) fn error_response_with_data(
     id: serde_json::Value,
     code: i32,
@@ -150,6 +168,7 @@ pub(super) fn error_response_with_data(
     })
 }
 
+/// Returns machine-readable metadata for LSP error `data` payloads.
 pub(super) fn error_data_contract_metadata() -> serde_json::Value {
     let mut metadata = lsp_error_data_metadata();
     if let serde_json::Value::Object(fields) = &mut metadata {
@@ -196,6 +215,7 @@ pub(super) fn error_data_contract_metadata() -> serde_json::Value {
     metadata
 }
 
+/// Returns machine-readable metadata for the stdio LSP transport contract.
 pub(super) fn transport_contract_metadata() -> serde_json::Value {
     serde_json::json!({
         "schema_name": "laniusc.lsp.transport",
@@ -240,6 +260,7 @@ pub(super) fn transport_contract_metadata() -> serde_json::Value {
     })
 }
 
+/// Builds the standard invalid-message JSON-RPC error response.
 pub(super) fn invalid_message_error_response(
     id: serde_json::Value,
     code: i32,
@@ -255,6 +276,7 @@ pub(super) fn invalid_message_error_response(
     )
 }
 
+/// Builds an invalid-message response for a specific lifecycle boundary.
 pub(super) fn invalid_message_error_response_with_boundary(
     id: serde_json::Value,
     code: i32,
@@ -286,6 +308,7 @@ pub(super) fn invalid_message_error_response_with_boundary(
     )
 }
 
+/// Builds the response for requests that arrive before `initialize`.
 pub(super) fn server_not_initialized_error_response(id: serde_json::Value) -> serde_json::Value {
     let diagnostic = Diagnostic::error("LNC0029", "invalid LSP message")
         .with_note("initialize request has not completed; document and shutdown requests are rejected before the server is initialized")
@@ -316,6 +339,7 @@ pub(super) fn server_not_initialized_error_response(id: serde_json::Value) -> se
     )
 }
 
+/// Builds the response for supported-session requests with unknown methods.
 pub(super) fn unsupported_method_error_response(
     id: serde_json::Value,
     method: &str,

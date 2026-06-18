@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fully prepare a target-specific artifact build using default shard limits.
 pub fn prepare_artifact_build_for_target(
     artifact_root: impl Into<PathBuf>,
     limits: CodegenUnitLimits,
@@ -15,6 +16,8 @@ pub fn prepare_artifact_build_for_target(
     )
 }
 
+/// Prepare the next chunk of library schedule pages from stored source
+/// metadata.
 pub fn prepare_library_schedule_chunk(
     artifact_root: impl Into<PathBuf>,
     limits: CodegenUnitLimits,
@@ -27,6 +30,8 @@ pub fn prepare_library_schedule_chunk(
     prepare_schedule_chunk_from_metadata(&store, target, limits, max_new_libraries)
 }
 
+/// Prepare the next chunk of artifact-reference pages from the library
+/// schedule.
 pub fn prepare_artifact_refs_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -39,6 +44,7 @@ pub fn prepare_artifact_refs_chunk(
     store_artifact_ref_pages_from_schedule_chunk(&store, &schedule_index, max_new_libraries)
 }
 
+/// Prepare the next chunk of job-batch pages from the library schedule.
 pub fn prepare_job_batches_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -57,6 +63,7 @@ pub fn prepare_job_batches_chunk(
     )
 }
 
+/// Prepare the next chunk of reverse job-batch dependency pages.
 pub fn prepare_job_dependents_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -74,6 +81,8 @@ pub fn prepare_job_dependents_chunk(
     )
 }
 
+/// Prepare the next chunk of artifact execution shards and progress directory
+/// pages.
 pub fn prepare_artifact_shards_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -101,6 +110,7 @@ pub fn prepare_artifact_shards_chunk(
     )
 }
 
+/// Prepare the next chunk of link-batch input pages.
 pub fn prepare_link_batches_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -122,6 +132,7 @@ pub fn prepare_link_batches_chunk(
     )
 }
 
+/// Prepare the next chunk of hierarchical link leaf groups.
 pub fn prepare_link_leaf_groups_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -135,6 +146,7 @@ pub fn prepare_link_leaf_groups_chunk(
     store_link_leaf_group_chunk(&store, &schedule_index, batch_limits, max_new_partitions)
 }
 
+/// Prepare the next chunk of hierarchical link reduce groups.
 pub fn prepare_link_reduce_groups_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -149,6 +161,7 @@ pub fn prepare_link_reduce_groups_chunk(
     store_link_reduce_group_chunk(&store, &schedule_index, batch_limits, max_new_reduce_groups)
 }
 
+/// Prepare the next chunk of hierarchical link execution pages.
 pub fn prepare_link_execution_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -169,6 +182,7 @@ pub fn prepare_link_execution_chunk(
     )
 }
 
+/// Prepare the next chunk of claimable work-queue item pages.
 pub fn prepare_work_queue_pages_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -187,6 +201,7 @@ pub fn prepare_work_queue_pages_chunk(
     )
 }
 
+/// Prepare the next chunk of initial work-queue progress pages.
 pub fn prepare_work_queue_progress_chunk(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,

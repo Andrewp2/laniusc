@@ -4,6 +4,7 @@ use super::{
     scan::{create_counted_u32_scan_bind_groups_with_passes, make_name_scan_steps},
 };
 
+/// Builds bind groups for trait predicate rows, method contracts, and obligations.
 pub(in crate::type_checker) fn create_predicate_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,

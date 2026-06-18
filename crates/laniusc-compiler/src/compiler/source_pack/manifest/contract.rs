@@ -1,6 +1,11 @@
 use super::*;
 use crate::codegen::unit::artifact_key_for_output;
 
+/// Validates the full artifact manifest contract.
+///
+/// This is the top-level consistency check for manifest replay: it verifies
+/// counts, dense positional records, job dependency shape, artifact provenance,
+/// job batches, artifact IO, artifact uses, and link-input batches.
 pub(in crate::compiler) fn validate_artifact_manifest_contract(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {
@@ -383,6 +388,10 @@ fn validate_manifest_artifact_producer_provenance(
     )))
 }
 
+/// Validates job-batch records and returns each job's owning batch.
+///
+/// Every job must appear in exactly one batch, batch job indices must be sorted
+/// and unique, and batch source totals must equal the sum of their jobs.
 pub(in crate::compiler) fn validate_manifest_job_batches(
     manifest: &SourcePackBuildArtifactManifest,
     job_count: usize,
@@ -447,6 +456,11 @@ pub(in crate::compiler) fn validate_manifest_job_batches(
     Ok(dense_job_to_batch)
 }
 
+/// Validates that batch dependencies match the job dependency graph.
+///
+/// The listed dependency batches, including compact ranges, are compared with
+/// the dependencies implied by every job in the batch. Link jobs without explicit
+/// dependencies are treated as depending on all codegen batches.
 pub(in crate::compiler) fn validate_manifest_batch_dependencies(
     manifest: &SourcePackBuildArtifactManifest,
     job_to_batch: &[usize],
@@ -562,6 +576,11 @@ pub(in crate::compiler) fn validate_manifest_batch_dependencies(
     Ok(())
 }
 
+/// Validates per-job artifact manifests and records actual artifact consumers.
+///
+/// The function checks each job's input/output shape, reference kinds, range
+/// metadata, dependency legality, and output provenance. As it validates inputs,
+/// it fills `actual_artifact_consumers` for the later artifact-use check.
 pub(in crate::compiler) fn validate_manifest_job_artifacts(
     manifest: &SourcePackBuildArtifactManifest,
     output_artifact_indices_by_job: &[Vec<usize>],
@@ -949,6 +968,10 @@ fn checked_count_sum(context: &str, counts: &[usize]) -> Result<usize, CompileEr
     })
 }
 
+/// Validates the phase-specific output shape for one job artifact manifest.
+///
+/// Frontend jobs must emit one interface artifact, codegen jobs one object
+/// artifact, and the link job one linked-output artifact.
 pub(in crate::compiler) fn validate_manifest_job_output_shape(
     job_manifest: &SourcePackJobArtifactManifest,
 ) -> Result<(), CompileError> {
@@ -992,6 +1015,10 @@ pub(in crate::compiler) fn validate_manifest_job_output_shape(
     Ok(())
 }
 
+/// Validates the compact artifact-IO rows against per-job artifact manifests.
+///
+/// Each IO row must match the schedule phase and carry the same input and output
+/// artifact index sets as the richer job artifact manifest.
 pub(in crate::compiler) fn validate_manifest_job_artifact_io(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {
@@ -1077,6 +1104,11 @@ pub(in crate::compiler) fn validate_manifest_job_artifact_io(
     Ok(())
 }
 
+/// Validates artifact-use records against the consumers discovered from job inputs.
+///
+/// Artifact-use rows must be dense by artifact index, point at the recorded
+/// producer, list exactly the discovered consumer set, and carry the correct
+/// last-consumer summary.
 pub(in crate::compiler) fn validate_manifest_artifact_uses(
     manifest: &SourcePackBuildArtifactManifest,
     actual_artifact_consumers: &[BTreeSet<usize>],
@@ -1137,6 +1169,11 @@ pub(in crate::compiler) fn validate_manifest_artifact_uses(
     Ok(())
 }
 
+/// Validates link-interface and link-object batch coverage.
+///
+/// Link batches must cover exactly the link job's expected interface and object
+/// input artifact sets, with each artifact appearing in one sorted, bounded
+/// batch whose source totals match the referenced artifacts.
 pub(in crate::compiler) fn validate_manifest_link_batches(
     manifest: &SourcePackBuildArtifactManifest,
     link_job_index: usize,

@@ -15,6 +15,7 @@ use crate::{
     lexer::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
 };
 
+/// Second pair pass: prefix-scans per-block boundary totals.
 pub struct Pair02ScanBlockTotalsPass {
     data: PassData,
 }

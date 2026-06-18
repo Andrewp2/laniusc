@@ -3,6 +3,7 @@ use std::path::Path;
 use super::error::CliError;
 use crate::compiler::{CompileError, Diagnostic};
 
+/// Adds package metadata selector context to a compiler error.
 pub(crate) fn package_metadata_cli_error(flag: &str, path: &Path, err: CompileError) -> CliError {
     match err {
         CompileError::Diagnostic(diagnostic) => CliError::Diagnostic(diagnostic.with_note(
@@ -13,6 +14,7 @@ pub(crate) fn package_metadata_cli_error(flag: &str, path: &Path, err: CompileEr
     }
 }
 
+/// Adds package compile selector context to a compiler error.
 pub(crate) fn package_compile_cli_error(flag: &str, path: &Path, err: CompileError) -> CliError {
     match err {
         CompileError::Diagnostic(diagnostic) => CliError::Diagnostic(

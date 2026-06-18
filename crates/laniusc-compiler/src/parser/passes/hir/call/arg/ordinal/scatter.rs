@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that scatters call argument ordinals and compact argument ranges.
 pub struct HirCallArgOrdinalScatterPass {
     data: PassData,
 }

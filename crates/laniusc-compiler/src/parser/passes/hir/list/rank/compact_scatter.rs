@@ -10,6 +10,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that compacts ranked HIR list entries for a caller-selected owner link.
 pub struct HirListRankCompactScatterPass {
     data: PassData,
 }
@@ -21,6 +22,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirListRankCompactScatterPass {
+    /// Records compact scatter work using the provided list-rank parameter buffer.
     pub fn record_for_params<P>(
         &self,
         device: &wgpu::Device,

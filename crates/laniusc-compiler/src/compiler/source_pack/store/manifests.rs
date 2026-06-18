@@ -1,5 +1,6 @@
 use super::*;
 
+/// Test helper materializing an execution shard from an in-memory path manifest.
 #[cfg(test)]
 pub(in crate::compiler) fn build_artifact_execution_shard(
     manifest: &SourcePackPathBuildManifest,
@@ -128,6 +129,7 @@ pub(in crate::compiler) fn build_artifact_execution_shard(
 }
 
 impl FilesystemArtifactStore {
+    /// Stores the compact build artifact manifest for a target.
     pub fn store_build_artifact_manifest(
         &self,
         manifest: &SourcePackBuildArtifactManifest,
@@ -152,6 +154,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the compact build artifact manifest for a target.
     pub fn load_build_artifact_manifest_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -174,6 +177,10 @@ impl FilesystemArtifactStore {
         Ok(manifest)
     }
 
+    /// Stores a compact artifact execution shard and its sidecar pages.
+    ///
+    /// Inline dependency, dependent, and input-interface records are paged out
+    /// before the execution shard is written so workers can load bounded inputs.
     pub(in crate::compiler) fn store_build_artifact_execution_shard_with_batch_count(
         &self,
         execution_shard: &SourcePackBuildArtifactExecutionShard,
@@ -270,6 +277,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Splits job input-interface artifact refs into fixed-size pages.
     pub(in crate::compiler) fn store_job_artifact_input_interface_pages_from_refs(
         &self,
         target: SourcePackArtifactTarget,
@@ -297,6 +305,7 @@ impl FilesystemArtifactStore {
             .div_ceil(SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_DEFAULT_PAGE_SIZE))
     }
 
+    /// Infers the global batch count referenced by an execution shard.
     pub(in crate::compiler) fn infer_execution_shard_batch_count(
         execution_shard: &SourcePackBuildArtifactExecutionShard,
     ) -> Result<usize, CompileError> {
@@ -353,6 +362,7 @@ impl FilesystemArtifactStore {
         Ok(batch_count)
     }
 
+    /// Loads and validates the compact artifact-shard index for a target.
     pub fn load_build_artifact_shard_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -381,6 +391,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Loads and validates the link-input shard index for a target.
     pub fn load_link_input_shard_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -404,6 +415,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Loads and validates one artifact-shard page.
     pub fn load_build_artifact_shard_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -435,6 +447,7 @@ impl FilesystemArtifactStore {
         Ok(shard)
     }
 
+    /// Loads and validates one artifact execution shard.
     pub fn load_build_artifact_execution_shard_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -468,6 +481,7 @@ impl FilesystemArtifactStore {
         Ok(execution_shard)
     }
 
+    /// Loads and validates the locator from batch index to artifact shard.
     pub fn load_build_batch_shard_locator_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -491,8 +505,8 @@ impl FilesystemArtifactStore {
         Ok(locator)
     }
 
+    /// Test helper storing a path build manifest with default shard limits.
     #[cfg(test)]
-
     pub(in crate::compiler) fn store_path_build_manifest(
         &self,
         manifest: &SourcePackPathBuildManifest,
@@ -503,8 +517,8 @@ impl FilesystemArtifactStore {
         )
     }
 
+    /// Test helper storing a path build manifest and derived shard records.
     #[cfg(test)]
-
     pub(in crate::compiler) fn store_path_build_manifest_with_shard_limits(
         &self,
         manifest: &SourcePackPathBuildManifest,
@@ -561,6 +575,7 @@ impl FilesystemArtifactStore {
         self.store_compact_path_build_manifest(manifest)
     }
 
+    /// Stores the compact path build manifest for a target.
     pub fn store_compact_path_build_manifest(
         &self,
         manifest: &SourcePackPathBuildManifest,
@@ -589,6 +604,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the compact path build manifest for a target.
     pub fn load_path_build_manifest_for_target(
         &self,
         target: SourcePackArtifactTarget,

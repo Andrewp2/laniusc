@@ -1,5 +1,6 @@
 use super::*;
 
+/// Caps x86 instruction HIR capacity to the parser tree capacity.
 pub(super) fn x86_inst_hir_node_count_for_backend_capacity(
     parser_tree_capacity: u32,
     semantic_hir_count: u32,
@@ -7,6 +8,7 @@ pub(super) fn x86_inst_hir_node_count_for_backend_capacity(
     semantic_hir_count.max(1).min(parser_tree_capacity.max(1))
 }
 
+/// Returns a buffer only when it contains at least `words` 32-bit words.
 pub(super) fn buffer_if_wgpu_u32_words(
     buffer: &wgpu::Buffer,
     words: usize,
@@ -14,6 +16,7 @@ pub(super) fn buffer_if_wgpu_u32_words(
     (buffer.size() >= words.saturating_mul(4) as u64).then_some(buffer)
 }
 
+/// Caps parser-emitted HIR capacity to the parser tree capacity.
 pub(super) fn hir_node_capacity_for_parser_emit(
     parser_tree_capacity: u32,
     parser_emit_len: u32,
@@ -21,12 +24,14 @@ pub(super) fn hir_node_capacity_for_parser_emit(
     parser_emit_len.max(1).min(parser_tree_capacity.max(1))
 }
 
+/// Emits a WASM compile trace line when WASM tracing is enabled.
 pub(super) fn trace_wasm_compile(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
         eprintln!("[laniusc][wasm] {stage}");
     }
 }
 
+/// Converts a packed type-mismatch detail code into diagnostic note text.
 pub(super) fn type_mismatch_note(detail: u32) -> String {
     if detail == 0 {
         return "change the expression or the annotation so both sides have the same type"
@@ -49,6 +54,7 @@ pub(super) fn type_mismatch_note(detail: u32) -> String {
     )
 }
 
+/// Converts a packed type-mismatch detail code into primary-label text.
 pub(super) fn type_mismatch_label(detail: u32) -> String {
     if detail == 0 {
         return "value type does not match this context".to_string();
@@ -110,10 +116,12 @@ fn type_code_note(code: u32) -> String {
     }
 }
 
+/// Prepares already-loaded source text for GPU compiler input.
 pub(in crate::compiler) fn prepare_source_for_gpu(src: &str) -> Result<String, CompileError> {
     Ok(src.to_string())
 }
 
+/// Reads source text from disk and prepares it for GPU compiler input.
 pub(in crate::compiler) fn prepare_source_for_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<String, CompileError> {

@@ -14,10 +14,14 @@ enum PathKind {
     Import,
 }
 
+/// Leading import declaration parsed from a package source file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct LeadingImportPath {
+    /// Parsed import path in canonical module syntax.
     pub(super) path: String,
+    /// Byte offset where the import declaration begins.
     pub(super) start: usize,
+    /// Byte length of the import declaration.
     pub(super) len: usize,
 }
 
@@ -30,6 +34,11 @@ impl PathKind {
     }
 }
 
+/// Parses an optional leading `module` declaration from a source file.
+///
+/// Imports before a module declaration and non-leading module declarations are
+/// rejected with source diagnostics because package-lock discovery relies on
+/// module declarations being the first semantic declaration in a file.
 pub(super) fn leading_module_path(
     source: &str,
     source_path: &Path,
@@ -55,6 +64,10 @@ pub(super) fn leading_module_path(
     Ok(Some(module_path))
 }
 
+/// Parses and validates the required module declaration for a package source file.
+///
+/// The declared module path must match the module path implied by the source
+/// file's package-relative path.
 pub(super) fn required_leading_module_path(
     source: &str,
     source_path: &Path,
@@ -84,6 +97,10 @@ pub(super) fn required_leading_module_path(
     Ok(module_path)
 }
 
+/// Returns leading import paths for a module source file.
+///
+/// The parser accepts only leading import declarations, rejects aliases and
+/// quoted imports, and rejects imports of the module itself.
 pub(super) fn leading_import_paths_for_module(
     source: &str,
     source_path: &Path,
@@ -97,6 +114,10 @@ pub(super) fn leading_import_paths_for_module(
     })
 }
 
+/// Returns leading import declarations with their source spans.
+///
+/// The span data is used for diagnostics while the path strings are used to
+/// build the package-lock import graph.
 pub(super) fn leading_import_path_records_for_module(
     source: &str,
     source_path: &Path,
@@ -180,14 +201,20 @@ fn leading_import_paths(
     }
 }
 
+/// Returns whether a string is a valid package-lock import path.
 pub(super) fn valid_import_path(path: &str) -> bool {
     valid_module_like_path(path)
 }
 
+/// Returns whether a string is a valid package-lock module path.
 pub(super) fn valid_module_path(path: &str) -> bool {
     valid_module_like_path(path)
 }
 
+/// Converts a dotted package name into a module path, if every segment is valid.
+///
+/// Package names use `.` separators, while source modules use `::` separators.
+/// Invalid, reserved, or over-long module segments return `None`.
 pub(super) fn package_name_module_path(package: &str) -> Option<String> {
     let segments = package.split('.').collect::<Vec<_>>();
     if segments.is_empty()

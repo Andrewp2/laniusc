@@ -3,6 +3,7 @@ use std::path::Path;
 use super::CliOutputError;
 use crate::compiler::{Diagnostic, DiagnosticLabel};
 
+/// Builds the stable diagnostic for invalid linked-output contract files.
 pub(super) fn linked_output_contract_descriptor_diagnostic(path: &Path, emit: &str) -> Diagnostic {
     Diagnostic::error("LNC0022", "linked-output contract descriptor")
         .with_primary_label(DiagnosticLabel::primary(
@@ -18,6 +19,7 @@ pub(super) fn linked_output_contract_descriptor_diagnostic(path: &Path, emit: &s
         ))
 }
 
+/// Converts a failed output-file write into the CLI's stable diagnostic form.
 pub(super) fn output_write_diagnostic(
     output: &Path,
     emit: &str,
@@ -39,6 +41,7 @@ pub(super) fn output_write_diagnostic(
     )
 }
 
+/// Converts stdout or stderr write failures into the CLI's stable diagnostic form.
 pub(super) fn output_stream_write_diagnostic(
     stream: &str,
     emit: &str,

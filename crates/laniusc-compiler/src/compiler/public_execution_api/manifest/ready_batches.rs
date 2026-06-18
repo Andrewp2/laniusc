@@ -1,5 +1,6 @@
 use super::*;
 
+/// Execute ready generic-target artifact-manifest batches up to `max_batches`.
 pub fn execute_ready_artifact_manifest_batches<E>(
     artifact_root: impl Into<PathBuf>,
     max_batches: usize,
@@ -20,6 +21,7 @@ where
     )
 }
 
+/// Execute ready artifact-manifest batches for a target up to `max_batches`.
 pub fn execute_ready_artifact_manifest_batches_for_target<E>(
     artifact_root: impl Into<PathBuf>,
     max_batches: usize,

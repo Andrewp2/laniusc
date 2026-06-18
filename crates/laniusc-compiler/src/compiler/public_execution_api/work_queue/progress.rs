@@ -1,5 +1,7 @@
 use super::*;
 
+/// Build a work-queue progress snapshot using the current time for claim
+/// pruning.
 pub fn work_queue_progress_snapshot(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -13,6 +15,8 @@ pub fn work_queue_progress_snapshot(
     )
 }
 
+/// Build a work-queue progress snapshot using an explicit timestamp for claim
+/// pruning.
 pub fn work_queue_progress_snapshot_at(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -24,6 +28,7 @@ pub fn work_queue_progress_snapshot_at(
     work_queue_progress_snapshot_from_index(&store, target, &index, max_ready_items, now_unix_nanos)
 }
 
+/// Builds a work-queue progress snapshot from an already-loaded progress index.
 pub(in crate::compiler) fn work_queue_progress_snapshot_from_index(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -59,6 +64,7 @@ pub(in crate::compiler) fn work_queue_progress_snapshot_from_index(
     })
 }
 
+/// Returns the final linked output artifact for a complete progress snapshot.
 pub(in crate::compiler) fn final_linked_output_for_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -74,6 +80,7 @@ pub(in crate::compiler) fn final_linked_output_for_progress(
     Ok((Some(linked_output_key), Some(linked_output_path)))
 }
 
+/// Resolves the output artifact path for a completed hierarchical link page.
 pub(in crate::compiler) fn completed_hierarchical_link_output_path(
     store: &FilesystemArtifactStore,
     page: &SourcePackHierarchicalLinkExecutionPage,

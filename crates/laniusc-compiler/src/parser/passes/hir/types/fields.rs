@@ -9,17 +9,24 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for filling type record fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Absence of a type form.
 pub const HIR_TYPE_FORM_NONE: u32 = 0;
+/// Named or qualified path type form.
 pub const HIR_TYPE_FORM_PATH: u32 = 1;
+/// Fixed-length array type form.
 pub const HIR_TYPE_FORM_ARRAY: u32 = 2;
+/// Slice type form.
 pub const HIR_TYPE_FORM_SLICE: u32 = 3;
+/// Reference type form.
 pub const HIR_TYPE_FORM_REF: u32 = 4;
 
+/// Parser pass that fills type form, path, length, and type-argument records.
 pub struct HirTypeFieldsPass {
     data: PassData,
 }

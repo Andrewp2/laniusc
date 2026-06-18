@@ -23,6 +23,7 @@ use crate::compiler::{
     run_prepared_descriptor_worker_for_target,
 };
 
+/// Runs descriptor output from metadata already persisted under the artifact root.
 pub(crate) fn compile_from_metadata(emit: &str, source_pack: &Options) -> Result<PathBuf, String> {
     let artifact_root = require_artifact_root(
         source_pack,
@@ -32,6 +33,7 @@ pub(crate) fn compile_from_metadata(emit: &str, source_pack: &Options) -> Result
     compile_prepared_root(emit, artifact_root, source_pack, worker_id)
 }
 
+/// Runs descriptor output for direct source-pack CLI inputs.
 pub(crate) fn compile_direct(emit: &str, source_pack: &Options) -> Result<PathBuf, String> {
     let artifact_root = require_artifact_root(
         source_pack,
@@ -40,6 +42,7 @@ pub(crate) fn compile_direct(emit: &str, source_pack: &Options) -> Result<PathBu
     compile_prepared_or_require_metadata(emit, artifact_root, source_pack, false)
 }
 
+/// Runs descriptor output for a JSONL library manifest.
 pub(crate) fn compile_library_manifest(
     emit: &str,
     source_pack: &Options,
@@ -51,6 +54,7 @@ pub(crate) fn compile_library_manifest(
     compile_prepared_or_require_metadata(emit, artifact_root, source_pack, true)
 }
 
+/// Runs descriptor output for an already prepared source-pack path manifest.
 pub(crate) fn compile_manifest(emit: &str, source_pack: &Options) -> Result<PathBuf, String> {
     let artifact_root = require_artifact_root(
         source_pack,

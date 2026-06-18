@@ -2,6 +2,11 @@ use anyhow::Result;
 
 use super::{super::*, buffers::Buffers, inputs::CreateInputs};
 
+/// Bind groups for projecting resolved paths into semantic type/value facts.
+///
+/// This is the bridge from module lookup tables to the rest of type checking:
+/// type paths become type refs, value paths become call/const/enum facts, and
+/// match patterns get bound to enum payload rows.
 pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) clear_type_path_types: wgpu::BindGroup,
     pub(in crate::type_checker) project_type_paths: wgpu::BindGroup,
@@ -22,6 +27,7 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) type_match_exprs: wgpu::BindGroup,
 }
 
+/// Creates bind groups for path projection and value/type path validation.
 pub(in crate::type_checker) fn create_projection_bind_groups(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,

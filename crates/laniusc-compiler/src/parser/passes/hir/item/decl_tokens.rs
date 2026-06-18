@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for item declaration token extraction.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records declaration token ranges for HIR items.
 pub struct HirItemDeclTokensPass {
     data: PassData,
 }

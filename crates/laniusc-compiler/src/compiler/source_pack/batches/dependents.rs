@@ -1,14 +1,28 @@
 use super::*;
 
+/// Resumable checkpoint for building job-batch dependent pages.
+///
+/// Dependency pages answer "what does this batch depend on"; dependent pages
+/// invert that relation so completion of a batch can quickly find batches that
+/// may have become ready.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::compiler) struct JobBatchDependentsPrepareProgress {
+    /// Serialization version for this checkpoint.
     pub(in crate::compiler) version: u32,
+    /// Artifact target whose batch graph is being inverted.
     pub(in crate::compiler) target: SourcePackArtifactTarget,
+    /// Total number of batch pages in the source graph.
     pub(in crate::compiler) batch_count: usize,
+    /// Next batch whose dependency list still needs to be inverted.
     pub(in crate::compiler) next_batch_index: usize,
+    /// Number of dependent edges appended so far.
     pub(in crate::compiler) dependent_edge_count: usize,
 }
 
+/// Validates a job-batch dependent preparation checkpoint.
+///
+/// The checkpoint is tied to a target and batch count, so stale progress from a
+/// previous batch graph is rejected before more dependent pages are appended.
 pub(in crate::compiler) fn validate_job_batch_dependents_prepare_progress(
     progress: &JobBatchDependentsPrepareProgress,
     target: SourcePackArtifactTarget,
@@ -41,6 +55,11 @@ pub(in crate::compiler) fn validate_job_batch_dependents_prepare_progress(
     Ok(())
 }
 
+/// Appends dependent pages for a bounded chunk of job batches.
+///
+/// Each processed batch has its dependency list read, then an inverse edge is
+/// appended to every dependency batch's dependents page. Progress is stored
+/// after each batch so the inversion can resume after interruption.
 pub(in crate::compiler) fn store_job_batch_dependents_pages_from_batch_chunk(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -116,6 +135,10 @@ pub(in crate::compiler) fn store_job_batch_dependents_pages_from_batch_chunk(
     })
 }
 
+/// Persists the resumable dependent-page preparation checkpoint.
+///
+/// Validation is run immediately before writing so the stored checkpoint cannot
+/// drift from the target batch graph shape.
 pub(in crate::compiler) fn store_job_batch_dependents_prepare_progress(
     store: &FilesystemArtifactStore,
     progress: &JobBatchDependentsPrepareProgress,
@@ -139,6 +162,10 @@ pub(in crate::compiler) fn store_job_batch_dependents_prepare_progress(
     Ok(path)
 }
 
+/// Loads and validates dependent-page preparation progress.
+///
+/// The expected target and batch count are supplied by the current batch index,
+/// which makes stale checkpoint files fail before new edges are appended.
 pub(in crate::compiler) fn load_job_batch_dependents_prepare_progress(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -162,8 +189,11 @@ pub(in crate::compiler) fn load_job_batch_dependents_prepare_progress(
     Ok(progress)
 }
 
+/// Stores dependent pages from an in-memory manifest dependency list for tests.
+///
+/// This test-only path mirrors the on-disk chunked inversion but starts from
+/// manifest dependency records instead of stored batch pages.
 #[cfg(test)]
-
 pub(in crate::compiler) fn store_job_batch_dependents_from_manifest_dependencies(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -196,6 +226,10 @@ pub(in crate::compiler) fn store_job_batch_dependents_from_manifest_dependencies
     Ok(())
 }
 
+/// Constructs an empty dependents page for one batch.
+///
+/// The page starts with no inline dependents and no overflow pages; callers then
+/// append dependent edges as the batch graph is inverted.
 pub(in crate::compiler) fn empty_build_job_batch_dependents_page(
     target: SourcePackArtifactTarget,
     batch_index: usize,
@@ -217,6 +251,11 @@ pub(in crate::compiler) fn empty_build_job_batch_dependents_page(
     Ok(page)
 }
 
+/// Appends one inverse dependent edge to a batch's dependents pages.
+///
+/// Edges are written into fixed-size dependent-batch pages once the parent page
+/// has no inline dependents. The parent page's counts are updated after the
+/// overflow page is stored.
 pub(in crate::compiler) fn append_job_batch_dependent_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -292,6 +331,11 @@ pub(in crate::compiler) fn append_job_batch_dependent_page(
     Ok(())
 }
 
+/// Visits every dependent batch index recorded for one batch.
+///
+/// Both representations are supported: inline dependents on the parent page and
+/// overflow dependent-batch pages. The final count check verifies that overflow
+/// pages matched the parent page summary.
 pub(in crate::compiler) fn for_each_job_batch_dependent_index<F>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,

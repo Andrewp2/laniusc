@@ -1,5 +1,6 @@
 use crate::gpu::buffers::LaniusBuffer;
 
+/// Reinterprets one typed storage buffer as another typed buffer with a new element count.
 pub(super) fn alias_storage_buffer<T, U>(
     source: &LaniusBuffer<T>,
     count: usize,
@@ -7,6 +8,7 @@ pub(super) fn alias_storage_buffer<T, U>(
     LaniusBuffer::new((source.buffer.clone(), source.byte_size as u64), count)
 }
 
+/// Allocates a three-word dispatch-argument buffer usable for compute indirect dispatches.
 pub(super) fn dispatch_args_buffer(device: &wgpu::Device, label: &str) -> LaniusBuffer<u32> {
     LaniusBuffer::new(
         (

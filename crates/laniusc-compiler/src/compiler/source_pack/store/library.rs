@@ -1,6 +1,7 @@
 use super::*;
 
 impl FilesystemArtifactStore {
+    /// Stores one library partition page, spilling inline dependencies to pages.
     pub fn store_library_partition_page(
         &self,
         partition: &SourcePackLibraryPartition,
@@ -45,6 +46,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores one page of dependency library ids for a partition.
     pub fn store_library_dependency_page(
         &self,
         page: &SourcePackLibraryDependencyPage,
@@ -65,6 +67,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores the compact index that summarizes all library partitions.
     pub fn store_library_partition_compact_index(
         &self,
         index: &SourcePackLibraryPartitionIndex,
@@ -80,6 +83,7 @@ impl FilesystemArtifactStore {
         Ok(index_path)
     }
 
+    /// Loads and validates the library partition index for a target.
     pub fn load_library_partition_index_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -102,6 +106,7 @@ impl FilesystemArtifactStore {
         Ok(index)
     }
 
+    /// Stores the resumable cursor for library metadata preparation.
     pub fn store_library_metadata_prepare_progress(
         &self,
         progress: &FilesystemLibraryMetadataPrepareProgress,
@@ -121,6 +126,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the library metadata preparation cursor.
     pub fn load_library_metadata_prepare_progress_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -143,6 +149,7 @@ impl FilesystemArtifactStore {
         Ok(progress)
     }
 
+    /// Loads and validates one library partition page.
     pub fn load_library_partition_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -166,6 +173,7 @@ impl FilesystemArtifactStore {
         Ok(partition)
     }
 
+    /// Loads and validates one dependency page for a library partition.
     pub fn load_library_dependency_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -191,6 +199,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the locator mapping a library id to its partition index.
     pub fn store_library_partition_locator_page(
         &self,
         page: &SourcePackLibraryPartitionLocatorPage,
@@ -208,6 +217,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the partition locator for a library id.
     pub fn load_library_partition_locator_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -231,6 +241,11 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores source-file metadata for one partition.
+    ///
+    /// Each source-file record is also stored individually by global source
+    /// index so later stages can load bounded source ranges without loading the
+    /// whole partition page.
     pub fn store_library_source_file_page(
         &self,
         page: &SourcePackLibrarySourceFilePage,
@@ -266,6 +281,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates the compact source-file page for a partition.
     pub fn load_library_source_file_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -289,6 +305,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one global source-file record page.
     pub fn store_library_source_file_record_page(
         &self,
         page: &SourcePackLibrarySourceFileRecordPage,
@@ -306,6 +323,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one global source-file record page.
     pub fn load_library_source_file_record_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -329,6 +347,10 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores the compact build-unit page for a partition.
+    ///
+    /// Inline frontend/codegen units are expanded into their own unit pages
+    /// before the compact page is written.
     pub fn store_library_build_unit_page(
         &self,
         page: &SourcePackLibraryBuildUnitPage,
@@ -366,6 +388,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Stores frontend-unit pages embedded in a build-unit page.
     pub(in crate::compiler) fn store_library_frontend_unit_pages_from_units(
         &self,
         page: &SourcePackLibraryBuildUnitPage,
@@ -377,6 +400,7 @@ impl FilesystemArtifactStore {
         Ok(page.frontend_units.len())
     }
 
+    /// Stores codegen-unit pages embedded in a build-unit page.
     pub(in crate::compiler) fn store_library_codegen_unit_pages_from_units(
         &self,
         page: &SourcePackLibraryBuildUnitPage,
@@ -388,6 +412,7 @@ impl FilesystemArtifactStore {
         Ok(page.codegen_units.len())
     }
 
+    /// Loads and validates the compact build-unit page for a partition.
     pub fn load_library_build_unit_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -411,6 +436,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one expanded frontend-unit page.
     pub fn store_library_frontend_unit_page(
         &self,
         page: &SourcePackLibraryFrontendUnitPage,
@@ -436,6 +462,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one expanded frontend-unit page.
     pub fn load_library_frontend_unit_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
@@ -469,6 +496,7 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
+    /// Stores one expanded codegen-unit page.
     pub fn store_library_codegen_unit_page(
         &self,
         page: &SourcePackLibraryCodegenUnitPage,
@@ -494,6 +522,7 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
+    /// Loads and validates one expanded codegen-unit page.
     pub fn load_library_codegen_unit_page_for_target(
         &self,
         target: SourcePackArtifactTarget,

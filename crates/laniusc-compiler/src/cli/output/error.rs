@@ -1,8 +1,11 @@
 use crate::compiler::Diagnostic;
 
+/// Error returned while writing CLI output.
 #[derive(Debug)]
 pub(crate) enum CliOutputError {
+    /// Structured output diagnostic.
     Diagnostic(Diagnostic),
+    /// Plain output error string.
     Message(String),
 }
 

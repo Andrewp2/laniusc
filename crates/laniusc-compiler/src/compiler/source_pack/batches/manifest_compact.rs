@@ -1,5 +1,9 @@
 use super::*;
 
+/// Builds a compact path-build manifest from stored source-pack indexes.
+///
+/// The returned manifest carries counts and limits only; detailed schedule,
+/// artifact, batch, and source records stay in their persisted page files.
 pub(in crate::compiler) fn compact_path_build_manifest_from_stored_indexes(
     limits: CodegenUnitLimits,
     batch_limits: SourcePackJobBatchLimits,

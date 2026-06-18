@@ -26,6 +26,7 @@ const DIAGNOSTIC_CODE_SELECTOR_PATTERNS: &[&str] = &[
     "copied text containing one LNCdddd token",
 ];
 
+/// Returns the diagnostic-code index used by tooling and `diagnostics codes`.
 pub(super) fn diagnostic_codes_json_pretty() -> Result<String, serde_json::Error> {
     let registry = diagnostic_registry();
     let codes = registry
@@ -49,6 +50,7 @@ pub(super) fn diagnostic_codes_json_pretty() -> Result<String, serde_json::Error
     serde_json::to_string_pretty(&document)
 }
 
+/// Returns one diagnostic-code record selected by a stable code-like string.
 pub(super) fn diagnostic_code_json_pretty(code: &str) -> Result<String, serde_json::Error> {
     let explanation = diagnostic_explanation(code);
     let diagnostic = explanation
@@ -72,6 +74,7 @@ pub(super) fn diagnostic_code_json_pretty(code: &str) -> Result<String, serde_js
     serde_json::to_string_pretty(&document)
 }
 
+/// Returns diagnostic categories grouped with their stable codes.
 pub(super) fn diagnostic_categories_json_pretty() -> Result<String, serde_json::Error> {
     let registry = diagnostic_registry();
     let categories = registry

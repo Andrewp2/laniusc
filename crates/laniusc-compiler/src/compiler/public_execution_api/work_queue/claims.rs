@@ -1,5 +1,6 @@
 use super::*;
 
+/// Finds the first ready, unclaimed artifact-backed work item and its batch.
 pub(in crate::compiler) fn work_queue_first_ready_unclaimed_artifact_item(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -128,6 +129,7 @@ pub(in crate::compiler) fn work_queue_first_ready_unclaimed_artifact_item(
     Ok(None)
 }
 
+/// Mirrors a work-queue item claim onto its backing artifact batch.
 pub(in crate::compiler) fn work_queue_record_artifact_batch_claim(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
@@ -161,6 +163,7 @@ pub(in crate::compiler) fn work_queue_record_artifact_batch_claim(
     Ok(())
 }
 
+/// Claim the first ready unclaimed work-queue item for a worker.
 pub fn claim_ready_work_queue_item(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -207,6 +210,8 @@ pub fn claim_ready_work_queue_item(
     })
 }
 
+/// Claim the first ready unclaimed artifact-producing work-queue item for a
+/// worker and mirror the claim into its singleton artifact batch.
 pub fn claim_ready_artifact_work_queue_item(
     artifact_root: impl Into<PathBuf>,
     target: SourcePackArtifactTarget,
@@ -263,6 +268,8 @@ pub fn claim_ready_artifact_work_queue_item(
     })
 }
 
+/// Mark a claimed work-queue item complete and update dependents that become
+/// ready.
 pub fn complete_claimed_work_queue_item(
     artifact_root: impl Into<PathBuf>,
     item_index: usize,

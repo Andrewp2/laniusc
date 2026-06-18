@@ -13,9 +13,15 @@ use crate::{
     parser::driver::Ll1AcceptResult,
 };
 
+/// Public severity class used by rendered diagnostics and diagnostic registries.
+///
+/// The compiler currently exposes only hard errors. Keeping severity as a
+/// serializable enum rather than a string leaves the JSON and LSP metadata ready
+/// for warnings or notes without changing the surrounding payload shape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
+    /// A diagnostic that prevents successful compilation or command execution.
     Error,
 }
 
@@ -27,30 +33,56 @@ impl DiagnosticSeverity {
     }
 }
 
+/// Stable registry row for one public diagnostic code.
+///
+/// The registry is consumed by CLI metadata commands, JSON renderers, and LSP
+/// capability payloads. Fields here describe the public diagnostic contract,
+/// not an implementation site that may move inside the compiler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticCodeInfo {
+    /// Stable `LNC####` code shown to users and tools.
     pub code: &'static str,
+    /// Short title associated with the code.
     pub title: &'static str,
+    /// Stable category used for filtering and grouped metadata output.
     pub category: &'static str,
+    /// Whether normal instances of this code should carry a primary source label.
     pub primary_label_policy: DiagnosticPrimaryLabelPolicy,
+    /// Default severity used by text and JSON renderers.
     pub default_severity: DiagnosticSeverity,
+    /// LSP `Diagnostic.source` value for this code.
     pub lsp_source: &'static str,
+    /// Numeric LSP `DiagnosticSeverity` value for this code.
     pub lsp_severity: u8,
 }
 
+/// Registry policy for whether a code is expected to identify source text.
+///
+/// This is advisory metadata for tools. Runtime construction still allows a
+/// diagnostic to omit a label when the failure happens before a source location
+/// is available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiagnosticPrimaryLabelPolicy {
+    /// Diagnostics for this code should normally include a primary label.
     Required,
+    /// Diagnostics for this code are not expected to include a source label.
     None,
 }
 
+/// LSP diagnostic source string used by compiler-produced diagnostics.
 pub const LSP_DIAGNOSTIC_SOURCE: &str = "laniusc";
+/// Numeric LSP `DiagnosticSeverity.Error` value used for compiler errors.
 pub const LSP_DIAGNOSTIC_ERROR_SEVERITY: u8 = 1;
+/// Position encoding used by the LSP-facing diagnostic range fields.
 pub const LSP_POSITION_ENCODING: &str = "utf-16";
+/// Schema name for the compiler's rendered diagnostic JSON payload.
 pub const DIAGNOSTIC_JSON_SCHEMA_NAME: &str = "laniusc.diagnostics.rendered-json";
+/// Schema name embedded in the `data` field of LSP-shaped diagnostics.
 pub const LSP_DIAGNOSTIC_DATA_SCHEMA_NAME: &str = "laniusc.diagnostics.lsp-data";
+/// Version of the rendered diagnostic JSON payload.
 pub const DIAGNOSTIC_JSON_SCHEMA_VERSION: u32 = 4;
+/// Version of the LSP diagnostic `data` payload.
 pub const LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION: u32 = 5;
 
 impl DiagnosticCodeInfo {
@@ -72,6 +104,12 @@ impl DiagnosticCodeInfo {
     }
 }
 
+/// Ordered registry of every stable diagnostic code emitted by the compiler.
+///
+/// Codes are sorted and unique so wrappers can binary-search, diff versions, or
+/// present stable completion lists without compiling source. Adding a new
+/// diagnostic code is a public metadata change and should update the registry
+/// tests and explanation metadata together.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
     DiagnosticCodeInfo::error(
         "LNC0001",
@@ -315,6 +353,11 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
     ),
 ];
 
+/// Stable diagnostic categories used by registry and category metadata output.
+///
+/// Categories are intentionally broader than implementation modules so tools can
+/// group related diagnostics across frontend, package loading, and target
+/// backends without depending on compiler internals.
 pub const DIAGNOSTIC_CATEGORIES: &[&str] = &[
     "module resolution",
     "name resolution",
@@ -328,26 +371,39 @@ pub const DIAGNOSTIC_CATEGORIES: &[&str] = &[
     "type checking",
 ];
 
+/// Schema name for the full diagnostic registry payload.
 pub const DIAGNOSTIC_REGISTRY_SCHEMA_NAME: &str = "laniusc.diagnostics.registry";
+/// Schema name for one `laniusc diagnostics explain` payload.
 pub const DIAGNOSTIC_EXPLANATION_SCHEMA_NAME: &str = "laniusc.diagnostics.explanation";
+/// Schema name for the diagnostic output-format registry payload.
 pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME: &str = "laniusc.diagnostics.output-formats";
+/// Version of the full diagnostic registry payload.
 pub const DIAGNOSTIC_REGISTRY_SCHEMA_VERSION: u32 = 8;
+/// Version of the diagnostic explanation payload.
 pub const DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION: u32 = 14;
+/// Version of the diagnostic output-format registry payload.
 pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION: u32 = 9;
+/// Default `--diagnostic-format` value.
 pub const DEFAULT_DIAGNOSTIC_OUTPUT_FORMAT: &str = "text";
+/// Accepted `--diagnostic-format` values in command-line spelling.
 pub const DIAGNOSTIC_OUTPUT_FORMAT_NAMES: &[&str] = &["text", "json", "lsp-json"];
+/// Example inputs accepted by diagnostic-code selector APIs.
 pub const DIAGNOSTIC_CODE_SELECTOR_EXAMPLES: &[&str] = &[
     "LNC0018",
     "lnc0018",
     "error[LNC0018]: unsupported CLI option value",
 ];
+/// Human-readable selector patterns accepted by diagnostic-code lookup APIs.
 pub const DIAGNOSTIC_CODE_SELECTOR_PATTERNS: &[&str] = &[
     "LNCdddd",
     "lncdddd",
     "copied text containing one LNCdddd token",
 ];
+/// CLI command that prints the compact diagnostic-code index.
 pub const DIAGNOSTIC_CODE_INDEX_COMMAND: &str = "laniusc diagnostics codes";
+/// CLI command that prints the full diagnostic registry.
 pub const DIAGNOSTIC_REGISTRY_COMMAND: &str = "laniusc diagnostics registry";
+/// Selector kinds accepted by runtime-service diagnostic metadata commands.
 pub const RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS: &[&str] = &[
     "service_id",
     "service_name",
@@ -358,129 +414,229 @@ pub const RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS: &[&str] = &[
     "api_name",
     "service_api_name",
 ];
+/// Selector kinds accepted by runtime-bound API diagnostic metadata commands.
 pub const RUNTIME_BOUND_API_SELECTOR_KINDS: &[&str] = &["api_name", "service_api_name"];
 
+/// Top-level diagnostic registry payload printed by `laniusc diagnostics registry`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticRegistry {
+    /// Payload schema version.
     pub schema_version: u32,
+    /// Payload schema name.
     pub schema_name: &'static str,
+    /// Stable diagnostic code rows.
     pub codes: &'static [DiagnosticCodeInfo],
+    /// Stable category names.
     pub categories: &'static [&'static str],
+    /// Diagnostic rows that describe intentionally unsupported language slices.
     pub unsupported_features: &'static [UnsupportedFeatureDiagnosticInfo],
+    /// Diagnostic rows for target-codegen fail-closed boundaries.
     pub codegen_boundaries: &'static [CodegenBoundaryDiagnosticInfo],
+    /// No-run contract for this metadata command.
     pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
+/// Registry of CLI diagnostic output formats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticOutputFormatRegistry {
+    /// Payload schema version.
     pub schema_version: u32,
+    /// Payload schema name.
     pub schema_name: &'static str,
+    /// CLI flag that selects a format.
     pub cli_flag: &'static str,
+    /// Format used when the caller does not pass the flag.
     pub default_format: &'static str,
+    /// Accepted command-line values.
     pub accepted_formats: &'static [&'static str],
+    /// Detailed format contracts.
     pub formats: &'static [DiagnosticOutputFormatInfo],
+    /// No-run contract for this metadata command.
     pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
+/// Metadata contract for one diagnostic renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticOutputFormatInfo {
+    /// Command-line format name.
     pub name: &'static str,
+    /// Stream that receives diagnostics in this format.
     pub output_stream: &'static str,
+    /// Shape of the emitted payload.
     pub payload: &'static str,
+    /// Schema name for machine-readable payloads.
     pub payload_schema_name: Option<&'static str>,
+    /// Schema version for machine-readable payloads.
     pub payload_schema_version: Option<u32>,
+    /// Where the schema marker appears in the emitted payload.
     pub payload_schema_location: Option<&'static str>,
+    /// Position encoding used by source locations in this format.
     pub position_encoding: &'static str,
+    /// Whether the format includes a source-line snippet.
     pub includes_source_snippet: bool,
+    /// Whether the format includes a language-server publish envelope.
     pub language_server_envelope: bool,
+    /// Whether `laniusc check` may emit this format.
     pub check_mode_supported: bool,
+    /// Whether formatter check diagnostics may emit this format.
     pub formatter_check_supported: bool,
+    /// Short public description of the renderer contract.
     pub description: &'static str,
 }
 
+/// Explanation metadata for a diagnostic that marks an unsupported boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct UnsupportedFeatureDiagnosticInfo {
+    /// Diagnostic code that reports the boundary.
     pub code: &'static str,
+    /// Name of the unsupported boundary.
     pub boundary: &'static str,
+    /// Public explanation of what was rejected.
     pub summary: &'static str,
+    /// Suggested next action for users or tools.
     pub next_step: &'static str,
 }
 
+/// Explanation metadata for a diagnostic that stops target-codegen safely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct CodegenBoundaryDiagnosticInfo {
+    /// Diagnostic code that reports the boundary.
     pub diagnostic_code: &'static str,
+    /// Name of the backend or descriptor boundary.
     pub boundary: &'static str,
+    /// Target triple or target family affected by the boundary.
     pub target: &'static str,
+    /// Compilation stage that owns the failure.
     pub stage: &'static str,
+    /// Policy for avoiding partially emitted target artifacts.
     pub partial_artifact_policy: &'static str,
+    /// Whether target bytes may have been emitted before this diagnostic.
     pub target_bytes_emitted: bool,
+    /// Diagnostics-only command that can be used to avoid codegen.
     pub diagnostics_only_command: &'static str,
+    /// Alternate emit target, if one currently exists for the boundary.
     pub fallback_emit: Option<&'static str>,
 }
 
+/// Metadata for one runtime service boundary exposed by stdlib declarations.
+///
+/// Runtime services are known to the compiler but intentionally fail closed when
+/// there is no executable host binding. The metadata lets tooling explain that
+/// boundary without compiling source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RuntimeServiceBoundaryDiagnosticInfo {
+    /// Diagnostic code that reports runtime-service binding failures.
     pub diagnostic_code: &'static str,
+    /// Stable runtime service id.
     pub service_id: u32,
+    /// Human-readable service name.
     pub service_name: &'static str,
+    /// Stdlib module that owns the service.
     pub module_path: &'static str,
+    /// Capability constant exposed by the stdlib contract.
     pub capability_constant: &'static str,
+    /// Query function that reports the service status.
     pub status_probe: &'static str,
+    /// Query function that reports whether a runtime binding is required.
     pub binding_probe: &'static str,
+    /// Selector kinds accepted by service metadata lookup commands.
     pub accepted_selector_kinds: &'static [&'static str],
+    /// Current compiler/runtime status for the service.
     pub current_status: &'static str,
+    /// Whether calls through the service are currently executable.
     pub executable: bool,
 }
 
+/// Metadata for one stdlib API that requires a runtime service binding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RuntimeBoundApiDiagnosticInfo {
+    /// Diagnostic code that reports runtime-bound API failures.
     pub diagnostic_code: &'static str,
+    /// Stable runtime service id.
     pub service_id: u32,
+    /// Human-readable service name.
     pub service_name: &'static str,
+    /// Capability constant for the owning service.
     pub service_capability_constant: &'static str,
+    /// Stdlib module that owns the service.
     pub service_module_path: &'static str,
+    /// Query function that reports the service status.
     pub service_status_probe: &'static str,
+    /// Query function that reports whether the service needs a binding.
     pub service_binding_probe: &'static str,
+    /// Current compiler/runtime status for the owning service.
     pub service_current_status: &'static str,
+    /// Whether the owning service is currently executable.
     pub service_executable: bool,
+    /// Module path containing the API.
     pub module_path: &'static str,
+    /// Fully qualified API name.
     pub api_name: &'static str,
+    /// Runtime ABI family expected by the API.
     pub extern_abi: &'static str,
+    /// Query function that reports whether the API is executable.
     pub executable_probe: &'static str,
+    /// Query function that reports whether the API needs a binding.
     pub binding_probe: &'static str,
+    /// Selector kinds accepted by API metadata lookup commands.
     pub accepted_selector_kinds: &'static [&'static str],
+    /// Current compiler/runtime status for the API.
     pub current_status: &'static str,
+    /// Whether calls to this API are currently executable.
     pub executable: bool,
 }
 
+/// No-run contract for metadata-only diagnostic commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticExplanationNoRunGuards {
+    /// Whether the command compiles source code.
     pub source_compilation: bool,
+    /// Whether the command scans user source files.
     pub source_scanning: bool,
+    /// Whether the command creates a GPU device.
     pub gpu_device_creation: bool,
+    /// Whether the command performs target codegen.
     pub target_codegen: bool,
 }
 
+/// Machine-readable explanation for one diagnostic code.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticExplanation {
+    /// Payload schema version.
     pub schema_version: u32,
+    /// Payload schema name.
     pub schema_name: &'static str,
+    /// Registry version used to interpret embedded registry rows.
     pub registry_schema_version: u32,
+    /// Canonical diagnostic code requested by the caller.
     pub requested_code: String,
+    /// CLI command that can reproduce this explanation.
     pub explain_command: String,
+    /// Whether `requested_code` appears in the current registry.
     pub known: bool,
+    /// Registry row for the requested code, if it is known.
     pub diagnostic: Option<DiagnosticCodeInfo>,
+    /// Unsupported-feature metadata for the code, if applicable.
     pub unsupported_feature: Option<UnsupportedFeatureDiagnosticInfo>,
+    /// Codegen-boundary metadata for the code, if applicable.
     pub codegen_boundary: Option<CodegenBoundaryDiagnosticInfo>,
+    /// Runtime service boundaries attached to the code, if applicable.
     pub runtime_service_boundaries: Option<&'static [RuntimeServiceBoundaryDiagnosticInfo]>,
+    /// Runtime-bound APIs attached to the code, if applicable.
     pub runtime_bound_apis: Option<&'static [RuntimeBoundApiDiagnosticInfo]>,
+    /// Example selectors accepted by code lookup commands.
     pub accepted_selector_examples: &'static [&'static str],
+    /// Selector patterns accepted by code lookup commands.
     pub accepted_selector_patterns: &'static [&'static str],
+    /// CLI command that lists diagnostic codes.
     pub code_index_command: &'static str,
+    /// CLI command that prints the full registry.
     pub registry_command: &'static str,
+    /// No-run contract for this metadata command.
     pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
+/// Diagnostic codes that intentionally describe unsupported compiler slices.
 pub const UNSUPPORTED_FEATURE_DIAGNOSTICS: &[UnsupportedFeatureDiagnosticInfo] = &[
     UnsupportedFeatureDiagnosticInfo {
         code: "LNC0011",
@@ -532,6 +688,7 @@ pub const UNSUPPORTED_FEATURE_DIAGNOSTICS: &[UnsupportedFeatureDiagnosticInfo] =
     },
 ];
 
+/// Fail-closed target-codegen boundaries exposed through diagnostic metadata.
 pub const CODEGEN_BOUNDARY_DIAGNOSTICS: &[CodegenBoundaryDiagnosticInfo] = &[
     CodegenBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0017",
@@ -555,6 +712,7 @@ pub const CODEGEN_BOUNDARY_DIAGNOSTICS: &[CodegenBoundaryDiagnosticInfo] = &[
     },
 ];
 
+/// Shared no-run guard metadata for diagnostic registry/explanation commands.
 pub const DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS: DiagnosticExplanationNoRunGuards =
     DiagnosticExplanationNoRunGuards {
         source_compilation: false,
@@ -563,6 +721,7 @@ pub const DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS: DiagnosticExplanationNoRunGuards
         target_codegen: false,
     };
 
+/// Runtime services that are known but not executable without host bindings.
 pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnosticInfo] = &[
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -848,6 +1007,7 @@ const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
     }
 }
 
+/// Stdlib APIs that currently require runtime bindings before executable codegen.
 pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
     runtime_bound_api(
         1,
@@ -1315,6 +1475,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
     ),
 ];
 
+/// Detailed metadata for each accepted diagnostic output format.
 pub const DIAGNOSTIC_OUTPUT_FORMATS: &[DiagnosticOutputFormatInfo] = &[
     DiagnosticOutputFormatInfo {
         name: "text",
@@ -1360,6 +1521,7 @@ pub const DIAGNOSTIC_OUTPUT_FORMATS: &[DiagnosticOutputFormatInfo] = &[
     },
 ];
 
+/// Looks up a diagnostic registry row by code, ignoring surrounding whitespace and case.
 pub fn diagnostic_code_info(code: &str) -> Option<&'static DiagnosticCodeInfo> {
     let code = code.trim();
     DIAGNOSTIC_CODE_REGISTRY
@@ -1407,10 +1569,12 @@ fn diagnostic_code_token_has_boundary(bytes: &[u8], start: usize, end: usize) ->
     left_boundary && right_boundary
 }
 
+/// Returns whether `category` is one of the stable diagnostic categories.
 pub fn diagnostic_category_is_registered(category: &str) -> bool {
     DIAGNOSTIC_CATEGORIES.contains(&category)
 }
 
+/// Looks up unsupported-feature metadata for a diagnostic code selector.
 pub fn unsupported_feature_diagnostic_info(
     code: &str,
 ) -> Option<&'static UnsupportedFeatureDiagnosticInfo> {
@@ -1420,6 +1584,7 @@ pub fn unsupported_feature_diagnostic_info(
         .find(|diagnostic| diagnostic.code == code)
 }
 
+/// Looks up target-codegen boundary metadata for a diagnostic code selector.
 pub fn codegen_boundary_diagnostic_info(
     code: &str,
 ) -> Option<&'static CodegenBoundaryDiagnosticInfo> {
@@ -1429,6 +1594,7 @@ pub fn codegen_boundary_diagnostic_info(
         .find(|diagnostic| diagnostic.diagnostic_code == code)
 }
 
+/// Looks up runtime-service boundary metadata by stable service id.
 pub fn runtime_service_boundary_diagnostic_info(
     service_id: u32,
 ) -> Option<&'static RuntimeServiceBoundaryDiagnosticInfo> {
@@ -1437,6 +1603,7 @@ pub fn runtime_service_boundary_diagnostic_info(
         .find(|diagnostic| diagnostic.service_id == service_id)
 }
 
+/// Looks up runtime-bound API metadata by fully qualified API name.
 pub fn runtime_bound_api_diagnostic_info(
     api_name: &str,
 ) -> Option<&'static RuntimeBoundApiDiagnosticInfo> {
@@ -1445,14 +1612,17 @@ pub fn runtime_bound_api_diagnostic_info(
         .find(|diagnostic| diagnostic.api_name == api_name)
 }
 
+/// Serializes runtime-service boundary metadata as pretty JSON.
 pub fn runtime_service_boundary_diagnostics_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS)
 }
 
+/// Serializes runtime-bound API metadata as pretty JSON.
 pub fn runtime_bound_api_diagnostics_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(RUNTIME_BOUND_API_DIAGNOSTICS)
 }
 
+/// Builds the full diagnostic registry payload.
 pub fn diagnostic_registry() -> DiagnosticRegistry {
     DiagnosticRegistry {
         schema_version: DIAGNOSTIC_REGISTRY_SCHEMA_VERSION,
@@ -1465,6 +1635,7 @@ pub fn diagnostic_registry() -> DiagnosticRegistry {
     }
 }
 
+/// Builds the diagnostic output-format registry payload.
 pub fn diagnostic_output_formats() -> DiagnosticOutputFormatRegistry {
     DiagnosticOutputFormatRegistry {
         schema_version: DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION,
@@ -1477,14 +1648,20 @@ pub fn diagnostic_output_formats() -> DiagnosticOutputFormatRegistry {
     }
 }
 
+/// Serializes the full diagnostic registry as pretty JSON.
 pub fn diagnostic_registry_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&diagnostic_registry())
 }
 
+/// Serializes the diagnostic output-format registry as pretty JSON.
 pub fn diagnostic_output_formats_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&diagnostic_output_formats())
 }
 
+/// Builds a machine-readable explanation for a diagnostic code selector.
+///
+/// Selectors may be canonical codes, differently cased codes, or copied
+/// diagnostic text containing one `LNC####` token.
 pub fn diagnostic_explanation(code: &str) -> DiagnosticExplanation {
     let requested_code = canonical_diagnostic_code(code);
     let diagnostic = diagnostic_code_info(&requested_code).copied();
@@ -1511,81 +1688,130 @@ pub fn diagnostic_explanation(code: &str) -> DiagnosticExplanation {
     }
 }
 
+/// Serializes one diagnostic explanation as pretty JSON.
 pub fn diagnostic_explanation_json_pretty(code: &str) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&diagnostic_explanation(code))
 }
 
+/// Serializes the compact diagnostic-code registry as pretty JSON.
 pub fn diagnostic_code_registry_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(DIAGNOSTIC_CODE_REGISTRY)
 }
 
+/// Serializes unsupported-feature diagnostic metadata as pretty JSON.
 pub fn unsupported_feature_diagnostics_json_pretty() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(UNSUPPORTED_FEATURE_DIAGNOSTICS)
 }
 
+/// Primary source span attached to a compiler diagnostic.
+///
+/// Text rendering uses one-based `line` and `column` plus an optional source
+/// snippet. LSP rendering converts the same label to zero-based UTF-16 ranges.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticLabel {
+    /// Source path displayed in diagnostics.
     pub path: PathBuf,
+    /// One-based source line.
     pub line: usize,
+    /// One-based source column measured in scalar values for text rendering.
     pub column: usize,
+    /// Label width in source characters; at least one.
     pub length: usize,
+    /// Byte offset of the label start, when known.
     pub byte_start: Option<usize>,
+    /// Byte offset of the label end, when known.
     pub byte_end: Option<usize>,
+    /// Full source line used by the text renderer and UTF-16 range conversion.
     pub source_line: Option<String>,
+    /// Label message shown beside the caret underline.
     pub message: String,
 }
 
+/// Zero-based LSP position measured with `LSP_POSITION_ENCODING`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspPosition {
+    /// Zero-based line number.
     pub line: usize,
+    /// Zero-based character offset in the negotiated encoding.
     pub character: usize,
 }
 
+/// LSP diagnostic range.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspRange {
+    /// Inclusive start position.
     pub start: LspPosition,
+    /// Exclusive end position.
     pub end: LspPosition,
 }
 
+/// LSP `Diagnostic`-shaped payload emitted by `--diagnostic-format lsp-json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspDiagnostic {
+    /// Source range for the diagnostic.
     pub range: LspRange,
+    /// Numeric LSP severity.
     pub severity: u8,
+    /// Stable compiler diagnostic code.
     pub code: String,
+    /// LSP diagnostic source.
     pub source: String,
+    /// Human-readable diagnostic message.
     pub message: String,
+    /// Versioned laniusc metadata carried in the LSP `data` field.
     pub data: LspDiagnosticData,
 }
 
+/// Versioned laniusc metadata embedded in an LSP diagnostic.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspDiagnosticData {
+    /// Payload schema version.
     pub schema_version: u32,
+    /// Payload schema name.
     pub schema_name: &'static str,
+    /// Registry version used to interpret `code`.
     pub registry_schema_version: u32,
+    /// Position encoding used by `range`.
     pub position_encoding: &'static str,
+    /// Stable title for the diagnostic code.
     pub title: String,
+    /// Stable category for the diagnostic code.
     pub category: String,
+    /// Whether this diagnostic code normally carries a primary label.
     pub primary_label_policy: DiagnosticPrimaryLabelPolicy,
+    /// CLI command that explains the diagnostic code.
     pub explain_command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional help text attached to the diagnostic.
     pub help: Option<String>,
+    /// Additional notes attached to the diagnostic.
     pub notes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Source-label metadata, if the diagnostic has a primary label.
     pub primary_label: Option<LspDiagnosticPrimaryLabel>,
 }
 
+/// Source-label metadata carried in an LSP diagnostic's `data` field.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspDiagnosticPrimaryLabel {
+    /// Display path for the source label.
     pub path: String,
+    /// One-based source line from the original label.
     pub line: usize,
+    /// One-based source column from the original label.
     pub column: usize,
+    /// Label width in source characters.
     pub length: usize,
+    /// Byte offset of the label start, when known.
     pub byte_start: Option<usize>,
+    /// Byte offset of the label end, when known.
     pub byte_end: Option<usize>,
+    /// Label message shown in text diagnostics.
     pub message: String,
 }
 
 impl DiagnosticLabel {
+    /// Creates a primary diagnostic label using one-based text coordinates.
     pub fn primary(
         path: impl Into<PathBuf>,
         line: usize,
@@ -1606,6 +1832,7 @@ impl DiagnosticLabel {
         }
     }
 
+    /// Attaches byte offsets to a label while preserving its text coordinates.
     pub fn with_byte_span(mut self, byte_start: usize, byte_end: usize) -> Self {
         self.byte_start = Some(byte_start);
         self.byte_end = Some(byte_end.max(byte_start));
@@ -1613,6 +1840,11 @@ impl DiagnosticLabel {
     }
 }
 
+/// Converts a byte span in source text into a primary diagnostic label.
+///
+/// The span is snapped to UTF-8 character boundaries before line, column, and
+/// length are computed. That lets GPU-produced byte positions still produce
+/// stable diagnostics when they point into a multibyte character.
 pub(in crate::compiler) fn diagnostic_label_from_source_span(
     path: impl Into<PathBuf>,
     source: &str,
@@ -1683,6 +1915,7 @@ fn trim_cr_before_newline(source: &str, line_end: usize) -> usize {
     }
 }
 
+/// Converts a parser rejection for one source file into a structured syntax error.
 pub(in crate::compiler) fn parser_ll1_error_to_compile_error_for_source(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1713,6 +1946,7 @@ pub(in crate::compiler) fn parser_ll1_error_to_compile_error_for_source(
     )
 }
 
+/// Builds a structured syntax error for an already-known source span.
 pub(in crate::compiler) fn syntax_error_to_compile_error_for_source_span(
     diagnostic_path: &Path,
     source: &str,
@@ -1732,15 +1966,21 @@ pub(in crate::compiler) fn syntax_error_to_compile_error_for_source_span(
     )
 }
 
+/// Source file plus global byte range used for source-pack diagnostics.
 #[derive(Clone, Debug)]
 pub(in crate::compiler) struct DiagnosticSourceFile {
+    /// Display path for diagnostics.
     pub path: PathBuf,
+    /// Source text for the file.
     pub source: String,
+    /// Inclusive start offset in the concatenated source-pack stream.
     pub global_start: usize,
+    /// Exclusive end offset in the concatenated source-pack stream.
     pub global_end: usize,
 }
 
 impl DiagnosticSourceFile {
+    /// Converts a global source-pack byte offset into a file-local byte offset.
     pub(in crate::compiler) fn local_start_for_global(&self, global_start: usize) -> usize {
         global_start
             .saturating_sub(self.global_start)
@@ -1748,6 +1988,7 @@ impl DiagnosticSourceFile {
     }
 }
 
+/// Builds diagnostic source-file records for concatenated source-pack input.
 pub(in crate::compiler) fn source_pack_diagnostic_files<S: AsRef<str>>(
     sources: &[S],
     source_paths: Option<&[Option<PathBuf>]>,
@@ -1775,6 +2016,7 @@ pub(in crate::compiler) fn source_pack_diagnostic_files<S: AsRef<str>>(
         .collect()
 }
 
+/// Finds the source-pack file that owns a global byte offset.
 pub(in crate::compiler) fn source_pack_file_for_global_span(
     files: &[DiagnosticSourceFile],
     global_start: usize,
@@ -1789,6 +2031,7 @@ pub(in crate::compiler) fn source_pack_file_for_global_span(
         })
 }
 
+/// Converts a parser rejection for source-pack input into a structured syntax error.
 pub(in crate::compiler) fn parser_ll1_error_to_compile_error_for_source_pack(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1828,6 +2071,7 @@ pub(in crate::compiler) fn parser_ll1_error_to_compile_error_for_source_pack(
     }
 }
 
+/// Reads one GPU token record back to host memory for diagnostic mapping.
 pub(in crate::compiler) fn read_single_token_from_buffer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1888,25 +2132,48 @@ fn fallback_syntax_error_start(source: &str) -> usize {
         .unwrap_or(0)
 }
 
+/// Structured compiler diagnostic used by CLI, JSON, and LSP renderers.
+///
+/// A `Diagnostic` is the user-facing error object carried by `CompileError`.
+/// It stores stable registry metadata alongside the concrete message and source
+/// label so all renderers are projections of the same object.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Diagnostic {
+    /// Rendered diagnostic JSON schema version.
     pub schema_version: u32,
+    /// Rendered diagnostic JSON schema name.
     pub schema_name: &'static str,
+    /// Diagnostic registry version used to interpret `code`.
     pub registry_schema_version: u32,
+    /// Diagnostic severity.
     pub severity: DiagnosticSeverity,
+    /// Stable compiler diagnostic code.
     pub code: String,
+    /// Stable registry title for `code`.
     pub title: String,
+    /// Stable registry category for `code`.
     pub category: String,
+    /// Whether this code normally carries a primary source label.
     pub primary_label_policy: DiagnosticPrimaryLabelPolicy,
+    /// CLI command that explains this diagnostic code.
     pub explain_command: String,
+    /// Concrete diagnostic message for this occurrence.
     pub message: String,
+    /// Primary source label for this occurrence, when available.
     pub primary_label: Option<DiagnosticLabel>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional help text shown after the primary label.
     pub help: Option<String>,
+    /// Additional diagnostic notes.
     pub notes: Vec<String>,
 }
 
 impl Diagnostic {
+    /// Creates an error diagnostic from a stable diagnostic code and message.
+    ///
+    /// The code is canonicalized from public selector forms. Debug builds assert
+    /// that the code is registered so new diagnostics cannot silently skip the
+    /// public registry.
     pub fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
         let code = code.into();
         let code = canonical_diagnostic_code(&code);
@@ -1941,11 +2208,13 @@ impl Diagnostic {
         }
     }
 
+    /// Attaches the primary source label.
     pub fn with_primary_label(mut self, label: DiagnosticLabel) -> Self {
         self.primary_label = Some(label);
         self
     }
 
+    /// Appends a nonempty note.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         if let Some(note) = non_empty_public_text(note) {
             self.notes.push(note);
@@ -1953,11 +2222,13 @@ impl Diagnostic {
         self
     }
 
+    /// Replaces the diagnostic help text with a nonempty public string.
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         self.help = non_empty_public_text(help);
         self
     }
 
+    /// Renders the diagnostic as the default human-readable text format.
     pub fn render(&self) -> String {
         let mut rendered = format!(
             "{}[{}]: {}",
@@ -2013,10 +2284,15 @@ impl Diagnostic {
         rendered
     }
 
+    /// Renders the structured diagnostic JSON payload.
     pub fn render_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
 
+    /// Converts this diagnostic to an LSP `Diagnostic`-shaped payload.
+    ///
+    /// Source ranges are zero-based and encoded with `LSP_POSITION_ENCODING`.
+    /// Additional laniusc metadata is preserved under the LSP `data` field.
     pub fn to_lsp_diagnostic(&self) -> LspDiagnostic {
         let code_info = diagnostic_code_info(&self.code);
         let (severity, source, title, category, primary_label_policy): (
@@ -2072,6 +2348,7 @@ impl Diagnostic {
         }
     }
 
+    /// Renders the LSP diagnostic payload as pretty JSON.
     pub fn render_lsp_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(&self.to_lsp_diagnostic())
     }
@@ -2083,6 +2360,7 @@ fn non_empty_public_text(text: impl Into<String>) -> Option<String> {
     (!text.is_empty()).then_some(text.to_string())
 }
 
+/// Builds the public CLI command that explains a diagnostic code selector.
 pub fn diagnostic_explain_command(code: &str) -> String {
     format!(
         "laniusc diagnostics explain {}",

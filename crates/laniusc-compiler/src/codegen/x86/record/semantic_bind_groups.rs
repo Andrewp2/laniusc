@@ -14,6 +14,7 @@ use super::{
     bind_helpers::{StepNames, StepPairs, step_pair_groups},
 };
 
+/// Bind groups used to record semantic x86 layout and ownership metadata.
 pub(super) struct SemanticRecordBindGroups {
     pub(super) enclosing_return_init: wgpu::BindGroup,
     pub(super) enclosing_return_step: Vec<wgpu::BindGroup>,
@@ -34,6 +35,7 @@ pub(super) struct SemanticRecordBindGroups {
     pub(super) decl_layout: wgpu::BindGroup,
 }
 
+/// Buffer inputs needed by x86 semantic-recording passes.
 pub(super) struct SemanticRecordInputs<'a> {
     pub(super) params_buf: &'a wgpu::Buffer,
     pub(super) feature_params_buf: &'a wgpu::Buffer,
@@ -100,6 +102,7 @@ pub(super) struct SemanticRecordInputs<'a> {
     pub(super) decl_layout_status_buf: &'a wgpu::Buffer,
 }
 
+/// Creates bind groups for x86 semantic records, layouts, and ownership scans.
 pub(super) fn create_semantic_record_bind_groups(
     generator: &GpuX86CodeGenerator,
     device: &wgpu::Device,

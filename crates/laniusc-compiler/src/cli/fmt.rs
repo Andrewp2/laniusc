@@ -22,6 +22,7 @@ use crate::{
     formatter::format_source,
 };
 
+/// Runs the lexical formatter subcommand.
 pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError> {
     let mut check = false;
     let mut stdin = false;

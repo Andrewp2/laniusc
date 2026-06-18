@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Returns the expected first item and item count for a progress page.
 pub(in crate::compiler) fn progress_expected_page_shape(
     index: &SourcePackWorkQueueProgressIndex,
     page_index: usize,
@@ -29,6 +30,7 @@ pub(in crate::compiler) fn progress_expected_page_shape(
     Ok((first_item_index, item_count))
 }
 
+/// Validates a work-queue progress directory page against the root index.
 pub(in crate::compiler) fn validate_progress_directory_page(
     page: &SourcePackWorkQueueProgressDirectoryPage,
     target: SourcePackArtifactTarget,
@@ -131,6 +133,7 @@ pub(in crate::compiler) fn validate_progress_directory_page(
     Ok(())
 }
 
+/// Validates a work-queue progress directory-index page against the root index.
 pub(in crate::compiler) fn validate_progress_directory_index_page(
     page: &SourcePackWorkQueueProgressDirectoryIndexPage,
     target: SourcePackArtifactTarget,
@@ -241,6 +244,7 @@ pub(in crate::compiler) fn validate_progress_directory_index_page(
     Ok(())
 }
 
+/// Validates that a page summary has the shape expected by the root index.
 pub(in crate::compiler) fn progress_validate_page_summary_shape(
     index: &SourcePackWorkQueueProgressIndex,
     summary: &SourcePackWorkQueueProgressPageSummary,
@@ -360,6 +364,7 @@ pub(in crate::compiler) fn progress_validate_page_summary_shape(
     Ok(())
 }
 
+/// Validates the root work-queue progress index for one target.
 pub(in crate::compiler) fn validate_progress_index(
     index: &SourcePackWorkQueueProgressIndex,
     target: SourcePackArtifactTarget,
@@ -457,6 +462,7 @@ pub(in crate::compiler) fn validate_progress_index(
     Ok(())
 }
 
+/// Validates a bounded per-page record count against page and record caps.
 pub(in crate::compiler) fn validate_progress_page_record_count(
     page_index: usize,
     label: &str,
@@ -477,6 +483,7 @@ pub(in crate::compiler) fn validate_progress_page_record_count(
     Ok(())
 }
 
+/// Validates one mutable work-queue progress page.
 pub(in crate::compiler) fn validate_progress_page(
     page: &SourcePackWorkQueueProgressPage,
     target: SourcePackArtifactTarget,
@@ -738,6 +745,7 @@ pub(in crate::compiler) fn validate_progress_page(
     Ok(())
 }
 
+/// Validates one stored work-queue progress page summary.
 pub(in crate::compiler) fn validate_progress_page_summary(
     summary: &SourcePackWorkQueueProgressPageSummary,
 ) -> Result<(), CompileError> {

@@ -1,5 +1,7 @@
 use super::*;
 
+/// Prepare ordered path-stream inputs if needed, then run async path-backed
+/// work-queue items.
 pub async fn run_ordered_path_stream_artifact_worker_async<I, PI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -51,6 +53,8 @@ where
     .await
 }
 
+/// Prepare dependency-stream inputs and execute the full artifact-manifest build
+/// for a target.
 pub fn execute_dependency_stream_artifact_build<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -83,6 +87,8 @@ where
     execute_artifact_manifest_build_for_target(artifact_root, target, executor)
 }
 
+/// Prepare dependency-stream inputs if needed, then run artifact-manifest worker
+/// batches with default shard limits.
 pub fn run_dependency_stream_artifact_worker<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -119,6 +125,8 @@ where
     )
 }
 
+/// Prepare dependency-stream inputs if needed, then run artifact-manifest worker
+/// batches with explicit shard limits.
 pub fn run_dependency_stream_artifact_worker_with_shards<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -166,6 +174,8 @@ where
     )
 }
 
+/// Prepare dependency-stream inputs if needed, then run path-artifact manifest
+/// worker batches with default shard limits.
 pub fn run_dependency_stream_path_artifact_worker<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -202,6 +212,8 @@ where
     )
 }
 
+/// Prepare dependency-stream inputs if needed, then run path-artifact manifest
+/// worker batches with explicit shard limits.
 pub fn run_dependency_stream_path_artifact_worker_with_shards<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
@@ -249,6 +261,7 @@ where
     )
 }
 
+/// Prepares artifact-build records from already prepared library schedule pages.
 pub(in crate::compiler) fn prepare_library_pages_artifact_build(
     prepared_pages: PreparedLibrarySchedulePages,
     store: &FilesystemArtifactStore,
@@ -266,6 +279,7 @@ pub(in crate::compiler) fn prepare_library_pages_artifact_build(
     )
 }
 
+/// Prepares artifact-build records from library pages using explicit shard limits.
 pub(in crate::compiler) fn prepare_library_pages_artifact_build_with_shards(
     prepared_pages: PreparedLibrarySchedulePages,
     store: &FilesystemArtifactStore,

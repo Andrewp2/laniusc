@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that compacts ranked match expressions into local ranges.
 pub struct HirMatchRankCompactScatterPass {
     data: PassData,
 }

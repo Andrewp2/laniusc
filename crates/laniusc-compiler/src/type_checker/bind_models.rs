@@ -1,27 +1,35 @@
 use super::*;
 
+/// Parameter buffer and ping-pong direction for one scan step.
 pub(in crate::type_checker) struct ScanStep<T> {
     pub(in crate::type_checker) params: LaniusBuffer<T>,
     pub(in crate::type_checker) read_from_a: bool,
     pub(in crate::type_checker) write_to_a: bool,
 }
 
+/// Scan step used while deriving loop nesting depth.
 pub(in crate::type_checker) type LoopDepthScanStep = ScanStep<LoopDepthParams>;
+/// Scan step used while deriving enclosing-function context.
 pub(in crate::type_checker) type FnContextScanStep = ScanStep<FnContextParams>;
+/// Scan step used by compacted name and run-head scans.
 pub(in crate::type_checker) type NameScanStep = ScanStep<NameScanParams>;
 
+/// Retained uniform for one byte pass of name radix sorting.
 pub(in crate::type_checker) struct NameRadixStep {
     pub(in crate::type_checker) _params: LaniusBuffer<NameRadixParams>,
 }
 
+/// Retained uniform for one byte pass of module-like key radix sorting.
 pub(in crate::type_checker) struct ModuleKeyRadixStep {
     pub(in crate::type_checker) _params: LaniusBuffer<ModuleKeyRadixParams>,
 }
 
+/// Retained uniform for one byte pass of predicate key radix sorting.
 pub(in crate::type_checker) struct PredicateKeyStep {
     pub(in crate::type_checker) _params: LaniusBuffer<PredicateKeyParams>,
 }
 
+/// Common four-buffer layout used by counted prefix scans.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct ScanRows<'a> {
     pub(in crate::type_checker) local_prefix: &'a wgpu::Buffer,
@@ -30,6 +38,7 @@ pub(in crate::type_checker) struct ScanRows<'a> {
     pub(in crate::type_checker) prefix_b: &'a wgpu::Buffer,
 }
 
+/// Common histogram/prefix/base layout used by byte-wise radix sorts.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct RadixRows<'a> {
     pub(in crate::type_checker) histogram: &'a wgpu::Buffer,
@@ -38,6 +47,7 @@ pub(in crate::type_checker) struct RadixRows<'a> {
     pub(in crate::type_checker) bucket_base: &'a wgpu::Buffer,
 }
 
+/// Token-indexed rows that identify source lexemes participating in naming.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct NameLexemeRows<'a> {
     pub(in crate::type_checker) flag: &'a wgpu::Buffer,
@@ -45,6 +55,7 @@ pub(in crate::type_checker) struct NameLexemeRows<'a> {
     pub(in crate::type_checker) prefix: &'a wgpu::Buffer,
 }
 
+/// Borrowed spelling table used for language and source symbols.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct SymbolRows<'a> {
     pub(in crate::type_checker) bytes: &'a wgpu::Buffer,
@@ -52,6 +63,7 @@ pub(in crate::type_checker) struct SymbolRows<'a> {
     pub(in crate::type_checker) len: &'a wgpu::Buffer,
 }
 
+/// Borrowed rows that map names between token, language, sorted, and unique ids.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct NameIdRows<'a> {
     pub(in crate::type_checker) by_token: &'a wgpu::Buffer,
@@ -61,6 +73,10 @@ pub(in crate::type_checker) struct NameIdRows<'a> {
     pub(in crate::type_checker) unique_count: &'a wgpu::Buffer,
 }
 
+/// Complete input set for constructing name bind groups.
+///
+/// This keeps the name pipeline constructor typed by relation role rather than
+/// by a long positional list of buffers.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct NameInput<'a> {
     pub(in crate::type_checker) params: &'a LaniusBuffer<TypeCheckParams>,
@@ -89,6 +105,7 @@ pub(in crate::type_checker) struct NameInput<'a> {
     pub(in crate::type_checker) run_prefix: &'a wgpu::Buffer,
 }
 
+/// Capacity and tree-shape summary for visible-declaration passes.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct VisibleShape {
     pub(in crate::type_checker) hir_nodes: u32,
@@ -98,6 +115,7 @@ pub(in crate::type_checker) struct VisibleShape {
     pub(in crate::type_checker) leaf_base: u32,
 }
 
+/// Borrowed rows used to compact and sort HIR-visible declarations.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct VisibleRows<'a> {
     pub(in crate::type_checker) active_count: &'a wgpu::Buffer,
@@ -117,6 +135,7 @@ pub(in crate::type_checker) struct VisibleRows<'a> {
     pub(in crate::type_checker) scope_tree: &'a wgpu::Buffer,
 }
 
+/// Borrowed method-declaration rows used while building method key tables.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct MethodDeclRows<'a> {
     pub(in crate::type_checker) impl_node: &'a wgpu::Buffer,
@@ -128,6 +147,7 @@ pub(in crate::type_checker) struct MethodDeclRows<'a> {
     pub(in crate::type_checker) visibility: &'a wgpu::Buffer,
 }
 
+/// Borrowed output/key rows for sorted method lookup tables.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct MethodKeyRows<'a> {
     pub(in crate::type_checker) to_fn_token: &'a wgpu::Buffer,
@@ -136,6 +156,7 @@ pub(in crate::type_checker) struct MethodKeyRows<'a> {
     pub(in crate::type_checker) duplicate_of: &'a wgpu::Buffer,
 }
 
+/// Complete input set for constructing method key bind groups.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct MethodKeyInput<'a> {
     pub(in crate::type_checker) label: &'static str,
@@ -160,6 +181,7 @@ pub(in crate::type_checker) struct MethodKeyInput<'a> {
     pub(in crate::type_checker) status: &'a wgpu::Buffer,
 }
 
+/// Borrowed predicate and method-contract rows used by predicate passes.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct PredicateRows<'a> {
     pub(in crate::type_checker) owner_node: &'a wgpu::Buffer,
@@ -193,6 +215,7 @@ pub(in crate::type_checker) struct PredicateRows<'a> {
     pub(in crate::type_checker) method_contract_owner_range_count: &'a wgpu::Buffer,
 }
 
+/// Borrowed rows for counted predicate-obligation pair emission.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct PredicateObligationRows<'a> {
     pub(in crate::type_checker) count_by_call: &'a wgpu::Buffer,
@@ -202,6 +225,7 @@ pub(in crate::type_checker) struct PredicateObligationRows<'a> {
     pub(in crate::type_checker) pair_dispatch_args: &'a wgpu::Buffer,
 }
 
+/// Complete input set for predicate collection, sorting, and validation.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct PredicateInput<'a> {
     pub(in crate::type_checker) token_capacity: u32,
@@ -223,6 +247,7 @@ pub(in crate::type_checker) struct PredicateInput<'a> {
     pub(in crate::type_checker) obligation_rows: PredicateObligationRows<'a>,
 }
 
+/// Bind groups for the loop-depth clear/mark/scan/apply pipeline.
 pub(in crate::type_checker) struct LoopDepthBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
@@ -231,6 +256,7 @@ pub(in crate::type_checker) struct LoopDepthBindGroups {
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
+/// Bind groups for the enclosing-function clear/mark/scan/apply pipeline.
 pub(in crate::type_checker) struct FnContextBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
@@ -239,6 +265,7 @@ pub(in crate::type_checker) struct FnContextBindGroups {
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
+/// Bind groups for HIR-visible declaration collection and lexical lookup.
 pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) hir_decl_scan_n_blocks: u32,
     pub(in crate::type_checker) hir_semantic_dispatch_args: LaniusBuffer<u32>,
@@ -265,12 +292,14 @@ pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) hir_names: wgpu::BindGroup,
 }
 
+/// One internal level in the visible-declaration scope tree.
 pub(in crate::type_checker) struct VisibleDeclScopeTreeLevel {
     pub(in crate::type_checker) _params: LaniusBuffer<VisibleDeclTreeParams>,
     pub(in crate::type_checker) bind_group: wgpu::BindGroup,
     pub(in crate::type_checker) work_items: u32,
 }
 
+/// Bind groups and retained parameters for source-name compaction and sorting.
 pub(in crate::type_checker) struct NameBindGroups {
     pub(in crate::type_checker) token_scan_n_blocks: u32,
     pub(in crate::type_checker) radix_n_blocks: u32,
@@ -295,18 +324,21 @@ pub(in crate::type_checker) struct NameBindGroups {
     pub(in crate::type_checker) assign_ids: wgpu::BindGroup,
 }
 
+/// Bind groups for clearing and materializing builtin language symbols.
 pub(in crate::type_checker) struct LanguageNameBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) type_codes_clear: wgpu::BindGroup,
     pub(in crate::type_checker) decls_materialize: wgpu::BindGroup,
 }
 
+/// Bind groups for a generic counted `u32` prefix scan.
 pub(in crate::type_checker) struct U32ScanBindGroups {
     pub(in crate::type_checker) local: wgpu::BindGroup,
     pub(in crate::type_checker) blocks: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
+/// Bind groups for generic parameter, type-instance, aggregate, and member refs.
 pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark_generic_param_records: wgpu::BindGroup,
@@ -353,6 +385,7 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) validate_aggregate_access: wgpu::BindGroup,
 }
 
+/// Bind groups for function call collection, argument matching, and generics.
 pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) return_refs: wgpu::BindGroup,
@@ -412,6 +445,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) erase_generic_params: wgpu::BindGroup,
 }
 
+/// Bind groups for method declaration collection and call resolution.
 pub(in crate::type_checker) struct MethodBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) collect: wgpu::BindGroup,
@@ -424,6 +458,7 @@ pub(in crate::type_checker) struct MethodBindGroups {
     pub(in crate::type_checker) resolve: wgpu::BindGroup,
 }
 
+/// Bind groups for sorting and validating method lookup keys.
 pub(in crate::type_checker) struct MethodKeyBindGroups {
     pub(in crate::type_checker) _key_radix_steps: Vec<ModuleKeyRadixStep>,
     pub(in crate::type_checker) seed_key_order: wgpu::BindGroup,
@@ -434,6 +469,7 @@ pub(in crate::type_checker) struct MethodKeyBindGroups {
     pub(in crate::type_checker) validate_keys: wgpu::BindGroup,
 }
 
+/// Bind groups for trait/predicate collection, sorting, and obligation checks.
 pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) _owner_key_radix_steps: Vec<PredicateKeyStep>,
     pub(in crate::type_checker) _impl_key_radix_steps: Vec<PredicateKeyStep>,

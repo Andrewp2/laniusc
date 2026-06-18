@@ -5,6 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
+/// Pass that records the return type node for each function item.
 pub struct HirFnReturnTypePass {
     data: PassData,
 }

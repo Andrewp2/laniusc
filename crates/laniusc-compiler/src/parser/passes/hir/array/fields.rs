@@ -9,11 +9,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+/// Uniform parameters for extracting HIR array expression fields.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
 }
 
+/// Pass that records array expression value ranges and element counts.
 pub struct HirArrayFieldsPass {
     data: PassData,
 }
