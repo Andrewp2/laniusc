@@ -3811,7 +3811,9 @@ fn main() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(rendered.contains("trait impl header uses an unsupported trait argument shape"));
+            assert!(
+                rendered.contains("trait impl header uses an unsupported trait argument shape")
+            );
         }
         other => panic!("expected reference trait impl argument diagnostic, got {other:?}"),
     }

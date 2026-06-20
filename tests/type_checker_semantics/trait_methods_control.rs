@@ -1601,8 +1601,11 @@ fn main() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(rendered
-                .contains("trait impl target type is outside the current GPU predicate row shape"));
+            assert!(
+                rendered.contains(
+                    "trait impl target type is outside the current GPU predicate row shape"
+                )
+            );
         }
         other => panic!("expected reference trait impl target diagnostic, got {other:?}"),
     }

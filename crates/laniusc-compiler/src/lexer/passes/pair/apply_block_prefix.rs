@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     gpu::passes_core::{DispatchDim, PassData},
-    lexer::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
+    lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
 /// Third pair pass: applies boundary prefixes and writes compact ranks.
@@ -34,24 +34,23 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
 
-        let rounds = compute_rounds(b.nb_sum);
+        let final_prefix_is_ping = super::block_total_scan_last_writer_is_ping(b.nb_sum);
 
         #[cfg(feature = "gpu-debug")]
         {
-            let plane = if (rounds % 2) == 1 { "PONG" } else { "PING" };
+            let plane = if final_prefix_is_ping { "PING" } else { "PONG" };
             println!(
-                "[dbg] {}: rounds={} -> last-writer={}",
+                "[dbg] {}: final pair-prefix last-writer={}",
                 Self::NAME,
-                rounds,
                 plane
             );
         }
 
         // Reuse DFA block ping/pong as the pair prefix source
-        let block_prefix_pair_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
-            b.dfa_02_pong.as_entire_binding()
-        } else {
+        let block_prefix_pair_binding: wgpu::BindingResource<'a> = if final_prefix_is_ping {
             b.dfa_02_ping.as_entire_binding()
+        } else {
+            b.dfa_02_pong.as_entire_binding()
         };
 
         HashMap::from([
@@ -88,11 +87,10 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
             b.s_keep_final.byte_size,
         );
 
-        let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 {
-            &b.dfa_02_pong
-        } else {
+        let last = if super::block_total_scan_last_writer_is_ping(b.nb_sum) {
             &b.dfa_02_ping
+        } else {
+            &b.dfa_02_pong
         };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

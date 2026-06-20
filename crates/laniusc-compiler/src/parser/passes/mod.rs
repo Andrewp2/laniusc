@@ -351,6 +351,13 @@ pub fn record_all_passes(
         .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
     p.pack_varlen
         .record_pass(&mut ctx, E1D(n_pairs.saturating_mul(256)))?;
+    ctx.encoder.copy_buffer_to_buffer(
+        &ctx.buffers.projected_status,
+        0,
+        &ctx.buffers.ll1_status,
+        0,
+        24,
+    );
 
     let n_sc = ctx.buffers.total_sc;
     let n_layers = ctx.buffers.b_n_layers;

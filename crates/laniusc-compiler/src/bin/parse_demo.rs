@@ -188,17 +188,18 @@ async fn main() -> Result<()> {
         res.ll1.steps,
         res.ll1.emit_len
     );
-    let ll1_to_show = res.ll1_emit_stream.len().min(32);
-    print!("ll1_emit_stream[0..{}] = [", ll1_to_show);
-    for i in 0..ll1_to_show {
-        if i > 0 {
-            print!(", ");
+    if res.ll1_emit_stream.is_empty() {
+        println!("ll1_emit_stream: not recorded by current readback");
+    } else {
+        let ll1_to_show = res.ll1_emit_stream.len().min(32);
+        print!("ll1_emit_stream[0..{}] = [", ll1_to_show);
+        for i in 0..ll1_to_show {
+            if i > 0 {
+                print!(", ");
+            }
+            print!("{}", res.ll1_emit_stream[i]);
         }
-        print!("{}", res.ll1_emit_stream[i]);
-    }
-    println!("]");
-
-    if res.ll1.accepted {
+        println!("]");
         println!(
             "llp_matches_ll1 = {}",
             res.emit_stream == res.ll1_emit_stream

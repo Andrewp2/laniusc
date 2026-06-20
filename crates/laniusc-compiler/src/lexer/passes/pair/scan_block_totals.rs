@@ -12,7 +12,7 @@ use crate::{
         compute_pass_batching_enabled,
         validation_scopes_enabled,
     },
-    lexer::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
+    lexer::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams},
 };
 
 /// Second pair pass: prefix-scans per-block boundary totals.
@@ -67,7 +67,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             _ => unreachable!(),
         };
 
-        let rounds = compute_rounds(n);
+        let scan_steps = super::block_total_scan_steps(n);
 
         let pd = self.data();
 
@@ -83,22 +83,19 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             && maybe_dbg.is_none()
             && compute_pass_batching_enabled()
             && !use_scopes;
-        let mut retained_scan_params = Vec::with_capacity(rounds as usize);
-        let mut retained_bind_groups = Vec::with_capacity(rounds as usize);
+        let mut retained_scan_params = Vec::with_capacity(scan_steps.len());
+        let mut retained_bind_groups = Vec::with_capacity(scan_steps.len());
 
         if can_batch {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some(Self::NAME),
                 timestamp_writes: None,
             });
-            for r in 0..rounds {
-                let stride = 1u32 << r;
-                let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
-
+            for (r, step) in scan_steps.iter().copied().enumerate() {
                 let mut ub = UniformBuffer::new(Vec::new());
                 ub.write(&ScanParams {
-                    stride,
-                    use_ping_as_src,
+                    stride: step.scan_step,
+                    use_ping_as_src: u32::from(step.read_from_a),
                 })
                 .expect("write ScanParams");
                 let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -106,6 +103,17 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     contents: ub.as_ref(),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
+
+                let block_pair_in = if step.read_from_a {
+                    &b.dfa_02_ping
+                } else {
+                    &b.dfa_02_pong
+                };
+                let block_pair_out = if step.write_to_a {
+                    &b.dfa_02_ping
+                } else {
+                    &b.dfa_02_pong
+                };
 
                 let res = HashMap::from([
                     (
@@ -117,8 +125,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                         wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
                     ),
                     // Reuse DFA ping/pong for pair scan
-                    ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
-                    ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
+                    ("block_pair_in".into(), block_pair_in.as_entire_binding()),
+                    ("block_pair_out".into(), block_pair_out.as_entire_binding()),
                 ]);
 
                 let bg = create_bind_group_from_reflection(
@@ -143,14 +151,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 retained_bind_groups.push(bg);
             }
         } else {
-            for r in 0..rounds {
-                let stride = 1u32 << r;
-                let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
-
+            for (r, step) in scan_steps.iter().copied().enumerate() {
                 let mut ub = UniformBuffer::new(Vec::new());
                 ub.write(&ScanParams {
-                    stride,
-                    use_ping_as_src,
+                    stride: step.scan_step,
+                    use_ping_as_src: u32::from(step.read_from_a),
                 })
                 .expect("write ScanParams");
                 let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -158,6 +163,17 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     contents: ub.as_ref(),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
+
+                let block_pair_in = if step.read_from_a {
+                    &b.dfa_02_ping
+                } else {
+                    &b.dfa_02_pong
+                };
+                let block_pair_out = if step.write_to_a {
+                    &b.dfa_02_ping
+                } else {
+                    &b.dfa_02_pong
+                };
 
                 let res = HashMap::from([
                     (
@@ -169,8 +185,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                         wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
                     ),
                     // Reuse DFA ping/pong for pair scan
-                    ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
-                    ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
+                    ("block_pair_in".into(), block_pair_in.as_entire_binding()),
+                    ("block_pair_out".into(), block_pair_out.as_entire_binding()),
                 ]);
 
                 let bg = create_bind_group_from_reflection(
@@ -205,10 +221,10 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     use crate::lexer::debug::make_staging;
                     let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
                     // Debug: snapshot reused DFA block ping/pong
-                    let last_writer = if use_ping_as_src != 0 {
-                        &b.dfa_02_pong
-                    } else {
+                    let last_writer = if step.write_to_a {
                         &b.dfa_02_ping
+                    } else {
+                        &b.dfa_02_pong
                     };
                     let staging =
                         make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
@@ -262,11 +278,10 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             b.dfa_02_pong.byte_size,
         );
 
-        let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 {
-            &b.dfa_02_pong
-        } else {
+        let last = if super::block_total_scan_last_writer_is_ping(b.nb_sum) {
             &b.dfa_02_ping
+        } else {
+            &b.dfa_02_pong
         };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

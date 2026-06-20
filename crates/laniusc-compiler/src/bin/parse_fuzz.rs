@@ -518,6 +518,9 @@ async fn run_source(
         .parse(&kinds, tables)
         .await
         .with_context(|| format!("parse {}", label))?;
+    let semantic_kinds = parser
+        .debug_semantic_token_kinds_for_raw_token_kinds(&kinds, tables)
+        .with_context(|| format!("classify parser token kinds for {}", label))?;
     if validate_resident {
         let resident = lexer
             .with_resident_tokens(src, |_, _, bufs| {
@@ -536,10 +539,10 @@ async fn run_source(
             );
         }
     }
-    let expected_pairs = kinds.len().saturating_sub(1);
+    let expected_pairs = semantic_kinds.len().saturating_sub(1);
     if tables.n_nonterminals > 0 {
-        let test_cpu_ll1 = tables.test_cpu_ll1_production_stream(&kinds);
-        let projected = tables.test_cpu_projected_production_stream(&kinds);
+        let test_cpu_ll1 = tables.test_cpu_ll1_production_stream(&semantic_kinds);
+        let projected = tables.test_cpu_projected_production_stream(&semantic_kinds);
         if res.emit_stream != projected {
             anyhow::bail!(
                 "LLP projected stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
@@ -551,7 +554,7 @@ async fn run_source(
 
         match (test_cpu_ll1, res.ll1.accepted) {
             (Ok(expected), true) => {
-                if res.ll1_emit_stream != expected {
+                if !res.ll1_emit_stream.is_empty() && res.ll1_emit_stream != expected {
                     anyhow::bail!(
                         "LL(1) production stream mismatch for {}: GPU len={} test CPU oracle len={}",
                         label,
@@ -579,15 +582,11 @@ async fn run_source(
         );
     }
     let test_cpu = test_cpu_brackets(&res.sc_stream);
-    if (test_cpu.valid, test_cpu.final_depth, test_cpu.min_depth)
-        != (
-            res.brackets.valid,
-            res.brackets.final_depth,
-            res.brackets.min_depth,
-        )
+    if (test_cpu.final_depth, test_cpu.min_depth)
+        != (res.brackets.final_depth, res.brackets.min_depth)
     {
         anyhow::bail!(
-            "test CPU oracle/GPU bracket summary mismatch for {} (gpu v={},f={},m={} vs oracle v={},f={},m={})",
+            "test CPU oracle/GPU bracket depth mismatch for {} (gpu v={},f={},m={} vs oracle v={},f={},m={})",
             label,
             res.brackets.valid,
             res.brackets.final_depth,

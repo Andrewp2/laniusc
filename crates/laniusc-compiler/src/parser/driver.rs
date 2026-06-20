@@ -20,7 +20,7 @@ mod resident_tree;
 mod results;
 mod support;
 mod token_frontend;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use results::ResidentParserBufferCache;
 pub use results::{
     BracketsMatchResult,
@@ -37,6 +37,7 @@ use wgpu;
 
 use crate::{
     gpu::{
+        buffers::{storage_ro_from_bytes, storage_ro_from_u32s},
         device,
         passes_core::{
             BindGroupCache,
@@ -53,6 +54,7 @@ use crate::{
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
+    lexer::GpuToken,
     parser::{
         buffers::{ActionHeader, ParserBuffers, resident_projected_tree_capacity_for_tables},
         debug::DebugOutput,
@@ -613,9 +615,57 @@ impl GpuParser {
         self.finish_resident_tree_readback(encoder, bufs)
     }
 
-    /// One-shot GPU parse pipeline. Tables are provided per-call (unlike the lexer),
-    /// so we allocate `ParserBuffers` per invocation.
+    /// Debug/test helper for classifying raw lexer token kinds into the parser
+    /// semantic token alphabet used by one-shot parser buffers.
+    #[doc(hidden)]
+    pub fn debug_semantic_token_kinds_for_raw_token_kinds(
+        &self,
+        token_kinds_u32: &[u32],
+        tables: &PrecomputedParseTables,
+    ) -> Result<Vec<u32>> {
+        let raw_kinds = raw_token_kinds_without_optional_sentinels(token_kinds_u32);
+        let token_count = u32::try_from(raw_kinds.len())
+            .map_err(|_| anyhow!("one-shot parser token count exceeds u32::MAX"))?;
+        let token_capacity = token_count.max(1);
+        let raw_token_bytes = raw_token_kind_rows(raw_kinds, token_capacity as usize);
+        let raw_token_buf = storage_ro_from_bytes::<GpuToken>(
+            &self.device,
+            "parser.one_shot.raw_token_rows",
+            &raw_token_bytes,
+            token_capacity as usize,
+        );
+        let raw_token_count_buf = storage_ro_from_u32s(
+            &self.device,
+            "parser.one_shot.raw_token_count",
+            &[token_count],
+        );
+
+        self.debug_semantic_token_kinds_for_resident_tokens(
+            token_capacity,
+            &raw_token_buf,
+            &raw_token_count_buf,
+            tables,
+        )
+    }
+
+    /// One-shot GPU parse pipeline from raw lexer token kinds.
+    ///
+    /// The input may include parser sentinel `0` words at the beginning/end; they
+    /// are ignored before the parser token frontend classifies the raw lexer
+    /// kinds into the semantic parser alphabet.
     pub async fn parse(
+        &self,
+        token_kinds_u32: &[u32],
+        tables: &PrecomputedParseTables,
+    ) -> Result<ParseResult> {
+        let semantic_token_kinds =
+            self.debug_semantic_token_kinds_for_raw_token_kinds(token_kinds_u32, tables)?;
+        self.parse_classified_token_kinds(&semantic_token_kinds, tables)
+            .await
+    }
+
+    /// One-shot GPU parse pipeline from already-classified semantic parser token kinds.
+    pub async fn parse_classified_token_kinds(
         &self,
         token_kinds_u32: &[u32],
         tables: &PrecomputedParseTables,
@@ -993,6 +1043,30 @@ impl GpuParser {
             debug: std::mem::take(&mut debug_sink),
         })
     }
+}
+
+fn raw_token_kinds_without_optional_sentinels(token_kinds_u32: &[u32]) -> &[u32] {
+    let mut start = 0usize;
+    let mut end = token_kinds_u32.len();
+    if token_kinds_u32.first().copied() == Some(0) {
+        start = 1;
+    }
+    if end > start && token_kinds_u32[end - 1] == 0 {
+        end -= 1;
+    }
+    &token_kinds_u32[start..end]
+}
+
+fn raw_token_kind_rows(raw_kinds: &[u32], row_count: usize) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(row_count.saturating_mul(3 * std::mem::size_of::<u32>()));
+    for i in 0..row_count {
+        let kind = raw_kinds.get(i).copied().unwrap_or(0);
+        let start = u32::try_from(i).unwrap_or(u32::MAX);
+        bytes.extend_from_slice(&kind.to_le_bytes());
+        bytes.extend_from_slice(&start.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+    }
+    bytes
 }
 
 fn plan_parser_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u32)> {
