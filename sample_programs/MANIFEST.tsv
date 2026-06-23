@@ -11,7 +11,7 @@ compound_assignments	compound_assignments.stdout	compound assignment operators	d
 factorial_loop	factorial_loop.stdout	while-loop arithmetic	documentation-smoke only; not backend or conformance evidence
 factorial_recursive	factorial_recursive.stdout	recursive function call	documentation-smoke only; not backend or conformance evidence
 fibonacci_loop	fibonacci_loop.stdout	loop-carried values	documentation-smoke only; not backend or conformance evidence
-fixed_point_ray_checksum	fixed_point_ray_checksum.stdout	fixed-point ray-style checksum exit status	documentation-smoke only; not backend or conformance evidence
+grid_distance_checksum	grid_distance_checksum.stdout	integer grid distance checksum exit status	documentation-smoke only; not backend or conformance evidence
 for_array_control	for_array_control.stdout	for-loop array control	documentation-smoke only; not backend or conformance evidence
 function_calls	function_calls.stdout	direct function calls	documentation-smoke only; not backend or conformance evidence
 loop_control	loop_control.stdout	loop break and continue control	documentation-smoke only; not backend or conformance evidence

@@ -6,29 +6,29 @@ fn abs_i32(value: i32) -> i32 {
     }
 }
 
-fn shade(dx: i32, dy: i32) -> i32 {
+fn distance_weight(dx: i32, dy: i32) -> i32 {
     let dist: i32 = abs_i32(dx) + abs_i32(dy);
-    let light: i32 = 64 - dist;
-    if (light < 0) {
+    let weight: i32 = 64 - dist;
+    if (weight < 0) {
         return 0;
     } else {
-        return light;
+        return weight;
     }
 }
 
-fn trace_pixel(x: i32, y: i32) -> i32 {
+fn grid_value(x: i32, y: i32) -> i32 {
     let dx: i32 = x * 16 - 24;
     let dy: i32 = y * 16 - 24;
-    return shade(dx, dy);
+    return distance_weight(dx, dy);
 }
 
-fn render_checksum() -> i32 {
+fn grid_checksum() -> i32 {
     let y: i32 = 0;
     let checksum: i32 = 0;
     while (y < 4) {
         let x: i32 = 0;
         while (x < 4) {
-            checksum += trace_pixel(x, y);
+            checksum += grid_value(x, y);
             x += 1;
         }
         y += 1;
@@ -37,7 +37,7 @@ fn render_checksum() -> i32 {
 }
 
 fn main() {
-    let checksum: i32 = render_checksum();
+    let checksum: i32 = grid_checksum();
     if (checksum == 512) {
         return 0;
     } else {
