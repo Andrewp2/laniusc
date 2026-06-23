@@ -12,7 +12,7 @@ pub(crate) const LANIUS_TARGET_TRIPLES: &str = "x86_64-unknown-linux-gnu, wasm32
 /// Accepted diagnostic rendering formats.
 pub(crate) const LANIUS_DIAGNOSTIC_FORMATS: &str = "text, json, lsp-json";
 /// Current x86_64 feature-slice description printed in help and version output.
-pub(crate) const LANIUS_X86_64_SUPPORT: &str = "bounded GPU HIR main-return, same-module resolver-backed scalar-const, and direct scalar helper-call source-pack slices; unsupported source shapes are rejected through GPU status";
+pub(crate) const LANIUS_X86_64_SUPPORT: &str = "bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics";
 /// Release channel label reported by version and policy metadata commands.
 pub(crate) const LANIUS_RELEASE_CHANNEL: &str = "source-worktree";
 /// Distribution status label reported by version and policy metadata commands.

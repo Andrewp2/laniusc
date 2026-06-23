@@ -3554,6 +3554,13 @@ fn artifact_manifest_build_stops_at_batch_limit() {
         &mut executor,
     )
     .expect_err("full manifest build should stop at the bounded batch limit");
+    match &err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0058");
+            assert_eq!(diagnostic.message, "source-pack progress state invalid");
+        }
+        other => panic!("expected source-pack progress diagnostic, got {other:?}"),
+    }
     assert!(
         err.to_string()
             .contains("did not complete within 64 bounded batches"),
@@ -3652,8 +3659,15 @@ fn artifact_manifest_ready_batches_reject_missing_completed_artifact() {
 
     let err = artifact_manifest_ready_batch_indices(artifact_root.clone())
         .expect_err("missing completed artifact should reject ready-state query");
-    std::fs::remove_dir_all(&root).expect("remove temp missing-completed-artifact dir");
+    match &err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0058");
+            assert_eq!(diagnostic.message, "source-pack progress state invalid");
+        }
+        other => panic!("expected source-pack progress diagnostic, got {other:?}"),
+    }
     let message = err.to_string();
+    std::fs::remove_dir_all(&root).expect("remove temp missing-completed-artifact dir");
 
     assert!(
         message.contains(&format!("marks batch {first_ready_batch_index} complete"))

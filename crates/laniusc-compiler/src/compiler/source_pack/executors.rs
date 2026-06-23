@@ -612,7 +612,7 @@ pub trait ExecutionShardLoader {
         let source_end = first_source_index
             .checked_add(source_file_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                library_partition_contract_error(format!(
                     "source-pack source range {first_source_index}+{source_file_count} overflows"
                 ))
             })?;

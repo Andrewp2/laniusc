@@ -44,6 +44,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsHistogra
         HashMap::from([
             ("gParams".into(), b.b04_params.as_entire_binding()),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
+            (
+                "partial_parse_status".into(),
+                b.partial_parse_status.as_entire_binding(),
+            ),
             ("layer".into(), b.b_layer.as_entire_binding()),
             ("hist_push".into(), b.b_hist_push.as_entire_binding()),
             ("hist_pop".into(), b.b_hist_pop.as_entire_binding()),

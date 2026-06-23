@@ -1,6 +1,7 @@
 use std::{
     env,
     fs,
+    path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -25,8 +26,105 @@ use super::{
     prepare_build_from_metadata_chunk_only,
     prepare_inputs_chunk_only,
     prepare_metadata_only,
+    prepare_path_manifest_metadata_only,
 };
-use crate::{codegen::unit::SourcePackArtifactTarget, compiler::FilesystemArtifactStore};
+use crate::{
+    cli::common::CliError,
+    codegen::unit::SourcePackArtifactTarget,
+    compiler::FilesystemArtifactStore,
+};
+
+fn assert_preparation_incomplete_error(err: &CliError) -> String {
+    match err {
+        CliError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0064");
+            assert_eq!(diagnostic.message, "source-pack preparation incomplete");
+        }
+        CliError::Message(message) => {
+            panic!("expected structured source-pack preparation diagnostic, got: {message}")
+        }
+    }
+    err.to_string()
+}
+
+fn assert_missing_artifact_root_error(err: &CliError) -> String {
+    match err {
+        CliError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0026");
+            assert_eq!(diagnostic.message, "missing CLI argument");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| { note.contains("--source-pack-artifact-root") })
+            );
+        }
+        CliError::Message(message) => {
+            panic!("expected structured missing artifact-root diagnostic, got: {message}")
+        }
+    }
+    err.to_string()
+}
+
+fn assert_explicit_source_pack_manifest_error(err: &CliError, note_fragment: &str) -> String {
+    match err {
+        CliError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0049");
+            assert_eq!(
+                diagnostic.message,
+                "explicit source-pack manifest invalid"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains(note_fragment)),
+                "expected LNC0049 diagnostic note containing {note_fragment:?}, got notes: {:?}",
+                diagnostic.notes
+            );
+        }
+        CliError::Message(message) => {
+            panic!("expected structured source-pack manifest diagnostic, got: {message}")
+        }
+    }
+    err.to_string()
+}
+
+#[test]
+fn source_pack_prepare_modes_report_missing_artifact_root_as_diagnostic() {
+    let mut metadata_pack = Options::default();
+    metadata_pack.metadata_only = true;
+    let metadata_err = prepare_metadata_only("wasm", &[], &[], &metadata_pack)
+        .expect_err("metadata-only mode should require an artifact root");
+    assert_missing_artifact_root_error(&metadata_err);
+
+    let mut prepare_pack = Options::default();
+    prepare_pack.prepare_only = true;
+    let prepare_err = prepare_inputs_chunk_only("wasm", &[], &[], &prepare_pack)
+        .expect_err("prepare-only mode should require an artifact root");
+    assert_missing_artifact_root_error(&prepare_err);
+
+    let mut build_pack = Options::default();
+    build_pack.build_from_metadata = true;
+    build_pack.build_prepare_only = true;
+    let build_err = prepare_build_from_metadata_chunk_only("wasm", &build_pack)
+        .expect_err("build-prepare mode should require an artifact root");
+    assert_missing_artifact_root_error(&build_err);
+
+    let path_manifest = crate::compiler::ExplicitSourcePackPathManifest {
+        files: Vec::new(),
+        library_dependencies: Vec::new(),
+    };
+    let path_manifest_err = prepare_path_manifest_metadata_only(
+        "wasm",
+        path_manifest,
+        &metadata_pack,
+        "--package-manifest",
+        Path::new("lanius.package.json"),
+    )
+    .expect_err("package metadata prep should require an artifact root");
+    assert_missing_artifact_root_error(&path_manifest_err);
+}
 
 #[test]
 fn source_pack_metadata_only_stores_persisted_library_records() {
@@ -195,16 +293,20 @@ fn source_pack_library_manifest_reader_rejects_overlong_records() {
         Ok(_) => panic!("chunked manifest reader should reject an overlong record"),
         Err(err) => err,
     };
+    let chunk_message =
+        assert_explicit_source_pack_manifest_error(&chunk_err, "exceeds line byte limit");
     assert!(
-        chunk_err.contains("exceeds line byte limit"),
-        "unexpected overlong chunk error: {chunk_err}"
+        chunk_message.contains("exceeds line byte limit"),
+        "unexpected overlong chunk error: {chunk_message}"
     );
 
     let progress_err = manifest::offset_after_entry_count(&manifest_path, 1)
         .expect_err("progress replay should reject an overlong record");
+    let progress_message =
+        assert_explicit_source_pack_manifest_error(&progress_err, "exceeds line byte limit");
     assert!(
-        progress_err.contains("exceeds line byte limit"),
-        "unexpected overlong progress error: {progress_err}"
+        progress_message.contains("exceeds line byte limit"),
+        "unexpected overlong progress error: {progress_message}"
     );
 
     fs::remove_dir_all(&root).expect("remove line cap root");
@@ -227,6 +329,7 @@ fn source_pack_path_list_reader_rejects_overlong_records() {
 
     let message = manifest::load_path_list(&path_list, 1)
         .expect_err("path-list reader should reject an overlong path record");
+    let message = assert_explicit_source_pack_manifest_error(&message, "exceeds line byte limit");
     assert!(
         message.contains("exceeds line byte limit"),
         "unexpected overlong path-list error: {message}"
@@ -262,16 +365,18 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
         Ok(_) => panic!("manifest chunk reader should reject too many blank records"),
         Err(err) => err,
     };
+    let chunk_message = assert_explicit_source_pack_manifest_error(&chunk_err, "blank lines");
     assert!(
-        chunk_err.contains("blank lines"),
-        "unexpected manifest blank chunk error: {chunk_err}"
+        chunk_message.contains("blank lines"),
+        "unexpected manifest blank chunk error: {chunk_message}"
     );
 
     let progress_err = manifest::offset_after_entry_count(&manifest_path, 1)
         .expect_err("manifest progress replay should reject too many blank records");
+    let progress_message = assert_explicit_source_pack_manifest_error(&progress_err, "blank lines");
     assert!(
-        progress_err.contains("blank lines"),
-        "unexpected manifest blank progress error: {progress_err}"
+        progress_message.contains("blank lines"),
+        "unexpected manifest blank progress error: {progress_message}"
     );
 
     let path_list = root.join("library.paths");
@@ -286,6 +391,7 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
     .expect("write blank-heavy path list");
     let message = manifest::load_path_list(&path_list, 1)
         .expect_err("path-list reader should reject too many blank records");
+    let message = assert_explicit_source_pack_manifest_error(&message, "blank lines");
     assert!(
         message.contains("blank lines"),
         "unexpected path-list blank error: {message}"
@@ -320,6 +426,7 @@ fn source_pack_library_manifest_rejects_duplicate_dependency_edges_before_paths(
 
     let err = prepare_metadata_only("wasm", &[], &[], &source_pack)
         .expect_err("library manifest metadata must reject duplicate dependency edges");
+    let err = err.to_string();
     assert!(
         err.contains("duplicate dependency library 1"),
         "unexpected duplicate dependency error: {err}"
@@ -721,6 +828,7 @@ fn prepare_only_rejects_oversized_library_before_paths() {
 
     let err = prepare_inputs_chunk_only("wasm", &[], &[], &source_pack)
         .expect_err("oversized single-library chunk should fail before opening path list");
+    let err = err.to_string();
     assert!(err.contains("per-chunk source-file limit"));
     assert!(
         !err.contains("missing.paths"),
@@ -844,6 +952,7 @@ fn source_pack_json_manifest_chunk_modes_reject_before_manifest_read() {
             }
         }
         .expect_err(expected_context);
+        let err = err.to_string();
         assert!(err.contains("--source-pack-library-manifest"));
         assert!(
             !err.contains("read source-pack manifest"),
@@ -877,6 +986,7 @@ fn source_pack_prepare_only_rejects_raw_paths_before_source_metadata_read() {
         &source_pack,
     )
     .expect_err("raw path prepare-only should be rejected as unbounded");
+    let err = err.to_string();
     assert!(err.contains("--source-pack-library-manifest"));
     assert!(
         !err.contains("missing.lani"),
@@ -902,6 +1012,7 @@ fn direct_descriptor_compile_requires_prepared_root() {
 
     let manifest_err = compile_manifest("wasm", &source_pack)
         .expect_err("fresh explicit artifact roots must be prepared before manifest parsing");
+    let manifest_err = assert_preparation_incomplete_error(&manifest_err);
     assert!(manifest_err.contains("no persisted metadata"));
     assert!(manifest_err.contains("--source-pack-prepare-only"));
     assert!(
@@ -912,6 +1023,7 @@ fn direct_descriptor_compile_requires_prepared_root() {
     let library_manifest_err = compile_library_manifest("wasm", &source_pack).expect_err(
         "fresh explicit artifact roots must be prepared before library manifest parsing",
     );
+    let library_manifest_err = assert_preparation_incomplete_error(&library_manifest_err);
     assert!(library_manifest_err.contains("no persisted metadata"));
     assert!(
         !library_manifest_err.contains("open source-pack library manifest"),
@@ -920,6 +1032,7 @@ fn direct_descriptor_compile_requires_prepared_root() {
 
     let default_manifest_err = compile_manifest("wasm", &Options::default())
         .expect_err("manifest descriptor compile must name an artifact root before parsing");
+    let default_manifest_err = assert_missing_artifact_root_error(&default_manifest_err);
     assert!(default_manifest_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_manifest_err.contains("read source-pack manifest"),
@@ -930,6 +1043,8 @@ fn direct_descriptor_compile_requires_prepared_root() {
         .expect_err(
             "library manifest descriptor compile must name an artifact root before parsing",
         );
+    let default_library_manifest_err =
+        assert_missing_artifact_root_error(&default_library_manifest_err);
     assert!(default_library_manifest_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_library_manifest_err.contains("open source-pack library manifest"),
@@ -939,6 +1054,7 @@ fn direct_descriptor_compile_requires_prepared_root() {
     let default_source_err = compile_direct("wasm", &Options::default()).expect_err(
         "source-pack descriptor compile must name an artifact root before reading sources",
     );
+    let default_source_err = assert_missing_artifact_root_error(&default_source_err);
     assert!(default_source_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_source_err.contains("missing.lani"),
@@ -947,11 +1063,17 @@ fn direct_descriptor_compile_requires_prepared_root() {
 
     let source_err = compile_direct("wasm", &source_pack)
         .expect_err("fresh explicit artifact roots must be prepared before source parsing");
+    let source_err = assert_preparation_incomplete_error(&source_err);
     assert!(source_err.contains("no persisted metadata"));
     assert!(
         !source_err.contains("missing.lani"),
         "compile should fail before touching explicit source paths"
     );
+
+    let default_from_metadata_err = compile_from_metadata("wasm", &Options::default())
+        .expect_err("metadata-backed descriptor compile must name an artifact root");
+    let default_from_metadata_err = assert_missing_artifact_root_error(&default_from_metadata_err);
+    assert!(default_from_metadata_err.contains("--source-pack-artifact-root"));
 
     let _ = fs::remove_dir_all(&root);
 }
@@ -982,6 +1104,7 @@ fn descriptor_compile_requires_build_queue_after_metadata() {
 
     let err = compile_from_metadata("wasm", &source_pack)
         .expect_err("metadata alone must not trigger full build-queue preparation");
+    let err = assert_preparation_incomplete_error(&err);
     assert!(err.contains("no prepared build queue"));
     assert!(err.contains("--source-pack-build-from-metadata --source-pack-build-prepare-only"));
     assert!(

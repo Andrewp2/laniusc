@@ -8,12 +8,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_library_schedule_index(index, index.target)?;
         let path = self.library_schedule_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule index: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library schedule index")?;
+        let bytes = serialize_store_json(index, "source-pack library schedule index")?;
+        write_store_file_atomic(&path, &bytes, "source-pack library schedule index")?;
         Ok(path)
     }
 
@@ -23,19 +19,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackLibraryScheduleIndex, CompileError> {
         let path = self.library_schedule_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackLibraryScheduleIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library schedule index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library schedule index")?;
+        let index = parse_store_json::<SourcePackLibraryScheduleIndex>(
+            &bytes,
+            &path,
+            "source-pack library schedule index",
+        )?;
         validate_library_schedule_index(&index, target)?;
         Ok(index)
     }
@@ -47,12 +36,9 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_library_schedule_prepare_progress(progress, progress.target)?;
         let path = self.library_schedule_prepare_progress_path_for_target(progress.target);
-        let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule prepare progress: {err}"
-            ))
-        })?;
-        write_file_atomic(
+        let bytes =
+            serialize_store_json(progress, "source-pack library schedule prepare progress")?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack library schedule prepare progress",
@@ -66,19 +52,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<FilesystemLibrarySchedulePrepareProgress, CompileError> {
         let path = self.library_schedule_prepare_progress_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
-        let progress = serde_json::from_slice::<FilesystemLibrarySchedulePrepareProgress>(&bytes)
-            .map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack library schedule prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
+        let bytes = read_store_file(&path, "source-pack library schedule prepare progress")?;
+        let progress = parse_store_json::<FilesystemLibrarySchedulePrepareProgress>(
+            &bytes,
+            &path,
+            "source-pack library schedule prepare progress",
+        )?;
         validate_library_schedule_prepare_progress(&progress, target)?;
         Ok(progress)
     }
@@ -147,13 +126,11 @@ impl FilesystemArtifactStore {
             Some(stored_page.partition_index),
         )?;
         let path = self.library_schedule_page_path_for_target(page.target, page.partition_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule page {}: {err}",
-                page.partition_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library schedule page")?;
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!("source-pack library schedule page {}", page.partition_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library schedule page")?;
         Ok(path)
     }
 
@@ -195,19 +172,12 @@ impl FilesystemArtifactStore {
         partition_index: usize,
     ) -> Result<SourcePackLibrarySchedulePage, CompileError> {
         let path = self.library_schedule_page_path_for_target(target, partition_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibrarySchedulePage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library schedule page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library schedule page")?;
+        let page = parse_store_json::<SourcePackLibrarySchedulePage>(
+            &bytes,
+            &path,
+            "source-pack library schedule page",
+        )?;
         validate_library_schedule_page(&page, target, Some(partition_index))?;
         Ok(page)
     }
@@ -220,13 +190,14 @@ impl FilesystemArtifactStore {
         validate_frontend_job_locator_page(page, page.target, Some(page.library_id))?;
         let path =
             self.library_frontend_job_locator_page_path_for_target(page.target, page.library_id);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library frontend-job locator for library {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library frontend-job locator for library {}",
                 page.library_id
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library frontend-job locator")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library frontend-job locator")?;
         Ok(path)
     }
 
@@ -237,19 +208,12 @@ impl FilesystemArtifactStore {
         library_id: u32,
     ) -> Result<SourcePackLibraryFrontendJobLocatorPage, CompileError> {
         let path = self.library_frontend_job_locator_page_path_for_target(target, library_id);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library frontend-job locator {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackLibraryFrontendJobLocatorPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library frontend-job locator {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library frontend-job locator")?;
+        let page = parse_store_json::<SourcePackLibraryFrontendJobLocatorPage>(
+            &bytes,
+            &path,
+            "source-pack library frontend-job locator",
+        )?;
         validate_frontend_job_locator_page(&page, target, Some(library_id))?;
         Ok(page)
     }
@@ -261,12 +225,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_schedule_job_locator_index(index, index.target)?;
         let path = self.library_schedule_job_locator_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule job-locator index: {err}"
-            ))
-        })?;
-        write_file_atomic(
+        let bytes = serialize_store_json(index, "source-pack library schedule job-locator index")?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack library schedule job-locator index",
@@ -283,13 +243,14 @@ impl FilesystemArtifactStore {
         validate_schedule_job_locator_page(page, page.target, job_count, Some(page.job_index))?;
         let path =
             self.library_schedule_job_locator_page_path_for_target(page.target, page.job_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule job-locator page {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library schedule job-locator page {}",
                 page.job_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack library schedule job-locator page",
@@ -305,19 +266,12 @@ impl FilesystemArtifactStore {
         job_count: usize,
     ) -> Result<SourcePackLibraryScheduleJobLocatorPage, CompileError> {
         let path = self.library_schedule_job_locator_page_path_for_target(target, job_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule job-locator page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackLibraryScheduleJobLocatorPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library schedule job-locator page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library schedule job-locator page")?;
+        let page = parse_store_json::<SourcePackLibraryScheduleJobLocatorPage>(
+            &bytes,
+            &path,
+            "source-pack library schedule job-locator page",
+        )?;
         validate_schedule_job_locator_page(&page, target, job_count, Some(job_index))?;
         Ok(page)
     }
@@ -354,13 +308,11 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_schedule_job_page(page, page.target, job_count, Some(page.job_index))?;
         let path = self.library_schedule_job_page_path_for_target(page.target, page.job_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule job page {}: {err}",
-                page.job_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library schedule job page")?;
+        let bytes = serialize_store_json(
+            page,
+            format!("source-pack library schedule job page {}", page.job_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library schedule job page")?;
         Ok(path)
     }
 
@@ -382,13 +334,14 @@ impl FilesystemArtifactStore {
             page.job_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library schedule job dependency page {} for job {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library schedule job dependency page {} for job {}",
                 page.page_index, page.job_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack library schedule job dependency page",
@@ -406,19 +359,12 @@ impl FilesystemArtifactStore {
     ) -> Result<SourcePackLibraryScheduleJobDependencyPage, CompileError> {
         let path = self
             .library_schedule_job_dependency_page_path_for_target(target, job_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule job dependency page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackLibraryScheduleJobDependencyPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library schedule job dependency page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library schedule job dependency page")?;
+        let page = parse_store_json::<SourcePackLibraryScheduleJobDependencyPage>(
+            &bytes,
+            &path,
+            "source-pack library schedule job dependency page",
+        )?;
         validate_schedule_job_dependency_page(&page, target, job_count, job_index, page_index)?;
         Ok(page)
     }
@@ -431,19 +377,12 @@ impl FilesystemArtifactStore {
         job_count: usize,
     ) -> Result<SourcePackLibraryScheduleJobPage, CompileError> {
         let path = self.library_schedule_job_page_path_for_target(target, job_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library schedule job page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibraryScheduleJobPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library schedule job page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library schedule job page")?;
+        let page = parse_store_json::<SourcePackLibraryScheduleJobPage>(
+            &bytes,
+            &path,
+            "source-pack library schedule job page",
+        )?;
         validate_schedule_job_page(&page, target, job_count, Some(job_index))?;
         Ok(page)
     }

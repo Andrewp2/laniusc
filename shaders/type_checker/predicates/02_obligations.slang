@@ -176,6 +176,7 @@ static const uint PREDICATE_STATUS_BOUND_PATH_TOO_DEEP = 29u;
 
 static const uint OBLIGATION_STAGE_COUNT = 0u;
 static const uint OBLIGATION_STAGE_VALIDATE = 1u;
+static const uint PREDICATE_OBLIGATION_WINDOW = 32u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -1368,6 +1369,15 @@ void count_call_predicate_obligations(uint call_node)
     }
 
     uint obligation_count = range.end - range.begin;
+    if (obligation_count > PREDICATE_OBLIGATION_WINDOW)
+    {
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
+        return;
+    }
+
     predicate_obligation_count_by_call[call_node] = obligation_count;
 }
 

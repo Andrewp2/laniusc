@@ -27,13 +27,11 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_build_progress_shard(shard)?;
         let path = self.build_progress_shard_path_for_target(shard.target, shard.shard_index);
-        let bytes = serde_json::to_vec_pretty(shard).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build progress shard {}: {err}",
-                shard.shard_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build progress shard")?;
+        let bytes = serialize_store_json(
+            shard,
+            format!("source-pack build progress shard {}", shard.shard_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack build progress shard")?;
         self.store_build_progress_shard_summary_for_target(
             shard.target,
             &build_progress_shard_summary(shard)?,
@@ -49,19 +47,20 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_build_progress_shard_summary(summary)?;
         if summary.target != target {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard summary target {:?} does not match requested target {:?}",
                 summary.target, target
             )));
         }
         let path = self.build_progress_shard_summary_path_for_target(target, summary.shard_index);
-        let bytes = serde_json::to_vec_pretty(summary).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build progress shard summary {}: {err}",
+        let bytes = serialize_store_json(
+            summary,
+            format!(
+                "source-pack build progress shard summary {}",
                 summary.shard_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build progress shard summary")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack build progress shard summary")?;
         Ok(path)
     }
 
@@ -77,13 +76,14 @@ impl FilesystemArtifactStore {
             target,
             directory_page.directory_page_index,
         );
-        let bytes = serde_json::to_vec_pretty(directory_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build progress directory page {}: {err}",
+        let bytes = serialize_store_json(
+            directory_page,
+            format!(
+                "source-pack build progress directory page {}",
                 directory_page.directory_page_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build progress directory page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack build progress directory page")?;
         Ok(path)
     }
 
@@ -94,25 +94,17 @@ impl FilesystemArtifactStore {
         directory_page_index: usize,
     ) -> Result<Option<SourcePackBuildProgressDirectoryPage>, CompileError> {
         let path = self.build_progress_directory_page_path_for_target(target, directory_page_index);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack build progress directory page {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) = try_read_store_file(&path, "source-pack build progress directory page")?
+        else {
+            return Ok(None);
         };
-        let directory_page = serde_json::from_slice::<SourcePackBuildProgressDirectoryPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build progress directory page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let directory_page = parse_store_json::<SourcePackBuildProgressDirectoryPage>(
+            &bytes,
+            &path,
+            "source-pack build progress directory page",
+        )?;
         if directory_page.version != SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_PAGE_VERSION {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "unsupported source-pack build progress directory page version {}; expected {}",
                 directory_page.version, SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_PAGE_VERSION
             )));
@@ -120,7 +112,7 @@ impl FilesystemArtifactStore {
         if directory_page.target != target
             || directory_page.directory_page_index != directory_page_index
         {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "loaded source-pack build progress directory page target {:?} index {} from {} but requested target {:?} index {}",
                 directory_page.target,
                 directory_page.directory_page_index,
@@ -144,13 +136,14 @@ impl FilesystemArtifactStore {
             target,
             directory_index_page.directory_index_page_index,
         );
-        let bytes = serde_json::to_vec_pretty(directory_index_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build progress directory-index page {}: {err}",
+        let bytes = serialize_store_json(
+            directory_index_page,
+            format!(
+                "source-pack build progress directory-index page {}",
                 directory_index_page.directory_index_page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack build progress directory-index page",
@@ -168,27 +161,18 @@ impl FilesystemArtifactStore {
             target,
             directory_index_page_index,
         );
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack build progress directory-index page {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) =
+            try_read_store_file(&path, "source-pack build progress directory-index page")?
+        else {
+            return Ok(None);
         };
-        let directory_index_page = serde_json::from_slice::<
-            SourcePackBuildProgressDirectoryIndexPage,
-        >(&bytes)
-        .map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack build progress directory-index page {}: {err}",
-                path.display()
-            ))
-        })?;
+        let directory_index_page = parse_store_json::<SourcePackBuildProgressDirectoryIndexPage>(
+            &bytes,
+            &path,
+            "source-pack build progress directory-index page",
+        )?;
         if directory_index_page.version != SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "unsupported source-pack build progress directory-index page version {}; expected {}",
                 directory_index_page.version,
                 SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION
@@ -197,7 +181,7 @@ impl FilesystemArtifactStore {
         if directory_index_page.target != target
             || directory_index_page.directory_index_page_index != directory_index_page_index
         {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "loaded source-pack build progress directory-index page target {:?} index {} from {} but requested target {:?} index {}",
                 directory_index_page.target,
                 directory_index_page.directory_index_page_index,
@@ -288,12 +272,8 @@ impl FilesystemArtifactStore {
         let path = self.build_progress_summary_path_for_target(summary.target);
         let compact_summary = summary.clone();
         validate_build_progress_summary(&compact_summary)?;
-        let bytes = serde_json::to_vec_pretty(&compact_summary).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build progress summary: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build progress summary")?;
+        let bytes = serialize_store_json(&compact_summary, "source-pack build progress summary")?;
+        write_store_file_atomic(&path, &bytes, "source-pack build progress summary")?;
         Ok(path)
     }
 
@@ -303,22 +283,15 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildProgressSummary, CompileError> {
         let path = self.build_progress_summary_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build progress summary {}: {err}",
-                path.display()
-            ))
-        })?;
-        let summary =
-            serde_json::from_slice::<SourcePackBuildProgressSummary>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build progress summary {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack build progress summary")?;
+        let summary = parse_store_json::<SourcePackBuildProgressSummary>(
+            &bytes,
+            &path,
+            "source-pack build progress summary",
+        )?;
         validate_build_progress_summary(&summary)?;
         if summary.target != target {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "loaded source-pack progress summary target {:?} from {} but requested target {:?}",
                 summary.target,
                 path.display(),
@@ -335,26 +308,18 @@ impl FilesystemArtifactStore {
         shard_index: usize,
     ) -> Result<Option<SourcePackBuildProgressShardSummary>, CompileError> {
         let path = self.build_progress_shard_summary_path_for_target(target, shard_index);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack build progress shard summary {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) = try_read_store_file(&path, "source-pack build progress shard summary")?
+        else {
+            return Ok(None);
         };
-        let summary = serde_json::from_slice::<SourcePackBuildProgressShardSummary>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build progress shard summary {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let summary = parse_store_json::<SourcePackBuildProgressShardSummary>(
+            &bytes,
+            &path,
+            "source-pack build progress shard summary",
+        )?;
         validate_build_progress_shard_summary(&summary)?;
         if summary.target != target || summary.shard_index != shard_index {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "loaded source-pack progress shard summary target {:?} index {} from {} but requested target {:?} index {}",
                 summary.target,
                 summary.shard_index,
@@ -383,7 +348,7 @@ impl FilesystemArtifactStore {
                 || old_shard.shard_index != new_shard.shard_index
                 || old_shard.batch_indices != new_shard.batch_indices
             {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack progress shard update changed identity from target {:?} index {} batches {:?} to target {:?} index {} batches {:?}",
                     old_shard.target,
                     old_shard.shard_index,
@@ -436,7 +401,7 @@ impl FilesystemArtifactStore {
             .saturating_add(new_job_batch_count)
             .checked_sub(old_job_batch_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_progress_state_error(format!(
                     "source-pack progress summary underflow updating shard {}",
                     new_shard.shard_index
                 ))
@@ -449,7 +414,7 @@ impl FilesystemArtifactStore {
             .saturating_add(new_completed_count)
             .checked_sub(old_completed_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_progress_state_error(format!(
                     "source-pack progress summary completed-count underflow updating shard {}",
                     new_shard.shard_index
                 ))
@@ -459,7 +424,7 @@ impl FilesystemArtifactStore {
             .saturating_add(new_ready_count)
             .checked_sub(old_ready_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_progress_state_error(format!(
                     "source-pack progress summary ready-count underflow updating shard {}",
                     new_shard.shard_index
                 ))
@@ -469,7 +434,7 @@ impl FilesystemArtifactStore {
             .saturating_add(new_claimed_count)
             .checked_sub(old_claimed_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_progress_state_error(format!(
                     "source-pack progress summary claimed-count underflow updating shard {}",
                     new_shard.shard_index
                 ))
@@ -480,7 +445,7 @@ impl FilesystemArtifactStore {
             .saturating_add(new_ready_claimed_count)
             .checked_sub(old_ready_claimed_count)
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_progress_state_error(format!(
                     "source-pack progress summary ready-claimed-count underflow updating shard {}",
                     new_shard.shard_index
                 ))
@@ -533,7 +498,7 @@ impl FilesystemArtifactStore {
                 .as_ref()
                 .is_some_and(|existing| existing != linked_output_key)
             {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack progress summary already recorded linked output {:?}, cannot replace with {:?}",
                     summary.linked_output_key.as_deref(),
                     linked_output_key
@@ -552,22 +517,15 @@ impl FilesystemArtifactStore {
         shard_index: usize,
     ) -> Result<SourcePackBuildProgressShard, CompileError> {
         let path = self.build_progress_shard_path_for_target(target, shard_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build progress shard {}: {err}",
-                path.display()
-            ))
-        })?;
-        let shard =
-            serde_json::from_slice::<SourcePackBuildProgressShard>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build progress shard {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack build progress shard")?;
+        let shard = parse_store_json::<SourcePackBuildProgressShard>(
+            &bytes,
+            &path,
+            "source-pack build progress shard",
+        )?;
         validate_build_progress_shard(&shard)?;
         if shard.target != target || shard.shard_index != shard_index {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_store_metadata_error(format!(
                 "loaded source-pack progress shard target {:?} index {} from {} but requested target {:?} index {}",
                 shard.target,
                 shard.shard_index,

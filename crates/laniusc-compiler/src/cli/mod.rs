@@ -12,6 +12,7 @@ mod diagnostics;
 mod dispatch;
 mod doctor;
 mod entry;
+mod fallback;
 mod fmt;
 mod help;
 mod lsp;

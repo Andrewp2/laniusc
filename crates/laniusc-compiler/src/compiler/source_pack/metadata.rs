@@ -23,7 +23,7 @@ where
         Some(SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT),
     )?;
     if !step.complete {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_preparation_incomplete_error(format!(
             "source-pack metadata prepare did not complete within {SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT} bounded library records; use prepare_metadata_chunk_for_target or the progress-based metadata chunk API to continue persisted preparation"
         )));
     }
@@ -99,9 +99,10 @@ where
             dependency_library_ids: declared_dependency_library_ids,
         } = library;
         if partition_source_file_count == 0 {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} has no source files"
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library_id),
+                "library declares no source files",
+            ));
         }
         if store
             .library_partition_locator_page_path_for_target(target, library_id)
@@ -184,6 +185,7 @@ where
             library_id,
             dependency_library_count,
             declared_dependency_library_ids,
+            DependencyLibraryIdErrorSource::ExplicitManifest,
         )?;
 
         let first_source_index = source_file_count;
@@ -332,7 +334,7 @@ pub(in crate::compiler) fn validate_metadata_chunk_limits(
     _dependency_library_count: usize,
 ) -> Result<(), CompileError> {
     if source_file_count > SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_preparation_limit_invalid_error(format!(
             "source-pack metadata chunk library {library_id} declares {source_file_count} source files, exceeding chunk source-file cap {SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT}; split the library into bounded library records"
         )));
     }
@@ -400,9 +402,10 @@ where
             dependency_library_ids: declared_dependency_library_ids,
         } = library;
         if partition_source_file_count == 0 {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} has no source files"
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library_id),
+                "library declares no source files",
+            ));
         }
         if store
             .library_partition_locator_page_path_for_target(target, library_id)
@@ -425,6 +428,7 @@ where
             library_id,
             dependency_library_count,
             declared_dependency_library_ids,
+            DependencyLibraryIdErrorSource::ExplicitManifest,
         )?;
 
         let first_source_index = source_file_count;
@@ -646,10 +650,10 @@ where
         ))
     })?;
     if expected_dependency_library_id == partition.library_id {
-        return Err(CompileError::GpuFrontend(format!(
-            "explicit source pack library {} depends on itself",
-            partition.library_id
-        )));
+        return Err(explicit_source_pack_manifest_invalid(
+            Some(partition.library_id),
+            "library depends on itself",
+        ));
     }
     if previous_expected_dependency_library_id
         .as_ref()
@@ -657,10 +661,10 @@ where
             expected_dependency_library_id <= *previous_dependency_library_id
         })
     {
-        return Err(CompileError::GpuFrontend(format!(
-            "explicit source pack library {} dependency ids must be strictly sorted and unique",
-            partition.library_id
-        )));
+        return Err(explicit_source_pack_manifest_invalid(
+            Some(partition.library_id),
+            "dependency ids must be strictly sorted and unique",
+        ));
     }
     if stored_dependency_library_id != expected_dependency_library_id {
         return Err(library_partition_contract_error(format!(

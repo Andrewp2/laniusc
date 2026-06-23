@@ -26,7 +26,7 @@ pub(in crate::compiler) fn validate_work_queue_prepare_progress(
     work_item_count: usize,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_WORK_QUEUE_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_WORK_QUEUE_PREPARE_PROGRESS_VERSION
         )));
@@ -64,8 +64,8 @@ pub(in crate::compiler) fn store_work_queue_pages_from_schedule_chunk(
     max_new_items: usize,
 ) -> Result<FilesystemWorkQueuePrepareStepResult, CompileError> {
     if max_new_items == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack work queue chunk max_new_items must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack work queue chunk max_new_items must be greater than zero",
         ));
     }
     validate_library_schedule_index(schedule_index, schedule_index.target)?;
@@ -354,7 +354,7 @@ pub(in crate::compiler) fn store_work_queue_prepare_progress(
     validate_work_queue_prepare_progress(progress, progress.target, progress.work_item_count)?;
     let path = store.work_queue_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack work queue prepare progress: {err}"
         ))
     })?;
@@ -370,13 +370,13 @@ pub(in crate::compiler) fn load_work_queue_prepare_progress(
 ) -> Result<WorkQueuePrepareProgress, CompileError> {
     let path = store.work_queue_prepare_progress_path_for_target(target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack work queue prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress = serde_json::from_slice::<WorkQueuePrepareProgress>(&bytes).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "parse source-pack work queue prepare progress {}: {err}",
             path.display()
         ))

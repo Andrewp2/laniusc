@@ -823,7 +823,7 @@ impl GpuLexer {
         token_count_readback.unmap();
         if token_count > bufs.n {
             anyhow::bail!(
-                "GPU source-pack lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                "source-pack lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
                 token_count,
                 bufs.n
             );
@@ -1130,7 +1130,7 @@ impl GpuLexer {
         token_count_readback.unmap();
         if token_count > bufs.n {
             anyhow::bail!(
-                "GPU lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
                 token_count,
                 bufs.n
             );
@@ -1307,7 +1307,7 @@ impl GpuLexer {
         token_count_readback.unmap();
         if token_count > bufs.n {
             anyhow::bail!(
-                "GPU lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
                 token_count,
                 bufs.n
             );
@@ -1490,7 +1490,7 @@ impl GpuLexer {
         token_count_readback.unmap();
         if token_count > bufs.n {
             anyhow::bail!(
-                "GPU lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
                 token_count,
                 bufs.n
             );

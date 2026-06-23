@@ -256,8 +256,8 @@ pub fn prepare_artifact_build_chunk(
     max_new_items: usize,
 ) -> Result<BuildPrepareStepResult, CompileError> {
     if max_new_items == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack artifact build chunk max_new_items must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack artifact build chunk max_new_items must be greater than zero",
         ));
     }
     let max_new_items = max_new_items.min(ARTIFACT_BUILD_PREPARE_DEFAULT_CHUNK_LIMIT);
@@ -570,7 +570,7 @@ pub fn prepare_artifact_build(
             });
         }
     }
-    Err(CompileError::GpuFrontend(format!(
+    Err(source_pack_preparation_incomplete_error(format!(
         "source-pack artifact build prepare did not complete within {ARTIFACT_BUILD_FULL_PREPARE_DEFAULT_STEP_LIMIT} bounded chunk steps; keep calling prepare_artifact_build_chunk to continue persisted preparation"
     )))
 }
@@ -592,9 +592,8 @@ where
     P: AsRef<Path>,
 {
     if max_new_items == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack work-queue preparation chunk max_new_items must be greater than zero"
-                .into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack work-queue preparation chunk max_new_items must be greater than zero",
         ));
     }
     let max_new_items = max_new_items.min(ARTIFACT_BUILD_PREPARE_DEFAULT_CHUNK_LIMIT);

@@ -125,7 +125,7 @@ fn assert_x86_capacity_estimate_is_internally_consistent(output: &str) {
     assert_eq!(
         parse_field(x86_line, "hir_basis"),
         Some("parser_tree_capacity"),
-        "estimate-only should use projected parser tree capacity as the x86 HIR basis"
+        "estimate-only should use partial-parse parser tree capacity as the x86 HIR basis"
     );
     assert_eq!(hir_words, parser_tree_capacity);
     assert_eq!(inst_basis_words, parser_tree_capacity);

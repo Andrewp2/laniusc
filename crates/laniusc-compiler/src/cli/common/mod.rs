@@ -57,10 +57,14 @@ pub(crate) use diagnostic_format::{
 };
 pub(crate) use error::{
     CliError,
+    explicit_source_pack_manifest_invalid_error,
     extra_cli_argument_error,
     incompatible_cli_options_error,
+    invalid_cli_argument_count_error,
+    invalid_cli_directory_path_error,
     missing_cli_argument_error,
     missing_cli_option_value_error,
+    source_pack_artifact_store_cli_error,
     missing_cli_subcommand_error,
     unknown_cli_option_error,
     unknown_cli_subcommand_error,

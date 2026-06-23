@@ -95,6 +95,32 @@ impl GpuTypeCheckCode {
             other => Self::Unknown(other),
         }
     }
+
+    fn description(self) -> String {
+        match self {
+            Self::UnknownType => "unknown type".to_string(),
+            Self::UnresolvedIdent => "unresolved identifier".to_string(),
+            Self::AssignMismatch => "type mismatch".to_string(),
+            Self::ReturnMismatch => "return type mismatch".to_string(),
+            Self::ConditionType => "condition has the wrong type".to_string(),
+            Self::BadHir => "invalid syntax or lowered syntax tree".to_string(),
+            Self::LoopControl => "invalid loop control".to_string(),
+            Self::InvalidMemberAccess => "invalid member access".to_string(),
+            Self::InvalidArrayReturn => "invalid array return".to_string(),
+            Self::CallMismatch => "call does not match a resolved function or method".to_string(),
+            Self::NameLimit => "name is outside the current compiler limit".to_string(),
+            Self::ImportCycle => "import cycle".to_string(),
+            Self::TraitBoundUnsatisfied => "unsatisfied trait bound".to_string(),
+            Self::TraitBoundAmbiguous => "ambiguous trait bound".to_string(),
+            Self::UnresolvedImport => "unresolved import".to_string(),
+            Self::UnsupportedImport => "unsupported import form".to_string(),
+            Self::ImportPathTooDeep => "import path too deep".to_string(),
+            Self::DuplicateModule => "duplicate module declaration".to_string(),
+            Self::ModulePathTooDeep => "module path too deep".to_string(),
+            Self::InvalidModulePath => "invalid module path".to_string(),
+            Self::Unknown(code) => format!("unknown type-check error (code {code})"),
+        }
+    }
 }
 
 /// Error returned after a recorded type-check pass sequence is finished.
@@ -304,22 +330,53 @@ pub struct GpuTypeCheckExternalScratchBuffers<'a> {
 impl std::fmt::Display for GpuTypeCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GpuTypeCheckError::Rejected {
-                token,
-                code,
-                detail,
-            } => {
-                write!(
-                    f,
-                    "GPU type check rejected token {token}: {code:?} ({detail})"
-                )
+            GpuTypeCheckError::Rejected { code, .. } => {
+                write!(f, "type check error: {}", code.description())
             }
-            GpuTypeCheckError::Gpu(err) => write!(f, "GPU type check failed: {err}"),
+            GpuTypeCheckError::Gpu(_) => {
+                f.write_str("type-check execution failed before semantic status could be decoded")
+            }
         }
     }
 }
 
 impl std::error::Error for GpuTypeCheckError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{GpuTypeCheckCode, GpuTypeCheckError};
+
+    #[test]
+    fn type_check_error_display_is_user_facing() {
+        let error = GpuTypeCheckError::Rejected {
+            token: 12,
+            code: GpuTypeCheckCode::UnknownType,
+            detail: 7,
+        };
+
+        let message = error.to_string();
+        assert_eq!(message, "type check error: unknown type");
+        assert!(!message.contains("GPU"));
+        assert!(!message.contains("near token"));
+        assert!(!message.contains("status token"));
+    }
+
+    #[test]
+    fn type_check_gpu_error_display_omits_backend_detail() {
+        let error = GpuTypeCheckError::Gpu(anyhow::anyhow!(
+            "typecheck.modules.projected_refs status readback failed"
+        ));
+
+        let message = error.to_string();
+        assert_eq!(
+            message,
+            "type-check execution failed before semantic status could be decoded"
+        );
+        assert!(!message.contains("projected_refs"));
+        assert!(!message.contains("readback"));
+        assert!(!message.contains("GPU"));
+    }
+}
 
 impl From<anyhow::Error> for GpuTypeCheckError {
     fn from(err: anyhow::Error) -> Self {

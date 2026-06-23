@@ -9,14 +9,14 @@
     "left_recursions": [],
     "ll1_conflicts": []
   },
-  "sc_projection": {
+  "stack_change_table": {
     "witness_inputs": 0,
-    "projected_cells": 2202,
+    "cells": 2202,
     "conflicts": []
   },
-  "pp_projection": {
+  "partial_parse_table": {
     "witness_inputs": 0,
-    "projected_cells": 2202,
+    "cells": 2202,
     "conflicts": []
   },
   "ll1_runtime": {

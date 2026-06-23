@@ -199,17 +199,23 @@ uint statement_phase_event_for(uint token_i, uint kind, int bracket_depth_before
 {
     if (bracket_depth_before != 0)
         return 0u;
+    uint context_kind = statement_context_token_kind(statement_context_kind[token_i]);
     if (is_statement_starter(kind))
         return encode_statement_event(token_i, kind);
     if (is_statement_reset_boundary(kind))
+    {
+        bool rhs_brace = (kind == TK_LBRACE || kind == TK_RBRACE) &&
+            (context_kind == TK_LET || context_kind == TK_CONST || context_kind == TK_RETURN);
+        if (rhs_brace)
+            return 0u;
         return encode_statement_event(token_i, 0u);
+    }
     if (kind == TK_LET_ASSIGN)
         return encode_statement_event(token_i, STATEMENT_CONTEXT_LET_RHS);
     if (kind == TK_TYPE_ALIAS_ASSIGN)
         return encode_statement_event(token_i, STATEMENT_CONTEXT_TYPE_ALIAS_RHS);
     if (kind == TK_CONST_ASSIGN)
         return encode_statement_event(token_i, STATEMENT_CONTEXT_CONST_RHS);
-    uint context_kind = statement_context_token_kind(statement_context_kind[token_i]);
     if (kind == TK_IN && context_kind == TK_FOR)
         return encode_statement_event(token_i, STATEMENT_CONTEXT_FOR_IN);
     if (kind == TK_ASSIGN && context_kind == TK_LET)

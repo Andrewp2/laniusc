@@ -24,7 +24,7 @@ where
     let item = store.load_work_queue_page_for_target(target, item_index)?;
     let batch_index = work_queue_singleton_artifact_batch_index_for_item(&store, target, &item)?
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            source_pack_work_queue_contract_error(format!(
             "source-pack work item {item_index} has no singleton artifact batch execution mapping"
         ))
         })?;
@@ -78,7 +78,7 @@ where
     let item = store.load_work_queue_page_for_target(target, item_index)?;
     let batch_index = work_queue_singleton_artifact_batch_index_for_item(&store, target, &item)?
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            source_pack_work_queue_contract_error(format!(
             "source-pack work item {item_index} has no singleton artifact batch execution mapping"
         ))
         })?;
@@ -137,7 +137,7 @@ where
                 &store, target, &item,
             )?
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_work_queue_contract_error(format!(
                     "source-pack work item {item_index} has no singleton artifact batch execution mapping"
                 ))
             })?;
@@ -232,7 +232,7 @@ where
                 &store, target, &item,
             )?
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                source_pack_work_queue_contract_error(format!(
                     "source-pack work item {item_index} has no singleton artifact batch execution mapping"
                 ))
             })?;
@@ -390,7 +390,7 @@ where
         item.kind,
         SourcePackWorkQueueItemKind::LinkLeaf | SourcePackWorkQueueItemKind::LinkReduce
     ) {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "source-pack work item {item_index} is {:?}, not a link item",
             item.kind
         )));

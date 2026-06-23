@@ -7,19 +7,11 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackHierarchicalLinkPlanIndex, CompileError> {
         let path = self.hierarchical_link_plan_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link plan index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index = serde_json::from_slice::<SourcePackHierarchicalLinkPlanIndex>(&bytes).map_err(
-            |err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link plan index {}: {err}",
-                    path.display()
-                ))
-            },
+        let bytes = read_store_file(&path, "source-pack hierarchical link plan index")?;
+        let index = parse_store_json::<SourcePackHierarchicalLinkPlanIndex>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link plan index",
         )?;
         validate_link_plan_index(&index, target)?;
         Ok(index)
@@ -43,13 +35,14 @@ impl FilesystemArtifactStore {
         validate_link_group_page(&stored_group, group.target, Some(group.group_index))?;
         let path =
             self.hierarchical_link_group_page_path_for_target(group.target, group.group_index);
-        let bytes = serde_json::to_vec_pretty(&stored_group).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack hierarchical link group page {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_group,
+            format!(
+                "source-pack hierarchical link group page {}",
                 group.group_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack hierarchical link group page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack hierarchical link group page")?;
         Ok(path)
     }
 
@@ -60,19 +53,11 @@ impl FilesystemArtifactStore {
         group_index: usize,
     ) -> Result<SourcePackHierarchicalLinkGroupPage, CompileError> {
         let path = self.hierarchical_link_group_page_path_for_target(target, group_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link group page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let group = serde_json::from_slice::<SourcePackHierarchicalLinkGroupPage>(&bytes).map_err(
-            |err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link group page {}: {err}",
-                    path.display()
-                ))
-            },
+        let bytes = read_store_file(&path, "source-pack hierarchical link group page")?;
+        let group = parse_store_json::<SourcePackHierarchicalLinkGroupPage>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link group page",
         )?;
         validate_link_group_page(&group, target, Some(group_index))?;
         Ok(group)
@@ -84,19 +69,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackHierarchicalLinkExecutionIndex, CompileError> {
         let path = self.hierarchical_link_execution_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link execution index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index = serde_json::from_slice::<SourcePackHierarchicalLinkExecutionIndex>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link execution index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack hierarchical link execution index")?;
+        let index = parse_store_json::<SourcePackHierarchicalLinkExecutionIndex>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link execution index",
+        )?;
         validate_link_execution_index(&index, target)?;
         Ok(index)
     }
@@ -178,13 +156,14 @@ impl FilesystemArtifactStore {
         validate_link_execution_page(&stored_page, page.target, Some(page.group_index))?;
         let path =
             self.hierarchical_link_execution_page_path_for_target(page.target, page.group_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack hierarchical link execution page {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!(
+                "source-pack hierarchical link execution page {}",
                 page.group_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack hierarchical link execution page",
@@ -306,13 +285,14 @@ impl FilesystemArtifactStore {
             page.group_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack hierarchical link execution interface page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack hierarchical link execution interface page {}:{}",
                 page.group_index, page.page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack hierarchical link execution interface page",
@@ -331,13 +311,14 @@ impl FilesystemArtifactStore {
             page.group_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack hierarchical link execution object page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack hierarchical link execution object page {}:{}",
                 page.group_index, page.page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack hierarchical link execution object page",
@@ -356,13 +337,14 @@ impl FilesystemArtifactStore {
             page.group_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack hierarchical link execution partial page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack hierarchical link execution partial page {}:{}",
                 page.group_index, page.page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack hierarchical link execution partial page",
@@ -377,19 +359,12 @@ impl FilesystemArtifactStore {
         group_index: usize,
     ) -> Result<SourcePackHierarchicalLinkExecutionPage, CompileError> {
         let path = self.hierarchical_link_execution_page_path_for_target(target, group_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link execution page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackHierarchicalLinkExecutionPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link execution page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack hierarchical link execution page")?;
+        let page = parse_store_json::<SourcePackHierarchicalLinkExecutionPage>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link execution page",
+        )?;
         validate_link_execution_page(&page, target, Some(group_index))?;
         Ok(page)
     }
@@ -406,20 +381,15 @@ impl FilesystemArtifactStore {
             group_index,
             page_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link execution interface page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackHierarchicalLinkExecutionInterfacePage>(&bytes)
-                .map_err(|err| {
-                    CompileError::GpuFrontend(format!(
-                        "parse source-pack hierarchical link execution interface page {}: {err}",
-                        path.display()
-                    ))
-                })?;
+        let bytes = read_store_file(
+            &path,
+            "source-pack hierarchical link execution interface page",
+        )?;
+        let page = parse_store_json::<SourcePackHierarchicalLinkExecutionInterfacePage>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link execution interface page",
+        )?;
         validate_link_execution_interface_page(&page, target, group_index, page_index)?;
         Ok(page)
     }
@@ -436,19 +406,12 @@ impl FilesystemArtifactStore {
             group_index,
             page_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link execution object page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackHierarchicalLinkExecutionObjectPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link execution object page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack hierarchical link execution object page")?;
+        let page = parse_store_json::<SourcePackHierarchicalLinkExecutionObjectPage>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link execution object page",
+        )?;
         validate_link_execution_object_page(&page, target, group_index, page_index)?;
         Ok(page)
     }
@@ -465,19 +428,15 @@ impl FilesystemArtifactStore {
             group_index,
             page_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack hierarchical link execution partial page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackHierarchicalLinkExecutionPartialPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack hierarchical link execution partial page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(
+            &path,
+            "source-pack hierarchical link execution partial page",
+        )?;
+        let page = parse_store_json::<SourcePackHierarchicalLinkExecutionPartialPage>(
+            &bytes,
+            &path,
+            "source-pack hierarchical link execution partial page",
+        )?;
         validate_link_execution_partial_page(&page, target, group_index, page_index)?;
         Ok(page)
     }

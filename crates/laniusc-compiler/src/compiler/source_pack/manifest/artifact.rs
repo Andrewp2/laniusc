@@ -98,7 +98,7 @@ pub(in crate::compiler) fn ensure_manifest_execution_records(
         .into_iter()
         .find(|(_, actual, expected)| actual != expected)
     {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(manifest_contract_error(format!(
             "source-pack artifact-manifest execution requires inline {label} records; compact manifest records {expected} counts but {actual} inline records and must use persisted execution shards"
         )));
     }
@@ -110,7 +110,7 @@ pub(in crate::compiler) fn validate_artifact_manifest_version(
     manifest: &SourcePackBuildArtifactManifest,
 ) -> Result<(), CompileError> {
     if manifest.version != SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(manifest_contract_error(format!(
             "unsupported source-pack artifact manifest version {}; expected {}",
             manifest.version, SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION
         )));

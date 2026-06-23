@@ -1,6 +1,6 @@
 //! Offline precomputed tables for the LLP/parser pipeline.
 //!
-//! Tables contain stack-change supersequences, projected production streams,
+//! Tables contain stack-change supersequences, partial-parse streams,
 //! production arity, and full LL(1) prediction/RHS data. File I/O is compact
 //! little-endian data with a versioned magic header.
 
@@ -172,13 +172,44 @@ pub enum Ll1ParseErrorCode {
     TablesUnavailable,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Structured LL(1) rejection context for user-facing diagnostics.
+pub struct Ll1RejectionContext {
+    /// Position in the full parser token-kind stream, including sentinels.
+    pub pos: usize,
+    /// Rejection class observed while replaying the table.
+    pub code: Ll1ParseErrorCode,
+    /// Parser token kind found at `pos`, or `0` for end of input.
+    pub found: u32,
+    /// Parser token kinds accepted at this position. Empty means unknown.
+    pub expected: Vec<u32>,
+}
+
 impl std::fmt::Display for Ll1ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "LL(1) parse error at token {}, {:?} ({})",
-            self.pos, self.code, self.detail
-        )
+        match self.code {
+            Ll1ParseErrorCode::TerminalMismatch => write!(
+                f,
+                "parse error: unexpected token at parser position {}",
+                self.pos
+            ),
+            Ll1ParseErrorCode::NoPrediction => write!(
+                f,
+                "parse error: could not match the grammar at parser position {}",
+                self.pos
+            ),
+            Ll1ParseErrorCode::TrailingInput => write!(
+                f,
+                "parse error: unexpected trailing input at parser position {}",
+                self.pos
+            ),
+            Ll1ParseErrorCode::BadSymbol => f.write_str(
+                "parser table error: an invalid parser symbol was encountered",
+            ),
+            Ll1ParseErrorCode::TablesUnavailable => {
+                f.write_str("parser table error: parser tables are unavailable")
+            }
+        }
     }
 }
 
@@ -399,8 +430,104 @@ impl PrecomputedParseTables {
         Ok((out, positions))
     }
 
-    /// Test-only host oracle for the pair-projected production stream.
-    pub fn test_cpu_projected_production_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
+    /// Replays the LL(1) table enough to explain the first rejected token.
+    ///
+    /// This is intentionally diagnostic-only: the GPU parser remains the
+    /// acceptance source, while this host replay turns the same generated table
+    /// into an expected/found payload for errors.
+    pub fn diagnose_ll1_rejection(&self, token_kinds: &[u32]) -> Option<Ll1RejectionContext> {
+        if self.n_nonterminals == 0 || self.ll1_predict.is_empty() {
+            return Some(Ll1RejectionContext {
+                pos: 0,
+                code: Ll1ParseErrorCode::TablesUnavailable,
+                found: token_kinds.first().copied().unwrap_or(0),
+                expected: Vec::new(),
+            });
+        }
+
+        let input_end = token_kinds.len().saturating_sub(1);
+        let first_input = if token_kinds.first().copied() == Some(0) {
+            1
+        } else {
+            0
+        };
+        let mut pos = first_input;
+        let mut stack = vec![self.n_kinds + self.start_nonterminal];
+
+        while let Some(sym) = stack.pop() {
+            let lookahead = if pos < input_end { token_kinds[pos] } else { 0 };
+
+            if sym < self.n_kinds {
+                if sym != lookahead {
+                    return Some(Ll1RejectionContext {
+                        pos,
+                        code: Ll1ParseErrorCode::TerminalMismatch,
+                        found: lookahead,
+                        expected: vec![sym],
+                    });
+                }
+                pos += 1;
+                continue;
+            }
+
+            let nt = sym - self.n_kinds;
+            if nt >= self.n_nonterminals || lookahead >= self.n_kinds {
+                return Some(Ll1RejectionContext {
+                    pos,
+                    code: Ll1ParseErrorCode::BadSymbol,
+                    found: lookahead,
+                    expected: Vec::new(),
+                });
+            }
+
+            let pred_idx = (nt as usize) * (self.n_kinds as usize) + lookahead as usize;
+            let prod = self.ll1_predict[pred_idx];
+            if prod == INVALID_TABLE_ENTRY || prod >= self.n_productions {
+                return Some(Ll1RejectionContext {
+                    pos,
+                    code: Ll1ParseErrorCode::NoPrediction,
+                    found: lookahead,
+                    expected: self.expected_lookaheads_for_nonterminal(nt),
+                });
+            }
+
+            let off = self.prod_rhs_off[prod as usize] as usize;
+            let len = self.prod_rhs_len[prod as usize] as usize;
+            stack.extend(self.prod_rhs[off..off + len].iter().rev().copied());
+        }
+
+        if pos != input_end {
+            return Some(Ll1RejectionContext {
+                pos,
+                code: Ll1ParseErrorCode::TrailingInput,
+                found: token_kinds.get(pos).copied().unwrap_or(0),
+                expected: vec![0],
+            });
+        }
+
+        None
+    }
+
+    fn expected_lookaheads_for_nonterminal(&self, nt: u32) -> Vec<u32> {
+        if nt >= self.n_nonterminals || self.n_kinds == 0 {
+            return Vec::new();
+        }
+
+        let row_start = (nt as usize).saturating_mul(self.n_kinds as usize);
+        let row_end = row_start.saturating_add(self.n_kinds as usize);
+        self.ll1_predict
+            .get(row_start..row_end)
+            .into_iter()
+            .flat_map(|row| row.iter().enumerate())
+            .filter_map(|(lookahead, &production)| {
+                (production != INVALID_TABLE_ENTRY && production < self.n_productions)
+                    .then_some(lookahead as u32)
+            })
+            .collect()
+    }
+
+    /// Test-only host oracle for the adjacent-pair partial-parse stream.
+    pub fn test_cpu_partial_parse_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
         let mut out = Vec::new();
         for pair in token_kinds.windows(2) {
             let prev = pair[0];
@@ -561,6 +688,81 @@ impl PrecomputedParseTables {
             prod_rhs_len,
             prod_rhs,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiny_ident_semicolon_table() -> PrecomputedParseTables {
+        let mut tables = PrecomputedParseTables::new(4, 1);
+        tables.n_nonterminals = 1;
+        tables.start_nonterminal = 0;
+        tables.ll1_predict = vec![INVALID_TABLE_ENTRY; 4];
+        tables.ll1_predict[1] = 0;
+        tables.prod_rhs_off = vec![0];
+        tables.prod_rhs_len = vec![2];
+        tables.prod_rhs = vec![1, 3];
+        tables
+    }
+
+    #[test]
+    fn ll1_diagnostic_rejection_reports_expected_terminal() {
+        let tables = tiny_ident_semicolon_table();
+
+        let context = tables
+            .diagnose_ll1_rejection(&[0, 1, 2, 0])
+            .expect("terminal mismatch should produce diagnostic context");
+
+        assert_eq!(context.pos, 2);
+        assert_eq!(context.code, Ll1ParseErrorCode::TerminalMismatch);
+        assert_eq!(context.found, 2);
+        assert_eq!(context.expected, vec![3]);
+    }
+
+    #[test]
+    fn ll1_diagnostic_rejection_reports_expected_lookaheads() {
+        let tables = tiny_ident_semicolon_table();
+
+        let context = tables
+            .diagnose_ll1_rejection(&[0, 2, 0])
+            .expect("missing prediction should produce diagnostic context");
+
+        assert_eq!(context.pos, 1);
+        assert_eq!(context.code, Ll1ParseErrorCode::NoPrediction);
+        assert_eq!(context.found, 2);
+        assert_eq!(context.expected, vec![1]);
+    }
+
+    #[test]
+    fn ll1_parse_error_display_avoids_internal_detail() {
+        let error = Ll1ParseError {
+            pos: 2,
+            code: Ll1ParseErrorCode::TerminalMismatch,
+            detail: 3,
+        };
+
+        let message = error.to_string();
+        assert_eq!(message, "parse error: unexpected token at parser position 2");
+        assert!(!message.contains("LL(1)"));
+        assert!(!message.contains("TerminalMismatch"));
+        assert!(!message.contains("(3)"));
+    }
+
+    #[test]
+    fn ll1_parse_table_error_display_avoids_internal_detail() {
+        let error = Ll1ParseError {
+            pos: 0,
+            code: Ll1ParseErrorCode::TablesUnavailable,
+            detail: 0,
+        };
+
+        let message = error.to_string();
+        assert_eq!(message, "parser table error: parser tables are unavailable");
+        assert!(!message.contains("LL(1)"));
+        assert!(!message.contains("TablesUnavailable"));
+        assert!(!message.contains("(0)"));
     }
 }
 

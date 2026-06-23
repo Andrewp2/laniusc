@@ -28,7 +28,7 @@ pub(in crate::compiler) fn validate_link_execution_prepare_progress(
     link_group_count: usize,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PREPARE_PROGRESS_VERSION
         )));
@@ -74,9 +74,8 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
     max_new_groups: usize,
 ) -> Result<FilesystemHierarchicalLinkExecutionPrepareStepResult, CompileError> {
     if max_new_groups == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack hierarchical link execution chunk max_new_groups must be greater than zero"
-                .into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack hierarchical link execution chunk max_new_groups must be greater than zero",
         ));
     }
     validate_link_plan_index(link_plan_index, link_plan_index.target)?;
@@ -251,7 +250,7 @@ pub(in crate::compiler) fn store_link_execution_prepare_progress(
     validate_link_execution_prepare_progress(progress, progress.target, progress.link_group_count)?;
     let path = store.link_execution_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack hierarchical link execution prepare progress: {err}"
         ))
     })?;
@@ -271,14 +270,14 @@ pub(in crate::compiler) fn load_link_execution_prepare_progress(
 ) -> Result<HierarchicalLinkExecutionPrepareProgress, CompileError> {
     let path = store.link_execution_prepare_progress_path_for_target(target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack hierarchical link execution prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress = serde_json::from_slice::<HierarchicalLinkExecutionPrepareProgress>(&bytes)
         .map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "parse source-pack hierarchical link execution prepare progress {}: {err}",
                 path.display()
             ))
@@ -1768,7 +1767,7 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_index(
     validate_completed_link_execution_index_evidence(store, index)?;
     let path = store.hierarchical_link_execution_index_path_for_target(index.target);
     let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack hierarchical link execution index: {err}"
         ))
     })?;
@@ -2707,12 +2706,12 @@ fn validate_completed_link_descriptor_count(
 ) -> Result<(), CompileError> {
     if required > available {
         return Err(library_partition_contract_error(format!(
-            "completed source-pack link execution group {group_index} descriptor summary records {required} {label} records but partial-link producer execution pages carry {available}; CPU-side descriptor metadata cannot substitute for GPU-produced partial-link/object record evidence"
+            "completed source-pack link execution group {group_index} descriptor summary records {required} {label} records but partial-link producer execution pages carry {available}; descriptor metadata cannot substitute for producer partial-link/object record evidence"
         )));
     }
     if required < available {
         return Err(library_partition_contract_error(format!(
-            "completed source-pack link execution group {group_index} descriptor summary records {required} {label} records but partial-link producer execution pages carry {available}; completed replay cannot drop GPU-produced partial-link/object record evidence without explicit link resolution artifacts"
+            "completed source-pack link execution group {group_index} descriptor summary records {required} {label} records but partial-link producer execution pages carry {available}; completed replay cannot drop producer partial-link/object record evidence without explicit link resolution artifacts"
         )));
     }
     Ok(())
@@ -2856,7 +2855,7 @@ pub(in crate::compiler) fn validate_build_artifact_ref_prepare_progress(
     validate_library_schedule_index(schedule_index, schedule_index.target)?;
     validate_library_partition_index(library_partition_index, schedule_index.target)?;
     if progress.version != SOURCE_PACK_BUILD_ARTIFACT_REF_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact-ref prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_BUILD_ARTIFACT_REF_PREPARE_PROGRESS_VERSION
         )));
@@ -2938,8 +2937,8 @@ pub(in crate::compiler) fn store_artifact_ref_pages_from_schedule_chunk(
     max_new_libraries: usize,
 ) -> Result<FilesystemArtifactRefPrepareStepResult, CompileError> {
     if max_new_libraries == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack artifact-ref chunk max_new_libraries must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack artifact-ref chunk max_new_libraries must be greater than zero",
         ));
     }
     validate_library_schedule_index(schedule_index, schedule_index.target)?;

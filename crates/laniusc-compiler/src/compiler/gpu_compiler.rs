@@ -6,6 +6,11 @@ mod benchmarks;
 mod buffers;
 mod descriptor_work_queue;
 mod typecheck;
+pub(in crate::compiler::gpu_compiler) use typecheck::{
+    type_check_diagnostic_at_span,
+    type_check_execution_failed_for_source,
+    type_check_execution_failed_for_source_pack,
+};
 mod wasm_codegen;
 mod x86_codegen;
 use buffers::{OwnedTypecheckParserBuffers, OwnedX86DiagnosticBuffers, OwnedX86ParserBuffers};
@@ -13,8 +18,16 @@ use buffers::{OwnedTypecheckParserBuffers, OwnedX86DiagnosticBuffers, OwnedX86Pa
 mod helpers;
 mod host_timer;
 use helpers::{
+    StageExecutionFailure,
     buffer_if_wgpu_u32_words,
+    first_nonempty_source_span,
     hir_node_capacity_for_parser_emit,
+    parser_execution_failed_for_source,
+    parser_execution_failed_for_source_pack,
+    source_tokenization_failed_for_source,
+    source_tokenization_failed_for_source_pack,
+    stage_execution_failed_for_source,
+    stage_execution_failed_for_source_pack,
     trace_wasm_compile,
     type_mismatch_label,
     type_mismatch_note,
@@ -29,6 +42,11 @@ pub use source_pack_executor::{
     GpuSourcePackCodegenObjectBuildHandle,
     GpuSourcePackLibraryInterfaceBuildHandle,
     GpuSourcePackLinkHandle,
+};
+#[cfg(test)]
+pub(in crate::compiler) use source_pack_executor::{
+    validate_gpu_source_pack_descriptor_artifact_paths,
+    validate_gpu_source_pack_descriptor_job_source_file_records,
 };
 
 /// GPU-resident compiler instance for frontend checks and backend compilation.
@@ -71,25 +89,43 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<Self, CompileError> {
         let mut host_timer = CompilerHostTimer::new("compiler.init");
         host_timer.pipeline_cache_size(gpu, "start");
-        let lexer = GpuLexer::new_with_device(gpu)
-            .await
-            .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU lexer: {err}")))?;
+        let lexer = GpuLexer::new_with_device(gpu).await.map_err(|err| {
+            compiler_execution_failed_error(
+                "the compiler stopped while initializing GPU frontend pipelines",
+                "initialize lexer",
+                err,
+            )
+        })?;
         host_timer.stamp("lexer");
         host_timer.pipeline_cache_size(gpu, "after_lexer");
-        let parser = GpuParser::new_with_device(gpu)
-            .await
-            .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU parser: {err}")))?;
+        let parser = GpuParser::new_with_device(gpu).await.map_err(|err| {
+            compiler_execution_failed_error(
+                "the compiler stopped while initializing GPU frontend pipelines",
+                "initialize parser",
+                err,
+            )
+        })?;
         host_timer.stamp("parser");
         host_timer.pipeline_cache_size(gpu, "after_parser");
         let parse_tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tables/parse_tables.bin"
         )))
-        .map_err(|err| CompileError::GpuFrontend(format!("load GPU parse tables: {err}")))?;
+        .map_err(|err| {
+            compiler_execution_failed_error(
+                "the compiler stopped while loading parser tables",
+                "load parse tables",
+                err,
+            )
+        })?;
         host_timer.stamp("parse_tables");
         let type_checker =
             gpu_type_checker::GpuTypeChecker::new_with_device(gpu).map_err(|err| {
-                CompileError::GpuFrontend(format!("initialize GPU type checker: {err}"))
+                compiler_execution_failed_error(
+                    "the compiler stopped while initializing GPU type-check pipelines",
+                    "initialize type checker",
+                    err,
+                )
             })?;
         host_timer.stamp("type_checker");
         host_timer.pipeline_cache_size(gpu, "after_type_checker");
@@ -99,7 +135,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(|err| err.to_string());
             if let Err(err) = &generator {
                 log::warn!(
-                    "preinitializing GPU WASM code generator failed; WASM compilation will report this error when used: {err}"
+                    "preinitializing WASM code generator failed; WASM compilation will report this error when used: {err}"
                 );
             }
             host_timer.stamp("wasm_generator");
@@ -107,7 +143,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             generator
         } else {
             host_timer.stamp("wasm_generator.skipped");
-            Err("GPU WASM code generator was not initialized for this compiler".into())
+            Err("WASM code generator was not initialized for this compiler".into())
         };
         let x86_generator = if backends.x86 {
             let generator = x86::GpuX86CodeGenerator::new_with_device(gpu)
@@ -115,7 +151,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(|err| err.to_string());
             if let Err(err) = &generator {
                 log::warn!(
-                    "preinitializing GPU x86 code generator failed; x86 compilation will report this error when used: {err}"
+                    "preinitializing x86 code generator failed; x86 compilation will report this error when used: {err}"
                 );
             }
             host_timer.stamp("x86_generator");
@@ -123,7 +159,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             generator
         } else {
             host_timer.stamp("x86_generator.skipped");
-            Err("GPU x86 code generator was not initialized for this compiler".into())
+            Err("x86 code generator was not initialized for this compiler".into())
         };
         Ok(Self {
             gpu,

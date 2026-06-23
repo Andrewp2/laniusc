@@ -12,6 +12,7 @@ use crate::compiler::{
     EntrySourceRoots,
     ExplicitSourcePack,
     ExplicitSourcePackPathManifest,
+    diagnostics::Diagnostic,
 };
 
 /// Maximum number of source roots a package manifest may declare.
@@ -24,7 +25,7 @@ pub(super) const PACKAGE_NAME_RULES: &str = "use dot-separated ASCII package seg
 /// Control-plane package metadata. Manifest paths are package-relative so the
 /// manifest stays relocatable; generated lockfiles record canonical absolute
 /// paths. Root paths are file-loading candidates only, and module identity still
-/// comes from GPU-parsed `module` and `import` records.
+/// comes from parsed `module` and `import` records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackageManifest {
     /// Dot-separated package name used for package identity.
@@ -91,7 +92,7 @@ impl PackageManifest {
                     "; unsupported package manifest field `{field}`; package manifests configure source roots, optional stdlib_root, and entry only; imports are declared in .lani source files with module paths, and external package dependencies are not supported yet"
                 ));
             }
-            CompileError::GpuFrontend(message)
+            package_manifest_error(message)
         })?;
         document.to_validated_manifest()
     }
@@ -99,9 +100,8 @@ impl PackageManifest {
     /// Loads a JSON manifest file and resolves paths relative to its directory.
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<ResolvedPackageManifest, CompileError> {
         let path = path.as_ref();
-        let source = fs::read_to_string(path).map_err(|err| {
-            CompileError::GpuFrontend(format!("read package manifest {}: {err}", path.display()))
-        })?;
+        let source =
+            fs::read_to_string(path).map_err(|err| package_manifest_read_error(path, err))?;
         let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
         Self::parse_json(&source)?.resolve_from_dir(base_dir)
     }
@@ -231,17 +231,6 @@ impl PackageManifest {
                 )));
             }
         }
-        for (index, root) in self.roots.iter().enumerate() {
-            for other in self.roots.iter().skip(index + 1) {
-                if resolved_paths_overlap(root, other) {
-                    return Err(package_manifest_error(format!(
-                        "package source roots {} and {} overlap by manifest-relative path",
-                        root.display(),
-                        other.display()
-                    )));
-                }
-            }
-        }
         if let Some(stdlib_root) = &self.stdlib_root {
             if stdlib_root.as_os_str().is_empty() {
                 return Err(package_manifest_error(
@@ -249,15 +238,6 @@ impl PackageManifest {
                 ));
             }
             validate_package_relative_path("stdlib root", stdlib_root)?;
-            for root in &self.roots {
-                if resolved_paths_overlap(root, stdlib_root) {
-                    return Err(package_manifest_error(format!(
-                        "package stdlib root {} overlaps source root {} by manifest-relative path",
-                        stdlib_root.display(),
-                        root.display()
-                    )));
-                }
-            }
         }
         if self.entry.as_os_str().is_empty() {
             return Err(package_manifest_error(
@@ -266,22 +246,6 @@ impl PackageManifest {
         }
         validate_package_relative_path("entry", &self.entry)?;
         validate_package_entry_source_path("entry", &self.entry)?;
-        let entry_relative_path = self
-            .roots
-            .iter()
-            .find_map(|root| self.entry.strip_prefix(root).ok())
-            .ok_or_else(|| {
-                package_manifest_error(format!(
-                    "package entry {} is not under any declared source root by manifest-relative path; declared source roots: {}",
-                    self.entry.display(),
-                    format_manifest_roots(&self.roots)
-                ))
-            })?;
-        package_source_root_relative_module_path_with_label(
-            "package entry source-root relative path",
-            entry_relative_path,
-        )
-        .map_err(package_manifest_error)?;
         Ok(())
     }
 }
@@ -545,7 +509,7 @@ pub(super) fn package_source_root_relative_module_path_with_label(
         }
         if is_package_module_reserved_segment(segment) {
             return Err(format!(
-                "{label} {} maps to reserved keyword module path segment {:?}; GPU parser module paths require identifier tokens",
+                "{label} {} maps to reserved keyword module path segment {:?}; module paths require identifier tokens",
                 relative_path.display(),
                 segment
             ));
@@ -553,7 +517,7 @@ pub(super) fn package_source_root_relative_module_path_with_label(
         segments.push(segment.to_string());
         if segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT {
             return Err(format!(
-                "{label} {} maps to a module path with more than {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} segments; current GPU resolver slice supports at most {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} path segments",
+                "{label} {} maps to a module path with more than {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} segments; current resolver supports at most {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} path segments",
                 relative_path.display()
             ));
         }
@@ -637,5 +601,20 @@ fn validate_package_entry_source_path(label: &str, path: &Path) -> Result<(), Co
 }
 
 fn package_manifest_error(message: impl Into<String>) -> CompileError {
-    CompileError::GpuFrontend(format!("package manifest: {}", message.into()))
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0053", "package manifest invalid")
+            .with_note(message)
+            .with_note(
+                "package manifests must declare a package name, source roots, and a .lani entry file using normalized package-relative paths",
+            ),
+    )
+}
+
+fn package_manifest_read_error(path: &Path, err: std::io::Error) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0054", "package manifest could not be read")
+            .with_note(format!("path: {}", path.display()))
+            .with_note(format!("I/O error: {err}"))
+            .with_note("pass a readable package manifest JSON file"),
+    )
 }

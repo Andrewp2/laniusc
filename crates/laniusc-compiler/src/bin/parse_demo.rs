@@ -206,7 +206,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    // LLP projected emit stream; for covered valid inputs this should match LL(1).
+    // LLP partial-parse stream; for covered valid inputs this should match LL(1).
     let to_show = res.emit_stream.len().min(32);
     print!("emit_stream[0..{}] = [", to_show);
     for i in 0..to_show {

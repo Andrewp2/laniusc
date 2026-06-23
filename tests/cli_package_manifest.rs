@@ -395,7 +395,7 @@ fn main() {
                 note.contains("declared module prefix `app`")
                     && note.contains("source-root relative module `main`")
                     && note.contains("control-plane loading metadata")
-                    && note.contains("GPU module declarations")
+                    && note.contains("source module declarations")
             })
         }),
         "module/file diagnostic should reject source-root prefixes as semantic identity: {notes:?}"

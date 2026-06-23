@@ -123,9 +123,13 @@ bool same_duplicate_key(uint left, uint right)
 {
     if (!valid_row(left) || !valid_row(right))
         return false;
+    if (generic_param_token[left] == generic_param_token[right])
+        return false;
+    uint owner = generic_param_owner_node[right];
     uint name = generic_param_name_id[right];
-    return name != INVALID &&
-           generic_param_owner_node[left] == generic_param_owner_node[right] &&
+    return owner != INVALID &&
+           name != INVALID &&
+           generic_param_owner_node[left] == owner &&
            generic_param_name_id[left] == name;
 }
 

@@ -9,7 +9,7 @@ pub(in crate::compiler) fn validate_artifact_ref_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact-ref index version {}; expected {}",
             index.version, SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION
         )));
@@ -167,7 +167,7 @@ pub(in crate::compiler) fn validate_artifact_ref_page(
     expected_artifact_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_ARTIFACT_REF_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact-ref page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_ARTIFACT_REF_PAGE_VERSION
         )));
@@ -398,7 +398,7 @@ pub(in crate::compiler) fn validate_job_artifact_input_interface_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job artifact input interface page version {}; expected {}",
             page.version, SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_PAGE_VERSION
         )));

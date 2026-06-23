@@ -1019,19 +1019,33 @@ fn main(limit: i32) {
 
 #[test]
 fn type_checker_rejects_loop_control_without_parser_owned_loop_context() {
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
-fn main() {
+fn main() -> i32 {
     break;
+    return 0;
 }
 "#,
+        "LNC0041",
+        &[
+            "error[LNC0041]: invalid loop control",
+            "break;",
+            "loop control statement is outside a loop",
+        ],
     );
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
-fn main() {
+fn main() -> i32 {
     continue;
+    return 0;
 }
 "#,
+        "LNC0041",
+        &[
+            "error[LNC0041]: invalid loop control",
+            "continue;",
+            "loop control statement is outside a loop",
+        ],
     );
 }
 
@@ -1202,7 +1216,7 @@ fn main() {
 "#,
     );
 
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 struct Pair {
     value: i32,
@@ -1213,6 +1227,12 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0042",
+        &[
+            "error[LNC0042]: invalid member access",
+            "value: bool,",
+            "field name is already declared in this struct",
+        ],
     );
 }
 
@@ -2004,8 +2024,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl PairBox<i32> {",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+            "trait impl target type is not supported here",
+            "this compiler currently supports trait impls for scalar and non-generic nominal targets here",
         ],
     );
 }
@@ -2036,8 +2056,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl Holder<Boxed<i32>> {",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+            "trait impl target type is not supported here",
+            "this compiler currently supports trait impls for scalar and non-generic nominal targets here",
         ],
     );
 }
@@ -2200,7 +2220,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn choose<T>(self, value: T) -> T {",
-            "trait method-level generics are outside the current GPU trait contract records",
+            "trait method-level generics are not supported here",
         ],
     );
 }
@@ -3013,7 +3033,7 @@ fn main() {
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "fn keep<T: First<T> + Second<T> + Third<T> >(value: T) -> T {",
-            "trait bound relation is outside the current GPU predicate row shape",
+            "trait bound relation is not supported here",
         ],
     );
 }
@@ -3399,7 +3419,7 @@ fn main() {{
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "let value: i32 = keep(1);",
-            "trait obligation exceeds the current GPU predicate solver window",
+            "trait obligation exceeds the current trait-solver window",
         ],
     );
 }
@@ -3552,7 +3572,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl Rel3<i32, bool, i32> for i32 {",
-            "trait impl header exceeds the current GPU predicate argument limit",
+            "trait impl header exceeds the current trait argument limit",
         ],
     );
 }
@@ -3586,7 +3606,7 @@ fn main() {
 }
 "#,
     )
-    .expect_err("unresolved second trait impl argument should fail GPU predicate validation");
+    .expect_err("unresolved second trait impl argument should fail trait validation");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -3706,7 +3726,7 @@ fn main() {
 }
 "#,
     )
-    .expect_err("reference trait-bound arguments should fail GPU predicate validation");
+    .expect_err("reference trait-bound arguments should fail trait validation");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -3750,7 +3770,7 @@ fn main() {
 }
 "#,
     )
-    .expect_err("unsupported second trait-bound argument should fail GPU predicate validation");
+    .expect_err("unsupported second trait-bound argument should fail trait validation");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -3793,7 +3813,7 @@ fn main() {
 }
 "#,
     )
-    .expect_err("reference trait-impl arguments should fail GPU predicate validation");
+    .expect_err("reference trait-impl arguments should fail trait validation");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -3881,11 +3901,12 @@ fn main() {
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
             assert!(rendered.contains(
-                "trait impl header uses generic trait arguments outside the current GPU predicate row shape"
+                "trait impl header uses generic trait arguments that are not supported here"
             ));
-            assert!(rendered.contains(
-                "publish trait impl argument rows that carry generic-parameter references"
-            ));
+            assert!(
+                rendered
+                    .contains("use concrete non-nested trait arguments in impl headers for now")
+            );
         }
         other => panic!("expected generic trait impl argument diagnostic, got {other:?}"),
     }
@@ -4555,7 +4576,7 @@ fn main() {
             "error[LNC0008]: unsatisfied trait bound",
             "fn keep<T: Bound<T> >(value: T) -> T {",
             "trait bound target does not resolve to a trait",
-            "name a trait in the bound before relying on GPU predicate solving",
+            "name a trait in the bound before relying on trait solving",
         ],
     );
 }
@@ -4660,7 +4681,7 @@ fn main() {
             assert_eq!(label.length, 6);
             assert_eq!(
                 label.message,
-                "trait bounds on this generic declaration are not enforced by the current GPU predicate solver"
+                "trait bounds on this generic declaration are not enforced by the current trait solver"
             );
         }
         other => panic!("expected declaration-level trait-bound diagnostic, got {other:?}"),
@@ -5413,7 +5434,7 @@ fn main() {
 }
 "#,
     );
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 fn choose(left: [i32; 4], right: [i32; 4]) -> [i32; 4] {
     return left;
@@ -5427,6 +5448,12 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0043",
+        &[
+            "error[LNC0043]: invalid array return",
+            "return choose(left, right);",
+            "array return value is not valid in this context",
+        ],
     );
 }
 
@@ -5494,7 +5521,7 @@ fn main() {
 }
 "#,
     );
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 struct Pair {
     left: i32,
@@ -5510,14 +5537,26 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0042",
+        &[
+            "error[LNC0042]: invalid member access",
+            "return self.right;",
+            "this value does not have the requested field",
+        ],
     );
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 fn main() {
     let value: i32 = 1;
     return value.field;
 }
 "#,
+        "LNC0042",
+        &[
+            "error[LNC0042]: invalid member access",
+            "return value.field;",
+            "this value does not have the requested field",
+        ],
     );
 }
 

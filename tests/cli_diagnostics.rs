@@ -116,6 +116,15 @@ fn diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_bo
             && code["lsp_severity"] == 1
     }));
     assert!(codes.iter().any(|code| {
+        code["code"] == "LNC0067"
+            && code["title"] == "CLI operation failed"
+            && code["category"] == "tooling"
+            && code["primary_label_policy"] == "none"
+            && code["default_severity"] == "error"
+            && code["lsp_source"] == "laniusc"
+            && code["lsp_severity"] == 1
+    }));
+    assert!(codes.iter().any(|code| {
         code["code"] == "LNC0022"
             && code["title"] == "linked-output contract descriptor"
             && code["category"] == "native codegen"
@@ -1503,6 +1512,12 @@ fn cli_diagnostics_categories_groups_codes_by_stable_category_without_compiling_
         code["code"] == "LNC0035"
             && code["title"] == "output stream write failed"
             && code["primary_label_policy"] == "none"
+    }));
+    assert!(tooling_codes.iter().any(|code| {
+        code["code"] == "LNC0067"
+            && code["title"] == "CLI operation failed"
+            && code["primary_label_policy"] == "none"
+            && code["explain_command"] == "laniusc diagnostics explain LNC0067"
     }));
 
     let native_codegen = categories
@@ -3581,7 +3596,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
 
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("runtime API output should be JSON");
-    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["schema_version"], 2);
     assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-api");
     assert_eq!(
         document["registry_schema_version"],
@@ -5837,6 +5852,82 @@ fn cli_check_missing_input_can_render_json_diagnostic_without_loading_source() {
 }
 
 #[test]
+fn cli_check_missing_source_file_can_render_json_input_read_diagnostic() {
+    let missing = common::temp_artifact_path(
+        "laniusc_cli_diagnostics",
+        "check_missing_source",
+        Some("lani"),
+    );
+    let _ = fs::remove_file(&missing);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("check")
+        .arg(&missing)
+        .arg("--diagnostic-format=json");
+    let output = command_output_with_timeout(
+        "laniusc check JSON missing source file diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc check");
+
+    assert!(
+        !output.status.success(),
+        "check mode with a missing source file should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "missing source input should not write stdout bytes\nstdout bytes: {}",
+        output.stdout.len()
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("laniusc:"),
+        "JSON diagnostics should not include the text CLI prefix\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("frontend error"),
+        "missing source input should not expose the raw frontend error wrapper\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0040");
+    assert_eq!(diagnostic["title"], "input read failed");
+    assert_eq!(diagnostic["category"], "tooling");
+    assert_eq!(diagnostic["message"], "input read failed");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        missing.display().to_string()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "could not read this source file"
+    );
+    let notes = diagnostic["notes"]
+        .as_array()
+        .expect("missing source input diagnostic should include notes");
+    assert!(
+        notes.iter().any(|note| note
+            .as_str()
+            .expect("diagnostic note should be a string")
+            .contains("source input path:")),
+        "diagnostic notes should include the source input path\nstderr:\n{stderr}"
+    );
+    assert!(
+        notes.iter().any(|note| note
+            .as_str()
+            .expect("diagnostic note should be a string")
+            .contains("I/O error kind:")),
+        "diagnostic notes should include the I/O error kind\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn cli_source_pack_manifest_conflict_can_render_json_incompatible_options_without_loading_inputs() {
     let mut command = Command::new(laniusc_bin());
     command
@@ -5996,6 +6087,26 @@ fn cli_source_pack_mode_conflicts_can_render_json_without_loading_inputs() {
             "--source-pack-build-prepare-only",
             "metadata-free source-pack compilation",
             "add --source-pack-build-from-metadata",
+        ),
+        (
+            "metadata max libraries without metadata mode",
+            vec![
+                "--diagnostic-format=json",
+                "--source-pack-metadata-max-libraries=4",
+            ],
+            "--source-pack-metadata-max-libraries",
+            "metadata-free source-pack modes",
+            "only applies with --source-pack-metadata-only or --source-pack-prepare-only",
+        ),
+        (
+            "metadata max source files without metadata mode",
+            vec![
+                "--diagnostic-format=json",
+                "--source-pack-metadata-max-source-files=4",
+            ],
+            "--source-pack-metadata-max-source-files",
+            "metadata-free source-pack modes",
+            "only applies with --source-pack-metadata-only or --source-pack-prepare-only",
         ),
     ] {
         let mut command = Command::new(laniusc_bin());
@@ -6329,6 +6440,81 @@ fn cli_missing_public_path_values_can_render_json_diagnostics_without_loading_in
 }
 
 #[test]
+fn cli_source_root_file_path_renders_structured_json_diagnostic() {
+    let root = common::temp_artifact_path("laniusc_cli_diagnostics", "source_root_file", None);
+    fs::create_dir_all(&root).expect("create source-root diagnostic temp root");
+    let source_root = root.join("not_a_dir");
+    fs::write(&source_root, "").expect("write non-directory source root path");
+    let entry = root.join("main.lani");
+    fs::write(&entry, "module app::main;\nfn main() { return 0; }\n")
+        .expect("write entry source");
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--diagnostic-format=json")
+        .arg("--source-root")
+        .arg(&source_root)
+        .arg(&entry);
+    let output = command_output_with_timeout(
+        "laniusc --source-root file path JSON diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc source-root file diagnostic");
+
+    assert!(
+        !output.status.success(),
+        "source-root file path should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "source-root path validation should not write stdout\nstdout bytes: {}",
+        output.stdout.len()
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("laniusc:"),
+        "JSON diagnostics should not include the text CLI prefix\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0040");
+    assert_eq!(diagnostic["title"], "input read failed");
+    assert_eq!(diagnostic["message"], "input read failed");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        source_root.display().to_string()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "source root path cannot be used"
+    );
+    let notes = diagnostic["notes"]
+        .as_array()
+        .expect("source-root path diagnostic should include notes");
+    assert!(
+        notes.iter().any(|note| note
+            .as_str()
+            .expect("diagnostic note should be a string")
+            .contains("source root:")),
+        "diagnostic notes should identify the source root\nstderr:\n{stderr}"
+    );
+    assert!(
+        notes.iter().any(|note| note
+            .as_str()
+            .expect("diagnostic note should be a string")
+            .contains("is not a directory")),
+        "diagnostic notes should explain the directory requirement\nstderr:\n{stderr}"
+    );
+
+    fs::remove_dir_all(&root).expect("remove source-root diagnostic temp root");
+}
+
+#[test]
 fn cli_missing_public_limit_values_can_render_json_diagnostics_without_loading_inputs() {
     for (label, option, args) in [
         (
@@ -6419,10 +6605,12 @@ fn cli_missing_public_limit_values_can_render_json_diagnostics_without_loading_i
 
 #[test]
 fn cli_invalid_public_limit_values_can_render_json_diagnostics_without_loading_inputs() {
-    for (label, option, args) in [
+    for (label, option, rejected_value, accepted_value, args) in [
         (
             "metadata max libraries",
             "--source-pack-metadata-max-libraries",
+            "not-a-number",
+            "non-negative integer",
             vec![
                 "--diagnostic-format=json",
                 "--source-pack-metadata-max-libraries",
@@ -6430,8 +6618,42 @@ fn cli_invalid_public_limit_values_can_render_json_diagnostics_without_loading_i
             ],
         ),
         (
+            "zero metadata max libraries",
+            "--source-pack-metadata-max-libraries",
+            "0",
+            "greater than zero",
+            vec![
+                "--diagnostic-format=json",
+                "--source-pack-metadata-only",
+                "--source-pack-metadata-max-libraries=0",
+            ],
+        ),
+        (
+            "zero metadata max source files",
+            "--source-pack-metadata-max-source-files",
+            "0",
+            "greater than zero",
+            vec![
+                "--diagnostic-format=json",
+                "--source-pack-metadata-only",
+                "--source-pack-metadata-max-source-files=0",
+            ],
+        ),
+        (
+            "zero build max items",
+            "--source-pack-build-max-items",
+            "0",
+            "greater than zero",
+            vec![
+                "--diagnostic-format=json",
+                "--source-pack-build-max-items=0",
+            ],
+        ),
+        (
             "max ready items",
             "--source-pack-max-ready-items",
+            "not-a-number",
+            "non-negative integer",
             vec![
                 "--diagnostic-format=json",
                 "--source-pack-max-ready-items=not-a-number",
@@ -6490,14 +6712,14 @@ fn cli_invalid_public_limit_values_can_render_json_diagnostics_without_loading_i
             notes.iter().any(|note| note
                 .as_str()
                 .expect("diagnostic note should be a string")
-                .contains("not-a-number")),
+                .contains(rejected_value)),
             "diagnostic notes should include the rejected value\nstderr:\n{stderr}"
         );
         assert!(
             notes.iter().any(|note| note
                 .as_str()
                 .expect("diagnostic note should be a string")
-                .contains("non-negative integer")),
+                .contains(accepted_value)),
             "diagnostic notes should describe the accepted value class\nstderr:\n{stderr}"
         );
     }
@@ -7312,7 +7534,7 @@ fn cli_no_run_diagnostic_help_advertises_machine_readable_invocation_diagnostics
                 "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] runtime-service-apis SERVICE",
                 "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] runtime-services",
                 "Usage: laniusc diagnostics [--diagnostic-format text|json|lsp-json] source-pack-progress --source-pack-artifact-root dir [--emit wasm|x86_64]",
-                "Usage: laniusc doctor [--diagnostic-format text|json|lsp-json]",
+                "Usage: laniusc doctor [--skip-slangc-probe] [--diagnostic-format text|json|lsp-json]",
             ][..],
         ),
         (
@@ -7604,7 +7826,7 @@ fn diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope() {
             Some("abcdef".to_string()),
             "invalid syntax here",
         ))
-        .with_note("parser rejected the token stream");
+        .with_note("the source could not be parsed");
 
     let json = diagnostic
         .render_lsp_json_pretty()
@@ -7631,10 +7853,7 @@ fn diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope() {
         value["data"]["explain_command"],
         "laniusc diagnostics explain LNC0016"
     );
-    assert_eq!(
-        value["data"]["notes"][0],
-        "parser rejected the token stream"
-    );
+    assert_eq!(value["data"]["notes"][0], "the source could not be parsed");
     assert_eq!(value["data"]["primary_label"]["path"], "app.lani");
     assert_eq!(value["data"]["primary_label"]["line"], 2);
     assert_eq!(value["data"]["primary_label"]["column"], 3);
@@ -8245,7 +8464,7 @@ fn cli_check_call_arity_mismatch_json_reports_public_call_context_without_stdout
     assert_eq!(primary_label["line"], 6);
     assert_eq!(
         primary_label["message"],
-        "call does not match a resolved function or method"
+        "call has the wrong number of arguments"
     );
     assert!(
         primary_label["source_line"]
@@ -8371,8 +8590,8 @@ fn cli_single_file_syntax_error_renders_stable_diagnostic() {
         "stderr should include a source caret\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("invalid syntax here"),
-        "stderr should include the primary parser label\nstderr:\n{stderr}"
+        stderr.contains("expected function name, found keyword `fn`"),
+        "stderr should explain the expected function name\nstderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("GPU syntax error"),
@@ -8437,7 +8656,7 @@ fn cli_single_file_syntax_error_can_render_json_diagnostic() {
     );
     assert_eq!(
         diagnostic["primary_label"]["message"],
-        "invalid syntax here"
+        "expected function name, found keyword `fn`"
     );
     let byte_start = diagnostic["primary_label"]["byte_start"]
         .as_u64()
@@ -8456,6 +8675,324 @@ fn cli_single_file_syntax_error_can_render_json_diagnostic() {
             .bytes()
             .all(|byte| byte != b'\n'),
         "byte span should identify source on the primary label line"
+    );
+    assert_eq!(
+        &source[byte_start..byte_end],
+        "fn",
+        "byte span should identify the unexpected keyword"
+    );
+}
+
+#[test]
+fn cli_single_file_missing_return_semicolon_can_render_json_diagnostic() {
+    let source = "fn main() { return 0 }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "syntax_missing_return_semicolon_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--diagnostic-format=json")
+        .arg("--emit")
+        .arg("x86_64")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc x86_64 JSON missing return semicolon diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc");
+
+    assert!(
+        !output.status.success(),
+        "missing return semicolon should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here"),
+        "missing-semicolon diagnostic should not expose compiler internals or generic fallback\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let close_brace = source.find('}').expect("source should contain }");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "syntax error");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 1);
+    assert_eq!(diagnostic["primary_label"]["column"], close_brace + 1);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], close_brace);
+    assert_eq!(diagnostic["primary_label"]["byte_end"], close_brace + 1);
+    assert_eq!(
+        diagnostic["primary_label"]["source_line"],
+        source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected ';' after return statement"
+    );
+}
+
+#[test]
+fn cli_single_file_missing_assignment_expression_can_render_json_diagnostic() {
+    let source = "fn main() { let x = ; return 0; }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "syntax_missing_assignment_expression_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--diagnostic-format=json")
+        .arg("--emit")
+        .arg("x86_64")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc x86_64 JSON missing assignment expression diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc");
+
+    assert!(
+        !output.status.success(),
+        "missing assignment expression should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here"),
+        "missing-expression diagnostic should not expose compiler internals or generic fallback\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let semicolon = source.find(';').expect("source should contain ;");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "syntax error");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 1);
+    assert_eq!(diagnostic["primary_label"]["column"], semicolon + 1);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], semicolon);
+    assert_eq!(diagnostic["primary_label"]["byte_end"], semicolon + 1);
+    assert_eq!(
+        diagnostic["primary_label"]["source_line"],
+        source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected expression after `=`"
+    );
+}
+
+#[test]
+fn cli_single_file_missing_if_block_can_render_json_diagnostic() {
+    let source = "fn main() { if (true) return 0; }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "syntax_missing_if_block_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--diagnostic-format=json")
+        .arg("--emit")
+        .arg("x86_64")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc x86_64 JSON missing if block diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc");
+
+    assert!(
+        !output.status.success(),
+        "missing if block should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here"),
+        "missing-if-block diagnostic should not expose compiler internals or generic fallback\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let return_start = source.find("return").expect("source should contain return");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "syntax error");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 1);
+    assert_eq!(diagnostic["primary_label"]["column"], return_start + 1);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], return_start);
+    assert_eq!(
+        diagnostic["primary_label"]["byte_end"],
+        return_start + "return".len()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["source_line"],
+        source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected `{` after if condition, found keyword `return`"
+    );
+}
+
+#[test]
+fn cli_single_file_parameter_list_error_uses_expected_found_diagnostic() {
+    let source = "fn main( { return 0; }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "syntax_parameter_list_expected_found_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--diagnostic-format=json")
+        .arg("--emit")
+        .arg("x86_64")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc x86_64 JSON parameter list expected/found diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc");
+
+    assert!(
+        !output.status.success(),
+        "malformed parameter list should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here")
+            && !stderr.contains("FnBlockLBrace"),
+        "expected/found diagnostic should not expose parser internals or fallback text\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let brace = source.find('{').expect("source should contain {");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "syntax error");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 1);
+    assert_eq!(diagnostic["primary_label"]["column"], brace + 1);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], brace);
+    assert_eq!(diagnostic["primary_label"]["byte_end"], brace + 1);
+    assert_eq!(
+        diagnostic["primary_label"]["source_line"],
+        source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected one of `)`, identifier, `&`, or keyword `self`, found `{`"
+    );
+}
+
+#[test]
+fn cli_single_file_missing_import_path_can_render_json_diagnostic() {
+    let source = "module app::main;\nimport ;\nfn main() { return 0; }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "syntax_missing_import_path_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("check")
+        .arg("--diagnostic-format=json")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc check JSON missing import path diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc check");
+
+    assert!(
+        !output.status.success(),
+        "missing import path should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here"),
+        "missing-import-path diagnostic should not expose compiler internals or generic fallback\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let semicolon = source
+        .find("import ;")
+        .expect("source should contain import")
+        + "import ".len();
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "syntax error");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 2);
+    assert_eq!(diagnostic["primary_label"]["column"], 8);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], semicolon);
+    assert_eq!(diagnostic["primary_label"]["byte_end"], semicolon + 1);
+    assert_eq!(diagnostic["primary_label"]["source_line"], "import ;");
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected module path after `import`"
     );
 }
 
@@ -8508,6 +9045,77 @@ fn cli_check_syntax_error_can_render_json_diagnostic_without_stdout() {
     assert_eq!(
         diagnostic["primary_label"]["source_line"],
         source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "expected function name, found keyword `fn`"
+    );
+}
+
+#[test]
+fn cli_check_unknown_token_can_render_json_diagnostic_at_token_span() {
+    let source = "fn main() { let x = @; }\n";
+    let artifact = common::TempArtifact::new(
+        "laniusc_cli_diagnostics",
+        "check_unknown_token_json",
+        Some("lani"),
+    );
+    artifact.write_str(source);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("check")
+        .arg("--diagnostic-format=json")
+        .arg(artifact.path());
+    let output = command_output_with_timeout(
+        "laniusc check JSON unknown token diagnostic",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc");
+
+    assert!(
+        !output.status.success(),
+        "unknown token should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "check should not write target bytes when diagnostics fail\nstdout bytes: {}",
+        output.stdout.len()
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GPU LL(1)")
+            && !stderr.contains("lex source")
+            && !stderr.contains("frontend error")
+            && !stderr.contains("invalid syntax here"),
+        "unknown-token diagnostic should not expose parser or frontend internals\nstderr:\n{stderr}"
+    );
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
+    let at = source.find('@').expect("source should contain @");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["code"], "LNC0016");
+    assert_eq!(diagnostic["title"], "syntax error");
+    assert_eq!(diagnostic["message"], "unknown start of token: `@`");
+    assert_eq!(
+        diagnostic["primary_label"]["path"],
+        artifact.path().display().to_string()
+    );
+    assert_eq!(diagnostic["primary_label"]["line"], 1);
+    assert_eq!(diagnostic["primary_label"]["column"], at + 1);
+    assert_eq!(diagnostic["primary_label"]["byte_start"], at);
+    assert_eq!(diagnostic["primary_label"]["byte_end"], at + 1);
+    assert_eq!(
+        diagnostic["primary_label"]["source_line"],
+        source.trim_end()
+    );
+    assert_eq!(
+        diagnostic["primary_label"]["message"],
+        "unknown start of token: `@`"
     );
 }
 
@@ -8580,7 +9188,7 @@ fn cli_check_syntax_error_can_render_lsp_json_diagnostic_without_stdout() {
     assert_eq!(diagnostic["data"]["primary_label"]["line"], 1);
     assert_eq!(
         diagnostic["data"]["primary_label"]["message"],
-        "invalid syntax here"
+        "expected function name, found keyword `fn`"
     );
     assert!(diagnostic["range"]["start"]["line"].is_number());
     assert!(diagnostic["range"]["start"]["character"].is_number());
@@ -8757,8 +9365,8 @@ fn cli_source_root_import_syntax_error_renders_stable_file_diagnostic() {
         "stderr should include a source caret\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("invalid syntax here"),
-        "stderr should include the primary parser label\nstderr:\n{stderr}"
+        stderr.contains("expected function name, found keyword `fn`"),
+        "stderr should explain the expected function name\nstderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("GPU syntax error"),

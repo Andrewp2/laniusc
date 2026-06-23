@@ -395,13 +395,19 @@ uint predicate_list_for_direct_bound(uint node)
     if (kind0 != PROD_TYPE_PARAM_BOUND_MORE)
         return INVALID;
 
-    uint parent1 = parent_node(parent0);
-    if (valid_node(parent1) && node_kind[parent1] == PROD_TYPE_PARAM_BOUND_LIST)
-        return parent1;
+    uint cursor = parent_node(parent0);
+    [loop]
+    while (valid_node(cursor) && node_kind[cursor] == PROD_TYPE_PARAM_BOUND_MORE)
+        cursor = parent_node(cursor);
 
-    // Multiple `+` bounds are still a parser-relation TODO. Keep the supported
-    // alpha slice fail-closed instead of walking an arbitrary ancestor chain.
-    return INVALID;
+    if (!valid_node(cursor) || node_kind[cursor] != PROD_TYPE_PARAM_BOUND_LIST)
+        return INVALID;
+
+    uint owner = parent_node(cursor);
+    if (valid_node(owner) && node_kind[owner] == PROD_TYPE_PARAM_BOUND)
+        return INVALID;
+
+    return cursor;
 }
 
 [noinline]
@@ -415,7 +421,18 @@ bool unsupported_direct_bound_list_relation(uint node)
         return false;
 
     uint parent1 = parent_node(parent0);
-    return valid_node(parent1) && node_kind[parent1] == PROD_TYPE_PARAM_BOUND_MORE;
+    if (!valid_node(parent1) || node_kind[parent1] != PROD_TYPE_PARAM_BOUND_MORE)
+        return false;
+
+    uint cursor = parent1;
+    [loop]
+    while (valid_node(cursor) && node_kind[cursor] == PROD_TYPE_PARAM_BOUND_MORE)
+        cursor = parent_node(cursor);
+
+    uint owner = valid_node(cursor) && node_kind[cursor] == PROD_TYPE_PARAM_BOUND_LIST
+        ? parent_node(cursor)
+        : INVALID;
+    return valid_node(owner) && node_kind[owner] == PROD_TYPE_PARAM_BOUND;
 }
 
 [noinline]

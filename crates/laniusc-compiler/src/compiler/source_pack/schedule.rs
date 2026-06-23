@@ -39,17 +39,19 @@ where
             dependency_library_ids: declared_dependency_library_ids,
         } = library;
         if partition_source_file_count == 0 {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} has no source files"
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library_id),
+                "library declares no source files",
+            ));
         }
         if store
             .library_frontend_job_locator_page_path_for_target(target, library_id)
             .is_file()
         {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} appears more than once"
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library_id),
+                "library id appears more than once",
+            ));
         }
         let (dependency_library_count, dependency_page_count) = store_partition_dependency_ids(
             store,
@@ -58,6 +60,7 @@ where
             library_id,
             dependency_library_count,
             declared_dependency_library_ids,
+            DependencyLibraryIdErrorSource::ExplicitManifest,
         )?;
 
         let first_source_index = source_file_count;
@@ -407,8 +410,8 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
     max_new_libraries: usize,
 ) -> Result<FilesystemLibrarySchedulePrepareStepResult, CompileError> {
     if max_new_libraries == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack schedule chunk max_new_libraries must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack schedule chunk max_new_libraries must be greater than zero",
         ));
     }
     let limits = limits.normalized();

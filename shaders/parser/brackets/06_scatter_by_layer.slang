@@ -11,6 +11,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> sc_stream;
+StructuredBuffer<uint> partial_parse_status; // [4]=actual stack-change count
 StructuredBuffer<uint> layer;
 StructuredBuffer<uint> off_push;
 StructuredBuffer<uint> off_pop;
@@ -25,7 +26,8 @@ RWStructuredBuffer<uint> slot_for_index;  // len = n_sc, absolute slot in layer 
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint i = tid.x;
-    if (i >= gParams.n_sc)
+    uint n = min(gParams.n_sc, partial_parse_status[4u]);
+    if (i >= n)
         return;
 
     uint l = layer[i];

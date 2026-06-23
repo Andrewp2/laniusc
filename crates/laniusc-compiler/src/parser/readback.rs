@@ -3980,7 +3980,7 @@ impl DecodedParserReadbacks {
             &decoded.hir_semantic_depth,
             &decoded.hir_semantic_child_index,
         )?;
-        // This readback path decodes the adjacent-pair projected tree. It is a
+        // This readback path decodes the adjacent-pair partial-parse tree. It is a
         // structural grammar artifact, not the complete LL(1) semantic tree, so
         // full HIR record validation belongs to the resident parse readback.
         Ok(decoded)

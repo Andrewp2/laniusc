@@ -283,7 +283,7 @@ pub(super) fn fill_repeated_u32_words_gpu(
         return Ok(());
     }
     if pattern.len() > 4 {
-        bail!("x86 GPU fill supports repeated patterns up to four u32 words");
+        bail!("x86 fill supports repeated patterns up to four u32 words");
     }
 
     let words = pattern.len().saturating_mul(repeats).max(1);
@@ -448,7 +448,7 @@ pub(super) fn push_allocation_error_scope(device: &wgpu::Device) -> wgpu::ErrorS
 /// Closes an x86 allocation error scope and turns allocation failure into `Result`.
 pub(super) fn pop_allocation_error_scope(scope: wgpu::ErrorScopeGuard, stage: &str) -> Result<()> {
     if let Some(err) = pollster::block_on(scope.pop()) {
-        bail!("GPU x86 buffer allocation failed during {stage}: {err}");
+        bail!("x86 code generation could not allocate buffers during {stage}: {err}");
     }
     Ok(())
 }
@@ -1025,7 +1025,7 @@ pub(super) fn read_x86_output(
     }
     if mode != 1 || len > recorded.output_capacity {
         return Err(anyhow::anyhow!(
-            "GPU x86 emitter produced {} bytes for capacity {}",
+            "x86 emitter produced {} bytes for capacity {}",
             len,
             recorded.output_capacity
         ));
@@ -1049,9 +1049,7 @@ pub(super) fn read_x86_output(
         }
         return read_exact_x86_output_bytes(device, queue, recorded, len);
     }
-    Err(anyhow::anyhow!(
-        "GPU x86 emitter output bytes were unavailable"
-    ))
+    Err(anyhow::anyhow!("x86 emitter output bytes were unavailable"))
 }
 
 fn x86_error_name(error_code: usize, error_detail: usize) -> &'static str {

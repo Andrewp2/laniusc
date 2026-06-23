@@ -323,14 +323,14 @@ fn parse_resident_source_pack(sources: &[&str]) -> DecodedParserHirItemReadbacks
                 |device, _, buffers, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
                     let tree_capacity = parser
-                        .read_resident_projected_tree_capacity(
+                        .read_resident_partial_parse_tree_capacity(
                             token_capacity,
                             &buffers.tokens_out,
                             &buffers.token_count,
                             Some(&buffers.token_file_id),
                             &tables,
                         )
-                        .expect("read projected resident tree capacity");
+                        .expect("read partial-parse resident tree capacity");
                     let (check, readbacks) = parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
                             encoder,
@@ -398,14 +398,14 @@ fn parse_resident_source_pack_fn_returns(
                     |device, _, buffers, token_count, encoder, mut timer| {
                         let token_capacity = token_count.max(1);
                         let tree_capacity = parser
-                            .read_resident_projected_tree_capacity(
+                            .read_resident_partial_parse_tree_capacity(
                                 token_capacity,
                                 &buffers.tokens_out,
                                 &buffers.token_count,
                                 Some(&buffers.token_file_id),
                                 &tables,
                             )
-                            .expect("read projected resident tree capacity");
+                            .expect("read partial-parse resident tree capacity");
                         let (check, readbacks) = parser
                             .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
                                 encoder,

@@ -2,7 +2,12 @@ use std::path::Path;
 
 use crate::{
     cli::{
-        common::{CliError, package_compile_cli_error, package_metadata_cli_error},
+        common::{
+            CliError,
+            missing_cli_argument_error,
+            package_compile_cli_error,
+            package_metadata_cli_error,
+        },
         output::CliEmission,
         source_pack::{self, Options},
     },
@@ -98,7 +103,6 @@ pub(super) fn prepare_manifest_metadata_only(
         "--package-manifest",
         manifest_path,
     )
-    .map_err(CliError::from)
 }
 
 /// Prepares one package-lockfile metadata chunk for source-pack execution.
@@ -120,12 +124,14 @@ pub(super) fn prepare_lockfile_metadata_only(
         "--package-lockfile",
         lockfile_path,
     )
-    .map_err(CliError::from)
 }
 
 fn ensure_package_metadata_artifact_root(source_pack_options: &Options) -> Result<(), CliError> {
     if source_pack_options.artifact_root.is_some() {
         return Ok(());
     }
-    Err("--source-pack-metadata-only requires --source-pack-artifact-root".into())
+    Err(missing_cli_argument_error(
+        "laniusc source-pack",
+        "--source-pack-artifact-root path",
+    ))
 }

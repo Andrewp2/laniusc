@@ -5,7 +5,7 @@ pub(in crate::compiler) fn validate_link_execution_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution index version {}; expected {}",
             index.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION
         )));
@@ -208,7 +208,7 @@ pub(in crate::compiler) fn validate_link_execution_page_with_mode(
     mode: LinkExecutionPageValidationMode,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution page version {}; expected {}",
             page.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION
         )));
@@ -1893,7 +1893,7 @@ pub(in crate::compiler) fn validate_link_execution_artifact_refs(
         }
         if artifact.artifact_index != artifact.producing_job_index {
             return Err(library_partition_contract_error(format!(
-                "{label} artifact index {} records producer job {}; link input artifact refs must use the dense producer job as artifact index so descriptor/link replay cannot overstate stale GPU-owned {:?} evidence",
+                "{label} artifact index {} records producer job {}; link input artifact refs must use the dense producer job as artifact index so descriptor/link replay cannot overstate stale producer-owned {:?} evidence",
                 artifact.artifact_index, artifact.producing_job_index, expected_kind
             )));
         }
@@ -2015,7 +2015,7 @@ pub(in crate::compiler) fn validate_link_execution_interface_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution interface page version {}; expected {}",
             page.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_PAGE_VERSION
         )));
@@ -2102,7 +2102,7 @@ pub(in crate::compiler) fn validate_link_execution_object_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution object page version {}; expected {}",
             page.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION
         )));
@@ -2189,7 +2189,7 @@ pub(in crate::compiler) fn validate_link_execution_partial_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link execution partial page version {}; expected {}",
             page.version, SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION
         )));

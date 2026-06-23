@@ -140,7 +140,7 @@ pub struct ParserBuffers {
     pub pack_emit_prefix_b: LaniusBuffer<u32>,
     pub pack_offset_scan_steps: Vec<PackOffsetScanStep>,
     pub pack_total_reduce_steps: Vec<PackTotalReduceStep>,
-    pub projected_status: LaniusBuffer<u32>,
+    pub partial_parse_status: LaniusBuffer<u32>,
     pub tables_blob: LaniusBuffer<u32>,
     pub out_sc: LaniusBuffer<u32>,
     pub out_emit: LaniusBuffer<u32>,

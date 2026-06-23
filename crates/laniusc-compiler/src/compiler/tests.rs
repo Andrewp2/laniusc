@@ -1,5 +1,125 @@
 use super::*;
 
+#[test]
+fn compile_error_fallback_display_uses_public_diagnostic() {
+    let cases = [
+        (
+            CompileError::GpuFrontend("failed to load source".into()),
+            "preparing frontend work",
+            "failed to load source",
+            "frontend error:",
+        ),
+        (
+            CompileError::GpuSyntax("unexpected token".into()),
+            "parsing",
+            "unexpected token",
+            "syntax error:",
+        ),
+        (
+            CompileError::GpuTypeCheck("unknown type".into()),
+            "type checking",
+            "unknown type",
+            "type check error:",
+        ),
+        (
+            CompileError::GpuCodegen("unsupported target".into()),
+            "generating target output",
+            "unsupported target",
+            "code generation error:",
+        ),
+    ];
+
+    for (error, phase_note, raw_detail, legacy_prefix) in cases {
+        let rendered = error.to_string();
+        assert!(rendered.contains("error[LNC0057]: compiler execution failed"));
+        assert!(
+            rendered.contains(phase_note),
+            "fallback display should identify the public compiler phase: {rendered}"
+        );
+        assert!(!rendered.contains("GPU"));
+        assert!(
+            !rendered.contains(raw_detail),
+            "fallback display should not expose legacy raw detail: {rendered}"
+        );
+        assert!(
+            !rendered.contains(legacy_prefix),
+            "fallback display should not use legacy prefixes: {rendered}"
+        );
+    }
+}
+
+#[test]
+fn compile_error_public_diagnostic_lowers_raw_phase_errors() {
+    let cases = [
+        (
+            CompileError::GpuFrontend("GPU LL(1) parser rejected token: 4".into()),
+            "preparing frontend work",
+        ),
+        (
+            CompileError::GpuSyntax("GPU syntax error: status token 7".into()),
+            "parsing",
+        ),
+        (
+            CompileError::GpuTypeCheck("typecheck.modules.projected_refs failed".into()),
+            "type checking",
+        ),
+        (
+            CompileError::GpuCodegen("source-pack file 3 did not map".into()),
+            "generating target output",
+        ),
+    ];
+
+    for (error, phase_note) in cases {
+        let diagnostic = error.into_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0057");
+        assert_eq!(diagnostic.title, "compiler execution failed");
+        assert_eq!(diagnostic.category, "tooling");
+        assert_eq!(diagnostic.message, "compiler execution failed");
+        assert!(diagnostic.primary_label.is_none());
+        assert!(
+            diagnostic
+                .notes
+                .iter()
+                .any(|note| note.contains(phase_note)),
+            "fallback diagnostic should identify the public compiler phase: {diagnostic:?}"
+        );
+
+        let rendered = diagnostic.render();
+        assert!(rendered.contains("error[LNC0057]: compiler execution failed"));
+        assert!(!rendered.contains("GPU"));
+        assert!(!rendered.contains("source-pack file 3"));
+        assert!(!rendered.contains("projected_refs"));
+        assert!(!rendered.contains("status token"));
+    }
+}
+
+#[test]
+fn compiler_execution_failed_error_reports_operation_without_raw_detail() {
+    let error = compiler_execution_failed_error(
+        "the compiler stopped while initializing GPU frontend pipelines",
+        "initialize parser",
+        "wgpu pipeline parser.ll1.accept status readback failed",
+    );
+
+    let diagnostic = error.into_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0057");
+    assert_eq!(diagnostic.message, "compiler execution failed");
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "operation: initialize parser"),
+        "fallback diagnostic should identify the public operation: {diagnostic:?}"
+    );
+
+    let rendered = diagnostic.render();
+    assert!(rendered.contains("error[LNC0057]: compiler execution failed"));
+    assert!(rendered.contains("operation: initialize parser"));
+    assert!(!rendered.contains("wgpu pipeline"));
+    assert!(!rendered.contains("parser.ll1.accept"));
+    assert!(!rendered.contains("readback failed"));
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct WorkQueueProgressPageModel {
     ready: std::collections::BTreeSet<usize>,
@@ -113,12 +233,25 @@ fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
         &too_many_files,
     )
     .expect_err("too many in-memory source files should be rejected");
-    assert!(
-        too_many_files_err
-            .to_string()
-            .contains("persisted source-pack descriptor work queues"),
-        "unexpected too-many-files error: {too_many_files_err}"
+    let too_many_files_diagnostic = match too_many_files_err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured too-many-files diagnostic, got {other:?}"),
+    };
+    assert_eq!(too_many_files_diagnostic.code, "LNC0048");
+    assert_eq!(
+        too_many_files_diagnostic.message,
+        "source-pack input limit exceeded"
     );
+    assert!(
+        too_many_files_diagnostic.primary_label.is_none(),
+        "file-count limit errors should not invent a source span"
+    );
+    let rendered = too_many_files_diagnostic.render();
+    assert!(rendered.contains("operation: test in-memory source pack"));
+    assert!(rendered.contains("received"));
+    assert!(rendered.contains("bounded codegen-unit source-file limit"));
+    assert!(rendered.contains("persisted source-pack descriptor work queues"));
+    assert!(!rendered.contains("frontend error:"));
 
     let oversized_file = "x".repeat(limits.max_source_bytes + 1);
     let oversized_file_err = validate_in_memory_source_pack_fits_default_codegen_unit(
@@ -126,12 +259,24 @@ fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
         &[oversized_file.as_str()],
     )
     .expect_err("oversized in-memory source file should be rejected");
-    assert!(
-        oversized_file_err
-            .to_string()
-            .contains("bounded codegen-unit limit"),
-        "unexpected oversized-file error: {oversized_file_err}"
+    let oversized_file_diagnostic = match oversized_file_err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured oversized-file diagnostic, got {other:?}"),
+    };
+    assert_eq!(oversized_file_diagnostic.code, "LNC0048");
+    let label = oversized_file_diagnostic
+        .primary_label
+        .as_ref()
+        .expect("oversized-file diagnostic should identify the in-memory source index");
+    assert_eq!(label.path, PathBuf::from("<source pack file 0>"));
+    assert_eq!(
+        label.message,
+        "this in-memory source file exceeds the bounded codegen-unit byte limit"
     );
+    let rendered = oversized_file_diagnostic.render();
+    assert!(rendered.contains("source file 0 has"));
+    assert!(rendered.contains("bounded codegen-unit byte limit"));
+    assert!(!rendered.contains("frontend error:"));
 
     let half_plus_one = limits.max_source_bytes / 2 + 1;
     let first = "x".repeat(half_plus_one);
@@ -141,18 +286,19 @@ fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
         &[first.as_str(), second.as_str()],
     )
     .expect_err("total in-memory source bytes above the default codegen unit should be rejected");
+    let oversized_total_diagnostic = match oversized_total_err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured oversized-total diagnostic, got {other:?}"),
+    };
+    assert_eq!(oversized_total_diagnostic.code, "LNC0048");
     assert!(
-        oversized_total_err
-            .to_string()
-            .contains("total in-memory source bytes"),
-        "unexpected oversized-total error: {oversized_total_err}"
+        oversized_total_diagnostic.primary_label.is_none(),
+        "aggregate byte limit errors should not invent a source span"
     );
-    assert!(
-        oversized_total_err
-            .to_string()
-            .contains("persisted source-pack descriptor work queues"),
-        "oversized-total error should direct callers to persisted work queues: {oversized_total_err}"
-    );
+    let rendered = oversized_total_diagnostic.render();
+    assert!(rendered.contains("total in-memory source bytes"));
+    assert!(rendered.contains("persisted source-pack descriptor work queues"));
+    assert!(!rendered.contains("frontend error:"));
 }
 
 #[test]
@@ -232,6 +378,115 @@ fn source_pack_work_queue_progress_page_transitions_match_reference_model() {
     );
     model.record_dependency_completed(2);
     assert_progress_page_matches_model(&page, &model);
+}
+
+#[test]
+fn source_pack_work_queue_progress_page_errors_are_structured() {
+    let mut page = SourcePackWorkQueueProgressPage {
+        version: SOURCE_PACK_WORK_QUEUE_PROGRESS_PAGE_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        page_index: 0,
+        first_item_index: 0,
+        item_count: 3,
+        artifact_item_indices: Vec::new(),
+        remaining_dependency_counts: Vec::new(),
+        remaining_dependent_counts: Vec::new(),
+        completed_item_indices: vec![1],
+        ready_item_indices: vec![0],
+        ready_artifact_item_indices: Vec::new(),
+        claimed_items: Vec::new(),
+    };
+
+    let err = progress_page_record_item_claim(&mut page, 0, "   ", Some(10), Some(0))
+        .expect_err("empty worker id should be rejected");
+    assert_source_pack_progress_state_invalid(err, "worker id must not be empty");
+
+    let err = progress_page_record_item_claim(&mut page, 0, "worker-a", Some(10), Some(10))
+        .expect_err("expired claim lease should be rejected");
+    assert_source_pack_progress_state_invalid(err, "is not after now");
+
+    let err = progress_page_record_item_claim(&mut page, 1, "worker-a", Some(20), Some(0))
+        .expect_err("completed item should not be claimable");
+    assert_source_pack_progress_state_invalid(err, "already complete and cannot be claimed");
+
+    let err = progress_page_record_item_claim(&mut page, 2, "worker-a", Some(20), Some(0))
+        .expect_err("not-ready item should not be claimable");
+    assert_source_pack_progress_state_invalid(err, "is not ready and cannot be claimed");
+
+    let err = progress_page_record_item_claim(&mut page, 3, "worker-a", Some(20), Some(0))
+        .expect_err("out-of-page item should not be claimable");
+    assert_source_pack_library_partition_invalid(err, "cannot claim item 3 outside range");
+
+    progress_page_record_item_claim(&mut page, 0, "worker-a", Some(20), Some(0))
+        .expect("ready item should be claimable");
+    let err = progress_page_record_item_claim(&mut page, 0, "worker-b", Some(20), Some(0))
+        .expect_err("item claimed by another worker should be rejected");
+    assert_source_pack_progress_state_invalid(err, "already claimed by worker");
+
+    let err = progress_page_record_item_claim(&mut page, 1, "worker-a", Some(20), Some(0))
+        .expect_err("completed item should still not be claimable after another claim");
+    assert_source_pack_progress_state_invalid(err, "already complete and cannot be claimed");
+
+    let err = progress_page_require_item_claimed_by(&page, 1, "worker-a", Some(0))
+        .expect_err("unclaimed item should reject worker ownership");
+    assert_source_pack_progress_state_invalid(err, "is not claimed by worker");
+
+    let err = progress_page_require_item_claimed_by(&page, 0, "worker-b", Some(0))
+        .expect_err("wrong worker should reject claim ownership");
+    assert_source_pack_progress_state_invalid(err, "not \"worker-b\"");
+
+    let err = progress_page_item_claim_lease_expires_by(&page, 1, "worker-a", Some(0))
+        .expect_err("unclaimed item should not report lease");
+    assert_source_pack_progress_state_invalid(err, "is not claimed by worker");
+
+    let err = progress_page_item_claim_lease_expires_by(&page, 0, "worker-b", Some(0))
+        .expect_err("wrong worker should not report lease");
+    assert_source_pack_progress_state_invalid(err, "not \"worker-b\"");
+}
+
+#[test]
+fn source_pack_work_queue_progress_validation_errors_are_structured() {
+    let index = SourcePackWorkQueueProgressIndex {
+        version: SOURCE_PACK_WORK_QUEUE_PROGRESS_INDEX_VERSION + 1,
+        target: SourcePackArtifactTarget::Generic,
+        work_item_count: 1,
+        page_size: 1,
+        page_count: 1,
+        artifact_item_count: 0,
+        completed_item_count: 0,
+        ready_item_count: 0,
+        ready_artifact_item_count: 0,
+        claimed_item_count: 0,
+        first_ready_item_index: None,
+        first_ready_artifact_item_index: None,
+    };
+    let err = validate_progress_index(&index, SourcePackArtifactTarget::Generic)
+        .expect_err("unsupported progress index version should be rejected");
+    assert_source_pack_progress_state_invalid(
+        err,
+        "unsupported source-pack work queue progress index version",
+    );
+
+    let page = SourcePackWorkQueueProgressPage {
+        version: SOURCE_PACK_WORK_QUEUE_PROGRESS_PAGE_VERSION + 1,
+        target: SourcePackArtifactTarget::Generic,
+        page_index: 0,
+        first_item_index: 0,
+        item_count: 1,
+        artifact_item_indices: Vec::new(),
+        remaining_dependency_counts: Vec::new(),
+        remaining_dependent_counts: Vec::new(),
+        completed_item_indices: Vec::new(),
+        ready_item_indices: Vec::new(),
+        ready_artifact_item_indices: Vec::new(),
+        claimed_items: Vec::new(),
+    };
+    let err = validate_progress_page(&page, SourcePackArtifactTarget::Generic, Some(0))
+        .expect_err("unsupported progress page version should be rejected");
+    assert_source_pack_progress_state_invalid(
+        err,
+        "unsupported source-pack work queue progress page version",
+    );
 }
 
 fn source_pack_contract_test_manifest() -> SourcePackPathBuildManifest {
@@ -1979,6 +2234,808 @@ fn explicit_source_path_manifest_plans_from_metadata_without_reading_sources() {
     );
 }
 
+fn assert_explicit_source_pack_manifest_invalid(
+    err: CompileError,
+    library_id: Option<u32>,
+    reason: &str,
+) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured explicit source-pack diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0049");
+    assert_eq!(diagnostic.message, "explicit source-pack manifest invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "dependency-stream manifest errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the invalid manifest field: {rendered}"
+    );
+    if let Some(library_id) = library_id {
+        assert!(
+            rendered.contains(&format!("library id: {library_id}")),
+            "diagnostic should include the affected library id: {rendered}"
+        );
+    }
+    assert!(
+        rendered.contains("each explicit source-pack library must appear once"),
+        "diagnostic should include the shared source-pack manifest contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_library_partition_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack partition diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0050");
+    assert_eq!(diagnostic.message, "source-pack library partition invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "partition metadata errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the partition contract failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("source-pack library partition metadata must be complete"),
+        "diagnostic should include the shared partition contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_artifact_manifest_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => {
+            panic!("expected structured source-pack artifact manifest diagnostic, got {other:?}")
+        }
+    };
+    assert_eq!(diagnostic.code, "LNC0051");
+    assert_eq!(diagnostic.message, "source-pack artifact manifest invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "artifact manifest metadata errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the artifact manifest contract failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("source-pack artifact manifests must describe consistent job"),
+        "diagnostic should include the shared artifact manifest contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_artifact_shard_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack artifact shard diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0052");
+    assert_eq!(
+        diagnostic.message,
+        "source-pack artifact shard metadata invalid"
+    );
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "artifact shard metadata errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the artifact shard contract failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("source-pack artifact shard metadata must be complete"),
+        "diagnostic should include the shared artifact shard contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_progress_state_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack progress diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0058");
+    assert_eq!(diagnostic.message, "source-pack progress state invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "progress-state errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the progress-state failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("persisted progress shards"),
+        "diagnostic should include the shared progress-state contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_work_queue_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack work-queue diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0063");
+    assert_eq!(diagnostic.message, "source-pack work queue invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "work-queue metadata errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the work-queue contract failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("map each work item"),
+        "diagnostic should include the shared work-queue contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_preparation_incomplete(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack preparation diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0064");
+    assert_eq!(diagnostic.message, "source-pack preparation incomplete");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "bounded-preparation errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the incomplete preparation: {rendered}"
+    );
+    assert!(
+        rendered.contains("bounded source-pack preparation may require multiple calls"),
+        "diagnostic should include the shared preparation contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_preparation_limit_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => {
+            panic!("expected structured source-pack preparation-limit diagnostic, got {other:?}")
+        }
+    };
+    assert_eq!(diagnostic.code, "LNC0065");
+    assert_eq!(diagnostic.message, "source-pack preparation limit invalid");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "bounded-preparation limit errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the invalid preparation limit: {rendered}"
+    );
+    assert!(
+        rendered.contains("bounded source-pack preparation APIs require positive chunk limits"),
+        "diagnostic should include the shared preparation-limit contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_artifact_store_failed(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack artifact-store diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0059");
+    assert_eq!(diagnostic.message, "source-pack artifact store failed");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "artifact-store errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the artifact-store failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("canonical artifact identities"),
+        "diagnostic should include the shared artifact-store contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_metadata_store_failed(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack metadata-store diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0060");
+    assert_eq!(diagnostic.message, "source-pack metadata store failed");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "metadata-store errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the metadata-store failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("readable JSON records"),
+        "diagnostic should include the shared metadata-store contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn unique_compiler_test_root(label: &str) -> PathBuf {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    std::env::temp_dir().join(format!("laniusc-{label}-{}-{suffix}", std::process::id()))
+}
+
+fn diagnostic_test_explicit_source_file(library_id: u32) -> ExplicitSourcePathFile {
+    ExplicitSourcePathFile {
+        library_id,
+        path: std::path::PathBuf::from("diagnostic-test.lanius"),
+        byte_len: 1,
+        modified_unix_nanos: None,
+        line_count: Some(1),
+    }
+}
+
+fn diagnostic_test_library_unit(library_id: u32) -> LibraryUnit {
+    LibraryUnit {
+        library_index: 0,
+        library_id,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 1,
+        source_lines: 1,
+    }
+}
+
+fn diagnostic_test_frontend_unit(library_id: u32) -> FrontendUnit {
+    FrontendUnit {
+        unit_index: 0,
+        library_id,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 1,
+        source_lines: 1,
+        oversized_source_file: false,
+    }
+}
+
+fn diagnostic_test_codegen_unit(library_id: u32) -> CodegenUnit {
+    CodegenUnit {
+        unit_index: 0,
+        library_id,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 1,
+        source_lines: 1,
+        oversized_source_file: false,
+    }
+}
+
+fn diagnostic_test_artifact_ref(
+    kind: SourcePackArtifactKind,
+    artifact_index: usize,
+    producing_job_index: usize,
+) -> SourcePackArtifactRef {
+    SourcePackArtifactRef {
+        artifact_index,
+        key: "diagnostic-test-artifact".into(),
+        producing_job_index,
+        kind,
+    }
+}
+
+fn diagnostic_test_artifact_manifest(
+    version: u32,
+    target: SourcePackArtifactTarget,
+) -> SourcePackBuildArtifactManifest {
+    SourcePackBuildArtifactManifest {
+        version,
+        target,
+        job_count: 0,
+        job_batch_count: 0,
+        batch_dependency_count: 0,
+        artifact_count: 0,
+        job_artifact_count: 0,
+        job_artifact_io_count: 0,
+        artifact_use_count: 0,
+        link_interface_batch_count: 0,
+        link_object_batch_count: 0,
+        job_schedule: Default::default(),
+        job_batches: Default::default(),
+        batch_dependencies: Default::default(),
+        artifacts: Default::default(),
+        job_artifacts: Default::default(),
+        job_artifact_io: Default::default(),
+        artifact_uses: Default::default(),
+        link_interface_batches: Default::default(),
+        link_object_batches: Default::default(),
+    }
+}
+
+fn assert_input_read_failed(err: CompileError, path: &Path, operation: &str, label: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured input-read diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0040");
+    assert_eq!(diagnostic.message, "input read failed");
+    let primary = diagnostic
+        .primary_label
+        .as_ref()
+        .expect("input-read diagnostics should label the filesystem path");
+    assert_eq!(primary.path, path);
+    assert_eq!(primary.message, label);
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(operation),
+        "diagnostic should name the failed input operation: {rendered}"
+    );
+    assert!(
+        rendered.contains(&path.display().to_string()),
+        "diagnostic should include the input path: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_root_input_invalid(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-root input diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0061");
+    assert_eq!(diagnostic.message, "source-root input invalid");
+    assert!(diagnostic.primary_label.is_none());
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the invalid source-root input: {rendered}"
+    );
+    assert!(
+        rendered.contains("readable, disjoint source-root directories"),
+        "diagnostic should include the shared source-root contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+fn assert_source_pack_target_invalid(err: CompileError, operation: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack target diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0062");
+    assert_eq!(diagnostic.message, "source-pack target invalid");
+    assert!(diagnostic.primary_label.is_none());
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(operation),
+        "diagnostic should name the invalid target operation: {rendered}"
+    );
+    assert!(
+        rendered.contains("received target: Generic"),
+        "diagnostic should include the rejected target: {rendered}"
+    );
+    assert!(
+        rendered.contains("expected target:"),
+        "diagnostic should describe accepted targets: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+#[test]
+fn public_source_path_input_errors_are_structured() {
+    let root = unique_compiler_test_root("public-source-path-diagnostics");
+    std::fs::create_dir_all(&root).expect("create temp public-source-path dir");
+
+    let missing = root.join("missing.lani");
+    let stdlib_paths: Vec<PathBuf> = Vec::new();
+    let err = load_explicit_source_pack_manifest_from_paths(&stdlib_paths, &[missing.clone()])
+        .expect_err("missing explicit source path should fail as input-read diagnostic");
+    assert_input_read_failed(
+        err,
+        &missing,
+        "operation: read explicit user source file 0",
+        "could not read this explicit source file",
+    );
+
+    let stale = root.join("stale.lani");
+    std::fs::write(&stale, "one\n").expect("write stale source");
+    let file = read_explicit_source_path_metadata("user", 0, 1, &stale)
+        .expect("source metadata should load before source changes");
+    std::fs::write(&stale, "changed source\n").expect("change stale source length");
+    let err = validate_explicit_source_path_file_metadata("user", 0, &file)
+        .expect_err("changed source metadata should invalidate the path manifest");
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured stale path-manifest diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0049");
+    assert_eq!(diagnostic.message, "explicit source-pack manifest invalid");
+    let primary = diagnostic
+        .primary_label
+        .as_ref()
+        .expect("stale path-manifest diagnostic should label the changed file");
+    assert_eq!(primary.path, stale);
+    assert_eq!(
+        primary.message,
+        "this source file changed since the manifest was planned"
+    );
+    let rendered = diagnostic.render();
+    assert!(rendered.contains("changed since manifest was planned"));
+    assert!(rendered.contains("byte_len was"));
+    assert!(!rendered.contains("frontend error:"));
+
+    std::fs::remove_dir_all(&root).expect("remove public-source-path diagnostics dir");
+}
+
+#[test]
+fn source_root_configuration_errors_are_structured() {
+    let root = unique_compiler_test_root("source-root-config-diagnostics");
+    let source_root = root.join("src");
+    std::fs::create_dir_all(&source_root).expect("create source root");
+    let roots = EntrySourceRoots {
+        stdlib_root: None,
+        user_roots: vec![source_root.clone(), source_root.clone()],
+    };
+
+    let err = load_entry_with_source_roots(root.join("entry.lani"), &roots)
+        .expect_err("duplicate source roots should be rejected before import discovery");
+    assert_source_root_input_invalid(err, "duplicate source root");
+
+    std::fs::remove_dir_all(&root).expect("remove source-root config diagnostics dir");
+}
+
+#[test]
+fn descriptor_worker_rejects_generic_target_with_structured_diagnostic() {
+    let root = unique_compiler_test_root("descriptor-target-diagnostics");
+
+    let run_err = pollster::block_on(run_prepared_descriptor_worker_for_target(
+        &root,
+        SourcePackArtifactTarget::Generic,
+        "worker",
+        1,
+        None,
+        1,
+    ))
+    .expect_err("generic descriptor run target should be rejected before GPU work");
+    assert_source_pack_target_invalid(run_err, "run prepared descriptor worker");
+
+    let step_err = pollster::block_on(step_prepared_descriptor_worker_for_target(
+        &root,
+        SourcePackArtifactTarget::Generic,
+        "worker",
+        None,
+        1,
+    ))
+    .expect_err("generic descriptor step target should be rejected before GPU work");
+    assert_source_pack_target_invalid(step_err, "step prepared descriptor worker");
+}
+
+#[test]
+fn bounded_source_pack_preparation_errors_are_structured() {
+    let err = source_pack_preparation_incomplete_error(
+        "source-pack Wasm work queue is not prepared after one bounded preparation chunk of 1 item",
+    );
+    assert_source_pack_preparation_incomplete(
+        err,
+        "not prepared after one bounded preparation chunk",
+    );
+
+    let root = unique_compiler_test_root("bounded-preparation-limit-diagnostics");
+    let err = prepare_artifact_build_chunk(
+        &root,
+        CodegenUnitLimits {
+            max_source_bytes: 1024,
+            max_source_files: 1,
+        },
+        SourcePackJobBatchLimits {
+            max_jobs_per_batch: 1,
+            max_source_bytes_per_batch: 1024,
+            max_source_files_per_batch: 1,
+        },
+        SourcePackBuildShardLimits::default(),
+        SourcePackArtifactTarget::Wasm,
+        0,
+    )
+    .expect_err("zero artifact-build preparation chunks should be rejected");
+    assert_source_pack_preparation_limit_invalid(err, "max_new_items must be greater than zero");
+
+    let libraries = Vec::<ExplicitSourceLibraryPathDependencyStream<Vec<PathBuf>, Vec<u32>>>::new();
+    let err =
+        prepare_metadata_chunk_for_target(libraries, &root, SourcePackArtifactTarget::Wasm, 0)
+            .expect_err("zero metadata preparation chunks should be rejected");
+    assert_source_pack_preparation_limit_invalid(
+        err,
+        "max_new_libraries must be greater than zero",
+    );
+
+    let err = validate_metadata_chunk_limits(
+        7,
+        SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT + 1,
+        0,
+    )
+    .expect_err("oversized metadata chunks should be preparation-limit diagnostics");
+    assert_source_pack_preparation_limit_invalid(
+        err,
+        "source-pack metadata chunk library 7 declares",
+    );
+
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("remove bounded preparation diagnostics dir");
+    }
+}
+
+#[test]
+fn full_metadata_prepare_continuation_errors_are_structured() {
+    let root = unique_compiler_test_root("metadata-prepare-incomplete-diagnostics");
+    let source_dir = root.join("src");
+    std::fs::create_dir_all(&source_dir).expect("create metadata diagnostic source dir");
+    let source_path = source_dir.join("lib.lanius");
+    std::fs::write(&source_path, "x").expect("write metadata diagnostic source");
+    let store = FilesystemArtifactStore::new(root.join("artifacts"));
+    let libraries = (0..=SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT)
+        .map(|library_id| ExplicitSourceLibraryPathDependencyStream {
+            library_id: library_id as u32,
+            source_file_count: 1,
+            paths: vec![source_path.clone()],
+            dependency_library_count: 0,
+            dependency_library_ids: Vec::<u32>::new(),
+        })
+        .collect::<Vec<_>>();
+
+    let err = prepare_metadata(libraries, &store, SourcePackArtifactTarget::Generic)
+        .expect_err("full metadata prepare should report resumable bounded continuation");
+    assert_source_pack_preparation_incomplete(err, "source-pack metadata prepare did not complete");
+
+    std::fs::remove_dir_all(&root).expect("remove metadata prepare diagnostics dir");
+}
+
+#[test]
+fn public_work_queue_execution_contract_errors_are_structured() {
+    let root = unique_compiler_test_root("public-work-queue-contract-diagnostics");
+    let target = SourcePackArtifactTarget::Generic;
+    let item_index = 0usize;
+    let store = FilesystemArtifactStore::new(&root);
+    store
+        .store_work_queue_page(&SourcePackWorkQueuePage {
+            version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+            target,
+            item_index,
+            kind: SourcePackWorkQueueItemKind::LibraryFrontend,
+            job_index: 0,
+            dependency_item_indices: Vec::new(),
+            dependency_item_count: 0,
+            dependency_page_count: 0,
+            dependency_item_ranges: Vec::new(),
+            dependent_item_indices: Vec::new(),
+            dependent_item_count: 0,
+            dependent_page_count: 0,
+            dependent_item_ranges: Vec::new(),
+            artifact_batch_index: Some(0),
+            partition_count: 1,
+            partition_indices: vec![0],
+            link_group_index: None,
+            input_frontend_job_count: 0,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_count: 0,
+            input_codegen_job_indices: Vec::new(),
+            input_link_group_count: 0,
+            input_link_group_indices: Vec::new(),
+            source_byte_count: 1,
+            source_file_count: 1,
+            source_line_count: 1,
+        })
+        .expect("store non-link work item");
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_claimed_link_work_queue_item(
+        &root,
+        item_index,
+        target,
+        "worker-a",
+        8,
+        Some(100),
+        &mut executor,
+    )
+    .expect_err("link execution should reject a non-link work item");
+    assert_source_pack_work_queue_invalid(err, "not a link item");
+    assert!(
+        executor.events.is_empty(),
+        "contract rejection must happen before executor work: {:?}",
+        executor.events
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove work-queue contract diagnostics dir");
+}
+
+#[test]
+fn source_pack_work_queue_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let index = SourcePackWorkQueueIndex {
+        version: SOURCE_PACK_WORK_QUEUE_INDEX_VERSION + 1,
+        target,
+        work_item_count: 1,
+        artifact_item_count: 1,
+        final_item_index: 0,
+        final_job_index: 0,
+    };
+    let err = validate_work_queue_index(&index, target)
+        .expect_err("unsupported work-queue index versions should be structured");
+    assert_source_pack_work_queue_invalid(err, "unsupported source-pack work queue index version");
+
+    let page = SourcePackWorkQueuePage {
+        version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION + 1,
+        target,
+        item_index: 0,
+        kind: SourcePackWorkQueueItemKind::LibraryFrontend,
+        job_index: 0,
+        dependency_item_indices: Vec::new(),
+        dependency_item_count: 0,
+        dependency_page_count: 0,
+        dependency_item_ranges: Vec::new(),
+        dependent_item_indices: Vec::new(),
+        dependent_item_count: 0,
+        dependent_page_count: 0,
+        dependent_item_ranges: Vec::new(),
+        artifact_batch_index: Some(0),
+        partition_count: 1,
+        partition_indices: vec![0],
+        link_group_index: None,
+        input_frontend_job_count: 0,
+        input_frontend_job_indices: Vec::new(),
+        input_codegen_job_count: 0,
+        input_codegen_job_indices: Vec::new(),
+        input_link_group_count: 0,
+        input_link_group_indices: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+    };
+    let err = validate_work_queue_page(&page, target, Some(0))
+        .expect_err("unsupported work-queue page versions should be structured");
+    assert_source_pack_work_queue_invalid(err, "unsupported source-pack work queue page version");
+
+    let dependencies_page = SourcePackWorkQueueDependenciesPage {
+        version: SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_PAGE_VERSION + 1,
+        target,
+        item_index: 1,
+        page_index: 0,
+        first_dependency_position: 0,
+        dependency_count: 1,
+        dependency_item_indices: vec![0],
+    };
+    let err = validate_work_queue_dependencies_page(&dependencies_page, target, 1, 0)
+        .expect_err("unsupported work-queue dependency page versions should be structured");
+    assert_source_pack_work_queue_invalid(
+        err,
+        "unsupported source-pack work queue dependencies page version",
+    );
+
+    let dependents_page = SourcePackWorkQueueDependentsPage {
+        version: SOURCE_PACK_WORK_QUEUE_DEPENDENTS_PAGE_VERSION + 1,
+        target,
+        item_index: 0,
+        page_index: 0,
+        first_dependent_position: 0,
+        dependent_count: 1,
+        dependent_item_indices: vec![1],
+    };
+    let err = validate_work_queue_dependents_page(&dependents_page, target, 0, 0)
+        .expect_err("unsupported work-queue dependent page versions should be structured");
+    assert_source_pack_work_queue_invalid(
+        err,
+        "unsupported source-pack work queue dependents page version",
+    );
+}
+
+#[test]
+fn source_pack_work_queue_prepare_progress_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+    let queue = SourcePackWorkQueueIndex {
+        version: SOURCE_PACK_WORK_QUEUE_INDEX_VERSION,
+        target,
+        work_item_count: 1,
+        artifact_item_count: 1,
+        final_item_index: 0,
+        final_job_index: 0,
+    };
+
+    let progress = WorkQueuePrepareProgress {
+        version: SOURCE_PACK_WORK_QUEUE_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        work_item_count: 1,
+        next_item_index: 0,
+    };
+    let err = validate_work_queue_prepare_progress(&progress, target, 1)
+        .expect_err("unsupported work-queue prepare versions should be structured");
+    assert_source_pack_work_queue_invalid(
+        err,
+        "unsupported source-pack work queue prepare progress version",
+    );
+
+    let progress = InitialWorkQueueProgressPrepareProgress {
+        version: SOURCE_PACK_WORK_QUEUE_PROGRESS_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        work_item_count: 1,
+        page_size: 1,
+        page_count: 1,
+        next_page_index: 0,
+        artifact_item_count: 0,
+        ready_item_count: 0,
+        ready_artifact_item_count: 0,
+        first_ready_item_index: None,
+        first_ready_artifact_item_index: None,
+    };
+    let err = validate_initial_work_queue_progress_prepare_progress(&progress, &queue, 1)
+        .expect_err("unsupported work-queue progress prepare versions should be structured");
+    assert_source_pack_work_queue_invalid(
+        err,
+        "unsupported source-pack work queue progress prepare progress version",
+    );
+}
+
 #[test]
 fn compact_artifact_manifest_rejects_bad_library_streams() {
     let limits = CodegenUnitLimits {
@@ -1993,9 +3050,10 @@ fn compact_artifact_manifest_rejects_bad_library_streams() {
         std::path::PathBuf,
     >(Vec::new(), limits, batch_limits)
     .expect_err("empty compact stream must be rejected");
-    assert!(
-        empty_err.to_string().contains("no source files"),
-        "unexpected empty stream error: {empty_err}"
+    assert_explicit_source_pack_manifest_invalid(
+        empty_err,
+        None,
+        "manifest contains no source libraries",
     );
 
     let suffix = std::time::SystemTime::now()
@@ -2023,11 +3081,10 @@ fn compact_artifact_manifest_rejects_bad_library_streams() {
     )
     .expect_err("later dependency compact stream must be rejected");
     std::fs::remove_dir_all(&root).expect("remove temp stream-contract dir");
-    assert!(
-        later_dependency_err
-            .to_string()
-            .contains("depends on missing or later library 1"),
-        "unexpected later dependency error: {later_dependency_err}"
+    assert_explicit_source_pack_manifest_invalid(
+        later_dependency_err,
+        Some(2),
+        "depends on missing or later library 1",
     );
 }
 
@@ -2092,11 +3149,9 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             },
         ]
     });
-    assert!(
-        missing_count_err
-            .to_string()
-            .contains("received 1 dependency libraries but expected 2"),
-        "unexpected missing dependency-count error: {missing_count_err}"
+    assert_source_pack_library_partition_invalid(
+        missing_count_err,
+        "partition 1 received 1 dependency libraries but expected 2",
     );
 
     let extra_count_err = err_for("extra-count", |core_path, app_path| {
@@ -2117,11 +3172,9 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             },
         ]
     });
-    assert!(
-        extra_count_err
-            .to_string()
-            .contains("received more than 0 dependency libraries"),
-        "unexpected extra dependency-count error: {extra_count_err}"
+    assert_source_pack_library_partition_invalid(
+        extra_count_err,
+        "partition 1 received more than 0 dependency libraries",
     );
 
     let duplicate_err = err_for("duplicate", |core_path, app_path| {
@@ -2142,11 +3195,10 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             },
         ]
     });
-    assert!(
-        duplicate_err
-            .to_string()
-            .contains("dependency ids must be strictly sorted and unique"),
-        "unexpected duplicate dependency error: {duplicate_err}"
+    assert_explicit_source_pack_manifest_invalid(
+        duplicate_err,
+        Some(2),
+        "dependency ids must be strictly sorted and unique",
     );
 
     let self_err = err_for("self", |core_path, _app_path| {
@@ -2158,10 +3210,7 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             dependency_library_ids: vec![1],
         }]
     });
-    assert!(
-        self_err.to_string().contains("depends on itself"),
-        "unexpected self dependency error: {self_err}"
-    );
+    assert_explicit_source_pack_manifest_invalid(self_err, Some(1), "library depends on itself");
 
     let missing_later_err = err_for("missing-later", |_core_path, app_path| {
         vec![ExplicitSourceLibraryPathDependencyStream {
@@ -2172,11 +3221,10 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             dependency_library_ids: vec![1],
         }]
     });
-    assert!(
-        missing_later_err
-            .to_string()
-            .contains("depends on missing or later library 1"),
-        "unexpected missing/later dependency error: {missing_later_err}"
+    assert_explicit_source_pack_manifest_invalid(
+        missing_later_err,
+        Some(2),
+        "depends on missing or later library 1",
     );
 }
 
@@ -2301,12 +3349,1838 @@ fn artifact_manifest_load_rejects_corrupt_contract() {
     let err = store
         .load_path_build_manifest_for_target(SourcePackArtifactTarget::Generic)
         .expect_err("load should reject corrupt manifest contract");
-    assert!(
-        err.to_string()
-            .contains("invalid source-pack artifact manifest"),
-        "unexpected error: {err}"
-    );
+    assert_source_pack_artifact_manifest_invalid(err, "stale");
     std::fs::remove_dir_all(&root).expect("remove corrupt manifest test dir");
+}
+
+#[test]
+fn artifact_shard_contract_errors_are_structured() {
+    assert_source_pack_artifact_shard_invalid(
+        artifact_shard_contract_error("artifact-shard test contract failure"),
+        "artifact-shard test contract failure",
+    );
+}
+
+#[test]
+fn source_pack_prepare_progress_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+    let schedule_index = SourcePackLibraryScheduleIndex {
+        version: SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION,
+        target,
+        partition_count: 1,
+        frontend_job_count: 1,
+        codegen_job_count: 1,
+        link_job_index: 2,
+        job_count: 3,
+    };
+    let artifact_ref_index = SourcePackBuildArtifactRefIndex {
+        version: SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION,
+        target,
+        artifact_count: 3,
+        interface_artifact_count: 1,
+        object_artifact_count: 1,
+        final_output_artifact_index: 2,
+        final_output_key: "linked-output".into(),
+        total_source_file_count: 1,
+        total_source_byte_count: 1,
+        total_source_line_count: 1,
+    };
+    let job_batch_page_index = SourcePackBuildJobBatchPageIndex {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION,
+        target,
+        batch_count: 1,
+        scheduled_job_count: 3,
+        dependency_edge_count: 0,
+    };
+    let link_batch_page_index = SourcePackBuildLinkBatchPageIndex {
+        version: SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION,
+        target,
+        link_interface_batch_count: 0,
+        link_object_batch_count: 0,
+    };
+    let library_partition_index = SourcePackLibraryPartitionIndex {
+        version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION,
+        target,
+        partition_count: 1,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+    };
+
+    let artifact_shard_progress = ArtifactShardPrepareProgress {
+        version: SOURCE_PACK_BUILD_ARTIFACT_SHARD_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        limits: SourcePackBuildShardLimits::default(),
+        job_count: 3,
+        job_batch_count: 1,
+        artifact_count: 3,
+        link_interface_batch_count: 0,
+        link_object_batch_count: 0,
+        phase: ArtifactShardPreparePhase::JobBatches,
+        next_batch_index: 0,
+        next_shard_index: 0,
+        current_builder: Some(ArtifactShardBuilder::new(
+            SourcePackBuildArtifactShardKind::JobBatches,
+        )),
+        job_batch_shard_count: 0,
+        link_interface_shard_range: None,
+        link_object_shard_range: None,
+        ready_batch_count: 0,
+        first_ready_batch_index: None,
+    };
+    let err = validate_artifact_shard_prepare_progress(
+        &artifact_shard_progress,
+        target,
+        SourcePackBuildShardLimits::default(),
+        &schedule_index,
+        &artifact_ref_index,
+        &job_batch_page_index,
+        &link_batch_page_index,
+    )
+    .expect_err("unsupported artifact-shard prepare versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact-shard prepare progress version",
+    );
+
+    let job_batch_progress = JobBatchPrepareProgress {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        batch_limits: SourcePackJobBatchLimits::default().normalized(),
+        scheduled_job_count: 3,
+        next_job_index: 0,
+        next_batch_index: 0,
+        dependency_edge_count: 0,
+    };
+    let err = validate_build_job_batch_prepare_progress(
+        &job_batch_progress,
+        target,
+        3,
+        SourcePackJobBatchLimits::default(),
+    )
+    .expect_err("unsupported job-batch prepare progress versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch prepare progress version",
+    );
+
+    let dependents_progress = JobBatchDependentsPrepareProgress {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        batch_count: 1,
+        next_batch_index: 0,
+        dependent_edge_count: 0,
+    };
+    let err = validate_job_batch_dependents_prepare_progress(&dependents_progress, target, 1)
+        .expect_err("unsupported job-batch dependents prepare versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch dependents prepare progress version",
+    );
+
+    let link_execution_progress = HierarchicalLinkExecutionPrepareProgress {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        link_group_count: 1,
+        next_group_index: 0,
+        final_output_seen: false,
+    };
+    let err = validate_link_execution_prepare_progress(&link_execution_progress, target, 1)
+        .expect_err("unsupported link execution prepare versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution prepare progress version",
+    );
+
+    let link_plan_progress = HierarchicalLinkPlanPrepareProgress {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_PLAN_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        limits: SourcePackJobBatchLimits::default().normalized(),
+        schedule_partition_count: 1,
+        next_partition_index: 0,
+        leaf_group_count: 0,
+        reduce_level: 0,
+        current_level_first_group_index: 0,
+        current_level_group_count: 0,
+        next_input_group_index: 0,
+        next_level_first_group_index: 0,
+        next_level_group_count: 0,
+        next_group_index: 0,
+    };
+    let err = validate_link_plan_prepare_progress(
+        &link_plan_progress,
+        target,
+        1,
+        SourcePackJobBatchLimits::default(),
+    )
+    .expect_err("unsupported link plan prepare versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link plan prepare progress version",
+    );
+
+    let artifact_ref_progress = ArtifactRefPrepareProgress {
+        version: SOURCE_PACK_BUILD_ARTIFACT_REF_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        partition_count: 1,
+        artifact_count: 3,
+        next_partition_index: 0,
+        artifact_ref_page_count: 0,
+        interface_artifact_count: 0,
+        object_artifact_count: 0,
+        total_source_file_count: 1,
+        total_source_byte_count: 1,
+        total_source_line_count: 1,
+    };
+    let err = validate_build_artifact_ref_prepare_progress(
+        &artifact_ref_progress,
+        &schedule_index,
+        &library_partition_index,
+    )
+    .expect_err("unsupported artifact-ref prepare versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact-ref prepare progress version",
+    );
+
+    let link_batch_progress = LinkBatchPrepareProgress {
+        version: SOURCE_PACK_BUILD_LINK_BATCH_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        batch_limits: SourcePackJobBatchLimits::default().normalized(),
+        artifact_count: artifact_ref_index.artifact_count,
+        interface_artifact_count: artifact_ref_index.interface_artifact_count,
+        object_artifact_count: artifact_ref_index.object_artifact_count,
+        next_interface_artifact_index: 0,
+        next_interface_batch_index: 0,
+        next_object_artifact_index: artifact_ref_index.interface_artifact_count,
+        next_object_batch_index: 0,
+    };
+    let err = validate_build_link_batch_prepare_progress(
+        &link_batch_progress,
+        target,
+        &artifact_ref_index,
+        SourcePackJobBatchLimits::default(),
+    )
+    .expect_err("unsupported link-batch prepare progress versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack link-batch prepare progress version",
+    );
+}
+
+#[test]
+fn source_pack_schedule_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+    let schedule_index = SourcePackLibraryScheduleIndex {
+        version: SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION + 1,
+        target,
+        partition_count: 1,
+        frontend_job_count: 1,
+        codegen_job_count: 1,
+        link_job_index: 2,
+        job_count: 3,
+    };
+    let err = validate_library_schedule_index(&schedule_index, target)
+        .expect_err("unsupported schedule index versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library schedule index version",
+    );
+
+    let progress = FilesystemLibrarySchedulePrepareProgress {
+        version: SOURCE_PACK_LIBRARY_SCHEDULE_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        phase: FilesystemLibrarySchedulePreparePhase::BuildUnitPages,
+        next_partition_index: 0,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+        library_count: 1,
+        library_partition_count: 1,
+        library_source_file_page_count: 1,
+        library_build_unit_page_count: 0,
+        library_schedule_page_count: 0,
+        frontend_job_count: 0,
+        codegen_job_count: 0,
+        next_frontend_job_index: 0,
+        next_codegen_job_index: 0,
+    };
+    let err = validate_library_schedule_prepare_progress(&progress, target)
+        .expect_err("unsupported schedule prepare progress versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library schedule prepare progress version",
+    );
+
+    let frontend_job = SourcePackJob {
+        job_index: 0,
+        phase: SourcePackJobPhase::LibraryFrontend,
+        phase_unit_index: 0,
+        library_job_index: None,
+        library_id: 1,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 1,
+        source_lines: 1,
+        oversized_source_file: false,
+        dependency_job_indices: Vec::new(),
+    };
+    let schedule_page = SourcePackLibrarySchedulePage {
+        version: SOURCE_PACK_LIBRARY_SCHEDULE_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id: 1,
+        dependency_library_ids: Vec::new(),
+        frontend_job_index: 0,
+        first_frontend_unit_index: 0,
+        frontend_job_count: 1,
+        first_codegen_unit_index: 0,
+        first_codegen_job_index: 1,
+        codegen_job_count: 1,
+        link_job_index: 2,
+        frontend_job,
+        frontend_jobs: Vec::new(),
+        codegen_jobs: Vec::new(),
+    };
+    let err = validate_library_schedule_page(&schedule_page, target, Some(0))
+        .expect_err("unsupported schedule page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library schedule page version",
+    );
+}
+
+#[test]
+fn source_pack_partition_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let empty_manifest = ExplicitSourcePackPathManifest {
+        files: Vec::new(),
+        library_dependencies: Vec::new(),
+    };
+    let err = library_partition_plan(&empty_manifest, target)
+        .expect_err("empty partition plans should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "source-pack library partition index has no source files",
+    );
+
+    let index = SourcePackLibraryPartitionIndex {
+        version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION + 1,
+        target,
+        partition_count: 1,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+    };
+    let err = validate_library_partition_index(&index, target)
+        .expect_err("unsupported partition index versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library partition index version",
+    );
+
+    let progress = FilesystemLibraryMetadataPrepareProgress {
+        version: SOURCE_PACK_LIBRARY_METADATA_PREPARE_PROGRESS_VERSION + 1,
+        target,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+        library_count: 1,
+        library_partition_count: 1,
+        library_source_file_page_count: 1,
+    };
+    let err = validate_library_metadata_prepare_progress(&progress, target)
+        .expect_err("unsupported library metadata progress versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library metadata prepare progress version",
+    );
+
+    let partition = SourcePackLibraryPartition {
+        version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id: 1,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+        dependency_library_ids: Vec::new(),
+        dependency_library_count: 0,
+        dependency_page_count: 0,
+    };
+    let err = validate_library_partition(&partition, target, Some(0))
+        .expect_err("unsupported library partition versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library partition version",
+    );
+
+    let dependency_page = SourcePackLibraryDependencyPage {
+        version: SOURCE_PACK_LIBRARY_DEPENDENCY_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        page_index: 0,
+        first_dependency_position: 0,
+        dependency_count: 0,
+        dependency_library_ids: Vec::new(),
+    };
+    let err = validate_library_dependency_page(&dependency_page, target, 0, 0)
+        .expect_err("unsupported library dependency page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library dependency page version",
+    );
+}
+
+#[test]
+fn source_pack_source_file_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let locator = SourcePackLibraryPartitionLocatorPage {
+        version: SOURCE_PACK_LIBRARY_PARTITION_LOCATOR_PAGE_VERSION + 1,
+        target,
+        library_id: 1,
+        partition_index: 0,
+    };
+    let err = validate_library_partition_locator_page(&locator, target, Some(1))
+        .expect_err("unsupported library partition locator versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library partition locator page version",
+    );
+
+    let source_file = diagnostic_test_explicit_source_file(1);
+    let source_page = SourcePackLibrarySourceFilePage {
+        version: SOURCE_PACK_LIBRARY_SOURCE_FILE_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id: 1,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+        source_files: vec![SourcePackShardSourceFile {
+            source_index: 0,
+            file: source_file.clone(),
+        }],
+    };
+    let err = validate_library_source_file_page(&source_page, target, Some(0))
+        .expect_err("unsupported source-file page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library source-file page version",
+    );
+
+    let source_record_page = SourcePackLibrarySourceFileRecordPage {
+        version: SOURCE_PACK_LIBRARY_SOURCE_FILE_RECORD_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id: 1,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_index: 0,
+        file: source_file,
+    };
+    let err = validate_library_source_file_record_page(&source_record_page, target, Some(0))
+        .expect_err("unsupported source-file record page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library source-file record page version",
+    );
+}
+
+#[test]
+fn source_pack_build_unit_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+    let library_id = 1;
+    let limits = CodegenUnitLimits::default().normalized();
+    let frontend_unit = diagnostic_test_frontend_unit(library_id);
+    let codegen_unit = diagnostic_test_codegen_unit(library_id);
+
+    let build_unit_page = SourcePackLibraryBuildUnitPage {
+        version: SOURCE_PACK_LIBRARY_BUILD_UNIT_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id,
+        dependency_library_ids: Vec::new(),
+        first_source_index: 0,
+        source_file_count: 1,
+        source_byte_count: 1,
+        source_line_count: 1,
+        limits,
+        frontend_unit: diagnostic_test_library_unit(library_id),
+        frontend_unit_count: 1,
+        codegen_unit_count: 1,
+        frontend_units: vec![frontend_unit.clone()],
+        codegen_units: vec![codegen_unit.clone()],
+    };
+    let err = validate_library_build_unit_page(&build_unit_page, target, Some(0))
+        .expect_err("unsupported build-unit page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library build-unit page version",
+    );
+
+    let frontend_unit_page = SourcePackLibraryFrontendUnitPage {
+        version: SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id,
+        limits,
+        frontend_unit_index: 0,
+        frontend_unit_count: 1,
+        unit: frontend_unit,
+    };
+    let err = validate_frontend_unit_page(&frontend_unit_page, target, Some(0), Some(0))
+        .expect_err("unsupported frontend-unit page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library frontend-unit page version",
+    );
+
+    let codegen_unit_page = SourcePackLibraryCodegenUnitPage {
+        version: SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION + 1,
+        target,
+        partition_index: 0,
+        library_id,
+        limits,
+        codegen_unit_index: 0,
+        codegen_unit_count: 1,
+        unit: codegen_unit,
+    };
+    let err = validate_codegen_unit_page(&codegen_unit_page, target, Some(0), Some(0))
+        .expect_err("unsupported codegen-unit page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack library codegen-unit page version",
+    );
+}
+
+#[test]
+fn source_pack_link_plan_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+    let limits = SourcePackJobBatchLimits::default().normalized();
+
+    let index = SourcePackHierarchicalLinkPlanIndex {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_PLAN_INDEX_VERSION + 1,
+        target,
+        limits,
+        input_partition_count: 1,
+        first_link_job_index: 0,
+        final_link_group_index: 0,
+        final_link_job_index: 0,
+        link_group_count: 1,
+    };
+    let err = validate_link_plan_index(&index, target)
+        .expect_err("unsupported link-plan index versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link plan version",
+    );
+
+    let group = SourcePackHierarchicalLinkGroupPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION + 1,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        level: 0,
+        job_index: 0,
+        input_partition_count: 1,
+        input_partition_indices: vec![0],
+        input_frontend_job_count: 1,
+        input_frontend_job_indices: vec![0],
+        input_codegen_job_indices: vec![1],
+        input_link_group_indices: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        oversized_input: false,
+    };
+    let err = validate_link_group_page(&group, target, Some(0))
+        .expect_err("unsupported link group versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link group version",
+    );
+}
+
+#[test]
+fn source_pack_link_execution_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let index = SourcePackHierarchicalLinkExecutionIndex {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION + 1,
+        target,
+        first_link_job_index: 0,
+        final_link_group_index: 0,
+        final_link_job_index: 0,
+        link_group_count: 1,
+        final_output_key: "linked-output".into(),
+    };
+    let err = validate_link_execution_index(&index, target)
+        .expect_err("unsupported link execution index versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution index version",
+    );
+
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION + 1,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 0,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "linked-output".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let err = validate_link_execution_page(&page, target, Some(0))
+        .expect_err("unsupported link execution page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution page version",
+    );
+
+    let interface_page = SourcePackHierarchicalLinkExecutionInterfacePage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_PAGE_VERSION + 1,
+        target,
+        group_index: 0,
+        job_index: 0,
+        page_index: 0,
+        first_input_position: 0,
+        input_count: 1,
+        input_interfaces: vec![diagnostic_test_artifact_ref(
+            SourcePackArtifactKind::LibraryInterface,
+            0,
+            0,
+        )],
+    };
+    let err = validate_link_execution_interface_page(&interface_page, target, 0, 0)
+        .expect_err("unsupported link execution interface page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution interface page version",
+    );
+
+    let object_page = SourcePackHierarchicalLinkExecutionObjectPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION + 1,
+        target,
+        group_index: 0,
+        job_index: 0,
+        page_index: 0,
+        first_input_position: 0,
+        input_count: 1,
+        input_objects: vec![diagnostic_test_artifact_ref(
+            SourcePackArtifactKind::CodegenObject,
+            1,
+            0,
+        )],
+    };
+    let err = validate_link_execution_object_page(&object_page, target, 0, 0)
+        .expect_err("unsupported link execution object page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution object page version",
+    );
+
+    let partial_page = SourcePackHierarchicalLinkExecutionPartialPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION + 1,
+        target,
+        group_index: 0,
+        job_index: 0,
+        page_index: 0,
+        first_input_position: 0,
+        input_count: 1,
+        input_group_indices: vec![0],
+        input_group_output_keys: vec!["partial-output".into()],
+    };
+    let err = validate_link_execution_partial_page(&partial_page, target, 0, 0)
+        .expect_err("unsupported link execution partial page versions should be structured");
+    assert_source_pack_library_partition_invalid(
+        err,
+        "unsupported source-pack hierarchical link execution partial page version",
+    );
+}
+
+#[test]
+fn source_pack_artifact_ref_validation_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let manifest =
+        diagnostic_test_artifact_manifest(SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION + 1, target);
+    let err = validate_artifact_manifest_version(&manifest)
+        .expect_err("unsupported artifact manifest versions should be structured");
+    assert_source_pack_artifact_manifest_invalid(
+        err,
+        "unsupported source-pack artifact manifest version",
+    );
+
+    let mut compact_manifest =
+        diagnostic_test_artifact_manifest(SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION, target);
+    compact_manifest.job_count = 1;
+    let err = ensure_manifest_execution_records(&compact_manifest)
+        .expect_err("compact manifests without inline records should be structured");
+    assert_source_pack_artifact_manifest_invalid(
+        err,
+        "source-pack artifact-manifest execution requires inline job schedule records",
+    );
+
+    let index = SourcePackBuildArtifactRefIndex {
+        version: SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION + 1,
+        target,
+        artifact_count: 1,
+        interface_artifact_count: 0,
+        object_artifact_count: 0,
+        final_output_artifact_index: 0,
+        final_output_key: "linked-output".into(),
+        total_source_file_count: 1,
+        total_source_byte_count: 1,
+        total_source_line_count: 1,
+    };
+    let err = validate_artifact_ref_index(&index, target)
+        .expect_err("unsupported artifact-ref index versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact-ref index version",
+    );
+
+    let artifact_ref_page = SourcePackBuildArtifactRefPage {
+        version: SOURCE_PACK_BUILD_ARTIFACT_REF_PAGE_VERSION + 1,
+        target,
+        artifact_index: 0,
+        artifact_ref: diagnostic_test_artifact_ref(SourcePackArtifactKind::LinkedOutput, 0, 0),
+        source_bytes: 1,
+        source_file_count: 1,
+        source_lines: 1,
+    };
+    let err = validate_artifact_ref_page(&artifact_ref_page, target, 1, Some(0))
+        .expect_err("unsupported artifact-ref page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact-ref page version",
+    );
+
+    let input_page = SourcePackJobArtifactInputInterfacePage {
+        version: SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_PAGE_VERSION + 1,
+        target,
+        job_index: 0,
+        page_index: 0,
+        first_input_position: 0,
+        input_count: 1,
+        input_interfaces: vec![diagnostic_test_artifact_ref(
+            SourcePackArtifactKind::LibraryInterface,
+            0,
+            0,
+        )],
+    };
+    let err = validate_job_artifact_input_interface_page(&input_page, target, 0, 0)
+        .expect_err("unsupported job artifact input interface page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job artifact input interface page version",
+    );
+
+    let shard_index = SourcePackBuildArtifactShardIndex {
+        version: SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION + 1,
+        target,
+        limits: SourcePackBuildShardLimits::default(),
+        shard_count: 1,
+        job_count: 1,
+        job_batch_count: 1,
+        artifact_count: 1,
+        link_interface_batch_count: 0,
+        link_object_batch_count: 0,
+    };
+    let err = validate_artifact_shard_index(&shard_index)
+        .expect_err("unsupported artifact-shard index versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact shard index version",
+    );
+
+    let shard = SourcePackBuildArtifactShard {
+        version: SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION + 1,
+        target,
+        limits: SourcePackBuildShardLimits::default(),
+        shard_index: 0,
+        kind: SourcePackBuildArtifactShardKind::JobBatches,
+        batch_indices: vec![0],
+        job_indices: vec![0],
+        input_artifact_indices: Vec::new(),
+        input_artifact_ranges: Vec::new(),
+        output_artifact_indices: vec![0],
+        source_bytes: 1,
+        source_file_count: 1,
+        source_lines: 1,
+        oversized: false,
+    };
+    let err = validate_artifact_shard(&shard, target)
+        .expect_err("unsupported artifact-shard versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact shard version",
+    );
+
+    let execution_shard = SourcePackBuildArtifactExecutionShard {
+        version: SOURCE_PACK_BUILD_ARTIFACT_EXECUTION_SHARD_VERSION + 1,
+        target,
+        shard,
+        source_files: Vec::new(),
+        job_batches: Vec::new(),
+        batch_dependencies: Vec::new(),
+        batch_dependents: Vec::new(),
+        jobs: Vec::new(),
+        job_artifacts: Vec::new(),
+        artifact_refs: Vec::new(),
+        link_interface_batches: Vec::new(),
+        link_object_batches: Vec::new(),
+    };
+    let err = validate_execution_shard(&execution_shard, target)
+        .expect_err("unsupported execution-shard versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack artifact execution shard version",
+    );
+}
+
+#[test]
+fn source_pack_build_state_version_errors_are_structured() {
+    let mut state = SourcePackBuildState::new();
+    state.version = SOURCE_PACK_BUILD_STATE_VERSION + 1;
+    let err = validate_build_state_version(&state)
+        .expect_err("unsupported build-state versions should be structured");
+    assert_source_pack_progress_state_invalid(err, "unsupported source-pack build state version");
+}
+
+#[test]
+fn source_pack_job_batch_manifest_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let locator = SourcePackBuildBatchShardLocator {
+        version: SOURCE_PACK_BUILD_BATCH_SHARD_LOCATOR_VERSION + 1,
+        target,
+        batch_index: 0,
+        shard_index: 0,
+    };
+    let err = validate_batch_shard_locator(&locator, target, 0)
+        .expect_err("unsupported batch shard locator versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack batch shard locator version",
+    );
+
+    let index = SourcePackBuildJobBatchPageIndex {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION + 1,
+        target,
+        batch_count: 1,
+        scheduled_job_count: 1,
+        dependency_edge_count: 0,
+    };
+    let err = validate_job_batch_page_index(&index, target)
+        .expect_err("unsupported job-batch index versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch page index version",
+    );
+
+    let batch = SourcePackJobBatch {
+        batch_index: 0,
+        wave_index: 0,
+        job_indices: vec![0],
+        source_bytes: 1,
+        source_file_count: 1,
+        source_lines: 1,
+        oversized: false,
+    };
+    let dependency = SourcePackJobBatchDependency {
+        batch_index: 0,
+        dependency_batch_count: 0,
+        dependency_page_count: 0,
+        dependency_range_count: 0,
+        dependency_range_page_count: 0,
+        dependency_range_batch_count: 0,
+        dependency_batch_indices: Vec::new(),
+        dependency_batch_ranges: Vec::new(),
+    };
+    let page = SourcePackBuildJobBatchPage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_PAGE_VERSION + 1,
+        target,
+        batch_index: 0,
+        batch,
+        dependency,
+    };
+    let err = validate_job_batch_page(&page, target, Some(0))
+        .expect_err("unsupported job-batch page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch page version",
+    );
+
+    let dependency_page = SourcePackBuildJobBatchDependencyPage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION + 1,
+        target,
+        batch_index: 0,
+        page_index: 0,
+        first_dependency_position: 0,
+        dependency_count: 1,
+        dependency_batch_indices: vec![0],
+    };
+    let err = validate_job_batch_dependency_page(&dependency_page, target, 0, 0)
+        .expect_err("unsupported job-batch dependency page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch dependency page version",
+    );
+
+    let range_page = SourcePackBuildJobBatchDependencyRangePage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION + 1,
+        target,
+        batch_index: 0,
+        page_index: 0,
+        first_range_position: 0,
+        range_count: 1,
+        dependency_batch_count: 1,
+        dependency_batch_ranges: vec![SourcePackJobBatchDependencyRange {
+            first_batch_index: 0,
+            batch_count: 1,
+        }],
+    };
+    let err = validate_job_batch_dependency_range_page(&range_page, target, 0, 0)
+        .expect_err("unsupported job-batch dependency range page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch dependency range page version",
+    );
+
+    let job_locator = SourcePackBuildJobBatchJobLocatorPage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_JOB_LOCATOR_PAGE_VERSION + 1,
+        target,
+        job_index: 0,
+        batch_index: 0,
+    };
+    let err = validate_job_batch_locator_page(&job_locator, target, 1, Some(0))
+        .expect_err("unsupported job-batch job-locator page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch job-locator page version",
+    );
+
+    let dependents_page = SourcePackBuildJobBatchDependentsPage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION + 1,
+        target,
+        batch_count: 1,
+        batch_index: 0,
+        dependents: SourcePackJobBatchDependents {
+            batch_index: 0,
+            dependent_batch_indices: Vec::new(),
+        },
+        dependent_batch_count: 0,
+        dependent_page_count: 0,
+    };
+    let err = validate_job_batch_dependents_page(&dependents_page, target, 1, Some(0))
+        .expect_err("unsupported job-batch dependents page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch dependents page version",
+    );
+
+    let dependent_batch_page = SourcePackBuildJobBatchDependentBatchPage {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION + 1,
+        target,
+        batch_count: 2,
+        batch_index: 0,
+        page_index: 0,
+        first_dependent_position: 0,
+        dependent_count: 1,
+        dependent_batch_indices: vec![1],
+    };
+    let err = validate_job_batch_dependent_batch_page(&dependent_batch_page, target, 2, 0, 0)
+        .expect_err("unsupported job-batch dependent-batch page versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack job-batch dependent-batch page version",
+    );
+}
+
+#[test]
+fn source_pack_link_batch_manifest_version_errors_are_structured() {
+    let target = SourcePackArtifactTarget::Generic;
+
+    let index = SourcePackBuildLinkBatchPageIndex {
+        version: SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION + 1,
+        target,
+        link_interface_batch_count: 1,
+        link_object_batch_count: 1,
+    };
+    let err = validate_link_batch_page_index(&index, target)
+        .expect_err("unsupported link-batch index versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack link-batch page index version",
+    );
+
+    let interface_page = SourcePackBuildLinkInterfaceBatchPage {
+        version: SOURCE_PACK_BUILD_LINK_INTERFACE_BATCH_PAGE_VERSION + 1,
+        target,
+        batch_index: 0,
+        batch: SourcePackLinkInterfaceBatch {
+            batch_index: 0,
+            input_interface_artifact_indices: vec![0],
+            source_bytes: 1,
+            source_file_count: 1,
+            source_lines: 1,
+        },
+    };
+    let err = validate_link_interface_batch_page(&interface_page, target, Some(0))
+        .expect_err("unsupported link-interface batch versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack link-interface batch page version",
+    );
+
+    let object_page = SourcePackBuildLinkObjectBatchPage {
+        version: SOURCE_PACK_BUILD_LINK_OBJECT_BATCH_PAGE_VERSION + 1,
+        target,
+        batch_index: 0,
+        batch: SourcePackLinkObjectBatch {
+            batch_index: 0,
+            input_object_artifact_indices: vec![1],
+            source_bytes: 1,
+            source_file_count: 1,
+            source_lines: 1,
+        },
+    };
+    let err = validate_link_object_batch_page(&object_page, target, Some(0))
+        .expect_err("unsupported link-object batch versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack link-object batch page version",
+    );
+
+    let link_input_index = SourcePackBuildLinkInputShardIndex {
+        version: SOURCE_PACK_BUILD_LINK_INPUT_SHARD_INDEX_VERSION + 1,
+        target,
+        link_interface_shard_range: Some(SourcePackLinkInputShardRange {
+            first_shard_index: 0,
+            shard_count: 1,
+        }),
+        link_object_shard_range: Some(SourcePackLinkInputShardRange {
+            first_shard_index: 1,
+            shard_count: 1,
+        }),
+    };
+    let err = validate_link_input_shard_index(&link_input_index, target)
+        .expect_err("unsupported link input shard index versions should be structured");
+    assert_source_pack_artifact_shard_invalid(
+        err,
+        "unsupported source-pack link input shard index version",
+    );
+}
+
+#[test]
+fn path_build_manifest_ready_queries_report_progress_state_diagnostics() {
+    let manifest = source_pack_contract_test_manifest();
+    assert!(
+        manifest.artifacts.job_batch_count > 1,
+        "contract fixture should need more than one artifact batch"
+    );
+
+    let mut partial_state = SourcePackBuildState::new();
+    partial_state.completed_batch_count = 1;
+    let err = manifest
+        .ready_batch_indices_from_state_limited(&partial_state, Some(1))
+        .expect_err("partial compact build state lacks completed-batch identities");
+    assert_source_pack_progress_state_invalid(
+        err,
+        "compact build state does not record completed-batch identities",
+    );
+
+    let mut claimed_state = SourcePackBuildState::new();
+    claimed_state.claimed_batch_count = 1;
+    let err = manifest
+        .ready_unclaimed_batch_indices_from_state_limited(&claimed_state, None, Some(1))
+        .expect_err("compact build state lacks claimed-batch identities");
+    assert_source_pack_progress_state_invalid(
+        err,
+        "compact build state does not record claimed-batch identities",
+    );
+}
+
+#[test]
+fn build_state_progress_summary_mismatches_are_structured() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-build-state-progress-diagnostic-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+
+    let summary = SourcePackBuildProgressSummary::new(SourcePackArtifactTarget::Wasm, 2);
+    store
+        .store_build_progress_summary(&summary)
+        .expect("store progress summary fixture");
+
+    let mut state = SourcePackBuildState::new();
+    state.completed_batch_count = 1;
+    let err = store
+        .store_build_state_for_target(SourcePackArtifactTarget::Wasm, &state)
+        .expect_err("build state should not disagree with progress summary");
+    assert_source_pack_progress_state_invalid(err, "records 1 completed batches");
+
+    std::fs::remove_dir_all(&root).expect("remove build-state progress diagnostic temp root");
+}
+
+#[test]
+fn source_pack_build_progress_errors_are_structured() {
+    let mut shard = SourcePackBuildProgressShard {
+        version: SOURCE_PACK_BUILD_PROGRESS_SHARD_VERSION + 1,
+        target: SourcePackArtifactTarget::Generic,
+        shard_index: 0,
+        batch_indices: vec![0],
+        completed_batch_indices: Vec::new(),
+        ready_batch_indices: Vec::new(),
+        claimed_batches: Vec::new(),
+        linked_output_key: None,
+    };
+    let err = validate_build_progress_shard(&shard)
+        .expect_err("unsupported progress shard versions should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(
+        err,
+        "unsupported source-pack build progress shard version",
+    );
+
+    shard.version = SOURCE_PACK_BUILD_PROGRESS_SHARD_VERSION;
+    shard.completed_batch_indices = vec![2];
+    let err = validate_build_progress_shard(&shard)
+        .expect_err("completed batches outside the shard should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "completed batch 2 outside shard batches");
+
+    let shard_summary = SourcePackBuildProgressShardSummary {
+        version: SOURCE_PACK_BUILD_PROGRESS_SHARD_SUMMARY_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        shard_index: 0,
+        batch_count: 1,
+        completed_batch_count: 0,
+        ready_batch_count: 1,
+        first_ready_batch_index: None,
+        claimed_batch_count: 0,
+        ready_claimed_batch_count: 0,
+        earliest_claim_lease_expires_unix_nanos: None,
+    };
+    let err = validate_build_progress_shard_summary(&shard_summary)
+        .expect_err("ready shard summaries should name their first ready batch");
+    assert_source_pack_progress_state_invalid(err, "ready batches but no first ready batch");
+
+    let mut summary = SourcePackBuildProgressSummary::new(SourcePackArtifactTarget::Generic, 1);
+    summary.ready_batch_count = 1;
+    summary.first_ready_batch_index = Some(2);
+    let err = validate_build_progress_summary(&summary)
+        .expect_err("root summaries should bound their first ready batch");
+    assert_source_pack_progress_state_invalid(err, "first ready batch 2 exceeds job batch count 1");
+
+    let mut complete_summary =
+        SourcePackBuildProgressSummary::new(SourcePackArtifactTarget::Generic, 1);
+    complete_summary.completed_batch_count = 1;
+    let store = FilesystemArtifactStore::new(std::env::temp_dir().join(format!(
+        "laniusc-build-progress-diagnostic-test-{}",
+        std::process::id()
+    )));
+    let err = validate_progress_summary_complete_output(&store, &complete_summary)
+        .expect_err("complete progress summaries should record a linked output key");
+    assert_source_pack_progress_state_invalid(err, "complete but has no linked output key");
+
+    let target_mismatch_summary =
+        SourcePackBuildProgressSummary::new(SourcePackArtifactTarget::Generic, 1);
+    let err = first_ready_batch_from_summary_pages(
+        &store,
+        SourcePackArtifactTarget::Wasm,
+        &target_mismatch_summary,
+    )
+    .expect_err("ready-frontier scans should reject mismatched targets");
+    assert_source_pack_progress_state_invalid(err, "does not match requested target");
+
+    let mut mutable_shard = SourcePackBuildProgressShard {
+        version: SOURCE_PACK_BUILD_PROGRESS_SHARD_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        shard_index: 0,
+        batch_indices: vec![0],
+        completed_batch_indices: Vec::new(),
+        ready_batch_indices: Vec::new(),
+        claimed_batches: Vec::new(),
+        linked_output_key: None,
+    };
+    let err = mutable_shard
+        .record_batch_ready(2)
+        .expect_err("readying an out-of-shard batch should be a progress diagnostic");
+    assert_source_pack_progress_state_invalid(err, "cannot ready batch 2");
+
+    let err = mutable_shard
+        .require_batch_claimed_by(0, "worker-a", None)
+        .expect_err("missing claims should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "is not claimed by worker");
+
+    let err = mutable_shard
+        .record_batch_claim(0, "", None, None)
+        .expect_err("empty worker ids should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "worker id must not be empty");
+
+    let err = mutable_shard
+        .record_batch_claim(0, "worker-a", Some(10), Some(10))
+        .expect_err("expired claim leases should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "is not after now");
+
+    mutable_shard
+        .record_batch_claim(0, "worker-a", Some(20), Some(10))
+        .expect("valid claim should be recorded");
+    let err = mutable_shard
+        .require_batch_claimed_by(0, "worker-b", Some(10))
+        .expect_err("wrong-worker claims should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "not \"worker-b\"");
+
+    let mut completed_shard = SourcePackBuildProgressShard {
+        completed_batch_indices: vec![0],
+        ..mutable_shard.clone()
+    };
+    completed_shard.claimed_batches.clear();
+    let err = completed_shard
+        .record_batch_claim(0, "worker-a", None, None)
+        .expect_err("completed batches should not be claimable");
+    assert_source_pack_progress_state_invalid(err, "already complete and cannot be claimed");
+
+    let mut result_shard = SourcePackBuildProgressShard {
+        linked_output_key: Some("linked-output-old".into()),
+        ..mutable_shard
+    };
+    let out_of_shard_result = ArtifactStoreBatchExecutionResult {
+        batch_index: 2,
+        job_count: 0,
+        linked_output_key: None,
+    };
+    let err = result_shard
+        .record_batch_result(&out_of_shard_result)
+        .expect_err("recording an out-of-shard batch should be a progress diagnostic");
+    assert_source_pack_progress_state_invalid(err, "cannot record batch 2");
+
+    let conflicting_output_result = ArtifactStoreBatchExecutionResult {
+        batch_index: 0,
+        job_count: 1,
+        linked_output_key: Some("linked-output-new".into()),
+    };
+    let err = result_shard
+        .record_batch_result(&conflicting_output_result)
+        .expect_err("conflicting linked outputs should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "already recorded linked output");
+}
+
+#[test]
+fn source_pack_artifact_store_errors_are_structured() {
+    let err = artifact_path(std::path::Path::new("artifact-root"), "../escape")
+        .expect_err("artifact store should reject non-normal keys");
+    assert_source_pack_artifact_store_failed(err, "not relative and normal");
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-artifact-store-diagnostic-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let key = "library-interface/lib-0/job-0/src-0-1";
+
+    let err = store
+        .require_artifact_key_file(key, "library interface")
+        .expect_err("missing artifact files should be structured diagnostics");
+    assert_source_pack_artifact_store_failed(err, "is missing at");
+
+    let err = read_artifact(&root, key, "library interface")
+        .expect_err("missing artifact reads should be structured diagnostics");
+    assert_source_pack_artifact_store_failed(err, "read source-pack library interface artifact");
+}
+
+#[test]
+fn source_pack_artifact_lookup_errors_are_structured() {
+    let manifest = source_pack_contract_test_manifest();
+    let err = artifact_manifest_batch(&manifest.artifacts, usize::MAX)
+        .expect_err("missing job batches should be manifest diagnostics");
+    assert_source_pack_artifact_manifest_invalid(err, "references missing job batch");
+
+    let err = artifact_ref_for_index(&SourcePackArtifactManifest::default(), 0)
+        .expect_err("missing artifact refs should be manifest diagnostics");
+    assert_source_pack_artifact_manifest_invalid(err, "references missing artifact 0");
+
+    let job_manifest = SourcePackJobArtifactManifest {
+        job_index: 7,
+        phase: SourcePackJobPhase::Link,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interface_artifact_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_object_artifact_ranges: Vec::new(),
+        input_objects: Vec::new(),
+        outputs: Vec::new(),
+    };
+    let err = single_output_artifact_ref(&job_manifest, SourcePackArtifactKind::LinkedOutput)
+        .expect_err("missing output artifacts should be manifest diagnostics");
+    assert_source_pack_artifact_manifest_invalid(err, "has no LinkedOutput output artifact");
+}
+
+#[test]
+fn source_pack_handle_lookup_errors_are_structured() {
+    let manifest = source_pack_contract_test_manifest();
+    let source_pack = manifest
+        .path_manifest()
+        .expect("contract fixture should retain source files");
+    let build_plan = source_pack.build_plan(manifest.limits);
+    let interface_artifact = build_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == SourcePackArtifactKind::LibraryInterface)
+        .expect("contract fixture should produce library interface artifacts")
+        .clone();
+
+    let mut missing_artifact_plan = build_plan.clone();
+    missing_artifact_plan
+        .link
+        .input_interface_artifact_ranges
+        .clear();
+    missing_artifact_plan.link.input_interface_artifact_indices =
+        vec![missing_artifact_plan.artifacts.len()];
+    let err = collect_link_interface_handle_clones::<String>(&[], &missing_artifact_plan)
+        .expect_err("bad link artifact indices should be manifest diagnostics");
+    assert_source_pack_artifact_manifest_invalid(err, "references missing artifact");
+
+    let mut missing_handle_plan = build_plan.clone();
+    missing_handle_plan
+        .link
+        .input_interface_artifact_ranges
+        .clear();
+    missing_handle_plan.link.input_interface_artifact_indices =
+        vec![interface_artifact.artifact_index];
+    let missing_handles = vec![None; interface_artifact.producing_job_index + 1];
+    let err =
+        collect_link_interface_handle_clones::<String>(&missing_handles, &missing_handle_plan)
+            .expect_err("missing produced handles should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "missing produced handle");
+
+    let mut handle_by_job = vec![None; interface_artifact.producing_job_index + 1];
+    handle_by_job[interface_artifact.producing_job_index] = Some(99);
+    let produced_interfaces = Vec::<String>::new();
+    let err =
+        collect_link_interface_refs(&produced_interfaces, &handle_by_job, &missing_handle_plan)
+            .expect_err("bad produced-handle slots should be progress diagnostics");
+    assert_source_pack_progress_state_invalid(err, "missing slot 99");
+}
+
+#[test]
+fn source_pack_execution_contract_errors_are_structured() {
+    let codegen_job = SourcePackJob {
+        job_index: 4,
+        phase: SourcePackJobPhase::Codegen,
+        phase_unit_index: 0,
+        library_job_index: None,
+        library_id: 10,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 4,
+        source_lines: 1,
+        oversized_source_file: false,
+        dependency_job_indices: Vec::new(),
+    };
+    let err = codegen_library_job_index(&codegen_job)
+        .expect_err("codegen jobs without owning frontend jobs should be manifest diagnostics");
+    assert_source_pack_artifact_manifest_invalid(err, "has no owning library job");
+
+    assert_source_pack_artifact_manifest_invalid(
+        missing_link_job_error(),
+        "did not execute a link job",
+    );
+    assert_source_pack_artifact_manifest_invalid(
+        duplicate_linked_output_error("source-pack test execution", "linked-output-key"),
+        "produced more than one linked output",
+    );
+}
+
+#[test]
+fn gpu_source_pack_descriptor_errors_are_structured() {
+    let mut job = SourcePackJob {
+        job_index: 4,
+        phase: SourcePackJobPhase::Codegen,
+        phase_unit_index: 0,
+        library_job_index: None,
+        library_id: 10,
+        first_source_index: 0,
+        source_file_count: 1,
+        source_bytes: 1,
+        source_lines: 1,
+        oversized_source_file: false,
+        dependency_job_indices: Vec::new(),
+    };
+    let source_file = diagnostic_test_explicit_source_file(job.library_id);
+
+    let mut wrong_phase = job.clone();
+    wrong_phase.phase = SourcePackJobPhase::LibraryFrontend;
+    let err = validate_gpu_source_pack_descriptor_job_source_file_records(
+        "codegen",
+        &wrong_phase,
+        std::slice::from_ref(&source_file),
+    )
+    .expect_err("descriptor job phase mismatches should be structured");
+    assert_source_pack_artifact_shard_invalid(err, "has phase LibraryFrontend");
+
+    let err = validate_gpu_source_pack_descriptor_job_source_file_records("codegen", &job, &[])
+        .expect_err("descriptor source-file count mismatches should be structured");
+    assert_source_pack_artifact_shard_invalid(err, "received 0 source-file records but expected 1");
+
+    let mut wrong_library_file = source_file.clone();
+    wrong_library_file.library_id = job.library_id + 1;
+    let err = validate_gpu_source_pack_descriptor_job_source_file_records(
+        "codegen",
+        &job,
+        std::slice::from_ref(&wrong_library_file),
+    )
+    .expect_err("descriptor source library mismatches should be structured");
+    assert_source_pack_artifact_shard_invalid(err, "belongs to library 11 but expected 10");
+
+    job.source_bytes = 2;
+    let err = validate_gpu_source_pack_descriptor_job_source_file_records(
+        "codegen",
+        &job,
+        std::slice::from_ref(&source_file),
+    )
+    .expect_err("descriptor source-byte mismatches should be structured");
+    assert_source_pack_artifact_shard_invalid(err, "has 1 bytes but job record declares 2");
+
+    let root = unique_compiler_test_root("descriptor-artifact-diagnostics");
+    let missing_artifact = ArtifactPath {
+        key: "missing-dependency".into(),
+        path: root.join("missing-dependency.json"),
+    };
+    let err = validate_gpu_source_pack_descriptor_artifact_paths(
+        "link object batch",
+        4,
+        std::slice::from_ref(&missing_artifact),
+    )
+    .expect_err("missing descriptor dependency artifacts should be structured");
+    assert_source_pack_artifact_store_failed(err, "missing dependency artifact");
+}
+
+#[test]
+fn source_pack_metadata_store_errors_are_structured() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-metadata-store-diagnostic-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+
+    let err = store
+        .load_build_progress_summary_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing progress summary should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack build progress summary");
+
+    let summary_path =
+        store.build_progress_summary_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(summary_path.parent().expect("summary path has parent"))
+        .expect("create corrupt summary parent");
+    std::fs::write(&summary_path, b"{").expect("write corrupt progress summary");
+    let err = store
+        .load_build_progress_summary_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("corrupt progress summary should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack build progress summary");
+
+    let err = store
+        .load_library_partition_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing library partition index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack library partition index");
+
+    let library_index_path =
+        store.library_partition_index_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        library_index_path
+            .parent()
+            .expect("library index path has parent"),
+    )
+    .expect("create corrupt library index parent");
+    std::fs::write(&library_index_path, b"{").expect("write corrupt library partition index");
+    let err = store
+        .load_library_partition_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("corrupt library partition index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack library partition index");
+
+    let err = store
+        .load_build_artifact_ref_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing artifact-ref index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack artifact-ref index");
+
+    let err = store
+        .load_work_queue_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing work-queue index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack work queue index");
+
+    let work_queue_prepare_progress_path =
+        store.work_queue_prepare_progress_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        work_queue_prepare_progress_path
+            .parent()
+            .expect("work-queue prepare progress path has parent"),
+    )
+    .expect("create corrupt work-queue prepare progress parent");
+    std::fs::write(&work_queue_prepare_progress_path, b"{")
+        .expect("write corrupt work-queue prepare progress");
+    let err = load_work_queue_prepare_progress(&store, SourcePackArtifactTarget::Generic, 1)
+        .expect_err("corrupt work-queue prepare progress should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack work queue prepare progress");
+
+    let queue = SourcePackWorkQueueIndex {
+        version: SOURCE_PACK_WORK_QUEUE_INDEX_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        work_item_count: 1,
+        artifact_item_count: 1,
+        final_item_index: 0,
+        final_job_index: 0,
+    };
+    let work_queue_progress_prepare_progress_path = store
+        .work_queue_progress_prepare_progress_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        work_queue_progress_prepare_progress_path
+            .parent()
+            .expect("work-queue progress prepare progress path has parent"),
+    )
+    .expect("create corrupt work-queue progress prepare progress parent");
+    std::fs::write(&work_queue_progress_prepare_progress_path, b"{")
+        .expect("write corrupt work-queue progress prepare progress");
+    let err = load_initial_work_queue_progress_prepare_progress(&store, &queue, 1).expect_err(
+        "corrupt work-queue progress prepare progress should be a metadata-store diagnostic",
+    );
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack work queue progress prepare progress",
+    );
+
+    let work_queue_summary_path = store
+        .work_queue_progress_page_summary_path_for_target(SourcePackArtifactTarget::Generic, 0);
+    std::fs::create_dir_all(
+        work_queue_summary_path
+            .parent()
+            .expect("work-queue summary path has parent"),
+    )
+    .expect("create corrupt work-queue summary parent");
+    std::fs::write(&work_queue_summary_path, b"{").expect("write corrupt work-queue summary");
+    let err = store
+        .try_load_work_queue_progress_page_summary_for_target(SourcePackArtifactTarget::Generic, 0)
+        .expect_err("corrupt optional work-queue summary should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack work queue progress page summary",
+    );
+
+    let err = store
+        .load_build_link_batch_page_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing link-batch page index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack link-batch page index");
+
+    let err = store
+        .load_build_job_batch_page_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing job-batch page index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack job-batch page index");
+
+    let job_batch_index_path =
+        store.build_job_batch_index_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        job_batch_index_path
+            .parent()
+            .expect("job-batch index path has parent"),
+    )
+    .expect("create corrupt job-batch index parent");
+    std::fs::write(&job_batch_index_path, b"{").expect("write corrupt job-batch index");
+    let err = store
+        .load_build_job_batch_page_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("corrupt job-batch page index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack job-batch page index");
+
+    let job_batch_dependents_progress_path = store
+        .build_job_batch_dependents_prepare_progress_path_for_target(
+            SourcePackArtifactTarget::Generic,
+        );
+    std::fs::create_dir_all(
+        job_batch_dependents_progress_path
+            .parent()
+            .expect("job-batch dependents progress path has parent"),
+    )
+    .expect("create corrupt job-batch dependents progress parent");
+    std::fs::write(&job_batch_dependents_progress_path, b"{")
+        .expect("write corrupt job-batch dependents progress");
+    let err =
+        load_job_batch_dependents_prepare_progress(&store, SourcePackArtifactTarget::Generic, 1)
+            .expect_err(
+                "corrupt job-batch dependents progress should be a metadata-store diagnostic",
+            );
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack job-batch dependents prepare progress",
+    );
+
+    let dependent_page_path = store.build_job_batch_dependent_batch_page_path_for_target(
+        SourcePackArtifactTarget::Generic,
+        0,
+        0,
+    );
+    std::fs::create_dir_all(
+        dependent_page_path
+            .parent()
+            .expect("job-batch dependent page path has parent"),
+    )
+    .expect("create dangling job-batch dependent page parent");
+    std::fs::write(&dependent_page_path, b"{}").expect("write dangling job-batch dependent page");
+    let err = store
+        .load_build_job_batch_dependents_page_for_target(SourcePackArtifactTarget::Generic, 0, 1)
+        .expect_err("dangling job-batch dependent pages should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(
+        err,
+        "missing count page but dependent-batch pages exist",
+    );
+
+    let err = store
+        .load_build_artifact_manifest_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing build artifact manifest should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack build artifact manifest");
+
+    let err = store
+        .load_build_artifact_shard_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing artifact shard index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack build artifact shard index");
+
+    let artifact_shard_progress_path =
+        store.artifact_shard_prepare_progress_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        artifact_shard_progress_path
+            .parent()
+            .expect("artifact-shard progress path has parent"),
+    )
+    .expect("create corrupt artifact-shard progress parent");
+    std::fs::write(&artifact_shard_progress_path, b"{")
+        .expect("write corrupt artifact-shard progress");
+    let schedule_index = SourcePackLibraryScheduleIndex {
+        version: SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        partition_count: 1,
+        frontend_job_count: 1,
+        codegen_job_count: 1,
+        link_job_index: 2,
+        job_count: 3,
+    };
+    let artifact_ref_index = SourcePackBuildArtifactRefIndex {
+        version: SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        artifact_count: 3,
+        interface_artifact_count: 1,
+        object_artifact_count: 1,
+        final_output_artifact_index: 2,
+        final_output_key: "linked-output".into(),
+        total_source_file_count: 1,
+        total_source_byte_count: 1,
+        total_source_line_count: 1,
+    };
+    let job_batch_page_index = SourcePackBuildJobBatchPageIndex {
+        version: SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        batch_count: 1,
+        scheduled_job_count: 3,
+        dependency_edge_count: 0,
+    };
+    let link_batch_page_index = SourcePackBuildLinkBatchPageIndex {
+        version: SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        link_interface_batch_count: 0,
+        link_object_batch_count: 0,
+    };
+    let err = load_artifact_shard_prepare_progress(
+        &store,
+        SourcePackArtifactTarget::Generic,
+        SourcePackBuildShardLimits::default(),
+        &schedule_index,
+        &artifact_ref_index,
+        &job_batch_page_index,
+        &link_batch_page_index,
+    )
+    .expect_err("corrupt artifact-shard progress should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack artifact-shard prepare progress",
+    );
+
+    let path_build_manifest_path =
+        store.build_manifest_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        path_build_manifest_path
+            .parent()
+            .expect("path build manifest path has parent"),
+    )
+    .expect("create corrupt path build manifest parent");
+    std::fs::write(&path_build_manifest_path, b"{").expect("write corrupt path build manifest");
+    let err = store
+        .load_path_build_manifest_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("corrupt path build manifest should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack path build manifest");
+
+    let err = store
+        .load_library_schedule_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing library schedule index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack library schedule index");
+
+    let schedule_index_path =
+        store.library_schedule_index_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        schedule_index_path
+            .parent()
+            .expect("library schedule index path has parent"),
+    )
+    .expect("create corrupt library schedule index parent");
+    std::fs::write(&schedule_index_path, b"{").expect("write corrupt library schedule index");
+    let err = store
+        .load_library_schedule_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("corrupt library schedule index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack library schedule index");
+
+    let err = store
+        .load_hierarchical_link_plan_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err("missing hierarchical link plan index should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack hierarchical link plan index");
+
+    let link_plan_progress_path = store
+        .hierarchical_link_plan_prepare_progress_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        link_plan_progress_path
+            .parent()
+            .expect("hierarchical link plan progress path has parent"),
+    )
+    .expect("create corrupt hierarchical link plan progress parent");
+    std::fs::write(&link_plan_progress_path, b"{")
+        .expect("write corrupt hierarchical link plan progress");
+    let err = load_link_plan_prepare_progress(
+        &store,
+        SourcePackArtifactTarget::Generic,
+        1,
+        SourcePackJobBatchLimits::default(),
+    )
+    .expect_err("corrupt hierarchical link plan progress should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack hierarchical link plan prepare progress",
+    );
+
+    let link_execution_index_path =
+        store.hierarchical_link_execution_index_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        link_execution_index_path
+            .parent()
+            .expect("hierarchical link execution index path has parent"),
+    )
+    .expect("create corrupt hierarchical link execution index parent");
+    std::fs::write(&link_execution_index_path, b"{")
+        .expect("write corrupt hierarchical link execution index");
+    let err = store
+        .load_hierarchical_link_execution_index_for_target(SourcePackArtifactTarget::Generic)
+        .expect_err(
+            "corrupt hierarchical link execution index should be a metadata-store diagnostic",
+        );
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack hierarchical link execution index",
+    );
+
+    let link_execution_progress_path =
+        store.link_execution_prepare_progress_path_for_target(SourcePackArtifactTarget::Generic);
+    std::fs::create_dir_all(
+        link_execution_progress_path
+            .parent()
+            .expect("hierarchical link execution progress path has parent"),
+    )
+    .expect("create corrupt hierarchical link execution progress parent");
+    std::fs::write(&link_execution_progress_path, b"{")
+        .expect("write corrupt hierarchical link execution progress");
+    let err = load_link_execution_prepare_progress(&store, SourcePackArtifactTarget::Generic, 1)
+        .expect_err(
+            "corrupt hierarchical link execution progress should be a metadata-store diagnostic",
+        );
+    assert_source_pack_metadata_store_failed(
+        err,
+        "parse source-pack hierarchical link execution prepare progress",
+    );
+
+    let err = store
+        .load_build_state_for_target(SourcePackArtifactTarget::Wasm)
+        .expect_err("missing build state should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "read source-pack build state");
+
+    let build_state_path = store.build_state_path_for_target(SourcePackArtifactTarget::Wasm);
+    std::fs::create_dir_all(
+        build_state_path
+            .parent()
+            .expect("build state path has parent"),
+    )
+    .expect("create corrupt build state parent");
+    std::fs::write(&build_state_path, b"{").expect("write corrupt build state");
+    let err = store
+        .load_build_state_for_target(SourcePackArtifactTarget::Wasm)
+        .expect_err("corrupt build state should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "parse source-pack build state");
+
+    let mut unsupported_build_state = SourcePackBuildState::new();
+    unsupported_build_state.version = SOURCE_PACK_BUILD_STATE_VERSION + 1;
+    let bytes =
+        serde_json::to_vec_pretty(&unsupported_build_state).expect("serialize build state fixture");
+    std::fs::write(&build_state_path, bytes).expect("write unsupported build state");
+    let err = store
+        .load_build_state_for_target(SourcePackArtifactTarget::Wasm)
+        .expect_err("unsupported build state should be a metadata-store diagnostic");
+    assert_source_pack_metadata_store_failed(err, "unsupported source-pack build state version");
+
+    let summary = SourcePackBuildProgressShardSummary {
+        version: SOURCE_PACK_BUILD_PROGRESS_SHARD_SUMMARY_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        shard_index: 0,
+        batch_count: 0,
+        completed_batch_count: 0,
+        ready_batch_count: 0,
+        first_ready_batch_index: None,
+        claimed_batch_count: 0,
+        ready_claimed_batch_count: 0,
+        earliest_claim_lease_expires_unix_nanos: None,
+    };
+    let err = store
+        .store_build_progress_shard_summary_for_target(SourcePackArtifactTarget::Wasm, &summary)
+        .expect_err("mismatched progress summary target should be a progress-state diagnostic");
+    assert_source_pack_progress_state_invalid(err, "does not match requested target");
+
+    std::fs::remove_dir_all(&root).expect("remove metadata-store diagnostic temp root");
 }
 
 #[test]

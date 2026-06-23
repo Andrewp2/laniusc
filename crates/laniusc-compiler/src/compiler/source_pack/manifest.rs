@@ -1,7 +1,17 @@
 use super::*;
 
 mod errors;
-pub(in crate::compiler) use errors::*;
+pub(in crate::compiler) use errors::{
+    artifact_shard_contract_error,
+    manifest_contract_error,
+    source_pack_preparation_limit_invalid_error,
+    source_pack_progress_state_error,
+    source_pack_work_queue_contract_error,
+};
+pub(crate) use errors::{
+    library_partition_contract_error,
+    source_pack_preparation_incomplete_error,
+};
 
 mod path;
 pub(in crate::compiler) use path::validate_path_manifest;

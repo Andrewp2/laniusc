@@ -626,6 +626,17 @@ impl GpuSyntaxCode {
             other => Self::Unknown(other),
         }
     }
+
+    fn description(self) -> String {
+        match self {
+            Self::UnexpectedToken => "unexpected token".to_string(),
+            Self::ExpectedToken => "expected another token".to_string(),
+            Self::MissingSemicolon => "missing semicolon".to_string(),
+            Self::StatementOverlap => "statement boundaries overlap".to_string(),
+            Self::UnbalancedDelimiter => "unbalanced delimiter".to_string(),
+            Self::Unknown(code) => format!("unknown syntax error (code {code})"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -642,20 +653,53 @@ pub enum GpuSyntaxError {
 impl std::fmt::Display for GpuSyntaxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GpuSyntaxError::Rejected {
-                token,
-                code,
-                detail,
-            } => write!(
-                f,
-                "GPU syntax parser rejected token {token}: {code:?} ({detail})"
-            ),
-            GpuSyntaxError::Gpu(err) => write!(f, "GPU syntax parser failed: {err}"),
+            GpuSyntaxError::Rejected { code, .. } => {
+                write!(f, "syntax error: {}", code.description())
+            }
+            GpuSyntaxError::Gpu(_) => {
+                f.write_str("syntax analysis failed before syntax status could be decoded")
+            }
         }
     }
 }
 
 impl std::error::Error for GpuSyntaxError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{GpuSyntaxCode, GpuSyntaxError};
+
+    #[test]
+    fn gpu_syntax_error_display_is_user_facing() {
+        let error = GpuSyntaxError::Rejected {
+            token: 4,
+            code: GpuSyntaxCode::MissingSemicolon,
+            detail: 9,
+        };
+
+        let message = error.to_string();
+        assert_eq!(message, "syntax error: missing semicolon");
+        assert!(!message.contains("GPU"));
+        assert!(!message.contains("near token"));
+        assert!(!message.contains("status token"));
+    }
+
+    #[test]
+    fn gpu_syntax_backend_error_display_omits_internal_detail() {
+        let error = GpuSyntaxError::Gpu(anyhow::anyhow!(
+            "parser.syntax.status readback failed"
+        ));
+
+        let message = error.to_string();
+        assert_eq!(
+            message,
+            "syntax analysis failed before syntax status could be decoded"
+        );
+        assert!(!message.contains("GPU"));
+        assert!(!message.contains("readback"));
+        assert!(!message.contains("parser.syntax.status"));
+    }
+}
 
 impl From<anyhow::Error> for GpuSyntaxError {
     fn from(err: anyhow::Error) -> Self {

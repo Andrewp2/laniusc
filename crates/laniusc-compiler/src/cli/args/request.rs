@@ -19,6 +19,9 @@ use crate::cli::{
         LANIUS_LANGUAGE_EDITION,
         canonical_directory_path,
         canonical_unique_directory_paths,
+        incompatible_cli_options_error,
+        invalid_cli_argument_count_error,
+        missing_cli_argument_error,
     },
     source_pack,
 };
@@ -102,19 +105,33 @@ impl CompileRequestBuilder {
 
         let source_root_requested = !source_roots.is_empty() || stdlib_root.is_some();
         if source_root_requested && !stdlib_paths.is_empty() {
-            return Err(
-                "--source-root and --stdlib-root discover module-path imports; do not combine them with explicit --stdlib source files"
-                    .into(),
-            );
+            return Err(incompatible_cli_options_error(
+                "laniusc",
+                "--source-root/--stdlib-root",
+                "--stdlib",
+                "--source-root and --stdlib-root discover module-path imports; do not combine them with explicit --stdlib source files",
+            ));
         }
         if source_root_requested && source_pack.conflicts_with_source_root_compile() {
-            return Err(
-                "--source-root and --stdlib-root currently use the in-memory source-pack path; omit descriptor/prepare/artifact-root flags or use --source-pack-library-manifest for bounded descriptor preparation"
-                    .into(),
-            );
+            return Err(incompatible_cli_options_error(
+                "laniusc",
+                "--source-root/--stdlib-root",
+                "source-pack descriptor, prepare, or artifact-root flags",
+                "--source-root and --stdlib-root currently use the in-memory source-pack path; omit descriptor/prepare/artifact-root flags or use --source-pack-library-manifest for bounded descriptor preparation",
+            ));
         }
         if source_root_requested && inputs.len() != 1 {
-            return Err("--source-root/--stdlib-root requires exactly one entry input file".into());
+            if inputs.is_empty() {
+                return Err(missing_cli_argument_error(
+                    "laniusc",
+                    "exactly one entry input file with --source-root/--stdlib-root",
+                ));
+            }
+            return Err(invalid_cli_argument_count_error(
+                "laniusc",
+                "exactly one entry input file with --source-root/--stdlib-root",
+                format!("received {} entry input files", inputs.len()),
+            ));
         }
         let source_roots = if source_root_requested {
             canonical_unique_directory_paths("source root", source_roots)?
@@ -141,7 +158,10 @@ impl CompileRequestBuilder {
             && !source_pack.build_from_metadata
             && !uses_package_metadata_prepare_path
         {
-            return Err("explicit source-pack compilation requires at least one input file".into());
+            return Err(missing_cli_argument_error(
+                "laniusc",
+                "at least one input file for explicit source-pack compilation",
+            ));
         }
         validate_check_mode(
             check_only,

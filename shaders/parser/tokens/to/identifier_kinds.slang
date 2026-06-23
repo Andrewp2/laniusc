@@ -136,6 +136,12 @@ uint identifier_kind_for(uint parser_i, uint count)
     if (prev_raw == TK_WHERE)
         return TK_WHERE_IDENT;
 
+    uint prev = previous_symbol_kind(parser_i, count);
+    if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
+        return TK_GENERIC_PARAM_IDENT;
+    if (prev == TK_WHERE_COMMA)
+        return TK_WHERE_IDENT;
+
     uint token_i = parser_i - 1u;
     uint qualified_kind = token_i < gParams.token_capacity
         ? (token_type_path_context_kind[token_i] & 0xffu)
@@ -143,11 +149,6 @@ uint identifier_kind_for(uint parser_i, uint count)
     if (qualified_kind != 0u)
         return qualified_kind;
 
-    uint prev = previous_symbol_kind(parser_i, count);
-    if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
-        return TK_GENERIC_PARAM_IDENT;
-    if (prev == TK_WHERE_COMMA)
-        return TK_WHERE_IDENT;
     uint type_context_kind = type_context_identifier_kind(
         prev,
         impl_type_context_before(parser_i, count));

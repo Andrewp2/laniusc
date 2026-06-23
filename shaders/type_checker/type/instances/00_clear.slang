@@ -74,7 +74,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     if (i == 0u)
+    {
         type_instance_arg_row_count_out[0u] = 0u;
+    }
 
     if (i >= gParams.n_tokens)
         return;

@@ -200,7 +200,7 @@ pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
             "suggested_root": "stdlib",
             "auto_imported": false,
             "source_rewrite": false,
-            "module_loading": "leading module/import declarations are loaded into the GPU source-pack resolver from explicit roots",
+            "module_loading": "leading module/import declarations are loaded into the module resolver from explicit roots",
             "runtime_bound_status": "known-unbound-contracts",
             "executable_host_apis": false,
             "runtime_boundary_diagnostic_code": "LNC0038",

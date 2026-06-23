@@ -117,7 +117,7 @@ impl GpuParser {
     }
 
     /// Records the minimal parser sequence needed to project tree capacity/status.
-    pub(super) fn record_resident_projected_status(
+    pub(super) fn record_resident_partial_parse_status(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,

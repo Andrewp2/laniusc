@@ -72,7 +72,7 @@ impl RecordCapacity {
         let output_capacity = capacity.output_capacity;
         if capacity.inst_capacity_capped {
             warn!(
-                "x86 instruction capacity estimate hit cap: requested={} cap={} hir_words={} inst_basis_words={} token_capacity={}; exact GPU instruction-count projection is required for larger programs",
+                "x86 instruction capacity estimate hit cap: requested={} cap={} hir_words={} inst_basis_words={} token_capacity={}; exact instruction-count projection is required for larger programs",
                 capacity.requested_inst_capacity,
                 capacity.inst_capacity,
                 capacity.hir_words,

@@ -252,7 +252,7 @@ fn validate_store_artifact_ref(
     artifact_label: &str,
 ) -> Result<(), CompileError> {
     if artifact.kind != expected_kind {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact ref {} has kind {:?}; expected {:?}",
             artifact.artifact_index, artifact.kind, expected_kind
         )));
@@ -261,7 +261,7 @@ fn validate_store_artifact_ref(
     let key_producer_job_index =
         store_artifact_key_producer_job_index(&artifact.key, expected_kind, artifact_label)?;
     if key_producer_job_index != artifact.producing_job_index {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact ref {} key {:?} records producer job {} but artifact ref producer job {}",
             artifact.artifact_index,
             artifact.key,
@@ -270,7 +270,7 @@ fn validate_store_artifact_ref(
         )));
     }
     if artifact.artifact_index != artifact.producing_job_index {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact ref {} records producer job {}; artifact refs must use the dense producer job as artifact index",
             artifact.artifact_index, artifact.producing_job_index
         )));
@@ -294,12 +294,12 @@ fn validate_store_partial_link_key(key: &str, artifact_label: &str) -> Result<()
     })?;
     let payload = strip_store_target_prefix(key);
     let Some(group_and_job) = payload.strip_prefix("partial-link/group-") else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} must include a partial-link group"
         )));
     };
     let Some((group_index, job_index)) = group_and_job.split_once("/job-") else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} must include a partial-link producer job"
         )));
     };
@@ -324,9 +324,9 @@ fn validate_store_artifact_key_segment(
     artifact_label: &str,
     expected_description: impl FnOnce() -> String,
 ) -> Result<(), CompileError> {
-    artifact_path(Path::new(""), key).map_err(|err| {
-        CompileError::GpuFrontend(format!(
-            "source-pack {artifact_label} artifact key {key:?} is invalid: {err}"
+    resolve_artifact_path(Path::new(""), key).map_err(|err| {
+        source_pack_artifact_store_error(format!(
+            "source-pack {artifact_label} artifact key {key:?} is invalid: {err}",
         ))
     })?;
     let payload = strip_store_target_prefix(key);
@@ -334,7 +334,7 @@ fn validate_store_artifact_key_segment(
     if payload.starts_with(&expected_prefix) {
         return Ok(());
     }
-    Err(CompileError::GpuFrontend(format!(
+    Err(source_pack_artifact_store_error(format!(
         "source-pack {artifact_label} artifact key {key:?} does not identify a {}",
         expected_description()
     )))
@@ -365,13 +365,13 @@ fn store_artifact_key_producer_job_index(
         SourcePackArtifactKind::LibraryInterface | SourcePackArtifactKind::CodegenObject => {
             let expected_prefix = format!("{}/lib-", expected_kind.key_segment());
             let Some(suffix) = payload.strip_prefix(&expected_prefix) else {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_artifact_store_error(format!(
                     "source-pack {artifact_label} artifact key {key:?} does not identify a {:?} artifact",
                     expected_kind
                 )));
             };
             let Some((library_id, job_and_source)) = suffix.split_once("/job-") else {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_artifact_store_error(format!(
                     "source-pack {artifact_label} artifact key {key:?} must include a library id and producer job"
                 )));
             };
@@ -381,7 +381,7 @@ fn store_artifact_key_producer_job_index(
         SourcePackArtifactKind::LinkedOutput => {
             let expected_prefix = "linked-output/job-";
             let Some(job_and_source) = payload.strip_prefix(expected_prefix) else {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_artifact_store_error(format!(
                     "source-pack {artifact_label} artifact key {key:?} does not identify a LinkedOutput artifact"
                 )));
             };
@@ -389,14 +389,14 @@ fn store_artifact_key_producer_job_index(
         }
     };
     let Some((producer_job_index, source_range)) = job_and_source.split_once("/src-") else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} must include a source range"
         )));
     };
     let producer_job_index =
         validate_store_artifact_key_usize(key, producer_job_index, artifact_label, "producer job")?;
     let Some((first_source_index, source_end)) = source_range.split_once('-') else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has invalid source range"
         )));
     };
@@ -405,7 +405,7 @@ fn store_artifact_key_producer_job_index(
     let source_end =
         validate_store_artifact_key_usize(key, source_end, artifact_label, "source end")?;
     if source_end <= first_source_index {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has empty source range {first_source_index}..{source_end}"
         )));
     }
@@ -419,17 +419,17 @@ fn validate_store_artifact_key_usize(
     field: &str,
 ) -> Result<usize, CompileError> {
     if value.is_empty() || !value.as_bytes().iter().all(|byte| byte.is_ascii_digit()) {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has invalid {field}"
         )));
     }
     if value.len() > 1 && value.starts_with('0') {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has non-canonical {field} {value:?}; expected no leading zeroes"
         )));
     }
     value.parse::<usize>().map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has invalid {field}: {err}"
         ))
     })
@@ -442,17 +442,17 @@ fn validate_store_partial_link_key_index(
     field: &str,
 ) -> Result<(), CompileError> {
     if value.len() < 8 || !value.as_bytes().iter().all(|byte| byte.is_ascii_digit()) {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has invalid partial-link {field}; expected at least eight digits"
         )));
     }
     if value.len() > 8 && value.starts_with('0') {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has non-canonical partial-link {field} {value:?}; widened partial-link indices must not carry leading zeroes"
         )));
     }
     value.parse::<usize>().map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact key {key:?} has invalid partial-link {field}: {err}"
         ))
     })?;
@@ -464,10 +464,12 @@ fn validate_store_partial_link_key_index(
 /// Empty keys, absolute paths, parent-directory components, and other
 /// non-normal components are rejected before any filesystem operation occurs.
 pub(in crate::compiler) fn artifact_path(root: &Path, key: &str) -> Result<PathBuf, CompileError> {
+    resolve_artifact_path(root, key).map_err(source_pack_artifact_store_error)
+}
+
+fn resolve_artifact_path(root: &Path, key: &str) -> Result<PathBuf, String> {
     if key.is_empty() {
-        return Err(CompileError::GpuFrontend(
-            "source-pack artifact key cannot be empty".into(),
-        ));
+        return Err("source-pack artifact key cannot be empty".into());
     }
 
     let mut path = root.to_path_buf();
@@ -475,9 +477,9 @@ pub(in crate::compiler) fn artifact_path(root: &Path, key: &str) -> Result<PathB
         match component {
             std::path::Component::Normal(segment) => path.push(segment),
             _ => {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(format!(
                     "source-pack artifact key {key:?} is not relative and normal"
-                )));
+                ));
             }
         }
     }
@@ -492,7 +494,7 @@ pub(in crate::compiler) fn read_artifact(
 ) -> Result<Vec<u8>, CompileError> {
     let path = artifact_path(root, key)?;
     fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "read source-pack {artifact_label} artifact {key:?} from {}: {err}",
             path.display()
         ))
@@ -511,14 +513,14 @@ pub(in crate::compiler) fn write_artifact(
     let path = artifact_path(root, key)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_artifact_store_error(format!(
                 "create source-pack {artifact_label} artifact directory {}: {err}",
                 parent.display()
             ))
         })?;
     }
     fs::write(&path, bytes).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "write source-pack {artifact_label} artifact {key:?} to {}: {err}",
             path.display()
         ))
@@ -534,17 +536,26 @@ pub(in crate::compiler) fn write_file_atomic(
     bytes: &[u8],
     label: &str,
 ) -> Result<(), CompileError> {
+    write_file_atomic_with_error(path, bytes, label, source_pack_store_metadata_error)
+}
+
+pub(in crate::compiler) fn write_file_atomic_with_error(
+    path: &Path,
+    bytes: &[u8],
+    label: &str,
+    error: impl Fn(String) -> CompileError,
+) -> Result<(), CompileError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            error(format!(
                 "create {label} directory {}: {err}",
                 parent.display()
             ))
         })?;
     }
-    let file_name = path.file_name().ok_or_else(|| {
-        CompileError::GpuFrontend(format!("{label} path {} has no file name", path.display()))
-    })?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| error(format!("{label} path {} has no file name", path.display())))?;
     let mut tmp_file_name = file_name.to_os_string();
     tmp_file_name.push(format!(
         ".tmp-{}-{}",
@@ -554,20 +565,72 @@ pub(in crate::compiler) fn write_file_atomic(
     let tmp_path = path.with_file_name(tmp_file_name);
 
     fs::write(&tmp_path, bytes).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        error(format!(
             "write temporary {label} {}: {err}",
             tmp_path.display()
         ))
     })?;
     fs::rename(&tmp_path, path).map_err(|err| {
         let _ = fs::remove_file(&tmp_path);
-        CompileError::GpuFrontend(format!(
+        error(format!(
             "replace {label} {} with {}: {err}",
             path.display(),
             tmp_path.display()
         ))
     })?;
     Ok(())
+}
+
+pub(in crate::compiler) fn serialize_store_json<T: serde::Serialize>(
+    value: &T,
+    label: impl Into<String>,
+) -> Result<Vec<u8>, CompileError> {
+    let label = label.into();
+    serde_json::to_vec_pretty(value)
+        .map_err(|err| source_pack_store_metadata_error(format!("serialize {label}: {err}")))
+}
+
+pub(in crate::compiler) fn read_store_file(
+    path: &Path,
+    label: &str,
+) -> Result<Vec<u8>, CompileError> {
+    fs::read(path).map_err(|err| {
+        source_pack_store_metadata_error(format!("read {label} {}: {err}", path.display()))
+    })
+}
+
+pub(in crate::compiler) fn try_read_store_file(
+    path: &Path,
+    label: &str,
+) -> Result<Option<Vec<u8>>, CompileError> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(source_pack_store_metadata_error(format!(
+            "read {label} {}: {err}",
+            path.display()
+        ))),
+    }
+}
+
+pub(in crate::compiler) fn parse_store_json<T: serde::de::DeserializeOwned>(
+    bytes: &[u8],
+    path: &Path,
+    label: &str,
+) -> Result<T, CompileError> {
+    serde_json::from_slice::<T>(bytes).map_err(|err| {
+        source_pack_store_metadata_error(format!("parse {label} {}: {err}", path.display()))
+    })
+}
+
+pub(in crate::compiler) fn write_store_file_atomic(
+    path: &Path,
+    bytes: &[u8],
+    label: &str,
+) -> Result<(), CompileError> {
+    write_file_atomic_with_error(path, bytes, label, |message| {
+        source_pack_store_metadata_error(message)
+    })
 }
 
 /// Returns a path handle for an existing artifact file.
@@ -581,7 +644,7 @@ pub(in crate::compiler) fn artifact_path_handle(
 ) -> Result<ArtifactPath, CompileError> {
     let path = artifact_path(root, key)?;
     if !path.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact {key:?} is missing at {}",
             path.display()
         )));
@@ -607,13 +670,13 @@ pub(in crate::compiler) fn copy_artifact_file_atomic(
         if path.is_file() {
             return Ok(());
         }
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact {key:?} was returned at {} but the file is missing",
             path.display()
         )));
     }
     if !artifact.path.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact source {} for key {:?} is missing",
             artifact.path.display(),
             artifact.key
@@ -621,14 +684,14 @@ pub(in crate::compiler) fn copy_artifact_file_atomic(
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_artifact_store_error(format!(
                 "create source-pack {artifact_label} artifact directory {}: {err}",
                 parent.display()
             ))
         })?;
     }
     let file_name = path.file_name().ok_or_else(|| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "source-pack {artifact_label} artifact path {} has no file name",
             path.display()
         ))
@@ -641,7 +704,7 @@ pub(in crate::compiler) fn copy_artifact_file_atomic(
     ));
     let tmp_path = path.with_file_name(tmp_file_name);
     fs::copy(&artifact.path, &tmp_path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "copy source-pack {artifact_label} artifact {:?} from {} to temporary {}: {err}",
             artifact.key,
             artifact.path.display(),
@@ -650,7 +713,7 @@ pub(in crate::compiler) fn copy_artifact_file_atomic(
     })?;
     fs::rename(&tmp_path, &path).map_err(|err| {
         let _ = fs::remove_file(&tmp_path);
-        CompileError::GpuFrontend(format!(
+        source_pack_artifact_store_error(format!(
             "replace source-pack {artifact_label} artifact {key:?} at {} with temporary {}: {err}",
             path.display(),
             tmp_path.display()
@@ -670,7 +733,7 @@ pub(in crate::compiler) fn remove_artifact(
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(CompileError::GpuFrontend(format!(
+        Err(err) => Err(source_pack_artifact_store_error(format!(
             "release source-pack {artifact_label} artifact {key:?} at {}: {err}",
             path.display()
         ))),

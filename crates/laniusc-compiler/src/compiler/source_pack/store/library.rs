@@ -24,6 +24,7 @@ impl FilesystemArtifactStore {
                 partition.library_id,
                 partition.dependency_library_ids.len(),
                 partition.dependency_library_ids.iter().copied(),
+                DependencyLibraryIdErrorSource::LibraryPartition,
             )?;
             stored_partition.dependency_library_ids.clear();
             stored_partition.dependency_library_count = dependency_library_count;
@@ -36,13 +37,14 @@ impl FilesystemArtifactStore {
         )?;
         let path =
             self.library_partition_path_for_target(partition.target, partition.partition_index);
-        let bytes = serde_json::to_vec_pretty(&stored_partition).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library partition {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_partition,
+            format!(
+                "source-pack library partition {}",
                 partition.partition_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library partition")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library partition")?;
         Ok(path)
     }
 
@@ -57,13 +59,14 @@ impl FilesystemArtifactStore {
             page.partition_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library dependency page {} for partition {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library dependency page {} for partition {}",
                 page.page_index, page.partition_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library dependency page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library dependency page")?;
         Ok(path)
     }
 
@@ -74,12 +77,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_library_partition_index(index, index.target)?;
         let index_path = self.library_partition_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library partition index: {err}"
-            ))
-        })?;
-        write_file_atomic(&index_path, &bytes, "source-pack library partition index")?;
+        let bytes = serialize_store_json(index, "source-pack library partition index")?;
+        write_store_file_atomic(&index_path, &bytes, "source-pack library partition index")?;
         Ok(index_path)
     }
 
@@ -89,19 +88,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackLibraryPartitionIndex, CompileError> {
         let path = self.library_partition_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library partition index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackLibraryPartitionIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library partition index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library partition index")?;
+        let index = parse_store_json::<SourcePackLibraryPartitionIndex>(
+            &bytes,
+            &path,
+            "source-pack library partition index",
+        )?;
         validate_library_partition_index(&index, target)?;
         Ok(index)
     }
@@ -113,12 +105,9 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_library_metadata_prepare_progress(progress, progress.target)?;
         let path = self.library_metadata_prepare_progress_path_for_target(progress.target);
-        let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library metadata prepare progress: {err}"
-            ))
-        })?;
-        write_file_atomic(
+        let bytes =
+            serialize_store_json(progress, "source-pack library metadata prepare progress")?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack library metadata prepare progress",
@@ -132,19 +121,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<FilesystemLibraryMetadataPrepareProgress, CompileError> {
         let path = self.library_metadata_prepare_progress_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library metadata prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
-        let progress = serde_json::from_slice::<FilesystemLibraryMetadataPrepareProgress>(&bytes)
-            .map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack library metadata prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
+        let bytes = read_store_file(&path, "source-pack library metadata prepare progress")?;
+        let progress = parse_store_json::<FilesystemLibraryMetadataPrepareProgress>(
+            &bytes,
+            &path,
+            "source-pack library metadata prepare progress",
+        )?;
         validate_library_metadata_prepare_progress(&progress, target)?;
         Ok(progress)
     }
@@ -156,19 +138,12 @@ impl FilesystemArtifactStore {
         partition_index: usize,
     ) -> Result<SourcePackLibraryPartition, CompileError> {
         let path = self.library_partition_path_for_target(target, partition_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library partition {}: {err}",
-                path.display()
-            ))
-        })?;
-        let partition =
-            serde_json::from_slice::<SourcePackLibraryPartition>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library partition {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library partition")?;
+        let partition = parse_store_json::<SourcePackLibraryPartition>(
+            &bytes,
+            &path,
+            "source-pack library partition",
+        )?;
         validate_library_partition(&partition, target, Some(partition_index))?;
         Ok(partition)
     }
@@ -182,19 +157,12 @@ impl FilesystemArtifactStore {
     ) -> Result<SourcePackLibraryDependencyPage, CompileError> {
         let path =
             self.library_dependency_page_path_for_target(target, partition_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library dependency page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibraryDependencyPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library dependency page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library dependency page")?;
+        let page = parse_store_json::<SourcePackLibraryDependencyPage>(
+            &bytes,
+            &path,
+            "source-pack library dependency page",
+        )?;
         validate_library_dependency_page(&page, target, partition_index, page_index)?;
         Ok(page)
     }
@@ -207,13 +175,14 @@ impl FilesystemArtifactStore {
         validate_library_partition_locator_page(page, page.target, Some(page.library_id))?;
         let path =
             self.library_partition_locator_page_path_for_target(page.target, page.library_id);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library partition locator for library {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library partition locator for library {}",
                 page.library_id
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library partition locator")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library partition locator")?;
         Ok(path)
     }
 
@@ -224,19 +193,12 @@ impl FilesystemArtifactStore {
         library_id: u32,
     ) -> Result<SourcePackLibraryPartitionLocatorPage, CompileError> {
         let path = self.library_partition_locator_page_path_for_target(target, library_id);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library partition locator {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackLibraryPartitionLocatorPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library partition locator {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library partition locator")?;
+        let page = parse_store_json::<SourcePackLibraryPartitionLocatorPage>(
+            &bytes,
+            &path,
+            "source-pack library partition locator",
+        )?;
         validate_library_partition_locator_page(&page, target, Some(library_id))?;
         Ok(page)
     }
@@ -271,13 +233,14 @@ impl FilesystemArtifactStore {
             Some(stored_page.partition_index),
         )?;
         let path = self.library_source_file_page_path_for_target(page.target, page.partition_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library source-file page {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!(
+                "source-pack library source-file page {}",
                 page.partition_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library source-file page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library source-file page")?;
         Ok(path)
     }
 
@@ -288,19 +251,12 @@ impl FilesystemArtifactStore {
         partition_index: usize,
     ) -> Result<SourcePackLibrarySourceFilePage, CompileError> {
         let path = self.library_source_file_page_path_for_target(target, partition_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library source-file page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibrarySourceFilePage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library source-file page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library source-file page")?;
+        let page = parse_store_json::<SourcePackLibrarySourceFilePage>(
+            &bytes,
+            &path,
+            "source-pack library source-file page",
+        )?;
         validate_library_source_file_page(&page, target, Some(partition_index))?;
         Ok(page)
     }
@@ -313,13 +269,14 @@ impl FilesystemArtifactStore {
         validate_library_source_file_record_page(page, page.target, Some(page.source_index))?;
         let path =
             self.library_source_file_record_page_path_for_target(page.target, page.source_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library source-file record {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library source-file record {}",
                 page.source_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library source-file record")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library source-file record")?;
         Ok(path)
     }
 
@@ -330,19 +287,12 @@ impl FilesystemArtifactStore {
         source_index: usize,
     ) -> Result<SourcePackLibrarySourceFileRecordPage, CompileError> {
         let path = self.library_source_file_record_page_path_for_target(target, source_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library source-file record {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackLibrarySourceFileRecordPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library source-file record {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library source-file record")?;
+        let page = parse_store_json::<SourcePackLibrarySourceFileRecordPage>(
+            &bytes,
+            &path,
+            "source-pack library source-file record",
+        )?;
         validate_library_source_file_record_page(&page, target, Some(source_index))?;
         Ok(page)
     }
@@ -378,13 +328,14 @@ impl FilesystemArtifactStore {
             Some(stored_page.partition_index),
         )?;
         let path = self.library_build_unit_page_path_for_target(page.target, page.partition_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library build-unit page {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!(
+                "source-pack library build-unit page {}",
                 page.partition_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library build-unit page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library build-unit page")?;
         Ok(path)
     }
 
@@ -419,19 +370,12 @@ impl FilesystemArtifactStore {
         partition_index: usize,
     ) -> Result<SourcePackLibraryBuildUnitPage, CompileError> {
         let path = self.library_build_unit_page_path_for_target(target, partition_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library build-unit page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibraryBuildUnitPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library build-unit page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library build-unit page")?;
+        let page = parse_store_json::<SourcePackLibraryBuildUnitPage>(
+            &bytes,
+            &path,
+            "source-pack library build-unit page",
+        )?;
         validate_library_build_unit_page(&page, target, Some(partition_index))?;
         Ok(page)
     }
@@ -452,13 +396,14 @@ impl FilesystemArtifactStore {
             page.partition_index,
             page.frontend_unit_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library frontend-unit page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library frontend-unit page {}:{}",
                 page.partition_index, page.frontend_unit_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library frontend-unit page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library frontend-unit page")?;
         Ok(path)
     }
 
@@ -474,19 +419,12 @@ impl FilesystemArtifactStore {
             partition_index,
             frontend_unit_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library frontend-unit page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibraryFrontendUnitPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library frontend-unit page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library frontend-unit page")?;
+        let page = parse_store_json::<SourcePackLibraryFrontendUnitPage>(
+            &bytes,
+            &path,
+            "source-pack library frontend-unit page",
+        )?;
         validate_frontend_unit_page(
             &page,
             target,
@@ -512,13 +450,14 @@ impl FilesystemArtifactStore {
             page.partition_index,
             page.codegen_unit_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack library codegen-unit page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack library codegen-unit page {}:{}",
                 page.partition_index, page.codegen_unit_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack library codegen-unit page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack library codegen-unit page")?;
         Ok(path)
     }
 
@@ -534,19 +473,12 @@ impl FilesystemArtifactStore {
             partition_index,
             codegen_unit_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack library codegen-unit page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackLibraryCodegenUnitPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack library codegen-unit page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack library codegen-unit page")?;
+        let page = parse_store_json::<SourcePackLibraryCodegenUnitPage>(
+            &bytes,
+            &path,
+            "source-pack library codegen-unit page",
+        )?;
         validate_codegen_unit_page(
             &page,
             target,

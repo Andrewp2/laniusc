@@ -99,8 +99,8 @@ struct ParseTablesMeta {
     lookback: u32,
     lookahead: u32,
     diagnostics: GrammarDiagnostics,
-    sc_projection: PairProjectionMeta,
-    pp_projection: PairProjectionMeta,
+    stack_change_table: PairTableMeta,
+    partial_parse_table: PairTableMeta,
     ll1_runtime: Ll1RuntimeMeta,
     ll1_predictions: Vec<PredictionMeta>,
     productions: Vec<ProductionMeta>,
@@ -140,22 +140,22 @@ struct Ll1RuntimeMeta {
 }
 
 #[derive(Debug, Default, Serialize)]
-struct PairProjectionMeta {
+struct PairTableMeta {
     witness_inputs: usize,
-    projected_cells: usize,
+    cells: usize,
     conflicts: Vec<String>,
 }
 
 #[derive(Debug, Default)]
-struct PairProjection {
+struct PairTableData {
     cells: BTreeMap<(u32, u32), Vec<u32>>,
     conflicts: Vec<String>,
 }
 
 #[derive(Debug, Default)]
-struct SummaryProjection {
-    sc: PairProjection,
-    pp: PairProjection,
+struct GeneratedPairTables {
+    stack_change: PairTableData,
+    partial_parse: PairTableData,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -251,8 +251,11 @@ fn main() -> Result<()> {
     let predictions = build_ll1_predictions(&spec, &analysis)?;
     let prod_arity = compute_prod_arity(&spec.productions);
 
-    let (tables, projection, witness_inputs): (PrecomputedParseTables, SummaryProjection, usize) =
-        build_projected_precomputed_tables(&spec, &predictions, prod_arity.clone())?;
+    let (tables, pair_tables, witness_inputs): (
+        PrecomputedParseTables,
+        GeneratedPairTables,
+        usize,
+    ) = build_llp_precomputed_tables(&spec, &predictions, prod_arity.clone())?;
 
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent)?;
@@ -264,7 +267,7 @@ fn main() -> Result<()> {
         &analysis,
         &predictions,
         &prod_arity,
-        &projection,
+        &pair_tables,
         witness_inputs,
     );
     let meta_json = serde_json::to_string_pretty(&meta)?;
@@ -277,17 +280,17 @@ fn main() -> Result<()> {
         )
     })?;
     println!(
-        "[gen_parse_tables] wrote {}, {}, and {} (start={}, productions={}, predictions={}, candidate_llp_sc_cells={}, candidate_llp_sc_conflicts={}, projected_pp_cells={}, pp_conflicts={}, terminals={}, nonterminals={}, nullable={}, diagnostics=clean)",
+        "[gen_parse_tables] wrote {}, {}, and {} (start={}, productions={}, predictions={}, stack_change_cells={}, stack_change_conflicts={}, partial_parse_cells={}, partial_parse_conflicts={}, terminals={}, nonterminals={}, nullable={}, diagnostics=clean)",
         out_path.display(),
         meta_path.display(),
         production_ids_path.display(),
         spec.start,
         spec.productions.len(),
         predictions.len(),
-        projection.sc.cells.len(),
-        projection.sc.conflicts.len(),
-        projection.pp.cells.len(),
-        projection.pp.conflicts.len(),
+        pair_tables.stack_change.cells.len(),
+        pair_tables.stack_change.conflicts.len(),
+        pair_tables.partial_parse.cells.len(),
+        pair_tables.partial_parse.conflicts.len(),
         count_terminal_refs(&spec.productions),
         count_nonterminal_refs(&spec.productions),
         analysis.nullable.len()

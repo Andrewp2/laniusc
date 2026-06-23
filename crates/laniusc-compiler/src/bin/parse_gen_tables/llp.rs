@@ -727,11 +727,11 @@ pub(super) fn install_ll1_runtime_tables(
     Ok(())
 }
 
-pub(super) fn build_projected_precomputed_tables(
+pub(super) fn build_llp_precomputed_tables(
     spec: &GrammarSpec,
     predictions: &[Prediction],
     prod_arity: Vec<u32>,
-) -> Result<(PrecomputedParseTables, SummaryProjection, usize)> {
+) -> Result<(PrecomputedParseTables, GeneratedPairTables, usize)> {
     let llp_spec = llp_augmented_spec(spec);
     let base_first = compute_base_first_or_last_terms(&llp_spec, true);
     let base_last = compute_base_first_or_last_terms(&llp_spec, false);
@@ -747,7 +747,7 @@ pub(super) fn build_projected_precomputed_tables(
     }
     let entries = build_llp_parse_entries(&llp_spec, &spec.start, predictions, &psls)?;
 
-    let mut projection = SummaryProjection::default();
+    let mut pair_tables = GeneratedPairTables::default();
 
     let mut tables = build_mvp_precomputed_tables(N_KINDS, prod_arity);
     install_ll1_runtime_tables(&mut tables, spec, predictions)?;
@@ -774,8 +774,14 @@ pub(super) fn build_projected_precomputed_tables(
             .map(|prod| *prod as u32)
             .collect::<Vec<_>>();
 
-        projection.sc.cells.insert((prev, this), sc.clone());
-        projection.pp.cells.insert((prev, this), pp.clone());
+        pair_tables
+            .stack_change
+            .cells
+            .insert((prev, this), sc.clone());
+        pair_tables
+            .partial_parse
+            .cells
+            .insert((prev, this), pp.clone());
         tables.set_sc_for_pair(prev, this, &sc);
         tables.set_pp_for_pair(prev, this, &pp);
     }
@@ -785,7 +791,7 @@ pub(super) fn build_projected_precomputed_tables(
         .saturating_sub(1);
     tables.finalize_bit_widths(max_symbol_id);
 
-    Ok((tables, projection, 0))
+    Ok((tables, pair_tables, 0))
 }
 
 pub(super) fn format_pair(pair: (u32, u32)) -> String {

@@ -117,13 +117,13 @@ pub(in crate::compiler) fn progress_page_record_item_claim(
 ) -> Result<(), CompileError> {
     let worker_id = worker_id.into();
     if worker_id.trim().is_empty() {
-        return Err(CompileError::GpuFrontend(
-            "source-pack work item claim worker id must not be empty".into(),
+        return Err(source_pack_progress_state_error(
+            "source-pack work item claim worker id must not be empty",
         ));
     }
     if let (Some(now), Some(expires)) = (now_unix_nanos, lease_expires_unix_nanos) {
         if expires <= now {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack work item {item_index} claim lease expires at {expires}, which is not after now {now}"
             )));
         }
@@ -136,12 +136,12 @@ pub(in crate::compiler) fn progress_page_record_item_claim(
     }
     progress_page_prune_inactive_claims(page, now_unix_nanos);
     if progress_page_item_is_completed(page, item_index) {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is already complete and cannot be claimed"
         )));
     }
     if !progress_page_item_is_ready(page, item_index) {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is not ready and cannot be claimed"
         )));
     }
@@ -151,7 +151,7 @@ pub(in crate::compiler) fn progress_page_record_item_claim(
         .find(|claim| claim.item_index == item_index)
     {
         if claim.worker_id != worker_id {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack work item {item_index} is already claimed by worker {:?}",
                 claim.worker_id
             )));
@@ -181,12 +181,12 @@ pub(in crate::compiler) fn progress_page_require_item_claimed_by(
         .iter()
         .find(|claim| claim.item_index == item_index && !claim.is_expired(now_unix_nanos))
     else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is not claimed by worker {worker_id:?}"
         )));
     };
     if claim.worker_id != worker_id {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is claimed by worker {:?}, not {:?}",
             claim.worker_id, worker_id
         )));
@@ -206,12 +206,12 @@ pub(in crate::compiler) fn progress_page_item_claim_lease_expires_by(
         .iter()
         .find(|claim| claim.item_index == item_index && !claim.is_expired(now_unix_nanos))
     else {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is not claimed by worker {worker_id:?}"
         )));
     };
     if claim.worker_id != worker_id {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack work item {item_index} is claimed by worker {:?}, not {:?}",
             claim.worker_id, worker_id
         )));

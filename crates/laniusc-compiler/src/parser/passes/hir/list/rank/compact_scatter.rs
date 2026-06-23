@@ -35,7 +35,7 @@ impl HirListRankCompactScatterPass {
             (
                 "tree_count_status".into(),
                 if buffers.tree_count_uses_status {
-                    buffers.projected_status.as_entire_binding()
+                    buffers.partial_parse_status.as_entire_binding()
                 } else {
                     buffers.ll1_status.as_entire_binding()
                 },

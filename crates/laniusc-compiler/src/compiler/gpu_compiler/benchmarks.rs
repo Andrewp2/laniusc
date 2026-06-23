@@ -15,7 +15,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |_device, _queue, _bufs, ()| Ok::<_, CompileError>(()),
             )
             .await
-            .map_err(|err| CompileError::GpuFrontend(format!("lex benchmark: {err}")))?
+            .map_err(|err| {
+                source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err)
+            })?
     }
     /// Estimate the live frontend capacities produced by lexing and parsing a
     /// source string.
@@ -46,14 +48,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let token_capacity = token_count.max(1);
                     let parser_tree_capacity = self
                         .parser
-                        .read_resident_projected_tree_capacity(
+                        .read_resident_partial_parse_tree_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
                             Some(&bufs.token_file_id),
                             &self.parse_tables,
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
+                        })?;
                     let (parser_check, parse_result) = self
                         .parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
@@ -70,10 +74,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                             |parse_bufs, encoder, timer| {
                                 self.parser
                                     .record_hir_semantic_count_readback(encoder, parse_bufs, timer)
-                                    .map_err(|err| CompileError::GpuSyntax(err.to_string()))
+                                    .map_err(|err| {
+                                        parser_execution_failed_for_source(
+                                            Path::new("<benchmark>"),
+                                            &src,
+                                            err,
+                                        )
+                                    })
                             },
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
+                        })?;
                     let semantic_count = parse_result?;
                     Ok((
                         parser_check,
@@ -89,11 +101,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let ll1 = self
                         .parser
                         .finish_recorded_resident_ll1_hir_check_result(&parser_check)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
+                        })?;
                     let semantic_hir_count = self
                         .parser
                         .finish_recorded_hir_semantic_count(&semantic_count)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
+                        })?;
                     Ok(GpuParseBenchmarkResult {
                         ll1,
                         token_count,
@@ -103,6 +119,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 },
             )
             .await
-            .map_err(|err| CompileError::GpuFrontend(format!("parse benchmark: {err}")))?
+            .map_err(|err| source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err))?
     }
 }

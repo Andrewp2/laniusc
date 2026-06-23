@@ -161,7 +161,7 @@ bool is_private_top_level_child(uint kind, uint parent_prod)
 bool is_public_top_level_child(uint kind, uint parent_prod)
 {
     // Public wrapper productions only arise from top-level `pub_item`.
-    // The projected tree can attach those wrappers under either the `item_pub`
+    // The partial-parse tree can attach those wrappers under either the `item_pub`
     // node or an item-list tail, so the wrapper parent is the durable signal.
     if (!is_public_wrapper(parent_prod))
         return false;

@@ -36,6 +36,8 @@ static const uint TK_TYPE_ALIAS_ASSIGN = 110u;
 static const uint TK_RETURN_ARROW = 112u;
 static const uint TK_TYPE_ARG_LT = 131u;
 static const uint TK_TYPE_ARG_COMMA = 135u;
+static const uint TK_GENERIC_PARAM_LT = 133u;
+static const uint TK_GENERIC_PARAM_COMMA = 136u;
 static const uint TK_TYPE_AMPERSAND = 144u;
 static const uint TK_BOUND_PLUS = 145u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
@@ -102,6 +104,8 @@ uint direct_type_path_context_kind(uint parser_i, uint count)
     if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS ||
         prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA)
         return TK_BOUND_TYPE_IDENT;
+    if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
+        return 0u;
     if (prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
         prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||

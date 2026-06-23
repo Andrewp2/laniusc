@@ -113,10 +113,7 @@ async fn assert_resident_parse_accepts(
         .map_err(|err| format!("resident parse failed: {err:#}"))?;
 
     if !result.ll1.accepted {
-        return Err(format!(
-            "LL(1) rejected token {}: code={} detail={} steps={}",
-            result.ll1.error_pos, result.ll1.error_code, result.ll1.detail, result.ll1.steps
-        ));
+        return Err(result.ll1.rejection_message());
     }
 
     Ok(())

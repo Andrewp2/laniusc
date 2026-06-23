@@ -10,8 +10,8 @@ pub(in crate::compiler) fn library_partition_plan(
     target: SourcePackArtifactTarget,
 ) -> Result<SourcePackLibraryPartitionPlan, CompileError> {
     if manifest.files.is_empty() {
-        return Err(CompileError::GpuFrontend(
-            "source-pack library partition index has no source files".into(),
+        return Err(library_partition_contract_error(
+            "source-pack library partition index has no source files",
         ));
     }
 

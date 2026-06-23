@@ -210,6 +210,14 @@ fn diagnostic_command_discovery_json() -> serde_json::Value {
             false,
         ),
         command_discovery_row(
+            "laniusc diagnostics registry",
+            "laniusc.diagnostics.registry",
+            "full stable diagnostic registry for tools that need public metadata for every code",
+            None,
+            "none",
+            false,
+        ),
+        command_discovery_row(
             "laniusc diagnostics codes",
             "laniusc.diagnostics.codes",
             "diagnostic code completion and filtering",

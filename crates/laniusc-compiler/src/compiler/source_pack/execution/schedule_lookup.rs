@@ -6,9 +6,37 @@ use super::*;
 /// cannot make progress. This helper formats that state for the source-pack
 /// execution path.
 pub(in crate::compiler) fn schedule_error(err: SourcePackScheduleError) -> CompileError {
-    CompileError::GpuFrontend(format!(
+    manifest_contract_error(format!(
         "source-pack job schedule has no dependency-ready wave for jobs {:?}",
         err.unscheduled_job_indices
+    ))
+}
+
+/// Returns the owning library-frontend job for a codegen job.
+pub(in crate::compiler) fn codegen_library_job_index(
+    job: &SourcePackJob,
+) -> Result<usize, CompileError> {
+    job.library_job_index.ok_or_else(|| {
+        manifest_contract_error(format!(
+            "source-pack codegen job {} has no owning library job",
+            job.job_index
+        ))
+    })
+}
+
+/// Reports a build plan or manifest that never executed a link job.
+pub(in crate::compiler) fn missing_link_job_error() -> CompileError {
+    manifest_contract_error("source-pack build plan did not execute a link job")
+}
+
+/// Reports multiple final linked outputs from one execution context.
+pub(in crate::compiler) fn duplicate_linked_output_error(
+    context: impl Into<String>,
+    duplicate_key: &str,
+) -> CompileError {
+    manifest_contract_error(format!(
+        "{} produced more than one linked output; duplicate key {duplicate_key:?}",
+        context.into()
     ))
 }
 
@@ -30,7 +58,7 @@ pub(in crate::compiler) fn schedule_job(
         .iter()
         .find(|job| job.job_index == job_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack job schedule references missing job {job_index}"
             ))
         })

@@ -9,7 +9,7 @@ pub(in crate::compiler) fn validate_link_plan_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_HIERARCHICAL_LINK_PLAN_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link plan version {}; expected {}",
             index.version, SOURCE_PACK_HIERARCHICAL_LINK_PLAN_INDEX_VERSION
         )));
@@ -83,7 +83,7 @@ pub(in crate::compiler) fn validate_link_group_page(
     expected_group_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if group.version != SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link group version {}; expected {}",
             group.version, SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION
         )));

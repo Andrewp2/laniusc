@@ -17,12 +17,8 @@ impl FilesystemArtifactStore {
             library_partition_index,
         )?;
         let path = self.build_artifact_ref_prepare_progress_path_for_target(progress.target);
-        let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack artifact-ref prepare progress: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack artifact-ref prepare progress")?;
+        let bytes = serialize_store_json(progress, "source-pack artifact-ref prepare progress")?;
+        write_store_file_atomic(&path, &bytes, "source-pack artifact-ref prepare progress")?;
         Ok(path)
     }
 
@@ -37,19 +33,12 @@ impl FilesystemArtifactStore {
         library_partition_index: &SourcePackLibraryPartitionIndex,
     ) -> Result<ArtifactRefPrepareProgress, CompileError> {
         let path = self.build_artifact_ref_prepare_progress_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack artifact-ref prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
-        let progress =
-            serde_json::from_slice::<ArtifactRefPrepareProgress>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack artifact-ref prepare progress {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack artifact-ref prepare progress")?;
+        let progress = parse_store_json::<ArtifactRefPrepareProgress>(
+            &bytes,
+            &path,
+            "source-pack artifact-ref prepare progress",
+        )?;
         validate_build_artifact_ref_prepare_progress(
             &progress,
             schedule_index,
@@ -68,10 +57,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_artifact_ref_index(index, index.target)?;
         let path = self.build_artifact_ref_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!("serialize source-pack artifact-ref index: {err}"))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack artifact-ref index")?;
+        let bytes = serialize_store_json(index, "source-pack artifact-ref index")?;
+        write_store_file_atomic(&path, &bytes, "source-pack artifact-ref index")?;
         Ok(path)
     }
 
@@ -81,19 +68,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildArtifactRefIndex, CompileError> {
         let path = self.build_artifact_ref_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack artifact-ref index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackBuildArtifactRefIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack artifact-ref index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack artifact-ref index")?;
+        let index = parse_store_json::<SourcePackBuildArtifactRefIndex>(
+            &bytes,
+            &path,
+            "source-pack artifact-ref index",
+        )?;
         validate_artifact_ref_index(&index, target)?;
         Ok(index)
     }
@@ -109,13 +89,11 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_artifact_ref_page(page, page.target, artifact_count, Some(page.artifact_index))?;
         let path = self.build_artifact_ref_page_path_for_target(page.target, page.artifact_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack artifact-ref page {}: {err}",
-                page.artifact_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack artifact-ref page")?;
+        let bytes = serialize_store_json(
+            page,
+            format!("source-pack artifact-ref page {}", page.artifact_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack artifact-ref page")?;
         Ok(path)
     }
 
@@ -127,19 +105,12 @@ impl FilesystemArtifactStore {
         artifact_count: usize,
     ) -> Result<SourcePackBuildArtifactRefPage, CompileError> {
         let path = self.build_artifact_ref_page_path_for_target(target, artifact_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack artifact-ref page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackBuildArtifactRefPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack artifact-ref page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack artifact-ref page")?;
+        let page = parse_store_json::<SourcePackBuildArtifactRefPage>(
+            &bytes,
+            &path,
+            "source-pack artifact-ref page",
+        )?;
         validate_artifact_ref_page(&page, target, artifact_count, Some(artifact_index))?;
         Ok(page)
     }
@@ -163,13 +134,14 @@ impl FilesystemArtifactStore {
             page.job_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job artifact input interface page {}:{}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack job artifact input interface page {}:{}",
                 page.job_index, page.page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack job artifact input interface page",
@@ -186,19 +158,12 @@ impl FilesystemArtifactStore {
     ) -> Result<SourcePackJobArtifactInputInterfacePage, CompileError> {
         let path =
             self.job_artifact_input_interface_page_path_for_target(target, job_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job artifact input interface page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackJobArtifactInputInterfacePage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job artifact input interface page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job artifact input interface page")?;
+        let page = parse_store_json::<SourcePackJobArtifactInputInterfacePage>(
+            &bytes,
+            &path,
+            "source-pack job artifact input interface page",
+        )?;
         validate_job_artifact_input_interface_page(&page, target, job_index, page_index)?;
         Ok(page)
     }

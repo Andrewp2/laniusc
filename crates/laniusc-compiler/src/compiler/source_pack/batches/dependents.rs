@@ -29,7 +29,7 @@ pub(in crate::compiler) fn validate_job_batch_dependents_prepare_progress(
     batch_count: usize,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch dependents prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PREPARE_PROGRESS_VERSION
         )));
@@ -67,9 +67,8 @@ pub(in crate::compiler) fn store_job_batch_dependents_pages_from_batch_chunk(
     max_new_batches: usize,
 ) -> Result<FilesystemJobBatchDependentsPrepareStepResult, CompileError> {
     if max_new_batches == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack job-batch dependents chunk max_new_batches must be greater than zero"
-                .into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack job-batch dependents chunk max_new_batches must be greater than zero",
         ));
     }
     validate_job_batch_page_index(index, target)?;
@@ -150,7 +149,7 @@ pub(in crate::compiler) fn store_job_batch_dependents_prepare_progress(
     )?;
     let path = store.build_job_batch_dependents_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack job-batch dependents prepare progress: {err}"
         ))
     })?;
@@ -173,14 +172,14 @@ pub(in crate::compiler) fn load_job_batch_dependents_prepare_progress(
 ) -> Result<JobBatchDependentsPrepareProgress, CompileError> {
     let path = store.build_job_batch_dependents_prepare_progress_path_for_target(target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack job-batch dependents prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress =
         serde_json::from_slice::<JobBatchDependentsPrepareProgress>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "parse source-pack job-batch dependents prepare progress {}: {err}",
                 path.display()
             ))

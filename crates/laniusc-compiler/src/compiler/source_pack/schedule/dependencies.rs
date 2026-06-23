@@ -1,5 +1,11 @@
 use super::super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::compiler) enum DependencyLibraryIdErrorSource {
+    ExplicitManifest,
+    LibraryPartition,
+}
+
 /// Incremental writer for one schedule job's dependency pages.
 pub(in crate::compiler) struct JobDependencyWriter<'a> {
     pub(in crate::compiler) store: &'a FilesystemArtifactStore,
@@ -328,6 +334,7 @@ pub(in crate::compiler) fn store_partition_dependency_ids<I>(
     library_id: u32,
     expected_dependency_library_count: usize,
     dependency_library_ids: I,
+    error_source: DependencyLibraryIdErrorSource,
 ) -> Result<(usize, usize), CompileError>
 where
     I: IntoIterator<Item = u32>,
@@ -346,16 +353,22 @@ where
             )));
         }
         if dependency_library_id == library_id {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} depends on itself"
-            )));
+            return Err(dependency_library_id_error(
+                error_source,
+                partition_index,
+                library_id,
+                "library depends on itself",
+            ));
         }
         if previous_dependency_library_id.is_some_and(|previous_dependency_library_id| {
             dependency_library_id <= previous_dependency_library_id
         }) {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} dependency ids must be strictly sorted and unique"
-            )));
+            return Err(dependency_library_id_error(
+                error_source,
+                partition_index,
+                library_id,
+                "dependency ids must be strictly sorted and unique",
+            ));
         }
         let partition_locator_path =
             store.library_partition_locator_page_path_for_target(target, dependency_library_id);
@@ -370,9 +383,12 @@ where
                 .load_library_frontend_job_locator_page_for_target(target, dependency_library_id)?
                 .partition_index
         } else {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {library_id} depends on missing or later library {dependency_library_id}"
-            )));
+            return Err(dependency_library_id_error(
+                error_source,
+                partition_index,
+                library_id,
+                format!("depends on missing or later library {dependency_library_id}"),
+            ));
         };
         if dependency_partition_index >= partition_index {
             return Err(library_partition_contract_error(format!(
@@ -417,6 +433,23 @@ where
     }
 
     Ok((dependency_library_count, dependency_page_count))
+}
+
+fn dependency_library_id_error(
+    error_source: DependencyLibraryIdErrorSource,
+    partition_index: usize,
+    library_id: u32,
+    reason: impl Into<String>,
+) -> CompileError {
+    let reason = reason.into();
+    match error_source {
+        DependencyLibraryIdErrorSource::ExplicitManifest => {
+            explicit_source_pack_manifest_invalid(Some(library_id), reason)
+        }
+        DependencyLibraryIdErrorSource::LibraryPartition => library_partition_contract_error(
+            format!("partition {partition_index} library {library_id}: {reason}"),
+        ),
+    }
 }
 
 /// Stores one dependency-library id page for a partition.

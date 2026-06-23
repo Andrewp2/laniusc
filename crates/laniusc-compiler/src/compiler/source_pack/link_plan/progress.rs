@@ -47,7 +47,7 @@ pub(in crate::compiler) fn validate_link_plan_prepare_progress(
     limits: SourcePackJobBatchLimits,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_HIERARCHICAL_LINK_PLAN_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack hierarchical link plan prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_HIERARCHICAL_LINK_PLAN_PREPARE_PROGRESS_VERSION
         )));
@@ -200,7 +200,7 @@ pub(in crate::compiler) fn store_link_plan_prepare_progress(
     )?;
     let path = store.hierarchical_link_plan_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack hierarchical link plan prepare progress: {err}"
         ))
     })?;
@@ -221,14 +221,14 @@ pub(in crate::compiler) fn load_link_plan_prepare_progress(
 ) -> Result<HierarchicalLinkPlanPrepareProgress, CompileError> {
     let path = store.hierarchical_link_plan_prepare_progress_path_for_target(target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack hierarchical link plan prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress =
         serde_json::from_slice::<HierarchicalLinkPlanPrepareProgress>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "parse source-pack hierarchical link plan prepare progress {}: {err}",
                 path.display()
             ))
@@ -248,7 +248,7 @@ pub(in crate::compiler) fn store_link_plan_index(
     validate_link_plan_index(index, index.target)?;
     let path = store.hierarchical_link_plan_index_path_for_target(index.target);
     let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack hierarchical link plan index: {err}"
         ))
     })?;

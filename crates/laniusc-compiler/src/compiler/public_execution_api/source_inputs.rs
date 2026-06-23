@@ -309,7 +309,7 @@ pub(in crate::compiler) fn prepare_library_pages_artifact_build_with_shards(
         }
     }
 
-    Err(CompileError::GpuFrontend(format!(
+    Err(source_pack_preparation_incomplete_error(format!(
         "prepared-library-pages artifact build prepare did not complete within {ARTIFACT_BUILD_FULL_PREPARE_DEFAULT_STEP_LIMIT} bounded chunk steps; keep calling prepare_artifact_build_chunk to continue persisted preparation"
     )))
 }

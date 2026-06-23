@@ -7,7 +7,7 @@ pub(in crate::compiler) fn validate_batch_shard_locator(
     batch_index: usize,
 ) -> Result<(), CompileError> {
     if locator.version != SOURCE_PACK_BUILD_BATCH_SHARD_LOCATOR_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack batch shard locator version {}; expected {}",
             locator.version, SOURCE_PACK_BUILD_BATCH_SHARD_LOCATOR_VERSION
         )));
@@ -33,7 +33,7 @@ pub(in crate::compiler) fn validate_job_batch_page_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch page index version {}; expected {}",
             index.version, SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION
         )));
@@ -119,7 +119,7 @@ pub(in crate::compiler) fn validate_job_batch_page_with_mode(
     mode: JobBatchPageValidationMode,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_PAGE_VERSION
         )));
@@ -267,7 +267,7 @@ pub(in crate::compiler) fn validate_job_batch_dependency_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch dependency page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION
         )));
@@ -352,7 +352,7 @@ pub(in crate::compiler) fn validate_job_batch_dependency_range_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch dependency range page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION
         )));
@@ -444,7 +444,7 @@ pub(in crate::compiler) fn validate_job_batch_locator_page(
     expected_job_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_JOB_LOCATOR_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch job-locator page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_JOB_LOCATOR_PAGE_VERSION
         )));
@@ -539,7 +539,7 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page_with_mode(
     mode: JobBatchDependentsPageValidationMode,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch dependents page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION
         )));
@@ -645,7 +645,7 @@ pub(in crate::compiler) fn validate_job_batch_dependent_batch_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack job-batch dependent-batch page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION
         )));

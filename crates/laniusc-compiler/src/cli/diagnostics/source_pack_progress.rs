@@ -84,8 +84,9 @@ fn source_pack_progress_artifact_error(
 ) -> CliError {
     match err {
         CompileError::Diagnostic(diagnostic) => CliError::Diagnostic(diagnostic),
-        err => CliError::Diagnostic(
-            Diagnostic::error("LNC0037", "package metadata invalid")
+        err => {
+            let underlying = err.into_public_diagnostic();
+            let diagnostic = Diagnostic::error("LNC0037", "package metadata invalid")
                 .with_note(
                     "diagnostics source-pack-progress reads persisted source-pack artifact records",
                 )
@@ -98,9 +99,17 @@ fn source_pack_progress_artifact_error(
                     "source-pack progress index: {}",
                     progress_index_path.display()
                 ))
-                .with_note(err.to_string())
-                .with_help("run source-pack prepare/build for the selected --emit target, or pass the artifact root that contains the persisted progress records"),
-        ),
+                .with_note(format!(
+                    "underlying diagnostic: {}: {}",
+                    underlying.code, underlying.message
+                ))
+                .with_note(format!(
+                    "underlying diagnostic category: {}",
+                    underlying.category
+                ))
+                .with_help("run source-pack prepare/build for the selected --emit target, or pass the artifact root that contains the persisted progress records");
+            CliError::Diagnostic(diagnostic)
+        }
     }
 }
 
@@ -181,5 +190,48 @@ fn source_pack_progress_status(progress: &SourcePackWorkQueueProgressIndex) -> &
         "claimed"
     } else {
         "waiting"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::source_pack_progress_artifact_error;
+    use crate::{cli::common::CliError, compiler::CompileError};
+
+    #[test]
+    fn source_pack_progress_artifact_error_summarizes_legacy_compile_errors_publicly() {
+        let err = source_pack_progress_artifact_error(
+            Path::new("artifacts"),
+            "wasm",
+            Path::new("artifacts/work-queue-progress.json"),
+            CompileError::GpuFrontend("GPU LL(1) parser rejected token: 4".to_string()),
+        );
+
+        let CliError::Diagnostic(diagnostic) = err else {
+            panic!("source-pack progress artifact errors should be structured diagnostics");
+        };
+
+        assert_eq!(diagnostic.code, "LNC0037");
+        assert!(
+            diagnostic.notes.iter().any(|note| {
+                note == "underlying diagnostic: LNC0057: compiler execution failed"
+            }),
+            "wrapper should expose the public underlying diagnostic identity"
+        );
+        assert!(
+            diagnostic
+                .notes
+                .iter()
+                .any(|note| note == "underlying diagnostic category: tooling"),
+            "wrapper should expose the public underlying diagnostic category"
+        );
+
+        let rendered = diagnostic.render();
+        assert!(
+            !rendered.contains("GPU LL(1)") && !rendered.contains("parser rejected token"),
+            "wrapper must not leak the legacy compiler error text\n{rendered}"
+        );
     }
 }

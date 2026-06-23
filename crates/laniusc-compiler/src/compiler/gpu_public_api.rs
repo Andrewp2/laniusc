@@ -34,10 +34,13 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
     for (i, path) in paths.iter().enumerate() {
         let path = path.as_ref();
         let source = fs::read_to_string(path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read explicit {label} source file {i} ({}): {err}",
-                path.display()
-            ))
+            input_read_failed_error(
+                path,
+                format!("read explicit {label} source file {i}"),
+                "could not read this explicit source file",
+                err,
+                "create the source file or pass a readable .lani input path",
+            )
         })?;
         sources.push(source);
     }
@@ -52,22 +55,40 @@ pub(super) fn read_explicit_source_path_metadata(
     path: &Path,
 ) -> Result<ExplicitSourcePathFile, CompileError> {
     let metadata = fs::metadata(path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): {err}",
-            path.display()
-        ))
+        input_read_failed_error(
+            path,
+            format!("stat explicit {label} source file {path_index}"),
+            "could not read metadata for this source file",
+            err,
+            "create the source file or pass a readable regular .lani input path",
+        )
     })?;
     if !metadata.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): not a regular file",
-            path.display()
-        )));
+        return Err(input_path_invalid_error(
+            path,
+            format!("stat explicit {label} source file {path_index}"),
+            "this source input is not a regular file",
+            "source input path is not a regular file",
+            "pass a readable regular .lani file",
+        ));
     }
     let byte_len = usize::try_from(metadata.len()).map_err(|_| {
-        CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): file is too large for this target",
-            path.display()
-        ))
+        source_pack_input_limit_exceeded(
+            &format!("stat explicit {label} source file {path_index}"),
+            format!(
+                "source file {} is too large for this target",
+                path.display()
+            ),
+            "file byte length does not fit the host target",
+            Some(DiagnosticLabel::primary(
+                path,
+                1,
+                1,
+                1,
+                None,
+                "this source file is too large for this target",
+            )),
+        )
     })?;
     let modified_unix_nanos = source_file_modified_unix_nanos(&metadata);
     Ok(ExplicitSourcePathFile {
@@ -95,40 +116,62 @@ pub(super) fn validate_explicit_source_path_file_metadata(
     file: &ExplicitSourcePathFile,
 ) -> Result<(), CompileError> {
     let metadata = fs::metadata(&file.path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): {err}",
-            file.path.display()
-        ))
+        input_read_failed_error(
+            &file.path,
+            format!("stat explicit {label} source file {path_index}"),
+            "could not read metadata for this source file",
+            err,
+            "restore the source file or regenerate the source-pack manifest",
+        )
     })?;
     if !metadata.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): not a regular file",
-            file.path.display()
-        )));
+        return Err(input_path_invalid_error(
+            &file.path,
+            format!("stat explicit {label} source file {path_index}"),
+            "this planned source input is not a regular file",
+            "planned source input path is not a regular file",
+            "restore the source file or regenerate the source-pack manifest",
+        ));
     }
     let current_byte_len = usize::try_from(metadata.len()).map_err(|_| {
-        CompileError::GpuFrontend(format!(
-            "stat explicit {label} source file {path_index} ({}): file is too large for this target",
-            file.path.display()
-        ))
+        source_pack_input_limit_exceeded(
+            &format!("stat explicit {label} source file {path_index}"),
+            format!(
+                "planned source file {} is too large for this target",
+                file.path.display()
+            ),
+            "file byte length does not fit the host target",
+            Some(DiagnosticLabel::primary(
+                &file.path,
+                1,
+                1,
+                1,
+                None,
+                "this planned source file is too large for this target",
+            )),
+        )
     })?;
     if current_byte_len != file.byte_len {
-        return Err(CompileError::GpuFrontend(format!(
-            "explicit {label} source file {path_index} ({}) changed since manifest was planned: byte_len was {}, now {}",
-            file.path.display(),
-            file.byte_len,
-            current_byte_len
-        )));
+        return Err(explicit_source_pack_manifest_invalid_at_path(
+            &file.path,
+            format!(
+                "explicit {label} source file {path_index} changed since manifest was planned: byte_len was {}, now {}",
+                file.byte_len, current_byte_len
+            ),
+            "this source file changed since the manifest was planned",
+        ));
     }
     let current_modified_unix_nanos = source_file_modified_unix_nanos(&metadata);
     if file.modified_unix_nanos.is_some() && current_modified_unix_nanos != file.modified_unix_nanos
     {
-        return Err(CompileError::GpuFrontend(format!(
-            "explicit {label} source file {path_index} ({}) changed since manifest was planned: modified_unix_nanos was {:?}, now {:?}",
-            file.path.display(),
-            file.modified_unix_nanos,
-            current_modified_unix_nanos
-        )));
+        return Err(explicit_source_pack_manifest_invalid_at_path(
+            &file.path,
+            format!(
+                "explicit {label} source file {path_index} changed since manifest was planned: modified_unix_nanos was {:?}, now {:?}",
+                file.modified_unix_nanos, current_modified_unix_nanos
+            ),
+            "this source file changed since the manifest was planned",
+        ));
     }
     Ok(())
 }
@@ -153,10 +196,13 @@ pub(super) fn read_explicit_source_path_files(
     let mut sources = Vec::with_capacity(files.len());
     for (i, file) in files.iter().enumerate() {
         let source = fs::read_to_string(&file.path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read explicit {label} source file {i} ({}): {err}",
-                file.path.display()
-            ))
+            input_read_failed_error(
+                &file.path,
+                format!("read explicit {label} source file {i}"),
+                "could not read this planned source file",
+                err,
+                "restore the source file or regenerate the source-pack manifest",
+            )
         })?;
         sources.push(source);
     }
@@ -178,7 +224,13 @@ pub(super) fn global_gpu_compiler_for(
             .map_err(|err| err.to_string())
         })
         .as_ref()
-        .map_err(|err| CompileError::GpuFrontend(format!("initialize {label} GPU compiler: {err}")))
+        .map_err(|err| {
+            compiler_execution_failed_error(
+                "the compiler stopped while initializing the process-global GPU compiler",
+                format!("initialize {label} compiler"),
+                err,
+            )
+        })
 }
 
 /// Returns the process-global frontend-only GPU compiler.
@@ -211,35 +263,85 @@ pub(super) fn validate_in_memory_source_pack_fits_default_codegen_unit<S: AsRef<
 ) -> Result<(), CompileError> {
     let limits = CodegenUnitLimits::default().normalized();
     if sources.len() > limits.max_source_files {
-        return Err(CompileError::GpuFrontend(format!(
-            "{operation} received {} in-memory source files, exceeding the bounded codegen-unit limit {}; use persisted source-pack descriptor work queues for larger codebases",
-            sources.len(),
-            limits.max_source_files
-        )));
+        return Err(source_pack_input_limit_exceeded(
+            operation,
+            format!("received {} in-memory source files", sources.len()),
+            format!(
+                "bounded codegen-unit source-file limit: {}",
+                limits.max_source_files
+            ),
+            None,
+        ));
     }
 
     let mut total_source_bytes = 0usize;
     for (source_index, source) in sources.iter().enumerate() {
         let source_bytes = source.as_ref().len();
         if source_bytes > limits.max_source_bytes {
-            return Err(CompileError::GpuFrontend(format!(
-                "{operation} source file {source_index} has {source_bytes} bytes, exceeding the bounded codegen-unit limit {}; use persisted source-pack descriptor work queues for larger codebases",
-                limits.max_source_bytes
-            )));
+            return Err(source_pack_input_limit_exceeded(
+                operation,
+                format!("source file {source_index} has {source_bytes} bytes"),
+                format!(
+                    "bounded codegen-unit byte limit: {}",
+                    limits.max_source_bytes
+                ),
+                Some(source_pack_input_limit_label(
+                    source_index,
+                    "this in-memory source file exceeds the bounded codegen-unit byte limit",
+                )),
+            ));
         }
-        total_source_bytes = total_source_bytes.checked_add(source_bytes).ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
-                "{operation} in-memory source-pack byte count overflowed; use persisted source-pack descriptor work queues for larger codebases"
-            ))
-        })?;
+        total_source_bytes = total_source_bytes
+            .checked_add(source_bytes)
+            .ok_or_else(|| {
+                source_pack_input_limit_exceeded(
+                    operation,
+                    "in-memory source-pack byte count overflowed",
+                    "bounded codegen-unit byte limit could not be checked",
+                    None,
+                )
+            })?;
         if total_source_bytes > limits.max_source_bytes {
-            return Err(CompileError::GpuFrontend(format!(
-                "{operation} received {total_source_bytes} total in-memory source bytes, exceeding the bounded codegen-unit limit {}; use persisted source-pack descriptor work queues for larger codebases",
-                limits.max_source_bytes
-            )));
+            return Err(source_pack_input_limit_exceeded(
+                operation,
+                format!("received {total_source_bytes} total in-memory source bytes"),
+                format!(
+                    "bounded codegen-unit byte limit: {}",
+                    limits.max_source_bytes
+                ),
+                None,
+            ));
         }
     }
     Ok(())
+}
+
+fn source_pack_input_limit_exceeded(
+    operation: &str,
+    observed: impl Into<String>,
+    limit: impl Into<String>,
+    primary_label: Option<DiagnosticLabel>,
+) -> CompileError {
+    let mut diagnostic = Diagnostic::error("LNC0048", "source-pack input limit exceeded")
+        .with_note(format!("operation: {operation}"))
+        .with_note(observed)
+        .with_note(limit)
+        .with_note("use persisted source-pack descriptor work queues for larger codebases");
+    if let Some(label) = primary_label {
+        diagnostic = diagnostic.with_primary_label(label);
+    }
+    CompileError::Diagnostic(diagnostic)
+}
+
+fn source_pack_input_limit_label(source_index: usize, message: &str) -> DiagnosticLabel {
+    DiagnosticLabel::primary(
+        format!("<source pack file {source_index}>"),
+        1,
+        1,
+        1,
+        None,
+        message,
+    )
 }
 
 /// Compile one in-memory source string to WASM with the process-global GPU
@@ -514,8 +616,10 @@ pub async fn run_prepared_descriptor_worker_for_target(
         SourcePackArtifactTarget::Wasm => global_wasm_gpu_compiler()?,
         SourcePackArtifactTarget::X86_64 => global_x86_gpu_compiler()?,
         SourcePackArtifactTarget::Generic => {
-            return Err(CompileError::GpuFrontend(
-                "source-pack descriptor GPU execution requires a concrete target".into(),
+            return Err(source_pack_target_invalid_error(
+                "run prepared descriptor worker",
+                format!("{:?}", SourcePackArtifactTarget::Generic),
+                "a concrete descriptor execution target: Wasm or X86_64",
             ));
         }
     };
@@ -544,8 +648,10 @@ pub async fn step_prepared_descriptor_worker_for_target(
         SourcePackArtifactTarget::Wasm => global_wasm_gpu_compiler()?,
         SourcePackArtifactTarget::X86_64 => global_x86_gpu_compiler()?,
         SourcePackArtifactTarget::Generic => {
-            return Err(CompileError::GpuFrontend(
-                "source-pack descriptor GPU execution requires a concrete target".into(),
+            return Err(source_pack_target_invalid_error(
+                "step prepared descriptor worker",
+                format!("{:?}", SourcePackArtifactTarget::Generic),
+                "a concrete descriptor execution target: Wasm or X86_64",
             ));
         }
     };

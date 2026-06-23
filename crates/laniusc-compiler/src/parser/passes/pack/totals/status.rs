@@ -71,8 +71,8 @@ impl PackTotalsStatusPass {
             ("sc_total".into(), sc_total.as_entire_binding()),
             ("emit_total".into(), emit_total.as_entire_binding()),
             (
-                "projected_status".into(),
-                buffers.projected_status.as_entire_binding(),
+                "partial_parse_status".into(),
+                buffers.partial_parse_status.as_entire_binding(),
             ),
         ]);
         let bind_group = bind_group::create_bind_group_from_reflection(

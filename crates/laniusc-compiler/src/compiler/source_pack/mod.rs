@@ -298,6 +298,10 @@ pub use artifact_model::{
 mod manifest;
 pub(in crate::compiler) use manifest::*;
 pub use manifest::{SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION, SourcePackPathBuildManifest};
+pub(crate) use manifest::{
+    library_partition_contract_error,
+    source_pack_preparation_incomplete_error,
+};
 
 mod library_pages;
 pub(in crate::compiler) use library_pages::*;

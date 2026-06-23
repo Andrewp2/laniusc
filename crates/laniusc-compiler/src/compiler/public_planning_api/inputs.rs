@@ -285,15 +285,19 @@ where
     for library_id in &source_pack.library_ids {
         let (next_index, library_paths) =
             source_paths_by_library.get_mut(library_id).ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "explicit source pack path lookup lost library {library_id}"
-                ))
+                explicit_source_pack_manifest_invalid(
+                    Some(*library_id),
+                    format!("explicit source pack path lookup lost library {library_id}"),
+                )
             })?;
         let path = library_paths.get(*next_index).cloned().ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
-                "explicit source pack path lookup lost source {} for library {library_id}",
-                *next_index
-            ))
+            explicit_source_pack_manifest_invalid(
+                Some(*library_id),
+                format!(
+                    "explicit source pack path lookup lost source {} for library {library_id}",
+                    *next_index
+                ),
+            )
         })?;
         *next_index += 1;
         source_paths.push(path);
@@ -354,20 +358,23 @@ fn collect_entry_source_root_paths(
         let source_root =
             canonical_source_root("source root", source_root, SourceRootLibrary::User)?;
         if seen_user_roots.contains(&source_root.root) {
-            return Err(CompileError::GpuFrontend(format!(
-                "duplicate source root {}",
-                source_root.root.display()
-            )));
+            return Err(source_root_input_error(
+                format!("duplicate source root {}", source_root.root.display()),
+                "remove duplicate source roots before loading imports",
+            ));
         }
         if let Some(overlapping_root) = seen_user_roots
             .iter()
             .find(|seen_root| source_roots_overlap(seen_root, &source_root.root))
         {
-            return Err(CompileError::GpuFrontend(format!(
-                "overlapping source roots {} and {}; user source roots must be disjoint so package-relative module identity is stable",
-                overlapping_root.display(),
-                source_root.root.display()
-            )));
+            return Err(source_root_input_error(
+                format!(
+                    "overlapping source roots {} and {}; user source roots must be disjoint so package-relative module identity is stable",
+                    overlapping_root.display(),
+                    source_root.root.display()
+                ),
+                "pass disjoint user source roots or use package manifest metadata for overlapping package layouts",
+            ));
         }
         seen_user_roots.insert(source_root.root.clone());
         search_roots.push(source_root);
@@ -380,8 +387,9 @@ fn collect_entry_source_root_paths(
         )?);
     }
     if search_roots.is_empty() {
-        return Err(CompileError::GpuFrontend(
-            "source-root import loading requires at least one source root".into(),
+        return Err(source_root_input_error(
+            "source-root import loading requires at least one source root",
+            "pass at least one user source root or standard-library root",
         ));
     }
 
@@ -416,13 +424,22 @@ fn canonical_source_root(
     library: SourceRootLibrary,
 ) -> Result<SourceRootSearchRoot, CompileError> {
     let root = fs::canonicalize(root).map_err(|err| {
-        CompileError::GpuFrontend(format!("canonicalize {label} {}: {err}", root.display()))
+        input_read_failed_error(
+            root,
+            format!("canonicalize {label}"),
+            "could not resolve this source root",
+            err,
+            "pass an existing readable source-root directory",
+        )
     })?;
     if !root.is_dir() {
-        return Err(CompileError::GpuFrontend(format!(
-            "{label} {} is not a directory",
-            root.display()
-        )));
+        return Err(input_path_invalid_error(
+            &root,
+            format!("validate {label}"),
+            "this source root is not a directory",
+            format!("{label} is not a directory"),
+            "pass an existing readable source-root directory",
+        ));
     }
     Ok(SourceRootSearchRoot {
         library,
@@ -451,10 +468,13 @@ fn load_source_root_import(
 
     let imported_file_count = stdlib_paths.len() + user_paths.len().saturating_sub(1);
     if imported_file_count >= SOURCE_ROOT_IMPORT_FILE_LIMIT {
-        return Err(CompileError::GpuFrontend(format!(
-            "source-root import loading reached the limit of {SOURCE_ROOT_IMPORT_FILE_LIMIT} imported files while loading {}",
-            entry_path.display()
-        )));
+        return Err(source_root_input_error(
+            format!(
+                "source-root import loading reached the limit of {SOURCE_ROOT_IMPORT_FILE_LIMIT} imported files while loading {}",
+                entry_path.display()
+            ),
+            "use package manifest/lockfile metadata or split the package into smaller source-root loading units",
+        ));
     }
 
     let imported_source =
@@ -670,6 +690,17 @@ fn is_lani_source_path(path: &Path) -> bool {
     path.extension().and_then(|extension| extension.to_str()) == Some("lani")
 }
 
+fn source_root_input_error(reason: impl Into<String>, help: impl Into<String>) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0061", "source-root input invalid")
+            .with_note(reason)
+            .with_note(
+                "source-root loading requires readable, disjoint source-root directories and a bounded import graph with stable module identities",
+            )
+            .with_help(help),
+    )
+}
+
 fn source_root_package_boundary_error(
     import: &SourceRootImport,
     matches: &[SourceRootResolvedImport],
@@ -810,10 +841,13 @@ fn missing_source_root_module_error(
 
 fn read_source_for_import_discovery(label: &str, path: &Path) -> Result<String, CompileError> {
     fs::read_to_string(path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
-            "read source-root {label} source file ({}): {err}",
-            path.display()
-        ))
+        input_read_failed_error(
+            path,
+            format!("read source-root {label} source file"),
+            "could not read this source file while discovering imports",
+            err,
+            "restore the source file or update the source-root import path",
+        )
     })
 }
 
@@ -1058,7 +1092,7 @@ fn invalid_source_root_path_separator_error(
                     "source-root discovery does not normalize filesystem path separators or package-name separators into module declarations",
                 )
                 .with_note(
-                    "module identity must come from GPU parser module-path tokens such as `module app::main;`",
+                    "module identity must come from source module-path declarations such as `module app::main;`",
                 ),
         ),
         SourceRootPathKind::Import => CompileError::Diagnostic(
@@ -1099,7 +1133,7 @@ fn source_root_import_path_too_deep_error(
                 "import path exceeds the current resolver depth limit",
             ))
             .with_note(
-                "source-root discovery supports at most eight module path segments in an import; module declarations are still validated by the GPU resolver",
+                "source-root discovery supports at most eight module path segments in an import; module declarations are still validated by the resolver",
             ),
     )
 }
@@ -1192,7 +1226,7 @@ fn unsupported_source_root_import_alias_error(
                 "import aliases are not supported by source-root discovery",
             ))
             .with_note(
-                "source-root discovery only loads explicit module-path imports until alias metadata is represented by GPU module/import records",
+                "source-root discovery only loads explicit module-path imports until alias metadata is represented by parsed module/import records",
             ),
     )
 }
@@ -1266,7 +1300,7 @@ fn invalid_source_root_import_path_segment_error(
                 "reserved keywords cannot be used as source-root import path segments",
             )
             .with_note(
-                "source-root discovery must follow GPU module/import identifier records instead of normalizing invalid module paths into host file lookups",
+                "source-root discovery must follow parsed module/import identifier records instead of normalizing invalid module paths into host file lookups",
             ),
     )
 }

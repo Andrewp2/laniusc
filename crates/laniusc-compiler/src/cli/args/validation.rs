@@ -138,19 +138,23 @@ pub(super) fn validate_package_mode(
         if source_pack.uses_package_metadata_prepare_path() {
             return Ok(());
         }
-        return Err(
-            "--package-lockfile currently supports source-pack metadata preparation only with --source-pack-metadata-only; final source-pack descriptor, build, and link output remain unsupported for package lockfiles"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--package-lockfile",
+            "final source-pack descriptor, build, or link output flags",
+            "--package-lockfile currently supports source-pack metadata preparation only with --source-pack-metadata-only; final source-pack descriptor, build, and link output remain unsupported for package lockfiles",
+        ));
     }
     if package_manifest.is_some() && source_pack.uses_source_pack_mode_flag() {
         if source_pack.uses_package_metadata_prepare_path() {
             return Ok(());
         }
-        return Err(
-            "--package-manifest currently supports source-pack metadata preparation only with --source-pack-metadata-only; final source-pack descriptor, build, and link output remain unsupported for package manifests"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--package-manifest",
+            "final source-pack descriptor, build, or link output flags",
+            "--package-manifest currently supports source-pack metadata preparation only with --source-pack-metadata-only; final source-pack descriptor, build, and link output remain unsupported for package manifests",
+        ));
     }
     Ok(())
 }
@@ -204,10 +208,12 @@ pub(super) fn validate_source_pack_prepare_options(
             || !source_roots.is_empty()
             || !inputs.is_empty())
     {
-        return Err(
-            "--source-pack-build-from-metadata reads persisted metadata from --source-pack-artifact-root; do not also pass source-pack inputs"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--source-pack-build-from-metadata",
+            "source-pack input flags or positional source files",
+            "--source-pack-build-from-metadata reads persisted metadata from --source-pack-artifact-root; do not also pass source-pack inputs",
+        ));
     }
     if source_pack.metadata_only && output.is_some() {
         return Err(incompatible_cli_options_error(
@@ -245,28 +251,47 @@ pub(super) fn validate_source_pack_prepare_options(
         && !source_pack.metadata_only
         && !source_pack.prepare_only
     {
-        return Err(
-            "--source-pack-metadata-max-libraries only applies with --source-pack-metadata-only or --source-pack-prepare-only"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--source-pack-metadata-max-libraries",
+            "metadata-free source-pack modes",
+            "--source-pack-metadata-max-libraries only applies with --source-pack-metadata-only or --source-pack-prepare-only",
+        ));
     }
     if source_pack.metadata_max_source_files.is_some()
         && !source_pack.metadata_only
         && !source_pack.prepare_only
     {
-        return Err(
-            "--source-pack-metadata-max-source-files only applies with --source-pack-metadata-only or --source-pack-prepare-only"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--source-pack-metadata-max-source-files",
+            "metadata-free source-pack modes",
+            "--source-pack-metadata-max-source-files only applies with --source-pack-metadata-only or --source-pack-prepare-only",
+        ));
     }
     if source_pack.metadata_max_libraries == Some(0) {
-        return Err("--source-pack-metadata-max-libraries must be greater than zero".into());
+        return Err(unsupported_cli_option_value_error(
+            "--source-pack-metadata-max-libraries",
+            "0",
+            "an integer greater than zero",
+            Some("--source-pack-metadata-max-libraries must be greater than zero".to_string()),
+        ));
     }
     if source_pack.metadata_max_source_files == Some(0) {
-        return Err("--source-pack-metadata-max-source-files must be greater than zero".into());
+        return Err(unsupported_cli_option_value_error(
+            "--source-pack-metadata-max-source-files",
+            "0",
+            "an integer greater than zero",
+            Some("--source-pack-metadata-max-source-files must be greater than zero".to_string()),
+        ));
     }
     if source_pack.build_max_items == 0 {
-        return Err("--source-pack-build-max-items must be greater than zero".into());
+        return Err(unsupported_cli_option_value_error(
+            "--source-pack-build-max-items",
+            "0",
+            "an integer greater than zero",
+            Some("--source-pack-build-max-items must be greater than zero".to_string()),
+        ));
     }
     if (source_pack.manifest.is_some() || source_pack.library_manifest.is_some())
         && (!stdlib_paths.is_empty()
@@ -274,10 +299,12 @@ pub(super) fn validate_source_pack_prepare_options(
             || !source_roots.is_empty()
             || !inputs.is_empty())
     {
-        return Err(
-            "--source-pack-manifest and --source-pack-library-manifest describe all source-pack libraries; do not also pass --stdlib, --stdlib-root, --source-root, or positional input files"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "--source-pack-manifest/--source-pack-library-manifest",
+            "--stdlib, --stdlib-root, --source-root, or positional input files",
+            "--source-pack-manifest and --source-pack-library-manifest describe all source-pack libraries; do not also pass --stdlib, --stdlib-root, --source-root, or positional input files",
+        ));
     }
     Ok(())
 }
@@ -305,10 +332,12 @@ pub(super) fn validate_check_mode(
             || !stdlib_paths.is_empty()
             || inputs.len() > 1)
     {
-        return Err(
-            "check mode currently supports single-entry in-memory, source-root, stdlib-root, package-manifest, and package-lockfile compile paths; omit explicit source-pack descriptor, metadata, prepare, contract, artifact-root, --stdlib, or multi-input flags"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc check",
+            "--check",
+            "explicit source-pack descriptor, metadata, prepare, contract, artifact-root, --stdlib, or multi-input flags",
+            "check mode currently supports single-entry in-memory, source-root, stdlib-root, package-manifest, and package-lockfile compile paths; omit explicit source-pack descriptor, metadata, prepare, contract, artifact-root, --stdlib, or multi-input flags",
+        ));
     }
     if check_only && inputs.is_empty() && package_manifest.is_none() && package_lockfile.is_none() {
         return Err(missing_cli_argument_error(

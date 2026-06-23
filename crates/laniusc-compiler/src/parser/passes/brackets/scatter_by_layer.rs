@@ -44,6 +44,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScatterB
         HashMap::from([
             ("gParams".into(), b.b06_params.as_entire_binding()),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
+            (
+                "partial_parse_status".into(),
+                b.partial_parse_status.as_entire_binding(),
+            ),
             ("layer".into(), b.b_layer.as_entire_binding()),
             ("off_push".into(), b.b_off_push.as_entire_binding()),
             ("off_pop".into(), b.b_off_pop.as_entire_binding()),

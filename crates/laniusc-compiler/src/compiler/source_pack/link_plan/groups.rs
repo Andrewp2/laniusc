@@ -20,9 +20,8 @@ pub(in crate::compiler) fn store_link_leaf_group_chunk(
     max_new_partitions: usize,
 ) -> Result<FilesystemHierarchicalLinkLeafPrepareStepResult, CompileError> {
     if max_new_partitions == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack hierarchical link leaf chunk max_new_partitions must be greater than zero"
-                .into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack hierarchical link leaf chunk max_new_partitions must be greater than zero",
         ));
     }
     validate_library_schedule_index(schedule_index, schedule_index.target)?;
@@ -223,9 +222,8 @@ pub(in crate::compiler) fn store_link_reduce_group_chunk(
     max_new_reduce_groups: usize,
 ) -> Result<FilesystemHierarchicalLinkPlanPrepareStepResult, CompileError> {
     if max_new_reduce_groups == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack hierarchical link reduce chunk max_new_reduce_groups must be greater than zero"
-                .into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack hierarchical link reduce chunk max_new_reduce_groups must be greater than zero",
         ));
     }
     validate_library_schedule_index(schedule_index, schedule_index.target)?;

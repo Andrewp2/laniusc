@@ -37,7 +37,7 @@ pub(in crate::compiler) fn validate_progress_directory_page(
     index: &SourcePackWorkQueueProgressIndex,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack work queue progress directory page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_PAGE_VERSION
         )));
@@ -140,7 +140,7 @@ pub(in crate::compiler) fn validate_progress_directory_index_page(
     index: &SourcePackWorkQueueProgressIndex,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack work queue progress directory-index page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION
         )));
@@ -370,7 +370,7 @@ pub(in crate::compiler) fn validate_progress_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_WORK_QUEUE_PROGRESS_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack work queue progress index version {}; expected {}",
             index.version, SOURCE_PACK_WORK_QUEUE_PROGRESS_INDEX_VERSION
         )));
@@ -490,7 +490,7 @@ pub(in crate::compiler) fn validate_progress_page(
     expected_page_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_PROGRESS_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack work queue progress page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_PROGRESS_PAGE_VERSION
         )));

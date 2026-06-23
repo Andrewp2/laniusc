@@ -148,7 +148,7 @@ pub(in crate::compiler) fn work_queue_record_artifact_batch_claim(
             return Ok(());
         }
         if !batch_ready_unclaimed_from_locator(store, target, batch_index, now_unix_nanos)? {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack artifact batch {batch_index} is not ready for work-queue item claim"
             )));
         }

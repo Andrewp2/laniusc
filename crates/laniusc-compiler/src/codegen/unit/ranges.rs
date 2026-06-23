@@ -76,6 +76,35 @@ pub(in crate::codegen::unit) fn job_index_range_dependency_count(
         .fold(0usize, |count, range| count.saturating_add(range.job_count))
 }
 
+/// Sorts and merges overlapping or adjacent job dependency ranges.
+pub(in crate::codegen::unit) fn compact_job_index_ranges(
+    ranges: Vec<SourcePackJobIndexRange>,
+) -> Vec<SourcePackJobIndexRange> {
+    let mut ranges = ranges
+        .into_iter()
+        .filter(|range| !range.is_empty())
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|range| range.first_job_index);
+    let mut compact_ranges = Vec::<SourcePackJobIndexRange>::with_capacity(ranges.len());
+    for range in ranges {
+        let Some(range_end) = range.end_job_index() else {
+            compact_ranges.push(range);
+            continue;
+        };
+        if let Some(last) = compact_ranges.last_mut() {
+            if let Some(last_end) = last.end_job_index() {
+                if range.first_job_index <= last_end {
+                    let compact_end = last_end.max(range_end);
+                    last.job_count = compact_end - last.first_job_index;
+                    continue;
+                }
+            }
+        }
+        compact_ranges.push(range);
+    }
+    compact_ranges
+}
+
 /// Returns whether completed job ranges fully cover one dependency range.
 pub(in crate::codegen::unit) fn job_range_covered_by_ranges(
     dependency_range: &SourcePackJobIndexRange,
@@ -204,6 +233,12 @@ pub(in crate::codegen::unit) fn push_unique(values: &mut Vec<usize>, value: usiz
     if !values.contains(&value) {
         values.push(value);
     }
+}
+
+/// Sorts dependency indices into the canonical persisted order.
+pub(in crate::codegen::unit) fn normalize_dependency_indices(values: &mut Vec<usize>) {
+    values.sort_unstable();
+    values.dedup();
 }
 
 /// Appends dependency batch indices as compact contiguous ranges.

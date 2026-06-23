@@ -79,6 +79,11 @@ bool impl_node_kind(uint kind)
     return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
+bool inherent_impl_node_kind(uint kind)
+{
+    return kind == PROD_IMPL_INHERENT;
+}
+
 bool type_params_list_param_node(uint node)
 {
     if (!valid_node(node))
@@ -120,8 +125,14 @@ uint impl_generic_param_owner_from_span(uint node)
             continue;
 
         uint owner_start = hir_token_pos[cursor];
+        uint owner_end = hir_token_end[cursor];
         if (valid_token(owner_start) && owner_start <= start)
-            return cursor;
+        {
+            if (inherent_impl_node_kind(node_kind[cursor]))
+                return cursor;
+            if (owner_end != INVALID && start <= owner_end)
+                return cursor;
+        }
     }
     return INVALID;
 }

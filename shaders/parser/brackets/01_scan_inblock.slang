@@ -10,7 +10,8 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> sc_stream;       // len = n_sc (odd=push, even=pop)
+StructuredBuffer<uint> sc_stream;             // len = n_sc (odd=push, even=pop)
+StructuredBuffer<uint> partial_parse_status;  // [4]=actual stack-change count
 RWStructuredBuffer<int> exscan_inblock; // len = n_sc (exclusive prefix inside block)
 RWStructuredBuffer<int> block_sum;      // len = n_blocks
 RWStructuredBuffer<int> block_minpref;  // len = n_blocks (min prefix within block)
@@ -52,7 +53,7 @@ void main(uint3 tid: SV_DispatchThreadID,
           uint3 ltid: SV_GroupThreadID,
           uint3 gid: SV_GroupID)
 {
-    const uint n = gParams.n_sc;
+    const uint n = min(gParams.n_sc, partial_parse_status[4u]);
     const uint GSIZE = gParams.wg_size; // 256
     const uint base = gid.x * GSIZE;
     const uint i = base + ltid.x;

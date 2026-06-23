@@ -31,13 +31,13 @@ fn build_source_pack<S: AsRef<str>>(sources: &[S]) -> Result<(Vec<u8>, SourceFil
     for (file_i, source) in sources.iter().enumerate() {
         let source_bytes = source.as_ref().as_bytes();
         let len = u32::try_from(source_bytes.len())
-            .map_err(|_| anyhow!("source file {file_i} is too large for GPU lexing"))?;
+            .map_err(|_| anyhow!("source file {file_i} is too large to lex"))?;
         starts.push(total_len);
         lens.push(len);
         bytes.extend_from_slice(source_bytes);
         total_len = total_len
             .checked_add(len)
-            .ok_or_else(|| anyhow!("source pack byte length exceeds GPU lexer capacity"))?;
+            .ok_or_else(|| anyhow!("source pack byte length exceeds lexer capacity"))?;
     }
 
     Ok((bytes, SourceFileMetadata { starts, lens }))
@@ -129,7 +129,7 @@ impl GpuLexer {
     ) -> Result<std::sync::MutexGuard<'a, Option<buffers::GpuBuffers>>> {
         let (input_bytes, source_files) = build_source_pack(sources)?;
         let n = u32::try_from(input_bytes.len())
-            .map_err(|_| anyhow!("source pack byte length exceeds GPU lexer capacity"))?;
+            .map_err(|_| anyhow!("source pack byte length exceeds lexer capacity"))?;
         let aligned_len = align_to_word(n);
         let source_file_capacity = source_files.capacity();
 

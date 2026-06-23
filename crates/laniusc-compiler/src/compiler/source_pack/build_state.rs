@@ -30,7 +30,9 @@ pub(in crate::compiler) fn current_unix_nanos() -> Result<u128, CompileError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
-        .map_err(|err| CompileError::GpuFrontend(format!("system clock is before epoch: {err}")))
+        .map_err(|err| {
+            source_pack_progress_state_error(format!("system clock is before epoch: {err}"))
+        })
 }
 
 /// Returns the earliest non-`None` lease expiry among two candidates.
@@ -338,7 +340,7 @@ impl SourcePackBuildProgressShard {
     pub fn record_batch_ready(&mut self, batch_index: usize) -> Result<(), CompileError> {
         validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} cannot ready batch {batch_index}; shard batches are {:?}",
                 self.shard_index, self.batch_indices
             )));
@@ -376,12 +378,12 @@ impl SourcePackBuildProgressShard {
             .iter()
             .find(|claim| claim.batch_index == batch_index && !claim.is_expired(now_unix_nanos))
         else {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack batch {batch_index} is not claimed by worker {worker_id:?}"
             )));
         };
         if claim.worker_id != worker_id {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack batch {batch_index} is claimed by worker {:?}, not {:?}",
                 claim.worker_id, worker_id
             )));
@@ -408,27 +410,27 @@ impl SourcePackBuildProgressShard {
     ) -> Result<(), CompileError> {
         validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} cannot claim batch {batch_index}; shard batches are {:?}",
                 self.shard_index, self.batch_indices
             )));
         }
         let worker_id = worker_id.into();
         if worker_id.trim().is_empty() {
-            return Err(CompileError::GpuFrontend(
-                "source-pack batch claim worker id must not be empty".into(),
+            return Err(source_pack_progress_state_error(
+                "source-pack batch claim worker id must not be empty",
             ));
         }
         if let (Some(now), Some(expires)) = (now_unix_nanos, lease_expires_unix_nanos) {
             if expires <= now {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} claim lease expires at {expires}, which is not after now {now}"
                 )));
             }
         }
         self.prune_inactive_batch_claims_unchecked(now_unix_nanos);
         if self.is_batch_completed(batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack batch {batch_index} is already complete and cannot be claimed"
             )));
         }
@@ -438,7 +440,7 @@ impl SourcePackBuildProgressShard {
             .find(|claim| claim.batch_index == batch_index)
         {
             if claim.worker_id != worker_id {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} is already claimed by worker {:?}",
                     claim.worker_id
                 )));
@@ -463,7 +465,7 @@ impl SourcePackBuildProgressShard {
     ) -> Result<(), CompileError> {
         validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&result.batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} cannot record batch {}; shard batches are {:?}",
                 self.shard_index, result.batch_index, self.batch_indices
             )));
@@ -483,7 +485,7 @@ impl SourcePackBuildProgressShard {
                 .as_ref()
                 .is_some_and(|existing| existing != linked_output_key)
             {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack progress shard {} already recorded linked output {:?}, cannot replace with {:?}",
                     self.shard_index,
                     self.linked_output_key.as_deref(),

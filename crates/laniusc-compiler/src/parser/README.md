@@ -429,7 +429,7 @@ Recommended unit cases:
 
 2. **Route full parser-stack summaries through runtime validation.**
 
-   * `sc_projection` is conflict-free in table metadata, but runtime bracket validation still reads a delimiter-safe stream.
+   * `stack_change_table` is conflict-free in table metadata, but runtime bracket validation still reads a delimiter-safe stream.
    * Add a dedicated parser-stack summary stream so delimiter matching and parser-stack composition do not share one interpretation.
 
 3. **Optional PSE (min-tree) experiment for brackets.**

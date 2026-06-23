@@ -49,8 +49,8 @@ impl GpuParser {
             .pack_varlen
             .record_pass_indirect(&mut ctx, &bufs.active_pair_group_dispatch_args)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.pack_varlen");
-        ctx.encoder
-            .copy_buffer_to_buffer(&bufs.projected_status, 0, &bufs.ll1_status, 0, 24);
+        passes::record_stack_effect_validation(&mut ctx, &self.passes)?;
+        stamp_timer(timer_ref, ctx.encoder, "parser.stack_effect_status");
         if include_tree {
             self.record_tree_active_dispatch_args(ctx.encoder, bufs)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_active_dispatch_args");

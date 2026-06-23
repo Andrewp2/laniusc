@@ -95,16 +95,20 @@ impl ExplicitSourcePack {
     /// have identical lengths.
     pub fn new(sources: Vec<String>, library_ids: Vec<u32>) -> Result<Self, CompileError> {
         if sources.is_empty() {
-            return Err(CompileError::GpuFrontend(
-                "explicit source pack has no source files".to_string(),
+            return Err(explicit_source_pack_manifest_invalid(
+                None,
+                "manifest contains no source files",
             ));
         }
         if sources.len() != library_ids.len() {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack has {} source files but {} library ids",
-                sources.len(),
-                library_ids.len()
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                None,
+                format!(
+                    "has {} source files but {} library ids",
+                    sources.len(),
+                    library_ids.len()
+                ),
+            ));
         }
         Ok(Self {
             source_paths: vec![None; sources.len()],
@@ -120,11 +124,14 @@ impl ExplicitSourcePack {
         source_paths: Vec<Option<PathBuf>>,
     ) -> Result<Self, CompileError> {
         if source_paths.len() != self.sources.len() {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack has {} source files but {} source paths",
-                self.sources.len(),
-                source_paths.len()
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                None,
+                format!(
+                    "has {} source files but {} source paths",
+                    self.sources.len(),
+                    source_paths.len()
+                ),
+            ));
         }
         self.source_paths = source_paths;
         Ok(self)
@@ -184,29 +191,38 @@ impl ExplicitSourcePack {
         let mut seen_dependencies = BTreeSet::new();
         for dependency in &library_dependencies {
             if dependency.library_id == dependency.depends_on_library_id {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} depends on itself",
-                    dependency.library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(dependency.library_id),
+                    "library depends on itself",
+                ));
             }
             if !library_id_set.contains(&dependency.library_id) {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack dependency references missing library {}",
-                    dependency.library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(dependency.library_id),
+                    format!(
+                        "dependency references missing library {}",
+                        dependency.library_id
+                    ),
+                ));
             }
             if !library_id_set.contains(&dependency.depends_on_library_id) {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack dependency references missing library {}",
-                    dependency.depends_on_library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(dependency.library_id),
+                    format!(
+                        "dependency references missing library {}",
+                        dependency.depends_on_library_id
+                    ),
+                ));
             }
             if !seen_dependencies.insert((dependency.library_id, dependency.depends_on_library_id))
             {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack duplicate library dependency {} -> {}",
-                    dependency.library_id, dependency.depends_on_library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(dependency.library_id),
+                    format!(
+                        "duplicate library dependency {} -> {}",
+                        dependency.library_id, dependency.depends_on_library_id
+                    ),
+                ));
             }
         }
 
@@ -215,7 +231,6 @@ impl ExplicitSourcePack {
         self.library_dependencies = library_dependencies;
         Ok(self)
     }
-
     /// Plans backend codegen units over this in-memory pack.
     pub fn codegen_unit_plan(&self, limits: CodegenUnitLimits) -> CodegenUnitPlan {
         CodegenUnitPlan::from_source_pack_with_libraries(&self.sources, &self.library_ids, limits)
@@ -628,8 +643,9 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
     libraries: &[ExplicitSourceLibraryManifestEntry],
 ) -> Result<(Vec<u32>, Vec<SourcePackLibraryDependency>), CompileError> {
     if libraries.is_empty() {
-        return Err(CompileError::GpuFrontend(
-            "explicit source pack has no source files".to_string(),
+        return Err(explicit_source_pack_manifest_invalid(
+            None,
+            "manifest contains no source libraries",
         ));
     }
 
@@ -640,16 +656,16 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
 
     for library in libraries {
         if library.source_file_count == 0 {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} has no source files",
-                library.library_id
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                "library declares no source files",
+            ));
         }
         if !library_id_set.insert(library.library_id) {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} appears more than once",
-                library.library_id
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                "library id appears more than once",
+            ));
         }
         library_id_order.push(library.library_id);
     }
@@ -657,22 +673,25 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
     for library in libraries {
         for &dependency_library_id in &library.dependency_library_ids {
             if dependency_library_id == library.library_id {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} depends on itself",
-                    library.library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    "library depends on itself",
+                ));
             }
             if !library_id_set.contains(&dependency_library_id) {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} depends on missing library {}",
-                    library.library_id, dependency_library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    format!("depends on missing library {dependency_library_id}"),
+                ));
             }
             if !seen_dependencies.insert((library.library_id, dependency_library_id)) {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack duplicate library dependency {} -> {}",
-                    library.library_id, dependency_library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    format!(
+                        "duplicate library dependency {} -> {}",
+                        library.library_id, dependency_library_id
+                    ),
+                ));
             }
             library_dependencies.push(SourcePackLibraryDependency {
                 library_id: library.library_id,
@@ -684,6 +703,36 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
     let topological_library_ids =
         topologically_order_library_ids(&library_id_order, &library_dependencies)?;
     Ok((topological_library_ids, library_dependencies))
+}
+
+pub(in crate::compiler) fn explicit_source_pack_manifest_invalid(
+    library_id: Option<u32>,
+    reason: impl Into<String>,
+) -> CompileError {
+    let mut diagnostic = explicit_source_pack_manifest_invalid_diagnostic(reason);
+    if let Some(library_id) = library_id {
+        diagnostic = diagnostic.with_note(format!("library id: {library_id}"));
+    }
+    CompileError::Diagnostic(diagnostic)
+}
+
+pub(in crate::compiler) fn explicit_source_pack_manifest_invalid_at_path(
+    path: &Path,
+    reason: impl Into<String>,
+    label_message: impl Into<String>,
+) -> CompileError {
+    CompileError::Diagnostic(
+        explicit_source_pack_manifest_invalid_diagnostic(reason)
+            .with_primary_label(DiagnosticLabel::primary(path, 1, 1, 1, None, label_message)),
+    )
+}
+
+fn explicit_source_pack_manifest_invalid_diagnostic(reason: impl Into<String>) -> Diagnostic {
+    Diagnostic::error("LNC0049", "explicit source-pack manifest invalid")
+        .with_note(reason)
+        .with_note(
+            "each explicit source-pack library must appear once, declare at least one source file, depend only on present libraries, and report counts that match the streamed paths and dependencies",
+        )
 }
 
 /// Converts vector path inputs into path streams without reordering libraries.
@@ -858,8 +907,9 @@ pub(in crate::compiler) fn topologically_order_library_ids(
     }
 
     if sorted_ids.len() != library_ids.len() {
-        return Err(CompileError::GpuFrontend(
-            "explicit source pack library dependencies contain a cycle".to_string(),
+        return Err(explicit_source_pack_manifest_invalid(
+            None,
+            "library dependencies contain a cycle",
         ));
     }
 

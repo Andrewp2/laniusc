@@ -242,13 +242,13 @@ fn simple_llp_grammar_builds_paper_style_pair_tables() {
     let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
     let prod_arity = compute_prod_arity(&spec.productions);
 
-    let (tables, projection, witness_inputs) =
-        build_projected_precomputed_tables(&spec, &predictions, prod_arity)
+    let (tables, pair_tables, witness_inputs) =
+        build_llp_precomputed_tables(&spec, &predictions, prod_arity)
             .expect("build paper-style LLP tables");
 
     assert_eq!(witness_inputs, 0);
-    assert!(!projection.sc.cells.is_empty());
-    assert!(!projection.pp.cells.is_empty());
+    assert!(!pair_tables.stack_change.cells.is_empty());
+    assert!(!pair_tables.partial_parse.cells.is_empty());
     assert!(!tables.sc_superseq.is_empty());
     assert!(!tables.pp_superseq.is_empty());
 }
@@ -288,7 +288,7 @@ fn psls_conflict_report_names_productions_and_gammas() {
 }
 
 #[test]
-fn semantic_closing_delimiters_use_distinct_projection_pairs() {
+fn semantic_closing_delimiters_use_distinct_pair_table_entries() {
     let current = current_grammar();
 
     let group = prediction_chunks_by_pair(

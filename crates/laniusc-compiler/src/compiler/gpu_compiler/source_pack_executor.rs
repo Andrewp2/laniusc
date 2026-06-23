@@ -36,6 +36,102 @@ pub struct GpuSourcePackLinkHandle {
     pub(super) partial_link_count: usize,
 }
 
+/// Validates that source-file metadata still matches a descriptor job record.
+pub(in crate::compiler) fn validate_gpu_source_pack_descriptor_job_source_file_records(
+    stage: &str,
+    job: &SourcePackJob,
+    source_files: &[ExplicitSourcePathFile],
+) -> Result<(), CompileError> {
+    let expected_phase = match stage {
+        "library-interface" => Some(SourcePackJobPhase::LibraryFrontend),
+        "codegen" => Some(SourcePackJobPhase::Codegen),
+        _ => None,
+    };
+    if let Some(expected_phase) = expected_phase {
+        if job.phase != expected_phase {
+            return Err(artifact_shard_contract_error(format!(
+                "source-pack {stage} descriptor job {} has phase {:?} but expected {:?}",
+                job.job_index, job.phase, expected_phase
+            )));
+        }
+    }
+    let source_end = job
+        .first_source_index
+        .checked_add(job.source_file_count)
+        .ok_or_else(|| {
+            artifact_shard_contract_error(format!(
+                "source-pack {stage} descriptor job {} source range {}+{} overflows",
+                job.job_index, job.first_source_index, job.source_file_count
+            ))
+        })?;
+    if source_files.len() != job.source_file_count {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack {stage} descriptor job {} received {} source-file records but expected {}",
+            job.job_index,
+            source_files.len(),
+            job.source_file_count
+        )));
+    }
+    let mut source_bytes = 0usize;
+    let mut source_lines = 0usize;
+    for (offset, file) in source_files.iter().enumerate() {
+        if file.library_id != job.library_id {
+            let source_index = job.first_source_index.saturating_add(offset);
+            return Err(artifact_shard_contract_error(format!(
+                "source-pack {stage} descriptor job {} source file {} belongs to library {} but expected {}",
+                job.job_index, source_index, file.library_id, job.library_id
+            )));
+        }
+        source_bytes = source_bytes.checked_add(file.byte_len).ok_or_else(|| {
+            artifact_shard_contract_error(format!(
+                "source-pack {stage} descriptor job {} source byte count overflows before source {}",
+                job.job_index,
+                job.first_source_index.saturating_add(offset)
+            ))
+        })?;
+        source_lines = source_lines
+            .checked_add(file.line_count.unwrap_or(0))
+            .ok_or_else(|| {
+                artifact_shard_contract_error(format!(
+                    "source-pack {stage} descriptor job {} source line count overflows before source {}",
+                    job.job_index,
+                    job.first_source_index.saturating_add(offset)
+                ))
+            })?;
+    }
+    if source_bytes != job.source_bytes {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack {stage} descriptor job {} source range {}..{} has {} bytes but job record declares {}",
+            job.job_index, job.first_source_index, source_end, source_bytes, job.source_bytes
+        )));
+    }
+    if source_lines != job.source_lines {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack {stage} descriptor job {} source range {}..{} has {} lines but job record declares {}",
+            job.job_index, job.first_source_index, source_end, source_lines, job.source_lines
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that every dependency descriptor artifact in a batch exists on disk.
+pub(in crate::compiler) fn validate_gpu_source_pack_descriptor_artifact_paths(
+    stage: &str,
+    owner_index: usize,
+    artifacts: &[ArtifactPath],
+) -> Result<(), CompileError> {
+    for artifact in artifacts {
+        if !artifact.path.is_file() {
+            return Err(source_pack_artifact_store_error(format!(
+                "source-pack {stage} {owner_index} is missing dependency artifact {} at {}",
+                artifact.key,
+                artifact.path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
     /// Creates a descriptor executor for one compiler, artifact root, and target.
     pub fn new(
@@ -76,7 +172,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             &handle.source_files,
         )?;
         let sources = read_explicit_source_path_files(
-            "GPU source-pack library-interface job",
+            "source-pack library-interface job",
             &handle.source_files,
         )?;
         self.compiler.type_check_source_pack(&sources).await?;
@@ -99,8 +195,8 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
     ) -> Result<ArtifactPath, CompileError> {
         self.validate_job_source_file_records("codegen", &handle.job, &handle.source_files)?;
         if !handle.library_interface_artifact.path.is_file() {
-            return Err(CompileError::GpuCodegen(format!(
-                "GPU source-pack codegen descriptor job {} missing owning interface artifact {}",
+            return Err(source_pack_artifact_store_error(format!(
+                "source-pack codegen descriptor job {} is missing owning interface artifact {}",
                 handle.job.job_index,
                 handle.library_interface_artifact.path.display()
             )));
@@ -196,20 +292,25 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         let path = artifact_path(&self.artifact_root, &key)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "create GPU source-pack descriptor artifact directory {}: {err}",
+                source_pack_artifact_store_error(format!(
+                    "create source-pack descriptor artifact directory {}: {err}",
                     parent.display()
                 ))
             })?;
         }
         let bytes = serde_json::to_vec_pretty(descriptor).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize GPU source-pack {:?} descriptor for {}: {err}",
+            source_pack_artifact_store_error(format!(
+                "serialize source-pack {:?} descriptor for {}: {err}",
                 stage,
                 key_suffix.as_ref()
             ))
         })?;
-        write_file_atomic(&path, &bytes, "GPU source-pack descriptor artifact")?;
+        write_file_atomic_with_error(
+            &path,
+            &bytes,
+            "source-pack descriptor artifact",
+            source_pack_artifact_store_error,
+        )?;
         Ok(ArtifactPath { key, path })
     }
 
@@ -220,76 +321,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         job: &SourcePackJob,
         source_files: &[ExplicitSourcePathFile],
     ) -> Result<(), CompileError> {
-        let expected_phase = match stage {
-            "library-interface" => Some(SourcePackJobPhase::LibraryFrontend),
-            "codegen" => Some(SourcePackJobPhase::Codegen),
-            _ => None,
-        };
-        if let Some(expected_phase) = expected_phase {
-            if job.phase != expected_phase {
-                return Err(CompileError::GpuCodegen(format!(
-                    "GPU source-pack {stage} descriptor job {} has phase {:?} but expected {:?}",
-                    job.job_index, job.phase, expected_phase
-                )));
-            }
-        }
-        let source_end = job
-            .first_source_index
-            .checked_add(job.source_file_count)
-            .ok_or_else(|| {
-                CompileError::GpuCodegen(format!(
-                    "GPU source-pack {stage} descriptor job {} source range {}+{} overflows",
-                    job.job_index, job.first_source_index, job.source_file_count
-                ))
-            })?;
-        if source_files.len() != job.source_file_count {
-            return Err(CompileError::GpuCodegen(format!(
-                "GPU source-pack {stage} descriptor job {} received {} source-file records but expected {}",
-                job.job_index,
-                source_files.len(),
-                job.source_file_count
-            )));
-        }
-        let mut source_bytes = 0usize;
-        let mut source_lines = 0usize;
-        for (offset, file) in source_files.iter().enumerate() {
-            if file.library_id != job.library_id {
-                let source_index = job.first_source_index.saturating_add(offset);
-                return Err(CompileError::GpuCodegen(format!(
-                    "GPU source-pack {stage} descriptor job {} source file {} belongs to library {} but expected {}",
-                    job.job_index, source_index, file.library_id, job.library_id
-                )));
-            }
-            source_bytes = source_bytes.checked_add(file.byte_len).ok_or_else(|| {
-                CompileError::GpuCodegen(format!(
-                    "GPU source-pack {stage} descriptor job {} source byte count overflows before source {}",
-                    job.job_index,
-                    job.first_source_index.saturating_add(offset)
-                ))
-            })?;
-            source_lines = source_lines
-                .checked_add(file.line_count.unwrap_or(0))
-                .ok_or_else(|| {
-                    CompileError::GpuCodegen(format!(
-                        "GPU source-pack {stage} descriptor job {} source line count overflows before source {}",
-                        job.job_index,
-                        job.first_source_index.saturating_add(offset)
-                    ))
-                })?;
-        }
-        if source_bytes != job.source_bytes {
-            return Err(CompileError::GpuCodegen(format!(
-                "GPU source-pack {stage} descriptor job {} source range {}..{} has {} bytes but job record declares {}",
-                job.job_index, job.first_source_index, source_end, source_bytes, job.source_bytes
-            )));
-        }
-        if source_lines != job.source_lines {
-            return Err(CompileError::GpuCodegen(format!(
-                "GPU source-pack {stage} descriptor job {} source range {}..{} has {} lines but job record declares {}",
-                job.job_index, job.first_source_index, source_end, source_lines, job.source_lines
-            )));
-        }
-        Ok(())
+        validate_gpu_source_pack_descriptor_job_source_file_records(stage, job, source_files)
     }
 
     /// Validates that every dependency artifact in a batch exists on disk.
@@ -299,21 +331,11 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         owner_index: usize,
         artifacts: &[ArtifactPath],
     ) -> Result<(), CompileError> {
-        for artifact in artifacts {
-            if !artifact.path.is_file() {
-                return Err(CompileError::GpuCodegen(format!(
-                    "GPU source-pack {stage} {} missing dependency artifact {} at {}",
-                    owner_index,
-                    artifact.key,
-                    artifact.path.display()
-                )));
-            }
-        }
-        Ok(())
+        validate_gpu_source_pack_descriptor_artifact_paths(stage, owner_index, artifacts)
     }
 }
 
-/// Builds the artifact key for a GPU source-pack descriptor artifact.
+/// Builds the artifact key for a source-pack descriptor artifact.
 pub(super) fn gpu_source_pack_descriptor_artifact_key(
     target: SourcePackArtifactTarget,
     stage: GpuSourcePackArtifactStage,

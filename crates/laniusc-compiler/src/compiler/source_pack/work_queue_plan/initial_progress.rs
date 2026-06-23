@@ -44,7 +44,7 @@ pub(in crate::compiler) fn validate_initial_work_queue_progress_prepare_progress
 ) -> Result<(), CompileError> {
     validate_work_queue_index(queue, queue.target)?;
     if progress.version != SOURCE_PACK_WORK_QUEUE_PROGRESS_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue progress prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_WORK_QUEUE_PROGRESS_PREPARE_PROGRESS_VERSION
         )));
@@ -332,14 +332,14 @@ pub(in crate::compiler) fn store_initial_progress_chunk(
     max_new_pages: usize,
 ) -> Result<FilesystemWorkQueueProgressPrepareStepResult, CompileError> {
     if max_new_pages == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack work queue progress chunk max_new_pages must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack work queue progress chunk max_new_pages must be greater than zero",
         ));
     }
     validate_work_queue_index(queue, queue.target)?;
     if page_size == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack work queue progress chunk page_size must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack work queue progress chunk page_size must be greater than zero",
         ));
     }
     if page_size > SOURCE_PACK_WORK_QUEUE_PROGRESS_DEFAULT_PAGE_SIZE {
@@ -470,7 +470,7 @@ pub(in crate::compiler) fn store_prepare_progress(
     )?;
     let path = store.work_queue_progress_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack work queue progress prepare progress: {err}"
         ))
     })?;
@@ -494,14 +494,14 @@ pub(in crate::compiler) fn load_initial_work_queue_progress_prepare_progress(
 ) -> Result<InitialWorkQueueProgressPrepareProgress, CompileError> {
     let path = store.work_queue_progress_prepare_progress_path_for_target(queue.target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack work queue progress prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress = serde_json::from_slice::<InitialWorkQueueProgressPrepareProgress>(&bytes)
         .map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "parse source-pack work queue progress prepare progress {}: {err}",
                 path.display()
             ))

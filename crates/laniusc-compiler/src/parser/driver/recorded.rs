@@ -145,23 +145,10 @@ impl GpuParser {
         drop(mapped);
         recorded.status_readback.unmap();
 
-        let result = Ll1AcceptResult {
-            accepted: words[0] != 0,
-            error_pos: words[1],
-            error_code: words[2],
-            detail: words[3],
-            steps: words[4],
-            emit_len: words[5],
-        };
+        let result = Ll1AcceptResult::from_status_words(&words);
 
         if !result.accepted {
-            anyhow::bail!(
-                "GPU LL(1) parser rejected token {}: error {} ({}) after {} steps",
-                result.error_pos,
-                result.error_code,
-                result.detail,
-                result.steps
-            );
+            anyhow::bail!("{}", result.rejection_message());
         }
 
         Ok(result)

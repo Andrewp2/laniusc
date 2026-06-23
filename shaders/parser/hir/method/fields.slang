@@ -259,7 +259,11 @@ uint method_impl_node_for_fn(uint fn_node)
             return ancestor;
         if (saw_method_wrapper && prod == PROD_IMPL_METHODS_SOME)
         {
-            uint owner = impl_owner_from_item_list(parent_node(ancestor));
+            uint list_parent = parent_node(ancestor);
+            if (valid_node(list_parent) && is_impl_owner_node(node_kind[list_parent]))
+                return list_parent;
+
+            uint owner = impl_owner_from_item_list(list_parent);
             if (!valid_node(owner))
                 owner = preceding_inherent_impl_header(ancestor);
             if (valid_node(owner))

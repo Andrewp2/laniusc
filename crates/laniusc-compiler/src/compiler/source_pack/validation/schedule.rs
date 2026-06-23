@@ -6,7 +6,7 @@ pub(in crate::compiler) fn validate_library_schedule_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule index version {}; expected {}",
             index.version, SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION
         )));
@@ -63,7 +63,7 @@ pub(in crate::compiler) fn validate_library_schedule_prepare_progress(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_LIBRARY_SCHEDULE_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_LIBRARY_SCHEDULE_PREPARE_PROGRESS_VERSION
         )));
@@ -179,7 +179,7 @@ pub(in crate::compiler) fn validate_library_schedule_page(
     expected_partition_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SCHEDULE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SCHEDULE_PAGE_VERSION
         )));
@@ -479,7 +479,7 @@ pub(in crate::compiler) fn validate_schedule_job_locator_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_LIBRARY_SCHEDULE_JOB_LOCATOR_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule job-locator index version {}; expected {}",
             index.version, SOURCE_PACK_LIBRARY_SCHEDULE_JOB_LOCATOR_INDEX_VERSION
         )));
@@ -511,7 +511,7 @@ pub(in crate::compiler) fn validate_frontend_job_locator_page(
     expected_library_id: Option<u32>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_FRONTEND_JOB_LOCATOR_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library frontend-job locator page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_FRONTEND_JOB_LOCATOR_PAGE_VERSION
         )));
@@ -547,7 +547,7 @@ pub(in crate::compiler) fn validate_schedule_job_locator_page(
     expected_job_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SCHEDULE_JOB_LOCATOR_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule job-locator page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SCHEDULE_JOB_LOCATOR_PAGE_VERSION
         )));
@@ -609,7 +609,7 @@ pub(in crate::compiler) fn validate_schedule_job_page(
     expected_job_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SCHEDULE_JOB_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule job page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SCHEDULE_JOB_PAGE_VERSION
         )));
@@ -741,7 +741,7 @@ pub(in crate::compiler) fn validate_schedule_job_dependency_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SCHEDULE_JOB_DEPENDENCY_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library schedule job dependency page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SCHEDULE_JOB_DEPENDENCY_PAGE_VERSION
         )));

@@ -143,15 +143,70 @@ pub enum CompileError {
     GpuCodegen(String),
 }
 
+impl CompileError {
+    /// Converts any borrowed compiler error into a public diagnostic payload.
+    ///
+    /// This is the non-consuming form used by `Display` and other reporting
+    /// paths that must not leak legacy phase-specific strings.
+    pub fn to_public_diagnostic(&self) -> Diagnostic {
+        match self {
+            CompileError::Diagnostic(diagnostic) => diagnostic.clone(),
+            CompileError::GpuFrontend(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while preparing frontend work before producing a more specific diagnostic",
+            ),
+            CompileError::GpuSyntax(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while parsing before producing a source-specific syntax diagnostic",
+            ),
+            CompileError::GpuTypeCheck(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while type checking before producing a source-specific diagnostic",
+            ),
+            CompileError::GpuCodegen(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while generating target output before producing a target-specific diagnostic",
+            ),
+        }
+    }
+
+    /// Converts any compiler error into a public diagnostic payload.
+    ///
+    /// Specific compilation failures should normally construct
+    /// `CompileError::Diagnostic` at the owning source/type/backend boundary.
+    /// This fallback keeps the CLI and tool APIs structured when an older raw
+    /// phase error still escapes.
+    pub fn into_public_diagnostic(self) -> Diagnostic {
+        self.to_public_diagnostic()
+    }
+}
+
+fn compiler_execution_failed_diagnostic(
+    message: &'static str,
+    phase_note: &'static str,
+) -> Diagnostic {
+    Diagnostic::error("LNC0057", message)
+        .with_note(phase_note)
+        .with_help(
+            "this is a compiler diagnostic gap; re-run with `laniusc check` when target output is not required",
+        )
+}
+
+pub(in crate::compiler) fn compiler_execution_failed_error(
+    phase_note: &'static str,
+    operation: impl Into<String>,
+    _detail: impl std::fmt::Display,
+) -> CompileError {
+    let operation = operation.into();
+    CompileError::Diagnostic(
+        compiler_execution_failed_diagnostic("compiler execution failed", phase_note)
+            .with_note(format!("operation: {operation}")),
+    )
+}
+
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompileError::Diagnostic(diagnostic) => write!(f, "{diagnostic}"),
-            CompileError::GpuFrontend(err) => write!(f, "GPU frontend error: {err}"),
-            CompileError::GpuSyntax(err) => write!(f, "GPU syntax error: {err}"),
-            CompileError::GpuTypeCheck(err) => write!(f, "GPU type check error: {err}"),
-            CompileError::GpuCodegen(err) => write!(f, "GPU codegen error: {err}"),
-        }
+        write!(f, "{}", self.to_public_diagnostic())
     }
 }
 

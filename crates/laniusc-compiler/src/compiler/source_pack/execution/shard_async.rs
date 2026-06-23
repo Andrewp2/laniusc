@@ -39,10 +39,13 @@ where
                 .replace(job_linked_output_key.clone())
                 .is_some()
             {
-                return Err(CompileError::GpuFrontend(format!(
-                    "source-pack async execution shard batch {} produced more than one linked output; duplicate key {job_linked_output_key:?}",
-                    batch.batch_index
-                )));
+                return Err(duplicate_linked_output_error(
+                    format!(
+                        "source-pack async execution shard batch {}",
+                        batch.batch_index
+                    ),
+                    &job_linked_output_key,
+                ));
             }
         }
     }
@@ -97,12 +100,7 @@ where
             Ok(None)
         }
         SourcePackJobPhase::Codegen => {
-            let library_job_index = job.library_job_index.ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack codegen job {} has no owning library job",
-                    job.job_index
-                ))
-            })?;
+            let library_job_index = codegen_library_job_index(job)?;
             let library_interface_ref = execution_shard_job_input_interface_ref(
                 store,
                 target,
@@ -134,7 +132,7 @@ where
             execute_execution_shard_link_job_async(
                 execution_shard,
                 link_input_shard_index.ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
+                    artifact_shard_contract_error(format!(
                         "source-pack link job {} requires a link input shard index",
                         job.job_index
                     ))

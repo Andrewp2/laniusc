@@ -52,7 +52,7 @@ where
             Some(max_batches),
         )?;
         if ready_batch_indices.is_empty() {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack build state has no unclaimed ready batches and is incomplete; completed {} batches; claimed {} batches",
                 initial_summary.completed_batch_count, initial_summary.claimed_batch_count
             )));

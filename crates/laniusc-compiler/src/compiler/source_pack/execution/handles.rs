@@ -1,5 +1,68 @@
 use super::*;
 
+fn build_plan_artifact<'a>(
+    build_plan: &'a SourcePackBuildPlan,
+    artifact_index: usize,
+    label: &str,
+) -> Result<&'a SourcePackArtifactPlan, CompileError> {
+    let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
+        manifest_contract_error(format!(
+            "{label} references missing artifact {artifact_index}"
+        ))
+    })?;
+    if artifact.artifact_index != artifact_index {
+        return Err(manifest_contract_error(format!(
+            "{label} references artifact {artifact_index} but plan entry records artifact_index {}",
+            artifact.artifact_index
+        )));
+    }
+    Ok(artifact)
+}
+
+pub(in crate::compiler) fn produced_handle<T: Clone>(
+    handles: &[Option<T>],
+    producing_job_index: usize,
+    label: &str,
+) -> Result<T, CompileError> {
+    handles
+        .get(producing_job_index)
+        .and_then(|handle| handle.as_ref())
+        .cloned()
+        .ok_or_else(|| {
+            source_pack_progress_state_error(format!(
+                "{label} missing produced handle from job {producing_job_index}"
+            ))
+        })
+}
+
+pub(in crate::compiler) fn produced_handle_index(
+    handle_by_job: &[Option<usize>],
+    producing_job_index: usize,
+    label: &str,
+) -> Result<usize, CompileError> {
+    handle_by_job
+        .get(producing_job_index)
+        .and_then(|index| *index)
+        .ok_or_else(|| {
+            source_pack_progress_state_error(format!(
+                "{label} missing produced handle from job {producing_job_index}"
+            ))
+        })
+}
+
+pub(in crate::compiler) fn produced_ref<'a, T>(
+    values: &'a [T],
+    value_index: usize,
+    producing_job_index: usize,
+    label: &str,
+) -> Result<&'a T, CompileError> {
+    values.get(value_index).ok_or_else(|| {
+        source_pack_progress_state_error(format!(
+            "{label} maps produced handle from job {producing_job_index} to missing slot {value_index}"
+        ))
+    })
+}
+
 /// Collects cloned interface handles for a job's dependencies.
 pub(in crate::compiler) fn collect_interface_handle_clones<T: Clone>(
     library_interfaces: &[Option<T>],
@@ -22,16 +85,8 @@ pub(in crate::compiler) fn collect_interface_handle_clones_excluding<T: Clone>(
         job,
         excluded_job_index,
         |dependency_job_index| {
-            let handle = library_interfaces
-                .get(dependency_job_index)
-                .and_then(|handle| handle.as_ref())
-                .cloned()
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack job {} missing interface dependency from job {}",
-                        job.job_index, dependency_job_index
-                    ))
-                })?;
+            let label = format!("source-pack job {} interface dependency", job.job_index);
+            let handle = produced_handle(library_interfaces, dependency_job_index, &label)?;
             handles.push(handle);
             Ok(())
         },
@@ -48,21 +103,16 @@ pub(in crate::compiler) fn collect_link_interface_handle_clones<T: Clone>(
     build_plan
         .link
         .try_for_each_input_interface_artifact_index(|artifact_index| {
-            let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link references missing interface artifact {artifact_index}"
-                ))
-            })?;
-            let handle = library_interfaces
-                .get(artifact.producing_job_index)
-                .and_then(|handle| handle.as_ref())
-                .cloned()
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack link missing interface from job {}",
-                        artifact.producing_job_index
-                    ))
-                })?;
+            let artifact = build_plan_artifact(
+                build_plan,
+                artifact_index,
+                "source-pack link interface input",
+            )?;
+            let handle = produced_handle(
+                library_interfaces,
+                artifact.producing_job_index,
+                "source-pack link interface input",
+            )?;
             handles.push(handle);
             Ok(())
         })?;
@@ -77,21 +127,16 @@ pub(in crate::compiler) fn collect_link_interface_handle_clones_for_batch<T: Clo
 ) -> Result<Vec<T>, CompileError> {
     let mut handles = Vec::new();
     for &artifact_index in &batch.input_interface_artifact_indices {
-        let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
-                "source-pack link batch references missing interface artifact {artifact_index}"
-            ))
-        })?;
-        let handle = library_interfaces
-            .get(artifact.producing_job_index)
-            .and_then(|handle| handle.as_ref())
-            .cloned()
-            .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link batch missing interface from job {}",
-                    artifact.producing_job_index
-                ))
-            })?;
+        let artifact = build_plan_artifact(
+            build_plan,
+            artifact_index,
+            "source-pack link-interface batch input",
+        )?;
+        let handle = produced_handle(
+            library_interfaces,
+            artifact.producing_job_index,
+            "source-pack link-interface batch input",
+        )?;
         handles.push(handle);
     }
     Ok(handles)
@@ -106,21 +151,13 @@ pub(in crate::compiler) fn collect_link_object_handle_clones<T: Clone>(
     build_plan
         .link
         .try_for_each_input_object_artifact_index(|artifact_index| {
-            let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link references missing object artifact {artifact_index}"
-                ))
-            })?;
-            let handle = codegen_objects
-                .get(artifact.producing_job_index)
-                .and_then(|handle| handle.as_ref())
-                .cloned()
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack link missing object from job {}",
-                        artifact.producing_job_index
-                    ))
-                })?;
+            let artifact =
+                build_plan_artifact(build_plan, artifact_index, "source-pack link object input")?;
+            let handle = produced_handle(
+                codegen_objects,
+                artifact.producing_job_index,
+                "source-pack link object input",
+            )?;
             handles.push(handle);
             Ok(())
         })?;
@@ -135,21 +172,16 @@ pub(in crate::compiler) fn collect_link_object_handle_clones_for_batch<T: Clone>
 ) -> Result<Vec<T>, CompileError> {
     let mut handles = Vec::new();
     for &artifact_index in &batch.input_object_artifact_indices {
-        let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
-                "source-pack link batch references missing object artifact {artifact_index}"
-            ))
-        })?;
-        let handle = codegen_objects
-            .get(artifact.producing_job_index)
-            .and_then(|handle| handle.as_ref())
-            .cloned()
-            .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link batch missing object from job {}",
-                    artifact.producing_job_index
-                ))
-            })?;
+        let artifact = build_plan_artifact(
+            build_plan,
+            artifact_index,
+            "source-pack link-object batch input",
+        )?;
+        let handle = produced_handle(
+            codegen_objects,
+            artifact.producing_job_index,
+            "source-pack link-object batch input",
+        )?;
         handles.push(handle);
     }
     Ok(handles)
@@ -290,16 +322,15 @@ pub(in crate::compiler) fn collect_interface_refs_excluding<'a, T>(
         job,
         excluded_job_index,
         |dependency_job_index| {
-            let interface_index = interface_by_job
-                .get(dependency_job_index)
-                .and_then(|index| *index)
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack job {} missing interface dependency from job {}",
-                        job.job_index, dependency_job_index
-                    ))
-                })?;
-            refs.push(&library_interfaces[interface_index]);
+            let label = format!("source-pack job {} interface dependency", job.job_index);
+            let interface_index =
+                produced_handle_index(interface_by_job, dependency_job_index, &label)?;
+            refs.push(produced_ref(
+                library_interfaces,
+                interface_index,
+                dependency_job_index,
+                &label,
+            )?);
             Ok(())
         },
     )?;
@@ -324,7 +355,7 @@ where
     }
     for dependency_range in schedule.dependency_job_ranges_for_job(job) {
         let Some(dependency_job_indices) = dependency_range.iter() else {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(manifest_contract_error(format!(
                 "source-pack job {} interface dependency range starting at {} overflows",
                 job.job_index, dependency_range.first_job_index
             )));
@@ -349,21 +380,22 @@ pub(in crate::compiler) fn collect_link_interface_refs<'a, T>(
     build_plan
         .link
         .try_for_each_input_interface_artifact_index(|artifact_index| {
-            let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link references missing interface artifact {artifact_index}"
-                ))
-            })?;
-            let interface_index = interface_by_job
-                .get(artifact.producing_job_index)
-                .and_then(|index| *index)
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack link missing interface from job {}",
-                        artifact.producing_job_index
-                    ))
-                })?;
-            refs.push(&library_interfaces[interface_index]);
+            let artifact = build_plan_artifact(
+                build_plan,
+                artifact_index,
+                "source-pack link interface input",
+            )?;
+            let interface_index = produced_handle_index(
+                interface_by_job,
+                artifact.producing_job_index,
+                "source-pack link interface input",
+            )?;
+            refs.push(produced_ref(
+                library_interfaces,
+                interface_index,
+                artifact.producing_job_index,
+                "source-pack link interface input",
+            )?);
             Ok(())
         })?;
     Ok(refs)
@@ -379,21 +411,19 @@ pub(in crate::compiler) fn collect_link_object_refs<'a, T>(
     build_plan
         .link
         .try_for_each_input_object_artifact_index(|artifact_index| {
-            let artifact = build_plan.artifacts.get(artifact_index).ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack link references missing object artifact {artifact_index}"
-                ))
-            })?;
-            let object_index = object_by_job
-                .get(artifact.producing_job_index)
-                .and_then(|index| *index)
-                .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
-                        "source-pack link missing object from job {}",
-                        artifact.producing_job_index
-                    ))
-                })?;
-            refs.push(&codegen_objects[object_index]);
+            let artifact =
+                build_plan_artifact(build_plan, artifact_index, "source-pack link object input")?;
+            let object_index = produced_handle_index(
+                object_by_job,
+                artifact.producing_job_index,
+                "source-pack link object input",
+            )?;
+            refs.push(produced_ref(
+                codegen_objects,
+                object_index,
+                artifact.producing_job_index,
+                "source-pack link object input",
+            )?);
             Ok(())
         })?;
     Ok(refs)

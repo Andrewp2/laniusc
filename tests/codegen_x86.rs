@@ -2022,11 +2022,27 @@ fn x86_path_reports_missing_input() {
     let message = err.to_string();
 
     match err {
-        CompileError::GpuFrontend(_) => {}
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0040");
+            assert_eq!(diagnostic.message, "input read failed");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("missing input diagnostic should label the source path");
+            assert_eq!(label.path, missing);
+            assert_eq!(label.message, "could not read this source file");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("source input path:")),
+                "missing input diagnostic should include the source path note: {message}"
+            );
+        }
         other => panic!("expected source read error, got {other:?}: {message}"),
     }
     assert!(
-        message.contains("read") && message.contains(&missing.display().to_string()),
+        message.contains("input read failed") && message.contains(&missing.display().to_string()),
         "missing input error should name the unreadable path: {message}"
     );
 }
@@ -3780,19 +3796,17 @@ fn main() {
             CompileError::Diagnostic(diagnostic) => {
                 let message = diagnostic.render();
                 assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "loop-control rejection should use the stable x86 diagnostic: {message}"
+                    diagnostic.code, "LNC0041",
+                    "loop-control rejection should use the stable frontend diagnostic: {message}"
                 );
                 assert_eq!(
-                    diagnostic.category, "native codegen",
-                    "loop-control rejection should stay in native codegen: {message}"
+                    diagnostic.category, "type checking",
+                    "loop-control rejection should fail before native codegen: {message}"
                 );
                 assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 loop control outside loop")
-                        && message.contains("native x86 backend"),
-                    "diagnostic should identify the native loop-control boundary: {message}"
+                    diagnostic.message.contains("invalid loop control")
+                        && message.contains("loop control statement is outside a loop"),
+                    "diagnostic should identify the source-level loop-control error: {message}"
                 );
                 let label = diagnostic
                     .primary_label

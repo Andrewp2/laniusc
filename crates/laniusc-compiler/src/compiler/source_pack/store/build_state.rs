@@ -17,6 +17,18 @@ impl Drop for BuildStateLock {
     }
 }
 
+fn validate_build_state_version_for_store(
+    state: &SourcePackBuildState,
+) -> Result<(), CompileError> {
+    if state.version != SOURCE_PACK_BUILD_STATE_VERSION {
+        return Err(source_pack_store_metadata_error(format!(
+            "unsupported source-pack build state version {}; expected {}",
+            state.version, SOURCE_PACK_BUILD_STATE_VERSION
+        )));
+    }
+    Ok(())
+}
+
 /// Checks that compact build state agrees with the persisted progress summary.
 ///
 /// When a progress summary exists, it is the authoritative state for completed
@@ -27,16 +39,16 @@ pub(in crate::compiler) fn validate_build_state_progress_summary(
     target: SourcePackArtifactTarget,
     state: &SourcePackBuildState,
 ) -> Result<(), CompileError> {
-    validate_build_state_version(state)?;
+    validate_build_state_version_for_store(state)?;
     let summary = store.load_build_progress_summary_for_target(target)?;
     if state.completed_batch_count != summary.completed_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "compact source-pack build state records {} completed batches, but persisted progress summary records {}",
             state.completed_batch_count, summary.completed_batch_count
         )));
     }
     if state.claimed_batch_count != summary.claimed_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "compact source-pack build state records {} claimed batches, but persisted progress summary records {}",
             state.claimed_batch_count, summary.claimed_batch_count
         )));
@@ -47,15 +59,15 @@ pub(in crate::compiler) fn validate_build_state_progress_summary(
             .as_ref()
             .is_some_and(|existing| existing != linked_output_key)
         {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress summary already recorded linked output {:?}, cannot replace with {:?}",
                 summary.linked_output_key.as_deref(),
                 linked_output_key
             )));
         }
         if summary.linked_output_key.is_none() {
-            return Err(CompileError::GpuFrontend(
-                "compact source-pack build state cannot introduce a linked output key; write the producing progress shard instead".into(),
+            return Err(source_pack_progress_state_error(
+                "compact source-pack build state cannot introduce a linked output key; write the producing progress shard instead",
             ));
         }
     }
@@ -74,7 +86,7 @@ impl FilesystemArtifactStore {
         let path = self.build_state_lock_path_for_target(target);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|err| {
-                CompileError::GpuFrontend(format!(
+                source_pack_store_metadata_error(format!(
                     "create source-pack build state lock directory {}: {err}",
                     parent.display()
                 ))
@@ -87,12 +99,12 @@ impl FilesystemArtifactStore {
         {
             Ok(_) => Ok(BuildStateLock { path }),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                Err(CompileError::GpuFrontend(format!(
+                Err(source_pack_store_metadata_error(format!(
                     "source-pack build state lock is already held at {}",
                     path.display()
                 )))
             }
-            Err(err) => Err(CompileError::GpuFrontend(format!(
+            Err(err) => Err(source_pack_store_metadata_error(format!(
                 "create source-pack build state lock {}: {err}",
                 path.display()
             ))),
@@ -120,7 +132,7 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
         state: &SourcePackBuildState,
     ) -> Result<PathBuf, CompileError> {
-        validate_build_state_version(state)?;
+        validate_build_state_version_for_store(state)?;
         if self.progress_summary_available_for_target(target) {
             validate_build_state_progress_summary(self, target, state)?;
         }
@@ -137,7 +149,7 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
         state: &SourcePackBuildState,
     ) -> Result<PathBuf, CompileError> {
-        validate_build_state_version(state)?;
+        validate_build_state_version_for_store(state)?;
         self.store_build_state_file_for_target(target, &root_build_state_marker(state))
     }
 
@@ -150,20 +162,10 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
         state: &SourcePackBuildState,
     ) -> Result<PathBuf, CompileError> {
-        validate_build_state_version(state)?;
+        validate_build_state_version_for_store(state)?;
         let path = self.build_state_path_for_target(target);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "create source-pack build state directory {}: {err}",
-                    parent.display()
-                ))
-            })?;
-        }
-        let bytes = serde_json::to_vec_pretty(state).map_err(|err| {
-            CompileError::GpuFrontend(format!("serialize source-pack build state: {err}"))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build state")?;
+        let bytes = serialize_store_json(state, "source-pack build state")?;
+        write_store_file_atomic(&path, &bytes, "source-pack build state")?;
         Ok(path)
     }
 
@@ -181,19 +183,10 @@ impl FilesystemArtifactStore {
             return load_build_state_from_progress_summary(self, target);
         }
         let path = self.build_state_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build state {}: {err}",
-                path.display()
-            ))
-        })?;
-        let state = serde_json::from_slice::<SourcePackBuildState>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack build state {}: {err}",
-                path.display()
-            ))
-        })?;
-        validate_build_state_version(&state)?;
+        let bytes = read_store_file(&path, "source-pack build state")?;
+        let state =
+            parse_store_json::<SourcePackBuildState>(&bytes, &path, "source-pack build state")?;
+        validate_build_state_version_for_store(&state)?;
         Ok(state)
     }
 
@@ -210,25 +203,12 @@ impl FilesystemArtifactStore {
             return load_build_state_from_progress_summary(self, target);
         }
         let path = self.build_state_path_for_target(target);
-        match fs::read(&path) {
-            Ok(bytes) => {
-                let state =
-                    serde_json::from_slice::<SourcePackBuildState>(&bytes).map_err(|err| {
-                        CompileError::GpuFrontend(format!(
-                            "parse source-pack build state {}: {err}",
-                            path.display()
-                        ))
-                    })?;
-                validate_build_state_version(&state)?;
-                Ok(state)
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                Ok(SourcePackBuildState::new())
-            }
-            Err(err) => Err(CompileError::GpuFrontend(format!(
-                "read source-pack build state {}: {err}",
-                path.display()
-            ))),
-        }
+        let Some(bytes) = try_read_store_file(&path, "source-pack build state")? else {
+            return Ok(SourcePackBuildState::new());
+        };
+        let state =
+            parse_store_json::<SourcePackBuildState>(&bytes, &path, "source-pack build state")?;
+        validate_build_state_version_for_store(&state)?;
+        Ok(state)
     }
 }

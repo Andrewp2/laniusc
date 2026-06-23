@@ -17,6 +17,8 @@ pub mod llp_pairs;
 pub mod pack;
 /// Source-file token boundary pass.
 pub mod source_file_token_end;
+/// Parser acceptance status passes.
+pub mod status;
 /// Parser tree recovery passes.
 pub mod tree;
 
@@ -29,6 +31,7 @@ pub struct ParserPasses {
     pub pack_totals_reduce: pack::totals::reduce::PackTotalsReducePass,
     pub pack_totals_status: pack::totals::status::PackTotalsStatusPass,
     pub pack_varlen: pack::varlen::PackVarlenPass,
+    pub status_from_brackets: status::ParserStatusFromBracketsPass,
     pub source_file_token_end: source_file_token_end::SourceFileTokenEndPass,
 
     // Bracket matching passes
@@ -161,6 +164,7 @@ impl ParserPasses {
             pack_totals_reduce: pack::totals::reduce::PackTotalsReducePass::new(device)?,
             pack_totals_status: pack::totals::status::PackTotalsStatusPass::new(device)?,
             pack_varlen: pack::varlen::PackVarlenPass::new(device)?,
+            status_from_brackets: status::ParserStatusFromBracketsPass::new(device)?,
             source_file_token_end: source_file_token_end::SourceFileTokenEndPass::new(device)?,
 
             b01: brackets::scan_inblock::BracketsScanInblockPass::new(device)?,
@@ -352,34 +356,14 @@ pub fn record_all_passes(
     p.pack_varlen
         .record_pass(&mut ctx, E1D(n_pairs.saturating_mul(256)))?;
     ctx.encoder.copy_buffer_to_buffer(
-        &ctx.buffers.projected_status,
+        &ctx.buffers.partial_parse_status,
         0,
         &ctx.buffers.ll1_status,
         0,
         24,
     );
 
-    let n_sc = ctx.buffers.total_sc;
-    let n_layers = ctx.buffers.b_n_layers;
-    p.b01.record_pass(&mut ctx, E1D(n_sc))?;
-    p.b02.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.b03.record_pass(&mut ctx, E1D(n_sc))?;
-    p.b04.record_pass(&mut ctx, E1D(n_sc))?;
-    p.b05.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-
-    let bytes = (n_layers.max(1) * 4) as u64;
-    ctx.encoder.copy_buffer_to_buffer(
-        &ctx.buffers.b_off_push,
-        0,
-        &ctx.buffers.b_cur_push,
-        0,
-        bytes,
-    );
-    ctx.encoder
-        .copy_buffer_to_buffer(&ctx.buffers.b_off_pop, 0, &ctx.buffers.b_cur_pop, 0, bytes);
-
-    p.b06.record_pass(&mut ctx, E1D(n_sc))?;
-    p.pse04.record_pass(&mut ctx, E1D(n_sc))?;
+    record_stack_effect_validation(&mut ctx, p)?;
 
     // Tree parent recovery: one independent thread per emitted production.
     let n_tree = ctx.buffers.tree_capacity;
@@ -672,6 +656,43 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_item_decl_tokens
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+
+    Ok(())
+}
+
+/// Records stack-effect validation and publishes the combined parser status.
+pub fn record_stack_effect_validation(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    let n_sc = ctx.buffers.total_sc.max(1);
+    let n_layers = ctx.buffers.b_n_layers.max(1);
+
+    ctx.encoder.clear_buffer(&ctx.buffers.b_hist_push, 0, None);
+    ctx.encoder.clear_buffer(&ctx.buffers.b_hist_pop, 0, None);
+
+    p.b01.record_pass(ctx, E1D(n_sc))?;
+    p.b02.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.b03.record_pass(ctx, E1D(n_sc))?;
+    p.b04.record_pass(ctx, E1D(n_sc))?;
+    p.b05.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+
+    let bytes = (n_layers * 4) as u64;
+    ctx.encoder.copy_buffer_to_buffer(
+        &ctx.buffers.b_off_push,
+        0,
+        &ctx.buffers.b_cur_push,
+        0,
+        bytes,
+    );
+    ctx.encoder
+        .copy_buffer_to_buffer(&ctx.buffers.b_off_pop, 0, &ctx.buffers.b_cur_pop, 0, bytes);
+
+    p.b06.record_pass(ctx, E1D(n_sc))?;
+    p.pse04.record_pass(ctx, E1D(n_sc))?;
+    p.status_from_brackets.record_pass(ctx, E1D(1))?;
 
     Ok(())
 }

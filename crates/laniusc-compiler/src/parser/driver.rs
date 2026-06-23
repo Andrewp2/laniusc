@@ -26,6 +26,8 @@ pub use results::{
     BracketsMatchResult,
     Ll1AcceptResult,
     ParseResult,
+    ParserFailure,
+    ParserFailureKind,
     RecordedHirSemanticCount,
     RecordedResidentLl1HirCheck,
     ResidentParseResult,
@@ -56,7 +58,7 @@ use crate::{
     },
     lexer::GpuToken,
     parser::{
-        buffers::{ActionHeader, ParserBuffers, resident_projected_tree_capacity_for_tables},
+        buffers::{ActionHeader, ParserBuffers, resident_partial_parse_tree_capacity_for_tables},
         debug::DebugOutput,
         passes::{self, ParserPasses},
         readback,
@@ -319,14 +321,9 @@ impl GpuParser {
         drop(mapped);
         status_readback.unmap();
 
-        if words[0] == 0 {
-            anyhow::bail!(
-                "GPU LL(1) parser rejected token {}: error {} ({}) after {} steps",
-                words[1],
-                words[2],
-                words[3],
-                words[4]
-            );
+        let result = Ll1AcceptResult::from_status_words(&words);
+        if !result.accepted {
+            anyhow::bail!("{}", result.rejection_message());
         }
 
         Ok(consume(bufs))
@@ -442,8 +439,8 @@ impl GpuParser {
         Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
     }
 
-    /// Records projected-capacity work and reads back the required tree capacity.
-    pub fn read_resident_projected_tree_capacity(
+    /// Records partial-parse capacity work and reads back the required tree capacity.
+    pub fn read_resident_partial_parse_tree_capacity(
         &self,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
@@ -465,7 +462,7 @@ impl GpuParser {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("parser.projected-tree-capacity.encoder"),
+                label: Some("parser.partial-parse-tree-capacity.encoder"),
             });
         self.record_tokens_to_kinds(
             &mut encoder,
@@ -488,18 +485,18 @@ impl GpuParser {
         } else {
             encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
         }
-        self.record_resident_projected_status(&mut encoder, bufs)?;
+        self.record_resident_partial_parse_status(&mut encoder, bufs)?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.projected_tree_capacity.status"),
+            label: Some("rb.parser.partial_parse_tree_capacity.status"),
             size: 24,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.projected_status, 0, &status_readback, 0, 24);
+        encoder.copy_buffer_to_buffer(&bufs.partial_parse_status, 0, &status_readback, 0, 24);
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
-            "parser.projected-tree-capacity",
+            "parser.partial-parse-tree-capacity",
             encoder.finish(),
         );
 
@@ -507,7 +504,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &slice,
-            "parser.projected_tree_capacity.status",
+            "parser.partial_parse_tree_capacity.status",
         )?;
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 6)?;
@@ -523,12 +520,12 @@ impl GpuParser {
     }
 
     /// Computes a conservative resident tree capacity from token capacity and tables.
-    pub fn projected_resident_tree_capacity(
+    pub fn partial_parse_resident_tree_capacity(
         &self,
         token_capacity: u32,
         tables: &PrecomputedParseTables,
     ) -> u32 {
-        resident_projected_tree_capacity_for_tables(token_capacity.max(1), tables)
+        resident_partial_parse_tree_capacity_for_tables(token_capacity.max(1), tables)
     }
 
     /// Borrows current resident parser buffers sized for the provided token capacity.

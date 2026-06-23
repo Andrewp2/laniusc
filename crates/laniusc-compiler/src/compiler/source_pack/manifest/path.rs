@@ -107,8 +107,8 @@ impl SourcePackPathBuildManifest {
         if self.is_state_complete(state)? {
             return Ok(Vec::new());
         }
-        Err(CompileError::GpuFrontend(
-            "source-pack ready-batch queries must use persisted progress state; compact build state does not record completed-batch identities".into(),
+        Err(source_pack_progress_state_error(
+            "source-pack ready-batch queries must use persisted progress state; compact build state does not record completed-batch identities",
         ))
     }
 
@@ -125,8 +125,8 @@ impl SourcePackPathBuildManifest {
             return Ok(Vec::new());
         }
         if state.claimed_batch_count != 0 {
-            return Err(CompileError::GpuFrontend(
-                "source-pack ready-unclaimed queries must use persisted progress state; compact build state does not record claimed-batch identities".into(),
+            return Err(source_pack_progress_state_error(
+                "source-pack ready-unclaimed queries must use persisted progress state; compact build state does not record claimed-batch identities",
             ));
         }
         if state.completed_batch_count == 0 {
@@ -135,8 +135,8 @@ impl SourcePackPathBuildManifest {
         if self.is_state_complete(state)? {
             return Ok(Vec::new());
         }
-        Err(CompileError::GpuFrontend(
-            "source-pack ready-unclaimed queries must use persisted progress state; compact build state does not record completed-batch identities".into(),
+        Err(source_pack_progress_state_error(
+            "source-pack ready-unclaimed queries must use persisted progress state; compact build state does not record completed-batch identities",
         ))
     }
 
@@ -153,7 +153,7 @@ impl SourcePackPathBuildManifest {
     ) -> Result<(), CompileError> {
         let dependency_record_count = self.artifacts.batch_dependencies.batches.len();
         if dependency_record_count != self.artifacts.batch_dependency_count {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack path-build manifest ready-batch queries require inline batch-dependency records; compact manifest records {} dependency counts but {} inline records and must use persisted progress state",
                 self.artifacts.batch_dependency_count, dependency_record_count
             )));
@@ -167,7 +167,7 @@ pub(in crate::compiler) fn validate_path_manifest(
     manifest: &SourcePackPathBuildManifest,
 ) -> Result<(), CompileError> {
     if manifest.version != SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(manifest_contract_error(format!(
             "unsupported source-pack path build manifest version {}; expected {}",
             manifest.version, SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION
         )));

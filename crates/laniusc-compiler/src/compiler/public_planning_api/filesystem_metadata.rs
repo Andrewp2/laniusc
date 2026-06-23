@@ -181,8 +181,8 @@ where
     P: AsRef<Path>,
 {
     if max_new_libraries == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack metadata chunk max_new_libraries must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack metadata chunk max_new_libraries must be greater than zero",
         ));
     }
     let max_new_libraries =
@@ -207,8 +207,8 @@ where
     P: AsRef<Path>,
 {
     if max_new_libraries == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack metadata chunk max_new_libraries must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack metadata chunk max_new_libraries must be greater than zero",
         ));
     }
     let max_new_libraries =

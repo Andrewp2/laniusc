@@ -45,6 +45,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsApplyPre
             ("gParams".into(), b.b03_params.as_entire_binding()),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
             (
+                "partial_parse_status".into(),
+                b.partial_parse_status.as_entire_binding(),
+            ),
+            (
                 "exscan_inblock".into(),
                 b.b_exscan_inblock.as_entire_binding(),
             ),

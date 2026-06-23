@@ -136,21 +136,9 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_artifact_manifest(manifest)?;
         let path = self.artifact_manifest_path_for_target(manifest.target);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "create source-pack build artifact manifest directory {}: {err}",
-                    parent.display()
-                ))
-            })?;
-        }
         let compact_manifest = compact_artifact_manifest(manifest)?;
-        let bytes = serde_json::to_vec_pretty(&compact_manifest).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build artifact manifest: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build artifact manifest")?;
+        let bytes = serialize_store_json(&compact_manifest, "source-pack build artifact manifest")?;
+        write_store_file_atomic(&path, &bytes, "source-pack build artifact manifest")?;
         Ok(path)
     }
 
@@ -160,19 +148,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildArtifactManifest, CompileError> {
         let path = self.artifact_manifest_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build artifact manifest {}: {err}",
-                path.display()
-            ))
-        })?;
-        let manifest =
-            serde_json::from_slice::<SourcePackBuildArtifactManifest>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build artifact manifest {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack build artifact manifest")?;
+        let manifest = parse_store_json::<SourcePackBuildArtifactManifest>(
+            &bytes,
+            &path,
+            "source-pack build artifact manifest",
+        )?;
         validate_artifact_manifest(&manifest)?;
         Ok(manifest)
     }
@@ -267,13 +248,14 @@ impl FilesystemArtifactStore {
             stored_execution_shard.target,
             stored_execution_shard.shard.shard_index,
         );
-        let bytes = serde_json::to_vec_pretty(&stored_execution_shard).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack build artifact execution shard {}: {err}",
+        let bytes = serialize_store_json(
+            &stored_execution_shard,
+            format!(
+                "source-pack build artifact execution shard {}",
                 stored_execution_shard.shard.shard_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack build artifact execution shard")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack build artifact execution shard")?;
         Ok(path)
     }
 
@@ -368,19 +350,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildArtifactShardIndex, CompileError> {
         let path = self.artifact_shard_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build artifact shard index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackBuildArtifactShardIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build artifact shard index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack build artifact shard index")?;
+        let index = parse_store_json::<SourcePackBuildArtifactShardIndex>(
+            &bytes,
+            &path,
+            "source-pack build artifact shard index",
+        )?;
         validate_artifact_shard_index(&index)?;
         if index.target != target {
             return Err(artifact_shard_contract_error(format!(
@@ -397,19 +372,11 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildLinkInputShardIndex, CompileError> {
         let path = self.link_input_shard_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack link input shard index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index = serde_json::from_slice::<SourcePackBuildLinkInputShardIndex>(&bytes).map_err(
-            |err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack link input shard index {}: {err}",
-                    path.display()
-                ))
-            },
+        let bytes = read_store_file(&path, "source-pack link input shard index")?;
+        let index = parse_store_json::<SourcePackBuildLinkInputShardIndex>(
+            &bytes,
+            &path,
+            "source-pack link input shard index",
         )?;
         validate_link_input_shard_index(&index, target)?;
         Ok(index)
@@ -422,19 +389,12 @@ impl FilesystemArtifactStore {
         shard_index: usize,
     ) -> Result<SourcePackBuildArtifactShard, CompileError> {
         let path = self.artifact_shard_path_for_target(target, shard_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build artifact shard {}: {err}",
-                path.display()
-            ))
-        })?;
-        let shard =
-            serde_json::from_slice::<SourcePackBuildArtifactShard>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack build artifact shard {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack build artifact shard")?;
+        let shard = parse_store_json::<SourcePackBuildArtifactShard>(
+            &bytes,
+            &path,
+            "source-pack build artifact shard",
+        )?;
         validate_artifact_shard(&shard, target)?;
         if shard.shard_index != shard_index {
             return Err(artifact_shard_contract_error(format!(
@@ -454,21 +414,12 @@ impl FilesystemArtifactStore {
         shard_index: usize,
     ) -> Result<SourcePackBuildArtifactExecutionShard, CompileError> {
         let path = self.artifact_execution_shard_path_for_target(target, shard_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack build artifact execution shard {}: {err}",
-                path.display()
-            ))
-        })?;
-        let execution_shard = serde_json::from_slice::<SourcePackBuildArtifactExecutionShard>(
+        let bytes = read_store_file(&path, "source-pack build artifact execution shard")?;
+        let execution_shard = parse_store_json::<SourcePackBuildArtifactExecutionShard>(
             &bytes,
-        )
-        .map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack build artifact execution shard {}: {err}",
-                path.display()
-            ))
-        })?;
+            &path,
+            "source-pack build artifact execution shard",
+        )?;
         validate_execution_shard(&execution_shard, target)?;
         if execution_shard.shard.shard_index != shard_index {
             return Err(artifact_shard_contract_error(format!(
@@ -488,19 +439,12 @@ impl FilesystemArtifactStore {
         batch_index: usize,
     ) -> Result<SourcePackBuildBatchShardLocator, CompileError> {
         let path = self.batch_shard_locator_path_for_target(target, batch_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack batch shard locator {}: {err}",
-                path.display()
-            ))
-        })?;
-        let locator =
-            serde_json::from_slice::<SourcePackBuildBatchShardLocator>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack batch shard locator {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack batch shard locator")?;
+        let locator = parse_store_json::<SourcePackBuildBatchShardLocator>(
+            &bytes,
+            &path,
+            "source-pack batch shard locator",
+        )?;
         validate_batch_shard_locator(&locator, target, batch_index)?;
         Ok(locator)
     }
@@ -582,14 +526,6 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_path_manifest(manifest)?;
         let path = self.build_manifest_path_for_target(manifest.artifacts.target);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "create source-pack path build manifest directory {}: {err}",
-                    parent.display()
-                ))
-            })?;
-        }
         let compact_manifest = SourcePackPathBuildManifest {
             source_files: Vec::new(),
             library_dependencies: Vec::new(),
@@ -597,10 +533,8 @@ impl FilesystemArtifactStore {
             ..manifest.clone()
         };
         validate_path_manifest(&compact_manifest)?;
-        let bytes = serde_json::to_vec_pretty(&compact_manifest).map_err(|err| {
-            CompileError::GpuFrontend(format!("serialize source-pack path build manifest: {err}"))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack path build manifest")?;
+        let bytes = serialize_store_json(&compact_manifest, "source-pack path build manifest")?;
+        write_store_file_atomic(&path, &bytes, "source-pack path build manifest")?;
         Ok(path)
     }
 
@@ -610,19 +544,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackPathBuildManifest, CompileError> {
         let path = self.build_manifest_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack path build manifest {}: {err}",
-                path.display()
-            ))
-        })?;
-        let manifest =
-            serde_json::from_slice::<SourcePackPathBuildManifest>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack path build manifest {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack path build manifest")?;
+        let manifest = parse_store_json::<SourcePackPathBuildManifest>(
+            &bytes,
+            &path,
+            "source-pack path build manifest",
+        )?;
         validate_path_manifest(&manifest)?;
         Ok(manifest)
     }

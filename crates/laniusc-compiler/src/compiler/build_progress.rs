@@ -5,13 +5,13 @@ pub(super) fn validate_build_progress_shard(
     shard: &SourcePackBuildProgressShard,
 ) -> Result<(), CompileError> {
     if shard.version != SOURCE_PACK_BUILD_PROGRESS_SHARD_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack build progress shard version {}; expected {}",
             shard.version, SOURCE_PACK_BUILD_PROGRESS_SHARD_VERSION
         )));
     }
     if shard.batch_indices.len() > DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard {} has {} batches but the record cap is {}",
             shard.shard_index,
             shard.batch_indices.len(),
@@ -19,7 +19,7 @@ pub(super) fn validate_build_progress_shard(
         )));
     }
     if shard.completed_batch_indices.len() > DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard {} has {} completed batches but the record cap is {}",
             shard.shard_index,
             shard.completed_batch_indices.len(),
@@ -27,7 +27,7 @@ pub(super) fn validate_build_progress_shard(
         )));
     }
     if shard.ready_batch_indices.len() > DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard {} has {} ready batches but the record cap is {}",
             shard.shard_index,
             shard.ready_batch_indices.len(),
@@ -35,7 +35,7 @@ pub(super) fn validate_build_progress_shard(
         )));
     }
     if shard.claimed_batches.len() > DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard {} has {} claimed batches but the record cap is {}",
             shard.shard_index,
             shard.claimed_batches.len(),
@@ -57,7 +57,7 @@ pub(super) fn validate_build_progress_shard(
     )?;
     for batch_index in &completed {
         if !batch_indices.contains(batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} completed batch {} outside shard batches {:?}",
                 shard.shard_index, batch_index, shard.batch_indices
             )));
@@ -65,13 +65,13 @@ pub(super) fn validate_build_progress_shard(
     }
     for batch_index in &ready {
         if !batch_indices.contains(batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} ready batch {} outside shard batches {:?}",
                 shard.shard_index, batch_index, shard.batch_indices
             )));
         }
         if completed.contains(batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} marks completed batch {} ready",
                 shard.shard_index, batch_index
             )));
@@ -80,25 +80,25 @@ pub(super) fn validate_build_progress_shard(
     let mut seen_claimed = BTreeSet::new();
     for claim in &shard.claimed_batches {
         if !batch_indices.contains(&claim.batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} claimed batch {} outside shard batches {:?}",
                 shard.shard_index, claim.batch_index, shard.batch_indices
             )));
         }
         if completed.contains(&claim.batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} claims already completed batch {}",
                 shard.shard_index, claim.batch_index
             )));
         }
         if !seen_claimed.insert(claim.batch_index) {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} contains duplicate claim for batch {}",
                 shard.shard_index, claim.batch_index
             )));
         }
         if claim.worker_id.trim().is_empty() {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress shard {} contains empty worker id for batch {}",
                 shard.shard_index, claim.batch_index
             )));
@@ -112,55 +112,55 @@ pub(super) fn validate_build_progress_shard_summary(
     summary: &SourcePackBuildProgressShardSummary,
 ) -> Result<(), CompileError> {
     if summary.version != SOURCE_PACK_BUILD_PROGRESS_SHARD_SUMMARY_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack build progress shard summary version {}; expected {}",
             summary.version, SOURCE_PACK_BUILD_PROGRESS_SHARD_SUMMARY_VERSION
         )));
     }
     if summary.batch_count > DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} batches but the record cap is {}",
             summary.shard_index, summary.batch_count, DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES
         )));
     }
     if summary.completed_batch_count > summary.batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} completed {} batches but only has {} batches",
             summary.shard_index, summary.completed_batch_count, summary.batch_count
         )));
     }
     if summary.ready_batch_count > summary.batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} ready batches but only has {} batches",
             summary.shard_index, summary.ready_batch_count, summary.batch_count
         )));
     }
     if summary.claimed_batch_count > summary.batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} claimed batches but only has {} batches",
             summary.shard_index, summary.claimed_batch_count, summary.batch_count
         )));
     }
     if summary.ready_claimed_batch_count > summary.ready_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} ready claimed batches but only has {} ready batches",
             summary.shard_index, summary.ready_claimed_batch_count, summary.ready_batch_count
         )));
     }
     if summary.ready_claimed_batch_count > summary.claimed_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} ready claimed batches but only has {} claimed batches",
             summary.shard_index, summary.ready_claimed_batch_count, summary.claimed_batch_count
         )));
     }
     if summary.ready_batch_count == 0 && summary.first_ready_batch_index.is_some() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has no ready batches but first ready batch {:?}",
             summary.shard_index, summary.first_ready_batch_index
         )));
     }
     if summary.ready_batch_count != 0 && summary.first_ready_batch_index.is_none() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress shard summary {} has {} ready batches but no first ready batch",
             summary.shard_index, summary.ready_batch_count
         )));
@@ -173,62 +173,61 @@ pub(super) fn validate_build_progress_summary(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<(), CompileError> {
     if summary.version != SOURCE_PACK_BUILD_PROGRESS_SUMMARY_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack build progress summary version {}; expected {}",
             summary.version, SOURCE_PACK_BUILD_PROGRESS_SUMMARY_VERSION
         )));
     }
     if summary.completed_batch_count > summary.job_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary completed {} batches but only has {} job batches",
             summary.completed_batch_count, summary.job_batch_count
         )));
     }
     if summary.job_batch_shard_count > summary.job_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} job-batch shards but only {} job batches",
             summary.job_batch_shard_count, summary.job_batch_count
         )));
     }
     if summary.ready_batch_count > summary.job_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} ready batches but only has {} job batches",
             summary.ready_batch_count, summary.job_batch_count
         )));
     }
     if summary.claimed_batch_count > summary.job_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} claimed batches but only has {} job batches",
             summary.claimed_batch_count, summary.job_batch_count
         )));
     }
     if summary.ready_claimed_batch_count > summary.ready_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} ready claimed batches but only has {} ready batches",
             summary.ready_claimed_batch_count, summary.ready_batch_count
         )));
     }
     if summary.ready_claimed_batch_count > summary.claimed_batch_count {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} ready claimed batches but only has {} claimed batches",
             summary.ready_claimed_batch_count, summary.claimed_batch_count
         )));
     }
     if let Some(first_ready_batch_index) = summary.first_ready_batch_index {
         if first_ready_batch_index >= summary.job_batch_count {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack progress summary first ready batch {} exceeds job batch count {}",
                 first_ready_batch_index, summary.job_batch_count
             )));
         }
         if summary.ready_batch_count == 0 {
-            return Err(CompileError::GpuFrontend(
-                "source-pack progress summary has a first ready batch but zero ready batches"
-                    .into(),
+            return Err(source_pack_progress_state_error(
+                "source-pack progress summary has a first ready batch but zero ready batches",
             ));
         }
     } else if summary.ready_batch_count != 0 {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary has {} ready batches but no first ready batch",
             summary.ready_batch_count
         )));
@@ -282,7 +281,7 @@ pub(super) fn validate_build_progress_directory_page(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack build progress directory page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_PAGE_VERSION
         )));
@@ -403,7 +402,7 @@ pub(super) fn validate_directory_index_page(
     summary: &SourcePackBuildProgressSummary,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "unsupported source-pack build progress directory-index page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_PROGRESS_DIRECTORY_INDEX_PAGE_VERSION
         )));
@@ -662,13 +661,13 @@ pub(super) fn validate_progress_summary_complete_output(
         return Ok(());
     }
     let Some(linked_output_key) = &summary.linked_output_key else {
-        return Err(CompileError::GpuFrontend(
-            "source-pack progress summary is complete but has no linked output key".into(),
+        return Err(source_pack_progress_state_error(
+            "source-pack progress summary is complete but has no linked output key",
         ));
     };
     let linked_output_path = store.path_for_key(linked_output_key)?;
     if !linked_output_path.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary is complete but linked output artifact {linked_output_key:?} is missing at {}",
             linked_output_path.display()
         )));
@@ -992,7 +991,7 @@ pub(super) fn first_ready_batch_from_summary_pages(
 ) -> Result<Option<usize>, CompileError> {
     validate_build_progress_summary(summary)?;
     if summary.target != target {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary target {:?} does not match requested target {:?}",
             summary.target, target
         )));
@@ -1113,7 +1112,7 @@ pub(super) fn ready_unclaimed_batch_indices_limited(
 ) -> Result<Vec<usize>, CompileError> {
     validate_build_progress_summary(summary)?;
     if summary.target != target {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary target {:?} does not match requested target {:?}",
             summary.target, target
         )));
@@ -1272,7 +1271,7 @@ pub(super) fn first_ready_unclaimed_batch_index(
 ) -> Result<Option<usize>, CompileError> {
     validate_build_progress_summary(summary)?;
     if summary.target != target {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack progress summary target {:?} does not match requested target {:?}",
             summary.target, target
         )));

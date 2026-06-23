@@ -181,16 +181,21 @@ pub(super) fn formatting_edits(source: &str) -> Vec<serde_json::Value> {
 pub(super) fn diagnostic_items(uri: &str, source: &str) -> Result<Vec<serde_json::Value>, String> {
     match pollster::block_on(type_check_source_with_gpu(source)) {
         Ok(()) => Ok(Vec::new()),
-        Err(CompileError::Diagnostic(mut diagnostic)) => {
-            if let Some(label) = diagnostic.primary_label.as_mut() {
-                label.path = uri_label_path(uri);
-            }
-            serde_json::to_value(diagnostic.to_lsp_diagnostic())
-                .map(|diagnostic| vec![diagnostic])
-                .map_err(|err| format!("serialize LSP diagnostic: {err}"))
-        }
-        Err(err) => Err(err.to_string()),
+        Err(err) => compile_error_to_lsp_diagnostic_items(uri, err),
     }
+}
+
+fn compile_error_to_lsp_diagnostic_items(
+    uri: &str,
+    err: CompileError,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut diagnostic = err.into_public_diagnostic();
+    if let Some(label) = diagnostic.primary_label.as_mut() {
+        label.path = uri_label_path(uri);
+    }
+    serde_json::to_value(diagnostic.to_lsp_diagnostic())
+        .map(|diagnostic| vec![diagnostic])
+        .map_err(|err| format!("serialize LSP diagnostic: {err}"))
 }
 
 fn document_end_position(source: &str) -> serde_json::Value {
@@ -219,4 +224,67 @@ fn uri_label_path(uri: &str) -> PathBuf {
     uri.strip_prefix("file://")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(uri))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compile_error_to_lsp_diagnostic_items;
+    use crate::compiler::{CompileError, Diagnostic, DiagnosticLabel};
+
+    #[test]
+    fn lsp_diagnostic_items_lower_raw_compile_errors_without_internal_detail() {
+        let items = compile_error_to_lsp_diagnostic_items(
+            "file:///workspace/main.lani",
+            CompileError::GpuFrontend("GPU LL(1) parser rejected token: 4".to_string()),
+        )
+        .expect("raw compiler fallback should serialize as an LSP diagnostic");
+
+        assert_eq!(items.len(), 1);
+        let diagnostic = &items[0];
+        assert_eq!(diagnostic["code"], "LNC0057");
+        assert_eq!(diagnostic["message"], "compiler execution failed");
+        assert_eq!(diagnostic["data"]["category"], "tooling");
+        assert!(
+            diagnostic["data"]["primary_label"].is_null(),
+            "spanless fallback diagnostics should remain spanless in metadata"
+        );
+
+        let rendered =
+            serde_json::to_string(diagnostic).expect("LSP diagnostic JSON should serialize");
+        assert!(!rendered.contains("GPU"));
+        assert!(!rendered.contains("LL(1)"));
+        assert!(!rendered.contains("parser rejected token"));
+        assert!(!rendered.contains("frontend error"));
+    }
+
+    #[test]
+    fn lsp_diagnostic_items_relabel_structured_compile_error_with_request_uri() {
+        let items = compile_error_to_lsp_diagnostic_items(
+            "file:///workspace/current.lani",
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0016", "syntax error").with_primary_label(
+                    DiagnosticLabel::primary(
+                        "stale-path.lani",
+                        2,
+                        5,
+                        1,
+                        Some("let x = ;".to_string()),
+                        "expected an expression here",
+                    ),
+                ),
+            ),
+        )
+        .expect("structured compiler diagnostic should serialize as an LSP diagnostic");
+
+        assert_eq!(items.len(), 1);
+        let diagnostic = &items[0];
+        assert_eq!(diagnostic["code"], "LNC0016");
+        assert_eq!(diagnostic["data"]["primary_label"]["path"], "/workspace/current.lani");
+        assert_eq!(
+            diagnostic["data"]["primary_label"]["message"],
+            "expected an expression here"
+        );
+        assert_eq!(diagnostic["range"]["start"]["line"], 1);
+        assert_eq!(diagnostic["range"]["start"]["character"], 4);
+    }
 }

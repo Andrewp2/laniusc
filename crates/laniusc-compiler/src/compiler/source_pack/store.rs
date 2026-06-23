@@ -1,5 +1,35 @@
 use super::*;
 
+pub(in crate::compiler) fn source_pack_artifact_store_error(
+    message: impl Into<String>,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0059", "source-pack artifact store failed")
+            .with_note(message)
+            .with_note(
+                "source-pack artifact stores require canonical artifact identities, normal relative artifact keys, and readable or writable artifact files under the selected artifact root",
+            )
+            .with_help(
+                "regenerate the source-pack artifact root or remove stale artifact files before resuming the build",
+            ),
+    )
+}
+
+pub(in crate::compiler) fn source_pack_store_metadata_error(
+    message: impl Into<String>,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0060", "source-pack metadata store failed")
+            .with_note(message)
+            .with_note(
+                "source-pack metadata store files must be readable JSON records with supported versions and matching target, page, and shard identities under the selected artifact root",
+            )
+            .with_help(
+                "regenerate the source-pack artifact root or remove stale metadata files before resuming the build",
+            ),
+    )
+}
+
 mod artifact_io;
 pub(in crate::compiler) use artifact_io::*;
 mod artifact_refs;
@@ -66,7 +96,7 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         let path = self.path_for_key(key)?;
         if !path.is_file() {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_artifact_store_error(format!(
                 "source-pack {artifact_label} artifact {key:?} is missing at {}",
                 path.display()
             )));

@@ -5,7 +5,7 @@ pub(in crate::compiler) fn validate_artifact_shard_index(
     index: &SourcePackBuildArtifactShardIndex,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact shard index version {}; expected {}",
             index.version, SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION
         )));
@@ -28,7 +28,7 @@ pub(in crate::compiler) fn validate_artifact_shard(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if shard.version != SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact shard version {}; expected {}",
             shard.version, SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION
         )));

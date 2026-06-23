@@ -1,4 +1,5 @@
 use super::*;
+use crate::parser::tables::{Ll1RejectionContext, PrecomputedParseTables};
 
 /// Debug readback for delimiter-pair validation.
 pub struct BracketsMatchResult {
@@ -17,6 +18,185 @@ pub struct Ll1AcceptResult {
     pub detail: u32,
     pub steps: u32,
     pub emit_len: u32,
+}
+
+impl Ll1AcceptResult {
+    /// Decodes the six-word parser status buffer used by GPU parser passes.
+    pub(crate) fn from_status_words(words: &[u32]) -> Self {
+        Self {
+            accepted: words[0] != 0,
+            error_pos: words[1],
+            error_code: words[2],
+            detail: words[3],
+            steps: words[4],
+            emit_len: words[5],
+        }
+    }
+
+    /// Formats a parser rejection without exposing internal GPU pass names.
+    pub fn rejection_message(&self) -> String {
+        if self.accepted {
+            return "parse accepted".to_string();
+        }
+
+        match self.error_code {
+            3 => format!(
+                "parse error: this input is too large for the current parser buffers \
+                 (needed {} output entries, capacity {})",
+                self.detail, self.emit_len
+            ),
+            4 => "parse error: input is incomplete or contains mismatched syntax".to_string(),
+            _ => "parse error: could not match the grammar".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Parser rejection class owned by the parser boundary.
+pub enum ParserFailureKind {
+    /// The LL(1) acceptance pass rejected the token-kind stream.
+    Ll1Rejected,
+}
+
+#[derive(Clone, Debug)]
+/// Structured parser failure payload consumed by compiler diagnostics.
+pub struct ParserFailure {
+    pub kind: ParserFailureKind,
+    ll1: Ll1AcceptResult,
+    semantic_token_kinds: Option<Vec<u32>>,
+    ll1_rejection: Option<Ll1RejectionContext>,
+}
+
+impl ParserFailure {
+    /// Builds a parser failure from a rejected LL(1) status and optional token-kind readback.
+    pub fn from_ll1_rejection(
+        ll1: Ll1AcceptResult,
+        parse_tables: &PrecomputedParseTables,
+        semantic_token_kinds: Option<Vec<u32>>,
+    ) -> Self {
+        debug_assert!(
+            !ll1.accepted,
+            "accepted LL(1) status should not be reported as a parser failure"
+        );
+        let ll1_rejection = semantic_token_kinds
+            .as_deref()
+            .and_then(|kinds| parse_tables.diagnose_ll1_rejection(kinds));
+        Self {
+            kind: ParserFailureKind::Ll1Rejected,
+            ll1,
+            semantic_token_kinds,
+            ll1_rejection,
+        }
+    }
+
+    /// Raw LL(1) status. This remains useful for low-level fallback positioning.
+    pub fn ll1(&self) -> &Ll1AcceptResult {
+        &self.ll1
+    }
+
+    /// Current parser token-kind stream, when diagnostic readback succeeded.
+    pub fn semantic_token_kinds(&self) -> Option<&[u32]> {
+        self.semantic_token_kinds.as_deref()
+    }
+
+    /// Table-derived expected/found context, when available.
+    pub fn ll1_rejection(&self) -> Option<&Ll1RejectionContext> {
+        self.ll1_rejection.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Ll1AcceptResult, ParserFailure};
+    use crate::parser::tables::{INVALID_TABLE_ENTRY, Ll1ParseErrorCode, PrecomputedParseTables};
+
+    fn tiny_ident_semicolon_table() -> PrecomputedParseTables {
+        let mut tables = PrecomputedParseTables::new(4, 1);
+        tables.n_nonterminals = 1;
+        tables.start_nonterminal = 0;
+        tables.ll1_predict = vec![INVALID_TABLE_ENTRY; 4];
+        tables.ll1_predict[1] = 0;
+        tables.prod_rhs_off = vec![0];
+        tables.prod_rhs_len = vec![2];
+        tables.prod_rhs = vec![1, 3];
+        tables
+    }
+
+    #[test]
+    fn parser_rejection_message_hides_gpu_ll1_details() {
+        let result = Ll1AcceptResult {
+            accepted: false,
+            error_pos: 7,
+            error_code: 2,
+            detail: 19,
+            steps: 11,
+            emit_len: 0,
+        };
+
+        let message = result.rejection_message();
+        assert_eq!(message, "parse error: could not match the grammar");
+        assert!(!message.contains("near token"));
+        assert!(!message.contains("status token"));
+        assert!(!message.contains("GPU LL(1)"));
+    }
+
+    #[test]
+    fn parser_rejection_message_decodes_stack_effect_depth() {
+        let result = Ll1AcceptResult {
+            accepted: false,
+            error_pos: 0,
+            error_code: 4,
+            detail: (-2i32) as u32,
+            steps: 14,
+            emit_len: 0,
+        };
+
+        let message = result.rejection_message();
+        assert_eq!(
+            message,
+            "parse error: input is incomplete or contains mismatched syntax"
+        );
+        assert!(!message.contains("depth"));
+        assert!(!message.contains("GPU LL(1)"));
+    }
+
+    #[test]
+    fn parser_status_words_decode_to_accept_result() {
+        let result = Ll1AcceptResult::from_status_words(&[0, 3, 4, 5, 6, 7]);
+
+        assert!(!result.accepted);
+        assert_eq!(result.error_pos, 3);
+        assert_eq!(result.error_code, 4);
+        assert_eq!(result.detail, 5);
+        assert_eq!(result.steps, 6);
+        assert_eq!(result.emit_len, 7);
+    }
+
+    #[test]
+    fn parser_failure_captures_table_rejection_context() {
+        let failure = ParserFailure::from_ll1_rejection(
+            Ll1AcceptResult {
+                accepted: false,
+                error_pos: 2,
+                error_code: 2,
+                detail: 0,
+                steps: 3,
+                emit_len: 0,
+            },
+            &tiny_ident_semicolon_table(),
+            Some(vec![0, 1, 2, 0]),
+        );
+
+        let rejection = failure
+            .ll1_rejection()
+            .expect("table replay should explain the rejected token");
+        assert_eq!(rejection.pos, 2);
+        assert_eq!(rejection.code, Ll1ParseErrorCode::TerminalMismatch);
+        assert_eq!(rejection.found, 2);
+        assert_eq!(rejection.expected, vec![3]);
+        assert_eq!(failure.semantic_token_kinds(), Some(&[0, 1, 2, 0][..]));
+        assert_eq!(failure.ll1().error_pos, 2);
+    }
 }
 
 /// Full one-shot parser debug readback result.
@@ -242,14 +422,7 @@ impl RecordedResidentLl1HirCheck {
         drop(mapped);
         self.status_readback.unmap();
 
-        Ok(Ll1AcceptResult {
-            accepted: words[0] != 0,
-            error_pos: words[1],
-            error_code: words[2],
-            detail: words[3],
-            steps: words[4],
-            emit_len: words[5],
-        })
+        Ok(Ll1AcceptResult::from_status_words(&words))
     }
 }
 

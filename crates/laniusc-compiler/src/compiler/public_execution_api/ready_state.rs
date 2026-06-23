@@ -10,7 +10,7 @@ fn validate_completed_batch_artifacts(
         let job_manifest = execution_shard_job_artifact(execution_shard, job_index)?;
         for artifact in &job_manifest.outputs {
             if !store.artifact_exists(artifact)? {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack build state marks batch {} complete but output artifact {:?} from job {} is missing",
                     batch.batch_index, artifact.key, job_manifest.job_index
                 )));
@@ -70,7 +70,7 @@ fn validate_ready_batch_dependency_artifact(
         )));
     }
     if !batch_completed_from_locator(store, target, dependency_batch_index)? {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack ready batch {ready_batch_index} dependency {dependency_batch_index} is not complete"
         )));
     }

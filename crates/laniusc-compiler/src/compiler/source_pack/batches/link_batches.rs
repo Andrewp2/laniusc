@@ -42,7 +42,7 @@ pub(in crate::compiler) fn validate_build_link_batch_prepare_progress(
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_BUILD_LINK_BATCH_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack link-batch prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_BUILD_LINK_BATCH_PREPARE_PROGRESS_VERSION
         )));
@@ -101,8 +101,8 @@ pub(in crate::compiler) fn store_build_link_batch_pages_from_artifact_refs_chunk
     max_new_batches: usize,
 ) -> Result<FilesystemLinkBatchPrepareStepResult, CompileError> {
     if max_new_batches == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack link-batch chunk max_new_batches must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack link-batch chunk max_new_batches must be greater than zero",
         ));
     }
     validate_library_schedule_index(schedule_index, target)?;

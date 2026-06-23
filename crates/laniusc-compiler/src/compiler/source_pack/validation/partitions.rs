@@ -9,7 +9,7 @@ pub(in crate::compiler) fn validate_library_partition_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library partition index version {}; expected {}",
             index.version, SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION
         )));
@@ -54,7 +54,7 @@ pub(in crate::compiler) fn validate_library_metadata_prepare_progress(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_LIBRARY_METADATA_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library metadata prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_LIBRARY_METADATA_PREPARE_PROGRESS_VERSION
         )));
@@ -234,7 +234,7 @@ pub(in crate::compiler) fn validate_library_partition(
     expected_partition_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if partition.version != SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library partition version {}; expected {}",
             partition.version, SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION
         )));
@@ -360,7 +360,7 @@ pub(in crate::compiler) fn validate_library_dependency_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_DEPENDENCY_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library dependency page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_DEPENDENCY_PAGE_VERSION
         )));
@@ -451,9 +451,15 @@ mod tests {
 
         let err = validate_library_dependency_page(&dependency_page, target, 1, page_index)
             .expect_err("overflowed dependency page positions must be rejected");
+        let diagnostic = match err {
+            CompileError::Diagnostic(diagnostic) => diagnostic,
+            other => panic!("expected structured dependency-page diagnostic, got {other:?}"),
+        };
+        assert_eq!(diagnostic.code, "LNC0050");
+        let rendered = diagnostic.render();
         assert!(
-            matches!(err, CompileError::GpuFrontend(_)),
-            "unexpected dependency page validation error: {err}"
+            rendered.contains("overflows first record position"),
+            "unexpected dependency page validation error: {rendered}"
         );
     }
 

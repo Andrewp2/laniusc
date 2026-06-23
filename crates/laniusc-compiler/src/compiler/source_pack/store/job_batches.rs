@@ -8,10 +8,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_job_batch_page_index(index, index.target)?;
         let path = self.build_job_batch_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!("serialize source-pack job-batch page index: {err}"))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch page index")?;
+        let bytes = serialize_store_json(index, "source-pack job-batch page index")?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch page index")?;
         Ok(path)
     }
 
@@ -21,19 +19,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackBuildJobBatchPageIndex, CompileError> {
         let path = self.build_job_batch_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch page index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackBuildJobBatchPageIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch page index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch page index")?;
+        let index = parse_store_json::<SourcePackBuildJobBatchPageIndex>(
+            &bytes,
+            &path,
+            "source-pack job-batch page index",
+        )?;
         validate_job_batch_page_index(&index, target)?;
         Ok(index)
     }
@@ -50,12 +41,8 @@ impl FilesystemArtifactStore {
             progress.batch_limits,
         )?;
         let path = self.build_job_batch_prepare_progress_path_for_target(progress.target);
-        let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch prepare progress: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch prepare progress")?;
+        let bytes = serialize_store_json(progress, "source-pack job-batch prepare progress")?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch prepare progress")?;
         Ok(path)
     }
 
@@ -67,19 +54,12 @@ impl FilesystemArtifactStore {
         batch_limits: SourcePackJobBatchLimits,
     ) -> Result<JobBatchPrepareProgress, CompileError> {
         let path = self.build_job_batch_prepare_progress_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch prepare progress {}: {err}",
-                path.display()
-            ))
-        })?;
-        let progress =
-            serde_json::from_slice::<JobBatchPrepareProgress>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch prepare progress {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch prepare progress")?;
+        let progress = parse_store_json::<JobBatchPrepareProgress>(
+            &bytes,
+            &path,
+            "source-pack job-batch prepare progress",
+        )?;
         validate_build_job_batch_prepare_progress(
             &progress,
             target,
@@ -113,13 +93,11 @@ impl FilesystemArtifactStore {
             Some(stored_page.batch_index),
         )?;
         let path = self.build_job_batch_page_path_for_target(page.target, page.batch_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch page {}: {err}",
-                page.batch_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch page")?;
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!("source-pack job-batch page {}", page.batch_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch page")?;
         Ok(path)
     }
 
@@ -130,19 +108,12 @@ impl FilesystemArtifactStore {
         batch_index: usize,
     ) -> Result<SourcePackBuildJobBatchPage, CompileError> {
         let path = self.build_job_batch_page_path_for_target(target, batch_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackBuildJobBatchPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch page")?;
+        let page = parse_store_json::<SourcePackBuildJobBatchPage>(
+            &bytes,
+            &path,
+            "source-pack job-batch page",
+        )?;
         validate_job_batch_page(&page, target, Some(batch_index))?;
         Ok(page)
     }
@@ -158,13 +129,14 @@ impl FilesystemArtifactStore {
             page.batch_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch dependency page {} for batch {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack job-batch dependency page {} for batch {}",
                 page.page_index, page.batch_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch dependency page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch dependency page")?;
         Ok(path)
     }
 
@@ -177,19 +149,12 @@ impl FilesystemArtifactStore {
     ) -> Result<SourcePackBuildJobBatchDependencyPage, CompileError> {
         let path =
             self.build_job_batch_dependency_page_path_for_target(target, batch_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch dependency page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackBuildJobBatchDependencyPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch dependency page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch dependency page")?;
+        let page = parse_store_json::<SourcePackBuildJobBatchDependencyPage>(
+            &bytes,
+            &path,
+            "source-pack job-batch dependency page",
+        )?;
         validate_job_batch_dependency_page(&page, target, batch_index, page_index)?;
         Ok(page)
     }
@@ -210,13 +175,14 @@ impl FilesystemArtifactStore {
             page.batch_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch dependency range page {} for batch {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack job-batch dependency range page {} for batch {}",
                 page.page_index, page.batch_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch dependency range page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch dependency range page")?;
         Ok(path)
     }
 
@@ -232,19 +198,12 @@ impl FilesystemArtifactStore {
             batch_index,
             page_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch dependency range page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackBuildJobBatchDependencyRangePage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch dependency range page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch dependency range page")?;
+        let page = parse_store_json::<SourcePackBuildJobBatchDependencyRangePage>(
+            &bytes,
+            &path,
+            "source-pack job-batch dependency range page",
+        )?;
         validate_job_batch_dependency_range_page(&page, target, batch_index, page_index)?;
         Ok(page)
     }
@@ -287,13 +246,11 @@ impl FilesystemArtifactStore {
         )?;
         let path =
             self.build_job_batch_dependents_page_path_for_target(page.target, page.batch_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch dependents page {}: {err}",
-                page.batch_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch dependents page")?;
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!("source-pack job-batch dependents page {}", page.batch_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch dependents page")?;
         Ok(path)
     }
 
@@ -346,33 +303,23 @@ impl FilesystemArtifactStore {
         batch_count: usize,
     ) -> Result<SourcePackBuildJobBatchDependentsPage, CompileError> {
         let path = self.build_job_batch_dependents_page_path_for_target(target, batch_index);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                let first_dependent_page_path = self
-                    .build_job_batch_dependent_batch_page_path_for_target(target, batch_index, 0);
-                if first_dependent_page_path.is_file() {
-                    return Err(CompileError::GpuFrontend(format!(
-                        "read source-pack job-batch dependents page {}: missing count page but dependent-batch pages exist",
-                        path.display()
-                    )));
-                }
-                return empty_build_job_batch_dependents_page(target, batch_index, batch_count);
-            }
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack job-batch dependents page {}: {err}",
+        let Some(bytes) = try_read_store_file(&path, "source-pack job-batch dependents page")?
+        else {
+            let first_dependent_page_path =
+                self.build_job_batch_dependent_batch_page_path_for_target(target, batch_index, 0);
+            if first_dependent_page_path.is_file() {
+                return Err(source_pack_store_metadata_error(format!(
+                    "read source-pack job-batch dependents page {}: missing count page but dependent-batch pages exist",
                     path.display()
                 )));
             }
+            return empty_build_job_batch_dependents_page(target, batch_index, batch_count);
         };
-        let page = serde_json::from_slice::<SourcePackBuildJobBatchDependentsPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch dependents page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let page = parse_store_json::<SourcePackBuildJobBatchDependentsPage>(
+            &bytes,
+            &path,
+            "source-pack job-batch dependents page",
+        )?;
         validate_job_batch_dependents_page(&page, target, batch_count, Some(batch_index))?;
         Ok(page)
     }
@@ -395,13 +342,14 @@ impl FilesystemArtifactStore {
             page.batch_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch dependent-batch page {} for batch {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack job-batch dependent-batch page {} for batch {}",
                 page.page_index, page.batch_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch dependent-batch page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch dependent-batch page")?;
         Ok(path)
     }
 
@@ -418,19 +366,12 @@ impl FilesystemArtifactStore {
             batch_index,
             page_index,
         );
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch dependent-batch page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackBuildJobBatchDependentBatchPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch dependent-batch page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch dependent-batch page")?;
+        let page = parse_store_json::<SourcePackBuildJobBatchDependentBatchPage>(
+            &bytes,
+            &path,
+            "source-pack job-batch dependent-batch page",
+        )?;
         validate_job_batch_dependent_batch_page(
             &page,
             target,
@@ -455,13 +396,11 @@ impl FilesystemArtifactStore {
         )?;
         let path =
             self.build_job_batch_job_locator_page_path_for_target(page.target, page.job_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack job-batch job-locator page {}: {err}",
-                page.job_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack job-batch job-locator page")?;
+        let bytes = serialize_store_json(
+            page,
+            format!("source-pack job-batch job-locator page {}", page.job_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack job-batch job-locator page")?;
         Ok(path)
     }
 
@@ -473,19 +412,12 @@ impl FilesystemArtifactStore {
         scheduled_job_count: usize,
     ) -> Result<SourcePackBuildJobBatchJobLocatorPage, CompileError> {
         let path = self.build_job_batch_job_locator_page_path_for_target(target, job_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack job-batch job-locator page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackBuildJobBatchJobLocatorPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack job-batch job-locator page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack job-batch job-locator page")?;
+        let page = parse_store_json::<SourcePackBuildJobBatchJobLocatorPage>(
+            &bytes,
+            &path,
+            "source-pack job-batch job-locator page",
+        )?;
         validate_job_batch_locator_page(&page, target, scheduled_job_count, Some(job_index))?;
         Ok(page)
     }

@@ -1,6 +1,12 @@
 // src/compiler/gpu_compiler/wasm_codegen.rs
 
-use super::{typecheck::type_check_error_to_compile_error_for_source, *};
+use super::{
+    typecheck::{
+        type_check_error_to_compile_error_for_source,
+        type_check_error_to_compile_error_for_source_pack_tokens,
+    },
+    *,
+};
 use crate::gpu::buffers::LaniusBuffer;
 
 impl<'gpu> GpuCompiler<'gpu> {
@@ -43,14 +49,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let token_capacity = token_count.max(1);
                     let parser_tree_capacity = self
                         .parser
-                        .read_resident_projected_tree_capacity(
+                        .read_resident_partial_parse_tree_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
                             Some(&bufs.token_file_id),
                             &self.parse_tables,
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                        })?;
                     let (parser_check, type_check) = self
                         .parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
@@ -228,7 +236,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         },
                                         timer.as_deref_mut(),
                                     )
-                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                                    .map_err(|err| {
+                                        type_check_execution_failed_for_source_pack(
+                                            &diagnostic_files,
+                                            err,
+                                        )
+                                    })?;
                                 trace_wasm_compile("source_pack.typecheck.recorded");
                                 if let Some(timer) = timer.as_deref_mut() {
                                     timer.stamp(encoder, "typecheck.done");
@@ -236,7 +249,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 let wasm_check = self
                                     .type_checker
                                     .with_codegen_buffers(|codegen| {
-                                        self.wasm_generator()?
+                                        self.wasm_generator()
+                                            .map_err(|err| {
+                                                wasm_backend_execution_failed_for_source_pack(
+                                                    &diagnostic_files,
+                                                    err,
+                                                )
+                                            })?
                                             .record_wasm_from_gpu_token_buffer(
                                                 device,
                                                 queue,
@@ -345,12 +364,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.struct_init_field_expected_ref_payload,
                                             )
                                             .map_err(|err| {
-                                                CompileError::GpuCodegen(err.to_string())
+                                                wasm_backend_execution_failed_for_source_pack(
+                                                    &diagnostic_files,
+                                                    err,
+                                                )
                                             })
                                     })
                                     .ok_or_else(|| {
-                                        CompileError::GpuCodegen(
-                                            "GPU type metadata buffers missing".into(),
+                                        wasm_backend_execution_failed_for_source_pack(
+                                            &diagnostic_files,
+                                            "WASM type metadata buffers are unavailable",
                                         )
                                     })??;
                                 trace_wasm_compile("source_pack.wasm.recorded");
@@ -360,25 +383,71 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 Ok::<_, CompileError>((recorded, wasm_check, wasm_diagnostics))
                             },
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                        })?;
                     trace_wasm_compile("source_pack.parser.typecheck.recorded");
                     let (type_check, wasm_check, wasm_diagnostics) = type_check?;
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "wasm.codegen.done");
                     }
-                    Ok((parser_check, type_check, wasm_check, wasm_diagnostics))
+                    Ok((
+                        parser_check,
+                        type_check,
+                        wasm_check,
+                        wasm_diagnostics,
+                        token_capacity,
+                        parser_tree_capacity,
+                    ))
                 },
-                |device, queue, (parser_check, type_check, wasm_check, wasm_diagnostics)| {
+                |device,
+                 queue,
+                 (
+                    parser_check,
+                    type_check,
+                    wasm_check,
+                    wasm_diagnostics,
+                    token_capacity,
+                    parser_tree_capacity,
+                )| {
                     trace_wasm_compile("source_pack.finish.parser.start");
-                    self.parser
-                        .finish_recorded_resident_ll1_hir_check(&parser_check)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
+                        parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                    })?;
+                    if !ll1.accepted {
+                        let parser_failure = self
+                            .parser
+                            .current_resident_parser_failure_for_ll1_rejection(
+                                token_capacity,
+                                &self.parse_tables,
+                                Some(parser_tree_capacity),
+                                ll1,
+                            );
+                        return Err(parser_failure_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &wasm_diagnostics.tokens_out.buffer,
+                            &diagnostic_files,
+                            &parser_failure,
+                        ));
+                    }
                     trace_wasm_compile("source_pack.finish.typecheck.start");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_source_pack_tokens(
+                                device,
+                                queue,
+                                &wasm_diagnostics.tokens_out,
+                                &diagnostic_files,
+                                err,
+                            )
+                        })?;
                     trace_wasm_compile("source_pack.finish.wasm.start");
-                    self.wasm_generator()?
+                    self.wasm_generator()
+                        .map_err(|err| {
+                            wasm_backend_execution_failed_for_source_pack(&diagnostic_files, err)
+                        })?
                         .finish_recorded_wasm(device, queue, &wasm_check)
                         .map_err(|err| {
                             wasm_codegen_error_to_compile_error_for_source_pack(
@@ -392,7 +461,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 },
             )
             .await
-            .map_err(|err| CompileError::GpuFrontend(format!("lex source pack: {err}")))?
+            .map_err(|err| source_tokenization_failed_for_source_pack(&diagnostic_files, err))?
     }
     /// Compile an explicit in-memory source-pack manifest through the WASM
     /// backend and preserve manifest source paths for diagnostics.
@@ -432,14 +501,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let token_capacity = token_count.max(1);
                     let parser_tree_capacity = self
                         .parser
-                        .read_resident_projected_tree_capacity(
+                        .read_resident_partial_parse_tree_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
                             Some(&bufs.token_file_id),
                             &self.parse_tables,
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(&diagnostic_path, src, err)
+                        })?;
                     let (parser_check, type_check) = self
                         .parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
@@ -617,7 +688,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         },
                                         timer.as_deref_mut(),
                                     )
-                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                                    .map_err(|err| {
+                                        type_check_execution_failed_for_source(
+                                            &diagnostic_path,
+                                            src,
+                                            err,
+                                        )
+                                    })?;
                                 trace_wasm_compile("typecheck.recorded");
                                 if let Some(timer) = timer.as_deref_mut() {
                                     timer.stamp(encoder, "typecheck.done");
@@ -625,7 +702,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 let wasm_check = self
                                     .type_checker
                                     .with_codegen_buffers(|codegen| {
-                                        self.wasm_generator()?
+                                        self.wasm_generator()
+                                            .map_err(|err| {
+                                                wasm_backend_execution_failed_for_source(
+                                                    &diagnostic_path,
+                                                    src,
+                                                    err,
+                                                )
+                                            })?
                                             .record_wasm_from_gpu_token_buffer(
                                                 device,
                                                 queue,
@@ -734,31 +818,60 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.struct_init_field_expected_ref_payload,
                                             )
                                             .map_err(|err| {
-                                                CompileError::GpuCodegen(err.to_string())
+                                                wasm_backend_execution_failed_for_source(
+                                                    &diagnostic_path,
+                                                    src,
+                                                    err,
+                                                )
                                             })
                                     })
                                     .ok_or_else(|| {
-                                        CompileError::GpuCodegen(
-                                            "GPU type metadata buffers missing".into(),
+                                        wasm_backend_execution_failed_for_source(
+                                            &diagnostic_path,
+                                            src,
+                                            "WASM type metadata buffers are unavailable",
                                         )
                                     })??;
                                 trace_wasm_compile("wasm.recorded");
                                 Ok::<_, CompileError>((recorded, wasm_check))
                             },
                         )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                        .map_err(|err| {
+                            parser_execution_failed_for_source(&diagnostic_path, src, err)
+                        })?;
                     trace_wasm_compile("parser.typecheck.recorded");
                     let (type_check, wasm_check) = type_check?;
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "wasm.codegen.done");
                     }
-                    Ok((parser_check, type_check, wasm_check))
+                    Ok((parser_check, type_check, wasm_check, token_capacity, parser_tree_capacity))
                 },
-                |device, queue, _bufs, (parser_check, type_check, wasm_check)| {
+                |device,
+                 queue,
+                 _bufs,
+                 (parser_check, type_check, wasm_check, token_capacity, parser_tree_capacity)| {
                     trace_wasm_compile("finish.parser.start");
-                    self.parser
-                        .finish_recorded_resident_ll1_hir_check(&parser_check)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
+                        parser_execution_failed_for_source(&diagnostic_path, src, err)
+                    })?;
+                    if !ll1.accepted {
+                        let parser_failure = self
+                            .parser
+                            .current_resident_parser_failure_for_ll1_rejection(
+                                token_capacity,
+                                &self.parse_tables,
+                                Some(parser_tree_capacity),
+                                ll1,
+                            );
+                        return Err(parser_failure_to_compile_error_for_source(
+                            device,
+                            queue,
+                            &_bufs.tokens_out.buffer,
+                            src,
+                            &diagnostic_path,
+                            &parser_failure,
+                        ));
+                    }
                     trace_wasm_compile("finish.typecheck.start");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
@@ -773,7 +886,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                     trace_wasm_compile("finish.wasm.start");
-                    self.wasm_generator()?
+                    self.wasm_generator()
+                        .map_err(|err| {
+                            wasm_backend_execution_failed_for_source(&diagnostic_path, src, err)
+                        })?
                         .finish_recorded_wasm(device, queue, &wasm_check)
                         .map_err(|err| {
                             wasm_codegen_error_to_compile_error_for_source(
@@ -788,14 +904,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                 },
             )
             .await
-            .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
+            .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))?
     }
-    /// Returns the initialized WASM code generator or a backend initialization error.
-    pub(super) fn wasm_generator(&self) -> Result<&wasm::GpuWasmCodeGenerator, CompileError> {
+    /// Returns the initialized WASM code generator or its deferred initialization error.
+    pub(super) fn wasm_generator(&self) -> Result<&wasm::GpuWasmCodeGenerator, &str> {
         trace_wasm_compile("wasm.generator");
-        self.wasm_generator.as_deref().map_err(|err| {
-            CompileError::GpuCodegen(format!("initialize GPU WASM code generator: {err}"))
-        })
+        self.wasm_generator.as_deref().map_err(String::as_str)
     }
 }
 
@@ -812,7 +926,7 @@ fn wasm_codegen_error_to_compile_error_for_source(
     err: &anyhow::Error,
 ) -> CompileError {
     let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
-        return CompileError::GpuCodegen(err.to_string());
+        return wasm_backend_execution_failed_for_source(diagnostic_path, src, err);
     };
 
     let label =
@@ -842,11 +956,12 @@ fn wasm_error_label_for_source(
         }
     }
 
+    let (start, len) = first_nonempty_source_span(src);
     diagnostic_label_from_source_span(
         diagnostic_path,
         src,
-        first_nonempty_label_start(src),
-        first_label_len(src),
+        start,
+        len,
         "not supported by the WASM backend yet",
     )
 }
@@ -859,41 +974,45 @@ fn wasm_codegen_error_to_compile_error_for_source_pack(
     err: &anyhow::Error,
 ) -> CompileError {
     let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
-        return CompileError::GpuCodegen(err.to_string());
+        return wasm_backend_execution_failed_for_source_pack(diagnostic_files, err);
     };
     let Some(file) = diagnostic_files.first() else {
-        return CompileError::GpuCodegen(err.to_string());
+        return wasm_backend_execution_failed_for_source_pack(diagnostic_files, err);
     };
 
     let label = if wasm_err.detail_is_token() {
         read_single_token_from_buffer(device, queue, token_buffer, wasm_err.error_detail())
             .ok()
             .and_then(|token| {
-                source_pack_file_for_global_span(diagnostic_files, token.start).map(|file| {
-                    diagnostic_label_from_source_span(
-                        &file.path,
-                        &file.source,
-                        file.local_start_for_global(token.start),
-                        token.len,
-                        "not supported by the WASM backend yet",
-                    )
-                })
+                source_pack_nearest_file_for_global_span(diagnostic_files, token.start).map(
+                    |file| {
+                        diagnostic_label_from_source_span(
+                            &file.path,
+                            &file.source,
+                            file.local_start_for_global(token.start),
+                            token.len,
+                            "not supported by the WASM backend yet",
+                        )
+                    },
+                )
             })
             .unwrap_or_else(|| {
+                let (start, len) = first_nonempty_source_span(&file.source);
                 diagnostic_label_from_source_span(
                     &file.path,
                     &file.source,
-                    first_nonempty_label_start(&file.source),
-                    first_label_len(&file.source),
+                    start,
+                    len,
                     "not supported by the WASM backend yet",
                 )
             })
     } else {
+        let (start, len) = first_nonempty_source_span(&file.source);
         diagnostic_label_from_source_span(
             &file.path,
             &file.source,
-            first_nonempty_label_start(&file.source),
-            first_label_len(&file.source),
+            start,
+            len,
             "not supported by the WASM backend yet",
         )
     };
@@ -902,25 +1021,100 @@ fn wasm_codegen_error_to_compile_error_for_source_pack(
 }
 
 fn wasm_backend_boundary_diagnostic(wasm_err: &wasm::WasmOutputError) -> Diagnostic {
-    Diagnostic::error("LNC0036", wasm_err.error_name()).with_note(format!(
-        "WASM backend error code {} detail {}",
-        wasm_err.error_code(),
-        wasm_err.error_detail()
-    ))
+    Diagnostic::error("LNC0036", wasm_err.public_message()).with_note(
+        "this program reached a WASM lowering path that is not supported yet; use `laniusc check` for diagnostics-only validation until this construct is covered",
+    )
 }
 
-fn first_label_len(source: &str) -> usize {
-    source[first_nonempty_label_start(source)..]
-        .chars()
-        .next()
-        .map(char::len_utf8)
-        .unwrap_or(0)
+fn wasm_backend_execution_failed_for_source(
+    diagnostic_path: &Path,
+    src: &str,
+    err: impl std::fmt::Display,
+) -> CompileError {
+    stage_execution_failed_for_source(wasm_backend_execution_failure(), diagnostic_path, src, err)
 }
 
-fn first_nonempty_label_start(source: &str) -> usize {
-    source
-        .char_indices()
-        .find(|(_, ch)| !ch.is_whitespace())
-        .map(|(index, _)| index)
-        .unwrap_or(0)
+fn wasm_backend_execution_failed_for_source_pack(
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: impl std::fmt::Display,
+) -> CompileError {
+    stage_execution_failed_for_source_pack(wasm_backend_execution_failure(), diagnostic_files, err)
+}
+
+fn wasm_backend_execution_failure() -> StageExecutionFailure<'static> {
+    StageExecutionFailure {
+        code: "LNC0036",
+        message: "WASM backend execution failed",
+        primary_label: "WASM backend failed before it could classify this source",
+        source_help: "use `laniusc check` to validate frontend diagnostics; if this happens on a small supported program, report a compiler bug",
+        source_pack_help: "use `laniusc check` to validate frontend diagnostics; if this happens on a small supported source pack, report a compiler bug",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wasm_backend_execution_failure_for_source_is_structured_diagnostic() {
+        let err = wasm_backend_execution_failed_for_source(
+            Path::new("app.lani"),
+            "fn main() { return 0; }\n",
+            "finish readback failed",
+        );
+
+        match err {
+            CompileError::Diagnostic(diagnostic) => {
+                assert_eq!(diagnostic.code, "LNC0036");
+                assert_eq!(diagnostic.message, "WASM backend execution failed");
+                let label = diagnostic
+                    .primary_label
+                    .as_ref()
+                    .expect("WASM backend diagnostic should carry a label");
+                assert_eq!(label.path, PathBuf::from("app.lani"));
+                assert_eq!(
+                    label.message,
+                    "WASM backend failed before it could classify this source"
+                );
+                let rendered = diagnostic.render();
+                assert!(rendered.contains("error[LNC0036]: WASM backend execution failed"));
+                assert!(!rendered.contains("finish readback failed"));
+                assert!(!rendered.contains("WASM backend error:"));
+                assert!(!rendered.contains("GpuCodegen"));
+                assert!(!rendered.contains("code generation error:"));
+            }
+            other => panic!("expected structured WASM backend diagnostic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wasm_backend_execution_failure_for_source_pack_is_structured_diagnostic() {
+        let paths = [Some(PathBuf::from("first.lani"))];
+        let files = source_pack_diagnostic_files(&["module first;\n"], Some(&paths));
+
+        let err = wasm_backend_execution_failed_for_source_pack(&files, "finish readback failed");
+
+        match err {
+            CompileError::Diagnostic(diagnostic) => {
+                assert_eq!(diagnostic.code, "LNC0036");
+                assert_eq!(diagnostic.message, "WASM backend execution failed");
+                let label = diagnostic
+                    .primary_label
+                    .as_ref()
+                    .expect("WASM backend diagnostic should carry a label");
+                assert_eq!(label.path, PathBuf::from("first.lani"));
+                assert_eq!(
+                    label.message,
+                    "WASM backend failed before it could classify this source"
+                );
+                let rendered = diagnostic.render();
+                assert!(rendered.contains("source file count: 1"));
+                assert!(!rendered.contains("finish readback failed"));
+                assert!(!rendered.contains("WASM backend error:"));
+                assert!(!rendered.contains("GpuCodegen"));
+                assert!(!rendered.contains("code generation error:"));
+            }
+            other => panic!("expected structured WASM source-pack diagnostic, got {other:?}"),
+        }
+    }
 }

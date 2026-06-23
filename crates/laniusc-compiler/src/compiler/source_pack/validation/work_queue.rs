@@ -9,7 +9,7 @@ pub(in crate::compiler) fn validate_work_queue_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_WORK_QUEUE_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue index version {}; expected {}",
             index.version, SOURCE_PACK_WORK_QUEUE_INDEX_VERSION
         )));
@@ -125,7 +125,7 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
     mode: WorkQueuePageValidationMode,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_PAGE_VERSION
         )));
@@ -506,7 +506,7 @@ pub(in crate::compiler) fn validate_work_queue_dependencies_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue dependencies page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_PAGE_VERSION
         )));
@@ -599,7 +599,7 @@ pub(in crate::compiler) fn validate_work_queue_dependents_page(
     expected_page_index: usize,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_WORK_QUEUE_DEPENDENTS_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_work_queue_contract_error(format!(
             "unsupported source-pack work queue dependents page version {}; expected {}",
             page.version, SOURCE_PACK_WORK_QUEUE_DEPENDENTS_PAGE_VERSION
         )));

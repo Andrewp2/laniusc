@@ -9,6 +9,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> sc_stream;
+StructuredBuffer<uint> partial_parse_status; // [4]=actual stack-change count
 StructuredBuffer<int> exscan_inblock;
 StructuredBuffer<int> block_prefix;
 
@@ -22,7 +23,7 @@ RWStructuredBuffer<uint> layer;       // len = n_sc (depth layer: push→d+1, po
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    const uint n = gParams.n_sc;
+    const uint n = min(gParams.n_sc, partial_parse_status[4u]);
     const uint GSIZE = gParams.wg_size;
     const uint block = tid.x / GSIZE;
     const uint i = tid.x;

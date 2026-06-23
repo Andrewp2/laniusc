@@ -40,7 +40,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamIdBasePa
             (
                 "tree_count_status".into(),
                 if b.tree_count_uses_status {
-                    b.projected_status.as_entire_binding()
+                    b.partial_parse_status.as_entire_binding()
                 } else {
                     b.ll1_status.as_entire_binding()
                 },

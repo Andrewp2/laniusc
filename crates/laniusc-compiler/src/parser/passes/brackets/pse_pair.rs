@@ -57,6 +57,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairP
                 b.b_pops_by_layer.as_entire_binding(),
             ),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
+            (
+                "partial_parse_status".into(),
+                b.partial_parse_status.as_entire_binding(),
+            ),
             ("layer".into(), b.b_layer.as_entire_binding()),
             (
                 "slot_for_index".into(),

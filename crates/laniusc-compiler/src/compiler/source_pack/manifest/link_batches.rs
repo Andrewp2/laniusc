@@ -6,7 +6,7 @@ pub(in crate::compiler) fn validate_link_batch_page_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack link-batch page index version {}; expected {}",
             index.version, SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION
         )));
@@ -30,7 +30,7 @@ pub(in crate::compiler) fn validate_link_interface_batch_page(
     batch_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_LINK_INTERFACE_BATCH_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack link-interface batch page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_LINK_INTERFACE_BATCH_PAGE_VERSION
         )));
@@ -93,7 +93,7 @@ pub(in crate::compiler) fn validate_link_object_batch_page(
     batch_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_BUILD_LINK_OBJECT_BATCH_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack link-object batch page version {}; expected {}",
             page.version, SOURCE_PACK_BUILD_LINK_OBJECT_BATCH_PAGE_VERSION
         )));
@@ -155,7 +155,7 @@ pub(in crate::compiler) fn validate_link_input_shard_index(
     target: SourcePackArtifactTarget,
 ) -> Result<(), CompileError> {
     if index.version != SOURCE_PACK_BUILD_LINK_INPUT_SHARD_INDEX_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack link input shard index version {}; expected {}",
             index.version, SOURCE_PACK_BUILD_LINK_INPUT_SHARD_INDEX_VERSION
         )));

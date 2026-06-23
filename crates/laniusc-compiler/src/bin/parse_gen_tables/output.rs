@@ -72,7 +72,7 @@ pub(super) fn build_meta(
     analysis: &GrammarAnalysis,
     predictions: &[Prediction],
     prod_arity: &[u32],
-    projection: &SummaryProjection,
+    pair_tables: &GeneratedPairTables,
     witness_inputs: usize,
 ) -> ParseTablesMeta {
     ParseTablesMeta {
@@ -81,15 +81,15 @@ pub(super) fn build_meta(
         lookback: DEFAULT_LOOKBACK,
         lookahead: DEFAULT_LOOKAHEAD,
         diagnostics: analysis.diagnostics.clone(),
-        sc_projection: PairProjectionMeta {
+        stack_change_table: PairTableMeta {
             witness_inputs,
-            projected_cells: projection.sc.cells.len(),
-            conflicts: projection.sc.conflicts.clone(),
+            cells: pair_tables.stack_change.cells.len(),
+            conflicts: pair_tables.stack_change.conflicts.clone(),
         },
-        pp_projection: PairProjectionMeta {
+        partial_parse_table: PairTableMeta {
             witness_inputs,
-            projected_cells: projection.pp.cells.len(),
-            conflicts: projection.pp.conflicts.clone(),
+            cells: pair_tables.partial_parse.cells.len(),
+            conflicts: pair_tables.partial_parse.conflicts.clone(),
         },
         ll1_runtime: {
             let nonterminals = collect_nonterminals(&spec.productions);

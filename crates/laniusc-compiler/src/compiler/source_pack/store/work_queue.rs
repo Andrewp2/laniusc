@@ -7,18 +7,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackWorkQueueIndex, CompileError> {
         let path = self.work_queue_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index = serde_json::from_slice::<SourcePackWorkQueueIndex>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack work queue index {}: {err}",
-                path.display()
-            ))
-        })?;
+        let bytes = read_store_file(&path, "source-pack work queue index")?;
+        let index = parse_store_json::<SourcePackWorkQueueIndex>(
+            &bytes,
+            &path,
+            "source-pack work queue index",
+        )?;
         validate_work_queue_index(&index, target)?;
         Ok(index)
     }
@@ -73,13 +67,11 @@ impl FilesystemArtifactStore {
         validate_work_queue_page(&stored_page, page.target, Some(page.item_index))?;
         self.validate_work_queue_page_sidecars(&stored_page)?;
         let path = self.work_queue_page_path_for_target(page.target, page.item_index);
-        let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue page {}: {err}",
-                page.item_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack work queue page")?;
+        let bytes = serialize_store_json(
+            &stored_page,
+            format!("source-pack work queue page {}", page.item_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack work queue page")?;
         Ok(path)
     }
 
@@ -210,18 +202,12 @@ impl FilesystemArtifactStore {
         item_index: usize,
     ) -> Result<SourcePackWorkQueuePage, CompileError> {
         let path = self.work_queue_page_path_for_target(target, item_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackWorkQueuePage>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "parse source-pack work queue page {}: {err}",
-                path.display()
-            ))
-        })?;
+        let bytes = read_store_file(&path, "source-pack work queue page")?;
+        let page = parse_store_json::<SourcePackWorkQueuePage>(
+            &bytes,
+            &path,
+            "source-pack work queue page",
+        )?;
         validate_work_queue_page(&page, target, Some(item_index))?;
         self.validate_work_queue_page_sidecars(&page)?;
         Ok(page)
@@ -394,13 +380,14 @@ impl FilesystemArtifactStore {
             page.item_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue dependencies page {} for item {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack work queue dependencies page {} for item {}",
                 page.page_index, page.item_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack work queue dependencies page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack work queue dependencies page")?;
         Ok(path)
     }
 
@@ -413,19 +400,11 @@ impl FilesystemArtifactStore {
     ) -> Result<SourcePackWorkQueueDependenciesPage, CompileError> {
         let path =
             self.work_queue_dependencies_page_path_for_target(target, item_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue dependencies page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page = serde_json::from_slice::<SourcePackWorkQueueDependenciesPage>(&bytes).map_err(
-            |err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue dependencies page {}: {err}",
-                    path.display()
-                ))
-            },
+        let bytes = read_store_file(&path, "source-pack work queue dependencies page")?;
+        let page = parse_store_json::<SourcePackWorkQueueDependenciesPage>(
+            &bytes,
+            &path,
+            "source-pack work queue dependencies page",
         )?;
         validate_work_queue_dependencies_page(&page, target, item_index, page_index)?;
         Ok(page)
@@ -442,13 +421,14 @@ impl FilesystemArtifactStore {
             page.item_index,
             page.page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue dependents page {} for item {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack work queue dependents page {} for item {}",
                 page.page_index, page.item_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack work queue dependents page")?;
+            ),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack work queue dependents page")?;
         Ok(path)
     }
 
@@ -460,19 +440,12 @@ impl FilesystemArtifactStore {
         page_index: usize,
     ) -> Result<SourcePackWorkQueueDependentsPage, CompileError> {
         let path = self.work_queue_dependents_page_path_for_target(target, item_index, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue dependents page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackWorkQueueDependentsPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue dependents page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack work queue dependents page")?;
+        let page = parse_store_json::<SourcePackWorkQueueDependentsPage>(
+            &bytes,
+            &path,
+            "source-pack work queue dependents page",
+        )?;
         validate_work_queue_dependents_page(&page, target, item_index, page_index)?;
         Ok(page)
     }
@@ -484,12 +457,8 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_progress_index(index, index.target)?;
         let path = self.work_queue_progress_index_path_for_target(index.target);
-        let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue progress index: {err}"
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack work queue progress index")?;
+        let bytes = serialize_store_json(index, "source-pack work queue progress index")?;
+        write_store_file_atomic(&path, &bytes, "source-pack work queue progress index")?;
         Ok(path)
     }
 
@@ -499,19 +468,12 @@ impl FilesystemArtifactStore {
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackWorkQueueProgressIndex, CompileError> {
         let path = self.work_queue_progress_index_path_for_target(target);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue progress index {}: {err}",
-                path.display()
-            ))
-        })?;
-        let index =
-            serde_json::from_slice::<SourcePackWorkQueueProgressIndex>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue progress index {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack work queue progress index")?;
+        let index = parse_store_json::<SourcePackWorkQueueProgressIndex>(
+            &bytes,
+            &path,
+            "source-pack work queue progress index",
+        )?;
         validate_progress_index(&index, target)?;
         Ok(index)
     }
@@ -523,13 +485,11 @@ impl FilesystemArtifactStore {
     ) -> Result<PathBuf, CompileError> {
         validate_progress_page(page, page.target, Some(page.page_index))?;
         let path = self.work_queue_progress_page_path_for_target(page.target, page.page_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue progress page {}: {err}",
-                page.page_index
-            ))
-        })?;
-        write_file_atomic(&path, &bytes, "source-pack work queue progress page")?;
+        let bytes = serialize_store_json(
+            page,
+            format!("source-pack work queue progress page {}", page.page_index),
+        )?;
+        write_store_file_atomic(&path, &bytes, "source-pack work queue progress page")?;
         self.store_work_queue_progress_page_summary_for_target(
             page.target,
             &progress_page_summary(page),
@@ -546,13 +506,14 @@ impl FilesystemArtifactStore {
         validate_progress_page_summary(summary)?;
         let path =
             self.work_queue_progress_page_summary_path_for_target(target, summary.page_index);
-        let bytes = serde_json::to_vec_pretty(summary).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue progress page summary {}: {err}",
+        let bytes = serialize_store_json(
+            summary,
+            format!(
+                "source-pack work queue progress page summary {}",
                 summary.page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack work queue progress page summary",
@@ -567,23 +528,16 @@ impl FilesystemArtifactStore {
         page_index: usize,
     ) -> Result<Option<SourcePackWorkQueueProgressPageSummary>, CompileError> {
         let path = self.work_queue_progress_page_summary_path_for_target(target, page_index);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack work queue progress page summary {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) =
+            try_read_store_file(&path, "source-pack work queue progress page summary")?
+        else {
+            return Ok(None);
         };
-        let summary = serde_json::from_slice::<SourcePackWorkQueueProgressPageSummary>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue progress page summary {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let summary = parse_store_json::<SourcePackWorkQueueProgressPageSummary>(
+            &bytes,
+            &path,
+            "source-pack work queue progress page summary",
+        )?;
         validate_progress_page_summary(&summary)?;
         Ok(Some(summary))
     }
@@ -602,13 +556,14 @@ impl FilesystemArtifactStore {
         }
         let path = self
             .work_queue_progress_directory_page_path_for_target(target, page.directory_page_index);
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue progress directory page {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack work queue progress directory page {}",
                 page.directory_page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack work queue progress directory page",
@@ -624,23 +579,16 @@ impl FilesystemArtifactStore {
     ) -> Result<Option<SourcePackWorkQueueProgressDirectoryPage>, CompileError> {
         let path =
             self.work_queue_progress_directory_page_path_for_target(target, directory_page_index);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack work queue progress directory page {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) =
+            try_read_store_file(&path, "source-pack work queue progress directory page")?
+        else {
+            return Ok(None);
         };
-        let page = serde_json::from_slice::<SourcePackWorkQueueProgressDirectoryPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue progress directory page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let page = parse_store_json::<SourcePackWorkQueueProgressDirectoryPage>(
+            &bytes,
+            &path,
+            "source-pack work queue progress directory page",
+        )?;
         Ok(Some(page))
     }
 
@@ -656,13 +604,14 @@ impl FilesystemArtifactStore {
             target,
             page.directory_index_page_index,
         );
-        let bytes = serde_json::to_vec_pretty(page).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "serialize source-pack work queue progress directory-index page {}: {err}",
+        let bytes = serialize_store_json(
+            page,
+            format!(
+                "source-pack work queue progress directory-index page {}",
                 page.directory_index_page_index
-            ))
-        })?;
-        write_file_atomic(
+            ),
+        )?;
+        write_store_file_atomic(
             &path,
             &bytes,
             "source-pack work queue progress directory-index page",
@@ -680,23 +629,18 @@ impl FilesystemArtifactStore {
             target,
             directory_index_page_index,
         );
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => {
-                return Err(CompileError::GpuFrontend(format!(
-                    "read source-pack work queue progress directory-index page {}: {err}",
-                    path.display()
-                )));
-            }
+        let Some(bytes) = try_read_store_file(
+            &path,
+            "source-pack work queue progress directory-index page",
+        )?
+        else {
+            return Ok(None);
         };
-        let page = serde_json::from_slice::<SourcePackWorkQueueProgressDirectoryIndexPage>(&bytes)
-            .map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue progress directory-index page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let page = parse_store_json::<SourcePackWorkQueueProgressDirectoryIndexPage>(
+            &bytes,
+            &path,
+            "source-pack work queue progress directory-index page",
+        )?;
         Ok(Some(page))
     }
 
@@ -707,19 +651,12 @@ impl FilesystemArtifactStore {
         page_index: usize,
     ) -> Result<SourcePackWorkQueueProgressPage, CompileError> {
         let path = self.work_queue_progress_page_path_for_target(target, page_index);
-        let bytes = fs::read(&path).map_err(|err| {
-            CompileError::GpuFrontend(format!(
-                "read source-pack work queue progress page {}: {err}",
-                path.display()
-            ))
-        })?;
-        let page =
-            serde_json::from_slice::<SourcePackWorkQueueProgressPage>(&bytes).map_err(|err| {
-                CompileError::GpuFrontend(format!(
-                    "parse source-pack work queue progress page {}: {err}",
-                    path.display()
-                ))
-            })?;
+        let bytes = read_store_file(&path, "source-pack work queue progress page")?;
+        let page = parse_store_json::<SourcePackWorkQueueProgressPage>(
+            &bytes,
+            &path,
+            "source-pack work queue progress page",
+        )?;
         validate_progress_page(&page, target, Some(page_index))?;
         Ok(page)
     }

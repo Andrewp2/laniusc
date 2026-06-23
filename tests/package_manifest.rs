@@ -12,6 +12,98 @@ use laniusc_compiler::compiler::{
     load_entry_path_manifest_with_source_root,
 };
 
+fn assert_package_diagnostic(err: &CompileError, code: &str, message: &str, note: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured package diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, code);
+    assert_eq!(diagnostic.message, message);
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "package control-plane diagnostics should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(note),
+        "diagnostic should include detailed note {note:?}: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
+#[test]
+fn package_manifest_errors_are_structured() {
+    let parse_err = PackageManifest::parse_json("{")
+        .expect_err("malformed manifest JSON should produce a diagnostic");
+    assert_package_diagnostic(
+        &parse_err,
+        "LNC0053",
+        "package manifest invalid",
+        "parse package manifest JSON",
+    );
+
+    let missing_manifest =
+        common::temp_artifact_path("laniusc_package_manifest", "missing_manifest", Some("json"));
+    let read_err = PackageManifest::load_json_file(&missing_manifest)
+        .expect_err("missing package manifest should produce a diagnostic");
+    assert_package_diagnostic(
+        &read_err,
+        "LNC0054",
+        "package manifest could not be read",
+        &missing_manifest.display().to_string(),
+    );
+}
+
+#[test]
+fn package_lockfile_errors_are_structured() {
+    let parse_err = PackageLockfile::parse_json("{")
+        .expect_err("malformed lockfile JSON should produce a diagnostic");
+    assert_package_diagnostic(
+        &parse_err,
+        "LNC0055",
+        "package lockfile invalid",
+        "parse package lockfile JSON",
+    );
+
+    let missing_lockfile =
+        common::temp_artifact_path("laniusc_package_manifest", "missing_lockfile", Some("json"));
+    let read_err = PackageLockfile::load_json_file(&missing_lockfile)
+        .expect_err("missing package lockfile should produce a diagnostic");
+    assert_package_diagnostic(
+        &read_err,
+        "LNC0056",
+        "package lockfile could not be read or written",
+        &missing_lockfile.display().to_string(),
+    );
+}
+
+#[test]
+fn package_lockfile_write_errors_are_structured() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "lockfile_write_io", None);
+    let (_, _, lockfile_path) = write_minimal_generated_lockfile(&root, "lockfile-write-io");
+    let lockfile =
+        PackageLockfile::load_json_file(&lockfile_path).expect("load generated package lockfile");
+    let blocked_parent = root.join("blocked-parent");
+    std::fs::write(&blocked_parent, b"not a directory")
+        .expect("create blocking file at output parent path");
+    let output_path = blocked_parent.join("lanius.lock.json");
+
+    let write_err = lockfile
+        .write_json_file(&output_path)
+        .expect_err("package lockfile write failures should produce a diagnostic");
+    assert_package_diagnostic(
+        &write_err,
+        "LNC0056",
+        "package lockfile could not be read or written",
+        "create package lockfile directory",
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package lockfile write temp root");
+}
+
 #[test]
 fn package_lockfile_rejects_module_declaration_file_mapping_mismatch() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "control_plane", None);
@@ -3126,7 +3218,7 @@ fn main() {
 }
 
 #[test]
-fn package_lockfile_rejects_stale_input_identity_before_tampered_source_identity_metadata() {
+fn package_lockfile_rejects_tampered_source_identity_before_stale_input_digest() {
     let root = common::temp_artifact_path(
         "laniusc_package_manifest",
         "stale_input_before_source_identity_metadata",
@@ -3165,16 +3257,20 @@ fn package_lockfile_rejects_stale_input_identity_before_tampered_source_identity
     std::fs::write(&entry_path, source.replace("return 0;", "return 1;"))
         .expect("mutate package entry source without changing replay shape");
 
-    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
-        .expect_err("stale package inputs should fail before tampered source identity metadata");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "tampered source identity metadata should fail before generic stale input bytes",
+    );
     let message = format!("{err:?}");
     assert!(
-        message.contains("input digest mismatch") && message.contains(canonical_entry.as_str()),
-        "expected stale input identity error before source identity metadata, got {message}"
+        message.contains("source identity file")
+            && message.contains("app::tampered")
+            && message.contains("source-root relative path")
+            && message.contains("app::main"),
+        "expected source identity ownership error before stale input digest, got {message}"
     );
     assert!(
-        !message.contains("source identity file") && !message.contains("declares module"),
-        "tampered source identity metadata should not mask stale source inputs, got {message}"
+        !message.contains("input digest mismatch"),
+        "generic stale input digest should not mask tampered source identity metadata, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -3186,8 +3282,9 @@ fn package_lockfile_requires_integrity_sections_to_cover_entry_source() {
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
+    let helper_path = app_root.join("helper.lani");
     std::fs::write(
-        app_root.join("helper.lani"),
+        &helper_path,
         r#"
 module app::helper;
 
@@ -3439,8 +3536,9 @@ fn package_loaders_reject_import_aliases_that_do_not_match_declared_modules() {
     let app_root = src_root.join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
+    let helper_path = app_root.join("helper.lani");
     std::fs::write(
-        app_root.join("helper.lani"),
+        &helper_path,
         r#"
 module app::helper;
 
@@ -4145,8 +4243,8 @@ fn main() {
                 diagnostic
                     .notes
                     .iter()
-                    .any(|note| note.contains("GPU module identity")),
-                "expected GPU module-identity boundary note, got {:?}",
+                    .any(|note| note.contains("source module identity")),
+                "expected source module-identity boundary note, got {:?}",
                 diagnostic.notes
             );
         }
@@ -4442,7 +4540,7 @@ fn main() {
                 diagnostic
                     .notes
                     .iter()
-                    .any(|note| note.contains("GPU module/import records")),
+                    .any(|note| note.contains("parsed module/import records")),
                 "expected package replay alias boundary note, got {:?}",
                 diagnostic.notes
             );
@@ -5400,8 +5498,9 @@ fn package_lockfile_rejects_source_identity_without_module_path() {
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
+    let helper_path = app_root.join("helper.lani");
     std::fs::write(
-        app_root.join("helper.lani"),
+        &helper_path,
         r#"
 pub fn value() -> i32 {
     return 7;
@@ -5443,13 +5542,31 @@ fn main() {
     let err = lockfile.to_json_pretty().expect_err(
         "package lockfiles should require module path metadata for every source identity",
     );
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("source identity file")
-            && message.contains("missing module path metadata")
-            && message.contains("leading module declarations"),
-        "expected missing module path metadata error, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("missing module diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(&helper_path).unwrap());
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("pub fn value() -> i32 {")
+            );
+            assert_eq!(label.message, "expected leading module declaration");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("app/helper.lani") && note.contains("app::helper")),
+                "expected missing module diagnostic to name the expected module path, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned missing module diagnostic, got {other:?}"),
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -5526,7 +5643,7 @@ fn main() {
             && message.contains("control.plane")
             && message.contains("control::plane")
             && message.contains("control-plane identity")
-            && message.contains("GPU module declarations"),
+            && message.contains("source module declarations"),
         "expected package/source identity boundary error, got {message}"
     );
 
@@ -5750,7 +5867,7 @@ fn main() {
             && message.contains("control.plane")
             && message.contains("control::plane")
             && message.contains("control-plane identity")
-            && message.contains("GPU module declarations"),
+            && message.contains("source module declarations"),
         "expected import-graph/package metadata boundary error, got {message}"
     );
 
@@ -5859,7 +5976,7 @@ fn main() {
             && message.contains("control::plane")
             && message.contains("source-root relative path")
             && message.contains("app/helper.lani")
-            && message.contains("GPU module declarations"),
+            && message.contains("source module declarations"),
         "expected import graph endpoint/source-root identity boundary error, got {message}"
     );
 
@@ -6541,7 +6658,7 @@ fn package_lockfile_rejects_source_identity_package_metadata_before_import_graph
             && message.contains("control.plane")
             && message.contains("control::plane")
             && message.contains("control-plane identity")
-            && message.contains("GPU module declarations"),
+            && message.contains("source module declarations"),
         "expected source identity package/control-plane boundary error, got {message}"
     );
     assert!(
@@ -6636,8 +6753,8 @@ fn main() {
                 diagnostic
                     .notes
                     .iter()
-                    .any(|note| note.contains("GPU import records")),
-                "expected GPU import-record boundary note, got {:?}",
+                    .any(|note| note.contains("parsed import records")),
+                "expected parsed import-record boundary note, got {:?}",
                 diagnostic.notes
             );
         }
@@ -9456,7 +9573,7 @@ fn main() {
         .resolve_from_dir(&root)
         .expect("resolve package manifest paths");
     let err = resolved.load_path_manifest().expect_err(
-        "package source-root replay should reject imported paths that cannot be GPU module identifiers",
+        "package source-root replay should reject imported paths that cannot be source module identifiers",
     );
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -10173,7 +10290,7 @@ fn assert_reserved_artifact_kind_error(err: &CompileError, kind: &str) {
     assert!(
         message.contains("artifact kind")
             && message.contains(kind)
-            && message.contains("reserved for GPU/source-pack")
+            && message.contains("reserved for compiler module, import, semantic, or link evidence")
             && message.contains("control-plane path/digest metadata"),
         "expected reserved artifact kind error, got {message}"
     );
@@ -10292,8 +10409,8 @@ fn assert_source_spanned_module_path_separator_error(
                 diagnostic
                     .notes
                     .iter()
-                    .any(|note| note.contains("GPU parser module-path tokens")),
-                "expected GPU parser token boundary note, got {:?}",
+                    .any(|note| note.contains("source module-path declarations")),
+                "expected source module-path boundary note, got {:?}",
                 diagnostic.notes
             );
             assert!(
@@ -10561,7 +10678,8 @@ fn assert_source_spanned_self_import_error(
             );
             assert!(
                 diagnostic.notes.iter().any(|note| {
-                    note.contains("import graph metadata") && note.contains("GPU module identity")
+                    note.contains("import graph metadata")
+                        && note.contains("source module identity")
                 }),
                 "expected package import graph boundary note, got {:?}",
                 diagnostic.notes
@@ -10598,8 +10716,8 @@ fn assert_source_spanned_import_glob_error(err: &CompileError, source_path: &Pat
                 diagnostic
                     .notes
                     .iter()
-                    .any(|note| note.contains("GPU module/import records")),
-                "expected GPU module/import boundary note, got {:?}",
+                    .any(|note| note.contains("parsed module/import records")),
+                "expected parsed module/import boundary note, got {:?}",
                 diagnostic.notes
             );
         }
@@ -10630,7 +10748,7 @@ fn assert_source_spanned_import_path_too_deep_error(
             assert!(
                 diagnostic.notes.iter().any(|note| {
                     note.contains("before persisting import graph metadata")
-                        && note.contains("GPU import keys")
+                        && note.contains("resolver import keys")
                 }),
                 "expected import graph boundary note, got {:?}",
                 diagnostic.notes

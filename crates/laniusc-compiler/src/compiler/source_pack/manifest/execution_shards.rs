@@ -84,7 +84,7 @@ pub(in crate::compiler) fn validate_execution_shard_with_mode(
     mode: ExecutionShardValidationMode,
 ) -> Result<(), CompileError> {
     if execution_shard.version != SOURCE_PACK_BUILD_ARTIFACT_EXECUTION_SHARD_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact execution shard version {}; expected {}",
             execution_shard.version, SOURCE_PACK_BUILD_ARTIFACT_EXECUTION_SHARD_VERSION
         )));

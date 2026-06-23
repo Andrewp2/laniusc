@@ -720,6 +720,8 @@ impl SourcePackJobPlan {
                         .and_then(|job_index| *job_index)
                 })
                 .collect::<Vec<_>>();
+            let mut dependency_job_indices = dependency_job_indices;
+            normalize_dependency_indices(&mut dependency_job_indices);
             jobs.push(SourcePackJob {
                 job_index: jobs.len(),
                 phase: SourcePackJobPhase::LibraryFrontend,
@@ -776,6 +778,7 @@ impl SourcePackJobPlan {
                     push_unique(&mut dependency_job_indices, dependency_job_index);
                 }
             }
+            normalize_dependency_indices(&mut dependency_job_indices);
             jobs.push(SourcePackJob {
                 job_index: jobs.len(),
                 phase: SourcePackJobPhase::Codegen,
@@ -836,6 +839,7 @@ impl SourcePackJobPlan {
                         .and_then(|range| range.clone())
                 })
                 .collect::<Vec<_>>();
+            let dependency_job_ranges = compact_job_index_ranges(dependency_job_ranges);
             let first_frontend_job_index = jobs.len();
             let frontend_units = self.frontend_units_for_library(library);
             for frontend_unit in frontend_units {
@@ -944,6 +948,8 @@ impl SourcePackJobPlan {
                     }
                 }
             }
+            normalize_dependency_indices(&mut dependency_job_indices);
+            dependency_job_ranges = compact_job_index_ranges(dependency_job_ranges);
             jobs.push(SourcePackJob {
                 job_index: jobs.len(),
                 phase: SourcePackJobPhase::Codegen,

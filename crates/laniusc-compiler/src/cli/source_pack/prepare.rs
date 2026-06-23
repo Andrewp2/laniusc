@@ -6,13 +6,19 @@ use std::{
 use super::{
     Options,
     artifact_target_for_emit,
-    artifacts::{has_prepared_metadata, prepared_library_prefix_count, require_artifact_root},
+    artifacts::{has_prepared_metadata, prepared_library_prefix_count, require_artifact_root_cli},
     build_max_items,
     manifest,
     metadata_max_libraries,
     metadata_max_source_files,
 };
 use crate::{
+    cli::common::{
+        explicit_source_pack_manifest_invalid_error,
+        incompatible_cli_options_error,
+        missing_cli_argument_error,
+        CliError,
+    },
     codegen::unit::{
         CodegenUnitLimits,
         SourcePackArtifactTarget,
@@ -25,6 +31,7 @@ use crate::{
         FilesystemArtifactStore,
         FilesystemLibraryMetadataPrepareStepResult,
         SourcePackLibraryPartition,
+        library_partition_contract_error,
         prepare_artifact_build_chunk,
         resume_metadata_chunk_for_target,
     },
@@ -36,8 +43,8 @@ pub(crate) fn prepare_metadata_only(
     stdlib_paths: &[PathBuf],
     inputs: &[PathBuf],
     source_pack: &Options,
-) -> Result<(), String> {
-    let artifact_root = require_artifact_root(
+) -> Result<(), CliError> {
+    let artifact_root = require_artifact_root_cli(
         source_pack,
         "--source-pack-metadata-only requires --source-pack-artifact-root",
     )?;
@@ -77,21 +84,28 @@ pub(crate) fn prepare_metadata_only(
         return Ok(());
     }
     if let Some(manifest_path) = source_pack.manifest.as_deref() {
-        return Err(format!(
-            "--source-pack-metadata-only with --source-pack-manifest would require reading the whole JSON manifest {}; use --source-pack-library-manifest for bounded JSONL metadata chunks",
-            manifest_path.display()
+        return Err(incompatible_cli_options_error(
+            "laniusc source-pack",
+            "--source-pack-metadata-only",
+            "--source-pack-manifest",
+            &format!(
+                "JSON manifest {} would require whole-manifest preparation; use --source-pack-library-manifest for bounded JSONL metadata chunks",
+                manifest_path.display()
+            ),
         ));
     }
     if !stdlib_paths.is_empty() || !inputs.is_empty() {
-        return Err(
-            "--source-pack-metadata-only with raw --stdlib or positional source paths would prepare a whole path list; use --source-pack-library-manifest for bounded JSONL metadata chunks"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc source-pack",
+            "--source-pack-metadata-only",
+            "raw --stdlib or positional source paths",
+            "use --source-pack-library-manifest for bounded JSONL metadata chunks",
+        ));
     }
-    Err(
-        "--source-pack-metadata-only requires --source-pack-library-manifest source-pack inputs"
-            .into(),
-    )
+    Err(missing_cli_argument_error(
+        "laniusc source-pack",
+        "--source-pack-library-manifest path",
+    ))
 }
 
 /// Prepares one metadata chunk from package/path-manifest inputs.
@@ -101,8 +115,8 @@ pub(crate) fn prepare_path_manifest_metadata_only(
     source_pack: &Options,
     package_selector: &str,
     package_path: &Path,
-) -> Result<(), String> {
-    let artifact_root = require_artifact_root(
+) -> Result<(), CliError> {
+    let artifact_root = require_artifact_root_cli(
         source_pack,
         "--source-pack-metadata-only requires --source-pack-artifact-root",
     )?;
@@ -138,7 +152,7 @@ pub(crate) fn prepare_path_manifest_metadata_only(
         max_new_libraries,
         manifest_complete_after_input,
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(CliError::from_compile_error)?;
     eprintln!(
         "source-pack package metadata chunk prepared at {}; target={:?} complete={} libraries={} new_libraries={} source_files={} source_bytes={} source_lines={} selector={} {}",
         artifact_root.display(),
@@ -159,8 +173,8 @@ pub(crate) fn prepare_path_manifest_metadata_only(
 pub(crate) fn prepare_build_from_metadata_chunk_only(
     emit: &str,
     source_pack: &Options,
-) -> Result<(), String> {
-    let artifact_root = require_artifact_root(
+) -> Result<(), CliError> {
+    let artifact_root = require_artifact_root_cli(
         source_pack,
         "--source-pack-build-from-metadata requires --source-pack-artifact-root",
     )?;
@@ -175,7 +189,7 @@ pub(crate) fn prepare_build_from_metadata_chunk_only(
         artifact_target_for_emit(emit),
         build_max_items(source_pack),
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(CliError::from_compile_error)?;
     eprintln!(
         "source-pack build chunk prepared at {}; target={:?} complete={} stage={:?} next_stage={:?} new_items={}",
         artifact_root.display(),
@@ -210,8 +224,8 @@ pub(crate) fn prepare_inputs_chunk_only(
     stdlib_paths: &[PathBuf],
     inputs: &[PathBuf],
     source_pack: &Options,
-) -> Result<(), String> {
-    let artifact_root = require_artifact_root(
+) -> Result<(), CliError> {
+    let artifact_root = require_artifact_root_cli(
         source_pack,
         "--source-pack-prepare-only requires --source-pack-artifact-root",
     )?;
@@ -240,10 +254,12 @@ pub(crate) fn prepare_inputs_chunk_only(
             );
             return Ok(());
         }
-        return Err(
-            "--source-pack-prepare-only with raw --stdlib or positional source paths would prepare a whole path list; use --source-pack-library-manifest for bounded JSONL metadata chunks"
-                .into(),
-        );
+        return Err(incompatible_cli_options_error(
+            "laniusc source-pack",
+            "--source-pack-prepare-only",
+            "raw --stdlib or positional source paths",
+            "use --source-pack-library-manifest for bounded JSONL metadata chunks",
+        ));
     }
     prepare_build_from_metadata_chunk_only(emit, source_pack)
 }
@@ -256,7 +272,7 @@ fn prepare_metadata_chunk(
     target: SourcePackArtifactTarget,
     max_new_libraries: usize,
     max_new_source_files: usize,
-) -> Result<FilesystemLibraryMetadataPrepareStepResult, String> {
+) -> Result<FilesystemLibraryMetadataPrepareStepResult, CliError> {
     if let Some(library_manifest_path) = source_pack.library_manifest.as_deref() {
         let persisted_library_count = prepared_library_prefix_count(artifact_root, target);
         let progress = manifest::load_progress_or_default(
@@ -266,13 +282,13 @@ fn prepare_metadata_chunk(
             persisted_library_count,
         )?;
         if progress.library_count != persisted_library_count {
-            return Err(format!(
+            return Err(explicit_source_pack_manifest_invalid_error(format!(
                 "source-pack library manifest {} read progress records {} libraries, but artifact root {} contains {} persisted metadata partitions",
                 library_manifest_path.display(),
                 progress.library_count,
                 artifact_root.display(),
                 persisted_library_count
-            ));
+            )));
         }
         let chunk = manifest::load_entries_chunk_from_offset(
             library_manifest_path,
@@ -290,13 +306,15 @@ fn prepare_metadata_chunk(
             max_new_libraries,
             manifest_complete_after_input,
         )
-        .map_err(|err| err.to_string())?;
+        .map_err(CliError::from_compile_error)?;
         let next_progress = manifest::Progress {
             library_count: progress
                 .library_count
                 .checked_add(result.new_library_count)
                 .ok_or_else(|| {
-                    "source-pack library manifest read progress library count overflows".to_string()
+                    explicit_source_pack_manifest_invalid_error(
+                        "source-pack library manifest read progress library count overflows",
+                    )
                 })?,
             next_byte_offset,
             ..progress
@@ -304,17 +322,27 @@ fn prepare_metadata_chunk(
         manifest::store_progress(artifact_root, &next_progress)?;
         Ok(result)
     } else if let Some(manifest_path) = source_pack.manifest.as_deref() {
-        Err(format!(
-            "--source-pack-metadata chunk limits with --source-pack-manifest would require reading the whole JSON manifest {}; use --source-pack-library-manifest for bounded JSONL metadata chunks",
-            manifest_path.display()
+        Err(incompatible_cli_options_error(
+            "laniusc source-pack",
+            "--source-pack-metadata chunk limits",
+            "--source-pack-manifest",
+            &format!(
+                "JSON manifest {} would require whole-manifest preparation; use --source-pack-library-manifest for bounded JSONL metadata chunks",
+                manifest_path.display()
+            ),
         ))
     } else if !stdlib_paths.is_empty() || !inputs.is_empty() {
-        Err(
-            "--source-pack-metadata chunk limits require --source-pack-manifest or --source-pack-library-manifest for multi-library metadata chunks"
-                .into(),
-        )
+        Err(incompatible_cli_options_error(
+            "laniusc source-pack",
+            "--source-pack-metadata chunk limits",
+            "raw --stdlib or positional source paths",
+            "use --source-pack-library-manifest for bounded multi-library metadata chunks",
+        ))
     } else {
-        Err("--source-pack-metadata chunk limits require source-pack inputs".into())
+        Err(missing_cli_argument_error(
+            "laniusc source-pack",
+            "--source-pack-library-manifest path",
+        ))
     }
 }
 
@@ -341,7 +369,7 @@ impl PathManifestLibrary {
 
 fn path_manifest_libraries(
     path_manifest: ExplicitSourcePackPathManifest,
-) -> Result<Vec<PathManifestLibrary>, String> {
+) -> Result<Vec<PathManifestLibrary>, CliError> {
     let mut library_order = Vec::new();
     let mut paths_by_library = BTreeMap::<u32, Vec<PathBuf>>::new();
     for file in path_manifest.files {
@@ -367,9 +395,9 @@ fn path_manifest_libraries(
             .remove(&library_id)
             .expect("library order was derived from path map keys");
         if paths.is_empty() {
-            return Err(format!(
+            return Err(explicit_source_pack_manifest_invalid_error(format!(
                 "package source-pack path manifest library {library_id} has no source files"
-            ));
+            )));
         }
         let mut dependency_library_ids = dependencies_by_library
             .remove(&library_id)
@@ -382,7 +410,9 @@ fn path_manifest_libraries(
         });
     }
     if libraries.is_empty() {
-        return Err("package source-pack path manifest has no source files".into());
+        return Err(explicit_source_pack_manifest_invalid_error(
+            "package source-pack path manifest has no source files",
+        ));
     }
     Ok(libraries)
 }
@@ -394,13 +424,13 @@ fn path_manifest_library_chunk(
     max_new_source_files: usize,
     package_selector: &str,
     package_path: &Path,
-) -> Result<(Vec<PathManifestLibrary>, bool), String> {
+) -> Result<(Vec<PathManifestLibrary>, bool), CliError> {
     if persisted_library_count > libraries.len() {
-        return Err(format!(
+        return Err(explicit_source_pack_manifest_invalid_error(format!(
             "source-pack package metadata for {package_selector} {} has {} libraries, but artifact metadata already contains {persisted_library_count} persisted library partitions",
             package_path.display(),
             libraries.len()
-        ));
+        )));
     }
 
     let total_library_count = libraries.len();
@@ -413,19 +443,19 @@ fn path_manifest_library_chunk(
         let next_source_file_count = selected_source_file_count
             .checked_add(library.paths.len())
             .ok_or_else(|| {
-                format!(
+                explicit_source_pack_manifest_invalid_error(format!(
                     "source-pack package metadata chunk source-file count overflows for {package_selector} {}",
                     package_path.display()
-                )
+                ))
             })?;
         if next_source_file_count > max_new_source_files {
             if selected.is_empty() {
-                return Err(format!(
+                return Err(explicit_source_pack_manifest_invalid_error(format!(
                     "source-pack package metadata library {} has {} source files, exceeding the per-chunk source-file limit {}; reduce the package source graph or use smaller package libraries before metadata preparation",
                     library.library_id,
                     library.paths.len(),
                     max_new_source_files
-                ));
+                )));
             }
             break;
         }
@@ -435,13 +465,17 @@ fn path_manifest_library_chunk(
 
     let next_library_count = persisted_library_count
         .checked_add(selected.len())
-        .ok_or_else(|| "source-pack package metadata library count overflows".to_string())?;
+        .ok_or_else(|| {
+            explicit_source_pack_manifest_invalid_error(
+                "source-pack package metadata library count overflows",
+            )
+        })?;
     let manifest_complete_after_input = next_library_count == total_library_count;
     if selected.is_empty() && !manifest_complete_after_input {
-        return Err(format!(
+        return Err(explicit_source_pack_manifest_invalid_error(format!(
             "source-pack package metadata chunk for {package_selector} {} selected no new libraries; increase --source-pack-metadata-max-libraries or --source-pack-metadata-max-source-files",
             package_path.display()
-        ));
+        )));
     }
     Ok((selected, manifest_complete_after_input))
 }
@@ -450,14 +484,14 @@ fn validate_persisted_path_manifest_prefix(
     artifact_root: &Path,
     target: SourcePackArtifactTarget,
     libraries: &[PathManifestLibrary],
-) -> Result<(), String> {
+) -> Result<(), CliError> {
     let store = FilesystemArtifactStore::new(artifact_root);
     let index_path = store.library_partition_index_path_for_target(target);
     let complete_library_count = if index_path.is_file() {
         Some(
             store
                 .load_library_partition_index_for_target(target)
-                .map_err(|err| err.to_string())?
+                .map_err(CliError::from_compile_error)?
                 .partition_count,
         )
     } else {
@@ -465,25 +499,25 @@ fn validate_persisted_path_manifest_prefix(
     };
     let persisted_library_count = prepared_library_prefix_count(artifact_root, target);
     if persisted_library_count > libraries.len() {
-        return Err(format!(
+        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
             "source-pack artifact root {} contains {persisted_library_count} persisted metadata partitions, but package source-pack metadata has only {} libraries",
             artifact_root.display(),
             libraries.len()
-        ));
+        ))));
     }
     if let Some(complete_library_count) = complete_library_count {
         if complete_library_count != libraries.len() {
-            return Err(format!(
+            return Err(CliError::from_compile_error(library_partition_contract_error(format!(
                 "source-pack artifact root {} has a complete metadata index with {complete_library_count} libraries, but package source-pack metadata has {} libraries",
                 artifact_root.display(),
                 libraries.len()
-            ));
+            ))));
         }
     }
     for (partition_index, expected) in libraries.iter().take(persisted_library_count).enumerate() {
         let partition = store
             .load_library_partition_for_target(target, partition_index)
-            .map_err(|err| err.to_string())?;
+            .map_err(CliError::from_compile_error)?;
         validate_persisted_path_manifest_library(
             &store,
             target,
@@ -503,34 +537,34 @@ fn validate_persisted_path_manifest_library(
     partition_index: usize,
     partition: &SourcePackLibraryPartition,
     expected: &PathManifestLibrary,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
     if partition.library_id != expected.library_id {
-        return Err(format!(
+        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
             "source-pack artifact root {} partition {partition_index} is library {}, but package source-pack metadata expects library {}",
             artifact_root.display(),
             partition.library_id,
             expected.library_id
-        ));
+        ))));
     }
     if partition.source_file_count != expected.paths.len() {
-        return Err(format!(
+        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
             "source-pack artifact root {} partition {partition_index} for library {} stores {} source files, but package source-pack metadata declares {}",
             artifact_root.display(),
             partition.library_id,
             partition.source_file_count,
             expected.paths.len()
-        ));
+        ))));
     }
-    let stored_dependency_ids =
-        stored_partition_dependency_ids(store, target, partition).map_err(|err| err.to_string())?;
+    let stored_dependency_ids = stored_partition_dependency_ids(store, target, partition)
+        .map_err(CliError::from_compile_error)?;
     if stored_dependency_ids != expected.dependency_library_ids {
-        return Err(format!(
+        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
             "source-pack artifact root {} partition {partition_index} for library {} stores dependency libraries {:?}, but package source-pack metadata declares {:?}",
             artifact_root.display(),
             partition.library_id,
             stored_dependency_ids,
             expected.dependency_library_ids
-        ));
+        ))));
     }
     Ok(())
 }
@@ -551,7 +585,7 @@ fn stored_partition_dependency_ids(
     }
     dependency_ids.sort_unstable();
     if dependency_ids.len() != partition.dependency_library_count {
-        return Err(crate::compiler::CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "source-pack partition {} dependency count mismatch: partition declares {}, loaded {}",
             partition.partition_index,
             partition.dependency_library_count,
@@ -559,4 +593,43 @@ fn stored_partition_dependency_ids(
         )));
     }
     Ok(dependency_ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::{CompileError, SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION};
+
+    #[test]
+    fn dependency_count_mismatch_uses_partition_contract_diagnostic() {
+        let store = FilesystemArtifactStore::new(Path::new("<unused>"));
+        let partition = SourcePackLibraryPartition {
+            version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION,
+            target: SourcePackArtifactTarget::Wasm,
+            partition_index: 3,
+            library_id: 7,
+            first_source_index: 0,
+            source_file_count: 1,
+            source_byte_count: 12,
+            source_line_count: 1,
+            dependency_library_ids: vec![1],
+            dependency_library_count: 2,
+            dependency_page_count: 0,
+        };
+
+        let err =
+            stored_partition_dependency_ids(&store, SourcePackArtifactTarget::Wasm, &partition)
+                .expect_err("dependency count mismatch should fail");
+
+        match err {
+            CompileError::Diagnostic(diagnostic) => {
+                assert_eq!(diagnostic.code, "LNC0050");
+                assert_eq!(diagnostic.message, "source-pack library partition invalid");
+                let rendered = diagnostic.render();
+                assert!(rendered.contains("dependency count mismatch"));
+                assert!(!rendered.contains("frontend error:"));
+            }
+            err => panic!("expected structured partition diagnostic, got {err:?}"),
+        }
+    }
 }

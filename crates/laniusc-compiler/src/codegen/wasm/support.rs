@@ -94,7 +94,7 @@ pub(super) fn read_wasm_output(
         }
         if !ok || len > output_capacity {
             return Err(anyhow::anyhow!(
-                "GPU WASM emitter produced {} bytes for capacity {} with {} tokens",
+                "WASM emitter produced {} bytes for capacity {} with {} tokens",
                 len,
                 output_capacity,
                 token_capacity

@@ -149,7 +149,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn wrap<T>(value: T) -> T {",
-            "trait method-level generics are outside the current GPU trait contract records",
+            "trait method-level generics are not supported here",
         ],
     );
 }
@@ -348,7 +348,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<T>(value: T) -> T {",
-            "trait method-level generics are outside the current GPU trait contract records",
+            "trait method-level generics are not supported here",
             "move the generic parameter to the trait or impl receiver type",
         ],
     );
@@ -376,7 +376,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<U>(value: i32) -> i32 {",
-            "trait method-level generics are outside the current GPU trait contract records",
+            "trait method-level generics are not supported here",
             "move the generic parameter to the trait or impl receiver type",
         ],
     );
@@ -1027,7 +1027,7 @@ fn main() {{
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait method-level generics are outside the current GPU trait contract records",
+            "trait method-level generics are not supported here",
             "move the generic parameter to the trait or impl receiver type",
         ],
     );
@@ -1055,7 +1055,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make(value: i32) -> i32 where i32: Factory<i32> {",
-            "trait method where clauses are outside the current GPU trait contract records",
+            "trait method where clauses are not supported here",
             "move the bound to the trait, impl, or caller-visible where clause",
         ],
     );
@@ -1077,7 +1077,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make(value: i32) -> i32 where i32: Factory;",
-            "trait method where clauses are outside the current GPU trait contract records",
+            "trait method where clauses are not supported here",
             "move the bound to the trait, impl, or caller-visible where clause",
         ],
     );
@@ -1101,7 +1101,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "fn same(value: T) -> bool;",
             "trait declares duplicate method contracts",
-            "GPU trait method overload resolution is implemented",
+            "trait method overload resolution is supported",
         ],
     );
 }
@@ -1464,8 +1464,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl Wide<i32, bool, i32> for i32 {",
-            "trait impl header exceeds the current GPU predicate argument limit",
-            "records at most two trait type arguments per trait impl row",
+            "trait impl header exceeds the current trait argument limit",
+            "supports at most two trait type arguments in a trait impl",
         ],
     );
 
@@ -1541,8 +1541,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl<T> Rel<T> for i32 {",
-            "trait impl header uses generic trait arguments outside the current GPU predicate row shape",
-            "publish trait impl argument rows that carry generic-parameter references",
+            "trait impl header uses generic trait arguments that are not supported here",
+            "use concrete non-nested trait arguments in impl headers for now",
         ],
     );
 }
@@ -1586,7 +1586,7 @@ fn main() {
 }
 "#,
     )
-    .expect_err("reference trait-impl targets should fail GPU predicate validation");
+    .expect_err("reference trait-impl targets should fail trait validation");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
@@ -1601,11 +1601,7 @@ fn main() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(
-                rendered.contains(
-                    "trait impl target type is outside the current GPU predicate row shape"
-                )
-            );
+            assert!(rendered.contains("trait impl target type is not supported here"));
         }
         other => panic!("expected reference trait impl target diagnostic, got {other:?}"),
     }
@@ -2188,9 +2184,7 @@ fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {
             assert_eq!(label.length, "i".len());
 
             assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
-            assert!(
-                rendered.contains("trait bound path exceeds the current GPU predicate path limit")
-            );
+            assert!(rendered.contains("trait bound path exceeds the current trait path limit"));
         }
         other => panic!("expected over-wide bound argument diagnostic, got {other:?}"),
     }
@@ -2224,9 +2218,7 @@ fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
             assert_eq!(label.length, "i".len());
 
             assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
-            assert!(
-                rendered.contains("trait bound path exceeds the current GPU predicate path limit")
-            );
+            assert!(rendered.contains("trait bound path exceeds the current trait path limit"));
         }
         other => panic!("expected over-wide bound target diagnostic, got {other:?}"),
     }

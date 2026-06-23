@@ -12,12 +12,12 @@ pub fn try_global_lexer() -> Result<&'static GpuLexer> {
     GPU_LEXER
         .get_or_init(|| pollster::block_on(GpuLexer::new()).map_err(|err| err.to_string()))
         .as_ref()
-        .map_err(|err| anyhow!("GPU init: {err}"))
+        .map_err(|err| anyhow!("initialize lexer: {err}"))
 }
 
 /// Returns the process-global lexer, panicking if GPU initialization fails.
 pub async fn get_global_lexer() -> &'static GpuLexer {
-    try_global_lexer().expect("GPU init")
+    try_global_lexer().expect("initialize lexer")
 }
 
 /// Lexes one source string through the process-global lexer.

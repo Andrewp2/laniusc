@@ -7,7 +7,7 @@ pub(in crate::compiler) fn validate_library_partition_locator_page(
     expected_library_id: Option<u32>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_PARTITION_LOCATOR_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library partition locator page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_PARTITION_LOCATOR_PAGE_VERSION
         )));
@@ -39,7 +39,7 @@ pub(in crate::compiler) fn validate_library_source_file_page(
     expected_partition_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SOURCE_FILE_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library source-file page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SOURCE_FILE_PAGE_VERSION
         )));
@@ -151,7 +151,7 @@ pub(in crate::compiler) fn validate_library_source_file_record_page(
     expected_source_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_SOURCE_FILE_RECORD_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library source-file record page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_SOURCE_FILE_RECORD_PAGE_VERSION
         )));

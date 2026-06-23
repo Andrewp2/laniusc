@@ -15,7 +15,7 @@ use super::{
         resolved_paths_overlap,
         valid_package_name,
     },
-    write_file_atomic,
+    write_file_atomic_with_error,
 };
 mod artifacts;
 mod import_graph;
@@ -36,6 +36,7 @@ use source_scan::{
     LeadingImportPath,
     leading_import_path_records_for_module,
     leading_import_paths_for_module,
+    leading_module_path,
     package_name_module_path,
     required_leading_module_path,
     valid_module_path,
@@ -65,7 +66,7 @@ const PACKAGE_LOCKFILE_USER_LIBRARY_ID: u32 = 1;
 
 /// Persisted package loading metadata. Paths are resolved control-plane inputs;
 /// recorded module declarations and import endpoints are source identity
-/// metadata only. Semantic module identity remains owned by GPU-parsed
+/// metadata only. Semantic module identity remains owned by parsed
 /// module/import records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackageLockfile {
@@ -200,9 +201,8 @@ impl PackageLockfile {
     /// Loads and validates a lockfile JSON file.
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<Self, CompileError> {
         let path = path.as_ref();
-        let source = fs::read_to_string(path).map_err(|err| {
-            CompileError::GpuFrontend(format!("read package lockfile {}: {err}", path.display()))
-        })?;
+        let source =
+            fs::read_to_string(path).map_err(|err| package_lockfile_io_error(path, err))?;
         let document = Self::parse_document(&source)?;
         let lockfile_shape = document.to_lockfile();
         lockfile_shape.validate_shape()?;
@@ -215,14 +215,14 @@ impl PackageLockfile {
 
     fn parse_document(source: &str) -> Result<PackageLockfileDocument, CompileError> {
         serde_json::from_str::<PackageLockfileDocument>(source)
-            .map_err(|err| CompileError::GpuFrontend(format!("parse package lockfile JSON: {err}")))
+            .map_err(|err| package_lockfile_error(format!("parse package lockfile JSON: {err}")))
     }
 
     /// Serializes the lockfile as pretty JSON after replay validation.
     pub fn to_json_pretty(&self) -> Result<String, CompileError> {
         let document = self.to_document_for_serialization()?;
         serde_json::to_string_pretty(&document).map_err(|err| {
-            CompileError::GpuFrontend(format!("serialize package lockfile JSON: {err}"))
+            package_lockfile_io_message(format!("serialize package lockfile JSON: {err}"))
         })
     }
 
@@ -232,7 +232,9 @@ impl PackageLockfile {
         self.validate_control_plane_path_is_outside_source_roots("lockfile output path", path)?;
         let source = self.to_json_pretty()?;
         self.validate_control_plane_path_is_not_recorded_artifact("lockfile output path", path)?;
-        write_file_atomic(path, source.as_bytes(), "package lockfile")
+        write_file_atomic_with_error(path, source.as_bytes(), "package lockfile", |message| {
+            package_lockfile_io_message(message)
+        })
     }
 
     fn validate_control_plane_path_is_outside_source_roots(
@@ -590,7 +592,6 @@ impl PackageLockfile {
         let Some(integrity) = &self.replay_integrity else {
             return Ok(());
         };
-        self.validate_persisted_input_identity_bytes(&integrity.inputs)?;
         self.validate_section_consistency(
             &integrity.inputs,
             &integrity.source_identities,
@@ -715,6 +716,7 @@ impl PackageLockfile {
         &self,
         path_manifest: &ExplicitSourcePackPathManifest,
     ) -> Result<PackageLockfileSourceIdentities, CompileError> {
+        self.validate_unique_declared_source_modules(path_manifest)?;
         let mut files = Vec::with_capacity(path_manifest.files.len());
         for file in &path_manifest.files {
             let source = fs::read_to_string(&file.path).map_err(|err| {
@@ -746,6 +748,35 @@ impl PackageLockfile {
         identities.validate_shape()?;
         self.validate_source_identity_ownership(&identities)?;
         Ok(identities)
+    }
+
+    fn validate_unique_declared_source_modules(
+        &self,
+        path_manifest: &ExplicitSourcePackPathManifest,
+    ) -> Result<(), CompileError> {
+        let mut seen_modules = BTreeMap::new();
+        for file in &path_manifest.files {
+            let source = fs::read_to_string(&file.path).map_err(|err| {
+                package_lockfile_error(format!(
+                    "read source identity file {}: {err}",
+                    file.path.display()
+                ))
+            })?;
+            let Some(module_path) = leading_module_path(&source, &file.path)? else {
+                continue;
+            };
+            let module_identity = (file.library_id, module_path.clone());
+            if let Some(previous_path) = seen_modules.insert(module_identity, file.path.clone()) {
+                return Err(package_lockfile_error(format!(
+                    "duplicate source identity module {:?} in library {} for {} and {}; package lockfiles require one source file per module identity",
+                    module_path,
+                    file.library_id,
+                    previous_path.display(),
+                    file.path.display()
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn import_graph(&self) -> Result<PackageLockfileImportGraph, CompileError> {
@@ -991,9 +1022,15 @@ impl PackageLockfile {
         inputs: &PackageLockfileInputs,
     ) -> Result<(), CompileError> {
         expected.validate_shape()?;
-        self.validate_persisted_input_identity_bytes(inputs)?;
-        let actual = self.import_graph()?;
-        self.validate_import_graph_against_actual(expected, &actual)
+        let actual = match self.import_graph() {
+            Ok(actual) => actual,
+            Err(replay_err) => {
+                self.validate_persisted_input_identity_bytes(inputs)?;
+                return Err(replay_err);
+            }
+        };
+        self.validate_import_graph_against_actual(expected, &actual, Some(inputs))?;
+        self.validate_persisted_input_identity_bytes(inputs)
     }
 
     fn validate_persisted_input_identity_bytes(
@@ -1013,9 +1050,13 @@ impl PackageLockfile {
         &self,
         expected: &PackageLockfileImportGraph,
         actual: &PackageLockfileImportGraph,
+        inputs: Option<&PackageLockfileInputs>,
     ) -> Result<(), CompileError> {
         validate_live_import_graph_user_root_precedence(expected, actual)?;
         if actual.library_dependencies != expected.library_dependencies {
+            if let Some(input_err) = self.first_unavailable_replay_input(inputs)? {
+                return Err(input_err);
+            }
             return Err(package_lockfile_error(format!(
                 "library dependency graph changed; expected {:?}, found {:?}",
                 expected.library_dependencies, actual.library_dependencies
@@ -1040,6 +1081,9 @@ impl PackageLockfile {
             ));
         }
         if actual.imports.len() != expected.imports.len() {
+            if let Some(input_err) = self.first_unavailable_replay_input(inputs)? {
+                return Err(input_err);
+            }
             return Err(package_lockfile_error(format!(
                 "import graph changed; expected {} imports [{}], found {} [{}]",
                 expected.imports.len(),
@@ -1063,6 +1107,16 @@ impl PackageLockfile {
             }
         }
         Ok(())
+    }
+
+    fn first_unavailable_replay_input(
+        &self,
+        inputs: Option<&PackageLockfileInputs>,
+    ) -> Result<Option<CompileError>, CompileError> {
+        match inputs {
+            Some(inputs) => self.first_unavailable_input_identity_error(inputs),
+            None => Ok(None),
+        }
     }
 
     fn first_unavailable_input_identity_error(
@@ -1139,9 +1193,11 @@ impl PackageLockfile {
         inputs.validate_shape()?;
         self.validate_source_identity_root_metadata(source_identities)?;
         source_identities.validate_shape()?;
+        self.validate_input_identity_ownership(inputs)?;
+        self.validate_import_graph_source_import_target_uniqueness(import_graph)?;
+        self.validate_import_graph_package_metadata_endpoints(import_graph)?;
         self.validate_source_identity_ownership(source_identities)?;
         import_graph.validate_shape()?;
-        self.validate_input_identity_ownership(inputs)?;
         self.validate_import_graph_ownership(import_graph)?;
 
         let input_files = inputs
@@ -1341,7 +1397,7 @@ impl PackageLockfile {
                         .is_some_and(|package_module_path| package_module_path == module_path)
                     {
                         return Err(package_lockfile_error(format!(
-                            "source identity file {} declares module {:?} matching package metadata {:?}, but resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace GPU module declarations",
+                            "source identity file {} declares module {:?} matching package metadata {:?}, but resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace source module declarations",
                             file.path.display(),
                             module_path,
                             self.package,
@@ -1384,6 +1440,7 @@ impl PackageLockfile {
         &self,
         file: &PackageLockfileSourceIdentityFile,
     ) -> Result<PathBuf, CompileError> {
+        validate_lockfile_replay_library_id("source identity file", file.library_id)?;
         validate_resolved_source_path("source identity file", &file.path)?;
         self.validate_file_library_ownership("source identity file", file.library_id, &file.path)?;
         let (expected_root_index, expected_relative_path) =
@@ -1408,15 +1465,20 @@ impl PackageLockfile {
             }
         }
         match &file.source_root_relative_path {
-            Some(actual_relative_path) if actual_relative_path == &expected_relative_path => {}
             Some(actual_relative_path) => {
-                return Err(package_lockfile_error(format!(
-                    "source identity file {} in library {} has source-root relative path {}; expected {}",
-                    file.path.display(),
-                    file.library_id,
-                    actual_relative_path.display(),
-                    expected_relative_path.display()
-                )));
+                validate_source_root_relative_path(
+                    "source identity relative path",
+                    actual_relative_path,
+                )?;
+                if actual_relative_path != &expected_relative_path {
+                    return Err(package_lockfile_error(format!(
+                        "source identity file {} in library {} has source-root relative path {}; expected {}",
+                        file.path.display(),
+                        file.library_id,
+                        actual_relative_path.display(),
+                        expected_relative_path.display()
+                    )));
+                }
             }
             None => {
                 return Err(package_lockfile_error(format!(
@@ -1486,6 +1548,14 @@ impl PackageLockfile {
         import_graph: &PackageLockfileImportGraph,
     ) -> Result<(), CompileError> {
         for (edge_index, import) in import_graph.imports.iter().enumerate() {
+            validate_resolved_source_path(
+                &format!("import graph edge {edge_index} source file"),
+                &import.source_path,
+            )?;
+            validate_resolved_source_path(
+                &format!("import graph edge {edge_index} target file"),
+                &import.target_path,
+            )?;
             self.validate_file_library_ownership(
                 &format!("import graph edge {edge_index} source file"),
                 import.source_library_id,
@@ -1514,6 +1584,93 @@ impl PackageLockfile {
         Ok(())
     }
 
+    fn validate_import_graph_source_import_target_uniqueness(
+        &self,
+        import_graph: &PackageLockfileImportGraph,
+    ) -> Result<(), CompileError> {
+        let mut seen_source_import_targets = BTreeMap::new();
+        for import in &import_graph.imports {
+            let source_import_key = (
+                import.source_library_id,
+                import.source_path.clone(),
+                import.import_path.clone(),
+            );
+            let target_key = (import.target_library_id, import.target_path.clone());
+            if let Some(previous_target) = seen_source_import_targets.get(&source_import_key) {
+                if previous_target != &target_key {
+                    let (previous_library_id, previous_path) = previous_target;
+                    return Err(package_lockfile_error(format!(
+                        "ambiguous import graph edge {} from library {} {}; previous target library {} {}, new target library {} {}; package imports must resolve to one target per source import path",
+                        import.import_path,
+                        import.source_library_id,
+                        import.source_path.display(),
+                        previous_library_id,
+                        previous_path.display(),
+                        import.target_library_id,
+                        import.target_path.display()
+                    )));
+                }
+            } else {
+                seen_source_import_targets.insert(source_import_key, target_key);
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_import_graph_package_metadata_endpoints(
+        &self,
+        import_graph: &PackageLockfileImportGraph,
+    ) -> Result<(), CompileError> {
+        let Some(package_module_path) = package_name_module_path(&self.package) else {
+            return Ok(());
+        };
+        for (edge_index, import) in import_graph.imports.iter().enumerate() {
+            self.validate_import_graph_package_metadata_endpoint(
+                edge_index,
+                "source",
+                import.source_library_id,
+                &import.source_path,
+                &import.source_module_path,
+                &package_module_path,
+            )?;
+            self.validate_import_graph_package_metadata_endpoint(
+                edge_index,
+                "target",
+                import.target_library_id,
+                &import.target_path,
+                &import.target_module_path,
+                &package_module_path,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn validate_import_graph_package_metadata_endpoint(
+        &self,
+        edge_index: usize,
+        endpoint: &str,
+        library_id: u32,
+        path: &Path,
+        edge_module_path: &str,
+        package_module_path: &str,
+    ) -> Result<(), CompileError> {
+        if edge_module_path != package_module_path {
+            return Ok(());
+        }
+        let (_, relative_path) = self.source_identity_root_metadata(library_id, path)?;
+        let expected_module_path = source_root_relative_module_path(&relative_path)?;
+        if edge_module_path == expected_module_path {
+            return Ok(());
+        }
+        Err(package_lockfile_error(format!(
+            "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module from resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace source module declarations",
+            edge_module_path,
+            self.package,
+            relative_path.display(),
+            expected_module_path
+        )))
+    }
+
     fn validate_import_graph_endpoint_path_identity(
         &self,
         edge_index: usize,
@@ -1532,7 +1689,7 @@ impl PackageLockfile {
             .is_some_and(|package_module_path| package_module_path == edge_module_path)
         {
             return Err(package_lockfile_error(format!(
-                "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module from resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace GPU module declarations",
+                "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module from resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace source module declarations",
                 edge_module_path,
                 self.package,
                 relative_path.display(),
@@ -2080,21 +2237,17 @@ impl PackageLockfileDocument {
                 "missing source identities; regenerate the package lockfile from the package manifest",
             )
         })?;
-        inputs.validate_shape()?;
-        source_identities.validate_shape()?;
-        import_graph.validate_shape()?;
-        lockfile.validate_existing_package_source_state()?;
-        lockfile.validate_persisted_input_identity_bytes(inputs)?;
         lockfile.validate_section_consistency(inputs, source_identities, import_graph)?;
-        if let Some(artifacts) = &self.artifacts {
-            artifacts.validate_shape()?;
-        }
+        lockfile.validate_existing_package_source_state()?;
         lockfile.validate_import_graph_with_input_staleness(import_graph, inputs)?;
         lockfile.validate_entry_input_identity(inputs)?;
         lockfile.validate_entry_replay_metadata()?;
         lockfile.validate_source_identities(source_identities)?;
         lockfile.validate_inputs(inputs)?;
         lockfile.validate_artifact_source_collisions(inputs)?;
+        if let Some(artifacts) = &self.artifacts {
+            artifacts.validate_shape()?;
+        }
         lockfile.validate_artifacts()?;
         lockfile.replay_integrity = Some(PackageLockfileReplayIntegrity {
             inputs: inputs.clone(),
@@ -2571,5 +2724,23 @@ fn valid_lockfile_label(label: &str) -> bool {
 }
 
 fn package_lockfile_error(message: impl Into<String>) -> CompileError {
-    CompileError::GpuFrontend(format!("package lockfile: {}", message.into()))
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0055", "package lockfile invalid")
+            .with_note(message)
+            .with_note(
+                "package lockfiles must match the package manifest, source identities, import graph, and recorded artifacts; regenerate the lockfile from the current package manifest if stale",
+            ),
+    )
+}
+
+fn package_lockfile_io_error(path: &Path, err: std::io::Error) -> CompileError {
+    package_lockfile_io_message(format!("package lockfile path {}: {err}", path.display()))
+}
+
+fn package_lockfile_io_message(message: impl Into<String>) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0056", "package lockfile could not be read or written")
+            .with_note(message)
+            .with_note("use a readable and writable package lockfile JSON path"),
+    )
 }

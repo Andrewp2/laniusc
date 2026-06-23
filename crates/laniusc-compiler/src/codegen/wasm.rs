@@ -124,6 +124,11 @@ impl WasmOutputError {
         self.error_name
     }
 
+    /// Returns a user-facing diagnostic message for this backend boundary.
+    pub fn public_message(&self) -> String {
+        self.error_name.replace('_', " ")
+    }
+
     /// Returns the numeric backend status code.
     pub fn error_code(&self) -> u32 {
         self.error_code
@@ -145,15 +150,43 @@ impl WasmOutputError {
 
 impl fmt::Display for WasmOutputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "GPU WASM emitter rejected {} (code {}) at detail {}",
-            self.error_name, self.error_code, self.error_detail
-        )
+        f.write_str("WASM code generation reached an unsupported backend boundary")
     }
 }
 
 impl std::error::Error for WasmOutputError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wasm_output_error_display_is_user_facing() {
+        let error = WasmOutputError::new("unsupported_struct_literal", 830, 27);
+        let rendered = error.to_string();
+
+        assert_eq!(
+            rendered,
+            "WASM code generation reached an unsupported backend boundary"
+        );
+        assert!(!rendered.contains("GPU"));
+        assert!(!rendered.contains("emitter rejected"));
+        assert!(!rendered.contains("unsupported_struct_literal"));
+        assert!(!rendered.contains("code 830"));
+        assert!(!rendered.contains("detail 27"));
+    }
+
+    #[test]
+    fn wasm_output_error_public_message_humanizes_backend_status() {
+        let error = WasmOutputError::new("unsupported_struct_literal", 830, 27);
+
+        let message = error.public_message();
+        assert_eq!(message, "unsupported struct literal");
+        assert!(!message.contains("unsupported_struct_literal"));
+        assert!(!message.contains("830"));
+        assert!(!message.contains("27"));
+    }
+}
 
 #[derive(Clone, Copy)]
 /// Struct declaration/member metadata buffers needed by WASM lowering.
@@ -690,7 +723,7 @@ impl GpuWasmCodeGenerator {
             .expect("GpuWasmCodeGenerator.buffers poisoned");
         let bufs = guard
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("GPU WASM codegen buffers missing"))?;
+            .ok_or_else(|| anyhow::anyhow!("WASM code generation buffers missing"))?;
         read_wasm_output(
             device,
             queue,

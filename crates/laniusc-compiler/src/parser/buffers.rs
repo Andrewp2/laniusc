@@ -9,8 +9,8 @@ mod storage;
 pub use model::{ActionHeader, ParserBuffers, TokenBraceMatchParams, TokenDelimiterParams};
 pub use scan_steps::*;
 use scans::*;
-use sizing::resident_projected_tree_capacity;
-pub(crate) use sizing::resident_projected_tree_capacity_for_tables;
+use sizing::resident_partial_parse_tree_capacity;
+pub(crate) use sizing::resident_partial_parse_tree_capacity_for_tables;
 use storage::{alias_storage_buffer, dispatch_args_buffer};
 
 use crate::gpu::buffers::{
@@ -29,7 +29,7 @@ impl ParserBuffers {
         n_kinds: u32,
         action_table_bytes: &[u8],
         tables: &crate::parser::tables::PrecomputedParseTables,
-        resident_projected_capacity: bool,
+        resident_partial_parse_capacity: bool,
         retain_debug_hir_buffers: bool,
         tree_capacity_override: Option<u32>,
     ) -> Self {
@@ -395,7 +395,7 @@ impl ParserBuffers {
         // ---------- Pack varlen ----------
         let (mut acc_sc, mut acc_emit) = (0u32, 0u32);
 
-        if resident_projected_capacity {
+        if resident_partial_parse_capacity {
             let max_sc_len = tables.sc_len.iter().copied().max().unwrap_or(0);
             let max_emit_len = tables.pp_len.iter().copied().max().unwrap_or(0);
             acc_sc = (n_pairs as u32).saturating_mul(max_sc_len);
@@ -413,17 +413,17 @@ impl ParserBuffers {
         }
         let total_sc = acc_sc;
         let total_emit = acc_emit;
-        let tree_count_uses_status = resident_projected_capacity;
+        let tree_count_uses_status = true;
         let tree_capacity = tree_capacity_override
             .unwrap_or_else(|| {
                 if tree_count_uses_status {
-                    resident_projected_tree_capacity(total_emit)
+                    resident_partial_parse_tree_capacity(total_emit)
                 } else {
                     total_emit
                 }
             })
             .max(1);
-        let emit_capacity = if resident_projected_capacity {
+        let emit_capacity = if resident_partial_parse_capacity {
             tree_capacity
         } else {
             total_emit.max(1)
@@ -464,11 +464,7 @@ impl ParserBuffers {
                 n_kinds,
                 total_sc,
                 total_emit,
-                sc_capacity: if resident_projected_capacity {
-                    1
-                } else {
-                    total_sc.max(1)
-                },
+                sc_capacity: total_sc.max(1),
                 emit_capacity,
                 sc_superseq_off,
                 sc_off_off,
@@ -494,37 +490,22 @@ impl ParserBuffers {
             make_pack_offset_scan_steps(device, n_tokens.saturating_sub(1));
         let pack_total_reduce_steps =
             make_pack_total_reduce_steps(device, n_tokens.saturating_sub(1));
-        let projected_status = storage_rw_for_array::<u32>(device, "pack.projected_status", 6);
+        let partial_parse_status =
+            storage_rw_for_array::<u32>(device, "pack.partial_parse_status", 6);
         let tables_blob = storage_ro_from_u32s(device, "pack.tables_blob", &blob);
 
-        let out_sc = storage_rw_for_array::<u32>(
-            device,
-            "pack.out_sc",
-            if resident_projected_capacity {
-                1
-            } else {
-                total_sc.max(1) as usize
-            },
-        );
+        let out_sc = storage_rw_for_array::<u32>(device, "pack.out_sc", total_sc.max(1) as usize);
         let out_emit = storage_rw_for_array::<u32>(device, "pack.out_emit", emit_capacity as usize);
         let out_emit_pos =
             storage_rw_for_array::<u32>(device, "pack.out_emit_pos", emit_capacity as usize);
 
         // ---------- Brackets (parallel) ----------
         //
-        // Resident parsing records tree/HIR from projected counts, so bracket
-        // scratch stays one word unless the debug one-shot parser records it.
+        // Resident parsing validates stack effects before publishing acceptance,
+        // so bracket scratch is sized to the conservative stack capacity.
         const WG: u32 = 256;
-        let bracket_capacity = if resident_projected_capacity {
-            1
-        } else {
-            total_sc.max(1)
-        };
-        let n_blocks = if resident_projected_capacity {
-            1
-        } else {
-            total_sc.div_ceil(WG).max(1)
-        };
+        let bracket_capacity = total_sc.max(1);
+        let n_blocks = total_sc.div_ceil(WG).max(1);
 
         let b01_params = uniform_from_val(
             device,
@@ -552,13 +533,8 @@ impl ParserBuffers {
             },
         );
 
-        // layers upper bound = #pushes <= total_sc; +2 for safety. Resident mode
-        // does not record bracket passes, so one layer is enough for bindings.
-        let n_layers = if resident_projected_capacity {
-            1
-        } else {
-            total_sc.saturating_add(2).max(1)
-        };
+        // layers upper bound = #pushes <= total_sc; +2 for safety.
+        let n_layers = total_sc.saturating_add(2).max(1);
 
         let b04_params = uniform_from_val(
             device,
@@ -902,7 +878,8 @@ impl ParserBuffers {
             "parser.hir_semantic_dense_node",
             tree_capacity as usize,
         );
-        let reuse_semantic_debug_buffers = resident_projected_capacity && !retain_debug_hir_buffers;
+        let reuse_semantic_debug_buffers =
+            resident_partial_parse_capacity && !retain_debug_hir_buffers;
         let hir_semantic_subtree_end = storage_rw_for_array::<u32>(
             device,
             "parser.hir_semantic_subtree_end",
@@ -1004,7 +981,7 @@ impl ParserBuffers {
         let hir_token_file_id =
             storage_rw_for_array::<u32>(device, "parser.hir_token_file_id", tree_capacity as usize);
         let (hir_type_form, hir_type_value_node, hir_type_len_token, hir_type_len_value) =
-            if resident_projected_capacity {
+            if resident_partial_parse_capacity {
                 // Resident compilation does not expose packed productions as
                 // parser debug artifacts. After `hir_nodes`, the production
                 // streams and tree-prefix scratch are dead, so reuse them for
@@ -1866,7 +1843,7 @@ impl ParserBuffers {
             pack_emit_prefix_b,
             pack_offset_scan_steps,
             pack_total_reduce_steps,
-            projected_status,
+            partial_parse_status,
             tables_blob,
             out_sc,
             out_emit,

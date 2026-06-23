@@ -19,7 +19,7 @@ pub struct Params {
     pub emit_capacity: u32,
 }
 
-/// Pass that validates projected packed stream capacity and status.
+/// Pass that validates partial-parse packed stream capacity and status.
 pub struct PackOffsetsStatusPass {
     data: PassData,
 }
@@ -93,8 +93,8 @@ impl PackOffsetsStatusPass {
             ("sc_prefix".into(), sc_prefix.as_entire_binding()),
             ("emit_prefix".into(), emit_prefix.as_entire_binding()),
             (
-                "projected_status".into(),
-                buffers.projected_status.as_entire_binding(),
+                "partial_parse_status".into(),
+                buffers.partial_parse_status.as_entire_binding(),
             ),
         ]);
         let bind_group = bind_group::create_bind_group_from_reflection(

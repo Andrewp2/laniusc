@@ -8,7 +8,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> sc_prefix;
 StructuredBuffer<uint> emit_prefix;
-RWStructuredBuffer<uint> projected_status;
+RWStructuredBuffer<uint> partial_parse_status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -38,12 +38,12 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint n_active = active_pair_count();
     if (n_active == 0u || gParams.n_pairs == 0u)
     {
-        projected_status[0u] = 1u;
-        projected_status[1u] = 0u;
-        projected_status[2u] = ERR_NONE;
-        projected_status[3u] = 0u;
-        projected_status[4u] = 0u;
-        projected_status[5u] = 0u;
+        partial_parse_status[0u] = 1u;
+        partial_parse_status[1u] = 0u;
+        partial_parse_status[2u] = ERR_NONE;
+        partial_parse_status[3u] = 0u;
+        partial_parse_status[4u] = 0u;
+        partial_parse_status[5u] = 0u;
         return;
     }
 
@@ -53,10 +53,10 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     bool emit_overflow = emit_total > gParams.emit_capacity;
     uint reported_emit = min(emit_total, gParams.emit_capacity);
 
-    projected_status[0u] = emit_overflow ? 0u : 1u;
-    projected_status[1u] = emit_overflow ? last : 0u;
-    projected_status[2u] = emit_overflow ? ERR_OUTPUT_CAPACITY : ERR_NONE;
-    projected_status[3u] = emit_overflow ? emit_total : 0u;
-    projected_status[4u] = sc_total;
-    projected_status[5u] = reported_emit;
+    partial_parse_status[0u] = emit_overflow ? 0u : 1u;
+    partial_parse_status[1u] = emit_overflow ? last : 0u;
+    partial_parse_status[2u] = emit_overflow ? ERR_OUTPUT_CAPACITY : ERR_NONE;
+    partial_parse_status[3u] = emit_overflow ? emit_total : 0u;
+    partial_parse_status[4u] = sc_total;
+    partial_parse_status[5u] = reported_emit;
 }

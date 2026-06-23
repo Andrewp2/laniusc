@@ -44,22 +44,17 @@ where
                         library_interfaces.push(interface);
                     }
                     SourcePackJobPhase::Codegen => {
-                        let library_job_index = job.library_job_index.ok_or_else(|| {
-                            CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} has no owning library job",
-                                job.job_index
-                            ))
-                        })?;
-                        let library_interface_index = interface_by_job
-                            .get(library_job_index)
-                            .and_then(|index| *index)
-                            .ok_or_else(|| {
-                                CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} missing library interface from job {}",
-                                job.job_index, library_job_index
-                            ))
-                            })?;
-                        let library_interface = &library_interfaces[library_interface_index];
+                        let library_job_index = codegen_library_job_index(job)?;
+                        let label =
+                            format!("source-pack codegen job {} owning interface", job.job_index);
+                        let library_interface_index =
+                            produced_handle_index(&interface_by_job, library_job_index, &label)?;
+                        let library_interface = produced_ref(
+                            &library_interfaces,
+                            library_interface_index,
+                            library_job_index,
+                            &label,
+                        )?;
                         let dependency_interfaces = collect_interface_refs_excluding(
                             &library_interfaces,
                             &interface_by_job,
@@ -95,9 +90,7 @@ where
             Ok(())
         })?;
 
-    let linked_output = linked_output.ok_or_else(|| {
-        CompileError::GpuFrontend("source-pack build plan did not execute a link job".into())
-    })?;
+    let linked_output = linked_output.ok_or_else(missing_link_job_error)?;
 
     Ok(BuildExecutionResult {
         library_interfaces,
@@ -150,22 +143,17 @@ where
                         library_interfaces.push(interface);
                     }
                     SourcePackJobPhase::Codegen => {
-                        let library_job_index = job.library_job_index.ok_or_else(|| {
-                            CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} has no owning library job",
-                                job.job_index
-                            ))
-                        })?;
-                        let library_interface_index = interface_by_job
-                            .get(library_job_index)
-                            .and_then(|index| *index)
-                            .ok_or_else(|| {
-                                CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} missing library interface from job {}",
-                                job.job_index, library_job_index
-                            ))
-                            })?;
-                        let library_interface = &library_interfaces[library_interface_index];
+                        let library_job_index = codegen_library_job_index(job)?;
+                        let label =
+                            format!("source-pack codegen job {} owning interface", job.job_index);
+                        let library_interface_index =
+                            produced_handle_index(&interface_by_job, library_job_index, &label)?;
+                        let library_interface = produced_ref(
+                            &library_interfaces,
+                            library_interface_index,
+                            library_job_index,
+                            &label,
+                        )?;
                         let dependency_interfaces = collect_interface_refs_excluding(
                             &library_interfaces,
                             &interface_by_job,
@@ -201,9 +189,7 @@ where
             Ok(())
         })?;
 
-    let linked_output = linked_output.ok_or_else(|| {
-        CompileError::GpuFrontend("source-pack build plan did not execute a link job".into())
-    })?;
+    let linked_output = linked_output.ok_or_else(missing_link_job_error)?;
 
     Ok(BuildExecutionResult {
         library_interfaces,
@@ -249,22 +235,11 @@ where
                         library_interfaces[job.job_index] = Some(interface);
                     }
                     SourcePackJobPhase::Codegen => {
-                        let library_job_index = job.library_job_index.ok_or_else(|| {
-                            CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} has no owning library job",
-                                job.job_index
-                            ))
-                        })?;
-                        let library_interface = library_interfaces
-                            .get(library_job_index)
-                            .and_then(|handle| handle.as_ref())
-                            .cloned()
-                            .ok_or_else(|| {
-                                CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} missing library interface from job {}",
-                                job.job_index, library_job_index
-                            ))
-                            })?;
+                        let library_job_index = codegen_library_job_index(job)?;
+                        let label =
+                            format!("source-pack codegen job {} owning interface", job.job_index);
+                        let library_interface =
+                            produced_handle(&library_interfaces, library_job_index, &label)?;
                         let dependency_interfaces = collect_interface_handle_clones_excluding(
                             &library_interfaces,
                             &build_plan.schedule,
@@ -301,9 +276,7 @@ where
             Ok(())
         })?;
 
-    let linked_output = linked_output.ok_or_else(|| {
-        CompileError::GpuFrontend("source-pack build plan did not execute a link job".into())
-    })?;
+    let linked_output = linked_output.ok_or_else(missing_link_job_error)?;
 
     Ok(HandleBuildExecutionResult { linked_output })
 }
@@ -346,22 +319,11 @@ where
                         library_interfaces[job.job_index] = Some(interface);
                     }
                     SourcePackJobPhase::Codegen => {
-                        let library_job_index = job.library_job_index.ok_or_else(|| {
-                            CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} has no owning library job",
-                                job.job_index
-                            ))
-                        })?;
-                        let library_interface = library_interfaces
-                            .get(library_job_index)
-                            .and_then(|handle| handle.as_ref())
-                            .cloned()
-                            .ok_or_else(|| {
-                                CompileError::GpuFrontend(format!(
-                                "source-pack codegen job {} missing library interface from job {}",
-                                job.job_index, library_job_index
-                            ))
-                            })?;
+                        let library_job_index = codegen_library_job_index(job)?;
+                        let label =
+                            format!("source-pack codegen job {} owning interface", job.job_index);
+                        let library_interface =
+                            produced_handle(&library_interfaces, library_job_index, &label)?;
                         let dependency_interfaces = collect_interface_handle_clones_excluding(
                             &library_interfaces,
                             &build_plan.schedule,
@@ -430,9 +392,7 @@ where
             Ok(())
         })?;
 
-    let linked_output = linked_output.ok_or_else(|| {
-        CompileError::GpuFrontend("source-pack build plan did not execute a link job".into())
-    })?;
+    let linked_output = linked_output.ok_or_else(missing_link_job_error)?;
 
     Ok(HandleBuildExecutionResult { linked_output })
 }

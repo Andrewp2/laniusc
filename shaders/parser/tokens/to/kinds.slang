@@ -574,6 +574,7 @@ bool bound_plus_context(uint parser_i, uint count);
 bool bound_type_context_before(uint parser_i, uint count);
 bool impl_type_context_before(uint parser_i, uint count);
 bool where_clause_context_before(uint parser_i, uint count);
+bool path_type_arg_open_has_value_path_tail(uint open_parser_i, uint count);
 bool matching_raw_paren_open_before(uint parser_i, uint count, out uint open_i);
 bool matching_raw_bracket_open_before(uint parser_i, uint count, out uint open_i);
 uint matching_semantic_paren_open_before(uint parser_i, uint count);
@@ -957,6 +958,12 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
         return TK_PATH_TYPE_ARG_LT;
     }
     if (prev_raw == TK_IDENT &&
+        value_expression_context_before(parser_i) &&
+        path_type_arg_open_has_value_path_tail(parser_i, count))
+    {
+        return TK_PATH_TYPE_ARG_LT;
+    }
+    if (prev_raw == TK_IDENT &&
         (prev2_raw == TK_COLON || prev2_raw == TK_ARROW || prev2_raw == TK_AMPERSAND ||
          prev2_raw == TK_LT || prev2_raw == TK_COMMA || prev2_raw == TK_LBRACKET ||
          prev2_raw == TK_PATH_COLON || impl_type_context_before(parser_i, count)))
@@ -984,6 +991,38 @@ bool where_clause_context_before(uint parser_i, uint count)
     return token_i < count &&
            token_i < gParams.token_capacity &&
            (token_where_context_event[token_i] & 0xffu) == WHERE_CLAUSE_CONTEXT;
+}
+
+bool path_type_arg_open_has_value_path_tail(uint open_parser_i, uint count)
+{
+    uint depth = 0u;
+    for (uint cursor = open_parser_i + 1u; cursor <= count; cursor++)
+    {
+        uint kind = raw_kind_at(cursor, count);
+        if (kind == TK_LT)
+        {
+            depth++;
+            continue;
+        }
+        if (kind == TK_GT)
+        {
+            if (depth == 0u)
+            {
+                uint next = raw_kind_at(cursor + 1u, count);
+                uint next2 = raw_kind_at(cursor + 2u, count);
+                return next == TK_LPAREN || (next == TK_COLON && next2 == TK_COLON);
+            }
+            depth--;
+            continue;
+        }
+        if (depth == 0u &&
+            (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE ||
+             kind == TK_RPAREN))
+        {
+            return false;
+        }
+    }
+    return false;
 }
 
 bool matching_raw_angle_open_before(uint parser_i, uint count, out uint open_i)
@@ -1282,6 +1321,59 @@ uint semicolon_kind_for_statement_context(uint statement_kind)
     return 0u;
 }
 
+uint semicolon_kind_after_braced_rhs(uint token_i)
+{
+    if (token_i == 0u || raw_token_kind(token_i - 1u) != TK_RBRACE)
+        return 0u;
+
+    uint brace_depth = 0u;
+    for (uint cursor = token_i; cursor > 0u;)
+    {
+        cursor--;
+        uint kind = raw_token_kind(cursor);
+
+        if (kind == TK_RBRACE)
+        {
+            brace_depth++;
+            continue;
+        }
+        if (kind == TK_LBRACE)
+        {
+            if (brace_depth == 0u)
+                return 0u;
+            brace_depth--;
+            continue;
+        }
+        if (brace_depth != 0u)
+            continue;
+
+        if (kind == TK_SEMICOLON)
+            return 0u;
+        if (kind == TK_LET)
+            return TK_LET_SEMICOLON;
+        if (kind == TK_CONST)
+            return TK_CONST_SEMICOLON;
+        if (kind == TK_RETURN)
+            return TK_RETURN_SEMICOLON;
+        if (kind == TK_TYPE)
+            return TK_TYPE_ALIAS_SEMICOLON;
+        if (kind == TK_IMPORT)
+            return TK_IMPORT_SEMICOLON;
+        if (kind == TK_MODULE)
+            return TK_MODULE_SEMICOLON;
+        if (kind == TK_BREAK)
+            return TK_BREAK_SEMICOLON;
+        if (kind == TK_CONTINUE)
+            return TK_CONTINUE_SEMICOLON;
+        if (kind == TK_FN || kind == TK_STRUCT || kind == TK_ENUM ||
+            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_IF ||
+            kind == TK_ELSE || kind == TK_WHILE || kind == TK_FOR)
+            return 0u;
+    }
+
+    return 0u;
+}
+
 bool extern_fn_signature_context_before(uint token_i)
 {
     if (statement_context_token_kind(token_i) != TK_FN)
@@ -1305,6 +1397,9 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
     uint recorded = semicolon_kind_for_statement_context(statement_context_token_kind(token_i));
     if (recorded != 0u)
         return recorded;
+    uint braced_rhs = semicolon_kind_after_braced_rhs(token_i);
+    if (braced_rhs != 0u)
+        return braced_rhs;
     if (extern_fn_signature_context_before(token_i))
         return TK_EXTERN_SEMICOLON;
 

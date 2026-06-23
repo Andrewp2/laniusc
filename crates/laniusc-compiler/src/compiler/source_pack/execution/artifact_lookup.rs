@@ -10,7 +10,7 @@ pub(in crate::compiler) fn execution_shard_job_batch(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack execution shard {} references missing job batch {batch_index}",
                 execution_shard.shard.shard_index
             ))
@@ -27,7 +27,7 @@ pub(in crate::compiler) fn execution_shard_batch_dependency(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack execution shard {} references missing batch dependency {batch_index}",
                 execution_shard.shard.shard_index
             ))
@@ -44,7 +44,7 @@ pub(in crate::compiler) fn execution_shard_job(
         .iter()
         .find(|job| job.job_index == job_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack execution shard {} references missing job {job_index}",
                 execution_shard.shard.shard_index
             ))
@@ -61,7 +61,7 @@ pub(in crate::compiler) fn execution_shard_job_artifact(
         .iter()
         .find(|job| job.job_index == job_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack execution shard {} references missing job artifact manifest {job_index}",
                 execution_shard.shard.shard_index
             ))
@@ -98,7 +98,7 @@ where
             .find(|source_file| source_file.source_index == source_index)
             .map(|source_file| source_file.file.clone())
             .ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
+                manifest_contract_error(format!(
                     "source-pack execution shard {} missing source file {} for job {}",
                     execution_shard.shard.shard_index, source_index, job.job_index
                 ))
@@ -139,7 +139,7 @@ pub(in crate::compiler) fn execution_shard_artifact_ref_for_index(
         .iter()
         .find(|artifact| artifact.artifact_index == artifact_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack execution shard {} missing artifact ref {}",
                 execution_shard.shard.shard_index, artifact_index
             ))
@@ -208,7 +208,7 @@ pub(in crate::compiler) fn artifact_manifest_batch(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack artifact manifest references missing job batch {batch_index}"
             ))
         })
@@ -229,7 +229,7 @@ pub(in crate::compiler) fn job_batch_dependency(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack artifact manifest references missing batch dependency {batch_index}"
             ))
         })
@@ -250,7 +250,7 @@ pub(in crate::compiler) fn link_interface_batch(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack artifact manifest references missing link interface batch {batch_index}"
             ))
         })
@@ -271,7 +271,7 @@ pub(in crate::compiler) fn link_object_batch(
         .iter()
         .find(|batch| batch.batch_index == batch_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack artifact manifest references missing link object batch {batch_index}"
             ))
         })
@@ -285,7 +285,7 @@ pub(in crate::compiler) fn path_manifest_source_files_for_job<'a>(
     let start = job.first_source_index;
     let end = start.saturating_add(job.source_file_count);
     let source_files = source_pack.files.get(start..end).ok_or_else(|| {
-        CompileError::GpuFrontend(format!(
+        manifest_contract_error(format!(
             "source-pack job {} source range {}..{} exceeds manifest source file count {}",
             job.job_index,
             start,
@@ -312,7 +312,7 @@ pub(in crate::compiler) fn job_artifact_manifest(
         .iter()
         .find(|job| job.job_index == job_index)
         .ok_or_else(|| {
-            CompileError::GpuFrontend(format!(
+            manifest_contract_error(format!(
                 "source-pack artifact manifest references missing job {job_index}"
             ))
         })
@@ -394,13 +394,13 @@ pub(in crate::compiler) fn single_output_artifact_ref(
         .iter()
         .filter(|artifact| artifact.kind == kind);
     let output = outputs.next().ok_or_else(|| {
-        CompileError::GpuFrontend(format!(
+        manifest_contract_error(format!(
             "source-pack job {} has no {:?} output artifact",
             job_manifest.job_index, kind
         ))
     })?;
     if outputs.next().is_some() {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(manifest_contract_error(format!(
             "source-pack job {} has more than one {:?} output artifact",
             job_manifest.job_index, kind
         )));
@@ -444,11 +444,8 @@ pub(in crate::compiler) fn artifact_ref_for_index(
     manifest: &SourcePackArtifactManifest,
     artifact_index: usize,
 ) -> Result<SourcePackArtifactRef, CompileError> {
-    let artifact = manifest.get(artifact_index).ok_or_else(|| {
-        CompileError::GpuFrontend(format!(
-            "source-pack artifact manifest missing artifact {artifact_index}"
-        ))
-    })?;
+    let artifact =
+        manifest_artifact_entry(manifest, artifact_index, "source-pack artifact manifest")?;
     Ok(SourcePackArtifactRef {
         artifact_index: artifact.artifact_index,
         key: artifact.key.clone(),
@@ -626,7 +623,7 @@ pub(in crate::compiler) fn execution_shard_batch_result(
         let output =
             single_output_artifact_ref(job_manifest, SourcePackArtifactKind::LinkedOutput)?;
         if linked_output_key.replace(output.key.clone()).is_some() {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(manifest_contract_error(format!(
                 "source-pack execution shard batch {} contains more than one linked output",
                 batch.batch_index
             )));

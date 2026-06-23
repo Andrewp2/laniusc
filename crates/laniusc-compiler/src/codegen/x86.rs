@@ -44,6 +44,11 @@ impl X86OutputError {
         self.error_name
     }
 
+    /// Returns a user-facing diagnostic message for this backend boundary.
+    pub fn public_message(&self) -> String {
+        self.error_name.replace('_', " ")
+    }
+
     /// Returns the numeric backend status code.
     pub fn error_code(&self) -> u32 {
         self.error_code
@@ -109,11 +114,7 @@ impl X86OutputError {
 
 impl fmt::Display for X86OutputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "GPU x86 emitter rejected {} (code {}) at detail {}",
-            self.error_name, self.error_code, self.error_detail
-        )
+        f.write_str("x86 code generation reached an unsupported backend boundary")
     }
 }
 
@@ -1574,6 +1575,33 @@ impl GpuX86CodeGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn x86_output_error_display_is_user_facing() {
+        let error = X86OutputError::new("unsupported_scalar_return", 48, 12);
+        let rendered = error.to_string();
+
+        assert_eq!(
+            rendered,
+            "x86 code generation reached an unsupported backend boundary"
+        );
+        assert!(!rendered.contains("GPU"));
+        assert!(!rendered.contains("emitter rejected"));
+        assert!(!rendered.contains("unsupported_scalar_return"));
+        assert!(!rendered.contains("code 48"));
+        assert!(!rendered.contains("detail 12"));
+    }
+
+    #[test]
+    fn x86_output_error_public_message_humanizes_backend_status() {
+        let error = X86OutputError::new("unsupported_scalar_return", 48, 12);
+
+        let message = error.public_message();
+        assert_eq!(message, "unsupported scalar return");
+        assert!(!message.contains("unsupported_scalar_return"));
+        assert!(!message.contains("48"));
+        assert!(!message.contains("12"));
+    }
 
     #[test]
     fn x86_function_slot_capacity_shrinks_sparse_token_sized_slots() {

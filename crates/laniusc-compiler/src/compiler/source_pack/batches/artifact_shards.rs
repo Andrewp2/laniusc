@@ -156,7 +156,7 @@ pub(in crate::compiler) fn validate_artifact_shard_prepare_progress(
     link_batch_page_index: &SourcePackBuildLinkBatchPageIndex,
 ) -> Result<(), CompileError> {
     if progress.version != SOURCE_PACK_BUILD_ARTIFACT_SHARD_PREPARE_PROGRESS_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(artifact_shard_contract_error(format!(
             "unsupported source-pack artifact-shard prepare progress version {}; expected {}",
             progress.version, SOURCE_PACK_BUILD_ARTIFACT_SHARD_PREPARE_PROGRESS_VERSION
         )));
@@ -437,8 +437,8 @@ pub(in crate::compiler) fn store_build_artifact_shards_from_metadata_chunk(
     max_new_batches: usize,
 ) -> Result<FilesystemArtifactShardPrepareStepResult, CompileError> {
     if max_new_batches == 0 {
-        return Err(CompileError::GpuFrontend(
-            "source-pack artifact-shard chunk max_new_batches must be greater than zero".into(),
+        return Err(source_pack_preparation_limit_invalid_error(
+            "source-pack artifact-shard chunk max_new_batches must be greater than zero",
         ));
     }
     let limits = limits.normalized();
@@ -766,7 +766,7 @@ pub(in crate::compiler) fn store_artifact_shard_prepare_progress(
 ) -> Result<PathBuf, CompileError> {
     let path = store.artifact_shard_prepare_progress_path_for_target(progress.target);
     let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack artifact-shard prepare progress: {err}"
         ))
     })?;
@@ -786,14 +786,14 @@ pub(in crate::compiler) fn load_artifact_shard_prepare_progress(
 ) -> Result<ArtifactShardPrepareProgress, CompileError> {
     let path = store.artifact_shard_prepare_progress_path_for_target(target);
     let bytes = fs::read(&path).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "read source-pack artifact-shard prepare progress {}: {err}",
             path.display()
         ))
     })?;
     let progress =
         serde_json::from_slice::<ArtifactShardPrepareProgress>(&bytes).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "parse source-pack artifact-shard prepare progress {}: {err}",
                 path.display()
             ))
@@ -845,7 +845,7 @@ pub(in crate::compiler) fn store_artifact_shard_page(
     validate_artifact_shard(shard, shard.target)?;
     let path = store.artifact_shard_path_for_target(shard.target, shard.shard_index);
     let bytes = serde_json::to_vec_pretty(shard).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack build artifact shard {}: {err}",
             shard.shard_index
         ))
@@ -873,7 +873,7 @@ pub(in crate::compiler) fn store_batch_shard_locators(
         };
         let locator_path = store.batch_shard_locator_path_for_target(shard.target, batch_index);
         let bytes = serde_json::to_vec_pretty(&locator).map_err(|err| {
-            CompileError::GpuFrontend(format!(
+            source_pack_store_metadata_error(format!(
                 "serialize source-pack batch shard locator {batch_index}: {err}"
             ))
         })?;
@@ -894,12 +894,12 @@ pub(in crate::compiler) fn store_artifact_shard_compact_indexes(
     let index_path = store.artifact_shard_index_path_for_target(index.target);
     let link_input_index_path = store.link_input_shard_index_path_for_target(index.target);
     let index_bytes = serde_json::to_vec_pretty(index).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack build artifact shard index: {err}"
         ))
     })?;
     let link_input_index_bytes = serde_json::to_vec_pretty(link_input_index).map_err(|err| {
-        CompileError::GpuFrontend(format!(
+        source_pack_store_metadata_error(format!(
             "serialize source-pack link input shard index: {err}"
         ))
     })?;

@@ -21,51 +21,56 @@ where
 
     for library in libraries {
         library_count = library_count.checked_add(1).ok_or_else(|| {
-            CompileError::GpuFrontend("explicit source pack library count overflows".into())
+            explicit_source_pack_manifest_invalid(
+                None,
+                "library count overflowed while planning compact manifest",
+            )
         })?;
         if library.source_file_count == 0 {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} has no source files",
-                library.library_id
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                "library declares no source files",
+            ));
         }
         if !seen_library_ids.insert(library.library_id) {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} appears more than once",
-                library.library_id
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                "library id appears more than once",
+            ));
         }
 
         let mut dependency_library_count = 0usize;
         let mut previous_dependency_library_id = None;
         for dependency_library_id in library.dependency_library_ids {
             if dependency_library_count >= library.dependency_library_count {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} declares {} dependencies but provides at least {}",
-                    library.library_id,
-                    library.dependency_library_count,
-                    dependency_library_count.saturating_add(1)
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    format!(
+                        "declares {} dependencies but yielded at least {}",
+                        library.dependency_library_count,
+                        dependency_library_count.saturating_add(1)
+                    ),
+                ));
             }
             if dependency_library_id == library.library_id {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} depends on itself",
-                    library.library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    "library depends on itself",
+                ));
             }
             if previous_dependency_library_id
                 .is_some_and(|previous| dependency_library_id <= previous)
             {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} dependency ids must be strictly sorted and unique",
-                    library.library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    "dependency ids must be strictly sorted and unique",
+                ));
             }
             if !seen_library_ids.contains(&dependency_library_id) {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} depends on missing or later library {}",
-                    library.library_id, dependency_library_id
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    format!("depends on missing or later library {dependency_library_id}"),
+                ));
             }
             library_dependencies.push(SourcePackLibraryDependency {
                 library_id: library.library_id,
@@ -75,26 +80,34 @@ where
             dependency_library_count = dependency_library_count.saturating_add(1);
         }
         if dependency_library_count != library.dependency_library_count {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} declares {} dependencies but provides {}",
-                library.library_id, library.dependency_library_count, dependency_library_count
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                format!(
+                    "declares {} dependencies but yielded {}",
+                    library.dependency_library_count, dependency_library_count
+                ),
+            ));
         }
 
         let label = format!("library {}", library.library_id);
         let mut stored_source_file_count = 0usize;
         for (path_index, path) in library.paths.into_iter().enumerate() {
             if path_index >= library.source_file_count {
-                return Err(CompileError::GpuFrontend(format!(
-                    "explicit source pack library {} declares {} source files but provides at least {}",
-                    library.library_id,
-                    library.source_file_count,
-                    path_index + 1
-                )));
+                return Err(explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    format!(
+                        "declares {} source files but yielded at least {}",
+                        library.source_file_count,
+                        path_index + 1
+                    ),
+                ));
             }
             let source_index = next_source_index;
             next_source_index = next_source_index.checked_add(1).ok_or_else(|| {
-                CompileError::GpuFrontend("explicit source pack source index overflows".into())
+                explicit_source_pack_manifest_invalid(
+                    Some(library.library_id),
+                    "source index overflowed while planning compact manifest",
+                )
             })?;
             let file = read_explicit_source_path_metadata(
                 &label,
@@ -111,15 +124,19 @@ where
             stored_source_file_count += 1;
         }
         if stored_source_file_count != library.source_file_count {
-            return Err(CompileError::GpuFrontend(format!(
-                "explicit source pack library {} provides {} source files but declares {}",
-                library.library_id, stored_source_file_count, library.source_file_count
-            )));
+            return Err(explicit_source_pack_manifest_invalid(
+                Some(library.library_id),
+                format!(
+                    "declares {} source files but yielded {}",
+                    library.source_file_count, stored_source_file_count
+                ),
+            ));
         }
     }
     if library_count == 0 {
-        return Err(CompileError::GpuFrontend(
-            "explicit source pack has no source files".into(),
+        return Err(explicit_source_pack_manifest_invalid(
+            None,
+            "manifest contains no source libraries",
         ));
     }
 

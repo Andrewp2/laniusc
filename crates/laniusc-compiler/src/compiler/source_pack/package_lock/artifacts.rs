@@ -40,7 +40,7 @@ const RESERVED_ARTIFACT_EVIDENCE_LABELS: &[&str] = &[
 /// Optional produced-artifact identity metadata. Paths and hashes are
 /// control-plane reproducibility evidence; each produced path has one
 /// unambiguous identity, and semantic module identity remains owned by
-/// GPU-parsed module/import records.
+/// parsed module/import records.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackageLockfileArtifact {
@@ -131,7 +131,7 @@ impl PackageLockfileArtifact {
 fn validate_artifact_evidence_label(label: &str, value: &str) -> Result<(), CompileError> {
     if RESERVED_ARTIFACT_EVIDENCE_LABELS.contains(&value) {
         return Err(package_lockfile_error(format!(
-            "artifact {label} {value:?} is reserved for GPU/source-pack module, import, semantic, or link evidence; package lockfile artifacts are control-plane path/digest metadata only"
+            "artifact {label} {value:?} is reserved for compiler module, import, semantic, or link evidence; package lockfile artifacts are control-plane path/digest metadata only"
         )));
     }
     Ok(())

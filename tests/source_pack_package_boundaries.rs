@@ -79,6 +79,32 @@ use laniusc_compiler::{
     },
 };
 
+fn assert_source_pack_artifact_store_failed(err: CompileError, reason: &str) {
+    let diagnostic = match err {
+        CompileError::Diagnostic(diagnostic) => diagnostic,
+        other => panic!("expected structured source-pack artifact-store diagnostic, got {other:?}"),
+    };
+    assert_eq!(diagnostic.code, "LNC0059");
+    assert_eq!(diagnostic.message, "source-pack artifact store failed");
+    assert!(
+        diagnostic.primary_label.is_none(),
+        "artifact-store errors should not invent a source span"
+    );
+    let rendered = diagnostic.render();
+    assert!(
+        rendered.contains(reason),
+        "diagnostic should explain the artifact-store failure: {rendered}"
+    );
+    assert!(
+        rendered.contains("canonical artifact identities"),
+        "diagnostic should include the shared artifact-store contract: {rendered}"
+    );
+    assert!(
+        !rendered.contains("frontend error:"),
+        "diagnostic should not fall back to raw frontend display: {rendered}"
+    );
+}
+
 #[test]
 fn explicit_source_pack_library_ids_are_planning_boundaries_not_package_boundaries() {
     let pack = ExplicitSourcePack::from_libraries(vec![
@@ -426,9 +452,10 @@ fn source_pack_artifact_store_rejects_cross_kind_artifact_identities() {
         producing_job_index: 2,
         kind: SourcePackArtifactKind::CodegenObject,
     };
-    store
+    let err = store
         .store_codegen_object(&forged_object_ref, b"object".to_vec())
         .expect_err("codegen objects must not publish under interface artifact keys");
+    assert_source_pack_artifact_store_failed(err, "does not identify a CodegenObject artifact");
     assert!(
         !store
             .path_for_key(&forged_object_ref.key)
@@ -443,9 +470,10 @@ fn source_pack_artifact_store_rejects_cross_kind_artifact_identities() {
         producing_job_index: 2,
         kind: SourcePackArtifactKind::CodegenObject,
     };
-    store
+    let err = store
         .store_codegen_object(&forged_producer_ref, b"object".to_vec())
         .expect_err("artifact refs must agree with the producer encoded by their key");
+    assert_source_pack_artifact_store_failed(err, "records producer job 3");
     assert!(
         !store
             .path_for_key(&forged_producer_ref.key)
@@ -460,9 +488,10 @@ fn source_pack_artifact_store_rejects_cross_kind_artifact_identities() {
         producing_job_index: 3,
         kind: SourcePackArtifactKind::CodegenObject,
     };
-    store
+    let err = store
         .store_codegen_object(&forged_artifact_index_ref, b"object".to_vec())
         .expect_err("artifact refs must use the dense producer job as artifact index");
+    assert_source_pack_artifact_store_failed(err, "dense producer job as artifact index");
     assert!(
         !store
             .path_for_key(&forged_artifact_index_ref.key)
@@ -498,9 +527,10 @@ fn source_pack_artifact_store_rejects_cross_kind_artifact_identities() {
         "accepted x86-prefixed codegen object artifact must be persisted"
     );
 
-    store
+    let err = store
         .load_partial_link_output(&object_ref.key)
         .expect_err("partial-link loads must reject object artifact keys");
+    assert_source_pack_artifact_store_failed(err, "does not identify a partial-link artifact");
 
     std::fs::remove_dir_all(&root).expect("remove artifact store kind identity temp root");
 }
@@ -518,13 +548,7 @@ fn source_pack_artifact_store_rejects_malformed_partial_link_keys() {
     let err = store
         .store_partial_link_output(malformed_key, b"partial".to_vec())
         .expect_err("partial-link artifacts must use canonical group/job identities");
-    let message = err.to_string();
-    assert!(
-        message.contains("partial link output")
-            && message.contains("partial-link producer job")
-            && message.contains(malformed_key),
-        "expected malformed partial-link key error, got {message}"
-    );
+    assert_source_pack_artifact_store_failed(err, "partial-link producer job");
     assert!(
         !store
             .path_for_key(malformed_key)
@@ -537,12 +561,7 @@ fn source_pack_artifact_store_rejects_malformed_partial_link_keys() {
     let err = store
         .load_partial_link_output(noncanonical_key)
         .expect_err("partial-link loads should reject widened keys with leading zeroes");
-    let message = err.to_string();
-    assert!(
-        message.contains("non-canonical partial-link group index")
-            && message.contains(noncanonical_key),
-        "expected non-canonical partial-link key error, got {message}"
-    );
+    assert_source_pack_artifact_store_failed(err, "non-canonical partial-link group index");
 
     let canonical_key = "wasm/partial-link/group-00000000/job-00000002";
     store
@@ -571,13 +590,7 @@ fn source_pack_artifact_store_rejects_malformed_hierarchical_linked_output_keys(
     let err = store
         .store_hierarchical_linked_output(malformed_key, b"linked".to_vec())
         .expect_err("hierarchical linked outputs must include canonical source ranges");
-    let message = err.to_string();
-    assert!(
-        message.contains("linked output")
-            && message.contains("source range")
-            && message.contains(malformed_key),
-        "expected malformed linked-output key error, got {message}"
-    );
+    assert_source_pack_artifact_store_failed(err, "source range");
     assert!(
         !store
             .path_for_key(malformed_key)
@@ -590,11 +603,7 @@ fn source_pack_artifact_store_rejects_malformed_hierarchical_linked_output_keys(
     let err = store
         .store_hierarchical_linked_output(noncanonical_key, b"linked".to_vec())
         .expect_err("hierarchical linked outputs must use canonical producer-job fields");
-    let message = err.to_string();
-    assert!(
-        message.contains("non-canonical producer job") && message.contains(noncanonical_key),
-        "expected non-canonical linked-output producer error, got {message}"
-    );
+    assert_source_pack_artifact_store_failed(err, "non-canonical producer job");
     assert!(
         !store
             .path_for_key(noncanonical_key)
@@ -3631,7 +3640,7 @@ fn source_pack_link_execution_resume_rejects_reduce_descriptor_summary_without_p
     assert!(
         message.contains("descriptor summary records 0 object section records")
             && message.contains("partial-link producer execution pages carry 1")
-            && message.contains("cannot drop GPU-produced partial-link/object record evidence"),
+            && message.contains("cannot drop producer partial-link/object record evidence"),
         "expected dropped partial-link descriptor evidence error, got {message}"
     );
 
@@ -6210,7 +6219,7 @@ fn source_pack_link_execution_rejects_descriptor_summary_with_forged_object_arti
     assert!(
         message.contains("artifact index 42")
             && message.contains("producer job 2")
-            && message.contains("GPU-owned CodegenObject evidence"),
+            && message.contains("producer-owned CodegenObject evidence"),
         "expected forged object identity rejection, got {message}"
     );
     assert!(
@@ -6957,12 +6966,13 @@ fn source_root_loader_reports_malformed_import_metadata_as_stable_syntax_diagnos
             assert_eq!(label.path.as_path(), entry.path());
             assert_eq!(label.line, 2);
             assert_eq!(label.source_line.as_deref(), Some("import ;"));
-            assert_eq!(label.message, "invalid syntax here");
+            assert_eq!(label.message, "expected module path after `import`");
 
             let rendered = diagnostic.render();
             assert!(
                 !rendered.contains("source-root import loading")
-                    && !rendered.contains("GPU frontend error"),
+                    && !rendered.contains("GPU frontend error")
+                    && !rendered.contains("invalid syntax here"),
                 "source-root metadata syntax failures should not leak raw loader errors: {rendered}"
             );
         }
@@ -7051,7 +7061,7 @@ fn source_root_loader_rejects_glob_and_alias_imports_before_lookup() {
 
                 let rendered = diagnostic.render();
                 assert!(
-                    rendered.contains("GPU module/import records")
+                    rendered.contains("parsed module/import records")
                         || rendered.contains("explicit module-path source candidates"),
                     "unsupported import diagnostics should name the module/import metadata boundary: {rendered}"
                 );
@@ -7149,7 +7159,7 @@ fn source_root_loader_rejects_reserved_import_segments_before_lookup() {
 
             let rendered = diagnostic.render();
             assert!(rendered.contains("reserved keywords"));
-            assert!(rendered.contains("GPU module/import identifier records"));
+            assert!(rendered.contains("parsed module/import identifier records"));
             assert!(
                 !rendered.contains("missing source-root module")
                     && !rendered.contains("GPU frontend error"),
@@ -7494,7 +7504,7 @@ fn source_root_loader_leaves_deep_module_paths_for_gpu_validation() {
     entry.write_str("module a::b::c::d::e::f::g::h::i;\nfn main() { return 0; }\n");
 
     let source_pack = load_entry_with_source_root(entry.path(), &source_root)
-        .expect("source-root discovery should not preempt GPU module-depth validation");
+        .expect("source-root discovery should not preempt resolver module-depth validation");
     assert_eq!(source_pack.sources.len(), 1);
     assert_eq!(source_pack.library_ids, vec![1]);
     assert_eq!(

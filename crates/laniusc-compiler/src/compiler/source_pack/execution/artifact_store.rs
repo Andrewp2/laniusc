@@ -62,17 +62,16 @@ where
                 .replace(batch_linked_output_key.clone())
                 .is_some()
             {
-                return Err(CompileError::GpuFrontend(format!(
-                    "source-pack artifact manifest produced more than one linked output; duplicate key {batch_linked_output_key:?}"
-                )));
+                return Err(duplicate_linked_output_error(
+                    "source-pack artifact manifest",
+                    &batch_linked_output_key,
+                ));
             }
             release_link_input_artifacts(artifact_manifest, store)?;
         }
     }
 
-    let linked_output_key = linked_output_key.ok_or_else(|| {
-        CompileError::GpuFrontend("source-pack build plan did not execute a link job".into())
-    })?;
+    let linked_output_key = linked_output_key.ok_or_else(missing_link_job_error)?;
 
     Ok(ArtifactStoreBuildExecutionResult { linked_output_key })
 }
@@ -131,10 +130,10 @@ where
                 .replace(job_linked_output_key.clone())
                 .is_some()
             {
-                return Err(CompileError::GpuFrontend(format!(
-                    "source-pack job batch {} produced more than one linked output; duplicate key {job_linked_output_key:?}",
-                    batch.batch_index
-                )));
+                return Err(duplicate_linked_output_error(
+                    format!("source-pack job batch {}", batch.batch_index),
+                    &job_linked_output_key,
+                ));
             }
         }
     }
@@ -184,19 +183,14 @@ where
             Ok(None)
         }
         SourcePackJobPhase::Codegen => {
-            let library_job_index = job.library_job_index.ok_or_else(|| {
-                CompileError::GpuFrontend(format!(
-                    "source-pack codegen job {} has no owning library job",
-                    job.job_index
-                ))
-            })?;
+            let library_job_index = codegen_library_job_index(job)?;
             let input_interface_refs =
                 manifest_job_input_interface_refs(artifact_manifest, job_manifest)?;
             let library_interface_ref = input_interface_refs
                 .iter()
                 .find(|artifact| artifact.producing_job_index == library_job_index)
                 .ok_or_else(|| {
-                    CompileError::GpuFrontend(format!(
+                    manifest_contract_error(format!(
                         "source-pack codegen job {} missing owning interface artifact from job {}",
                         job.job_index, library_job_index
                     ))

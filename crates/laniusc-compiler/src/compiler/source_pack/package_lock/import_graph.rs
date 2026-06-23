@@ -457,7 +457,7 @@ pub(super) fn validate_import_graph_module_endpoint(
     }
     if package_module_path == Some(edge_module_path) {
         return Err(package_lockfile_error(format!(
-            "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module is {:?} for library {} {}; package names are control-plane identity and must not replace GPU module declarations",
+            "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module is {:?} for library {} {}; package names are control-plane identity and must not replace source module declarations",
             edge_module_path,
             package,
             source_identity_module_path,

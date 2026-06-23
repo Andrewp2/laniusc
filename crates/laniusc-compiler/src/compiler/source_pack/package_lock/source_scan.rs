@@ -507,7 +507,7 @@ fn path_separator_diagnostic(
                     "package replay does not normalize filesystem path separators or package-name separators into module declarations",
                 )
                 .with_note(
-                    "module identity must come from GPU parser module-path tokens such as `module app::main;`",
+                    "module identity must come from source module-path declarations such as `module app::main;`",
                 ),
         ),
         PathKind::Import => CompileError::Diagnostic(
@@ -547,7 +547,7 @@ fn path_too_deep_diagnostic(
                     "module path exceeds the current resolver depth limit",
                 ))
                 .with_note(
-                    "package replay supports at most eight module path segments per source file because GPU module keys currently have that bound",
+                    "package replay supports at most eight module path segments per source file because resolver module keys currently have that bound",
                 ),
         ),
         PathKind::Import => CompileError::Diagnostic(
@@ -560,7 +560,7 @@ fn path_too_deep_diagnostic(
                     "import path exceeds the current resolver depth limit",
                 ))
                 .with_note(
-                    "package replay rejects import paths with more than eight module path segments before persisting import graph metadata because GPU import keys currently have that bound",
+                    "package replay rejects import paths with more than eight module path segments before persisting import graph metadata because resolver import keys currently have that bound",
                 ),
         ),
     }
@@ -592,7 +592,7 @@ fn expected_path_segment_diagnostic(
                     "package replay metadata records module-path imports such as `import app::module;`",
                 )
                 .with_note(
-                    "import paths must use GPU parser identifier segments so persisted import graphs cannot encode non-source module evidence",
+                    "import paths must use source identifier segments so persisted import graphs cannot encode non-source module evidence",
                 ),
         ),
     }
@@ -618,7 +618,7 @@ fn invalid_path_segment_diagnostic(
                     label_message,
                 ))
                 .with_note(
-                    "module declarations in package replay metadata must use GPU parser identifier segments",
+                    "module declarations in package replay metadata must use source identifier segments",
                 )
                 .with_note(invalid_segment_note),
         ),
@@ -642,7 +642,7 @@ fn invalid_path_segment_diagnostic(
 fn invalid_path_segment_note(segment: &str, kind: PathKind) -> String {
     if is_package_module_reserved_segment(segment) {
         return format!(
-            "reserved keywords cannot be used as {} path segments because GPU module identity comes from parsed module/import records",
+            "reserved keywords cannot be used as {} path segments because module identity comes from parsed module/import records",
             kind.label()
         );
     }
@@ -653,7 +653,7 @@ fn invalid_path_segment_note(segment: &str, kind: PathKind) -> String {
         );
     }
     format!(
-        "{} path segments must be GPU parser identifiers and must not be reserved keywords",
+        "{} path segments must be source identifiers and must not be reserved keywords",
         kind.label()
     )
 }
@@ -709,7 +709,7 @@ fn unsupported_import_alias_diagnostic(
                 "package lockfile import graphs currently persist module-path imports such as `import app::module;`",
             )
             .with_note(
-                "alias metadata must be represented by GPU module/import records before lockfiles can replay it",
+                "alias metadata must be represented by parsed module/import records before lockfiles can replay it",
             ),
     )
 }
@@ -732,7 +732,7 @@ fn unsupported_import_glob_diagnostic(
                 "package lockfile import graphs currently persist explicit module-path imports such as `import app::module;`",
             )
             .with_note(
-                "glob visibility must be represented by GPU module/import records before lockfiles can replay it",
+                "glob visibility must be represented by parsed module/import records before lockfiles can replay it",
             ),
     )
 }
@@ -755,7 +755,7 @@ fn import_before_module_declaration_diagnostic(
                 "package replay requires the source module identity before collecting import graph edges",
             )
             .with_note(
-                "move `module path;` before imports so control-plane source paths cannot stand in for GPU module identity",
+                "move `module path;` before imports so control-plane source paths cannot stand in for source module identity",
             ),
     )
 }
@@ -813,7 +813,7 @@ fn self_import_diagnostic(
                 "source module `{import_path}` cannot import its own module path"
             ))
             .with_note(
-                "package replay rejects self-imports before persisting import graph metadata so lockfiles cannot make control-plane paths stand in for GPU module identity",
+                "package replay rejects self-imports before persisting import graph metadata so lockfiles cannot make control-plane paths stand in for source module identity",
             ),
     )
 }
@@ -843,7 +843,7 @@ fn duplicate_leading_import_diagnostic(
                 source_line_number_at(source, first_import_start)
             ))
             .with_note(
-                "package lockfiles require one source-level import declaration per module path until duplicate import semantics are represented by GPU import records",
+                "package lockfiles require one source-level import declaration per module path until duplicate import semantics are represented by parsed import records",
             ),
     )
 }
@@ -956,7 +956,7 @@ fn missing_leading_module_declaration_diagnostic(
                 expected_relative_path.display()
             ))
             .with_note(format!(
-                "add `module {expected_module_path};` before imports or items so stale source-root metadata cannot stand in for GPU module identity",
+                "add `module {expected_module_path};` before imports or items so stale source-root metadata cannot stand in for source module identity",
             )),
     )
 }
@@ -988,11 +988,11 @@ fn module_file_mapping_mismatch_diagnostic(
         .filter(|prefix| !prefix.is_empty())
     {
         diagnostic = diagnostic.with_note(format!(
-            "declared module prefix `{extra_prefix}` is not part of source-root relative module `{expected_module_path}`; package names and source-root directory names are control-plane loading metadata and must not be prepended to GPU module declarations",
+            "declared module prefix `{extra_prefix}` is not part of source-root relative module `{expected_module_path}`; package names and source-root directory names are control-plane loading metadata and must not be prepended to source module declarations",
         ));
     }
     CompileError::Diagnostic(diagnostic.with_note(
-        "package replay validates file-to-module metadata before writing lockfiles so source-root paths cannot replace GPU module declarations",
+        "package replay validates file-to-module metadata before writing lockfiles so source-root paths cannot replace source module declarations",
     ))
 }
 
@@ -1128,7 +1128,7 @@ fn missing_semicolon_diagnostic(
                 format!("expected ';' after {context} path"),
             ))
             .with_note(
-                "package replay records leading module/import metadata exactly as parsed by the GPU syntax slice",
+                "package replay records leading module/import metadata exactly as parsed from source",
             )
             .with_note(
                 "terminate module and import declarations before other package source items",

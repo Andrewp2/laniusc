@@ -107,7 +107,7 @@ where
         }
         return Ok(page.artifact_ref);
     }
-    Err(CompileError::GpuFrontend(format!(
+    Err(artifact_shard_contract_error(format!(
         "source-pack job {} missing paged interface artifact from producer {}",
         job_manifest.job_index, producing_job_index
     )))

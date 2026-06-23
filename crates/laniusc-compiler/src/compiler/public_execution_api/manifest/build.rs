@@ -39,20 +39,20 @@ where
         }
         progress = step.progress;
         if !progress.complete && step.claimed_batch_index.is_none() {
-            return Err(CompileError::GpuFrontend(format!(
+            return Err(source_pack_progress_state_error(format!(
                 "source-pack filesystem artifact build stopped before completion after executing {executed_batch_count} batches"
             )));
         }
     }
     if !progress.complete {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(source_pack_progress_state_error(format!(
             "source-pack filesystem artifact build did not complete within {step_limit} bounded batches; keep calling run_artifact_manifest_worker or execute_ready_artifact_manifest_batches_for_target to continue persisted execution"
         )));
     }
 
     let linked_output_key = progress.linked_output_key.ok_or_else(|| {
-        CompileError::GpuFrontend(
-            "source-pack filesystem artifact build completed without a linked output key".into(),
+        source_pack_progress_state_error(
+            "source-pack filesystem artifact build completed without a linked output key",
         )
     })?;
     let store = FilesystemArtifactStore::new(&artifact_root);
@@ -127,12 +127,12 @@ where
             Some(execution_shard_batch_result(&execution_shard, batch_index)?)
         } else {
             if progress.is_batch_claimed(batch_index, now_unix_nanos)? {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} is claimed by another worker; use claimed-batch execution"
                 )));
             }
             if !batch_ready_unclaimed_from_locator(&store, target, batch_index, now_unix_nanos)? {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} is not ready in its persisted progress shard"
                 )));
             }
@@ -161,12 +161,12 @@ where
         let batch_was_completed = progress.is_batch_completed(batch_index);
         if !batch_was_completed {
             if progress.is_batch_claimed(batch_index, now_unix_nanos)? {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} is claimed by another worker; use claimed-batch execution"
                 )));
             }
             if !batch_ready_unclaimed_from_locator(&store, target, batch_index, now_unix_nanos)? {
-                return Err(CompileError::GpuFrontend(format!(
+                return Err(source_pack_progress_state_error(format!(
                     "source-pack batch {batch_index} is not ready in its persisted progress shard"
                 )));
             }

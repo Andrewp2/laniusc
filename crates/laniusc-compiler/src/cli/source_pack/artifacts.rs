@@ -1,17 +1,32 @@
 use std::path::Path;
 
 use super::{Options, artifact_target_for_emit};
-use crate::{codegen::unit::SourcePackArtifactTarget, compiler::FilesystemArtifactStore};
+use crate::{
+    cli::common::{CliError, missing_cli_argument_error},
+    codegen::unit::SourcePackArtifactTarget,
+    compiler::{FilesystemArtifactStore, source_pack_preparation_incomplete_error},
+};
 
-/// Returns the artifact root required by persisted source-pack operations.
-pub(super) fn require_artifact_root<'a>(
+/// Returns the artifact root required by a CLI source-pack operation.
+pub(super) fn require_artifact_root_cli<'a>(
     source_pack: &'a Options,
-    message: &str,
-) -> Result<&'a Path, String> {
+    context: &str,
+) -> Result<&'a Path, CliError> {
     source_pack
         .artifact_root
         .as_deref()
-        .ok_or_else(|| message.to_string())
+        .ok_or_else(|| source_pack_artifact_root_missing_error(context))
+}
+
+fn source_pack_artifact_root_missing_error(context: &str) -> CliError {
+    match missing_cli_argument_error("laniusc source-pack", "--source-pack-artifact-root path") {
+        CliError::Diagnostic(diagnostic) => CliError::Diagnostic(
+            diagnostic
+                .with_note(context.to_string())
+                .with_help("pass --source-pack-artifact-root to name the persisted source-pack artifact root for this operation"),
+        ),
+        CliError::Message(message) => CliError::Message(message),
+    }
 }
 
 /// Checks whether the artifact root already has a prepared build queue.
@@ -57,14 +72,17 @@ pub(super) fn prepared_library_prefix_count(
 pub(super) fn require_prepared_metadata_for_direct_compile(
     artifact_root: &Path,
     emit: &str,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
     if has_prepared_build(artifact_root, emit) || has_prepared_metadata(artifact_root, emit) {
         return Ok(());
     }
-    Err(format!(
+    let message = format!(
         "source-pack descriptor compile at {} has no persisted metadata for target {emit}; run --source-pack-prepare-only with --source-pack-artifact-root {} until preparation completes, then rerun compile",
         artifact_root.display(),
         artifact_root.display()
+    );
+    Err(CliError::from_compile_error(
+        source_pack_preparation_incomplete_error(message),
     ))
 }
 
@@ -72,14 +90,17 @@ pub(super) fn require_prepared_metadata_for_direct_compile(
 pub(super) fn require_prepared_metadata_for_manifest_compile(
     artifact_root: &Path,
     emit: &str,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
     if has_prepared_build(artifact_root, emit) || has_prepared_metadata(artifact_root, emit) {
         return Ok(());
     }
-    Err(format!(
+    let message = format!(
         "source-pack manifest descriptor compile at {} has no persisted metadata for target {emit}; run --source-pack-prepare-only with --source-pack-library-manifest and --source-pack-artifact-root {} until preparation completes, then rerun compile",
         artifact_root.display(),
         artifact_root.display()
+    );
+    Err(CliError::from_compile_error(
+        source_pack_preparation_incomplete_error(message),
     ))
 }
 
@@ -87,13 +108,16 @@ pub(super) fn require_prepared_metadata_for_manifest_compile(
 pub(super) fn require_prepared_build_for_descriptor_compile(
     artifact_root: &Path,
     emit: &str,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
     if has_prepared_build(artifact_root, emit) {
         return Ok(());
     }
-    Err(format!(
+    let message = format!(
         "source-pack descriptor compile at {} has persisted metadata but no prepared build queue for target {emit}; run --source-pack-prepare-only or --source-pack-build-from-metadata --source-pack-build-prepare-only with --source-pack-artifact-root {} until preparation completes, then rerun compile",
         artifact_root.display(),
         artifact_root.display()
+    );
+    Err(CliError::from_compile_error(
+        source_pack_preparation_incomplete_error(message),
     ))
 }

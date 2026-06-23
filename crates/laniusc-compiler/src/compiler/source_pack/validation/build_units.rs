@@ -11,7 +11,7 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
     expected_partition_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_BUILD_UNIT_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library build-unit page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_BUILD_UNIT_PAGE_VERSION
         )));
@@ -335,7 +335,7 @@ pub(in crate::compiler) fn validate_frontend_unit_page(
     expected_frontend_unit_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library frontend-unit page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION
         )));
@@ -438,7 +438,7 @@ pub(in crate::compiler) fn validate_codegen_unit_page(
     expected_codegen_unit_index: Option<usize>,
 ) -> Result<(), CompileError> {
     if page.version != SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION {
-        return Err(CompileError::GpuFrontend(format!(
+        return Err(library_partition_contract_error(format!(
             "unsupported source-pack library codegen-unit page version {}; expected {}",
             page.version, SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION
         )));

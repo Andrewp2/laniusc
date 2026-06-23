@@ -542,13 +542,13 @@ async fn run_source(
     let expected_pairs = semantic_kinds.len().saturating_sub(1);
     if tables.n_nonterminals > 0 {
         let test_cpu_ll1 = tables.test_cpu_ll1_production_stream(&semantic_kinds);
-        let projected = tables.test_cpu_projected_production_stream(&semantic_kinds);
-        if res.emit_stream != projected {
+        let partial_parse = tables.test_cpu_partial_parse_stream(&semantic_kinds);
+        if res.emit_stream != partial_parse {
             anyhow::bail!(
-                "LLP projected stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
+                "LLP partial-parse stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
                 label,
                 res.emit_stream.len(),
-                projected.len()
+                partial_parse.len()
             );
         }
 
@@ -613,7 +613,7 @@ async fn run_source(
     }
 
     println!(
-        "[ok] {} (ll1={}, pairs={}, sc={}, projected_emits={}, ll1_emits={}, nodes={})",
+        "[ok] {} (ll1={}, pairs={}, stack_changes={}, partial_parse_emits={}, ll1_emits={}, nodes={})",
         label,
         res.ll1.accepted,
         res.headers.len(),
