@@ -121,8 +121,17 @@ fn assert_x86_64_elf_header(bytes: &[u8]) {
 
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn assert_x86_exit_code(context: &str, artifact_stem: &str, bytes: &[u8], expected: i32) {
+    use std::os::unix::process::ExitStatusExt;
+
     let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
-    assert_eq!(output.status.code(), Some(expected));
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "{context}: signal={:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.signal(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn compile_source(context: &str, source: &str) -> Vec<u8> {
@@ -207,6 +216,16 @@ fn assert_source_exit(name: &str, source: &str, expected: i32) {
         &format!("x86_source_{name}"),
         &bytes,
         expected,
+    );
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn assert_x86_stdout(context: &str, artifact_stem: &str, bytes: &[u8], expected: &str) {
+    let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
+    common::assert_command_success(format!("{context}: native ELF execution"), &output);
+    assert_eq!(
+        common::stdout_utf8(format!("{context}: native stdout"), output.stdout),
+        expected
     );
 }
 
@@ -591,6 +610,12 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[X86_CALL_RECORDS_OK, 0, INVALID, 1],
         );
+        let call_intrinsic_tag = buffer_from_u32s(
+            device,
+            "x86_call_abi.call_intrinsic_tag",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0, 0],
+        );
         let enum_value_record = buffer_from_u32s(
             device,
             "x86_call_abi.enum_value_record",
@@ -650,6 +675,7 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                     ("x86_call_record", call_record.as_entire_binding()),
                     ("x86_call_type_record", call_type_record.as_entire_binding()),
                     ("call_record_status", call_record_status.as_entire_binding()),
+                    ("call_intrinsic_tag", call_intrinsic_tag.as_entire_binding()),
                     ("type_instance_kind", token_words_zero.as_entire_binding()),
                     (
                         "type_instance_decl_token",
@@ -767,6 +793,7 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                     ),
                     ("x86_call_type_record", call_type_record.as_entire_binding()),
                     ("call_record_status", call_record_status.as_entire_binding()),
+                    ("call_intrinsic_tag", call_intrinsic_tag.as_entire_binding()),
                     ("type_instance_kind", token_words_zero.as_entire_binding()),
                     (
                         "type_instance_decl_token",
@@ -3916,6 +3943,33 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_numeric_range_for_loop_with_dynamic_end() {
+    assert_source_exit(
+        "numeric_range_for_loop_dynamic_end",
+        r#"
+fn sum_range(end: i32) -> i32 {
+    let total: i32 = 0;
+    for value in 2..end {
+        if (value == 3) {
+            continue;
+        }
+        if (value == 6) {
+            break;
+        }
+        total += value;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return sum_range(8);
+}
+"#,
+        11,
+    );
+}
+
+#[test]
 fn x86_rejects_struct_for_iterable_without_record_with_diagnostic() {
     let source = r#"
 struct Range {
@@ -4021,6 +4075,50 @@ fn main() {
             assert!(
                 (1..=source_line.len()).contains(&label.column),
                 "diagnostic column should fall inside the for statement: {message}"
+            );
+        }
+        CompileError::GpuCodegen(message) => {
+            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
+        }
+        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn x86_stage_status_pairs_error_code_with_min_detail() {
+    let source = r#"
+fn main() {
+    let limit: i32 = 3;
+    let total: i32 = 0;
+    for value in limit {
+        total += value;
+    }
+    let later: str = "not yet";
+    return total;
+}
+"#
+    .to_owned();
+
+    let err = common::run_gpu_codegen_with_timeout("x86 min-detail status pairing", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+    })
+    .expect_err("the earliest unsupported x86 node should determine both code and label");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            let message = diagnostic.render();
+            assert!(
+                diagnostic.message.contains("unsupported x86 for iterable"),
+                "diagnostic code/message should follow the earliest unsupported node, not a later literal: {message}"
+            );
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("x86 diagnostic should include a primary source label");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("    for value in limit {"),
+                "diagnostic label should stay paired with the reported x86 error: {message}"
             );
         }
         CompileError::GpuCodegen(message) => {
@@ -4142,6 +4240,37 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_for_loop_over_struct_array() {
+    assert_source_exit(
+        "for_loop_struct_array",
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn sum(values: [Pair; 3]) -> i32 {
+    let total: i32 = 0;
+    for pair in values {
+        total += pair.left * 10 + pair.right;
+    }
+    return total;
+}
+
+fn main() {
+    let values: [Pair; 3] = [
+        Pair { left: 1, right: 2 },
+        Pair { left: 3, right: 4 },
+        Pair { left: 5, right: 6 },
+    ];
+    return sum(values);
+}
+"#,
+        102,
+    );
+}
+
+#[test]
 fn x86_executes_bounded_aggregate_copy_as_value() {
     assert_source_exit(
         "bounded_aggregate_copy_value",
@@ -4198,6 +4327,50 @@ fn main() {
 }
 "#,
         47,
+    );
+}
+
+#[test]
+fn x86_executes_single_field_struct_parameter_member_reads() {
+    assert_source_exit(
+        "single_field_struct_parameter_member_reads",
+        r#"
+struct Boxed {
+    value: i32,
+}
+
+fn read(value: Boxed) -> i32 {
+    return value.value;
+}
+
+fn main() {
+    let value: Boxed = Boxed { value: 9 };
+    return read(value);
+}
+"#,
+        9,
+    );
+}
+
+#[test]
+fn x86_executes_generic_struct_parameter_member_reads() {
+    assert_source_exit(
+        "generic_struct_parameter_member_reads",
+        r#"
+struct Boxed<T> {
+    value: i32,
+}
+
+fn read<T>(value: Boxed<T>) -> i32 {
+    return value.value;
+}
+
+fn main() {
+    let value: Boxed<i32> = Boxed { value: 9 };
+    return read(value);
+}
+"#,
+        9,
     );
 }
 
@@ -4924,62 +5097,22 @@ fn main() {{
 }
 
 #[test]
-fn x86_rejects_float_literal_before_silent_noop() {
-    let source = r#"
+fn x86_accepts_float_literals_as_scalar_immediates() {
+    assert_source_exit(
+        "float_literal_immediates",
+        r#"
+const HALF: f32 = 0.5;
+
 fn main() {
-    let value: f32 = 1.5;
+    let one: f32 = 1.0;
+    let two: f32 = 2.0e0;
+    let small: f32 = .25;
+    let copy: f32 = HALF;
     return 0;
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 float literal", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("float literals should fail closed until x86 scalar-float lowering exists");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "x86 rejection should use the stable backend diagnostic: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 literal expression")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the unsupported literal boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            assert_eq!(
-                label.source_line.as_deref(),
-                Some("    let value: f32 = 1.5;"),
-                "diagnostic should point at the unsupported literal statement: {message}"
-            );
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the literal source line");
-            let literal_start_column = source_line
-                .find("1.5")
-                .map(|column| column + 1)
-                .expect("fixture should contain the float literal");
-            let literal_end_column = literal_start_column + "1.5".len();
-            assert!(
-                (literal_start_column..=literal_end_column).contains(&label.column),
-                "diagnostic column should fall inside the float literal: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+"#,
+        0,
+    );
 }
 
 #[test]
@@ -5853,7 +5986,58 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_stdout_runtime_call_until_runtime_binding_exists() {
+fn x86_executes_builtin_print_stdout() {
+    let bytes = compile_source(
+        "x86 builtin print stdout",
+        r#"
+fn main() {
+    print(0);
+    print(40);
+    print(-7);
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 builtin print stdout",
+        "x86_builtin_print_stdout",
+        &bytes,
+        "0\n40\n-7\n",
+    );
+}
+
+#[test]
+fn x86_executes_void_helper_fallthrough_return() {
+    let bytes = compile_source(
+        "x86 void helper fallthrough return",
+        r#"
+fn print_once(value: i32) {
+    print(value);
+}
+
+fn main() {
+    print_once(7);
+    print(9);
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 void helper fallthrough return",
+        "x86_void_helper_fallthrough_return",
+        &bytes,
+        "7\n9\n",
+    );
+}
+
+#[test]
+fn x86_executes_std_io_print_i32_stdout() {
     let sources = [
         include_str!("../stdlib/std/io.lani"),
         r#"
@@ -5873,43 +6057,19 @@ fn main() {
 "#,
     ];
 
-    let err = common::run_gpu_codegen_with_timeout("x86 stdout runtime call", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("x86 std::io print_i32 stdout", move || {
         pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
     })
-    .expect_err("stdio calls should fail closed until the x86 runtime/linker binding exists");
+    .expect("std::io::print_i32 should compile through the native print primitive");
 
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "stdio runtime rejection should use the stable x86 backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "stdio runtime rejection should stay in the native-codegen category: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("unsupported x86 call ABI")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the unbound native call boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            assert_eq!(label.path.display().to_string(), "<source pack file 1>");
-            assert_eq!(
-                label.source_line.as_deref(),
-                Some("        std::io::print_i32(a);"),
-                "diagnostic should point at the first stdio runtime call: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 std::io print_i32 stdout",
+        "x86_std_io_print_i32_stdout",
+        &bytes,
+        "7\n9\n",
+    );
 }
 
 #[test]

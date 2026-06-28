@@ -22,8 +22,11 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> module_type_path_type;
 
 RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
@@ -35,6 +38,8 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_FN = 3u;
 
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TY_UNKNOWN = 0u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -78,6 +83,17 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint scalar_type_for_token(uint token)
+{
+    if (!valid_token(token))
+        return TY_UNKNOWN;
+    uint ty = module_type_path_type[token];
+    if (ty != TY_UNKNOWN)
+        return ty;
+    uint name_id = name_id_by_token[token];
+    return name_id == INVALID ? TY_UNKNOWN : language_type_code_by_name_id[name_id];
+}
+
 void publish_function_return_ref(uint fn_node)
 {
     uint decl_token = hir_token_pos[fn_node];
@@ -97,6 +113,15 @@ void publish_function_return_ref(uint fn_node)
 
     fn_return_ref_tag[decl_token] = type_expr_ref_tag[type_token];
     fn_return_ref_payload[decl_token] = type_expr_ref_payload[type_token];
+    if (fn_return_ref_tag[decl_token] == TYPE_REF_INVALID)
+    {
+        uint ty = scalar_type_for_token(type_token);
+        if (ty != TY_UNKNOWN)
+        {
+            fn_return_ref_tag[decl_token] = TYPE_REF_SCALAR;
+            fn_return_ref_payload[decl_token] = ty;
+        }
+    }
 }
 
 [shader("compute")]

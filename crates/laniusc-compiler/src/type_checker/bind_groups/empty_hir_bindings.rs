@@ -235,6 +235,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("parent_record", &empty_hir.parent);
     resources.buffer("first_child", &empty_hir.first_child);
     resources.buffer("next_sibling", &empty_hir.next_sibling);
+    resources.buffer("subtree_end", &empty_hir.node_kind);
     resources.buffer("hir_item_kind", &empty_hir.node_kind);
     resources.buffer("hir_item_name_token", &empty_hir.parent);
     resources.buffer("hir_type_form", &empty_hir.node_kind);

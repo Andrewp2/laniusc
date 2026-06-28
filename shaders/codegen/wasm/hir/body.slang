@@ -1,31 +1,50 @@
-// Fail-closed placeholder for the retired single-body WASM byte emitter.
-//
-// The previous shader walked HIR nodes inside one invocation to find main,
-// locals, returns, and statements. That source-sized body scan is not the
-// paper/Pareas pass shape. WASM lowering should be rebuilt as record
-// publication, byte counts, prefix sums, and scatters before it can emit bytes
-// again.
+// Per-HIR-node WASM body fragment records from the small scalar body plan.
 
-RWStructuredBuffer<uint> body_status;
-RWStructuredBuffer<uint> status;
+import body_common;
 
-static const uint INVALID = 0xffffffffu;
-static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+StructuredBuffer<uint> body_plan;
+StructuredBuffer<uint> status;
+
+RWStructuredBuffer<uint> body_fragment_len;
+RWStructuredBuffer<uint4> body_fragment_meta;
+
+static const uint BODY_PLAN_OK = 1u;
+static const uint BODY_PLAN_STATUS = 0u;
+static const uint BODY_PLAN_MAIN_TOKEN = 1u;
+static const uint BODY_PLAN_RETURN_TOKEN = 2u;
+static const uint BODY_PLAN_RETURN_VALUE = 4u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    if (tid.x != 0u || tid.y != 0u || tid.z != 0u)
+    uint node = linear_dispatch_id(tid);
+    if (!valid_node(node))
         return;
 
-    body_status[0u] = 0u;
-    body_status[1u] = 0u;
+    if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
+        return;
 
-    if (status[2u] == 0u || status[2u] == ERR_UNSUPPORTED_SOURCE_SHAPE)
+    if (body_plan[BODY_PLAN_STATUS] != BODY_PLAN_OK)
+        return;
+
+    uint main_token = body_plan[BODY_PLAN_MAIN_TOKEN];
+    uint return_token = body_plan[BODY_PLAN_RETURN_TOKEN];
+    uint return_value = body_plan[BODY_PLAN_RETURN_VALUE];
+
+    uint token_i = INVALID;
+    uint4 fragment_meta = uint4(BODY_FRAGMENT_NONE, 0u, 0u, INVALID);
+    uint fragment_len = 0u;
+    if (body_fragment_for_node(
+            node,
+            main_token,
+            return_token,
+            return_value,
+            token_i,
+            fragment_meta,
+            fragment_len))
     {
-        status[1u] = 0u;
-        status[2u] = ERR_UNSUPPORTED_SOURCE_SHAPE;
-        status[3u] = INVALID;
+        body_fragment_len[token_i] = fragment_len;
+        body_fragment_meta[token_i] = fragment_meta;
     }
 }

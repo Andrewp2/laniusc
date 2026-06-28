@@ -202,6 +202,23 @@ pub fn command_output_with_timeout(context: impl fmt::Display, command: &mut Com
     })
 }
 
+pub fn codegen_command_output_with_timeout(
+    context: impl fmt::Display,
+    command: &mut Command,
+) -> Output {
+    let context = context.to_string();
+    let (_guard, gpu_lock_wait) = gpu_test_lock();
+    command_output_result_with_timeout(
+        &context,
+        command,
+        gpu_codegen_test_timeout(),
+        TimeoutDetails::with_gpu_lock_wait(gpu_lock_wait),
+    )
+    .unwrap_or_else(|err| {
+        panic!("{context}: spawn command: {err}");
+    })
+}
+
 pub fn short_process_output_with_timeout(
     context: impl fmt::Display,
     command: &mut Command,

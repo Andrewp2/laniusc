@@ -967,7 +967,7 @@ bool select_virtual_inst(uint row, uint inst_count)
         x86_inst_kind[out_row] = X86_INST_V_FOR_ARRAY_INC_JMP;
         x86_inst_arg0[out_row] = args.x;
         x86_inst_arg1[out_row] = selected_target(args.y, inst_count);
-        x86_inst_arg2[out_row] = 0u;
+        x86_inst_arg2[out_row] = args.z;
         return true;
     }
 

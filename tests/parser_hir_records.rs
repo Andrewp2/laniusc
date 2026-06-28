@@ -18,6 +18,7 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_INT,
                 HIR_EXPR_FORM_LE,
                 HIR_EXPR_FORM_NAME,
+                HIR_EXPR_FORM_MUL,
                 HIR_EXPR_FORM_NONE,
                 HIR_EXPR_FORM_NOT,
                 HIR_EXPR_FORM_RANGE,
@@ -914,8 +915,8 @@ fn parser_semantic_commas_follow_innermost_array_inside_match_arm() {
 fn parser_hir_struct_literal_argument_trailing_comma_does_not_swallow_next_item() {
     let parsed = parse_resident_source(
         r#"
-fn main() {
-    sink(S { a: 1, b: 2, });
+	fn main() {
+	    sink(S { a: 1, b: 2, });
 }
 
 fn next() {
@@ -940,10 +941,43 @@ fn next() {
 }
 
 #[test]
+fn parser_hir_return_call_accepts_struct_literal_argument() {
+    let source = r#"
+struct RenderSettings {
+    width: i32,
+    height: i32,
+}
+
+fn sanitize(settings: RenderSettings) -> RenderSettings {
+    return settings;
+}
+
+fn load_settings() -> RenderSettings {
+    let width: i32 = 16;
+    let height: i32 = 9;
+    return sanitize(RenderSettings {
+        width: width,
+        height: height,
+    });
+}
+"#;
+    let parsed = parse_resident_source(source);
+
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept a struct-literal call argument in return position: error_pos={} code={} detail={} semantic_kinds={:?}",
+        parsed.ll1.error_pos,
+        parsed.ll1.error_code,
+        parsed.ll1.detail,
+        parser_semantic_token_kinds_for_source(source)
+    );
+}
+
+#[test]
 fn parser_hir_call_argument_records_have_contiguous_owners_and_ordinals() {
     let parsed = parse_resident_source(
         r#"
-fn choose(a: i32, b: i32, c: i32, d: i32) -> i32 {
+	fn choose(a: i32, b: i32, c: i32, d: i32) -> i32 {
     return a;
 }
 
@@ -2247,6 +2281,254 @@ fn main(value: i32) -> i32 {
     ] {
         assert_nearest_fn(&parsed, node, main_fn, label);
     }
+}
+
+#[test]
+fn parser_hir_member_after_index_uses_index_receiver() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair {
+    left: i32,
+}
+
+fn main(values: [Pair; 2]) -> i32 {
+    return values[0].left;
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let member = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| (kind == HIR_NODE_MEMBER_EXPR).then_some(node))
+        .expect("fixture should publish one member expression");
+    let receiver = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_member_receiver_node[member],
+        "member receiver",
+    );
+    assert_eq!(
+        parsed.hir_kind[receiver], HIR_NODE_INDEX_EXPR,
+        "member receiver should be the parser-owned index expression"
+    );
+}
+
+#[test]
+fn parser_hir_return_value_token_uses_member_name_after_index() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+struct Pair {
+    left: i32,
+}
+
+fn main(values: [Pair; 2]) -> i32 {
+    return values[0].left;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let member_node = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_NODE_MEMBER_EXPR
+                && parsed.hir_token_pos[return_expr] <= parsed.hir_token_pos[node]
+                && parsed.hir_token_end[node] <= parsed.hir_token_end[return_expr])
+                .then_some(node)
+        })
+        .expect("return expression should publish one indexed-member result row");
+    let member_token = parsed.hir_member_name_token[member_node];
+    assert_ne!(
+        member_token, INVALID,
+        "indexed member result row should publish a member-name token"
+    );
+    assert_eq!(
+        parsed.hir_stmt_record_operand2[return_node], member_token,
+        "return value token should come from the indexed-member expression result"
+    );
+}
+
+#[test]
+fn parser_hir_binary_left_operand_uses_indexed_member_result() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+struct Pair {
+    left: i32,
+}
+
+fn main(values: [Pair; 2]) -> i32 {
+    return values[0].left + 0;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let add_node = resolve_forward_expr_record(&parsed, return_expr, "return expression");
+    assert_eq!(
+        parsed.hir_expr_record_form[add_node], HIR_EXPR_FORM_ADD,
+        "return expression should resolve to the add operator"
+    );
+
+    let left_operand = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[add_node],
+            "add left operand",
+        ),
+        "add left operand",
+    );
+    assert_eq!(
+        parsed.hir_kind[left_operand], HIR_NODE_MEMBER_EXPR,
+        "add left operand should resolve to the parser-owned indexed member expression"
+    );
+    let receiver = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_member_receiver_node[left_operand],
+        "indexed member receiver",
+    );
+    assert_eq!(
+        parsed.hir_kind[receiver], HIR_NODE_INDEX_EXPR,
+        "indexed member receiver should stay on the parser-owned index expression"
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        return_expr,
+        left_operand,
+        "indexed member add operand",
+    );
+}
+
+#[test]
+fn parser_hir_binary_operands_use_member_results() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main(pair: Pair) -> i32 {
+    return pair.left * 10 + pair.right;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let add_node = resolve_forward_expr_record(&parsed, return_expr, "return expression");
+    assert_eq!(
+        parsed.hir_expr_record_form[add_node], HIR_EXPR_FORM_ADD,
+        "return expression should resolve to the outer add operator"
+    );
+
+    let add_right = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_right[add_node],
+            "outer add right operand",
+        ),
+        "outer add right operand",
+    );
+    assert_eq!(
+        parsed.hir_kind[add_right], HIR_NODE_MEMBER_EXPR,
+        "outer add right operand should resolve to the parser-owned member expression"
+    );
+
+    let mul_node = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[add_node],
+            "outer add left operand",
+        ),
+        "outer add left operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[mul_node], HIR_EXPR_FORM_MUL,
+        "outer add left operand should resolve to the multiplication operator"
+    );
+    let mul_left = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[mul_node],
+            "multiplication left operand",
+        ),
+        "multiplication left operand",
+    );
+    assert_eq!(
+        parsed.hir_kind[mul_left], HIR_NODE_MEMBER_EXPR,
+        "multiplication left operand should resolve to the parser-owned member expression"
+    );
 }
 
 #[test]

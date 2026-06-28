@@ -422,6 +422,15 @@ uint param_index_mem_r32_size(uint dst, uint base, uint index)
                : 0u;
 }
 
+uint param_index_slot_mem_r32_size(uint dst, uint base, uint index, uint ordinal)
+{
+    uint disp = ordinal * 4u;
+    return valid_reg(dst) && valid_reg(base) && valid_index_reg(index) &&
+                   (base & 7u) != 4u && disp <= 127u
+               ? 4u + (needs_rex_sib(dst, index, base) ? 1u : 0u)
+               : 0u;
+}
+
 uint local_zero_size(uint slot)
 {
     if (!valid_local_slot(slot))
@@ -530,9 +539,10 @@ uint mov_r64_r64_byte(uint dst, uint src, uint byte_i)
     return 0u;
 }
 
-uint load_param_index_r32_byte(uint dst, uint base, uint index, uint byte_i)
+uint load_param_index_slot_r32_byte(uint dst, uint base, uint index, uint ordinal, uint byte_i)
 {
     bool rex = needs_rex_sib(dst, index, base);
+    uint disp = ordinal * 4u;
     uint cursor = 0u;
     if (rex)
     {
@@ -542,8 +552,13 @@ uint load_param_index_r32_byte(uint dst, uint base, uint index, uint byte_i)
     if (byte_i == cursor) return 0x8bu;
     if (byte_i == cursor + 1u) return 0x44u | ((dst & 7u) << 3u);
     if (byte_i == cursor + 2u) return 0x80u | ((index & 7u) << 3u) | (base & 7u);
-    if (byte_i == cursor + 3u) return 0u;
+    if (byte_i == cursor + 3u) return disp & 0xffu;
     return 0u;
+}
+
+uint load_param_index_r32_byte(uint dst, uint base, uint index, uint byte_i)
+{
+    return load_param_index_slot_r32_byte(dst, base, index, 0u, byte_i);
 }
 
 uint load_ptr_slot_r32_byte(uint dst, uint base, uint ordinal, uint byte_i)
@@ -859,26 +874,35 @@ uint for_array_load_byte(uint array_base_slot, uint index_slot, uint value_slot,
     return store_local_r32_byte(value_slot, X86_REG_R11D, byte_i - load_index_size - load_value_size);
 }
 
-uint for_param_array_load_byte(uint array_base_reg, uint index_slot, uint value_slot, uint byte_i)
+uint for_param_array_load_byte(uint packed_base, uint index_slot, uint value_slot, uint byte_i)
 {
+    uint array_base_reg = unpack_u16_pair_low(packed_base);
+    uint ordinal = unpack_u16_pair_high(packed_base);
     uint load_index_size = local_mem_r32_size(X86_REG_R11D, index_slot);
-    uint load_value_size = param_index_mem_r32_size(X86_REG_R11D, array_base_reg, X86_REG_R11D);
+    uint load_value_size = param_index_slot_mem_r32_size(
+        X86_REG_R11D,
+        array_base_reg,
+        X86_REG_R11D,
+        ordinal);
     if (byte_i < load_index_size)
         return load_local_r32_byte(X86_REG_R11D, index_slot, byte_i);
     if (byte_i < load_index_size + load_value_size)
-        return load_param_index_r32_byte(
+        return load_param_index_slot_r32_byte(
             X86_REG_R11D,
             array_base_reg,
             X86_REG_R11D,
+            ordinal,
             byte_i - load_index_size);
     return store_local_r32_byte(value_slot, X86_REG_R11D, byte_i - load_index_size - load_value_size);
 }
 
-uint for_array_inc_jmp_byte(uint inst_i, uint index_slot, uint target, uint byte_i)
+uint for_array_inc_jmp_byte(uint inst_i, uint index_slot, uint target, uint stride, uint byte_i)
 {
+    if (stride == 0u)
+        stride = 1u;
     uint add_size = local_slot_disp(index_slot) <= 127u ? 5u : 8u;
     if (byte_i < add_size)
-        return add_local_imm8_byte(index_slot, 1u, byte_i);
+        return add_local_imm8_byte(index_slot, stride, byte_i);
     return jmp_target_from_byte(
         x86_inst_byte_offset[inst_i] + add_size + 5u,
         target,
@@ -2607,6 +2631,7 @@ uint instruction_byte(uint inst_i, uint byte_i)
             inst_i,
             x86_inst_arg0[inst_i],
             x86_inst_arg1[inst_i],
+            x86_inst_arg2[inst_i],
             byte_i);
     if (kind == X86_INST_V_FOR_INTERVAL_BRANCH)
         return for_interval_branch_byte(

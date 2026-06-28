@@ -255,6 +255,10 @@ pub(super) fn create_call_record_bind_groups(
                 expr_metadata.int_value.as_entire_binding(),
             ),
             (
+                "hir_expr_float_bits",
+                expr_metadata.float_bits.as_entire_binding(),
+            ),
+            (
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
@@ -350,6 +354,16 @@ pub(super) fn create_call_record_bind_groups(
                 type_metadata.type_instance_decl_token.as_entire_binding(),
             ),
             (
+                "type_instance_elem_ref_tag",
+                type_metadata.type_instance_elem_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_payload",
+                type_metadata
+                    .type_instance_elem_ref_payload
+                    .as_entire_binding(),
+            ),
+            (
                 "type_instance_len_kind",
                 type_metadata.type_instance_len_kind.as_entire_binding(),
             ),
@@ -405,6 +419,10 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "hir_expr_int_value",
                 expr_metadata.int_value.as_entire_binding(),
+            ),
+            (
+                "hir_expr_float_bits",
+                expr_metadata.float_bits.as_entire_binding(),
             ),
             (
                 "hir_stmt_record",
@@ -498,12 +516,26 @@ pub(super) fn create_call_record_bind_groups(
                 call_record_status_buf.as_entire_binding(),
             ),
             (
+                "call_intrinsic_tag",
+                call_metadata.call_intrinsic_tag.as_entire_binding(),
+            ),
+            (
                 "type_instance_kind",
                 type_metadata.type_instance_kind.as_entire_binding(),
             ),
             (
                 "type_instance_decl_token",
                 type_metadata.type_instance_decl_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_tag",
+                type_metadata.type_instance_elem_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_payload",
+                type_metadata
+                    .type_instance_elem_ref_payload
+                    .as_entire_binding(),
             ),
             (
                 "type_instance_len_kind",

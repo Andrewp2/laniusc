@@ -17,9 +17,11 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_len_token;
 StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> module_type_path_type;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
@@ -40,10 +42,14 @@ static const uint HIR_TYPE_FORM_SLICE = 3u;
 static const uint HIR_TYPE_FORM_REF = 4u;
 
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
 
 static const uint TYPE_INSTANCE_RESOLVED = 1u;
 static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
+
+static const uint TY_UNKNOWN = 0u;
 
 static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint TYPE_LEN_UNSUPPORTED = 3u;
@@ -69,6 +75,31 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint projected_type_for_type_node(uint node)
+{
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint token = hir_token_pos[node];
+    if (valid_token(token))
+    {
+        uint projected = module_type_path_type[token];
+        if (projected != TY_UNKNOWN)
+            return projected;
+    }
+
+    uint leaf_node = hir_type_path_leaf_node[node];
+    uint leaf_token = valid_node(leaf_node) ? hir_token_pos[leaf_node] : INVALID;
+    if (valid_token(leaf_token))
+    {
+        uint projected = module_type_path_type[leaf_token];
+        if (projected != TY_UNKNOWN)
+            return projected;
+    }
+
+    return TY_UNKNOWN;
+}
+
 bool child_ref(uint node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_ERROR;
@@ -80,7 +111,16 @@ bool child_ref(uint node, out uint tag, out uint payload)
         return false;
     tag = type_expr_ref_tag[token];
     payload = type_expr_ref_payload[token];
-    return tag != TYPE_REF_INVALID;
+    if (tag == TYPE_REF_INVALID || tag == TYPE_REF_GENERIC_PARAM || tag == TYPE_REF_ERROR)
+    {
+        uint projected = projected_type_for_type_node(node);
+        if (projected != TY_UNKNOWN)
+        {
+            tag = TYPE_REF_SCALAR;
+            payload = projected;
+        }
+    }
+    return tag != TYPE_REF_INVALID && tag != TYPE_REF_ERROR;
 }
 
 void publish_array_or_slice_details(uint node, uint token, bool is_array)

@@ -25,7 +25,9 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
+StructuredBuffer<int> depth_paren_inblock;
 StructuredBuffer<int> depth_bracket_inblock;
+StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<uint> statement_context_kind;
 
@@ -198,7 +200,11 @@ uint encode_statement_event(uint token_i, uint payload)
     return ((token_i + 1u) << 8u) | (payload & 0xffu);
 }
 
-uint statement_phase_event_for(uint token_i, uint kind, int bracket_depth_before)
+uint statement_phase_event_for(
+    uint token_i,
+    uint kind,
+    int paren_depth_before,
+    int bracket_depth_before)
 {
     if (bracket_depth_before != 0)
         return 0u;
@@ -207,6 +213,8 @@ uint statement_phase_event_for(uint token_i, uint kind, int bracket_depth_before
         return encode_statement_event(token_i, kind);
     if (is_statement_reset_boundary(kind))
     {
+        if ((kind == TK_LBRACE || kind == TK_RBRACE) && paren_depth_before != 0)
+            return 0u;
         bool rhs_brace = (kind == TK_LBRACE || kind == TK_RBRACE) &&
             (context_kind == TK_LET || context_kind == TK_CONST || context_kind == TK_RETURN);
         if (rhs_brace)
@@ -244,11 +252,14 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint token_i = block_idx * WG_SIZE + lane;
     uint count = active_token_count();
     uint kind = token_i < count ? token_words[token_i].kind : 0u;
+    int paren_depth_before = token_i < gParams.n_tokens
+        ? block_prefix_paren[block_idx] + depth_paren_inblock[token_i]
+        : 0;
     int bracket_depth_before = token_i < gParams.n_tokens
         ? block_prefix_bracket[block_idx] + depth_bracket_inblock[token_i]
         : 0;
     uint event = token_i < count
-        ? statement_phase_event_for(token_i, kind, bracket_depth_before)
+        ? statement_phase_event_for(token_i, kind, paren_depth_before, bracket_depth_before)
         : 0u;
     uint prefix = prefix_scan_u32_max_256(lane, event);
     if (lane + 1u == WG_SIZE)

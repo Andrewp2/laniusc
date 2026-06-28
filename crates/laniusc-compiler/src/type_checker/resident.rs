@@ -353,6 +353,8 @@ impl GpuTypeChecker {
             fingerprint_buffers.push(scratch.type_instance_arg_count);
             fingerprint_buffers.push(scratch.type_instance_arg_ref_tag);
             fingerprint_buffers.push(scratch.type_instance_arg_ref_payload);
+            fingerprint_buffers.push(scratch.type_instance_elem_ref_tag);
+            fingerprint_buffers.push(scratch.type_instance_elem_ref_payload);
             fingerprint_buffers.push(scratch.type_instance_len_kind);
             fingerprint_buffers.push(scratch.type_instance_len_payload);
             fingerprint_buffers.push(scratch.type_instance_state);
@@ -523,6 +525,7 @@ impl GpuTypeChecker {
                     encoder,
                     module_path,
                     &bind_groups.hir_active_dispatch_args,
+                    &bind_groups.token_hir_active_dispatch_args,
                     timer.as_deref_mut(),
                 )?;
                 if let Some(timer) = timer.as_deref_mut() {
@@ -707,6 +710,16 @@ impl GpuTypeChecker {
                 &self.passes.type_instances_decl_refs,
                 &bind_groups.type_instances.decl_refs,
                 "type_check.resident.type_instances_decl_refs.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            // For-binding element refs consume iterable decl refs published by
+            // the same HIR-indexed shader, so run a second fixed pass after the
+            // direct decl facts are stable.
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_decl_refs,
+                &bind_groups.type_instances.decl_refs,
+                "type_check.resident.type_instances_decl_refs.for_bindings.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
@@ -1088,6 +1101,30 @@ impl GpuTypeChecker {
             }
             record_compute_indirect(
                 encoder,
+                &self.passes.type_instances_member_receivers,
+                &bind_groups.type_instances.member_receivers,
+                "type_check.resident.type_instances_member_receivers_after_array_index.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_member_results,
+                &bind_groups.type_instances.member_results,
+                "type_check.resident.type_instances_member_results_after_array_index.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_member_substitute,
+                &bind_groups.type_instances.member_substitute,
+                "type_check.resident.type_instances_member_substitute_after_array_index.pass",
+                &bind_groups.token_active_dispatch_args,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.members_after_array_index.done");
+            }
+            record_compute_indirect(
+                encoder,
                 &self.passes.type_instances_array_return_refs,
                 &bind_groups.type_instances.array_return_refs,
                 "type_check.resident.type_instances_array_return_refs.pass",
@@ -1116,6 +1153,13 @@ impl GpuTypeChecker {
                 &bind_groups.type_instances.struct_init_substitute,
                 "type_check.resident.type_instances_struct_init_substitute.pass",
                 &bind_groups.token_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.methods_mark_call_keys,
+                &bind_groups.methods.mark_call_keys,
+                "type_check.methods.mark_call_keys_before_aggregate_validation",
+                &bind_groups.token_hir_active_dispatch_args,
             )?;
             record_compute_indirect(
                 encoder,
@@ -1418,6 +1462,9 @@ impl GpuTypeChecker {
             path_count_out: &module_path.path_count_out,
             path_owner_token: &module_path.path_owner_token,
             path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
+            path_segment_count: &module_path.path_segment_count,
+            path_segment_base: &module_path.path_segment_base,
+            path_segment_token: &module_path.path_segment_token,
             resolved_value_decl: &module_path.resolved_value_decl,
             resolved_value_status: &module_path.resolved_value_status,
             decl_count_out: &module_path.decl_count_out,
@@ -1546,6 +1593,9 @@ impl GpuTypeChecker {
             path_count_out,
             path_owner_token,
             path_id_by_owner_hir,
+            path_segment_count,
+            path_segment_base,
+            path_segment_token,
             resolved_value_decl,
             resolved_value_status,
             decl_count_out,
@@ -1565,6 +1615,9 @@ impl GpuTypeChecker {
             path_count_out,
             path_owner_token,
             path_id_by_owner_hir,
+            path_segment_count,
+            path_segment_base,
+            path_segment_token,
             resolved_value_decl,
             resolved_value_status,
             decl_count_out,
@@ -1651,6 +1704,8 @@ impl GpuTypeChecker {
             method_decl_param_offset,
             type_instance_kind,
             type_instance_decl_token,
+            type_instance_elem_ref_tag,
+            type_instance_elem_ref_payload,
             type_instance_len_kind,
             type_instance_len_payload,
             decl_type_ref_tag,
@@ -1704,6 +1759,8 @@ impl GpuTypeChecker {
             method_decl_param_offset,
             type_instance_kind,
             type_instance_decl_token,
+            type_instance_elem_ref_tag,
+            type_instance_elem_ref_payload,
             type_instance_len_kind,
             type_instance_len_payload,
             member_result_field_ordinal,

@@ -122,9 +122,9 @@ fn diagnostic_command_discovery_json() -> serde_json::Value {
             "placeholder": "API",
             "meaning": "runtime-bound stdlib API selector",
             "accepted_selector_examples": [
-                "std::io::print_i32",
-                "stdio::print_i32",
-                "\"std::io::print_i32\""
+                "std::io::write_stdout",
+                "stdio::write_stdout",
+                "\"std::io::write_stdout\""
             ],
             "bulk_discovery_command": "laniusc diagnostics runtime-apis",
             "used_by": [
@@ -139,7 +139,7 @@ fn diagnostic_command_discovery_json() -> serde_json::Value {
                 "std::io",
                 "STDIO_HAS_RUNTIME_BINDING",
                 "stdio_service_status()",
-                "std::io::print_i32"
+                "std::io::write_stdout"
             ],
             "bulk_discovery_command": "laniusc diagnostics runtime-services",
             "used_by": [

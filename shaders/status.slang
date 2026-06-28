@@ -92,9 +92,12 @@ public void publish_stage_error_min_detail4_at(
     uint error,
     uint detail)
 {
-    output[base + 0u] = 0u;
-    atomic_u32_compare_exchange(output, base + 1u, 0u, error);
     atomic_u32_min(output, base + 2u, detail);
+    if (output[base + 2u] == detail)
+    {
+        output[base + 0u] = 0u;
+        output[base + 1u] = error;
+    }
 }
 
 public void publish_stage_error_min_detail4(
@@ -112,11 +115,13 @@ public void publish_stage_error_min_detail_extra4_at(
     uint detail,
     uint extra)
 {
-    output[base + 0u] = 0u;
-    atomic_u32_compare_exchange(output, base + 1u, 0u, error);
-    uint old_detail = atomic_u32_min(output, base + 2u, detail);
-    if (detail <= old_detail)
+    atomic_u32_min(output, base + 2u, detail);
+    if (output[base + 2u] == detail)
+    {
+        output[base + 0u] = 0u;
+        output[base + 1u] = error;
         output[base + 3u] = extra;
+    }
 }
 
 public void publish_stage_error_min_detail_extra4(
@@ -289,7 +294,7 @@ public void record_min_token_error(
     uint detail)
 {
     uint old = atomic_u32_min(status, STATUS_TOKEN_SLOT, token_i);
-    if (token_i <= old)
+    if (token_i <= old && status[STATUS_TOKEN_SLOT] == token_i)
     {
         status[STATUS_OK_SLOT] = 0u;
         status[STATUS_CODE_SLOT] = code;
@@ -303,7 +308,7 @@ public void record_min_detail_error(
     uint detail)
 {
     uint old = atomic_u32_min(status, STATUS_DETAIL_SLOT, detail);
-    if (detail <= old)
+    if (detail <= old && status[STATUS_DETAIL_SLOT] == detail)
     {
         status[STATUS_OK_SLOT] = 0u;
         status[STATUS_CODE_SLOT] = code;

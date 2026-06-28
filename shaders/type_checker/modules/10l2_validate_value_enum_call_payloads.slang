@@ -71,6 +71,8 @@ static const uint STMT_RECORD_KIND_RETURN = 2u;
 
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
+static const uint EXPR_RECORD_LEFT = 1u;
+static const uint EXPR_RECORD_RIGHT = 2u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
@@ -230,6 +232,30 @@ uint visible_type_for_token(uint token)
     return type_code_for_ref(decl_type_ref_tag[token], decl_type_ref_payload[token]);
 }
 
+uint direct_arithmetic_operand_type(uint node)
+{
+    node = result_expr(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_NAME)
+    {
+        uint token = expr_value_token(node);
+        if (!valid_token(token))
+            token = hir_token_pos[node];
+        return visible_type_for_token(token);
+    }
+
+    return TY_UNKNOWN;
+}
+
 uint direct_expr_type(uint node)
 {
     node = result_expr(node);
@@ -266,8 +292,14 @@ uint direct_expr_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_arithmetic_operand_type(expr_record_slot(node, EXPR_RECORD_LEFT));
+        uint right_ty = direct_arithmetic_operand_type(expr_record_slot(node, EXPR_RECORD_RIGHT));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||

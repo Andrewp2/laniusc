@@ -48,6 +48,16 @@ fn json_string_array_matches(value: &serde_json::Value, field: &str, expected: &
     json_string_array(value, field).as_slice() == expected
 }
 
+fn runtime_api_json_has_expected_status(api: &serde_json::Value) -> bool {
+    if api["api_name"] == "std::io::print_i32" {
+        api["extern_abi"] == "compiler_print_i32"
+            && api["current_status"] == "executable-compiler-primitive"
+            && api["executable"] == true
+    } else {
+        api["current_status"] == "known-unbound" && api["executable"] == false
+    }
+}
+
 #[test]
 fn diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_boundaries() {
     let json = laniusc_compiler::compiler::diagnostic_registry_json_pretty()
@@ -456,7 +466,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
                     laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && api["module_path"] == "std::io"
-            && api["api_name"] == "std::io::print_i32"
+            && api["api_name"] == "std::io::write_stdout"
             && api["service_module_path"] == "std::io"
             && api["service_current_status"] == "known-unbound"
             && api["service_executable"] == false
@@ -478,8 +488,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
         let service = service_id
             .and_then(laniusc_compiler::compiler::runtime_service_boundary_diagnostic_info);
         api["diagnostic_code"] == "LNC0038"
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && runtime_api_json_has_expected_status(api)
             && service.is_some_and(|service| {
                 api["service_capability_constant"] == service.capability_constant
                     && api["service_module_path"] == service.module_path
@@ -3521,7 +3530,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
         laniusc_compiler::compiler::RUNTIME_BOUND_API_DIAGNOSTICS.len()
     );
     assert!(apis.iter().any(|api| {
-        api["api_name"] == "std::io::print_i32"
+        api["api_name"] == "std::io::write_stdout"
             && api["service_id"].as_u64()
                 == Some(u64::from(
                     laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
@@ -3554,8 +3563,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && runtime_api_json_has_expected_status(api)
             && service.is_some_and(|service| {
                 api["service_capability_constant"] == service.capability_constant
                     && api["service_module_path"] == service.module_path
@@ -3573,10 +3581,10 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     command
         .arg("diagnostics")
         .arg("runtime-api")
-        .arg("std::io::print_i32")
+        .arg("std::io::write_stdout")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
-        "laniusc diagnostics runtime-api std::io::print_i32",
+        "laniusc diagnostics runtime-api std::io::write_stdout",
         &mut command,
         CLI_DIAGNOSTIC_TIMEOUT,
     )
@@ -3602,7 +3610,7 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
         document["registry_schema_version"],
         laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
-    assert_eq!(document["requested_api"], "std::io::print_i32");
+    assert_eq!(document["requested_api"], "std::io::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "api_name");
     assert!(json_string_array_matches(
@@ -3615,11 +3623,11 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
         "service_accepted_selector_kinds",
         laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
-    assert_eq!(document["canonical_api_name"], "std::io::print_i32");
+    assert_eq!(document["canonical_api_name"], "std::io::write_stdout");
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(
         document["runtime_bound_api"]["api_name"],
-        "std::io::print_i32"
+        "std::io::write_stdout"
     );
     assert_eq!(document["runtime_bound_api"]["module_path"], "std::io");
     assert_eq!(
@@ -3669,15 +3677,76 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
 }
 
 #[test]
+fn cli_diagnostics_runtime_api_reports_executable_stdio_print_i32_without_source_scan() {
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("diagnostics")
+        .arg("runtime-api")
+        .arg("std::io::print_i32")
+        .arg("--diagnostic-format=json");
+    let output = command_output_with_timeout(
+        "laniusc diagnostics runtime-api std::io::print_i32",
+        &mut command,
+        CLI_DIAGNOSTIC_TIMEOUT,
+    )
+    .expect("spawn laniusc diagnostics runtime-api stdio print_i32");
+
+    assert!(
+        output.status.success(),
+        "runtime API lookup for executable stdio print_i32 should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "runtime API lookup for executable stdio print_i32 should not print diagnostics\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("runtime API output should be JSON");
+    assert_eq!(document["schema_version"], 2);
+    assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-api");
+    assert_eq!(document["requested_api"], "std::io::print_i32");
+    assert_eq!(document["known"], true);
+    assert_eq!(document["matched_by"], "api_name");
+    assert_eq!(document["canonical_api_name"], "std::io::print_i32");
+    assert_eq!(document["diagnostic_code"], "LNC0038");
+    assert_eq!(
+        document["runtime_bound_api"]["service_id"].as_u64(),
+        Some(u64::from(
+            laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+        ))
+    );
+    assert_eq!(
+        document["runtime_bound_api"]["extern_abi"],
+        "compiler_print_i32"
+    );
+    assert!(runtime_api_json_has_expected_status(
+        &document["runtime_bound_api"]
+    ));
+    assert_eq!(
+        document["runtime_service_boundary"]["current_status"],
+        "known-unbound"
+    );
+    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["no_run_guards"]["source_compilation"], false);
+    assert_eq!(document["no_run_guards"]["source_scanning"], false);
+    assert_eq!(document["no_run_guards"]["stdlib_source_scanning"], false);
+    assert_eq!(document["no_run_guards"]["gpu_device_creation"], false);
+    assert_eq!(document["no_run_guards"]["target_codegen"], false);
+}
+
+#[test]
 fn cli_diagnostics_runtime_api_accepts_service_qualified_selector_without_source_scan() {
     let mut command = Command::new(laniusc_bin());
     command
         .arg("diagnostics")
         .arg("runtime-api")
-        .arg("stdio::print_i32")
+        .arg("stdio::write_stdout")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
-        "laniusc diagnostics runtime-api stdio::print_i32",
+        "laniusc diagnostics runtime-api stdio::write_stdout",
         &mut command,
         CLI_DIAGNOSTIC_TIMEOUT,
     )
@@ -3699,13 +3768,13 @@ fn cli_diagnostics_runtime_api_accepts_service_qualified_selector_without_source
         serde_json::from_slice(&output.stdout).expect("runtime API output should be JSON");
     assert_eq!(document["schema_version"], 2);
     assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-api");
-    assert_eq!(document["requested_api"], "stdio::print_i32");
+    assert_eq!(document["requested_api"], "stdio::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "service_api_name");
-    assert_eq!(document["canonical_api_name"], "std::io::print_i32");
+    assert_eq!(document["canonical_api_name"], "std::io::write_stdout");
     assert_eq!(
         document["runtime_bound_api"]["api_name"],
-        "std::io::print_i32"
+        "std::io::write_stdout"
     );
     assert_eq!(document["runtime_bound_api"]["service_name"], "stdio");
     assert_eq!(
@@ -3731,7 +3800,7 @@ fn cli_diagnostics_runtime_api_accepts_copied_quoted_selector_without_source_sca
     command
         .arg("diagnostics")
         .arg("runtime-api")
-        .arg("`stdio::print_i32`")
+        .arg("`stdio::write_stdout`")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
         "laniusc diagnostics runtime-api copied quoted selector",
@@ -3756,10 +3825,10 @@ fn cli_diagnostics_runtime_api_accepts_copied_quoted_selector_without_source_sca
         serde_json::from_slice(&output.stdout).expect("runtime API output should be JSON");
     assert_eq!(document["schema_version"], 2);
     assert_eq!(document["schema_name"], "laniusc.diagnostics.runtime-api");
-    assert_eq!(document["requested_api"], "stdio::print_i32");
+    assert_eq!(document["requested_api"], "stdio::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "service_api_name");
-    assert_eq!(document["canonical_api_name"], "std::io::print_i32");
+    assert_eq!(document["canonical_api_name"], "std::io::write_stdout");
     assert_eq!(document["diagnostic_code"], "LNC0038");
     assert_eq!(document["runtime_bound_api"]["service_name"], "stdio");
     assert_eq!(
@@ -3840,7 +3909,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
     );
     assert_eq!(document["runtime_bound_api_count"], apis.len());
     assert!(apis.iter().any(|api| {
-        api["api_name"] == "std::io::print_i32"
+        api["api_name"] == "std::io::write_stdout"
             && api["module_path"] == "std::io"
             && api["service_id"].as_u64()
                 == Some(u64::from(
@@ -3855,6 +3924,12 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             && api["current_status"] == "known-unbound"
             && api["executable"] == false
     }));
+    assert!(apis.iter().any(|api| {
+        api["api_name"] == "std::io::print_i32"
+            && api["module_path"] == "std::io"
+            && api["extern_abi"] == "compiler_print_i32"
+            && runtime_api_json_has_expected_status(api)
+    }));
     assert!(apis.iter().all(|api| {
         api["diagnostic_code"] == "LNC0038"
             && json_string_array_matches(
@@ -3864,8 +3939,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             )
             && api["service_current_status"] == "known-unbound"
             && api["service_executable"] == false
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && runtime_api_json_has_expected_status(api)
     }));
 
     let services = document["runtime_service_boundaries"]
@@ -4122,10 +4196,10 @@ fn cli_diagnostics_runtime_service_accepts_service_qualified_api_selector_withou
     command
         .arg("diagnostics")
         .arg("runtime-service")
-        .arg("stdio::print_i32")
+        .arg("stdio::write_stdout")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
-        "laniusc diagnostics runtime-service stdio::print_i32",
+        "laniusc diagnostics runtime-service stdio::write_stdout",
         &mut command,
         CLI_DIAGNOSTIC_TIMEOUT,
     )
@@ -4150,7 +4224,7 @@ fn cli_diagnostics_runtime_service_accepts_service_qualified_api_selector_withou
         document["schema_name"],
         "laniusc.diagnostics.runtime-service"
     );
-    assert_eq!(document["requested_service"], "stdio::print_i32");
+    assert_eq!(document["requested_service"], "stdio::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "service_api_name");
     assert_eq!(document["diagnostic_code"], "LNC0038");
@@ -4341,14 +4415,11 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
             )
             && api["service_current_status"] == "known-unbound"
             && api["service_executable"] == false
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && runtime_api_json_has_expected_status(api)
     }));
-    assert!(
-        apis.iter().any(|api| {
-            api["api_name"] == "std::io::print_i32" && api["module_path"] == "std::io"
-        })
-    );
+    assert!(apis.iter().any(|api| {
+        api["api_name"] == "std::io::write_stdout" && api["module_path"] == "std::io"
+    }));
     assert_eq!(
         document["runtime_api_index_command"],
         "laniusc diagnostics runtime-apis"
@@ -4425,7 +4496,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_capability_constant_selector_wit
         .expect("capability selector should return service API rows");
     assert!(
         apis.iter().any(|api| {
-            api["api_name"] == "std::io::print_i32"
+            api["api_name"] == "std::io::write_stdout"
                 && api["service_id"].as_u64()
                     == Some(u64::from(
                         laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
@@ -4451,10 +4522,10 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
     command
         .arg("diagnostics")
         .arg("runtime-service-apis")
-        .arg("std::io::print_i32")
+        .arg("std::io::write_stdout")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
-        "laniusc diagnostics runtime-service-apis std::io::print_i32",
+        "laniusc diagnostics runtime-service-apis std::io::write_stdout",
         &mut command,
         CLI_DIAGNOSTIC_TIMEOUT,
     )
@@ -4479,7 +4550,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
         document["schema_name"],
         "laniusc.diagnostics.runtime-service-apis"
     );
-    assert_eq!(document["requested_service"], "std::io::print_i32");
+    assert_eq!(document["requested_service"], "std::io::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "api_name");
     assert_eq!(document["diagnostic_code"], "LNC0038");
@@ -4510,7 +4581,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
     assert_eq!(apis.len(), expected_stdio_api_count);
     assert!(
         apis.iter().any(|api| {
-            api["api_name"] == "std::io::print_i32"
+            api["api_name"] == "std::io::write_stdout"
                 && api["service_module_path"] == "std::io"
                 && api["diagnostic_code"] == "LNC0038"
                 && api["service_current_status"] == "known-unbound"
@@ -4536,10 +4607,10 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
     command
         .arg("diagnostics")
         .arg("runtime-service-apis")
-        .arg("stdio::print_i32")
+        .arg("stdio::write_stdout")
         .arg("--diagnostic-format=json");
     let output = command_output_with_timeout(
-        "laniusc diagnostics runtime-service-apis stdio::print_i32",
+        "laniusc diagnostics runtime-service-apis stdio::write_stdout",
         &mut command,
         CLI_DIAGNOSTIC_TIMEOUT,
     )
@@ -4564,7 +4635,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
         document["schema_name"],
         "laniusc.diagnostics.runtime-service-apis"
     );
-    assert_eq!(document["requested_service"], "stdio::print_i32");
+    assert_eq!(document["requested_service"], "stdio::write_stdout");
     assert_eq!(document["known"], true);
     assert_eq!(document["matched_by"], "service_api_name");
     assert_eq!(document["diagnostic_code"], "LNC0038");
@@ -4595,7 +4666,7 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
     assert_eq!(apis.len(), expected_stdio_api_count);
     assert!(
         apis.iter().any(|api| {
-            api["api_name"] == "std::io::print_i32"
+            api["api_name"] == "std::io::write_stdout"
                 && api["service_name"] == "stdio"
                 && api["service_module_path"] == "std::io"
                 && api["diagnostic_code"] == "LNC0038"
@@ -4660,11 +4731,11 @@ fn cli_diagnostics_runtime_api_reports_unknown_api_as_no_run_result() {
     ));
     assert_eq!(
         document["selector_examples"]["api_name"],
-        "std::io::print_i32"
+        "std::io::write_stdout"
     );
     assert_eq!(
         document["selector_examples"]["service_api_name"],
-        "stdio::print_i32"
+        "stdio::write_stdout"
     );
     assert_eq!(
         document["runtime_api_index_command"],
@@ -4752,11 +4823,11 @@ fn cli_diagnostics_runtime_service_reports_unknown_selector_as_no_run_result() {
     );
     assert_eq!(
         document["selector_examples"]["api_name"],
-        "std::io::print_i32"
+        "std::io::write_stdout"
     );
     assert_eq!(
         document["selector_examples"]["service_api_name"],
-        "stdio::print_i32"
+        "stdio::write_stdout"
     );
     assert!(document["diagnostic_code"].is_null());
     assert!(document["runtime_service_boundary"].is_null());
@@ -6446,8 +6517,7 @@ fn cli_source_root_file_path_renders_structured_json_diagnostic() {
     let source_root = root.join("not_a_dir");
     fs::write(&source_root, "").expect("write non-directory source root path");
     let entry = root.join("main.lani");
-    fs::write(&entry, "module app::main;\nfn main() { return 0; }\n")
-        .expect("write entry source");
+    fs::write(&entry, "module app::main;\nfn main() { return 0; }\n").expect("write entry source");
 
     let mut command = Command::new(laniusc_bin());
     command

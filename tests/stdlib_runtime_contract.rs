@@ -514,6 +514,7 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
     assert!(
         RUNTIME_BOUND_API_DIAGNOSTICS
             .iter()
+            .filter(|api| api.api_name != "std::io::print_i32")
             .all(|api| api.diagnostic_code == "LNC0038"
                 && api.current_status == "known-unbound"
                 && !api.executable),
@@ -571,36 +572,62 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
         );
     }
 
-    let print_i32 = runtime_bound_api_diagnostic_info("std::io::print_i32")
-        .expect("stdio print_i32 should have a public runtime-bound API row");
+    let write_stdout = runtime_bound_api_diagnostic_info("std::io::write_stdout")
+        .expect("stdio write_stdout should have a public runtime-bound API row");
     assert_eq!(
-        print_i32.service_id, GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
-        "stdio print_i32 should map to the stdio runtime service"
+        write_stdout.service_id, GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+        "stdio write_stdout should map to the stdio runtime service"
     );
-    assert_eq!(print_i32.module_path, "std::io");
+    assert_eq!(write_stdout.module_path, "std::io");
     let stdio_service =
         runtime_service_boundary_diagnostic_info(GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID)
             .expect("stdio runtime service boundary should be public");
     assert_eq!(
-        print_i32.service_capability_constant,
+        write_stdout.service_capability_constant,
         stdio_service.capability_constant
     );
-    assert_eq!(print_i32.service_module_path, stdio_service.module_path);
-    assert_eq!(print_i32.service_status_probe, stdio_service.status_probe);
-    assert_eq!(print_i32.service_binding_probe, stdio_service.binding_probe);
+    assert_eq!(write_stdout.service_module_path, stdio_service.module_path);
+    assert_eq!(
+        write_stdout.service_status_probe,
+        stdio_service.status_probe
+    );
+    assert_eq!(
+        write_stdout.service_binding_probe,
+        stdio_service.binding_probe
+    );
+    assert_eq!(
+        write_stdout.service_current_status,
+        stdio_service.current_status
+    );
+    assert_eq!(write_stdout.service_executable, stdio_service.executable);
+    assert_eq!(
+        write_stdout.executable_probe, "write_stdout_is_executable()",
+        "stdio write_stdout should expose the exact executable probe"
+    );
+    assert!(
+        !write_stdout.binding_probe.trim().is_empty(),
+        "runtime-bound API rows should expose a binding probe label for tooling"
+    );
+    let print_i32 = runtime_bound_api_diagnostic_info("std::io::print_i32")
+        .expect("stdio print_i32 should have a public executable API row");
+    assert_eq!(
+        print_i32.service_id,
+        GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
+    );
+    assert_eq!(print_i32.module_path, "std::io");
+    assert_eq!(print_i32.extern_abi, "compiler_print_i32");
+    assert_eq!(print_i32.executable_probe, "print_i32_is_executable()");
+    assert_eq!(
+        print_i32.binding_probe,
+        "print_i32_requires_runtime_binding()"
+    );
+    assert_eq!(print_i32.current_status, "executable-compiler-primitive");
+    assert!(print_i32.executable);
     assert_eq!(
         print_i32.service_current_status,
         stdio_service.current_status
     );
     assert_eq!(print_i32.service_executable, stdio_service.executable);
-    assert_eq!(
-        print_i32.executable_probe, "print_i32_is_executable()",
-        "stdio print_i32 should expose the exact executable probe"
-    );
-    assert!(
-        !print_i32.binding_probe.trim().is_empty(),
-        "runtime-bound API rows should expose a binding probe label for tooling"
-    );
     assert!(
         runtime_bound_api_diagnostic_info("std::io::println").is_none(),
         "unknown stdlib APIs should not be described as known runtime boundaries"
@@ -619,7 +646,7 @@ fn runtime_bound_api_diagnostic_catalog_exposes_extern_abi_namespaces() {
 
     for (api_name, service_id, extern_abi) in [
         ("alloc::allocator::alloc", 1, "lanius_alloc"),
-        ("std::io::print_i32", 3, "lanius_std"),
+        ("std::io::write_stdout", 3, "lanius_std"),
         ("core::panic::panic", 6, "lanius_panic"),
     ] {
         let api = runtime_bound_api_diagnostic_info(api_name)
@@ -669,17 +696,31 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                     .contains(&"service_api_name"),
             "{service_api_selector} should remain a public no-run selector"
         );
-        assert_eq!(api.current_status, "known-unbound");
+        if api.api_name == "std::io::print_i32" {
+            assert_eq!(api.current_status, "executable-compiler-primitive");
+            assert!(api.executable);
+            assert_eq!(api.extern_abi, "compiler_print_i32");
+        } else {
+            assert_eq!(api.current_status, "known-unbound");
+            assert!(
+                !api.executable,
+                "{service_api_selector} must remain contract-only until a runtime binding exists"
+            );
+        }
         assert_eq!(service.current_status, "known-unbound");
         assert!(
-            !api.executable && !service.executable,
-            "{service_api_selector} must remain contract-only until a runtime binding exists"
+            !service.executable,
+            "{service_api_selector} should not make the whole service executable"
         );
     }
 
     assert!(
-        service_api_selectors.contains("stdio::print_i32"),
+        service_api_selectors.contains("stdio::write_stdout"),
         "the documented stdio service-qualified selector should stay available"
+    );
+    assert!(
+        service_api_selectors.contains("stdio::print_i32"),
+        "the executable stdio print_i32 selector should stay available"
     );
     assert_eq!(
         service_api_selectors.len(),
@@ -790,50 +831,68 @@ fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
     let apis = explanation["runtime_bound_apis"]
         .as_array()
         .expect("LNC0038 explanation should include runtime-bound stdlib API rows");
-    let print_i32 = apis
+    let write_stdout = apis
         .iter()
-        .find(|api| api["api_name"] == "std::io::print_i32")
-        .expect("LNC0038 explanation should include std::io::print_i32");
+        .find(|api| api["api_name"] == "std::io::write_stdout")
+        .expect("LNC0038 explanation should include std::io::write_stdout");
     assert_eq!(
-        print_i32["service_id"].as_u64(),
+        write_stdout["service_id"].as_u64(),
         Some(u64::from(GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID))
     );
     assert_eq!(
-        print_i32["service_module_path"],
+        write_stdout["service_module_path"],
         stdio_service["module_path"]
     );
     assert_eq!(
-        print_i32["service_current_status"],
+        write_stdout["service_current_status"],
         stdio_service["current_status"]
     );
     assert_eq!(
-        print_i32["service_binding_probe"],
+        write_stdout["service_binding_probe"],
         stdio_service["binding_probe"]
     );
-    assert_eq!(print_i32["service_executable"], stdio_service["executable"]);
-    assert_eq!(print_i32["current_status"], "known-unbound");
-    assert_eq!(print_i32["executable"], false);
+    assert_eq!(
+        write_stdout["service_executable"],
+        stdio_service["executable"]
+    );
+    assert_eq!(write_stdout["current_status"], "known-unbound");
+    assert_eq!(write_stdout["executable"], false);
     assert!(
-        print_i32["executable_probe"]
+        write_stdout["executable_probe"]
             .as_str()
             .is_some_and(|probe| !probe.trim().is_empty()),
         "runtime-bound API rows should expose an executable probe label for tooling"
     );
     assert!(
-        print_i32["binding_probe"]
+        write_stdout["binding_probe"]
             .as_str()
             .is_some_and(|probe| !probe.trim().is_empty()),
         "runtime-bound API rows should expose a binding probe label for tooling"
     );
+    let print_i32 = apis
+        .iter()
+        .find(|api| api["api_name"] == "std::io::print_i32")
+        .expect("LNC0038 explanation should include executable std::io::print_i32");
+    assert_eq!(
+        print_i32["service_id"].as_u64(),
+        Some(u64::from(GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID))
+    );
+    assert_eq!(print_i32["extern_abi"], "compiler_print_i32");
+    assert_eq!(print_i32["service_current_status"], "known-unbound");
+    assert_eq!(print_i32["service_executable"], false);
+    assert_eq!(print_i32["current_status"], "executable-compiler-primitive");
+    assert_eq!(print_i32["executable"], true);
 
     assert!(
-        apis.iter().all(|api| {
-            api["diagnostic_code"] == "LNC0038"
-                && api["current_status"] == "known-unbound"
-                && api["executable"] == false
-                && api["service_current_status"] == "known-unbound"
-                && api["service_executable"] == false
-        }),
+        apis.iter()
+            .filter(|api| api["api_name"] != "std::io::print_i32")
+            .all(|api| {
+                api["diagnostic_code"] == "LNC0038"
+                    && api["current_status"] == "known-unbound"
+                    && api["executable"] == false
+                    && api["service_current_status"] == "known-unbound"
+                    && api["service_executable"] == false
+            }),
         "runtime-bound stdlib APIs must stay contract-only until their service is bound"
     );
 }
@@ -3694,7 +3753,7 @@ fn main() {
     if (io_abi != declared_abi || io_abi != runtime_abi) {
         return 1;
     }
-    if (!io_known || io_available || !io_blocked || !io_needs_binding || print_i32_executable || !print_i32_blocked || !print_i32_needs_binding || runtime_api_executable || !runtime_api_needs_binding || !runtime_needs_binding) {
+    if (!io_known || io_available || !io_blocked || !io_needs_binding || !print_i32_executable || print_i32_blocked || print_i32_needs_binding || runtime_api_executable || !runtime_api_needs_binding || !runtime_needs_binding) {
         return 1;
     }
     return 0;
@@ -3785,16 +3844,19 @@ fn main() {
     if (stdio_available || !stdio_metadata_available || !stdio_blocked || !stdio_known_unbound || !stdio_needs_binding || !stdio_contract_only) {
         return 1;
     }
-    if (output_executable || input_executable || stdout_executable || stderr_executable || stdin_executable || flush_stdout_executable || flush_stderr_executable || print_i32_executable) {
+    if (output_executable || input_executable || stdout_executable || stderr_executable || stdin_executable || flush_stdout_executable || flush_stderr_executable) {
         return 1;
     }
-    if (!output_blocked || !input_blocked || !stdout_blocked || !stderr_blocked || !stdin_blocked || !flush_stdout_blocked || !flush_stderr_blocked || !print_i32_blocked) {
+    if (!output_blocked || !input_blocked || !stdout_blocked || !stderr_blocked || !stdin_blocked || !flush_stdout_blocked || !flush_stderr_blocked) {
         return 1;
     }
-    if (!output_known_unbound || !input_known_unbound || !stdout_known_unbound || !stderr_known_unbound || !stdin_known_unbound || !flush_stdout_known_unbound || !flush_stderr_known_unbound || !print_i32_known_unbound) {
+    if (!output_known_unbound || !input_known_unbound || !stdout_known_unbound || !stderr_known_unbound || !stdin_known_unbound || !flush_stdout_known_unbound || !flush_stderr_known_unbound) {
         return 1;
     }
-    if (!output_needs_binding || !input_needs_binding || !stdout_needs_binding || !stderr_needs_binding || !stdin_needs_binding || !flush_stdout_needs_binding || !flush_stderr_needs_binding || !print_i32_needs_binding) {
+    if (!output_needs_binding || !input_needs_binding || !stdout_needs_binding || !stderr_needs_binding || !stdin_needs_binding || !flush_stdout_needs_binding || !flush_stderr_needs_binding) {
+        return 1;
+    }
+    if (!print_i32_executable || print_i32_blocked || print_i32_known_unbound || print_i32_needs_binding) {
         return 1;
     }
     return 0;
@@ -7175,35 +7237,39 @@ import std::process;
 import std::time;
 
 fn main() {
-    let ptr: u32 = alloc::allocator::alloc(16, 4);
-    let grown: u32 = alloc::allocator::realloc(ptr, 16, 32, 4);
-    let stdin_count: i32 = std::io::read_stdin(grown, 32);
-    let stdout_count: i32 = std::io::write_stdout(grown, 32);
-    let stderr_count: i32 = std::io::write_stderr(grown, 32);
+    let zero_ptr: u32 = 0;
+    let size: usize = 16;
+    let grown_size: usize = 32;
+    let align: usize = 4;
+    let sleep_ms: i64 = 0;
+    let ptr: u32 = alloc::allocator::alloc(size, align);
+    let grown: u32 = alloc::allocator::realloc(ptr, size, grown_size, align);
+    let stdin_count: i32 = std::io::read_stdin(grown, grown_size);
+    let stdout_count: i32 = std::io::write_stdout(grown, grown_size);
+    let stderr_count: i32 = std::io::write_stderr(grown, grown_size);
     let flushed_stdout: i32 = std::io::flush_stdout();
     let flushed_stderr: i32 = std::io::flush_stderr();
-    let file: i32 = std::fs::open_read(0, 0);
-    let written: i32 = std::fs::write(file, grown, 32);
-    let read: i32 = std::fs::read(file, grown, 32);
+    let file: i32 = std::fs::open_read(zero_ptr, size);
+    let written: i32 = std::fs::write(file, grown, grown_size);
+    let read: i32 = std::fs::read(file, grown, grown_size);
     let closed: i32 = std::fs::close(file);
     let vars: i32 = std::env::var_count();
     let key_len: i32 = std::env::var_key_len(0);
-    let value_len: i32 = std::env::var_len(0, 0);
-    let value_read: i32 = std::env::var_read(0, 0, grown, 32);
+    let value_len: i32 = std::env::var_len(zero_ptr, size);
+    let value_read: i32 = std::env::var_read(zero_ptr, size, grown, grown_size);
     let arg_count: i32 = std::process::argc();
     let arg_len: i32 = std::process::arg_len(0);
-    let arg_read: i32 = std::process::arg_read(0, grown, 32);
+    let arg_read: i32 = std::process::arg_read(0, grown, grown_size);
     let now_ns: i64 = std::time::monotonic_now_ns();
-    let sleep_status: i32 = std::time::sleep_ms(0);
-    let tcp: i32 = std::net::tcp_connect(0, 0, 80);
-    let sent: i32 = std::net::tcp_send(tcp, grown, 32);
-    let recv: i32 = std::net::tcp_recv(tcp, grown, 32);
-    let udp: i32 = std::net::udp_bind(0, 0, 53);
-    let udp_sent: i32 = std::net::udp_send_to(udp, 0, grown, 32);
-    std::io::print_i32(stdin_count + stdout_count + stderr_count + flushed_stdout + flushed_stderr);
+    let sleep_status: i32 = std::time::sleep_ms(sleep_ms);
+    let tcp: i32 = std::net::tcp_connect(zero_ptr, size, 80);
+    let sent: i32 = std::net::tcp_send(tcp, grown, grown_size);
+    let recv: i32 = std::net::tcp_recv(tcp, grown, grown_size);
+    let udp: i32 = std::net::udp_bind(zero_ptr, size, 53);
+    let udp_sent: i32 = std::net::udp_send_to(udp, zero_ptr, grown, grown_size);
     std::process::set_exit_code(0);
-    alloc::allocator::dealloc(grown, 32, 4);
-    alloc::allocator::alloc_failed(64, 8);
+    alloc::allocator::dealloc(grown, grown_size, align);
+    alloc::allocator::alloc_failed(grown_size, align);
     core::panic::unreachable();
     if (written + read + closed + vars + key_len + value_len + value_read + arg_count + arg_len + arg_read + sleep_status + sent + recv + udp_sent == 0) {
         return 0;

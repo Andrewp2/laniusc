@@ -1307,6 +1307,18 @@ uint direct_expr_record_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    {
+        uint member_token = hir_member_name_token[node];
+        return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
+    }
+
+    if (hir_kind[node] == HIR_INDEX_EXPR)
+    {
+        uint token_i = hir_token_pos[node];
+        return valid_token(token_i) ? call_return_type[token_i] : TY_UNKNOWN;
+    }
+
     uint form = expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
@@ -1345,8 +1357,14 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_node_type(resolve_expr(expr_left(node)));
+        uint right_ty = direct_node_type(resolve_expr(expr_right(node)));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -1419,14 +1437,6 @@ uint first_value_type_from_node(uint root, out uint value_token)
         }
     }
 
-    uint record_ty = direct_expr_record_type(root);
-    if (record_ty != TY_UNKNOWN)
-    {
-        uint record_node = resolve_expr(root);
-        value_token = valid_node(record_node) ? hir_token_pos[record_node] : hir_token_pos[root];
-        return record_ty;
-    }
-
     if (expression_result_node(resolved))
     {
         uint root_ty = direct_node_type(resolved);
@@ -1435,6 +1445,14 @@ uint first_value_type_from_node(uint root, out uint value_token)
             value_token = expression_result_token(resolved);
             return root_ty;
         }
+    }
+
+    uint record_ty = direct_expr_record_type(root);
+    if (record_ty != TY_UNKNOWN)
+    {
+        uint record_node = resolve_expr(root);
+        value_token = valid_node(record_node) ? hir_token_pos[record_node] : hir_token_pos[root];
+        return record_ty;
     }
 
     uint result_ty = preferred_result_type_from_node(root, value_token);
@@ -1761,7 +1779,9 @@ void validate_return_node(uint node)
              has_contextual_aggregate_literal_node(node, expr_node))
         actual = expected;
     else
+    {
         actual = first_struct_literal_type_from_node(expr_node, value_token);
+    }
     if (actual == TY_UNKNOWN)
         actual = first_value_type_from_node(expr_node, value_token);
     if (actual == TY_UNKNOWN)

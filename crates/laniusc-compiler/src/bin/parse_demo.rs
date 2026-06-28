@@ -155,12 +155,31 @@ async fn main() -> Result<()> {
                     .get(i)
                     .copied()
                     .unwrap_or(u32::MAX);
+                let member_receiver = parsed
+                    .hir_member_receiver_node
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let member_receiver_token = parsed
+                    .hir_member_receiver_token
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let member_name_token = parsed
+                    .hir_member_name_token
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let member_name_text = tokens
+                    .get(member_name_token as usize)
+                    .map(|t| &input[t.start..t.start + t.len])
+                    .unwrap_or("");
                 let token_text = tokens
                     .get(pos as usize)
                     .map(|t| &input[t.start..t.start + t.len])
                     .unwrap_or("");
                 println!(
-                    "  node[{i}] prod={kind} hir={hir} pos={pos} end={end} parent={parent} child={first_child} next={next_sibling} subtree_end={subtree_end} callee={callee} args=({arg_start},{arg_end},{arg_count}) array=({array_first},{array_count},{array_parent},{array_ordinal},{array_next}) match=({match_arm_start},{match_arm_count}) arm=({match_pattern},{match_payload_start},{match_payload_count},{match_result},{match_next}) token={token_text:?}"
+                    "  node[{i}] prod={kind} hir={hir} pos={pos} end={end} parent={parent} child={first_child} next={next_sibling} subtree_end={subtree_end} callee={callee} args=({arg_start},{arg_end},{arg_count}) member=({member_receiver},{member_receiver_token},{member_name_token},{member_name_text:?}) array=({array_first},{array_count},{array_parent},{array_ordinal},{array_next}) match=({match_arm_start},{match_arm_count}) arm=({match_pattern},{match_payload_start},{match_payload_count},{match_result},{match_next}) token={token_text:?}"
                 );
             }
         }

@@ -131,7 +131,7 @@ pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError
             let api_name = args.next().ok_or_else(|| {
                 missing_cli_argument_error(
                     "laniusc diagnostics runtime-api",
-                    "a stdlib API selector such as std::io::print_i32 or stdio::print_i32",
+                    "a stdlib API selector such as std::io::write_stdout or stdio::write_stdout",
                 )
             })?;
             reject_extra_arg("laniusc diagnostics runtime-api", args, "API")?;
@@ -150,7 +150,7 @@ pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError
             let service_selector = args.next().ok_or_else(|| {
                 missing_cli_argument_error(
                     "laniusc diagnostics runtime-service",
-                    "a runtime service id, service name, module path, capability constant, runtime probe, or qualified runtime-bound API such as std::io::print_i32",
+                    "a runtime service id, service name, module path, capability constant, runtime probe, or qualified runtime-bound API such as std::io::write_stdout",
                 )
             })?;
             reject_extra_arg("laniusc diagnostics runtime-service", args, "SERVICE")?;
@@ -163,7 +163,7 @@ pub(crate) fn run(args: impl IntoIterator<Item = String>) -> Result<(), CliError
             let service_selector = args.next().ok_or_else(|| {
                 missing_cli_argument_error(
                     "laniusc diagnostics runtime-service-apis",
-                    "a runtime service id, service name, module path, capability constant, runtime probe, or qualified runtime-bound API such as std::io::print_i32",
+                    "a runtime service id, service name, module path, capability constant, runtime probe, or qualified runtime-bound API such as std::io::write_stdout",
                 )
             })?;
             reject_extra_arg("laniusc diagnostics runtime-service-apis", args, "SERVICE")?;

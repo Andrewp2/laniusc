@@ -20,6 +20,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
+StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> hir_stmt_record;
 
 RWStructuredBuffer<uint2> x86_const_value_record;
@@ -30,6 +31,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_NEG = 13u;
 static const uint STMT_RECORD_STRIDE = 4u;
@@ -131,6 +133,11 @@ bool literal_leaf_value(uint value_node, out uint value)
     if (form == HIR_EXPR_INT)
     {
         value = hir_expr_int_value[value_node];
+        return true;
+    }
+    if (form == HIR_EXPR_FLOAT)
+    {
+        value = hir_expr_float_bits[value_node];
         return true;
     }
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)

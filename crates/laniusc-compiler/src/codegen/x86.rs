@@ -269,6 +269,7 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
     pub expr_result_root_node: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
+    pub float_bits: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
     pub type_len_value: &'a wgpu::Buffer,
@@ -367,6 +368,8 @@ pub struct GpuX86TypeMetadataBuffers<'a> {
     pub visible_type: &'a wgpu::Buffer,
     pub type_instance_kind: &'a wgpu::Buffer,
     pub type_instance_decl_token: &'a wgpu::Buffer,
+    pub type_instance_elem_ref_tag: &'a wgpu::Buffer,
+    pub type_instance_elem_ref_payload: &'a wgpu::Buffer,
     pub type_instance_len_kind: &'a wgpu::Buffer,
     pub type_instance_len_payload: &'a wgpu::Buffer,
 }

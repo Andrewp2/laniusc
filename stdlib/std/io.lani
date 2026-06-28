@@ -1,6 +1,6 @@
-// Source-level standard I/O host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind stdio.
+// Source-level standard I/O declarations.
+// Most host ABI declarations below remain unbound; integer printing is backed
+// by the compiler's existing print primitive.
 
 module std::io;
 
@@ -46,7 +46,10 @@ pub fn stdio_is_blocked() -> StdioCapability {
 }
 
 pub fn stdio_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && stdio_is_blocked();
+    if (stdio_service_is_known()) {
+        return stdio_is_blocked();
+    }
+    return false;
 }
 
 pub fn stdio_operation_ok() -> StdioOperationResult {
@@ -70,7 +73,10 @@ pub fn stdio_operation_is_unavailable(result: StdioOperationResult) -> StdioCapa
 }
 
 pub fn stdio_operation_is_fail_closed(result: StdioOperationResult) -> StdioCapability {
-    return stdio_is_known_but_unbound() && stdio_operation_is_unavailable(result);
+    if (stdio_is_known_but_unbound()) {
+        return stdio_operation_is_unavailable(result);
+    }
+    return false;
 }
 
 pub fn stdio_requires_runtime_binding() -> StdioCapability {
@@ -90,7 +96,10 @@ pub fn stdio_output_api_is_blocked() -> StdioCapability {
 }
 
 pub fn stdio_output_api_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && stdio_output_api_is_blocked();
+    if (stdio_service_is_known()) {
+        return stdio_output_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn stdio_output_api_requires_runtime_binding() -> StdioCapability {
@@ -106,7 +115,10 @@ pub fn stdio_input_api_is_blocked() -> StdioCapability {
 }
 
 pub fn stdio_input_api_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && stdio_input_api_is_blocked();
+    if (stdio_service_is_known()) {
+        return stdio_input_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn stdio_input_api_requires_runtime_binding() -> StdioCapability {
@@ -122,7 +134,10 @@ pub fn write_stdout_is_blocked() -> StdioCapability {
 }
 
 pub fn write_stdout_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && write_stdout_is_blocked();
+    if (stdio_service_is_known()) {
+        return write_stdout_is_blocked();
+    }
+    return false;
 }
 
 pub fn write_stdout_requires_runtime_binding() -> StdioCapability {
@@ -138,7 +153,10 @@ pub fn write_stderr_is_blocked() -> StdioCapability {
 }
 
 pub fn write_stderr_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && write_stderr_is_blocked();
+    if (stdio_service_is_known()) {
+        return write_stderr_is_blocked();
+    }
+    return false;
 }
 
 pub fn write_stderr_requires_runtime_binding() -> StdioCapability {
@@ -154,7 +172,10 @@ pub fn read_stdin_is_blocked() -> StdioCapability {
 }
 
 pub fn read_stdin_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && read_stdin_is_blocked();
+    if (stdio_service_is_known()) {
+        return read_stdin_is_blocked();
+    }
+    return false;
 }
 
 pub fn read_stdin_requires_runtime_binding() -> StdioCapability {
@@ -170,7 +191,10 @@ pub fn flush_stdout_is_blocked() -> StdioCapability {
 }
 
 pub fn flush_stdout_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && flush_stdout_is_blocked();
+    if (stdio_service_is_known()) {
+        return flush_stdout_is_blocked();
+    }
+    return false;
 }
 
 pub fn flush_stdout_requires_runtime_binding() -> StdioCapability {
@@ -186,7 +210,10 @@ pub fn flush_stderr_is_blocked() -> StdioCapability {
 }
 
 pub fn flush_stderr_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && flush_stderr_is_blocked();
+    if (stdio_service_is_known()) {
+        return flush_stderr_is_blocked();
+    }
+    return false;
 }
 
 pub fn flush_stderr_requires_runtime_binding() -> StdioCapability {
@@ -194,7 +221,7 @@ pub fn flush_stderr_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn print_i32_is_executable() -> StdioCapability {
-    return stdio_output_api_is_executable();
+    return true;
 }
 
 pub fn print_i32_is_blocked() -> StdioCapability {
@@ -202,7 +229,10 @@ pub fn print_i32_is_blocked() -> StdioCapability {
 }
 
 pub fn print_i32_is_known_but_unbound() -> StdioCapability {
-    return stdio_service_is_known() && print_i32_is_blocked();
+    if (stdio_service_is_known()) {
+        return print_i32_is_blocked();
+    }
+    return false;
 }
 
 pub fn print_i32_requires_runtime_binding() -> StdioCapability {
@@ -219,4 +249,6 @@ pub extern "lanius_std" fn flush_stdout() -> StdioOperationResult;
 
 pub extern "lanius_std" fn flush_stderr() -> StdioOperationResult;
 
-pub extern "lanius_std" fn print_i32(value: i32);
+pub fn print_i32(value: i32) {
+    print(value);
+}

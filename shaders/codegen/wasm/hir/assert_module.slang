@@ -19,9 +19,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-RWStructuredBuffer<uint> status;
+StructuredBuffer<uint> status;
 
-static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 
 bool module_already_emitted()
@@ -31,22 +30,10 @@ bool module_already_emitted()
            (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE);
 }
 
-uint linear_dispatch_id(uint3 tid)
-{
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     if (module_already_emitted())
         return;
-
-    uint target = linear_dispatch_id(tid);
-    if (target != 0u && target >= gParams.out_capacity)
-        return;
-
-    if (target == 0u && status[2u] == 0u)
-        status[2u] = 0u;
 }

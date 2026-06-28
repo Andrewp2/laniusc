@@ -713,12 +713,20 @@ impl GpuParser {
                 token_count_buf.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                bufs.token_depth_paren_inblock.as_entire_binding(),
+            ),
+            (
                 "depth_brace_inblock".into(),
                 bufs.token_depth_brace_inblock.as_entire_binding(),
             ),
             (
                 "depth_bracket_inblock".into(),
                 bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                bufs.token_block_prefix_paren.as_entire_binding(),
             ),
             (
                 "block_prefix_brace".into(),
@@ -798,8 +806,16 @@ impl GpuParser {
                 token_count_buf.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                bufs.token_depth_paren_inblock.as_entire_binding(),
+            ),
+            (
                 "depth_bracket_inblock".into(),
                 bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                bufs.token_block_prefix_paren.as_entire_binding(),
             ),
             (
                 "block_prefix_bracket".into(),
@@ -857,8 +873,16 @@ impl GpuParser {
                 token_count_buf.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                bufs.token_depth_paren_inblock.as_entire_binding(),
+            ),
+            (
                 "depth_bracket_inblock".into(),
                 bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                bufs.token_block_prefix_paren.as_entire_binding(),
             ),
             (
                 "block_prefix_bracket".into(),

@@ -10,6 +10,8 @@
 // - It does not inspect source bytes, hash token text, resolve names, or
 //   perform any CPU lookup.
 
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -65,10 +67,17 @@ static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint TK_LPAREN = 4u;
+static const uint TK_LT = 12u;
+static const uint TK_GT = 13u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
+static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_PATH_COLON = 114u;
+static const uint TK_TYPE_ARG_LT = 131u;
+static const uint TK_TYPE_ARG_GT = 132u;
+static const uint TK_PATH_TYPE_ARG_LT = 184u;
+static const uint TK_PATH_TYPE_ARG_GT = 185u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -82,7 +91,7 @@ uint active_hir_node_count()
 
 uint parser_hir_node_count()
 {
-    return hir_status[5u];
+    return gParams.n_hir_nodes;
 }
 
 uint token_kind(uint token_i)
@@ -113,6 +122,16 @@ bool path_colon(uint kind)
 bool call_open(uint kind)
 {
     return kind == TK_LPAREN || kind == TK_CALL_LPAREN || kind == TK_GROUP_LPAREN;
+}
+
+bool type_arg_open(uint kind)
+{
+    return kind == TK_LT || kind == TK_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT;
+}
+
+bool type_arg_close(uint kind)
+{
+    return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
 }
 
 bool metadata_path_context_step(inout uint node, uint active_count, out bool done)
@@ -146,6 +165,15 @@ bool metadata_path_context(uint node)
         return found;
     found = metadata_path_context_step(node, active_count, done);
     return found;
+}
+
+void mark_call_head(uint owner_token, uint call_node)
+{
+    if (!valid_token(owner_token))
+        return;
+
+    uint encoded_call_node = valid_hir_node(call_node) ? call_node + 1u : 1u;
+    atomic_u32_max(module_value_path_call_head, owner_token, encoded_call_node);
 }
 
 uint path_leaf_token(uint path_i)
@@ -182,13 +210,23 @@ uint associated_type_method_token(uint type_node)
         return INVALID;
 
     uint cursor = hir_token_end[type_node];
-    if (!valid_token(cursor + 3u))
-        return INVALID;
-    if (!path_colon(token_kind(cursor)) || !path_colon(token_kind(cursor + 1u)))
-        return INVALID;
-    uint method_token = cursor + 2u;
-    uint call_open_token = method_token + 1u;
-    return call_open(token_kind(call_open_token)) ? method_token : INVALID;
+    [unroll]
+    for (uint step = 0u; step < 16u; step += 1u)
+    {
+        if (!valid_token(cursor + 3u))
+            return INVALID;
+        if (path_colon(token_kind(cursor)) && path_colon(token_kind(cursor + 1u)))
+        {
+            uint method_token = cursor + 2u;
+            uint call_open_token = method_token + 1u;
+            return call_open(token_kind(call_open_token)) ? method_token : INVALID;
+        }
+        uint kind = token_kind(cursor);
+        if (kind == TK_SEMICOLON || call_open(kind))
+            return INVALID;
+        cursor += 1u;
+    }
+    return INVALID;
 }
 
 uint associated_method_token_before_call_open(uint call_open_token)
@@ -201,6 +239,61 @@ uint associated_method_token_before_call_open(uint call_open_token)
         !path_colon(token_kind(method_token - 1u)))
         return INVALID;
     return method_token;
+}
+
+bool generic_associated_receiver_before_method(uint method_token)
+{
+    if (!valid_token(method_token) || method_token < 3u)
+        return false;
+    uint before_colons = token_kind(method_token - 3u);
+    return type_arg_close(before_colons);
+}
+
+uint generic_associated_receiver_leaf_token(uint method_token)
+{
+    if (!generic_associated_receiver_before_method(method_token))
+        return INVALID;
+
+    uint cursor = method_token - 3u;
+    uint depth = 0u;
+    [unroll]
+    for (uint step = 0u; step < 64u; step += 1u)
+    {
+        uint kind = token_kind(cursor);
+        if (type_arg_close(kind))
+        {
+            depth += 1u;
+        }
+        else if (type_arg_open(kind))
+        {
+            if (depth == 1u)
+                return cursor > 0u ? cursor - 1u : INVALID;
+            if (depth > 0u)
+                depth -= 1u;
+        }
+
+        if (cursor == 0u)
+            return INVALID;
+        cursor -= 1u;
+    }
+    return INVALID;
+}
+
+uint associated_receiver_owner_token(uint receiver_token)
+{
+    uint owner = receiver_token;
+    [unroll]
+    for (uint step = 0u; step < MAX_PATH_SEGMENTS; step += 1u)
+    {
+        if (owner < 3u ||
+            !path_colon(token_kind(owner - 2u)) ||
+            !path_colon(token_kind(owner - 1u)))
+        {
+            return owner;
+        }
+        owner -= 3u;
+    }
+    return owner;
 }
 
 void mark_associated_receiver_span(uint owner_token, uint method_token)
@@ -222,7 +315,7 @@ bool mark_associated_type_call(uint type_node, uint owner_token, uint path_i)
     uint call_open_token = method_token + 1u;
     uint receiver_token = type_path_leaf_token(type_node, path_i, owner_token);
 
-    module_value_path_call_head[owner_token] = 1u;
+    mark_call_head(owner_token, INVALID);
     module_value_path_call_open[owner_token] = call_open_token;
     mark_associated_receiver_span(owner_token, method_token);
     module_value_path_associated_method_token[owner_token] = method_token;
@@ -240,16 +333,88 @@ bool mark_associated_type_call(uint type_node, uint owner_token, uint path_i)
     return true;
 }
 
+bool mark_generic_associated_expr_call(uint method_token)
+{
+    uint receiver_token = generic_associated_receiver_leaf_token(method_token);
+    if (!valid_token(receiver_token))
+        return false;
+
+    uint owner_token = associated_receiver_owner_token(receiver_token);
+    if (!valid_token(owner_token))
+        return false;
+
+    uint call_open_token = method_token + 1u;
+    uint path_i = path_id_by_owner_token[owner_token];
+    if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
+        path_i = path_id_by_owner_token[receiver_token];
+
+    mark_call_head(owner_token, INVALID);
+    module_value_path_call_open[owner_token] = call_open_token;
+    mark_associated_receiver_span(owner_token, method_token);
+    module_value_path_associated_method_token[owner_token] = method_token;
+    module_value_path_associated_method_token[receiver_token] = method_token;
+    module_value_path_associated_receiver_token[method_token] = receiver_token;
+    if (path_i != INVALID && path_i < gParams.n_hir_nodes)
+    {
+        module_value_path_call_path_id[owner_token] = path_i;
+        module_value_path_call_path_id[receiver_token] = path_i;
+        module_value_path_call_path_id[call_open_token] = path_i;
+        module_value_path_call_path_id[method_token] = path_i;
+    }
+    module_value_path_call_leaf[method_token] = 1u;
+    module_value_path_call_leaf[owner_token] = 1u;
+    return true;
+}
+
+bool mark_qualified_expr_call_before_open(uint leaf_token)
+{
+    if (!valid_token(leaf_token) || !valid_token(leaf_token + 1u) ||
+        !call_open(token_kind(leaf_token + 1u)))
+    {
+        return false;
+    }
+    if (leaf_token < 2u ||
+        !path_colon(token_kind(leaf_token - 2u)) ||
+        !path_colon(token_kind(leaf_token - 1u)))
+    {
+        return false;
+    }
+
+    uint owner_token = associated_receiver_owner_token(leaf_token);
+    if (!valid_token(owner_token) || owner_token == leaf_token)
+        return false;
+
+    uint path_i = path_id_by_owner_token[owner_token];
+    if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
+        path_i = path_id_by_owner_token[leaf_token];
+
+    mark_call_head(owner_token, INVALID);
+    module_value_path_call_open[owner_token] = leaf_token + 1u;
+    if (path_i != INVALID && path_i < gParams.n_hir_nodes)
+    {
+        module_value_path_call_path_id[owner_token] = path_i;
+        module_value_path_call_path_id[leaf_token] = path_i;
+        module_value_path_call_path_id[leaf_token + 1u] = path_i;
+    }
+    module_value_path_call_leaf[leaf_token] = 1u;
+    return true;
+}
+
 uint associated_expr_method_token(uint call_node)
 {
     if (!valid_hir_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
+    uint call_token = hir_token_pos[call_node];
+    uint method_token = associated_method_token_before_call_open(call_token);
+    if (valid_token(method_token))
+        return method_token;
+
     uint first_arg = hir_call_arg_start[call_node];
     if (valid_hir_node(first_arg))
     {
         uint first_arg_token = hir_token_pos[first_arg];
-        uint method_token = first_arg_token > 0u
+        method_token = first_arg_token > 0u
             ? associated_method_token_before_call_open(first_arg_token - 1u)
             : INVALID;
         if (valid_token(method_token))
@@ -260,7 +425,7 @@ uint associated_expr_method_token(uint call_node)
     if (valid_hir_node(callee_node))
     {
         uint callee_end = hir_token_end[callee_node];
-        uint method_token = associated_method_token_before_call_open(callee_end);
+        method_token = associated_method_token_before_call_open(callee_end);
         if (valid_token(method_token))
             return method_token;
         method_token = callee_end != INVALID && callee_end > 0u
@@ -282,27 +447,24 @@ bool mark_associated_expr_call(uint call_node)
     uint method_token = associated_expr_method_token(call_node);
     if (!valid_token(method_token) || method_token == owner_token)
         return false;
+    if (generic_associated_receiver_before_method(method_token))
+        return mark_generic_associated_expr_call(method_token);
 
     uint path_i = path_id_by_owner_token[owner_token];
-    uint receiver_token = path_leaf_token(path_i);
-    if (!valid_token(receiver_token))
-        receiver_token = owner_token;
+    uint leaf_token = path_leaf_token(path_i);
+    if (!valid_token(leaf_token))
+        leaf_token = method_token;
     uint call_open_token = method_token + 1u;
 
-    module_value_path_call_head[owner_token] = 1u;
+    mark_call_head(owner_token, call_node);
     module_value_path_call_open[owner_token] = call_open_token;
-    mark_associated_receiver_span(owner_token, method_token);
-    module_value_path_associated_method_token[owner_token] = method_token;
-    module_value_path_associated_method_token[receiver_token] = method_token;
-    module_value_path_associated_receiver_token[method_token] = receiver_token;
     if (path_i != INVALID && path_i < gParams.n_hir_nodes)
     {
         module_value_path_call_path_id[owner_token] = path_i;
-        module_value_path_call_path_id[receiver_token] = path_i;
         module_value_path_call_path_id[call_open_token] = path_i;
-        module_value_path_call_path_id[method_token] = path_i;
+        module_value_path_call_path_id[leaf_token] = path_i;
+        module_value_path_call_leaf[leaf_token] = 1u;
     }
-    module_value_path_call_leaf[method_token] = 1u;
     return true;
 }
 
@@ -311,6 +473,16 @@ bool mark_associated_expr_call(uint call_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
+    if (i < gParams.n_tokens &&
+        valid_token(i + 1u) &&
+        call_open(token_kind(i + 1u)))
+    {
+        if (generic_associated_receiver_before_method(i))
+            mark_generic_associated_expr_call(i);
+        else
+            mark_qualified_expr_call_before_open(i);
+    }
+
     if (i >= parser_hir_node_count())
         return;
     if (hir_kind[i] == HIR_CALL_EXPR)
@@ -363,11 +535,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (call_expr != INVALID && call_expr < active_hir_node_count() &&
         hir_kind[call_expr] == HIR_CALL_EXPR)
     {
-        module_value_path_call_head[token_i] = 1u;
-        module_value_path_call_open[token_i] = end_i - 1u;
+        uint call_open_token = valid_token(end_i) && call_open(token_kind(end_i))
+            ? end_i
+            : end_i - 1u;
+        if (!valid_token(call_open_token) || !call_open(token_kind(call_open_token)))
+            return;
+
+        mark_call_head(token_i, call_expr);
+        module_value_path_call_open[token_i] = call_open_token;
         if (path_i != INVALID && path_i < gParams.n_hir_nodes)
         {
-            module_value_path_call_path_id[end_i - 1u] = path_i;
+            module_value_path_call_path_id[call_open_token] = path_i;
             uint leaf = call_leaf_token_for_path(path_i);
             if (leaf < gParams.n_tokens)
             {

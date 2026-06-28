@@ -577,6 +577,27 @@ pub(super) fn create_semantic_record_bind_groups(
                     .as_entire_binding(),
             ),
             (
+                "hir_array_lit_first_element",
+                array_metadata.lit_first_element.as_entire_binding(),
+            ),
+            (
+                "hir_array_lit_element_count",
+                array_metadata.lit_element_count.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_parent_lit",
+                array_metadata.element_parent_lit.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_ordinal",
+                array_metadata.element_ordinal.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_next",
+                array_metadata.element_next.as_entire_binding(),
+            ),
+            ("x86_tree_parent", parent_buf.as_entire_binding()),
+            (
                 "x86_node_tree_status",
                 node_tree_status_buf.as_entire_binding(),
             ),
@@ -721,6 +742,16 @@ pub(super) fn create_semantic_record_bind_groups(
                 type_metadata.type_instance_decl_token.as_entire_binding(),
             ),
             (
+                "type_instance_elem_ref_tag",
+                type_metadata.type_instance_elem_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_payload",
+                type_metadata
+                    .type_instance_elem_ref_payload
+                    .as_entire_binding(),
+            ),
+            (
                 "type_instance_len_kind",
                 type_metadata.type_instance_len_kind.as_entire_binding(),
             ),
@@ -820,6 +851,16 @@ pub(super) fn create_semantic_record_bind_groups(
             (
                 "type_instance_decl_token",
                 type_metadata.type_instance_decl_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_tag",
+                type_metadata.type_instance_elem_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_elem_ref_payload",
+                type_metadata
+                    .type_instance_elem_ref_payload
+                    .as_entire_binding(),
             ),
             (
                 "type_instance_len_kind",

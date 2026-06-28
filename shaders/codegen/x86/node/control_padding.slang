@@ -39,6 +39,7 @@ StructuredBuffer<uint4> x86_match_record;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint> x86_match_result_value_owner;
 StructuredBuffer<uint> x86_for_iterable_node;
+StructuredBuffer<uint> x86_decl_layout_record;
 
 RWStructuredBuffer<uint> x86_node_control_padding;
 
@@ -59,6 +60,7 @@ static const uint STMT_RECORD_KIND_WHILE = 6u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
 
 static const uint X86_FEATURE_MATCH = 1u << 1u;
+static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -88,6 +90,21 @@ uint stmt_slot(uint node, uint slot)
         STMT_RECORD_STRIDE,
         slot,
         INVALID);
+}
+
+uint decl_layout_word(uint row, uint slot)
+{
+    return row_major_load<uint>(
+        x86_decl_layout_record,
+        row,
+        X86_DECL_LAYOUT_STRIDE,
+        slot,
+        INVALID);
+}
+
+uint decl_layout_width(uint row)
+{
+    return decl_layout_word(row, 1u);
 }
 
 bool node_is_stmt_kind(uint node, uint stmt_kind)
@@ -131,6 +148,15 @@ bool supported_return_match(uint match_node)
            match_expr_is_return_value(match_node);
 }
 
+uint for_element_width(uint for_node)
+{
+    if (!node_is_stmt_kind(for_node, STMT_RECORD_KIND_FOR))
+        return 1u;
+    uint decl_token = stmt_slot(for_node, 1u);
+    uint width = decl_layout_width(decl_token);
+    return width == INVALID || width == 0u ? 1u : width;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -161,7 +187,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (node_is_stmt_kind(node, STMT_RECORD_KIND_FOR))
     {
-        add_padding(x86_for_iterable_node[node], 3u);
+        add_padding(x86_for_iterable_node[node], 2u + for_element_width(node));
         add_padding(stmt_slot(node, 3u), 1u);
         return;
     }

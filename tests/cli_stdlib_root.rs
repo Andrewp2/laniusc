@@ -26,6 +26,52 @@ fn assert_cli_fails_with(args: &[&std::path::Path], string_args: &[&str], contex
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+#[cfg(all(unix, target_arch = "x86_64"))]
+#[test]
+fn cli_stdlib_root_x86_sample_build_command_runs_stdio_print_i32() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sample = repo_root.join("sample_programs/stdio_print_i32.lani");
+    let expected_stdout =
+        fs::read_to_string(repo_root.join("sample_programs/stdio_print_i32.stdout"))
+            .expect("read stdio_print_i32 expected stdout");
+    let stdlib_root = repo_root.join("stdlib");
+    let exe = common::TempArtifact::new("laniusc_cli_stdlib_root", "stdio_print_i32", None);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--stdlib-root")
+        .arg(&stdlib_root)
+        .arg("--emit")
+        .arg("x86_64")
+        .arg("-o")
+        .arg(exe.path())
+        .arg(&sample);
+    let output = common::codegen_command_output_with_timeout(
+        "laniusc --stdlib-root stdio_print_i32 --emit x86_64",
+        &mut command,
+    );
+    common::assert_command_success(
+        "laniusc --stdlib-root stdio_print_i32 --emit x86_64",
+        &output,
+    );
+
+    let mut permissions = fs::metadata(exe.path())
+        .unwrap_or_else(|err| panic!("stat emitted executable {}: {err}", exe.path().display()))
+        .permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(exe.path(), permissions)
+        .unwrap_or_else(|err| panic!("chmod emitted executable {}: {err}", exe.path().display()));
+
+    let mut command = Command::new(exe.path());
+    let output =
+        common::short_process_output_with_timeout("run stdio_print_i32 sample", &mut command);
+    common::assert_command_success("stdio_print_i32 sample execution", &output);
+    let stdout = common::stdout_utf8("stdio_print_i32 sample stdout", output.stdout);
+    assert_eq!(stdout, expected_stdout);
+}
+
 #[test]
 fn cli_stdlib_root_reports_missing_import_before_gpu() {
     let root = common::temp_artifact_path("laniusc_cli_stdlib_root", "root", None);

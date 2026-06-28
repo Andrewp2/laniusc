@@ -37,6 +37,7 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_ERROR = 4u;
 
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
@@ -128,6 +129,39 @@ uint result_expr(uint node)
     return valid_node(root) ? root : INVALID;
 }
 
+uint direct_scalar_expr_type(uint node)
+{
+    node = result_expr(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_NAME)
+    {
+        uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+        if (!valid_token(token))
+            token = hir_token_pos[node];
+        if (!valid_token(token))
+            return TY_UNKNOWN;
+
+        uint decl_token = visible_decl[token];
+        if (!valid_token(decl_token))
+            return TY_UNKNOWN;
+        if (decl_type_ref_tag[decl_token] != TYPE_REF_SCALAR)
+            return TY_UNKNOWN;
+
+        return decl_type_ref_payload[decl_token];
+    }
+
+    return TY_UNKNOWN;
+}
+
 uint scalar_expr_type(uint node)
 {
     node = result_expr(node);
@@ -171,8 +205,14 @@ uint scalar_expr_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_scalar_expr_type(expr_slot(node, HIR_EXPR_RECORD_LEFT));
+        uint right_ty = direct_scalar_expr_type(expr_slot(node, HIR_EXPR_RECORD_RIGHT));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -204,11 +244,15 @@ uint type_instance_from_ref(uint tag, uint payload)
 {
     if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
         return INVALID;
-    if (type_instance_state[payload] != TYPE_INSTANCE_RESOLVED)
-        return INVALID;
 
     uint kind = type_instance_kind[payload];
     if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return INVALID;
+
+    uint elem_tag = type_instance_elem_ref_tag[payload];
+    uint elem_payload = type_instance_elem_ref_payload[payload];
+    if (elem_tag == TYPE_REF_INVALID || elem_tag == TYPE_REF_ERROR ||
+        elem_payload == INVALID)
         return INVALID;
 
     return payload;
@@ -221,8 +265,18 @@ uint array_or_slice_instance_from_decl(uint decl_token)
     return type_instance_from_ref(decl_type_ref_tag[decl_token], decl_type_ref_payload[decl_token]);
 }
 
-uint array_or_slice_instance_for_base_node(uint base_node)
+uint array_or_slice_instance_for_base_token(uint base_token)
 {
+    if (!valid_token(base_token))
+        return INVALID;
+
+    uint decl_token = visible_decl[base_token];
+    return array_or_slice_instance_from_decl(decl_token);
+}
+
+uint array_or_slice_instance_for_index_node(uint index_node)
+{
+    uint base_node = base_node_for_index(index_node);
     if (!valid_node(base_node))
         return INVALID;
 
@@ -230,8 +284,7 @@ uint array_or_slice_instance_for_base_node(uint base_node)
     if (!valid_token(base_token))
         return INVALID;
 
-    uint decl_token = visible_decl[base_token];
-    return array_or_slice_instance_from_decl(decl_token);
+    return array_or_slice_instance_for_base_token(base_token);
 }
 
 uint type_ref_to_type_code(uint tag, uint payload)
@@ -256,8 +309,7 @@ void publish_index_result(uint index_node)
     if (index_operand_scalar_type(index_node) != TY_INT)
         return;
 
-    uint base_node = base_node_for_index(index_node);
-    uint instance = array_or_slice_instance_for_base_node(base_node);
+    uint instance = array_or_slice_instance_for_index_node(index_node);
     if (instance == INVALID)
         return;
 

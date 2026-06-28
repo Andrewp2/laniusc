@@ -40,6 +40,7 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_expr_int_value;
+StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> path_count_out;
@@ -200,6 +201,7 @@ static const uint X86_VINST_ERROR_ROW_OUTSIDE_SUBTREE = 3021u;
 static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
 static const uint X86_VINST_ERROR_AGG_RET_COPY_WIDTH = 2623u;
 
+static const uint HIR_FN = 3u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_PARAM = 4u;
 static const uint HIR_LET_STMT = 8u;
@@ -288,6 +290,8 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INDEX = 26u;
+static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_RANGE = 30u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint X86_CONST_VALUE_LITERAL = 1u;
@@ -950,6 +954,17 @@ bool decl_array_len(uint decl_token, out uint len)
            len != 0u;
 }
 
+uint for_element_width(uint node)
+{
+    if (!valid_node(node) ||
+        !((hir_kind[node] == HIR_FOR_STMT || hir_kind[node] == HIR_STMT) &&
+          stmt_slot(node, 0u) == STMT_RECORD_KIND_FOR))
+        return 1u;
+    uint decl_token = stmt_slot(node, 1u);
+    uint width = decl_layout_width(decl_token);
+    return width == INVALID || width == 0u ? 1u : width;
+}
+
 bool decl_aggregate_width(uint decl_token, out uint width)
 {
     width = 0u;
@@ -969,6 +984,32 @@ bool decl_aggregate_width(uint decl_token, out uint width)
             width = param.w;
             return true;
         }
+    }
+    return false;
+}
+
+bool decl_storage_aggregate_width(uint decl_token, out uint width)
+{
+    width = 0u;
+    if (!valid_token(decl_token))
+        return false;
+
+    uint width_candidate = decl_layout_width(decl_token);
+    if (decl_layout_base(decl_token) != INVALID &&
+        decl_layout_kind(decl_token) != 0u &&
+        width_candidate > 0u)
+    {
+        width = width_candidate;
+        return true;
+    }
+
+    uint4 param = param_reg_record(decl_token);
+    if (param.x != INVALID &&
+        param_reg_aggregate_kind(decl_token) != 0u &&
+        param.w > 0u)
+    {
+        width = param.w;
+        return true;
     }
     return false;
 }
@@ -1021,7 +1062,7 @@ bool struct_field_store_for_value_node(uint node, out uint decl_token, out uint 
     uint width = 0u;
     return valid_token(decl_token) &&
            ordinal != INVALID &&
-           decl_aggregate_width(decl_token, width) &&
+           decl_storage_aggregate_width(decl_token, width) &&
            ordinal < width;
 }
 
@@ -1059,6 +1100,16 @@ bool struct_literal_width(uint expr_node, out uint width)
         return false;
     width = struct_access_payload0(record_node);
     return width > 1u;
+}
+
+bool struct_literal_storage_width(uint expr_node, out uint width)
+{
+    width = 0u;
+    uint record_node = struct_literal_record_node_for_expr(expr_node);
+    if (!valid_node(record_node))
+        return false;
+    width = struct_access_payload0(record_node);
+    return width > 0u;
 }
 
 uint enum_value_kind(uint2 record)
@@ -1231,6 +1282,11 @@ bool literal_value(uint node, out uint value)
     if (form == HIR_EXPR_INT)
     {
         value = hir_expr_int_value[node];
+        return true;
+    }
+    if (form == HIR_EXPR_FLOAT)
+    {
+        value = hir_expr_float_bits[node];
         return true;
     }
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
@@ -1637,7 +1693,7 @@ bool aggregate_source_for_decl(uint decl_token, uint owner_fn, out uint source_k
     uint kind = decl_layout_kind(decl_token);
     uint local_width = decl_layout_width(decl_token);
     if (base != INVALID && valid_node(decl_node) &&
-        x86_node_func[decl_node] == owner_fn && kind != 0u && local_width > 0u)
+        x86_node_func[decl_node] == owner_fn && kind != 0u && local_width > 1u)
     {
         source_kind = X86_AGG_SOURCE_LOCAL;
         payload = base;
@@ -1673,6 +1729,52 @@ bool aggregate_source_for_expr(uint expr_node, uint owner_fn, out uint source_ki
     payload = INVALID;
     width = 0u;
     return aggregate_source_for_name(expr_node, owner_fn, source_kind, payload, width);
+}
+
+bool member_source_for_decl(uint decl_token, uint owner_fn, out uint source_kind, out uint payload, out uint width)
+{
+    source_kind = 0u;
+    payload = INVALID;
+    width = 0u;
+    if (!valid_token(decl_token))
+        return false;
+
+    uint base = decl_layout_base(decl_token);
+    uint decl_node = decl_layout_node(decl_token);
+    uint kind = decl_layout_kind(decl_token);
+    uint local_width = decl_layout_width(decl_token);
+    if (base != INVALID && valid_node(decl_node) &&
+        x86_node_func[decl_node] == owner_fn && kind != 0u && local_width > 0u)
+    {
+        source_kind = X86_AGG_SOURCE_LOCAL;
+        payload = base;
+        width = local_width;
+        return true;
+    }
+
+    uint4 param = param_reg_record(decl_token);
+    if (param.x == owner_fn &&
+        param.z != INVALID &&
+        param_reg_aggregate_kind(decl_token) != 0u &&
+        param.w > 0u)
+    {
+        source_kind = X86_AGG_SOURCE_PARAM;
+        payload = param.z;
+        width = param.w;
+        return true;
+    }
+    return false;
+}
+
+bool member_source_for_expr(uint expr_node, uint owner_fn, out uint source_kind, out uint payload, out uint width)
+{
+    source_kind = 0u;
+    payload = INVALID;
+    width = 0u;
+    uint decl_token = INVALID;
+    if (!decl_token_for_name(expr_node, decl_token))
+        return false;
+    return member_source_for_decl(decl_token, owner_fn, source_kind, payload, width);
 }
 
 uint member_source_failure_detail(uint expr_node, uint owner_fn)
@@ -2471,18 +2573,27 @@ bool for_layout_for_node(uint node, out uint value_slot, out uint index_slot)
         return false;
 
     value_slot = decl_layout_base(decl_token);
-    index_slot = value_slot == INVALID ? INVALID : value_slot + 1u;
+    uint element_width = for_element_width(node);
+    index_slot = value_slot == INVALID ? INVALID : value_slot + element_width;
     if (value_slot == INVALID || index_slot == INVALID)
         return false;
     return true;
 }
 
-bool array_iterable_layout_for_for_node(uint node, out uint source_kind, out uint payload, out uint len)
+bool array_iterable_layout_for_for_node(
+    uint node,
+    out uint source_kind,
+    out uint payload,
+    out uint storage_width,
+    out uint element_width)
 {
     source_kind = 0u;
     payload = INVALID;
-    len = 0u;
+    storage_width = 0u;
+    element_width = for_element_width(node);
     if (!valid_node(node))
+        return false;
+    if (element_width == 0u)
         return false;
 
     uint iterable_node = x86_for_iterable_node[node];
@@ -2501,9 +2612,11 @@ bool array_iterable_layout_for_for_node(uint node, out uint source_kind, out uin
         uint width = decl_layout_width(decl_token);
         if (kind == X86_DECL_AGG_ARRAY && width != 0u)
         {
+            if (width % element_width != 0u)
+                return false;
             source_kind = X86_AGG_SOURCE_LOCAL;
             payload = base_slot;
-            len = width;
+            storage_width = width;
             return true;
         }
     }
@@ -2514,13 +2627,33 @@ bool array_iterable_layout_for_for_node(uint node, out uint source_kind, out uin
         param.w != 0u &&
         param_reg_aggregate_kind(decl_token) == X86_DECL_AGG_ARRAY)
     {
+        if (param.w % element_width != 0u)
+            return false;
         source_kind = X86_AGG_SOURCE_PARAM;
         payload = param.z;
-        len = param.w;
+        storage_width = param.w;
         return true;
     }
 
     return false;
+}
+
+bool numeric_range_iterable_for_for_node(uint node, out uint start_node, out uint end_node)
+{
+    start_node = INVALID;
+    end_node = INVALID;
+    if (!valid_node(node))
+        return false;
+
+    uint iterable_node = x86_for_iterable_node[node];
+    if (!valid_node(iterable_node) ||
+        hir_kind[iterable_node] != HIR_EXPR ||
+        expr_form(iterable_node) != HIR_EXPR_RANGE)
+        return false;
+
+    start_node = expr_left(iterable_node);
+    end_node = expr_right(iterable_node);
+    return valid_node(start_node) && valid_node(end_node);
 }
 
 uint member_access_node_for_expr(uint expr_node)
@@ -2913,7 +3046,7 @@ bool emit_member_field_value(uint node, uint row, uint dst)
     uint source_kind = 0u;
     uint payload = INVALID;
     uint width = 0u;
-    if (!aggregate_source_for_expr(receiver_node, x86_node_func[node], source_kind, payload, width))
+    if (!member_source_for_expr(receiver_node, x86_node_func[node], source_kind, payload, width))
     {
         uint nested_receiver = INVALID;
         if (nested_aggregate_member_receiver(node, nested_receiver))
@@ -2935,7 +3068,19 @@ bool emit_member_field_value(uint node, uint row, uint dst)
     if (source_kind == X86_AGG_SOURCE_LOCAL)
         write_inst(row, node, 0u, X86_VINST_LOAD_LOCAL, dst, uint4(payload + ordinal, 0u, 0u, 0u));
     else if (source_kind == X86_AGG_SOURCE_PARAM)
-        write_inst(row, node, 0u, X86_VINST_LOAD_PARAM_SLOT, dst, uint4(payload, ordinal, 0u, 0u));
+    {
+        uint4 param_record = uint4_fill(INVALID);
+        if (width == 1u && ordinal == 0u)
+        {
+            if (!param_record_for_name(receiver_node, param_record))
+                return false;
+            write_inst(row, node, 0u, X86_VINST_PARAM, dst, param_record);
+        }
+        else
+        {
+            write_inst(row, node, 0u, X86_VINST_LOAD_PARAM_SLOT, dst, uint4(payload, ordinal, 0u, 0u));
+        }
+    }
     else
         return false;
 
@@ -3083,8 +3228,7 @@ bool emit_expr(uint node, uint2 range)
         return emit_aggregate_element_stores(node, dst, 1u);
     }
     uint4 param_record = uint4_fill(INVALID);
-    if (is_struct_literal_head_or_path_child(node) &&
-        aggregate_element_store_count(node) == 0u)
+    if (is_struct_literal_head_or_path_child(node))
         return true;
 
     if (form == HIR_EXPR_NAME && has_enum_value_record(node))
@@ -3212,6 +3356,14 @@ bool emit_param(uint node, uint2 range)
 uint function_slot_for_node(uint fn_node)
 {
     return valid_node(fn_node) ? x86_func_slot_by_node[fn_node] : INVALID;
+}
+
+bool compiled_function_node(uint node)
+{
+    return valid_node(node) &&
+           hir_kind[node] == HIR_FN &&
+           x86_node_func[node] == node &&
+           function_slot_for_node(node) != INVALID;
 }
 
 bool emit_call(uint node, uint2 range)
@@ -4000,7 +4152,10 @@ bool emit_stmt(uint node, uint2 range)
         uint index_slot = INVALID;
         uint array_source_kind = 0u;
         uint array_payload = INVALID;
-        uint array_len = 0u;
+        uint array_storage_width = 0u;
+        uint array_element_width = 1u;
+        uint range_start_node = INVALID;
+        uint range_end_node = INVALID;
         uint init_row = INVALID;
         uint branch_row = INVALID;
         uint load_row = INVALID;
@@ -4012,7 +4167,38 @@ bool emit_stmt(uint node, uint2 range)
             write_status_error_detail(node, X86_VINST_ERROR_FOR_LAYOUT);
             return false;
         }
-        if (!array_iterable_layout_for_for_node(node, array_source_kind, array_payload, array_len))
+        if (numeric_range_iterable_for_for_node(node, range_start_node, range_end_node))
+        {
+            uint start_vreg = INVALID;
+            uint end_vreg = INVALID;
+            if (!value_vreg_for_node(range_start_node, start_vreg) ||
+                !value_vreg_for_node(range_end_node, end_vreg))
+            {
+                write_status_error_detail(node, X86_VINST_ERROR_FOR_ITERABLE);
+                return false;
+            }
+            if (!location_for_node_local(node, 0u, init_row) ||
+                !location_for_node_local(node, 1u, load_row) ||
+                !location_for_node_local(node, 2u, branch_row) ||
+                !location_for_node_local(body_node, 0u, inc_row) ||
+                !row_after_subtree(node, after_target))
+            {
+                write_status_error_detail(node, X86_VINST_ERROR_FOR_LOCATION);
+                return false;
+            }
+
+            write_inst(init_row, node, 0u, X86_VINST_STORE_LOCAL, INVALID, uint4(value_slot, start_vreg, 0u, 0u));
+            write_inst(load_row, node, 1u, X86_VINST_STORE_LOCAL, INVALID, uint4(index_slot, end_vreg, 0u, 0u));
+            write_inst(branch_row, node, 2u, X86_VINST_FOR_INTERVAL_BRANCH, INVALID, uint4(value_slot, index_slot, after_target, 0u));
+            write_inst(inc_row, node, 3u, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(value_slot, branch_row, 1u, 0u));
+            return true;
+        }
+        if (!array_iterable_layout_for_for_node(
+                node,
+                array_source_kind,
+                array_payload,
+                array_storage_width,
+                array_element_width))
         {
             write_for_iterable_error(node);
             return false;
@@ -4028,12 +4214,26 @@ bool emit_stmt(uint node, uint2 range)
         }
 
         write_inst(init_row, node, 0u, X86_VINST_STORE_LOCAL_IMM, INVALID, uint4(index_slot, 0u, 0u, 0u));
-        write_inst(branch_row, node, 1u, X86_VINST_FOR_ARRAY_BRANCH, INVALID, uint4(index_slot, array_len, after_target, 0u));
+        write_inst(branch_row, node, 1u, X86_VINST_FOR_ARRAY_BRANCH, INVALID, uint4(index_slot, array_storage_width, after_target, 0u));
         uint load_op = array_source_kind == X86_AGG_SOURCE_PARAM
                            ? X86_VINST_FOR_PARAM_ARRAY_LOAD
                            : X86_VINST_FOR_ARRAY_LOAD;
-        write_inst(load_row, node, 2u, load_op, INVALID, uint4(array_payload, index_slot, value_slot, 0u));
-        write_inst(inc_row, node, 3u, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(index_slot, branch_row, 0u, 0u));
+        [loop]
+        for (uint ordinal = 0u; ordinal < array_element_width; ordinal += 1u)
+        {
+            uint field_load_row = load_row + ordinal;
+            uint source_payload = array_source_kind == X86_AGG_SOURCE_PARAM
+                                      ? pack_u16_pair(array_payload, ordinal)
+                                      : array_payload + ordinal;
+            write_inst(
+                field_load_row,
+                node,
+                2u + ordinal,
+                load_op,
+                INVALID,
+                uint4(source_payload, index_slot, value_slot + ordinal, 0u));
+        }
+        write_inst(inc_row, node, 2u + array_element_width, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(index_slot, branch_row, array_element_width, 0u));
         return true;
     }
 
@@ -4071,6 +4271,26 @@ bool emit_stmt(uint node, uint2 range)
     }
 
     return false;
+}
+
+bool emit_function_fallthrough_return(uint node)
+{
+    if (!compiled_function_node(node))
+        return false;
+
+    uint value_row = INVALID;
+    uint return_row = INVALID;
+    if (!location_for_node_local(node, 0u, value_row) ||
+        !location_for_node_local(node, 1u, return_row))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_RETURN_LOCATION);
+        return false;
+    }
+
+    write_inst(value_row, node, 0u, X86_VINST_IMM_I32, value_row, uint4(0u, 0u, 0u, 0u));
+    write_node_value(node, X86_NODE_VALUE_IMM_I32, 0u, value_row, 0u);
+    write_inst(return_row, node, 1u, X86_VINST_RETURN, INVALID, uint4(value_row, 0u, 0u, 0u));
+    return true;
 }
 
 [shader("compute")]
@@ -4113,7 +4333,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
 
     bool emitted = false;
-    if (has_match_feature() && hir_kind[node] == HIR_MATCH_EXPR)
+    if (hir_kind[node] == HIR_FN)
+        emitted = emit_function_fallthrough_return(node);
+    else if (has_match_feature() && hir_kind[node] == HIR_MATCH_EXPR)
         emitted = emit_return_match(node);
     else if (hir_kind[node] == HIR_PARAM)
         emitted = emit_param(node, range);

@@ -36,6 +36,8 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> x86_struct_type_record;
@@ -119,6 +121,29 @@ uint sysv_integer_arg_reg(uint ordinal)
     return INVALID;
 }
 
+uint semantic_type_width(uint ty);
+
+uint named_type_width(uint ty)
+{
+    if (!valid_token(ty))
+        return 1u;
+    uint enum_token = type_instance_decl_token[ty];
+    if (valid_token(enum_token) && x86_enum_type_record[enum_token] > 1u)
+        return x86_enum_type_record[enum_token];
+    if (valid_token(enum_token) && x86_struct_type_record[enum_token] != 0u)
+        return x86_struct_type_record[enum_token];
+    return 1u;
+}
+
+uint type_ref_leaf_width(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return semantic_type_width(payload);
+    if (tag == TYPE_REF_INSTANCE)
+        return named_type_width(payload);
+    return 1u;
+}
+
 uint type_width(uint ty)
 {
     if (!valid_token(ty))
@@ -126,13 +151,13 @@ uint type_width(uint ty)
     if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
         type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
         type_instance_len_payload[ty] != 0u)
-        return type_instance_len_payload[ty];
-    uint enum_token = type_instance_decl_token[ty];
-    if (valid_token(enum_token) && x86_enum_type_record[enum_token] > 1u)
-        return x86_enum_type_record[enum_token];
-    if (valid_token(enum_token) && x86_struct_type_record[enum_token] != 0u)
-        return x86_struct_type_record[enum_token];
-    return 1u;
+    {
+        uint elem_width = type_ref_leaf_width(
+            type_instance_elem_ref_tag[ty],
+            type_instance_elem_ref_payload[ty]);
+        return max(elem_width, 1u) * type_instance_len_payload[ty];
+    }
+    return named_type_width(ty);
 }
 
 bool type_instance_is_unsized_array(uint ty)

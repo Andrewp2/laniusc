@@ -434,6 +434,7 @@ pub struct ParserBuffers {
     pub hir_binary_span_start_a: LaniusBuffer<u32>,
     pub hir_binary_span_start_b: LaniusBuffer<u32>,
     pub hir_expr_int_value: LaniusBuffer<u32>,
+    pub hir_expr_float_bits: LaniusBuffer<u32>,
     pub hir_member_receiver_node: LaniusBuffer<u32>,
     pub hir_member_receiver_token: LaniusBuffer<u32>,
     pub hir_member_name_token: LaniusBuffer<u32>,

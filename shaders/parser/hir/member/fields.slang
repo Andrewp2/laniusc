@@ -19,6 +19,7 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
@@ -79,6 +80,14 @@ uint first_child_node(uint node)
     return valid_node(child) ? child : INVALID;
 }
 
+uint previous_sibling_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint previous = prev_sibling[node];
+    return valid_node(previous) ? previous : INVALID;
+}
+
 bool is_postfix_operator(uint prod)
 {
     return prod == PROD_POSTFIX_CALL || prod == PROD_POSTFIX_INDEX ||
@@ -127,6 +136,10 @@ uint receiver_token_for_node(uint receiver_node)
 
 uint receiver_node_for_member(uint member_node)
 {
+    uint previous = previous_sibling_node(member_node);
+    if (is_postfix_operator(node_kind[previous]))
+        return previous;
+
     uint p = parent_node(member_node);
     if (!valid_node(p))
         return INVALID;

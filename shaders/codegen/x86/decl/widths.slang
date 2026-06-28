@@ -32,6 +32,8 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> x86_struct_type_record;
@@ -290,11 +292,64 @@ bool struct_width_for_decl(uint decl_token, out uint width)
     return width != 0u;
 }
 
+uint semantic_type_storage_width(uint ty)
+{
+    if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
+        return 2u;
+    if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
+    {
+        uint struct_token = ty - TY_STRUCT_BASE;
+        if (valid_token(struct_token) && x86_struct_type_record[struct_token] != 0u)
+            return x86_struct_type_record[struct_token];
+    }
+    return 1u;
+}
+
+uint named_type_instance_storage_width(uint ty)
+{
+    if (!valid_token(ty))
+        return 1u;
+    uint decl_token = type_instance_decl_token[ty];
+    if (valid_token(decl_token) && x86_enum_type_record[decl_token] > 1u)
+        return x86_enum_type_record[decl_token];
+    if (valid_token(decl_token) && x86_struct_type_record[decl_token] != 0u)
+        return x86_struct_type_record[decl_token];
+    return 1u;
+}
+
+uint type_ref_leaf_storage_width(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return semantic_type_storage_width(payload);
+    if (tag == TYPE_REF_INSTANCE)
+        return named_type_instance_storage_width(payload);
+    return 1u;
+}
+
+uint type_instance_storage_width(uint ty)
+{
+    if (!valid_token(ty))
+        return 1u;
+    if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
+        type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
+        type_instance_len_payload[ty] != 0u)
+    {
+        uint elem_width = type_ref_leaf_storage_width(
+            type_instance_elem_ref_tag[ty],
+            type_instance_elem_ref_payload[ty]);
+        return max(elem_width, 1u) * type_instance_len_payload[ty];
+    }
+    return named_type_instance_storage_width(ty);
+}
+
 uint width_for_decl(uint decl_token)
 {
-    uint len = 0u;
-    if (array_len_for_decl(decl_token, len))
-        return len;
+    if (!valid_token(decl_token))
+        return 1u;
+    if (decl_type_ref_tag[decl_token] == TYPE_REF_INSTANCE)
+        return max(
+            type_instance_storage_width(decl_type_ref_payload[decl_token]),
+            semantic_type_storage_width(visible_type[decl_token]));
     uint enum_width = 0u;
     if (enum_width_for_decl(decl_token, enum_width))
         return max(enum_width, visible_type[decl_token] != TY_UNKNOWN
@@ -337,10 +392,10 @@ bool type_instance_aggregate_width(uint ty, out uint width)
         return false;
     if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
         type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
-        type_instance_len_payload[ty] > 1u)
+        type_instance_len_payload[ty] != 0u)
     {
-        width = type_instance_len_payload[ty];
-        return true;
+        width = type_instance_storage_width(ty);
+        return width > 1u;
     }
 
     uint decl_token = type_instance_decl_token[ty];
@@ -441,7 +496,10 @@ bool is_scalar_param_node(uint node)
 uint local_width_for_node(uint node)
 {
     if (is_for_node(node))
-        return 2u;
+    {
+        uint decl_token = stmt_slot(node, 1u);
+        return width_for_decl(decl_token) + 1u;
+    }
     if (is_scalar_param_node(node))
         return 1u;
     if (is_local_decl_node(node))

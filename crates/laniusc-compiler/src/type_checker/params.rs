@@ -183,19 +183,19 @@ pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
 /// Maximum number of source bytes inspected for one compacted name key.
 pub(in crate::type_checker) const NAME_RADIX_MAX_BYTES: u32 = 64;
 /// Number of builtin symbols materialized before user names are resolved.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 19;
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 20;
 /// Concatenated builtin symbol spelling table.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_BYTES: &[u8] =
-    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstr_";
+    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_";
 /// Start offsets into `LANGUAGE_SYMBOL_BYTES` for each builtin symbol.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_STARTS: &[u32] = &[
-    0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64,
+    0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73,
 ];
 /// Byte lengths for each builtin symbol spelling.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] =
-    &[4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 1];
+    &[4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1];
 /// Number of language declarations materialized from builtin symbols.
-pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 18;
+pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 19;
 const LANGUAGE_DECL_KIND_ENTRYPOINT: u32 = 1;
 const LANGUAGE_DECL_KIND_INTRINSIC: u32 = 2;
 const LANGUAGE_DECL_KIND_PRIMITIVE_TYPE: u32 = 3;
@@ -203,8 +203,9 @@ const LANGUAGE_DECL_TAG_MAIN: u32 = 1;
 const LANGUAGE_DECL_TAG_PRINT: u32 = 1;
 const LANGUAGE_DECL_TAG_ASSERT: u32 = 2;
 /// Builtin symbol slots that become materialized language declarations.
-pub(in crate::type_checker) const LANGUAGE_DECL_SYMBOL_SLOTS: &[u32] =
-    &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+pub(in crate::type_checker) const LANGUAGE_DECL_SYMBOL_SLOTS: &[u32] = &[
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+];
 /// Declaration kind table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[
     LANGUAGE_DECL_KIND_ENTRYPOINT,
@@ -225,6 +226,7 @@ pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
+    LANGUAGE_DECL_KIND_INTRINSIC,
 ];
 /// Declaration tag table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
@@ -246,6 +248,7 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     5, // f64
     6, // char
     7, // str
+    LANGUAGE_DECL_TAG_PRINT,
 ];
 /// Number of key segments used when sorting module identities.
 pub(in crate::type_checker) const MODULE_KEY_SORT_SEGMENTS: u32 = 8;

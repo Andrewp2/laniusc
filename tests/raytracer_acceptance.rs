@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use laniusc_compiler::compiler::compile_source_to_x86_64_with_gpu_codegen_from_path;
+use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/raytracer_ppm");
 
@@ -84,8 +84,9 @@ fn raytracer_ppm_compiles_runs_and_matches_oracle() {
     let bytes = common::run_gpu_codegen_with_timeout("raytracer PPM fixture native compile", {
         let source_path = source_path.clone();
         move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(
                 &source_path,
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib"),
             ))
         }
     })

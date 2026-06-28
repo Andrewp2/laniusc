@@ -17,6 +17,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -32,6 +33,7 @@ RWStructuredBuffer<uint> method_decl_name_id;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_INSTANCE = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -84,6 +86,26 @@ uint impl_receiver_type_node(uint impl_node)
     return valid_node(receiver) ? receiver : INVALID;
 }
 
+uint path_leaf_token_for_type_node(uint node)
+{
+    uint leaf_node = valid_node(node) ? hir_type_path_leaf_node[node] : INVALID;
+    return valid_node(leaf_node) ? hir_token_pos[leaf_node] : INVALID;
+}
+
+uint receiver_ref_token_for_type_node(uint type_node)
+{
+    uint owner_token = type_node == INVALID ? INVALID : hir_token_pos[type_node];
+    uint leaf_token = path_leaf_token_for_type_node(type_node);
+
+    if (owner_token < active_token_count() && type_expr_ref_tag[owner_token] == TYPE_REF_INSTANCE)
+        return owner_token;
+    if (leaf_token < active_token_count() && type_expr_ref_tag[leaf_token] == TYPE_REF_INSTANCE)
+        return leaf_token;
+    if (owner_token < active_token_count())
+        return owner_token;
+    return leaf_token < active_token_count() ? leaf_token : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -98,7 +120,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint impl_token = hir_token_pos[impl_node];
     uint type_node = impl_receiver_type_node(impl_node);
-    uint type_i = type_node == INVALID ? INVALID : hir_token_pos[type_node];
+    uint type_i = receiver_ref_token_for_type_node(type_node);
 
     method_decl_receiver_ref_tag[i] =
         type_i == INVALID || type_i >= active_token_count() ? TYPE_REF_INVALID

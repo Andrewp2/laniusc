@@ -710,7 +710,7 @@ pub struct RuntimeServiceBoundaryDiagnosticInfo {
     pub executable: bool,
 }
 
-/// Metadata for one stdlib API that requires a runtime service binding.
+/// Metadata for one stdlib API that crosses a runtime or compiler-host boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RuntimeBoundApiDiagnosticInfo {
     /// Diagnostic code that reports runtime-bound API failures.
@@ -735,7 +735,8 @@ pub struct RuntimeBoundApiDiagnosticInfo {
     pub module_path: &'static str,
     /// Fully qualified API name.
     pub api_name: &'static str,
-    /// Runtime ABI family expected by the API.
+    /// Runtime ABI family expected by the API, or compiler primitive family for
+    /// APIs backed directly by codegen.
     pub extern_abi: &'static str,
     /// Query function that reports whether the API is executable.
     pub executable_probe: &'static str,
@@ -1052,6 +1053,52 @@ const fn runtime_bound_api(
     executable_probe: &'static str,
     binding_probe: &'static str,
 ) -> RuntimeBoundApiDiagnosticInfo {
+    runtime_api(
+        service_id,
+        service_name,
+        module_path,
+        api_name,
+        runtime_service_extern_abi(service_id),
+        executable_probe,
+        binding_probe,
+        "known-unbound",
+        false,
+    )
+}
+
+const fn executable_runtime_api(
+    service_id: u32,
+    service_name: &'static str,
+    module_path: &'static str,
+    api_name: &'static str,
+    extern_abi: &'static str,
+    executable_probe: &'static str,
+    binding_probe: &'static str,
+) -> RuntimeBoundApiDiagnosticInfo {
+    runtime_api(
+        service_id,
+        service_name,
+        module_path,
+        api_name,
+        extern_abi,
+        executable_probe,
+        binding_probe,
+        "executable-compiler-primitive",
+        true,
+    )
+}
+
+const fn runtime_api(
+    service_id: u32,
+    service_name: &'static str,
+    module_path: &'static str,
+    api_name: &'static str,
+    extern_abi: &'static str,
+    executable_probe: &'static str,
+    binding_probe: &'static str,
+    current_status: &'static str,
+    executable: bool,
+) -> RuntimeBoundApiDiagnosticInfo {
     RuntimeBoundApiDiagnosticInfo {
         diagnostic_code: "LNC0038",
         service_id,
@@ -1064,12 +1111,12 @@ const fn runtime_bound_api(
         service_executable: runtime_service_executable(service_id),
         module_path,
         api_name,
-        extern_abi: runtime_service_extern_abi(service_id),
+        extern_abi,
         executable_probe,
         binding_probe,
         accepted_selector_kinds: RUNTIME_BOUND_API_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status,
+        executable,
     }
 }
 
@@ -1170,7 +1217,7 @@ const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
     }
 }
 
-/// Stdlib APIs that currently require runtime bindings before executable codegen.
+/// Stdlib APIs that cross runtime-service boundaries or compiler-host primitives.
 pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
     runtime_bound_api(
         1,
@@ -1324,11 +1371,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "flush_stderr_is_executable()",
         "flush_stderr_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         3,
         "stdio",
         "std::io",
         "std::io::print_i32",
+        "compiler_print_i32",
         "print_i32_is_executable()",
         "print_i32_requires_runtime_binding()",
     ),
@@ -4141,6 +4189,26 @@ mod tests {
     use super::*;
     use crate::parser::tables::PrecomputedParseTables;
 
+    fn api_info_has_expected_status(api: &RuntimeBoundApiDiagnosticInfo) -> bool {
+        if api.api_name == "std::io::print_i32" {
+            api.extern_abi == "compiler_print_i32"
+                && api.current_status == "executable-compiler-primitive"
+                && api.executable
+        } else {
+            api.current_status == "known-unbound" && !api.executable
+        }
+    }
+
+    fn api_json_has_expected_status(api: &serde_json::Value) -> bool {
+        if api["api_name"] == "std::io::print_i32" {
+            api["extern_abi"] == "compiler_print_i32"
+                && api["current_status"] == "executable-compiler-primitive"
+                && api["executable"] == true
+        } else {
+            api["current_status"] == "known-unbound" && api["executable"] == false
+        }
+    }
+
     #[test]
     fn diagnostic_code_registry_is_unique_sorted_and_lookupable() {
         let mut previous = "";
@@ -4546,8 +4614,7 @@ mod tests {
                 entry.accepted_selector_kinds,
                 RUNTIME_BOUND_API_SELECTOR_KINDS
             );
-            assert_eq!(entry.current_status, "known-unbound");
-            assert!(!entry.executable);
+            assert!(api_info_has_expected_status(entry));
             assert_eq!(
                 runtime_bound_api_diagnostic_info(entry.api_name),
                 Some(entry),
@@ -4556,39 +4623,58 @@ mod tests {
             previous_service_id = entry.service_id;
         }
 
+        let write_stdout = entries
+            .iter()
+            .find(|entry| entry["api_name"] == "std::io::write_stdout")
+            .expect("stdio write_stdout API row should be present");
+        assert_eq!(write_stdout["diagnostic_code"], "LNC0038");
+        assert_eq!(write_stdout["service_id"], 3);
+        let stdio_service = runtime_service_boundary_diagnostic_info(3)
+            .expect("stdio service boundary row should be public");
+        assert_eq!(
+            write_stdout["service_capability_constant"],
+            stdio_service.capability_constant
+        );
+        assert_eq!(
+            write_stdout["service_module_path"],
+            stdio_service.module_path
+        );
+        assert_eq!(
+            write_stdout["service_status_probe"],
+            stdio_service.status_probe
+        );
+        assert_eq!(
+            write_stdout["service_binding_probe"],
+            stdio_service.binding_probe
+        );
+        assert_eq!(write_stdout["module_path"], "std::io");
+        assert_eq!(
+            write_stdout["executable_probe"],
+            "write_stdout_is_executable()"
+        );
+        assert_eq!(
+            write_stdout["binding_probe"],
+            "write_stdout_requires_runtime_binding()"
+        );
+        assert_eq!(
+            write_stdout["accepted_selector_kinds"],
+            serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
+        );
+        assert_eq!(write_stdout["current_status"], "known-unbound");
+        assert_eq!(write_stdout["executable"], false);
         let print_i32 = entries
             .iter()
             .find(|entry| entry["api_name"] == "std::io::print_i32")
             .expect("stdio print_i32 API row should be present");
-        assert_eq!(print_i32["diagnostic_code"], "LNC0038");
         assert_eq!(print_i32["service_id"], 3);
-        let stdio_service = runtime_service_boundary_diagnostic_info(3)
-            .expect("stdio service boundary row should be public");
-        assert_eq!(
-            print_i32["service_capability_constant"],
-            stdio_service.capability_constant
-        );
-        assert_eq!(print_i32["service_module_path"], stdio_service.module_path);
-        assert_eq!(
-            print_i32["service_status_probe"],
-            stdio_service.status_probe
-        );
-        assert_eq!(
-            print_i32["service_binding_probe"],
-            stdio_service.binding_probe
-        );
         assert_eq!(print_i32["module_path"], "std::io");
+        assert_eq!(print_i32["extern_abi"], "compiler_print_i32");
         assert_eq!(print_i32["executable_probe"], "print_i32_is_executable()");
         assert_eq!(
             print_i32["binding_probe"],
             "print_i32_requires_runtime_binding()"
         );
-        assert_eq!(
-            print_i32["accepted_selector_kinds"],
-            serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
-        );
-        assert_eq!(print_i32["current_status"], "known-unbound");
-        assert_eq!(print_i32["executable"], false);
+        assert!(api_json_has_expected_status(print_i32));
         assert!(runtime_bound_api_diagnostic_info("std::io::println").is_none());
     }
 
@@ -4688,9 +4774,9 @@ mod tests {
             .expect("runtime diagnostic explanation should include API rows");
         assert_eq!(runtime_apis.len(), RUNTIME_BOUND_API_DIAGNOSTICS.len());
         assert!(runtime_apis.iter().any(|api| {
-            api["api_name"] == "std::io::print_i32"
+            api["api_name"] == "std::io::write_stdout"
                 && api["service_id"] == 3
-                && api["binding_probe"] == "print_i32_requires_runtime_binding()"
+                && api["binding_probe"] == "write_stdout_requires_runtime_binding()"
                 && api["accepted_selector_kinds"]
                     == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
                 && api["executable"] == false
@@ -4703,8 +4789,7 @@ mod tests {
             api["diagnostic_code"] == "LNC0038"
                 && api["accepted_selector_kinds"]
                     == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
-                && api["current_status"] == "known-unbound"
-                && api["executable"] == false
+                && api_json_has_expected_status(api)
                 && service.is_some_and(|service| {
                     api["service_capability_constant"] == service.capability_constant
                         && api["service_module_path"] == service.module_path

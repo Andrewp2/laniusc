@@ -19,6 +19,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -296,6 +297,20 @@ uint substituted_method_return_type(uint method_i, uint fn_i, uint fallback_ty)
     return ty == TY_UNKNOWN ? fallback_ty : ty;
 }
 
+uint resolved_method_return_type(uint method_i, uint fn_i)
+{
+    uint table_ty = valid_token(method_i) ? call_return_type[method_i] : TY_UNKNOWN;
+    if (table_ty != TY_UNKNOWN)
+        return table_ty;
+    return substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
+}
+
+uint resolved_method_return_token(uint method_i, uint fn_i)
+{
+    uint table_token = valid_token(method_i) ? call_return_type_token[method_i] : INVALID;
+    return valid_token(table_token) ? table_token : call_return_type_token[fn_i];
+}
+
 uint path_id_for_callee_node(uint callee_node)
 {
     if (!valid_node(callee_node))
@@ -473,6 +488,32 @@ uint call_node_for_method_token(uint method_i)
     return call_arg_record[method_i].z;
 }
 
+uint call_node_for_member_node(uint member_node)
+{
+    if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
+        return INVALID;
+
+    uint owner = parent[member_node];
+    if (valid_node(owner) &&
+        hir_kind[owner] == HIR_CALL_EXPR &&
+        hir_call_callee_node[owner] == member_node)
+        return owner;
+
+    uint child = first_child[member_node];
+    if (valid_node(child) &&
+        hir_kind[child] == HIR_CALL_EXPR &&
+        hir_call_callee_node[child] == member_node)
+        return child;
+
+    return INVALID;
+}
+
+uint call_node_for_method_member(uint method_i, uint member_node)
+{
+    uint call_node = call_node_for_method_token(method_i);
+    return valid_node(call_node) ? call_node : call_node_for_member_node(member_node);
+}
+
 uint call_arg_count_for_method_token(uint method_i)
 {
     if (method_i >= active_token_count())
@@ -495,7 +536,7 @@ uint receiver_token_for_member(uint member_node)
     return valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
 }
 
-bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty)
+bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty, uint call_node)
 {
     uint param_count = call_param_count[fn_i];
     bool has_self_receiver = method_has_self_receiver(fn_i);
@@ -508,7 +549,7 @@ bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty)
 
     bool receiver_consumed = has_self_receiver || consumes_receiver;
     uint expected_args = receiver_consumed && param_count > 0u ? param_count - 1u : param_count;
-    uint actual_args = call_arg_count_for_method_token(method_i);
+    uint actual_args = call_arg_count_for_call_node(method_i, call_node);
     if (actual_args != expected_args)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);
@@ -543,23 +584,31 @@ void resolve_method_member_node(uint member_node)
     uint method_i = valid_node(member_node) ? hir_member_name_token[member_node] : INVALID;
     if (method_i >= active_token_count())
         return;
-    if (method_call_name_id[method_i] == INVALID)
+
+    uint call_node = call_node_for_method_member(method_i, member_node);
+    if (!valid_node(call_node))
         return;
 
-    uint call_node = call_node_for_method_token(method_i);
-    if (call_node == INVALID)
+    if (method_call_name_id[method_i] == INVALID)
+    {
+        record_error(2u, ERR_CALL_MISMATCH, 9102u);
         return;
+    }
 
     uint fn_i = call_fn_index[method_i];
     if (fn_i == INVALID || fn_i >= active_token_count())
     {
+        record_error(3u, ERR_CALL_MISMATCH, 9103u);
         record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
         return;
     }
 
     uint receiver_i = receiver_token_for_member(member_node);
     if (receiver_i == INVALID || receiver_i >= active_token_count())
+    {
+        record_error(4u, ERR_CALL_MISMATCH, 9104u);
         return;
+    }
     uint receiver_ty = visible_type[receiver_i];
     if (receiver_ty == TY_UNKNOWN)
         receiver_ty = call_return_type[receiver_i];
@@ -576,22 +625,30 @@ void resolve_method_member_node(uint member_node)
         return;
     }
 
-    uint ret_ty = substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
+    uint ret_ty = resolved_method_return_type(method_i, fn_i);
+    uint ret_token = resolved_method_return_token(method_i, fn_i);
     if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
         is_generic_type(ret_ty))
     {
+        record_error(5u, ERR_CALL_MISMATCH, 9105u);
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
         return;
     }
+    if (ret_ty == TY_VOID)
+        record_error(7u, ERR_CALL_MISMATCH, ret_ty);
+    else if (ret_ty == TY_INT)
+        record_error(8u, ERR_CALL_MISMATCH, ret_ty);
+    else
+        record_error(9u, ERR_CALL_MISMATCH, ret_ty);
     call_fn_index[method_i] = fn_i;
     call_return_type[method_i] = ret_ty;
-    call_return_type_token[method_i] = call_return_type_token[fn_i];
+    call_return_type_token[method_i] = ret_token;
     if (ret_ty != TY_UNKNOWN)
         visible_type[method_i] = ret_ty;
     if (call_return_type[receiver_i] != TY_UNKNOWN)
         call_return_type[receiver_i] = ret_ty;
 
-    validate_method_args(method_i, fn_i, receiver_ty);
+    validate_method_args(method_i, fn_i, receiver_ty, call_node);
 }
 
 void publish_associated_call_result(
@@ -599,11 +656,12 @@ void publish_associated_call_result(
     uint owner_token,
     uint call_open,
     uint fn_i,
-    uint ret_ty)
+    uint ret_ty,
+    uint ret_token)
 {
     call_fn_index[method_i] = fn_i;
     call_return_type[method_i] = ret_ty;
-    call_return_type_token[method_i] = call_return_type_token[fn_i];
+    call_return_type_token[method_i] = ret_token;
     if (ret_ty != TY_UNKNOWN)
         visible_type[method_i] = ret_ty;
     module_value_path_status[method_i] = PATH_RESOLVE_STATUS_INVALID;
@@ -612,7 +670,7 @@ void publish_associated_call_result(
     {
         call_fn_index[owner_token] = fn_i;
         call_return_type[owner_token] = ret_ty;
-        call_return_type_token[owner_token] = call_return_type_token[fn_i];
+        call_return_type_token[owner_token] = ret_token;
         if (ret_ty != TY_UNKNOWN)
             visible_type[owner_token] = ret_ty;
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_INVALID;
@@ -622,7 +680,7 @@ void publish_associated_call_result(
     {
         call_fn_index[call_open] = fn_i;
         call_return_type[call_open] = ret_ty;
-        call_return_type_token[call_open] = call_return_type_token[fn_i];
+        call_return_type_token[call_open] = ret_token;
         if (ret_ty != TY_UNKNOWN)
             visible_type[call_open] = ret_ty;
     }
@@ -658,7 +716,8 @@ void resolve_associated_call_node(uint call_node)
         return;
     }
 
-    uint ret_ty = substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
+    uint ret_ty = resolved_method_return_type(method_i, fn_i);
+    uint ret_token = resolved_method_return_token(method_i, fn_i);
     if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
         is_generic_type(ret_ty))
     {
@@ -671,7 +730,7 @@ void resolve_associated_call_node(uint call_node)
 
     uint owner_token = associated_owner_token_for_call(call_node);
     uint call_open = hir_token_pos[call_node];
-    publish_associated_call_result(method_i, owner_token, call_open, fn_i, ret_ty);
+    publish_associated_call_result(method_i, owner_token, call_open, fn_i, ret_ty, ret_token);
 }
 
 [shader("compute")]

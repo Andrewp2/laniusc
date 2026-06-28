@@ -445,7 +445,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (!valid_node(i) || hir_kind[i] != HIR_CALL_EXPR)
         return;
-    if (call_record_is_member_call(i) || call_record_is_qualified_path_call(i))
+    if (call_record_is_member_call(i))
         return;
 
     uint callee_token = callee_token_for_hir_call(i);

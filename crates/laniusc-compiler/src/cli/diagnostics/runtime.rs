@@ -275,8 +275,8 @@ pub(super) fn diagnostic_runtime_services_json_pretty() -> Result<String, serde_
 
 fn runtime_api_selector_examples_json() -> serde_json::Value {
     serde_json::json!({
-        "api_name": "std::io::print_i32",
-        "service_api_name": "stdio::print_i32"
+        "api_name": "std::io::write_stdout",
+        "service_api_name": "stdio::write_stdout"
     })
 }
 
@@ -288,8 +288,8 @@ fn runtime_service_selector_examples_json() -> serde_json::Value {
         "capability_constant": "STDIO_HAS_RUNTIME_BINDING",
         "status_probe": "stdio_service_status()",
         "binding_probe": "stdio_requires_runtime_binding()",
-        "api_name": "std::io::print_i32",
-        "service_api_name": "stdio::print_i32"
+        "api_name": "std::io::write_stdout",
+        "service_api_name": "stdio::write_stdout"
     })
 }
 

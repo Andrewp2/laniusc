@@ -1579,6 +1579,40 @@ fn main() {
 }
 
 #[test]
+fn type_checker_resolves_f32_method_call_let_initializer() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+}
+
+impl Vec3 {
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y;
+    }
+
+    fn length(self) -> f32 {
+        return self.dot(self);
+    }
+
+    fn unit(self) -> Vec3 {
+        let len: f32 = self.length();
+        if (len == 0.0) {
+            return self;
+        }
+        return Vec3 { x: self.x / len, y: self.y / len };
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_method_calls_use_hir_member_receiver_over_global_name_spelling() {
     assert_gpu_type_check_ok(
         r#"
@@ -5245,6 +5279,34 @@ fn main() {
     let reversed_values: [i32; 4] = reversed(source);
     let selected_values: [i32; 2] = selected(reversed_values, 1);
     return direct[0] + trailing[1] + mixed_values[3] + selected_values[0];
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_struct_array_literal_elements_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn values() -> [Pair; 2] {
+    return [
+        Pair { left: 1, right: 2 },
+        Pair { left: 3, right: 4 },
+    ];
+}
+
+fn main() {
+    let local: [Pair; 2] = [
+        Pair { left: 5, right: 6 },
+        Pair { left: 7, right: 8 },
+    ];
+    let returned: [Pair; 2] = values();
+    return local[0].left + returned[1].right;
 }
 "#,
     );

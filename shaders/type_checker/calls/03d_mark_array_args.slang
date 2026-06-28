@@ -64,6 +64,8 @@ static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
@@ -304,8 +306,14 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
+        uint right_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||

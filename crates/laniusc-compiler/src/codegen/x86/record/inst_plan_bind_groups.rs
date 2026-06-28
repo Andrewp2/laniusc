@@ -258,6 +258,7 @@ pub(super) fn create_inst_plan_bind_groups(
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
                 "x86_for_iterable_node",
                 for_iterable_node.as_entire_binding(),
@@ -290,6 +291,10 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "x86_for_iterable_node",
                 for_iterable_node.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
             ),
             (
                 "x86_node_control_padding",
@@ -814,6 +819,10 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "x86_for_iterable_node",
                 for_iterable_node.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
             ),
             (
                 "x86_node_inst_range_start",

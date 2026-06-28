@@ -1,25 +1,27 @@
-sample	stdout	slice	evidence_policy
-arithmetic_precedence	arithmetic_precedence.stdout	arithmetic and precedence	documentation-smoke only; not backend or conformance evidence
-array_return_helpers	array_return_helpers.stdout	array returns and helper calls	documentation-smoke only; not backend or conformance evidence
-array_sum	array_sum.stdout	array indexing and loops	documentation-smoke only; not backend or conformance evidence
-bitwise_ops	bitwise_ops.stdout	bitwise integer operators	documentation-smoke only; not backend or conformance evidence
-bool_branch	bool_branch.stdout	boolean branch control	documentation-smoke only; not backend or conformance evidence
-checkout_fee	checkout_fee.stdout	small external-user function call	documentation-smoke only; not backend or conformance evidence
-comparison_else_matrix	comparison_else_matrix.stdout	comparison branches with else paths	documentation-smoke only; not backend or conformance evidence
-comparison_matrix	comparison_matrix.stdout	comparison operator matrix	documentation-smoke only; not backend or conformance evidence
-compound_assignments	compound_assignments.stdout	compound assignment operators	documentation-smoke only; not backend or conformance evidence
-factorial_loop	factorial_loop.stdout	while-loop arithmetic	documentation-smoke only; not backend or conformance evidence
-factorial_recursive	factorial_recursive.stdout	recursive function call	documentation-smoke only; not backend or conformance evidence
-fibonacci_loop	fibonacci_loop.stdout	loop-carried values	documentation-smoke only; not backend or conformance evidence
-grid_distance_checksum	grid_distance_checksum.stdout	integer grid distance checksum exit status	documentation-smoke only; not backend or conformance evidence
-for_array_control	for_array_control.stdout	for-loop array control	documentation-smoke only; not backend or conformance evidence
-function_calls	function_calls.stdout	direct function calls	documentation-smoke only; not backend or conformance evidence
-loop_control	loop_control.stdout	loop break and continue control	documentation-smoke only; not backend or conformance evidence
-nested_blocks_shadowing	nested_blocks_shadowing.stdout	nested scopes and shadowing	documentation-smoke only; not backend or conformance evidence
-option_result_helpers	option_result_helpers.stdout	core option and result helpers	documentation-smoke only; not backend or conformance evidence
-range_sum	range_sum.stdout	range iteration helper surface	documentation-smoke only; not backend or conformance evidence
-slice_helpers	slice_helpers.stdout	slice helper surface	documentation-smoke only; not backend or conformance evidence
-struct_fields	struct_fields.stdout	struct fields and access	documentation-smoke only; not backend or conformance evidence
-top_level_script	top_level_script.stdout	top-level script entry behavior	documentation-smoke only; not backend or conformance evidence
-unary_abs	unary_abs.stdout	unary expressions	documentation-smoke only; not backend or conformance evidence
-while_sum	while_sum.stdout	while-loop accumulation	documentation-smoke only; not backend or conformance evidence
+sample	stdout	slice	checked_targets	evidence_policy
+arithmetic_precedence	arithmetic_precedence.stdout	arithmetic and precedence	x86_64,wasm	checked by sample_programs target tests
+array_return_helpers	array_return_helpers.stdout	array returns and helper calls	x86_64	checked by sample_programs target tests
+array_sum	array_sum.stdout	array indexing and loops	x86_64	checked by sample_programs target tests
+bitwise_ops	bitwise_ops.stdout	bitwise integer operators	x86_64,wasm	checked by sample_programs target tests
+bool_branch	bool_branch.stdout	boolean branch control	x86_64,wasm	checked by sample_programs target tests
+checkout_fee	checkout_fee.stdout	small external-user function call	x86_64	checked by sample_programs target tests
+comparison_else_matrix	comparison_else_matrix.stdout	comparison branches with else paths	x86_64,wasm	checked by sample_programs target tests
+comparison_matrix	comparison_matrix.stdout	comparison operator matrix	x86_64,wasm	checked by sample_programs target tests
+compound_assignments	compound_assignments.stdout	compound assignment operators	x86_64	checked by sample_programs target tests
+factorial_loop	factorial_loop.stdout	while-loop arithmetic	x86_64	checked by sample_programs target tests
+factorial_recursive	factorial_recursive.stdout	recursive function call	x86_64	checked by sample_programs target tests
+fibonacci_loop	fibonacci_loop.stdout	loop-carried values	x86_64	checked by sample_programs target tests
+grid_distance_checksum	grid_distance_checksum.stdout	integer grid distance checksum exit status	x86_64	checked by sample_programs target tests
+for_array_control	for_array_control.stdout	for-loop array control	x86_64	checked by sample_programs target tests
+function_calls	function_calls.stdout	direct function calls	x86_64	checked by sample_programs target tests
+loop_control	loop_control.stdout	loop break and continue control	x86_64	checked by sample_programs target tests
+nested_blocks_shadowing	nested_blocks_shadowing.stdout	nested scopes and shadowing	x86_64,wasm	checked by sample_programs target tests
+numeric_range_sum	numeric_range_sum.stdout	numeric range loop control	x86_64	checked by sample_programs target tests
+option_result_helpers	option_result_helpers.stdout	core option and result helpers	-	documentation-smoke only; not backend or conformance evidence
+range_sum	range_sum.stdout	range iteration helper surface	-	documentation-smoke only; not backend or conformance evidence
+slice_helpers	slice_helpers.stdout	slice helper surface	-	documentation-smoke only; not backend or conformance evidence
+stdio_print_i32	stdio_print_i32.stdout	stdlib stdout integer wrapper	x86_64,wasm	checked by sample_programs target tests
+struct_fields	struct_fields.stdout	struct fields and access	x86_64	checked by sample_programs target tests
+top_level_script	top_level_script.stdout	top-level script entry behavior	x86_64,wasm	checked by sample_programs target tests
+unary_abs	unary_abs.stdout	unary expressions	x86_64	checked by sample_programs target tests
+while_sum	while_sum.stdout	while-loop accumulation	x86_64	checked by sample_programs target tests

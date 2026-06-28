@@ -16,14 +16,20 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_array_lit_context_stmt_node;
+StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
@@ -37,6 +43,7 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
@@ -123,6 +130,13 @@ bool context_for_type_ref(uint tag, uint payload, out uint decl_token, out uint 
     return false;
 }
 
+uint bounded_array_instance_from_ref(uint tag, uint payload)
+{
+    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+        return INVALID;
+    return type_instance_kind[payload] == TYPE_INSTANCE_ARRAY ? payload : INVALID;
+}
+
 bool context_for_type_node(uint type_node, out uint decl_token, out uint instance_i)
 {
     decl_token = INVALID;
@@ -184,6 +198,98 @@ void publish_return_context(uint literal_node, uint stmt_node)
         publish_context(literal_node, decl_token, instance_i);
 }
 
+uint function_return_array_instance(uint return_node)
+{
+    uint return_token = hir_token_pos[return_node];
+    if (!valid_token(return_token))
+        return INVALID;
+
+    uint encoded_fn = enclosing_fn[return_token];
+    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    if (!valid_token(fn_token))
+        return INVALID;
+
+    return bounded_array_instance_from_ref(
+        fn_return_ref_tag[fn_token],
+        fn_return_ref_payload[fn_token]);
+}
+
+uint let_array_instance(uint let_node)
+{
+    if (!valid_node(let_node) ||
+        hir_stmt_record[stmt_slot(let_node, 0u)] != STMT_RECORD_KIND_LET)
+        return INVALID;
+
+    uint decl = hir_stmt_record[stmt_slot(let_node, 1u)];
+    if (!valid_token(decl))
+        return INVALID;
+
+    return bounded_array_instance_from_ref(
+        decl_type_ref_tag[decl],
+        decl_type_ref_payload[decl]);
+}
+
+uint array_instance_for_context_stmt(uint stmt_node)
+{
+    if (!valid_node(stmt_node))
+        return INVALID;
+
+    uint kind = hir_stmt_record[stmt_slot(stmt_node, 0u)];
+    if (kind == STMT_RECORD_KIND_LET)
+        return let_array_instance(stmt_node);
+    if (kind == STMT_RECORD_KIND_RETURN)
+        return function_return_array_instance(stmt_node);
+    return INVALID;
+}
+
+uint enclosing_array_element_node(uint literal_node)
+{
+    if (!valid_node(literal_node))
+        return INVALID;
+
+    uint found = INVALID;
+    [loop]
+    for (uint node = 0u; node < literal_node; node += 1u)
+    {
+        uint array_node = hir_array_element_parent_lit[node];
+        if (!valid_node(array_node))
+            continue;
+
+        uint end = subtree_end[node];
+        if (end != INVALID && end > literal_node && end <= active_node_count())
+            found = node;
+    }
+    return found;
+}
+
+bool publish_array_element_context(uint literal_node, uint stmt_node)
+{
+    uint element_node = enclosing_array_element_node(literal_node);
+    if (!valid_node(element_node))
+        return false;
+
+    uint array_node = hir_array_element_parent_lit[element_node];
+    if (!valid_node(array_node) ||
+        hir_array_lit_context_stmt_node[array_node] != stmt_node)
+        return false;
+
+    uint array_instance = array_instance_for_context_stmt(stmt_node);
+    if (!valid_token(array_instance))
+        return false;
+
+    uint decl_token = INVALID;
+    uint instance_i = INVALID;
+    if (!context_for_type_ref(
+        type_instance_elem_ref_tag[array_instance],
+        type_instance_elem_ref_payload[array_instance],
+        decl_token,
+        instance_i))
+        return false;
+
+    publish_context(literal_node, decl_token, instance_i);
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -196,6 +302,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint stmt_node = hir_struct_lit_context_stmt_node[i];
     if (!valid_node(stmt_node))
+        return;
+
+    if (publish_array_element_context(i, stmt_node))
         return;
 
     uint kind = hir_stmt_record[stmt_slot(stmt_node, 0u)];

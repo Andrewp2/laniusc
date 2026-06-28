@@ -1887,6 +1887,73 @@ fn main() {
 }
 
 #[test]
+fn type_checker_keeps_f32_arithmetic_results_as_f32() {
+    assert_gpu_type_check_accepts(
+        r#"
+module app::main;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y - right.y, self.z * right.z);
+    }
+
+    fn scale(self, factor: f32) -> Vec3 {
+        return Vec3::new(self.x / factor, -self.y, self.z + 1.0);
+    }
+}
+
+fn take(value: f32) -> f32 {
+    return value;
+}
+
+fn main() {
+    let left: Vec3 = Vec3::new(1.0, 2.0, 3.0);
+    let right: Vec3 = Vec3::new(4.0, 5.0, 6.0);
+    let sum: Vec3 = left.add(right);
+    let scaled: Vec3 = sum.scale(2.0);
+    let value: f32 = take(scaled.x + 0.5);
+    if (value > 0.0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_qualified_generic_type_associated_call() {
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/std/vec.lani"),
+        r#"
+module app::main;
+
+import std::vec;
+
+struct Sphere {
+    radius: f32,
+}
+
+fn main() {
+    let world: std::vec::Vec<Sphere> = std::vec::Vec<Sphere>::new();
+    let count: i32 = world.len();
+    return count;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_accepts_core_range_module_calls() {
     let cases = [
         (
@@ -2559,16 +2626,19 @@ import std::process;
 import std::time;
 
 fn main() {
+    let zero_ptr: u32 = 0;
+    let zero_len: usize = 0;
+    let sleep_zero: i64 = 0;
     let args: i32 = std::process::argc();
     let first_arg_len: i32 = std::process::arg_len(0);
     let vars: i32 = std::env::var_count();
     let first_var_len: i32 = std::env::var_key_len(0);
-    let file: i32 = std::fs::open_read(0, 0);
-    let bytes: i32 = std::fs::read(file, 0, 0);
+    let file: i32 = std::fs::open_read(zero_ptr, zero_len);
+    let bytes: i32 = std::fs::read(file, zero_ptr, zero_len);
     let now: i64 = std::time::monotonic_now_ns();
-    let slept: i32 = std::time::sleep_ms(0);
-    let tcp: i32 = std::net::tcp_connect(0, 0, 80);
-    let udp: i32 = std::net::udp_bind(0, 0, 53);
+    let slept: i32 = std::time::sleep_ms(sleep_zero);
+    let tcp: i32 = std::net::tcp_connect(zero_ptr, zero_len, 80);
+    let udp: i32 = std::net::udp_bind(zero_ptr, zero_len, 53);
     std::process::set_exit_code(0);
     return args + first_arg_len + vars + first_var_len + file + bytes + slept + tcp + udp;
 }
@@ -2586,15 +2656,18 @@ import alloc::allocator;
 import std::io;
 
 fn main() {
-    let ptr: u32 = alloc::allocator::alloc(16, 4);
-    let grown: u32 = alloc::allocator::realloc(ptr, 16, 32, 4);
-    let stdin_count: i32 = std::io::read_stdin(grown, 32);
-    let stdout_count: i32 = std::io::write_stdout(grown, 32);
-    let stderr_count: i32 = std::io::write_stderr(grown, 32);
+    let size: usize = 16;
+    let grown_size: usize = 32;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(size, align);
+    let grown: u32 = alloc::allocator::realloc(ptr, size, grown_size, align);
+    let stdin_count: i32 = std::io::read_stdin(grown, grown_size);
+    let stdout_count: i32 = std::io::write_stdout(grown, grown_size);
+    let stderr_count: i32 = std::io::write_stderr(grown, grown_size);
     let flushed: i32 = std::io::flush_stderr();
     std::io::print_i32(stdin_count + stdout_count + stderr_count + flushed);
-    alloc::allocator::dealloc(grown, 32, 4);
-    alloc::allocator::alloc_failed(64, 8);
+    alloc::allocator::dealloc(grown, grown_size, align);
+    alloc::allocator::alloc_failed(grown_size, align);
     return std::io::flush_stdout();
 }
 "#,

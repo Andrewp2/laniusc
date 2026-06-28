@@ -24,13 +24,17 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_array_lit_element_count;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
+StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -38,6 +42,7 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
@@ -53,6 +58,8 @@ static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint PROD_STRUCT_LIT = 275u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -102,6 +109,8 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 6144u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 
@@ -220,6 +229,38 @@ uint visible_scalar_type_for_name_token(uint token)
     return TY_UNKNOWN;
 }
 
+uint visible_type_for_token(uint token)
+{
+    if (!valid_token(token))
+        return TY_UNKNOWN;
+
+    uint ty = visible_type[token];
+    if (ty != TY_UNKNOWN && ty != INVALID)
+        return ty;
+
+    uint decl_token = visible_decl[token];
+    if (valid_token(decl_token))
+    {
+        ty = visible_type[decl_token];
+        if (ty != TY_UNKNOWN && ty != INVALID)
+            return ty;
+    }
+    return TY_UNKNOWN;
+}
+
+uint struct_literal_head_type_for_token(uint token)
+{
+    uint ty = visible_type_for_token(token);
+    if (ty != TY_UNKNOWN && ty != INVALID)
+        return ty;
+
+    uint decl_token = valid_token(token) ? visible_decl[token] : INVALID;
+    if (valid_token(decl_token))
+        return TY_STRUCT_BASE + decl_token;
+
+    return TY_UNKNOWN;
+}
+
 uint resolve_expr_node(uint node)
 {
     if (!valid_node(node))
@@ -268,6 +309,124 @@ bool index_expr_ref(uint index_node, out uint tag, out uint payload)
     return publish_scalar_ref(ty, tag, payload);
 }
 
+uint direct_scalar_expr_type(uint expr_node)
+{
+    uint node = resolve_expr_node(expr_node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint form = expr_record(node, EXPR_RECORD_FORM);
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_NAME)
+    {
+        uint name_token = expr_record(node, EXPR_RECORD_VALUE_TOKEN);
+        if (!valid_token(name_token))
+            name_token = hir_token_pos[node];
+        return visible_scalar_type_for_name_token(name_token);
+    }
+    if (form == HIR_EXPR_INDEX || hir_kind[node] == HIR_INDEX_EXPR)
+    {
+        uint index_token = hir_token_pos[node];
+        return valid_token(index_token) ? call_return_type[index_token] : TY_UNKNOWN;
+    }
+
+    return TY_UNKNOWN;
+}
+
+uint direct_struct_literal_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
+        node_kind[node] == PROD_STRUCT_LIT ||
+        valid_node(hir_struct_lit_head_node[node]))
+        return node;
+
+    uint resolved = resolve_expr_node(node);
+    if (valid_node(resolved) &&
+        (hir_kind[resolved] == HIR_STRUCT_LITERAL_EXPR ||
+         node_kind[resolved] == PROD_STRUCT_LIT ||
+         valid_node(hir_struct_lit_head_node[resolved])))
+        return resolved;
+
+    uint end = subtree_end[node];
+    if (end != INVALID && end > node && end <= active_hir_node_count())
+    {
+        [loop]
+        for (uint cursor = node + 1u; cursor < end; cursor += 1u)
+        {
+            if ((hir_kind[cursor] == HIR_STRUCT_LITERAL_EXPR ||
+                 node_kind[cursor] == PROD_STRUCT_LIT) &&
+                valid_node(hir_struct_lit_head_node[cursor]))
+                return cursor;
+        }
+    }
+
+    return INVALID;
+}
+
+bool struct_literal_expr_ref(uint expr_node, out uint tag, out uint payload)
+{
+    tag = 0u;
+    payload = INVALID;
+
+    uint literal_node = direct_struct_literal_node(expr_node);
+    if (!valid_node(literal_node))
+        return false;
+
+    uint head_node = hir_struct_lit_head_node[literal_node];
+    if (!valid_node(head_node))
+        return false;
+
+    uint head_token = hir_token_pos[head_node];
+    uint ty = struct_literal_head_type_for_token(head_token);
+    return publish_scalar_ref(ty, tag, payload);
+}
+
+uint scalar_struct_decl_token(uint payload)
+{
+    if (payload >= TY_STRUCT_BASE && payload < TY_ENUM_BASE)
+        return payload - TY_STRUCT_BASE;
+    return INVALID;
+}
+
+bool same_name_id(uint left_token, uint right_token)
+{
+    if (!valid_token(left_token) || !valid_token(right_token))
+        return false;
+    uint left_name = name_id_by_token[left_token];
+    uint right_name = name_id_by_token[right_token];
+    return left_name != INVALID && left_name == right_name;
+}
+
+bool struct_literal_head_matches_decl(uint literal_node, uint decl_token)
+{
+    uint head_node = valid_node(literal_node) ? hir_struct_lit_head_node[literal_node] : INVALID;
+    if (!valid_node(head_node) || !valid_token(decl_token))
+        return false;
+    return same_name_id(hir_token_pos[head_node], decl_token);
+}
+
+bool struct_literal_matches_expected_ref(uint expr_node, uint expected_tag, uint expected_payload)
+{
+    uint literal_node = direct_struct_literal_node(expr_node);
+    if (!valid_node(literal_node))
+        return false;
+
+    uint decl_token = INVALID;
+    if (expected_tag == TYPE_REF_SCALAR)
+        decl_token = scalar_struct_decl_token(expected_payload);
+    else if (expected_tag == TYPE_REF_INSTANCE && valid_token(expected_payload))
+        decl_token = type_instance_decl_token[expected_payload];
+
+    return struct_literal_head_matches_decl(literal_node, decl_token);
+}
+
 bool scalar_expr_ref(uint expr_node, out uint tag, out uint payload)
 {
     tag = 0u;
@@ -277,6 +436,9 @@ bool scalar_expr_ref(uint expr_node, out uint tag, out uint payload)
         return false;
 
     uint form = expr_record(node, EXPR_RECORD_FORM);
+    if (struct_literal_expr_ref(expr_node, tag, payload))
+        return true;
+
     if (form == HIR_EXPR_INT)
         return publish_scalar_ref(TY_INT, tag, payload);
 
@@ -312,8 +474,15 @@ bool scalar_expr_ref(uint expr_node, out uint tag, out uint payload)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_scalar_expr_type(expr_record(node, EXPR_RECORD_LEFT));
+        uint right_ty = direct_scalar_expr_type(expr_record(node, EXPR_RECORD_RIGHT));
+        uint result_ty = left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+        return publish_scalar_ref(result_ty, tag, payload);
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -423,6 +592,9 @@ void validate_array_literal_let_element(uint element_node)
     uint expected_tag = type_instance_elem_ref_tag[dst_instance];
     uint expected_payload = type_instance_elem_ref_payload[dst_instance];
 
+    if (struct_literal_matches_expected_ref(element_node, expected_tag, expected_payload))
+        return;
+
     uint actual_tag = 0u;
     uint actual_payload = INVALID;
     if (!scalar_expr_ref(element_node, actual_tag, actual_payload))
@@ -456,6 +628,9 @@ void validate_array_literal_return_element(uint element_node)
 
     uint expected_tag = type_instance_elem_ref_tag[dst_instance];
     uint expected_payload = type_instance_elem_ref_payload[dst_instance];
+
+    if (struct_literal_matches_expected_ref(element_node, expected_tag, expected_payload))
+        return;
 
     uint actual_tag = 0u;
     uint actual_payload = INVALID;

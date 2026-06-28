@@ -493,6 +493,15 @@ uint param_index_mem_r32_size(uint dst, uint base, uint index)
                : 0u;
 }
 
+uint param_index_slot_mem_r32_size(uint dst, uint base, uint index, uint ordinal)
+{
+    uint disp = ordinal * 4u;
+    return valid_reg(dst) && valid_reg(base) && valid_index_reg(index) &&
+                   (base & 7u) != 4u && disp <= 127u
+               ? 4u + rex_for_sib(dst, index, base)
+               : 0u;
+}
+
 uint checked_param_index_mem_r32_size(uint dst, uint base, uint packed)
 {
     uint index = packed_index_reg(packed);
@@ -609,19 +618,25 @@ uint for_array_load_size(uint array_base_slot, uint index_slot, uint value_slot)
                : 0u;
 }
 
-uint for_param_array_load_size(uint array_base_reg, uint index_slot, uint value_slot)
+uint for_param_array_load_size(uint packed_base, uint index_slot, uint value_slot)
 {
+    uint array_base_reg = unpack_u16_pair_low(packed_base);
+    uint ordinal = unpack_u16_pair_high(packed_base);
     uint load_index = local_mem_r32_size(X86_REG_R11D, index_slot);
-    uint load_value = param_index_mem_r32_size(X86_REG_R11D, array_base_reg, X86_REG_R11D);
+    uint load_value = param_index_slot_mem_r32_size(X86_REG_R11D, array_base_reg, X86_REG_R11D, ordinal);
     uint store_value = local_mem_r32_size(X86_REG_R11D, value_slot);
     return load_index != 0u && load_value != 0u && store_value != 0u
                ? load_index + load_value + store_value
                : 0u;
 }
 
-uint for_array_inc_jmp_size(uint index_slot)
+uint for_array_inc_jmp_size(uint index_slot, uint stride)
 {
     if (!valid_local_slot(index_slot))
+        return 0u;
+    if (stride == 0u)
+        stride = 1u;
+    if (stride > 127u)
         return 0u;
     return (local_slot_disp(index_slot) <= 127u ? 5u : 8u) + 5u;
 }
@@ -975,7 +990,7 @@ uint byte_size_for_inst(uint inst_i)
     if (kind == X86_INST_V_FOR_ARRAY_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? for_array_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]) : 0u;
     if (kind == X86_INST_V_FOR_ARRAY_LOAD) return for_array_load_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_FOR_PARAM_ARRAY_LOAD) return for_param_array_load_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
-    if (kind == X86_INST_V_FOR_ARRAY_INC_JMP) return inst_target_valid(x86_inst_arg1[inst_i]) ? for_array_inc_jmp_size(x86_inst_arg0[inst_i]) : 0u;
+    if (kind == X86_INST_V_FOR_ARRAY_INC_JMP) return inst_target_valid(x86_inst_arg1[inst_i]) ? for_array_inc_jmp_size(x86_inst_arg0[inst_i], x86_inst_arg2[inst_i]) : 0u;
     if (kind == X86_INST_V_FOR_INTERVAL_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? for_interval_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]) : 0u;
     if (kind == X86_INST_V_COPY_LOCAL_R32) return copy_local_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_CALL_MIXED_DIRECT) return inst_target_valid(x86_inst_arg0[inst_i]) ? call_mixed_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], inst_call_save_mask(inst_i)) : 0u;

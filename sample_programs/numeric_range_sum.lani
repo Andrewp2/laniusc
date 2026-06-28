@@ -1,0 +1,15 @@
+fn main() {
+    let end: i32 = 8;
+    let total: i32 = 0;
+    for value in 2..end {
+        if (value == 4) {
+            continue;
+        }
+        if (value == 7) {
+            break;
+        }
+        total += value;
+    }
+    print(total);
+    return 0;
+}

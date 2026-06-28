@@ -33,8 +33,14 @@ StructuredBuffer<uint> hir_struct_lit_field_count;
 StructuredBuffer<uint> hir_struct_decl_field_count;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> hir_struct_lit_field_next;
+StructuredBuffer<uint> hir_array_lit_first_element;
+StructuredBuffer<uint> hir_array_lit_element_count;
+StructuredBuffer<uint> hir_array_element_parent_lit;
+StructuredBuffer<uint> hir_array_element_ordinal;
+StructuredBuffer<uint> hir_array_element_next;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
+StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
 
@@ -51,6 +57,7 @@ static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_ERR_STRUCT_RECORDS = 28u;
 
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
@@ -63,10 +70,12 @@ static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_STRUCT_ACCESS_NONE = 0u;
 static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
+static const uint X86_AGG_STORE_ARRAY = 2u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_STRUCT_ACCESS_PAYLOAD_MAX = 0x0fffffffu;
+static const uint MAX_STRUCT_LITERAL_ROOT_WALK = 64u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -260,6 +269,149 @@ bool struct_literal_context_matches_let(uint literal_node, uint let_node)
            hir_struct_lit_context_stmt_node[literal_node] == let_node;
 }
 
+bool array_element_record_for_candidate(uint candidate, out uint array_node, out uint element_ordinal)
+{
+    array_node = INVALID;
+    element_ordinal = INVALID;
+    if (!valid_node(candidate))
+        return false;
+
+    uint owner = hir_array_element_parent_lit[candidate];
+    uint ordinal = hir_array_element_ordinal[candidate];
+    if (!valid_node(owner) || ordinal == INVALID)
+        return false;
+
+    array_node = owner;
+    element_ordinal = ordinal;
+    return true;
+}
+
+bool array_element_expr_matches_struct_literal(uint element_node, uint literal_node, uint head_node)
+{
+    if (!valid_node(element_node))
+        return false;
+    if (element_node == literal_node || element_node == head_node)
+        return true;
+
+    uint resolved = resolve_expr(element_node);
+    if (!valid_node(resolved))
+        return false;
+    if (resolved == literal_node || resolved == head_node)
+        return true;
+
+    uint literal_cursor = literal_node;
+    uint head_cursor = head_node;
+    [loop]
+    for (uint depth = 0u; depth < MAX_STRUCT_LITERAL_ROOT_WALK; depth += 1u)
+    {
+        if (literal_cursor == resolved || head_cursor == resolved)
+            return true;
+        literal_cursor = valid_node(literal_cursor) ? x86_tree_parent[literal_cursor] : INVALID;
+        head_cursor = valid_node(head_cursor) ? x86_tree_parent[head_cursor] : INVALID;
+        if (!valid_node(literal_cursor) && !valid_node(head_cursor))
+            return false;
+    }
+    return false;
+}
+
+bool array_element_record_for_struct_literal(
+    uint literal_node,
+    out uint array_node,
+    out uint element_ordinal)
+{
+    array_node = INVALID;
+    element_ordinal = INVALID;
+    if (!valid_node(literal_node))
+        return false;
+
+    uint head_node = hir_struct_lit_head_node[literal_node];
+    if (array_element_record_for_candidate(literal_node, array_node, element_ordinal) ||
+        array_element_record_for_candidate(head_node, array_node, element_ordinal) ||
+        array_element_record_for_candidate(resolve_expr(head_node), array_node, element_ordinal))
+        return true;
+
+    uint context_stmt = hir_struct_lit_context_stmt_node[literal_node];
+    if (!valid_node(context_stmt) || stmt_slot(context_stmt, 0u) != STMT_RECORD_KIND_LET)
+        return false;
+
+    uint init_expr = stmt_slot(context_stmt, 2u);
+    uint literal_array = resolve_expr(init_expr);
+    if (!valid_node(literal_array) || hir_kind[literal_array] != HIR_ARRAY_EXPR)
+        return false;
+
+    uint count = hir_array_lit_element_count[literal_array];
+    uint element = hir_array_lit_first_element[literal_array];
+    [loop]
+    for (uint i = 0u; i < count && i < gParams.n_hir_nodes && valid_node(element); i += 1u)
+    {
+        if (array_element_expr_matches_struct_literal(element, literal_node, head_node))
+        {
+            array_node = literal_array;
+            element_ordinal = hir_array_element_ordinal[element];
+            if (element_ordinal == INVALID)
+                element_ordinal = i;
+            return true;
+        }
+        element = hir_array_element_next[element];
+    }
+    return false;
+}
+
+bool struct_literal_is_array_element(uint literal_node)
+{
+    uint array_node = INVALID;
+    uint element_ordinal = INVALID;
+    return array_element_record_for_struct_literal(literal_node, array_node, element_ordinal);
+}
+
+bool let_initializer_is_array_literal(uint let_node, uint array_node)
+{
+    if (!valid_node(let_node) || !valid_node(array_node))
+        return false;
+    uint init_expr = stmt_slot(let_node, 2u);
+    return resolve_expr(init_expr) == array_node;
+}
+
+void publish_array_struct_field_store_record(
+    uint literal_node,
+    uint value_node,
+    uint field_ordinal)
+{
+    uint array_node = INVALID;
+    uint element_ordinal = INVALID;
+    uint element_width = hir_struct_lit_field_count[literal_node];
+    if (!array_element_record_for_struct_literal(literal_node, array_node, element_ordinal) ||
+        !valid_node(array_node) || element_ordinal == INVALID ||
+        field_ordinal == INVALID || element_width == 0u)
+        return;
+
+    uint let_node = x86_enclosing_let_node[array_node];
+    if (!valid_node(let_node) ||
+        stmt_slot(let_node, 0u) != STMT_RECORD_KIND_LET ||
+        !let_initializer_is_array_literal(let_node, array_node))
+        return;
+
+    uint decl_token = stmt_slot(let_node, 1u);
+    uint storage_ordinal = element_ordinal * element_width + field_ordinal;
+    if (!valid_node(value_node) || !valid_token(decl_token))
+        return;
+    x86_struct_store_record[value_node] = uint4(
+        decl_token,
+        storage_ordinal,
+        array_node,
+        X86_AGG_STORE_ARRAY);
+
+    uint resolved = resolve_expr(value_node);
+    if (valid_node(resolved))
+    {
+        x86_struct_store_record[resolved] = uint4(
+            decl_token,
+            storage_ordinal,
+            array_node,
+            X86_AGG_STORE_ARRAY);
+    }
+}
+
 uint context_let_node(uint node)
 {
     if (!valid_node(node))
@@ -310,7 +462,10 @@ void publish_struct_field_store_record(uint field_node)
     {
         uint next_field = hir_struct_lit_field_next[field_node];
         x86_struct_store_record[field_node] = uint4(value_node, ordinal, literal_node, next_field);
+        publish_array_struct_field_store_record(literal_node, value_node, ordinal);
     }
+    if (struct_literal_is_array_element(literal_node))
+        return;
 
     uint let_node = struct_literal_context_let(literal_node, field_node, value_node);
     if (!valid_node(let_node))

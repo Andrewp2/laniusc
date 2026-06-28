@@ -118,6 +118,17 @@ bool valid_path(uint i)
     return i != INVALID && i < active_path_count();
 }
 
+uint receiver_token_for_member_node(uint member_node)
+{
+    uint receiver_token = valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
+    if (valid_token(receiver_token))
+        return receiver_token;
+
+    uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
+    uint token = valid_node(receiver_node) ? hir_token_pos[receiver_node] : INVALID;
+    return valid_token(token) ? token : INVALID;
+}
+
 uint module_for_hir_node(uint node)
 {
     uint token_i = node < active_hir_node_count() ? hir_token_pos[node] : INVALID;
@@ -125,7 +136,7 @@ uint module_for_hir_node(uint node)
     uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
     if (module_id != INVALID)
         return module_id;
-    return file_id == 0u ? 0u : INVALID;
+    return file_id == 0u || file_id == INVALID ? 0u : INVALID;
 }
 
 bool receiver_call_return_type_ref(uint receiver_i, out uint tag, out uint payload)
@@ -273,11 +284,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (method_i >= active_token_count())
         return;
 
+    method_call_name_id[method_i] = name_id_by_token[method_i];
+    method_call_site_module_id[method_i] = module_for_hir_node(member_node);
+
     if (method_call_receiver_ref_tag[method_i] != TYPE_REF_INVALID)
         return;
 
-    uint receiver_i = hir_member_receiver_token[member_node];
-    if (receiver_i == INVALID || receiver_i >= active_token_count())
+    uint receiver_i = receiver_token_for_member_node(member_node);
+    if (!valid_token(receiver_i))
         return;
 
     uint receiver_node = hir_member_receiver_node[member_node];
@@ -293,8 +307,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!receiver_call_return_type_ref(receiver_i, tag, payload))
         return;
 
-    method_call_name_id[method_i] = name_id_by_token[method_i];
-    method_call_site_module_id[method_i] = module_for_hir_node(member_node);
     method_call_receiver_ref_tag[method_i] = tag;
     method_call_receiver_ref_payload[method_i] = payload;
 }

@@ -255,6 +255,10 @@ pub(super) fn create_inst_gen_bind_groups(
                 "hir_expr_int_value",
                 expr_metadata.int_value.as_entire_binding(),
             ),
+            (
+                "hir_expr_float_bits",
+                expr_metadata.float_bits.as_entire_binding(),
+            ),
             ("visible_decl", visible_decl.as_entire_binding()),
             ("visible_type", visible_type.as_entire_binding()),
             (

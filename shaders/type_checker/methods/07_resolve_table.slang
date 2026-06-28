@@ -231,6 +231,138 @@ bool same_generic_param_payload(uint left_payload, uint right_payload)
     return left_name != INVALID && left_name == right_name;
 }
 
+bool same_receiver_projection_arg(
+    uint ret_arg_tag,
+    uint ret_arg_payload,
+    uint decl_arg_tag,
+    uint decl_arg_payload)
+{
+    if (ret_arg_tag != decl_arg_tag)
+        return false;
+    if (ret_arg_tag == TYPE_REF_GENERIC_PARAM)
+        return same_generic_param_payload(ret_arg_payload, decl_arg_payload);
+    if (ret_arg_tag == TYPE_REF_SCALAR)
+        return ret_arg_payload == decl_arg_payload;
+    return false;
+}
+
+bool return_instance_is_receiver_projection(
+    uint receiver_tag,
+    uint receiver_payload,
+    uint fn_i,
+    uint ret_payload)
+{
+    if (receiver_tag != TYPE_REF_INSTANCE ||
+        receiver_payload >= active_token_count() ||
+        fn_i >= active_token_count() ||
+        ret_payload >= active_token_count())
+    {
+        return false;
+    }
+
+    uint decl_receiver_tag = method_decl_receiver_ref_tag[fn_i];
+    uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
+    if (decl_receiver_tag != TYPE_REF_INSTANCE || decl_receiver_payload >= active_token_count())
+        return false;
+
+    if (receiver_payload_key(decl_receiver_tag, decl_receiver_payload) !=
+        receiver_payload_key(TYPE_REF_INSTANCE, ret_payload))
+    {
+        return false;
+    }
+
+    uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
+    if (receiver_arg_count(TYPE_REF_INSTANCE, ret_payload) != decl_arg_count ||
+        receiver_arg_count(receiver_tag, receiver_payload) != decl_arg_count)
+    {
+        return false;
+    }
+
+    [loop]
+    for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
+    {
+        uint ret_arg_tag;
+        uint ret_arg_payload;
+        uint decl_arg_tag;
+        uint decl_arg_payload;
+        if (!receiver_arg_ref(
+                TYPE_REF_INSTANCE,
+                ret_payload,
+                slot_i,
+                ret_arg_tag,
+                ret_arg_payload) ||
+            !receiver_arg_ref(
+                decl_receiver_tag,
+                decl_receiver_payload,
+                slot_i,
+                decl_arg_tag,
+                decl_arg_payload) ||
+            !same_receiver_projection_arg(
+                ret_arg_tag,
+                ret_arg_payload,
+                decl_arg_tag,
+                decl_arg_payload))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool return_instance_is_call_receiver_slot_projection(
+    uint receiver_tag,
+    uint receiver_payload,
+    uint ret_payload)
+{
+    if (receiver_tag != TYPE_REF_INSTANCE ||
+        receiver_payload >= active_token_count() ||
+        ret_payload >= active_token_count())
+    {
+        return false;
+    }
+
+    if (receiver_payload_key(receiver_tag, receiver_payload) !=
+        receiver_payload_key(TYPE_REF_INSTANCE, ret_payload))
+    {
+        return false;
+    }
+
+    uint arg_count = receiver_arg_count(receiver_tag, receiver_payload);
+    if (arg_count == 0u || receiver_arg_count(TYPE_REF_INSTANCE, ret_payload) != arg_count)
+        return false;
+
+    [loop]
+    for (uint slot_i = 0u; slot_i < arg_count; slot_i += 1u)
+    {
+        uint ret_arg_tag;
+        uint ret_arg_payload;
+        if (!receiver_arg_ref(
+                TYPE_REF_INSTANCE,
+                ret_payload,
+                slot_i,
+                ret_arg_tag,
+                ret_arg_payload) ||
+            ret_arg_tag != TYPE_REF_GENERIC_PARAM ||
+            generic_param_slot_for_payload(ret_arg_payload) != slot_i)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool return_instance_projects_to_call_receiver(
+    uint receiver_tag,
+    uint receiver_payload,
+    uint fn_i,
+    uint ret_payload)
+{
+    return return_instance_is_receiver_projection(receiver_tag, receiver_payload, fn_i, ret_payload) ||
+           return_instance_is_call_receiver_slot_projection(receiver_tag, receiver_payload, ret_payload);
+}
+
 bool substituted_receiver_return_type_slot(
     uint receiver_tag,
     uint receiver_payload,
@@ -284,6 +416,18 @@ uint substituted_receiver_return_type(
     {
         uint ret_tag = fn_return_ref_tag[fn_i];
         uint ret_payload = fn_return_ref_payload[fn_i];
+        if (ret_tag == TYPE_REF_INSTANCE &&
+            return_instance_projects_to_call_receiver(
+                receiver_tag,
+                receiver_payload,
+                fn_i,
+                ret_payload))
+        {
+            uint ty = type_code_for_ref(receiver_tag, receiver_payload);
+            if (ty != TY_UNKNOWN)
+                return ty;
+        }
+
         if (ret_tag == TYPE_REF_GENERIC_PARAM && ret_payload != INVALID)
         {
             uint decl_receiver_tag = method_decl_receiver_ref_tag[fn_i];
@@ -312,6 +456,26 @@ uint substituted_receiver_return_type(
 
     uint ty = type_code_for_ref(arg_tag, arg_payload);
     return ty == TY_UNKNOWN ? fallback_ty : ty;
+}
+
+uint substituted_receiver_return_token(
+    uint receiver_tag,
+    uint receiver_payload,
+    uint fn_i,
+    uint fallback_token)
+{
+    if (fn_i >= active_token_count())
+        return fallback_token;
+
+    uint ret_tag = fn_return_ref_tag[fn_i];
+    uint ret_payload = fn_return_ref_payload[fn_i];
+    if (ret_tag == TYPE_REF_INSTANCE &&
+        return_instance_projects_to_call_receiver(receiver_tag, receiver_payload, fn_i, ret_payload))
+    {
+        return receiver_payload;
+    }
+
+    return fallback_token;
 }
 
 uint receiver_arg_ref_tag_key(uint receiver_tag, uint receiver_payload, uint slot)
@@ -609,7 +773,7 @@ bool unique_visible_method_in_range(
     return true;
 }
 
-uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
+uint find_visible_method_for_receiver(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
 {
     if (!receiver_instance_resolved(receiver_tag, receiver_payload))
         return INVALID;
@@ -652,6 +816,22 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
         return INVALID;
 
     return exact_fn_i != INVALID ? exact_fn_i : generic_fn_i;
+}
+
+uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
+{
+    uint fn_i = find_visible_method_for_receiver(method_i, receiver_tag, receiver_payload, name_id);
+    if (fn_i != INVALID)
+        return fn_i;
+
+    if (receiver_tag != TYPE_REF_INSTANCE)
+        return INVALID;
+
+    uint scalar_ty = type_code_for_ref(receiver_tag, receiver_payload);
+    if (scalar_ty == TY_UNKNOWN)
+        return INVALID;
+
+    return find_visible_method_for_receiver(method_i, TYPE_REF_SCALAR, scalar_ty, name_id);
 }
 
 uint visibility_checked_method(uint method_i, uint fn_i)
@@ -702,5 +882,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     call_fn_index[i] = fn_i;
     call_return_type[i] = ret_ty;
-    call_return_type_token[i] = call_return_type_token[fn_i];
+    call_return_type_token[i] = substituted_receiver_return_token(
+        method_call_receiver_ref_tag[i],
+        method_call_receiver_ref_payload[i],
+        fn_i,
+        call_return_type_token[fn_i]);
 }

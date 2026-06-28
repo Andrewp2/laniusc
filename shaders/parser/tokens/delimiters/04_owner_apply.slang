@@ -229,12 +229,18 @@ bool is_statement_reset_boundary(uint kind)
     return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE;
 }
 
-uint statement_event_for(uint token_i, uint kind, int global_bracket_depth_before)
+uint statement_event_for(
+    uint token_i,
+    uint kind,
+    int global_paren_depth_before,
+    int global_bracket_depth_before)
 {
     if (global_bracket_depth_before != 0)
         return 0u;
     if (is_statement_starter(kind))
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
+    if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)
+        return 0u;
     if (is_statement_reset_boundary(kind))
         return (token_i + 1u) << 8u;
     return 0u;
@@ -297,7 +303,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         top_brace_owner_block[block_idx] = owner_prefix;
 
     uint statement_event = token_i < count
-        ? statement_event_for(token_i, kind, bracket_depth)
+        ? statement_event_for(token_i, kind, paren_depth, bracket_depth)
         : 0u;
     uint statement_prefix = prefix_scan_u32_max_256(lane, statement_event);
     if (lane + 1u == WG_SIZE)

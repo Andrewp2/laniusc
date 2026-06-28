@@ -20,8 +20,10 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
+StructuredBuffer<int> depth_paren_inblock;
 StructuredBuffer<int> depth_brace_inblock;
 StructuredBuffer<int> depth_bracket_inblock;
+StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> block_prefix_brace;
 StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<uint> top_brace_owner_block_prefix;
@@ -142,12 +144,18 @@ bool is_statement_reset_boundary(uint kind)
     return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE;
 }
 
-uint statement_event_for(uint token_i, uint kind, int global_bracket_depth_before)
+uint statement_event_for(
+    uint token_i,
+    uint kind,
+    int global_paren_depth_before,
+    int global_bracket_depth_before)
 {
     if (global_bracket_depth_before != 0)
         return 0u;
     if (is_statement_starter(kind))
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
+    if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)
+        return 0u;
     if (is_statement_reset_boundary(kind))
         return (token_i + 1u) << 8u;
     return 0u;
@@ -165,6 +173,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint token_i = block_idx * WG_SIZE + lane;
     uint count = active_token_count();
     uint kind = token_i < count ? token_words[token_i].kind : 0u;
+    int paren_depth_before = token_i < gParams.n_tokens
+        ? block_prefix_paren[block_idx] + depth_paren_inblock[token_i]
+        : 0;
     int depth_before = token_i < gParams.n_tokens
         ? block_prefix_brace[block_idx] + depth_brace_inblock[token_i]
         : 0;
@@ -208,7 +219,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         brace_semantic_kind[token_i] = semantic_kind;
 
     uint statement_event = token_i < count
-        ? statement_event_for(token_i, kind, bracket_depth_before)
+        ? statement_event_for(token_i, kind, paren_depth_before, bracket_depth_before)
         : 0u;
     prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,

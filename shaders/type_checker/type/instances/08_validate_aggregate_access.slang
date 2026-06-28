@@ -18,9 +18,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
@@ -32,6 +34,7 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> method_call_name_id;
+StructuredBuffer<uint> method_call_site_module_id;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> name_id_by_token;
@@ -43,7 +46,10 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_CONDITION_TYPE = 5u;
+static const uint ERR_LOOP_CONTROL = 7u;
 static const uint ERR_INVALID_MEMBER_ACCESS = 8u;
+static const uint ERR_CALL_MISMATCH = 10u;
 
 static const uint TYPE_REF_INVALID = 0u;
 
@@ -61,6 +67,8 @@ static const uint HIR_NAME_EXPR = 22u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NAME = 2u;
@@ -229,6 +237,30 @@ uint expr_value_token(uint node)
     return expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
 }
 
+uint direct_arithmetic_operand_type(uint node)
+{
+    node = result_expr(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_NAME)
+    {
+        uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+        if (!valid_token(token_i))
+            token_i = hir_token_pos[node];
+        return visible_type_for_token(token_i);
+    }
+
+    return TY_UNKNOWN;
+}
+
 uint call_callee_token(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -284,8 +316,14 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_arithmetic_operand_type(expr_slot(node, HIR_EXPR_RECORD_LEFT));
+        uint right_ty = direct_arithmetic_operand_type(expr_slot(node, HIR_EXPR_RECORD_RIGHT));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -386,7 +424,26 @@ void validate_struct_literal_field_node(uint node)
 
 bool member_expr_is_marked_method_call(uint member_token)
 {
-    return valid_token(member_token) && method_call_name_id[member_token] != INVALID;
+    return valid_token(member_token) &&
+           (method_call_name_id[member_token] != INVALID ||
+            method_call_site_module_id[member_token] != INVALID);
+}
+
+bool member_expr_is_call_callee(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        return false;
+
+    uint owner = parent[node];
+    if (valid_node(owner) &&
+        hir_kind[owner] == HIR_CALL_EXPR &&
+        hir_call_callee_node[owner] == node)
+        return true;
+
+    uint child = first_child[node];
+    return valid_node(child) &&
+           hir_kind[child] == HIR_CALL_EXPR &&
+           hir_call_callee_node[child] == node;
 }
 
 void validate_member_expr_node(uint node)
@@ -395,7 +452,7 @@ void validate_member_expr_node(uint node)
     if (!valid_token(member_token))
         return;
 
-    if (member_expr_is_marked_method_call(member_token))
+    if (member_expr_is_marked_method_call(member_token) || member_expr_is_call_callee(node))
         return;
 
     if (member_result_field_ordinal[member_token] != INVALID)
@@ -403,7 +460,9 @@ void validate_member_expr_node(uint node)
 
     uint receiver_tag = member_result_ref_tag[member_token];
     if (receiver_tag != TYPE_REF_INVALID)
+    {
         record_error(member_token, ERR_INVALID_MEMBER_ACCESS, receiver_tag);
+    }
 }
 
 [shader("compute")]

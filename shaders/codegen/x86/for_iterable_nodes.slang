@@ -21,16 +21,21 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_expr_record;
 
 RWStructuredBuffer<uint> x86_for_iterable_node;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
+static const uint HIR_EXPR = 14u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
+static const uint EXPR_RECORD_STRIDE = 4u;
+static const uint EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RANGE = 30u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -57,6 +62,18 @@ uint stmt_slot(uint node, uint slot)
         INVALID);
 }
 
+uint expr_form(uint node)
+{
+    return valid_node(node)
+               ? row_major_load<uint>(
+                     hir_expr_record,
+                     node,
+                     EXPR_RECORD_STRIDE,
+                     EXPR_RECORD_FORM,
+                     0u)
+               : 0u;
+}
+
 bool is_for_stmt(uint node)
 {
     if (!valid_node(node))
@@ -75,7 +92,12 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint iterable_node = stmt_slot(node, 2u);
-    if (!valid_node(iterable_node) || hir_kind[iterable_node] != HIR_PATH_EXPR)
+    if (!valid_node(iterable_node))
+        return;
+
+    uint iterable_kind = hir_kind[iterable_node];
+    if (iterable_kind != HIR_PATH_EXPR &&
+        !(iterable_kind == HIR_EXPR && expr_form(iterable_node) == HIR_EXPR_RANGE))
         return;
 
     x86_for_iterable_node[node] = iterable_node;

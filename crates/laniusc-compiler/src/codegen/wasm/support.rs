@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 
-use super::{WasmOutputError, WasmParams};
+use super::{WasmOutputError, WasmParams, WasmScanParams};
 use crate::gpu::buffers::LaniusBuffer;
 
 /// Emits a WASM backend trace line when `LANIUS_WASM_TRACE` is enabled.
@@ -23,10 +23,35 @@ pub(super) fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+/// Encodes a WASM scan parameter uniform using shader layout rules.
+pub(super) fn wasm_scan_params_bytes(params: &WasmScanParams) -> Vec<u8> {
+    let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
+    ub.write(params).expect("failed to encode WASM scan params");
+    ub.as_ref().to_vec()
+}
+
 /// Returns the initial four-word body status buffer contents.
 pub(super) fn body_status_init_bytes() -> [u8; 16] {
     let mut bytes = [0u8; 16];
     bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+    bytes
+}
+
+/// Returns initial body-plan aggregate/final words.
+pub(super) fn body_plan_init_bytes() -> Vec<u8> {
+    const INVALID: u32 = u32::MAX;
+    let mut words = [0u32; 24];
+    words[1] = INVALID;
+    words[2] = INVALID;
+    words[7] = INVALID;
+    words[9] = INVALID;
+    words[13] = INVALID;
+    words[23] = INVALID;
+
+    let mut bytes = Vec::with_capacity(words.len() * 4);
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
     bytes
 }
 
@@ -53,6 +78,7 @@ pub(super) fn read_wasm_output(
     out_buf: &wgpu::Buffer,
     packed_out_buf: &wgpu::Buffer,
     status_readback: &wgpu::Buffer,
+    body_plan_readback: &wgpu::Buffer,
     out_readback: &wgpu::Buffer,
     output_capacity: usize,
     token_capacity: u32,
@@ -75,6 +101,7 @@ pub(super) fn read_wasm_output(
             eprintln!(
                 "[laniusc][wasm-codegen] readback.status len={len} mode={mode} error={error_code} detail={error_detail}"
             );
+            trace_body_plan_readback(device, body_plan_readback)?;
         }
         let len = len as usize;
         let ok = matches!(mode, 1 | 2 | 3 | 5);
@@ -140,6 +167,26 @@ pub(super) fn read_wasm_output(
     Ok(bytes)
 }
 
+fn trace_body_plan_readback(
+    device: &wgpu::Device,
+    body_plan_readback: &wgpu::Buffer,
+) -> Result<()> {
+    let slice = body_plan_readback.slice(..);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &slice,
+        "codegen.wasm.body_plan",
+        wasm_readback_timeout(),
+    )?;
+
+    let data = body_plan_readback.slice(..).get_mapped_range();
+    let words: [u32; 24] = crate::gpu::readback::read_u32_words(&data, "WASM body plan")?;
+    drop(data);
+    body_plan_readback.unmap();
+    eprintln!("[laniusc][wasm-codegen] readback.body_plan words={words:?}");
+    Ok(())
+}
+
 fn wasm_readback_timeout() -> Duration {
     let ms = crate::gpu::env::env_u64("LANIUS_WASM_READBACK_TIMEOUT_MS", 3_000);
     Duration::from_millis(ms)
@@ -163,6 +210,11 @@ pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     } else {
         (MAX_X, groups.div_ceil(MAX_X))
     }
+}
+
+/// Returns scan-step values for a WASM block-prefix scan.
+pub(super) fn scan_steps_for_blocks(n_blocks: usize) -> Vec<u32> {
+    crate::gpu::scan::scan_step_values(n_blocks as u32)
 }
 
 /// Hashes buffer identities that affect WASM resident bind-group reuse.

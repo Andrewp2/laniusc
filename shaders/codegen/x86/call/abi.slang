@@ -36,8 +36,11 @@ StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint4> x86_call_record;
 StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> call_record_status;
+StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> x86_struct_type_record;
@@ -68,11 +71,14 @@ static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
+static const uint INTRINSIC_NONE = 0u;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
 static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TY_STRUCT_BASE = 4096u;
@@ -189,6 +195,13 @@ uint call_type_word(uint call_node, uint slot)
         INVALID);
 }
 
+bool intrinsic_call(uint call_node)
+{
+    uint callee_token = call_type_word(call_node, 2u);
+    return valid_token(callee_token) &&
+           call_intrinsic_tag[callee_token] != INTRINSIC_NONE;
+}
+
 uint semantic_type_width(uint ty)
 {
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
@@ -202,6 +215,27 @@ uint semantic_type_width(uint ty)
     return 1u;
 }
 
+uint named_type_instance_width(uint ty)
+{
+    if (!valid_token(ty))
+        return 1u;
+    uint enum_token = type_instance_decl_token[ty];
+    if (valid_token(enum_token) && x86_enum_type_record[enum_token] > 1u)
+        return x86_enum_type_record[enum_token];
+    if (valid_token(enum_token) && x86_struct_type_record[enum_token] != 0u)
+        return x86_struct_type_record[enum_token];
+    return 1u;
+}
+
+uint type_ref_leaf_width(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return semantic_type_width(payload);
+    if (tag == TYPE_REF_INSTANCE)
+        return named_type_instance_width(payload);
+    return 1u;
+}
+
 uint type_instance_width(uint ty)
 {
     if (!valid_token(ty))
@@ -209,13 +243,13 @@ uint type_instance_width(uint ty)
     if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
         type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
         type_instance_len_payload[ty] != 0u)
-        return type_instance_len_payload[ty];
-    uint enum_token = type_instance_decl_token[ty];
-    if (valid_token(enum_token) && x86_enum_type_record[enum_token] > 1u)
-        return x86_enum_type_record[enum_token];
-    if (valid_token(enum_token) && x86_struct_type_record[enum_token] != 0u)
-        return x86_struct_type_record[enum_token];
-    return 1u;
+    {
+        uint elem_width = type_ref_leaf_width(
+            type_instance_elem_ref_tag[ty],
+            type_instance_elem_ref_payload[ty]);
+        return max(elem_width, 1u) * type_instance_len_payload[ty];
+    }
+    return named_type_instance_width(ty);
 }
 
 uint call_return_width(uint semantic_ty, uint type_token)
@@ -369,5 +403,9 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     if (has_call_record(node_i) && !has_enum_value_record(node_i))
+    {
+        if (intrinsic_call(node_i))
+            return;
         project_call_record(node_i);
+    }
 }

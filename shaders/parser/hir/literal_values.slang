@@ -30,6 +30,7 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_type_len_token;
 
 RWStructuredBuffer<uint> hir_expr_int_value;
+RWStructuredBuffer<uint> hir_expr_float_bits;
 RWStructuredBuffer<uint> hir_type_len_value;
 
 static const uint INVALID = 0xffffffffu;
@@ -37,6 +38,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
@@ -102,6 +104,70 @@ uint parse_uint_token(uint token_i)
     return value;
 }
 
+uint parse_float_token_bits(uint token_i)
+{
+    uint start = token_words[token_i].start;
+    uint len = token_words[token_i].len;
+    float value = 0.0;
+    float frac_scale = 0.1;
+    uint exponent = 0u;
+    bool after_dot = false;
+    bool after_exp = false;
+    bool exp_negative = false;
+    bool exp_sign_allowed = false;
+
+    for (uint i = 0u; i < len && i < 64u; i += 1u)
+    {
+        uint ch = source_at(start, i);
+        if (ch == 95u)
+            continue;
+        if (!after_exp && ch == 46u)
+        {
+            after_dot = true;
+            continue;
+        }
+        if (!after_exp && (ch == 101u || ch == 69u))
+        {
+            after_exp = true;
+            exp_sign_allowed = true;
+            continue;
+        }
+        if (exp_sign_allowed && (ch == 43u || ch == 45u))
+        {
+            exp_negative = ch == 45u;
+            exp_sign_allowed = false;
+            continue;
+        }
+        exp_sign_allowed = false;
+        if (ch < 48u || ch > 57u)
+            break;
+
+        uint digit = ch - 48u;
+        if (after_exp)
+        {
+            exponent = exponent * 10u + digit;
+        }
+        else if (after_dot)
+        {
+            value += float(digit) * frac_scale;
+            frac_scale *= 0.1;
+        }
+        else
+        {
+            value = value * 10.0 + float(digit);
+        }
+    }
+
+    float scale = 1.0;
+    uint capped_exponent = min(exponent, 38u);
+    for (uint e = 0u; e < capped_exponent; e += 1u)
+        scale *= 10.0;
+    if (after_exp)
+        value = exp_negative ? value / scale : value * scale;
+
+    return asuint(value);
+}
+
 bool token_starts_with_digit(uint token_i)
 {
     if (token_i == INVALID)
@@ -122,6 +188,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     hir_expr_int_value[i] = 0u;
+    hir_expr_float_bits[i] = 0u;
     hir_type_len_value[i] = INVALID;
 
     if (!valid_node(i))
@@ -132,7 +199,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_type_len_value[i] = parse_uint_token(len_token);
 
     if (expr_slot(i, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INT)
+    {
+        if (expr_slot(i, HIR_EXPR_RECORD_FORM) != HIR_EXPR_FLOAT)
+            return;
+
+        uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
+        if (value_token == INVALID)
+            return;
+
+        hir_expr_float_bits[i] = parse_float_token_bits(value_token);
         return;
+    }
 
     uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
     if (value_token == INVALID)

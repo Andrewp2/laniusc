@@ -8,10 +8,10 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
     hir_active_dispatch_args: &wgpu::Buffer,
+    _token_hir_active_dispatch_args: &wgpu::Buffer,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     let hir_work = state.n_blocks.saturating_mul(256).max(1);
-    let parser_hir_work = state.parser_hir_n_blocks.saturating_mul(256).max(1);
     let module_work = state.module_n_blocks.saturating_mul(256).max(1);
     let record_n_blocks = state.record_n_blocks.max(1);
     let file_map_clear_work = hir_work;
@@ -653,7 +653,10 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &passes.modules_mark_value_call_paths,
         &state.bind_groups.mark_value_call_paths,
         "type_check.modules.mark_value_call_paths",
-        parser_hir_work,
+        state
+            .token_capacity
+            .max(state.parser_hir_n_blocks.saturating_mul(256))
+            .max(1),
     )?;
     record_compute_indirect(
         encoder,

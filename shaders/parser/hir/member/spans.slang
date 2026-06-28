@@ -78,5 +78,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint member_token = hir_member_name_token[node];
     if (member_token != INVALID)
+    {
+        uint receiver_end_limit = member_token > 0u ? member_token - 1u : INVALID;
+        if (receiver_end_limit != INVALID)
+        {
+            uint receiver_end = hir_token_end[receiver];
+            if (receiver_end == INVALID || receiver_end > receiver_end_limit)
+                hir_token_end[receiver] = receiver_end_limit;
+        }
         hir_token_end[node] = member_token + 1u;
+    }
 }

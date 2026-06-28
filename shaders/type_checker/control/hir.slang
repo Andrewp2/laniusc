@@ -22,9 +22,13 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> hir_nearest_loop_node;
 
 RWStructuredBuffer<uint> status;
@@ -38,6 +42,7 @@ static const uint ERR_LOOP_CONTROL = 7u;
 static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_MEMBER_EXPR = 21u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -83,6 +88,10 @@ static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
+
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 
 uint active_hir_node_count()
 {
@@ -179,6 +188,47 @@ uint scalar_type_for_literal_prod(uint prod)
     return TY_UNKNOWN;
 }
 
+uint direct_arithmetic_operand_type(uint node)
+{
+    node = expr_result_root(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint literal_ty = scalar_type_for_literal_prod(node_kind[node]);
+    if (literal_ty != TY_UNKNOWN)
+        return literal_ty;
+
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
+        return visible_type_for_token(hir_member_name_token[node]);
+    if (hir_kind[node] == HIR_INDEX_EXPR)
+    {
+        uint token_i = hir_token_pos[node];
+        return valid_token(token_i) ? call_return_type[token_i] : TY_UNKNOWN;
+    }
+
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_NAME)
+    {
+        uint token_i = expr_value_token(node);
+        if (!valid_token(token_i))
+            token_i = hir_token_pos[node];
+        return visible_type_for_token(token_i);
+    }
+    if (form == HIR_EXPR_INDEX)
+    {
+        uint token_i = hir_token_pos[node];
+        return valid_token(token_i) ? call_return_type[token_i] : TY_UNKNOWN;
+    }
+
+    return TY_UNKNOWN;
+}
+
 uint direct_expr_record_type(uint node)
 {
     node = expr_result_root(node);
@@ -188,6 +238,14 @@ uint direct_expr_record_type(uint node)
     uint literal_ty = scalar_type_for_literal_prod(node_kind[node]);
     if (literal_ty != TY_UNKNOWN)
         return literal_ty;
+
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
+        return visible_type_for_token(hir_member_name_token[node]);
+    if (hir_kind[node] == HIR_INDEX_EXPR)
+    {
+        uint token_i = hir_token_pos[node];
+        return valid_token(token_i) ? call_return_type[token_i] : TY_UNKNOWN;
+    }
 
     uint form = expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
@@ -224,8 +282,14 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_arithmetic_operand_type(expr_left(node));
+        uint right_ty = direct_arithmetic_operand_type(expr_right(node));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -254,6 +318,32 @@ bool is_array_type(uint ty)
 {
     return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
            ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
+}
+
+bool decl_ref_is_array_or_slice(uint decl)
+{
+    if (!valid_token(decl) || decl_type_ref_tag[decl] != TYPE_REF_INSTANCE)
+        return false;
+
+    uint instance = decl_type_ref_payload[decl];
+    if (!valid_token(instance))
+        return false;
+
+    uint kind = type_instance_kind[instance];
+    return kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE;
+}
+
+bool expr_base_has_array_or_slice_decl(uint node)
+{
+    uint token_i = expr_error_token(node);
+    if (!valid_token(token_i))
+        return false;
+
+    uint decl = visible_decl[token_i];
+    if (decl_ref_is_array_or_slice(decl))
+        return true;
+
+    return decl_ref_is_array_or_slice(token_i);
 }
 
 bool assignable_to_int(uint ty)
@@ -345,7 +435,8 @@ void validate_index_expr_node(uint node)
 
     uint base = expr_left(node);
     uint base_ty = direct_expr_record_type(base);
-    if (base_ty != TY_UNKNOWN && !is_array_type(base_ty))
+    if (base_ty != TY_UNKNOWN && !is_array_type(base_ty) &&
+        !expr_base_has_array_or_slice_decl(base))
     {
         record_error(expr_error_token(node), ERR_ASSIGN_MISMATCH, base_ty);
         return;

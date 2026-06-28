@@ -10,7 +10,7 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> language_name_id;
 
 static const uint INVALID = 0xffffffffu;
-static const uint LANGUAGE_NAME_COUNT = 18u;
+static const uint LANGUAGE_NAME_COUNT = 19u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

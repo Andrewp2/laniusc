@@ -331,6 +331,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     nearest_enclosing_control_node: &parse_bufs
                                                         .hir_nearest_enclosing_control_node,
                                                 },
+                                                wasm::GpuWasmPathMetadataBuffers {
+                                                    count_out: codegen.path_count_out,
+                                                    segment_count: codegen.path_segment_count,
+                                                    segment_base: codegen.path_segment_base,
+                                                    segment_token: codegen.path_segment_token,
+                                                    id_by_owner_hir: codegen.path_id_by_owner_hir,
+                                                },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,
                                                 codegen.type_expr_ref_payload,
@@ -784,6 +791,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                         .hir_nearest_block_node,
                                                     nearest_enclosing_control_node: &parse_bufs
                                                         .hir_nearest_enclosing_control_node,
+                                                },
+                                                wasm::GpuWasmPathMetadataBuffers {
+                                                    count_out: codegen.path_count_out,
+                                                    segment_count: codegen.path_segment_count,
+                                                    segment_base: codegen.path_segment_base,
+                                                    segment_token: codegen.path_segment_token,
+                                                    id_by_owner_hir: codegen.path_id_by_owner_hir,
                                                 },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,

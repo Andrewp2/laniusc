@@ -39,6 +39,16 @@ StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> module_type_path_status;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> module_value_path_expr_head;
+StructuredBuffer<uint> module_value_path_associated_method_token;
+
+struct TokenIn
+{
+    uint kind;
+    uint start;
+    uint len;
+};
+
+StructuredBuffer<TokenIn> token_words;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> predicate_syntax_token;
@@ -52,6 +62,18 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
 static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
+static const uint TK_LPAREN = 4u;
+static const uint TK_LT = 12u;
+static const uint TK_GT = 13u;
+static const uint TK_CALL_LPAREN = 28u;
+static const uint TK_GROUP_LPAREN = 29u;
+static const uint TK_SEMICOLON = 37u;
+static const uint TK_COLON = 38u;
+static const uint TK_PATH_COLON = 114u;
+static const uint TK_TYPE_ARG_LT = 131u;
+static const uint TK_TYPE_ARG_GT = 132u;
+static const uint TK_PATH_TYPE_ARG_LT = 184u;
+static const uint TK_PATH_TYPE_ARG_GT = 185u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -71,6 +93,73 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
+}
+
+uint token_kind(uint token)
+{
+    return valid_token(token) ? token_words[token].kind : 0u;
+}
+
+bool path_colon(uint kind)
+{
+    return kind == TK_COLON || kind == TK_PATH_COLON;
+}
+
+bool call_open(uint kind)
+{
+    return kind == TK_LPAREN || kind == TK_CALL_LPAREN || kind == TK_GROUP_LPAREN;
+}
+
+bool type_arg_open(uint kind)
+{
+    return kind == TK_LT || kind == TK_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT;
+}
+
+bool type_arg_close(uint kind)
+{
+    return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
+}
+
+bool generic_associated_receiver_path_owner(uint owner_token)
+{
+    if (!valid_token(owner_token))
+        return false;
+
+    uint depth = 0u;
+    [unroll]
+    for (uint step = 0u; step < 64u; step += 1u)
+    {
+        uint cursor = owner_token + step;
+        if (!valid_token(cursor))
+            return false;
+
+        uint kind = token_kind(cursor);
+        if (type_arg_open(kind))
+        {
+            depth += 1u;
+        }
+        else if (type_arg_close(kind))
+        {
+            if (depth > 0u)
+                depth -= 1u;
+            if (depth == 0u)
+            {
+                return valid_token(cursor + 4u) &&
+                       path_colon(token_kind(cursor + 1u)) &&
+                       path_colon(token_kind(cursor + 2u)) &&
+                       call_open(token_kind(cursor + 4u));
+            }
+        }
+
+        if (kind == TK_SEMICOLON || call_open(kind))
+            return false;
+    }
+    return false;
 }
 
 bool predicate_bound_type_path(uint path_i)
@@ -112,6 +201,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module_type_path_status[owner_token] == PATH_RESOLVE_STATUS_OK)
         return;
     if (module_value_path_expr_head[owner_token] == 0u)
+        return;
+    if (module_value_path_associated_method_token[owner_token] != INVALID)
+        return;
+    if (generic_associated_receiver_path_owner(owner_token))
         return;
     if (segment_count == 1u &&
         (resolved_value_status[path_i] == PATH_RESOLVE_STATUS_UNRESOLVED ||

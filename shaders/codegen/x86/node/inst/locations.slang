@@ -39,6 +39,7 @@ StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint4> x86_match_record;
 StructuredBuffer<uint> x86_for_iterable_node;
+StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_node_inst_range_start;
 StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint> x86_node_inst_same_end_rank;
@@ -101,6 +102,7 @@ static const uint X86_NODE_INST_LOCATION_ERR_FOR = 4u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE = 5u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE_START = 52u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY = 53u;
+static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -142,6 +144,32 @@ uint stmt_slot(uint node, uint slot)
         STMT_RECORD_STRIDE,
         slot,
         INVALID);
+}
+
+uint decl_layout_word(uint row, uint slot)
+{
+    return row_major_load<uint>(
+        x86_decl_layout_record,
+        row,
+        X86_DECL_LAYOUT_STRIDE,
+        slot,
+        INVALID);
+}
+
+uint decl_layout_width(uint row)
+{
+    return decl_layout_word(row, 1u);
+}
+
+uint for_element_width(uint for_node)
+{
+    if (!valid_node(for_node) ||
+        hir_kind[for_node] != HIR_FOR_STMT ||
+        stmt_slot(for_node, 0u) != STMT_RECORD_KIND_FOR)
+        return 1u;
+    uint decl_token = stmt_slot(for_node, 1u);
+    uint width = decl_layout_width(decl_token);
+    return width == INVALID || width == 0u ? 1u : width;
 }
 
 uint expr_slot(uint node, uint slot)
@@ -325,10 +353,12 @@ bool corrected_for_locations(uint node, out uint4 locations)
 
     uint iterable_node = valid_node(node) ? x86_for_iterable_node[node] : INVALID;
     uint body_node = stmt_slot(node, 3u);
+    uint load_count = for_element_width(node);
+    uint iterable_padding_count = 2u + load_count;
     uint iterable_padding = INVALID;
     uint body_location = INVALID;
-    if (!trailing_padding_start_for_node(iterable_node, 3u, iterable_padding) ||
-        iterable_padding + 2u >= gParams.inst_capacity ||
+    if (!trailing_padding_start_for_node(iterable_node, iterable_padding_count, iterable_padding) ||
+        iterable_padding + 1u + load_count >= gParams.inst_capacity ||
         !padding_location_for_node(body_node, body_location))
         return false;
 

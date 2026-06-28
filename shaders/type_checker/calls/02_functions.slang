@@ -24,7 +24,9 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_node;
 StructuredBuffer<uint> generic_param_name_id;
@@ -344,6 +346,32 @@ uint return_type_token_for_ref(uint tag, uint payload)
                : INVALID;
 }
 
+uint return_type_node(uint fn_node)
+{
+    if (!valid_node(fn_node))
+        return INVALID;
+    uint type_node = hir_fn_return_type_node[fn_node];
+    return valid_node(type_node) ? type_node : INVALID;
+}
+
+uint scalar_return_type_for_function(uint fn_node)
+{
+    uint type_node = return_type_node(fn_node);
+    if (!valid_node(type_node))
+        return TY_UNKNOWN;
+
+    uint type_token = hir_token_pos[type_node];
+    if (!valid_token(type_token))
+        return TY_UNKNOWN;
+
+    uint ty = module_type_path_type[type_token];
+    if (ty != TY_UNKNOWN)
+        return ty;
+
+    uint name_id = name_id_by_token[type_token];
+    return name_id == INVALID ? TY_UNKNOWN : language_type_code_by_name_id[name_id];
+}
+
 void return_ref_for_function(uint fn_node, uint fn_decl_token, out uint tag, out uint payload)
 {
     tag = fn_return_ref_tag[fn_decl_token];
@@ -365,6 +393,9 @@ uint return_type_for_function(uint fn_node, uint fn_decl_token)
     return_ref_for_function(fn_node, fn_decl_token, tag, payload);
     if (tag != TYPE_REF_INVALID)
         return semantic_type_code_for_ref(tag, payload);
+    uint scalar_ty = scalar_return_type_for_function(fn_node);
+    if (scalar_ty != TY_UNKNOWN)
+        return scalar_ty;
     if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN)
         return TY_INT;
     return TY_VOID;

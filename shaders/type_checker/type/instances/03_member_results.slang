@@ -21,16 +21,25 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
 StructuredBuffer<uint> hir_struct_field_ordinal;
 StructuredBuffer<uint> hir_struct_field_type_node;
 StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 
 RWStructuredBuffer<uint> member_result_ref_tag;
@@ -40,17 +49,27 @@ RWStructuredBuffer<uint> member_result_field_ordinal;
 static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_ERROR = 4u;
+
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -72,11 +91,90 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint expr_slot(uint node, uint slot)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
+}
+
+uint result_expr(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : node;
+}
+
+uint name_or_path_token_for_node(uint node)
+{
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_NAME_EXPR && hir_kind[node] != HIR_PATH_EXPR))
+        return INVALID;
+
+    uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+    return valid_token(token) ? token : INVALID;
+}
+
+uint name_token_for_expr(uint node)
+{
+    uint token = name_or_path_token_for_node(node);
+    if (valid_token(token))
+        return token;
+
+    return name_or_path_token_for_node(result_expr(node));
+}
+
 uint scalar_struct_decl_token(uint payload)
 {
     if (payload >= TY_STRUCT_BASE && payload < TY_ENUM_BASE)
         return payload - TY_STRUCT_BASE;
     return INVALID;
+}
+
+bool array_or_slice_instance_from_ref(uint ref_tag, uint ref_payload, out uint instance)
+{
+    instance = INVALID;
+    if (ref_tag != TYPE_REF_INSTANCE || !valid_token(ref_payload))
+        return false;
+
+    uint kind = type_instance_kind[ref_payload];
+    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return false;
+
+    uint elem_tag = type_instance_elem_ref_tag[ref_payload];
+    uint elem_payload = type_instance_elem_ref_payload[ref_payload];
+    if (elem_tag == TYPE_REF_INVALID || elem_tag == TYPE_REF_ERROR ||
+        elem_payload == INVALID)
+        return false;
+
+    instance = ref_payload;
+    return true;
+}
+
+bool indexed_receiver_element_ref(uint member_node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+
+    uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
+    if (!valid_node(receiver_node) || hir_kind[receiver_node] != HIR_INDEX_EXPR)
+        return false;
+
+    uint receiver_base = expr_slot(receiver_node, HIR_EXPR_RECORD_LEFT);
+    uint receiver_token = name_token_for_expr(receiver_base);
+    uint receiver_decl = valid_token(receiver_token) ? visible_decl[receiver_token] : INVALID;
+    if (!valid_token(receiver_decl))
+        return false;
+
+    uint array_instance = INVALID;
+    if (!array_or_slice_instance_from_ref(
+            decl_type_ref_tag[receiver_decl],
+            decl_type_ref_payload[receiver_decl],
+            array_instance))
+        return false;
+
+    tag = type_instance_elem_ref_tag[array_instance];
+    payload = type_instance_elem_ref_payload[array_instance];
+    return tag != TYPE_REF_INVALID && tag != TYPE_REF_ERROR && payload != INVALID;
 }
 
 uint receiver_decl_token(uint tag, uint payload)
@@ -186,6 +284,13 @@ void publish_member_field_ref_for_node(uint member_node)
 
     uint receiver_tag = member_result_ref_tag[member_token];
     uint receiver_payload = member_result_ref_payload[member_token];
+    uint indexed_tag = TYPE_REF_INVALID;
+    uint indexed_payload = INVALID;
+    if (indexed_receiver_element_ref(member_node, indexed_tag, indexed_payload))
+    {
+        receiver_tag = indexed_tag;
+        receiver_payload = indexed_payload;
+    }
     uint decl_token = receiver_decl_token(receiver_tag, receiver_payload);
     if (!valid_token(decl_token))
         return;

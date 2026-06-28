@@ -13,7 +13,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> body_words;
 StructuredBuffer<uint> body_status;
 RWStructuredBuffer<uint> out_words;
-RWStructuredBuffer<uint> status;
+StructuredBuffer<uint> status;
 
 static const uint BODY_OFF = 80u;
 static const uint WORKGROUP_SIZE = 256u;
@@ -123,12 +123,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     bool body_ok = body_status[1u] != 0u;
     uint module_len = BODY_OFF + body_len;
     bool ok = body_ok && module_len <= gParams.out_capacity;
-
-    if (tid.x == 0u)
-    {
-        status[0u] = module_len;
-        status[1u] = ok ? 3u : 0u;
-    }
 
     if (!ok)
         return;

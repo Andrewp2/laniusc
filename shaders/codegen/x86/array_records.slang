@@ -157,6 +157,9 @@ void publish_store_record_for_value(uint value_node, uint decl_token, uint ordin
 {
     if (!valid_node(value_node) || !valid_token(decl_token) || ordinal == INVALID)
         return;
+    uint4 existing = x86_struct_store_record[value_node];
+    if (existing.x != INVALID)
+        return;
     x86_struct_store_record[value_node] = uint4(
         decl_token,
         ordinal,

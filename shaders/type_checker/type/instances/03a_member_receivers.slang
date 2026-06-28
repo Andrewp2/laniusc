@@ -19,6 +19,8 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
@@ -28,6 +30,10 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_state;
 
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
@@ -37,12 +43,26 @@ RWStructuredBuffer<uint> member_result_field_ordinal;
 static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_ERROR = 4u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint TYPE_INSTANCE_RESOLVED = 1u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
+
+static const uint HIR_EXPR_NAME = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -69,6 +89,38 @@ uint receiver_token_for_member(uint member_node)
     return valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
 }
 
+uint expr_slot(uint node, uint slot)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
+}
+
+uint result_expr(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : node;
+}
+
+uint name_or_path_token_for_node(uint node)
+{
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_NAME_EXPR && hir_kind[node] != HIR_PATH_EXPR))
+        return INVALID;
+
+    uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+    return valid_token(token) ? token : INVALID;
+}
+
+uint name_token_for_expr(uint node)
+{
+    uint token = name_or_path_token_for_node(node);
+    if (valid_token(token))
+        return token;
+
+    return name_or_path_token_for_node(result_expr(node));
+}
+
 bool receiver_decl_type_ref(uint receiver_token, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID;
@@ -80,6 +132,53 @@ bool receiver_decl_type_ref(uint receiver_token, out uint tag, out uint payload)
 
     tag = decl_type_ref_tag[decl_token];
     payload = decl_type_ref_payload[decl_token];
+    return tag != TYPE_REF_INVALID && payload != INVALID;
+}
+
+bool array_or_slice_instance_from_ref(uint ref_tag, uint ref_payload, out uint instance)
+{
+    instance = INVALID;
+    if (ref_tag != TYPE_REF_INSTANCE || !valid_token(ref_payload))
+        return false;
+
+    uint kind = type_instance_kind[ref_payload];
+    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return false;
+
+    uint elem_tag = type_instance_elem_ref_tag[ref_payload];
+    uint elem_payload = type_instance_elem_ref_payload[ref_payload];
+    if (elem_tag == TYPE_REF_INVALID || elem_tag == TYPE_REF_ERROR ||
+        elem_payload == INVALID)
+        return false;
+
+    instance = ref_payload;
+    return true;
+}
+
+bool indexed_receiver_element_type_ref(uint member_node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+
+    uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
+    if (!valid_node(receiver_node) || hir_kind[receiver_node] != HIR_INDEX_EXPR)
+        return false;
+
+    uint receiver_base = expr_slot(receiver_node, HIR_EXPR_RECORD_LEFT);
+    uint receiver_token = name_token_for_expr(receiver_base);
+    uint receiver_decl = valid_token(receiver_token) ? visible_decl[receiver_token] : INVALID;
+    if (!valid_token(receiver_decl))
+        return false;
+
+    uint array_instance = INVALID;
+    if (!array_or_slice_instance_from_ref(
+            decl_type_ref_tag[receiver_decl],
+            decl_type_ref_payload[receiver_decl],
+            array_instance))
+        return false;
+
+    tag = type_instance_elem_ref_tag[array_instance];
+    payload = type_instance_elem_ref_payload[array_instance];
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
@@ -102,6 +201,14 @@ bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
+bool indexed_receiver_type_ref(uint member_node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+
+    return indexed_receiver_element_type_ref(member_node, tag, payload);
+}
+
 bool member_receiver_is_self(uint member_node)
 {
     uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
@@ -119,11 +226,14 @@ void publish_receiver_ref_for_node(uint member_node)
 
     uint receiver_token = receiver_token_for_member(member_node);
     if (!valid_token(receiver_token))
+        receiver_token = name_token_for_expr(hir_member_receiver_node[member_node]);
+    if (!valid_token(receiver_token))
         return;
 
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
-    if (!receiver_decl_type_ref(receiver_token, tag, payload) &&
+    if (!indexed_receiver_type_ref(member_node, tag, payload) &&
+        !receiver_decl_type_ref(receiver_token, tag, payload) &&
         member_receiver_is_self(member_node))
         enclosing_method_receiver_type_ref(member_node, tag, payload);
     if (tag == TYPE_REF_INVALID || payload == INVALID)

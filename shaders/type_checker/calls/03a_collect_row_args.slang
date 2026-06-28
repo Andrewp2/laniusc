@@ -85,6 +85,8 @@ static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
@@ -117,6 +119,7 @@ static const uint HIR_EXPR_FLOAT = 27u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
@@ -175,6 +178,21 @@ void record_error(uint token_i, uint code, uint detail)
 bool is_generic_type(uint ty)
 {
     return ty >= TY_GENERIC_BASE;
+}
+
+bool assignable(uint dst, uint src)
+{
+    if (dst == TY_UNKNOWN || src == TY_UNKNOWN)
+        return true;
+    if (dst == src)
+        return true;
+    if (dst == TY_INT)
+        return src == TY_UINT || src == TY_CHAR;
+    if (dst == TY_UINT)
+        return src == TY_INT || src == TY_CHAR;
+    if (dst == TY_FLOAT)
+        return src == TY_INT || src == TY_UINT || src == TY_CHAR;
+    return false;
 }
 
 bool is_symbolic_array_type(uint ty)
@@ -393,8 +411,14 @@ uint expr_type_no_nested_call(uint result_node)
         form == HIR_EXPR_ADD ||
         form == HIR_EXPR_SUB ||
         form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_DIV)
+    {
+        uint left_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
+        uint right_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
+        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+    }
+
+    if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
         form == HIR_EXPR_BIT_XOR ||
         form == HIR_EXPR_BIT_AND ||
@@ -1163,7 +1187,7 @@ void collect_row_argument(uint row)
         if (!has_symbolic_instance_args)
         {
             uint arg_ty = expr_type_no_nested_call(arg_node);
-            if (arg_ty != TY_UNKNOWN && arg_ty != param_ty)
+            if (arg_ty != TY_UNKNOWN && !assignable(param_ty, arg_ty))
                 record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
             return;
         }

@@ -69,11 +69,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         call_generic_slot_ordinal,
         method_call_name_id,
         call_param_count,
-        call_param_row_start,
-        call_param_row_count,
-        call_param_row_type,
-        call_param_row_ref_tag,
-        call_param_row_ref_payload,
         call_arg_record,
         call_arg_row_node,
         call_arg_row_call_node,
@@ -403,6 +398,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 "module_value_path_expr_head",
                 module_value_path_expr_head.as_entire_binding(),
             ),
+            ("status", status_buf.as_entire_binding()),
         ],
     )?;
     let project_value_paths = bind_group::create_bind_group_from_bindings(
@@ -473,6 +469,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 module_value_path_expr_head.as_entire_binding(),
             ),
             (
+                "module_value_path_associated_method_token",
+                module_value_path_associated_method_token.as_entire_binding(),
+            ),
+            ("token_words", token_buf.as_entire_binding()),
+            (
                 "module_value_path_status",
                 module_value_path_status.as_entire_binding(),
             ),
@@ -522,6 +523,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             ("call_arg_record", call_arg_record.as_entire_binding()),
             ("call_arg_row_count", call_arg_row_count.as_entire_binding()),
+            ("token_words", token_buf.as_entire_binding()),
+            (
+                "module_value_path_call_head",
+                module_value_path_call_head.as_entire_binding(),
+            ),
             (
                 "module_value_path_call_open",
                 module_value_path_call_open.as_entire_binding(),
