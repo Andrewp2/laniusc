@@ -32,6 +32,17 @@ static const uint BODY_PLAN_RETURN_VALUE_OK_COUNT = 20u;
 static const uint BODY_PLAN_RETURN_VALUE_AGG = 21u;
 static const uint BODY_PLAN_RETURN_VALUE_INVALID_COUNT = 22u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
+static const uint BODY_PLAN_ASSIGN_COUNT = 24u;
+static const uint BODY_PLAN_ASSIGN_MAX_TOKEN = 25u;
+static const uint BODY_PLAN_ASSIGN_LEN_AGG = 26u;
+static const uint BODY_PLAN_LET_LEN_AGG = 27u;
+static const uint BODY_PLAN_RETURN_LEN_AGG = 28u;
+static const uint BODY_PLAN_LOCAL_CONST_EXPR_COUNT = 29u;
+static const uint BODY_PLAN_CONTROL_LEN_AGG = 30u;
+static const uint BODY_PLAN_FUNCTION_COUNT = 31u;
+static const uint BODY_PLAN_BODY_LEN_AGG = 32u;
+static const uint BODY_PLAN_FUNCTION_INVALID_COUNT = 33u;
+static const uint BODY_PLAN_MAIN_SLOT = 34u;
 static const uint BODY_PLAN_FINALIZE_SLOT_COUNT = 15u;
 
 uint base_fallback_detail(uint main_token, uint return_token, uint detail)
@@ -45,12 +56,14 @@ uint base_fallback_detail(uint main_token, uint return_token, uint detail)
     return INVALID;
 }
 
-uint plan_error_detail(uint main_token, uint return_token, uint print_count)
+uint plan_error_detail(uint main_token, uint return_token, uint print_count, uint assign_count)
 {
     uint detail = body_plan[BODY_PLAN_ERROR_DETAIL_MIN];
     if (body_plan[BODY_PLAN_LET_COUNT] != 0u &&
         body_plan[BODY_PLAN_LET_MAX_TOKEN] >= return_token)
         detail = min(detail, body_plan[BODY_PLAN_LET_MAX_TOKEN]);
+    if (assign_count != 0u && body_plan[BODY_PLAN_ASSIGN_MAX_TOKEN] >= return_token)
+        detail = min(detail, body_plan[BODY_PLAN_ASSIGN_MAX_TOKEN]);
     if (print_count != 0u && body_plan[BODY_PLAN_PRINT_MAX_TOKEN] >= return_token)
         detail = min(detail, body_plan[BODY_PLAN_PRINT_MAX_TOKEN]);
     return base_fallback_detail(main_token, return_token, detail);
@@ -59,13 +72,24 @@ uint plan_error_detail(uint main_token, uint return_token, uint print_count)
 bool plan_aggregate_ok(
     uint main_token,
     uint return_token,
+    uint let_count,
+    uint let_max_token,
+    uint let_len,
+    uint assign_count,
+    uint assign_len,
+    uint control_len,
     uint print_count,
     uint print_len,
-    uint return_value,
+    uint return_len,
+    uint local_const_expr_count,
     out uint body_len)
 {
     body_len = 0u;
     if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+        return false;
+    if (body_plan[BODY_PLAN_FUNCTION_COUNT] == 0u)
+        return false;
+    if (body_plan[BODY_PLAN_FUNCTION_INVALID_COUNT] != 0u)
         return false;
     if (body_plan[BODY_PLAN_COLLECT_INVALID_COUNT] != 0u)
         return false;
@@ -73,23 +97,16 @@ bool plan_aggregate_ok(
         return false;
     if (body_plan[BODY_PLAN_STMT_INVALID_COUNT] != 0u)
         return false;
-    if (body_plan[BODY_PLAN_RETURN_COUNT] != 1u)
-        return false;
-    if (!valid_token(return_token))
-        return false;
-    if (body_plan[BODY_PLAN_RETURN_VALUE_OK_COUNT] != 1u)
-        return false;
     if (body_plan[BODY_PLAN_RETURN_VALUE_INVALID_COUNT] != 0u)
         return false;
     if (body_plan[BODY_PLAN_CALL_INVALID_COUNT] != 0u)
         return false;
-    if (body_plan[BODY_PLAN_LET_COUNT] != 0u &&
-        body_plan[BODY_PLAN_LET_MAX_TOKEN] >= return_token)
+    if (assign_count != 0u && local_const_expr_count != 0u)
         return false;
-    if (print_count != 0u && body_plan[BODY_PLAN_PRINT_MAX_TOKEN] >= return_token)
+    if (body_plan[BODY_PLAN_BODY_LEN_AGG] == 0u)
         return false;
 
-    body_len = 1u + print_len + 1u + i32_sleb_len(return_value) + 1u;
+    body_len = body_plan[BODY_PLAN_BODY_LEN_AGG];
     return body_len <= gParams.out_capacity;
 }
 
@@ -150,21 +167,36 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint main_token = body_plan[BODY_PLAN_MAIN_TOKEN_MIN];
     uint return_token = body_plan[BODY_PLAN_RETURN_TOKEN_MIN];
+    uint let_count = body_plan[BODY_PLAN_LET_COUNT];
+    uint let_max_token = body_plan[BODY_PLAN_LET_MAX_TOKEN];
+    uint let_len = body_plan[BODY_PLAN_LET_LEN_AGG];
+    uint assign_count = body_plan[BODY_PLAN_ASSIGN_COUNT];
+    uint assign_len = body_plan[BODY_PLAN_ASSIGN_LEN_AGG];
+    uint control_len = body_plan[BODY_PLAN_CONTROL_LEN_AGG];
     uint print_count = body_plan[BODY_PLAN_PRINT_COUNT_AGG];
     uint print_len = body_plan[BODY_PLAN_PRINT_LEN_AGG];
     uint return_value = body_plan[BODY_PLAN_RETURN_VALUE_AGG];
+    uint return_len = body_plan[BODY_PLAN_RETURN_LEN_AGG];
+    uint local_const_expr_count = body_plan[BODY_PLAN_LOCAL_CONST_EXPR_COUNT];
     uint body_len = 0u;
     bool ok = plan_aggregate_ok(
         main_token,
         return_token,
+        let_count,
+        let_max_token,
+        let_len,
+        assign_count,
+        assign_len,
+        control_len,
         print_count,
         print_len,
-        return_value,
+        return_len,
+        local_const_expr_count,
         body_len);
     bool hard_error =
         input_error_code != 0u &&
         input_error_code != ERR_UNSUPPORTED_SOURCE_SHAPE;
-    uint detail = plan_error_detail(main_token, return_token, print_count);
+    uint detail = plan_error_detail(main_token, return_token, print_count, assign_count);
 
     if (slot < 8u)
     {

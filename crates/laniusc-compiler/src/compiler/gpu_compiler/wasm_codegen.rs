@@ -169,6 +169,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             visibility: &parse_bufs.hir_item_visibility,
                                             path_start: &parse_bufs.hir_item_path_start,
                                             path_end: &parse_bufs.hir_item_path_end,
+                                            path_node: &parse_bufs.hir_item_path_node,
                                             file_id: &parse_bufs.hir_item_file_id,
                                             import_target_kind: &parse_bufs
                                                 .hir_item_import_target_kind,
@@ -271,12 +272,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &parse_bufs.first_child,
                                                 &parse_bufs.next_sibling,
                                                 &parse_bufs.hir_kind,
+                                                &parse_bufs.hir_item_kind,
                                                 &parse_bufs.hir_token_pos,
                                                 &parse_bufs.hir_token_end,
                                                 hir_status,
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,
+                                                codegen.language_name_id,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
                                                     lit_field_parent_lit: &parse_bufs
@@ -317,6 +320,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     arg_end: &parse_bufs.hir_call_arg_end,
                                                     arg_count: &parse_bufs.hir_call_arg_count,
                                                     arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
+                                                    arg_row_node: codegen.call_arg_row_node,
+                                                    arg_row_start: codegen.call_arg_row_start,
+                                                    arg_row_count: codegen.call_arg_row_count,
                                                 },
                                                 wasm::GpuWasmExprMetadataBuffers {
                                                     record: &parse_bufs.hir_expr_record,
@@ -330,6 +336,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                         .hir_nearest_block_node,
                                                     nearest_enclosing_control_node: &parse_bufs
                                                         .hir_nearest_enclosing_control_node,
+                                                    nearest_loop_node: &parse_bufs
+                                                        .hir_nearest_loop_node,
+                                                },
+                                                wasm::GpuWasmArrayMetadataBuffers {
+                                                    lit_first_element: &parse_bufs
+                                                        .hir_array_lit_first_element,
+                                                    lit_element_count: &parse_bufs
+                                                        .hir_array_lit_element_count,
+                                                    lit_context_stmt_node: &parse_bufs
+                                                        .hir_array_lit_context_stmt_node,
+                                                    element_parent_lit: &parse_bufs
+                                                        .hir_array_element_parent_lit,
+                                                    element_ordinal: &parse_bufs
+                                                        .hir_array_element_ordinal,
+                                                    element_next: &parse_bufs
+                                                        .hir_array_element_next,
                                                 },
                                                 wasm::GpuWasmPathMetadataBuffers {
                                                     count_out: codegen.path_count_out,
@@ -628,6 +650,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             visibility: &parse_bufs.hir_item_visibility,
                                             path_start: &parse_bufs.hir_item_path_start,
                                             path_end: &parse_bufs.hir_item_path_end,
+                                            path_node: &parse_bufs.hir_item_path_node,
                                             file_id: &parse_bufs.hir_item_file_id,
                                             import_target_kind: &parse_bufs
                                                 .hir_item_import_target_kind,
@@ -732,12 +755,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &parse_bufs.first_child,
                                                 &parse_bufs.next_sibling,
                                                 &parse_bufs.hir_kind,
+                                                &parse_bufs.hir_item_kind,
                                                 &parse_bufs.hir_token_pos,
                                                 &parse_bufs.hir_token_end,
                                                 hir_status,
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,
+                                                codegen.language_name_id,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
                                                     lit_field_parent_lit: &parse_bufs
@@ -778,6 +803,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     arg_end: &parse_bufs.hir_call_arg_end,
                                                     arg_count: &parse_bufs.hir_call_arg_count,
                                                     arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
+                                                    arg_row_node: codegen.call_arg_row_node,
+                                                    arg_row_start: codegen.call_arg_row_start,
+                                                    arg_row_count: codegen.call_arg_row_count,
                                                 },
                                                 wasm::GpuWasmExprMetadataBuffers {
                                                     record: &parse_bufs.hir_expr_record,
@@ -791,6 +819,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                         .hir_nearest_block_node,
                                                     nearest_enclosing_control_node: &parse_bufs
                                                         .hir_nearest_enclosing_control_node,
+                                                    nearest_loop_node: &parse_bufs
+                                                        .hir_nearest_loop_node,
+                                                },
+                                                wasm::GpuWasmArrayMetadataBuffers {
+                                                    lit_first_element: &parse_bufs
+                                                        .hir_array_lit_first_element,
+                                                    lit_element_count: &parse_bufs
+                                                        .hir_array_lit_element_count,
+                                                    lit_context_stmt_node: &parse_bufs
+                                                        .hir_array_lit_context_stmt_node,
+                                                    element_parent_lit: &parse_bufs
+                                                        .hir_array_element_parent_lit,
+                                                    element_ordinal: &parse_bufs
+                                                        .hir_array_element_ordinal,
+                                                    element_next: &parse_bufs
+                                                        .hir_array_element_next,
                                                 },
                                                 wasm::GpuWasmPathMetadataBuffers {
                                                     count_out: codegen.path_count_out,

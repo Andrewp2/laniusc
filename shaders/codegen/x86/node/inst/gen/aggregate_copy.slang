@@ -25,6 +25,8 @@ StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> x86_struct_access_record;
+StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
 StructuredBuffer<uint> x86_node_inst_range_info;
@@ -45,11 +47,12 @@ static const uint X86_VINST_ERROR_AGG_COPY_LOCATION = 3012u;
 static const uint X86_VINST_ERROR_AGG_COPY_WIDTH = 3011u;
 static const uint X86_VINST_ERROR_AGG_RET_SOURCE_LOCATION = 2622u;
 static const uint X86_VINST_ERROR_AGG_RET_COPY_WIDTH = 2623u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
+static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
@@ -64,12 +67,33 @@ static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
 static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
+static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
+static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
+static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
+static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_VINST_LOAD_LOCAL = 13u;
 static const uint X86_VINST_STORE_LOCAL = 14u;
 static const uint X86_VINST_COPY_AGG_RET = 23u;
 static const uint X86_VINST_LOAD_PARAM_SLOT = 26u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
+
+uint aggregate_source_payload_offset(uint source_kind, uint payload, uint offset)
+{
+    if (source_kind == X86_AGG_SOURCE_PARAM)
+        return pack_u16_pair(unpack_u16_pair_low(payload), unpack_u16_pair_high(payload) + offset);
+    return payload + offset;
+}
+
+uint param_aggregate_payload_base(uint payload)
+{
+    return unpack_u16_pair_low(payload);
+}
+
+uint param_aggregate_payload_ordinal(uint payload)
+{
+    return unpack_u16_pair_high(payload);
+}
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -258,6 +282,32 @@ bool decl_aggregate_width(uint decl_token, out uint width)
     return false;
 }
 
+uint struct_access_word(uint row, uint slot)
+{
+    return row_major_load<uint>(
+        x86_struct_access_record,
+        row,
+        X86_STRUCT_ACCESS_STRIDE,
+        slot,
+        INVALID);
+}
+
+uint struct_access_kind(uint row)
+{
+    uint info = struct_access_word(row, 2u);
+    return info == INVALID ? 0u : info & X86_STRUCT_ACCESS_KIND_MASK;
+}
+
+uint struct_access_payload0(uint row)
+{
+    return struct_access_word(row, 0u);
+}
+
+uint struct_access_payload1(uint row)
+{
+    return struct_access_word(row, 1u);
+}
+
 bool decl_token_for_name(uint name_node, out uint decl_token)
 {
     decl_token = INVALID;
@@ -319,7 +369,7 @@ bool aggregate_source_for_decl(
     if (param.x == owner_fn && param.z != INVALID && param.w > 1u)
     {
         source_kind = X86_AGG_SOURCE_PARAM;
-        payload = param.z;
+        payload = pack_u16_pair(param.z, 0u);
         width = param.w;
         return true;
     }
@@ -336,10 +386,46 @@ bool aggregate_source_for_expr(
     source_kind = 0u;
     payload = INVALID;
     width = 0u;
-    uint decl_token = INVALID;
-    if (!decl_token_for_name(expr_node, decl_token))
+    uint current = expr_node;
+    uint offset = 0u;
+    for (uint i = 0u; i < gParams.n_hir_nodes; i++)
+    {
+        if (valid_node(current) &&
+            hir_kind[current] == HIR_MEMBER_EXPR &&
+            struct_access_kind(current) == X86_STRUCT_ACCESS_MEMBER)
+        {
+            uint member_offset = struct_access_payload1(current);
+            uint receiver = struct_access_payload0(current);
+            if (member_offset == INVALID || !valid_node(receiver))
+                return false;
+            offset += member_offset;
+            current = receiver;
+            continue;
+        }
+
+        uint resolved = resolve_expr(current);
+        if (valid_node(resolved) && resolved != current)
+        {
+            current = resolved;
+            continue;
+        }
+
+        uint decl_token = INVALID;
+        if (decl_token_for_name(current, decl_token))
+        {
+            if (!aggregate_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
+                return false;
+            if (offset >= width)
+                return false;
+            payload = aggregate_source_payload_offset(source_kind, payload, offset);
+            width -= offset;
+            return true;
+        }
+
         return false;
-    return aggregate_source_for_decl(decl_token, owner_fn, source_kind, payload, width);
+    }
+
+    return false;
 }
 
 bool range_for_node(uint node, out uint2 range)
@@ -463,6 +549,56 @@ bool aggregate_return_source_copy_info(
     return width > 1u;
 }
 
+bool aggregate_struct_field_copy_info(
+    uint node,
+    out uint dest_slot,
+    out uint dest_offset,
+    out uint copy_width,
+    out uint source_kind,
+    out uint source_payload)
+{
+    dest_slot = INVALID;
+    dest_offset = 0u;
+    copy_width = 0u;
+    source_kind = 0u;
+    source_payload = INVALID;
+
+    uint value_node = resolve_expr(node);
+    if (!valid_node(value_node))
+        return false;
+
+    uint4 record = x86_struct_store_record[value_node];
+    if (record.w != 0u ||
+        !valid_node(record.z) ||
+        record.y == INVALID)
+        return false;
+
+    uint dest_decl = record.x;
+    uint dest_width = 0u;
+    if (!local_slot_for_decl(dest_decl, x86_node_func[node], dest_slot) ||
+        !decl_aggregate_width(dest_decl, dest_width) ||
+        record.y >= dest_width)
+        return false;
+
+    uint source_node = resolve_expr(node);
+    if (!valid_node(source_node))
+        source_node = node;
+
+    uint source_width = 0u;
+    if (!aggregate_source_for_expr(
+            source_node,
+            x86_node_func[node],
+            source_kind,
+            source_payload,
+            source_width) ||
+        source_width <= 1u)
+        return false;
+
+    dest_offset = record.y;
+    copy_width = min(source_width, dest_width - dest_offset);
+    return copy_width > 1u;
+}
+
 void emit_aggregate_return_source_copy(uint node, uint ordinal)
 {
     uint width = 0u;
@@ -496,6 +632,77 @@ void emit_aggregate_return_source_copy(uint node, uint ordinal)
         uint4(source_kind, source_payload, ordinal, 0u));
 }
 
+void emit_aggregate_struct_field_copy(uint node, uint ordinal)
+{
+    uint dest_slot = INVALID;
+    uint dest_offset = 0u;
+    uint copy_width = 0u;
+    uint source_kind = 0u;
+    uint source_payload = INVALID;
+    if (!aggregate_struct_field_copy_info(
+            node,
+            dest_slot,
+            dest_offset,
+            copy_width,
+            source_kind,
+            source_payload))
+        return;
+
+    if (copy_width > X86_AGG_COPY_MAX_WIDTH)
+    {
+        if (ordinal == 0u)
+            write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_WIDTH);
+        return;
+    }
+    if (ordinal >= copy_width)
+        return;
+
+    uint load_row = INVALID;
+    uint store_row = INVALID;
+    if (!location_for_node_local(node, ordinal * 2u, load_row) ||
+        !location_for_node_local(node, ordinal * 2u + 1u, store_row))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_LOCATION);
+        return;
+    }
+
+    if (source_kind == X86_AGG_SOURCE_LOCAL)
+    {
+        write_inst(
+            load_row,
+            node,
+            ordinal * 2u,
+            X86_VINST_LOAD_LOCAL,
+            load_row,
+            uint4(source_payload + ordinal, 0u, 0u, 0u));
+    }
+    else if (source_kind == X86_AGG_SOURCE_PARAM)
+    {
+        uint source_base = param_aggregate_payload_base(source_payload);
+        uint source_ordinal = param_aggregate_payload_ordinal(source_payload) + ordinal;
+        write_inst(
+            load_row,
+            node,
+            ordinal * 2u,
+            X86_VINST_LOAD_PARAM_SLOT,
+            load_row,
+            uint4(source_base, source_ordinal, 0u, 0u));
+    }
+    else
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_LOCATION);
+        return;
+    }
+
+    write_inst(
+        store_row,
+        node,
+        ordinal * 2u + 1u,
+        X86_VINST_STORE_LOCAL,
+        INVALID,
+        uint4(dest_slot + dest_offset + ordinal, load_row, 0u, 0u));
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -512,6 +719,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     emit_aggregate_return_source_copy(node, ordinal);
+    emit_aggregate_struct_field_copy(node, ordinal);
 
     uint dest_slot = INVALID;
     uint dest_width = 0u;
@@ -550,13 +758,15 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
     else if (source_kind == X86_AGG_SOURCE_PARAM)
     {
+        uint source_base = param_aggregate_payload_base(source_payload);
+        uint source_ordinal = param_aggregate_payload_ordinal(source_payload) + ordinal;
         write_inst(
             load_row,
             node,
             ordinal * 2u,
             X86_VINST_LOAD_PARAM_SLOT,
             load_row,
-            uint4(source_payload, ordinal, 0u, 0u));
+            uint4(source_base, source_ordinal, 0u, 0u));
     }
     else
     {

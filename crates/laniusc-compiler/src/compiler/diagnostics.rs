@@ -1219,11 +1219,12 @@ const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
 
 /// Stdlib APIs that cross runtime-service boundaries or compiler-host primitives.
 pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
-    runtime_bound_api(
+    executable_runtime_api(
         1,
         "allocator",
         "alloc::allocator",
         "alloc::allocator::alloc",
+        "lanius_alloc",
         "alloc_is_executable()",
         "alloc_requires_runtime_binding()",
     ),
@@ -1235,11 +1236,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "realloc_is_executable()",
         "realloc_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         1,
         "allocator",
         "alloc::allocator",
         "alloc::allocator::dealloc",
+        "lanius_alloc",
         "dealloc_is_executable()",
         "dealloc_requires_runtime_binding()",
     ),
@@ -1331,27 +1333,30 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "path_mutation_api_is_executable()",
         "path_mutation_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         3,
         "stdio",
         "std::io",
         "std::io::write_stdout",
+        "compiler_host_stdio",
         "write_stdout_is_executable()",
         "write_stdout_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         3,
         "stdio",
         "std::io",
         "std::io::write_stderr",
+        "compiler_host_stdio",
         "write_stderr_is_executable()",
         "write_stderr_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         3,
         "stdio",
         "std::io",
         "std::io::read_stdin",
+        "compiler_host_stdio",
         "read_stdin_is_executable()",
         "read_stdin_requires_runtime_binding()",
     ),
@@ -1540,11 +1545,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "fill_secure_bytes_is_executable()",
         "fill_secure_bytes_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         9,
         "secure RNG",
         "std::random",
         "std::random::secure_u32",
+        "lanius_std",
         "secure_u32_is_executable()",
         "secure_u32_requires_runtime_binding()",
     ),
@@ -1588,27 +1594,30 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "gpu_dispatch_api_is_executable()",
         "gpu_dispatch_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         11,
         "process",
         "std::process",
         "std::process::argc",
+        "lanius_std",
         "argc_is_executable()",
         "argc_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         11,
         "process",
         "std::process",
         "std::process::arg_len",
+        "lanius_std",
         "arg_len_is_executable()",
         "arg_len_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         11,
         "process",
         "std::process",
         "std::process::arg_read",
+        "lanius_std",
         "arg_read_is_executable()",
         "arg_read_requires_runtime_binding()",
     ),
@@ -1620,11 +1629,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "set_exit_code_is_executable()",
         "set_exit_code_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         11,
         "process",
         "std::process",
         "std::process::exit",
+        "lanius_std",
         "exit_is_executable()",
         "exit_requires_runtime_binding()",
     ),
@@ -4190,23 +4200,71 @@ mod tests {
     use crate::parser::tables::PrecomputedParseTables;
 
     fn api_info_has_expected_status(api: &RuntimeBoundApiDiagnosticInfo) -> bool {
-        if api.api_name == "std::io::print_i32" {
-            api.extern_abi == "compiler_print_i32"
-                && api.current_status == "executable-compiler-primitive"
-                && api.executable
+        let expected_extern_abi = if api.api_name == "std::io::print_i32" {
+            Some("compiler_print_i32")
+        } else if api.api_name == "alloc::allocator::alloc" {
+            Some("lanius_alloc")
+        } else if api.api_name == "alloc::allocator::dealloc" {
+            Some("lanius_alloc")
+        } else if api.api_name == "std::random::secure_u32" {
+            Some("lanius_std")
+        } else if api.api_name == "std::process::exit" {
+            Some("lanius_std")
+        } else if api.api_name == "std::process::argc" {
+            Some("lanius_std")
+        } else if api.api_name == "std::process::arg_len" {
+            Some("lanius_std")
+        } else if api.api_name == "std::process::arg_read" {
+            Some("lanius_std")
+        } else if api.api_name == "std::io::write_stdout" {
+            Some("compiler_host_stdio")
+        } else if api.api_name == "std::io::write_stderr" {
+            Some("compiler_host_stdio")
+        } else if api.api_name == "std::io::read_stdin" {
+            Some("compiler_host_stdio")
         } else {
-            api.current_status == "known-unbound" && !api.executable
+            None
+        };
+        if let Some(extern_abi) = expected_extern_abi {
+            return api.extern_abi == extern_abi
+                && api.current_status == "executable-compiler-primitive"
+                && api.executable;
         }
+        api.current_status == "known-unbound" && !api.executable
     }
 
     fn api_json_has_expected_status(api: &serde_json::Value) -> bool {
-        if api["api_name"] == "std::io::print_i32" {
-            api["extern_abi"] == "compiler_print_i32"
-                && api["current_status"] == "executable-compiler-primitive"
-                && api["executable"] == true
+        let expected_extern_abi = if api["api_name"] == "std::io::print_i32" {
+            Some("compiler_print_i32")
+        } else if api["api_name"] == "alloc::allocator::alloc" {
+            Some("lanius_alloc")
+        } else if api["api_name"] == "alloc::allocator::dealloc" {
+            Some("lanius_alloc")
+        } else if api["api_name"] == "std::random::secure_u32" {
+            Some("lanius_std")
+        } else if api["api_name"] == "std::process::exit" {
+            Some("lanius_std")
+        } else if api["api_name"] == "std::process::argc" {
+            Some("lanius_std")
+        } else if api["api_name"] == "std::process::arg_len" {
+            Some("lanius_std")
+        } else if api["api_name"] == "std::process::arg_read" {
+            Some("lanius_std")
+        } else if api["api_name"] == "std::io::write_stdout" {
+            Some("compiler_host_stdio")
+        } else if api["api_name"] == "std::io::write_stderr" {
+            Some("compiler_host_stdio")
+        } else if api["api_name"] == "std::io::read_stdin" {
+            Some("compiler_host_stdio")
         } else {
-            api["current_status"] == "known-unbound" && api["executable"] == false
+            None
+        };
+        if let Some(extern_abi) = expected_extern_abi {
+            return api["extern_abi"] == extern_abi
+                && api["current_status"] == "executable-compiler-primitive"
+                && api["executable"] == true;
         }
+        api["current_status"] == "known-unbound" && api["executable"] == false
     }
 
     #[test]
@@ -4660,8 +4718,11 @@ mod tests {
             write_stdout["accepted_selector_kinds"],
             serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
         );
-        assert_eq!(write_stdout["current_status"], "known-unbound");
-        assert_eq!(write_stdout["executable"], false);
+        assert_eq!(
+            write_stdout["current_status"],
+            "executable-compiler-primitive"
+        );
+        assert_eq!(write_stdout["executable"], true);
         let print_i32 = entries
             .iter()
             .find(|entry| entry["api_name"] == "std::io::print_i32")

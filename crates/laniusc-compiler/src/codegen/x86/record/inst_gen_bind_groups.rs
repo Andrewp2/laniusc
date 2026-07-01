@@ -15,6 +15,10 @@ pub(super) struct InstGenBindGroups {
     pub(super) clear_dispatch_args: wgpu::BindGroup,
     pub(super) clear_virtual_insts: wgpu::BindGroup,
     pub(super) generate: wgpu::BindGroup,
+    pub(super) function_params: wgpu::BindGroup,
+    pub(super) host_calls: wgpu::BindGroup,
+    pub(super) for_stmt: wgpu::BindGroup,
+    pub(super) control_stmt: wgpu::BindGroup,
     pub(super) aggregate_return_flags: wgpu::BindGroup,
     pub(super) aggregate_return_copy: wgpu::BindGroup,
     pub(super) aggregate_copy: wgpu::BindGroup,
@@ -34,6 +38,8 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) expr_resolved_final: &'a wgpu::Buffer,
     pub(super) visible_decl: &'a wgpu::Buffer,
     pub(super) visible_type: &'a wgpu::Buffer,
+    pub(super) method_decl_param_offset: &'a wgpu::Buffer,
+    pub(super) method_decl_receiver_mode: &'a wgpu::Buffer,
     pub(super) struct_type_record: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
@@ -102,6 +108,8 @@ pub(super) fn create_inst_gen_bind_groups(
         expr_resolved_final,
         visible_decl,
         visible_type,
+        method_decl_param_offset,
+        method_decl_receiver_mode,
         struct_type_record,
         decl_layout_record,
         decl_layout_status,
@@ -259,6 +267,10 @@ pub(super) fn create_inst_gen_bind_groups(
                 "hir_expr_float_bits",
                 expr_metadata.float_bits.as_entire_binding(),
             ),
+            (
+                "hir_expr_string_len",
+                expr_metadata.string_len.as_entire_binding(),
+            ),
             ("visible_decl", visible_decl.as_entire_binding()),
             ("visible_type", visible_type.as_entire_binding()),
             (
@@ -386,10 +398,308 @@ pub(super) fn create_inst_gen_bind_groups(
                 "x86_enclosing_let_node",
                 enclosing_let_step_final.as_entire_binding(),
             ),
+            (
+                "x86_enclosing_return_node",
+                enclosing_return_step_final.as_entire_binding(),
+            ),
             ("x86_node_func", final_node_func.as_entire_binding()),
             (
                 "x86_func_slot_by_node",
                 func_slot_by_node.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_record",
+                virtual_inst_record.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_args",
+                virtual_inst_args.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_status",
+                virtual_inst_status.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let function_params = reflected_bind_group(
+        device,
+        Some("codegen.x86.node_inst_gen_function_params.bind_group"),
+        &generator.node_inst_gen_function_params_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_location_record",
+                node_inst_location_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_input_status",
+                node_inst_gen_input_status.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_node_record",
+                node_inst_gen_node_record.as_entire_binding(),
+            ),
+            ("x86_node_func", final_node_func.as_entire_binding()),
+            (
+                "x86_func_slot_by_node",
+                func_slot_by_node.as_entire_binding(),
+            ),
+            ("x86_param_reg_record", param_reg_record.as_entire_binding()),
+            (
+                "x86_virtual_inst_record",
+                virtual_inst_record.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_args",
+                virtual_inst_args.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_status",
+                virtual_inst_status.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let host_calls = reflected_bind_group(
+        device,
+        Some("codegen.x86.node_inst_gen_host_calls.bind_group"),
+        &generator.node_inst_gen_host_calls_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
+            ),
+            ("hir_token_pos", hir_token_pos.as_entire_binding()),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            (
+                "hir_expr_string_len",
+                expr_metadata.string_len.as_entire_binding(),
+            ),
+            ("visible_decl", visible_decl.as_entire_binding()),
+            (
+                "path_count_out",
+                enum_metadata.path_count_out.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                enum_metadata.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "resolved_value_decl",
+                enum_metadata.resolved_value_decl.as_entire_binding(),
+            ),
+            (
+                "resolved_value_status",
+                enum_metadata.resolved_value_status.as_entire_binding(),
+            ),
+            (
+                "decl_name_token",
+                enum_metadata.decl_name_token.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
+            ),
+            ("x86_param_reg_record", param_reg_record.as_entire_binding()),
+            ("x86_call_abi_record", call_abi_record.as_entire_binding()),
+            ("hir_call_arg_count", hir_call_arg_count.as_entire_binding()),
+            (
+                "hir_call_callee_node",
+                hir_call_callee_node.as_entire_binding(),
+            ),
+            (
+                "hir_member_receiver_node",
+                hir_member_receiver_node.as_entire_binding(),
+            ),
+            ("call_arg_row_node", call_arg_row_node.as_entire_binding()),
+            ("call_arg_row_start", call_arg_row_start.as_entire_binding()),
+            ("call_arg_row_count", call_arg_row_count.as_entire_binding()),
+            (
+                "x86_intrinsic_call_record",
+                intrinsic_call_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_range_info",
+                node_inst_range_info.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_location_record",
+                node_inst_location_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_input_status",
+                node_inst_gen_input_status.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_node_record",
+                node_inst_gen_node_record.as_entire_binding(),
+            ),
+            (
+                "x86_short_circuit_rhs_node",
+                short_circuit_rhs_step_final.as_entire_binding(),
+            ),
+            ("x86_node_func", final_node_func.as_entire_binding()),
+            (
+                "x86_virtual_inst_record",
+                virtual_inst_record.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_args",
+                virtual_inst_args.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_status",
+                virtual_inst_status.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let for_stmt = reflected_bind_group(
+        device,
+        Some("codegen.x86.node_inst_gen_for_stmt.bind_group"),
+        &generator.node_inst_gen_for_stmt_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
+            ),
+            ("hir_token_pos", hir_token_pos.as_entire_binding()),
+            ("x86_tree_parent", parent.as_entire_binding()),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            ("visible_decl", visible_decl.as_entire_binding()),
+            (
+                "path_count_out",
+                enum_metadata.path_count_out.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                enum_metadata.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "resolved_value_decl",
+                enum_metadata.resolved_value_decl.as_entire_binding(),
+            ),
+            (
+                "resolved_value_status",
+                enum_metadata.resolved_value_status.as_entire_binding(),
+            ),
+            (
+                "decl_name_token",
+                enum_metadata.decl_name_token.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
+            ),
+            ("x86_param_reg_record", param_reg_record.as_entire_binding()),
+            (
+                "x86_for_iterable_node",
+                for_iterable_node.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_range_info",
+                node_inst_range_info.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_location_record",
+                node_inst_location_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_subtree_bound_start",
+                node_inst_subtree_bound_start.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_subtree_bound_end",
+                node_inst_subtree_bound_end.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_input_status",
+                node_inst_gen_input_status.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_node_record",
+                node_inst_gen_node_record.as_entire_binding(),
+            ),
+            ("x86_node_func", final_node_func.as_entire_binding()),
+            (
+                "x86_virtual_inst_record",
+                virtual_inst_record.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_args",
+                virtual_inst_args.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_status",
+                virtual_inst_status.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let control_stmt = reflected_bind_group(
+        device,
+        Some("codegen.x86.node_inst_gen_control_stmt.bind_group"),
+        &generator.node_inst_gen_control_stmt_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
+            ),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_range_info",
+                node_inst_range_info.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_location_record",
+                node_inst_location_record.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_subtree_bound_start",
+                node_inst_subtree_bound_start.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_subtree_bound_end",
+                node_inst_subtree_bound_end.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_input_status",
+                node_inst_gen_input_status.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_gen_node_record",
+                node_inst_gen_node_record.as_entire_binding(),
             ),
             (
                 "x86_virtual_inst_record",
@@ -450,9 +760,24 @@ pub(super) fn create_inst_gen_bind_groups(
                 expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             ("x86_tree_parent", parent.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos.as_entire_binding()),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final.as_entire_binding(),
+            ),
+            ("x86_node_func", final_node_func.as_entire_binding()),
+            ("visible_decl", visible_decl.as_entire_binding()),
+            (
+                "method_decl_param_offset",
+                method_decl_param_offset.as_entire_binding(),
+            ),
+            (
+                "method_decl_receiver_mode",
+                method_decl_receiver_mode.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record.as_entire_binding(),
             ),
             (
                 "x86_struct_access_record",
@@ -537,6 +862,14 @@ pub(super) fn create_inst_gen_bind_groups(
             ),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
+                "x86_struct_access_record",
+                struct_access_record.as_entire_binding(),
+            ),
+            (
+                "x86_struct_store_record",
+                struct_store_record.as_entire_binding(),
+            ),
+            (
                 "x86_decl_layout_record",
                 decl_layout_record.as_entire_binding(),
             ),
@@ -578,6 +911,10 @@ pub(super) fn create_inst_gen_bind_groups(
         clear_dispatch_args,
         clear_virtual_insts,
         generate,
+        function_params,
+        host_calls,
+        for_stmt,
+        control_stmt,
         aggregate_return_flags,
         aggregate_return_copy,
         aggregate_copy,

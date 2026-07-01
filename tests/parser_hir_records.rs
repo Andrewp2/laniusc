@@ -17,8 +17,8 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_INDEX,
                 HIR_EXPR_FORM_INT,
                 HIR_EXPR_FORM_LE,
-                HIR_EXPR_FORM_NAME,
                 HIR_EXPR_FORM_MUL,
+                HIR_EXPR_FORM_NAME,
                 HIR_EXPR_FORM_NONE,
                 HIR_EXPR_FORM_NOT,
                 HIR_EXPR_FORM_RANGE,
@@ -6097,12 +6097,8 @@ fn parser_hir_method_readback_rejects_incomplete_first_parameter_records() {
         )
     };
 
-    let err = validate(HIR_METHOD_RECEIVER_NONE, 3)
-        .expect_err("method rows with first-parameter tokens must publish receiver modes");
-    assert!(
-        err.to_string().contains("without a receiver mode"),
-        "error should describe the parser-owned first-parameter mode contract"
-    );
+    validate(HIR_METHOD_RECEIVER_NONE, 3)
+        .expect("associated functions may have ordinary ordinal-zero parameters");
 
     let err = validate(HIR_METHOD_RECEIVER_EXPLICIT, INVALID)
         .expect_err("explicit first parameters must retain parser-owned type edges");
@@ -7014,6 +7010,71 @@ fn main(first: i32, second: i32, third: i32) -> i32 {
 }
 
 #[test]
+fn parser_hir_sum_of_products_links_multiply_operands_in_source_packs() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main() -> f32 {
+    return 1.5 * 2.0 + 3.0 * 4.0;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let add_node = resolve_forward_expr_record(&parsed, return_expr, "return expression");
+    assert_eq!(
+        parsed.hir_expr_record_form[add_node], HIR_EXPR_FORM_ADD,
+        "return expression should resolve to the add root"
+    );
+
+    let left_mul = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[add_node],
+            "add left operand",
+        ),
+        "add left operand",
+    );
+    let right_mul = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_right[add_node],
+            "add right operand",
+        ),
+        "add right operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[left_mul], HIR_EXPR_FORM_MUL,
+        "add left operand should resolve to the left multiply"
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[right_mul], HIR_EXPR_FORM_MUL,
+        "add right operand should resolve to the right multiply"
+    );
+}
+
+#[test]
 fn parser_hir_expression_records_link_qualified_path_binary_operands_in_source_packs() {
     let parsed = parse_resident_source_pack(&[
         r#"
@@ -7176,13 +7237,14 @@ fn main() -> f32 {
 
 #[test]
 fn parser_hir_expression_records_publish_string_literals_in_source_packs() {
-    let parsed = parse_resident_source_pack(&[r#"
+    let source = r#"
 module app::main;
 
 fn main() -> str {
     return "ready";
 }
-"#]);
+"#;
+    let parsed = parse_resident_source_pack(&[source]);
     assert!(
         parsed.ll1_status[0] != 0,
         "resident parser should accept the fixture: error_pos={} code={} detail={}",
@@ -7227,6 +7289,17 @@ fn main() -> str {
         "string literal expression",
     );
     assert_expr_record_value_token_inside(&parsed, string_node, "string literal");
+    assert_eq!(
+        parsed.hir_expr_string_start[string_node],
+        source
+            .find("ready")
+            .expect("fixture should contain string literal payload") as u32,
+        "string literal payload start should point at the parser-owned source byte range"
+    );
+    assert_eq!(
+        parsed.hir_expr_string_len[string_node], 5,
+        "string literal payload length should cover the raw literal interior"
+    );
 }
 
 #[test]

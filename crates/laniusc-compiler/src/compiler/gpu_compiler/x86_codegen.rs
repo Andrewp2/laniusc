@@ -18,6 +18,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source_len: u32,
+        source_bytes_buf: &wgpu::Buffer,
         token_capacity: u32,
         x86_hir_node_count: u32,
         x86_inst_hir_node_count: u32,
@@ -42,6 +43,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 encoder,
                 x86::RecordElfInputs {
                     source_len,
+                    source_bytes_buf,
                     token_capacity,
                     n_hir_nodes: x86_hir_node_count,
                     inst_hir_node_count: x86_inst_hir_node_count,
@@ -59,6 +61,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         param_record: &parse_bufs.hir_param_record,
                         enclosing_fn: codegen.enclosing_fn,
                         method_decl_param_offset: codegen.method_decl_param_offset,
+                        method_decl_receiver_mode: codegen.method_decl_receiver_mode,
                         method_decl_receiver_ref_tag: codegen.method_decl_receiver_ref_tag,
                         method_decl_receiver_ref_payload: codegen.method_decl_receiver_ref_payload,
                     },
@@ -67,11 +70,20 @@ impl<'gpu> GpuCompiler<'gpu> {
                         expr_result_root_node: &parse_bufs.hir_expr_result_root_node,
                         int_value: &parse_bufs.hir_expr_int_value,
                         float_bits: &parse_bufs.hir_expr_float_bits,
+                        string_start: &parse_bufs.hir_expr_string_start,
+                        string_len: &parse_bufs.hir_expr_string_len,
                         stmt_record: &parse_bufs.hir_stmt_record,
                         type_form: &parse_bufs.hir_type_form,
                         type_len_value: &parse_bufs.hir_type_len_value,
                     },
                     call_metadata: x86::GpuX86CallMetadataBuffers {
+                        name_id_by_token: codegen.name_id_by_token,
+                        language_name_id: codegen.language_name_id,
+                        path_count_out: codegen.path_count_out,
+                        path_id_by_owner_hir: codegen.path_id_by_owner_hir,
+                        resolved_value_decl: codegen.resolved_value_decl,
+                        resolved_value_status: codegen.resolved_value_status,
+                        decl_name_token: codegen.decl_name_token,
                         callee_node: &parse_bufs.hir_call_callee_node,
                         arg_start: &parse_bufs.hir_call_arg_start,
                         arg_end: &parse_bufs.hir_call_arg_end,
@@ -127,19 +139,32 @@ impl<'gpu> GpuCompiler<'gpu> {
                         struct_decl_field_count: &parse_bufs.hir_struct_decl_field_count,
                         struct_lit_head_node: &parse_bufs.hir_struct_lit_head_node,
                         struct_lit_context_stmt_node: &parse_bufs.hir_struct_lit_context_stmt_node,
+                        struct_field_parent_struct: &parse_bufs.hir_struct_field_parent_struct,
+                        struct_field_ordinal: &parse_bufs.hir_struct_field_ordinal,
+                        struct_field_type_node: &parse_bufs.hir_struct_field_type_node,
+                        struct_decl_field_start: &parse_bufs.hir_struct_decl_field_start,
                         struct_lit_field_parent_lit: &parse_bufs.hir_struct_lit_field_parent_lit,
                         struct_lit_field_start: &parse_bufs.hir_struct_lit_field_start,
                         struct_lit_field_count: &parse_bufs.hir_struct_lit_field_count,
                         struct_lit_field_value_node: &parse_bufs.hir_struct_lit_field_value_node,
                         struct_lit_field_next: &parse_bufs.hir_struct_lit_field_next,
                         member_result_field_ordinal: codegen.member_result_field_ordinal,
+                        member_result_field_node: codegen.member_result_field_node,
                         struct_init_field_ordinal: codegen.struct_init_field_ordinal,
                         struct_init_field_ordinal_by_node: codegen
                             .struct_init_field_ordinal_by_node,
+                        struct_init_field_decl_node_by_node: codegen
+                            .struct_init_field_decl_node_by_node,
                     },
                     type_metadata: x86::GpuX86TypeMetadataBuffers {
+                        type_value_node: &parse_bufs.hir_type_value_node,
+                        type_path_leaf_node: &parse_bufs.hir_type_path_leaf_node,
                         decl_type_ref_tag: codegen.decl_type_ref_tag,
                         decl_type_ref_payload: codegen.decl_type_ref_payload,
+                        type_expr_ref_tag: codegen.type_expr_ref_tag,
+                        type_expr_ref_payload: codegen.type_expr_ref_payload,
+                        module_type_path_type: codegen.module_type_path_type,
+                        type_decl_hir_node_by_token: codegen.type_decl_hir_node_by_token,
                         visible_type: codegen.visible_type,
                         type_instance_kind: codegen.type_instance_kind,
                         type_instance_decl_token: codegen.type_instance_decl_token,
@@ -369,6 +394,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     host_timer.stamp("parser_cache_released");
                     let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
+                    let x86_source_bytes = bufs.in_bytes.clone();
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,
@@ -393,6 +419,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         active_tree_capacity,
                         semantic_hir_count,
                         x86_diagnostics,
+                        x86_source_bytes,
                         x86_parse,
                     ))
                 },
@@ -404,6 +431,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     active_tree_capacity,
                     semantic_hir_count,
                     x86_diagnostics,
+                    x86_source_bytes,
                     x86_parse,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.source_pack.finish");
@@ -466,6 +494,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         queue,
                         &mut x86_encoder,
                         x86_diagnostics.source_len,
+                        &x86_source_bytes,
                         token_capacity,
                         x86_hir_node_count,
                         x86_inst_hir_node_count,
@@ -635,6 +664,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     host_timer.stamp("parser_cache_released");
                     let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
+                    let x86_source_bytes = bufs.in_bytes.clone();
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,
@@ -659,6 +689,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         active_tree_capacity,
                         semantic_hir_count,
                         x86_diagnostics,
+                        x86_source_bytes,
                         x86_parse,
                     ))
                 },
@@ -670,6 +701,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     active_tree_capacity,
                     semantic_hir_count,
                     x86_diagnostics,
+                    x86_source_bytes,
                     x86_parse,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.finish");
@@ -734,6 +766,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         queue,
                         &mut x86_encoder,
                         x86_diagnostics.source_len,
+                        &x86_source_bytes,
                         token_capacity,
                         x86_hir_node_count,
                         x86_inst_hir_node_count,
@@ -825,9 +858,20 @@ fn x86_codegen_error_to_compile_error_for_source_pack(
 }
 
 fn x86_backend_boundary_diagnostic(x86_err: &x86::X86OutputError) -> Diagnostic {
-    Diagnostic::error("LNC0017", x86_err.public_message()).with_note(
+    let diagnostic = Diagnostic::error("LNC0017", x86_err.public_message()).with_note(
         "this program reached a native x86 lowering path that is not supported yet; use `laniusc check` for diagnostics-only validation or emit WASM until this construct is covered",
-    )
+    );
+    if x86_err.error_code() == 9 {
+        return diagnostic.with_note(
+            "x86 call lowering currently supports direct Lanius function calls; runtime extern calls need an explicit host binding before they can emit native code",
+        );
+    }
+    if x86_err.error_code() == x86::X86_ERR_UNSUPPORTED_LITERAL_EXPR {
+        return diagnostic.with_note(
+            "x86 string and char literals need a target data layout before they can lower to native code; the frontend HIR and types were accepted",
+        );
+    }
+    diagnostic
 }
 
 fn x86_backend_execution_failed_for_source(

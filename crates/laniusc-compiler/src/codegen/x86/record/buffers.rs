@@ -81,6 +81,8 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) match_pattern_first_payload_node_storage_buf: Option<LaniusBuffer<u32>>,
     pub(super) aggregate_record_rows: usize,
     pub(super) struct_type_record_buf: LaniusBuffer<u32>,
+    pub(super) struct_field_width_by_node_buf: LaniusBuffer<u32>,
+    pub(super) struct_field_stream_index_by_node_buf: LaniusBuffer<u32>,
     pub(super) struct_access_record_buf: LaniusBuffer<u32>,
     pub(super) struct_store_record_buf: LaniusBuffer<u32>,
     pub(super) struct_record_status_buf: PooledStorageBuffer,
@@ -165,6 +167,15 @@ pub(super) struct InstructionRecordBuffers {
     pub(super) select_status_buf: PooledStorageBuffer,
     pub(super) size_status_buf: PooledStorageBuffer,
     pub(super) text_len_buf: LaniusBuffer<u32>,
+    pub(super) rodata_len_buf: LaniusBuffer<u32>,
+    pub(super) rodata_size_by_node_buf: LaniusBuffer<u32>,
+    pub(super) rodata_offset_by_node_buf: LaniusBuffer<u32>,
+    pub(super) rodata_status_buf: PooledStorageBuffer,
+    pub(super) rodata_scan_blocks: usize,
+    pub(super) rodata_scan_local_prefix_buf: LaniusBuffer<u32>,
+    pub(super) rodata_scan_block_sum_buf: LaniusBuffer<u32>,
+    pub(super) rodata_scan_prefix_a_buf: LaniusBuffer<u32>,
+    pub(super) rodata_scan_prefix_b_buf: LaniusBuffer<u32>,
     pub(super) text_status_buf: PooledStorageBuffer,
     pub(super) text_scan_words: usize,
     pub(super) text_scan_blocks: usize,
@@ -431,6 +442,13 @@ pub(super) fn create_metadata_record_buffers(
     });
     let struct_type_record_buf =
         storage_u32_copy(device, "codegen.x86.struct_type_record", token_words);
+    let struct_field_width_by_node_buf =
+        storage_u32_copy(device, "codegen.x86.struct_field_width_by_node", hir_words);
+    let struct_field_stream_index_by_node_buf = storage_u32_copy(
+        device,
+        "codegen.x86.struct_field_stream_index_by_node",
+        hir_words,
+    );
     let aggregate_record_rows = if feature_summary.has_aggregate() {
         hir_words
     } else {
@@ -586,6 +604,8 @@ pub(super) fn create_metadata_record_buffers(
         match_pattern_first_payload_node_storage_buf,
         aggregate_record_rows,
         struct_type_record_buf,
+        struct_field_width_by_node_buf,
+        struct_field_stream_index_by_node_buf,
         struct_access_record_buf,
         struct_store_record_buf,
         struct_record_status_buf,
@@ -638,7 +658,7 @@ pub(super) fn create_instruction_record_buffers(
     } = inputs;
 
     let node_inst_count_status_buf =
-        pooled_storage_u32_copy(device, "codegen.x86.node_inst_count_status", 4);
+        pooled_storage_u32_copy(device, "codegen.x86.node_inst_count_status", 5);
     let node_inst_order_status_buf =
         pooled_storage_u32_copy(device, "codegen.x86.node_inst_order_status", 4);
     let node_inst_scan_local_prefix_buf = external_or_storage_u32_copy(
@@ -747,6 +767,30 @@ pub(super) fn create_instruction_record_buffers(
     let select_status_buf = pooled_storage_u32_copy(device, "codegen.x86.select_status", 4);
     let size_status_buf = pooled_storage_u32_copy(device, "codegen.x86.size_status", 4);
     let text_len_buf = storage_u32_copy(device, "codegen.x86.text_len", 1);
+    let rodata_len_buf = storage_u32_copy(device, "codegen.x86.rodata_len", 1);
+    let rodata_size_by_node_buf =
+        storage_u32_copy(device, "codegen.x86.rodata_size_by_node", hir_words);
+    let rodata_offset_by_node_buf =
+        storage_u32_copy(device, "codegen.x86.rodata_offset_by_node", hir_words);
+    let rodata_status_buf = pooled_storage_u32_copy(device, "codegen.x86.rodata_status", 4);
+    let rodata_scan_blocks = hir_words.div_ceil(256).max(1);
+    let rodata_scan_local_prefix_buf =
+        storage_u32_copy(device, "codegen.x86.rodata_scan_local_prefix", hir_words);
+    let rodata_scan_block_sum_buf = storage_u32_copy(
+        device,
+        "codegen.x86.rodata_scan_block_sum",
+        rodata_scan_blocks,
+    );
+    let rodata_scan_prefix_a_buf = storage_u32_copy(
+        device,
+        "codegen.x86.rodata_scan_prefix_a",
+        rodata_scan_blocks,
+    );
+    let rodata_scan_prefix_b_buf = storage_u32_copy(
+        device,
+        "codegen.x86.rodata_scan_prefix_b",
+        rodata_scan_blocks,
+    );
     let text_status_buf = pooled_storage_u32_copy(device, "codegen.x86.text_status", 4);
     let text_scan_words = inst_capacity;
     let text_scan_blocks = text_scan_words.div_ceil(256).max(1);
@@ -813,6 +857,15 @@ pub(super) fn create_instruction_record_buffers(
         select_status_buf,
         size_status_buf,
         text_len_buf,
+        rodata_len_buf,
+        rodata_size_by_node_buf,
+        rodata_offset_by_node_buf,
+        rodata_status_buf,
+        rodata_scan_blocks,
+        rodata_scan_local_prefix_buf,
+        rodata_scan_block_sum_buf,
+        rodata_scan_prefix_a_buf,
+        rodata_scan_prefix_b_buf,
         text_status_buf,
         text_scan_words,
         text_scan_blocks,

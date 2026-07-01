@@ -17,10 +17,13 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
@@ -39,9 +42,11 @@ RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
+RWStructuredBuffer<uint> member_result_field_node;
 
 static const uint INVALID = 0xffffffffu;
 
+static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -215,6 +220,35 @@ bool member_receiver_is_self(uint member_node)
     return valid_node(receiver_node) && node_kind[receiver_node] == PROD_SELF_VALUE;
 }
 
+bool member_expr_is_call_callee(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        return false;
+
+    uint owner = parent[node];
+    if (valid_node(owner) &&
+        hir_kind[owner] == HIR_CALL_EXPR &&
+        hir_call_callee_node[owner] == node)
+        return true;
+
+    uint child = first_child[node];
+    return valid_node(child) &&
+           hir_kind[child] == HIR_CALL_EXPR &&
+           hir_call_callee_node[child] == node;
+}
+
+void clear_member_result(uint member_token)
+{
+    if (!valid_token(member_token))
+        return;
+
+    member_result_ref_tag[member_token] = TYPE_REF_INVALID;
+    member_result_ref_payload[member_token] = INVALID;
+    member_result_context_instance[member_token] = INVALID;
+    member_result_field_ordinal[member_token] = INVALID;
+    member_result_field_node[member_token] = INVALID;
+}
+
 void publish_receiver_ref_for_node(uint member_node)
 {
     if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
@@ -223,6 +257,12 @@ void publish_receiver_ref_for_node(uint member_node)
     uint member_token = hir_member_name_token[member_node];
     if (!valid_token(member_token))
         return;
+
+    if (member_expr_is_call_callee(member_node))
+    {
+        clear_member_result(member_token);
+        return;
+    }
 
     uint receiver_token = receiver_token_for_member(member_node);
     if (!valid_token(receiver_token))

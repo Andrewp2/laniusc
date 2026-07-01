@@ -233,19 +233,30 @@ pub(in crate::type_checker) fn create_record_discovery(
         0,
         &[
             ("gParams", inputs.params.as_entire_binding()),
-            ("token_words", inputs.token_buf.as_entire_binding()),
-            ("path_count_out", buffers.path_count_out.as_entire_binding()),
-            ("path_start", buffers.path_start.as_entire_binding()),
-            ("path_len", buffers.path_len.as_entire_binding()),
-            ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
-            ("path_kind", buffers.path_kind.as_entire_binding()),
+            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
+            ("hir_kind", inputs.hir_kind_buf.as_entire_binding()),
             (
-                "hir_type_path_leaf_node",
-                inputs.hir_items.type_path_leaf_node.as_entire_binding(),
+                "hir_token_pos",
+                inputs.hir_token_pos_buf.as_entire_binding(),
+            ),
+            ("node_kind", inputs.hir_items.node_kind.as_entire_binding()),
+            (
+                "first_child",
+                inputs.hir_items.first_child.as_entire_binding(),
             ),
             (
-                "hir_token_end",
-                inputs.hir_token_end_buf.as_entire_binding(),
+                "next_sibling",
+                inputs.hir_items.next_sibling.as_entire_binding(),
+            ),
+            ("path_count_out", buffers.path_count_out.as_entire_binding()),
+            ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
+            (
+                "hir_type_value_node",
+                inputs.hir_items.type_value_node.as_entire_binding(),
+            ),
+            (
+                "hir_item_path_node",
+                inputs.hir_items.path_node.as_entire_binding(),
             ),
             (
                 "name_id_by_token",
@@ -279,10 +290,22 @@ pub(in crate::type_checker) fn create_record_discovery(
         0,
         &[
             ("gParams", inputs.params.as_entire_binding()),
-            ("token_words", inputs.token_buf.as_entire_binding()),
+            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
+            ("hir_kind", inputs.hir_kind_buf.as_entire_binding()),
+            (
+                "hir_token_pos",
+                inputs.hir_token_pos_buf.as_entire_binding(),
+            ),
+            ("node_kind", inputs.hir_items.node_kind.as_entire_binding()),
+            (
+                "first_child",
+                inputs.hir_items.first_child.as_entire_binding(),
+            ),
+            (
+                "next_sibling",
+                inputs.hir_items.next_sibling.as_entire_binding(),
+            ),
             ("path_count_out", buffers.path_count_out.as_entire_binding()),
-            ("path_start", buffers.path_start.as_entire_binding()),
-            ("path_len", buffers.path_len.as_entire_binding()),
             ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
             (
                 "path_segment_base",
@@ -292,14 +315,13 @@ pub(in crate::type_checker) fn create_record_discovery(
                 "path_segment_count",
                 buffers.path_segment_count.as_entire_binding(),
             ),
-            ("path_kind", buffers.path_kind.as_entire_binding()),
             (
-                "hir_type_path_leaf_node",
-                inputs.hir_items.type_path_leaf_node.as_entire_binding(),
+                "hir_type_value_node",
+                inputs.hir_items.type_value_node.as_entire_binding(),
             ),
             (
-                "hir_token_end",
-                inputs.hir_token_end_buf.as_entire_binding(),
+                "hir_item_path_node",
+                inputs.hir_items.path_node.as_entire_binding(),
             ),
             (
                 "name_id_by_token",

@@ -103,6 +103,9 @@ impl X86OutputError {
                 | X86_ERR_NESTED_AGGREGATE_MEMBER
                 | X86_ERR_SIGNED_DIV_OVERFLOW
                 | X86_ERR_HIR_TREE_SHAPE
+                | X86_ERR_RODATA_SIZE
+                | X86_ERR_RODATA_OFFSET
+                | X86_ERR_RODATA_WRITE
         )
     }
 
@@ -177,11 +180,17 @@ pub(super) const X86_ERR_HIR_TREE_SHAPE: u32 = 57;
 /// Status code for signed division overflow or zero-divisor checks.
 pub(super) const X86_ERR_SIGNED_DIV_OVERFLOW: u32 = 59;
 /// Status code for literal expressions not supported by x86 lowering.
-pub(super) const X86_ERR_UNSUPPORTED_LITERAL_EXPR: u32 = 60;
+pub(crate) const X86_ERR_UNSUPPORTED_LITERAL_EXPR: u32 = 60;
 /// Status code for nested aggregate member lowering that is not supported.
 pub(super) const X86_ERR_NESTED_AGGREGATE_MEMBER: u32 = 61;
 /// Status code for programs with more than one x86 main entrypoint.
 pub(super) const X86_ERR_MULTIPLE_MAIN: u32 = 62;
+/// Status code for rodata byte-size planning failures.
+pub(super) const X86_ERR_RODATA_SIZE: u32 = 63;
+/// Status code for rodata offset planning failures.
+pub(super) const X86_ERR_RODATA_OFFSET: u32 = 64;
+/// Status code for rodata byte emission failures.
+pub(super) const X86_ERR_RODATA_WRITE: u32 = 65;
 
 /// Measured backend feature usage used for x86_64 capacity and pass selection.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -270,6 +279,8 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub expr_result_root_node: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub float_bits: &'a wgpu::Buffer,
+    pub string_start: &'a wgpu::Buffer,
+    pub string_len: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
     pub type_len_value: &'a wgpu::Buffer,
@@ -284,12 +295,20 @@ pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub param_record: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
+    pub method_decl_receiver_mode: &'a wgpu::Buffer,
     pub method_decl_receiver_ref_tag: &'a wgpu::Buffer,
     pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
 }
 
 /// Call and call-argument metadata buffers needed by x86 lowering.
 pub struct GpuX86CallMetadataBuffers<'a> {
+    pub name_id_by_token: &'a wgpu::Buffer,
+    pub language_name_id: &'a wgpu::Buffer,
+    pub path_count_out: &'a wgpu::Buffer,
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
+    pub resolved_value_decl: &'a wgpu::Buffer,
+    pub resolved_value_status: &'a wgpu::Buffer,
+    pub decl_name_token: &'a wgpu::Buffer,
     pub callee_node: &'a wgpu::Buffer,
     pub arg_start: &'a wgpu::Buffer,
     pub arg_end: &'a wgpu::Buffer,
@@ -351,20 +370,32 @@ pub struct GpuX86StructMetadataBuffers<'a> {
     pub struct_decl_field_count: &'a wgpu::Buffer,
     pub struct_lit_head_node: &'a wgpu::Buffer,
     pub struct_lit_context_stmt_node: &'a wgpu::Buffer,
+    pub struct_field_parent_struct: &'a wgpu::Buffer,
+    pub struct_field_ordinal: &'a wgpu::Buffer,
+    pub struct_field_type_node: &'a wgpu::Buffer,
+    pub struct_decl_field_start: &'a wgpu::Buffer,
     pub struct_lit_field_parent_lit: &'a wgpu::Buffer,
     pub struct_lit_field_start: &'a wgpu::Buffer,
     pub struct_lit_field_count: &'a wgpu::Buffer,
     pub struct_lit_field_value_node: &'a wgpu::Buffer,
     pub struct_lit_field_next: &'a wgpu::Buffer,
     pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub member_result_field_node: &'a wgpu::Buffer,
     pub struct_init_field_ordinal: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+    pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
 }
 
 /// Type reference and type-instance metadata buffers needed by x86 lowering.
 pub struct GpuX86TypeMetadataBuffers<'a> {
+    pub type_value_node: &'a wgpu::Buffer,
+    pub type_path_leaf_node: &'a wgpu::Buffer,
     pub decl_type_ref_tag: &'a wgpu::Buffer,
     pub decl_type_ref_payload: &'a wgpu::Buffer,
+    pub type_expr_ref_tag: &'a wgpu::Buffer,
+    pub type_expr_ref_payload: &'a wgpu::Buffer,
+    pub module_type_path_type: &'a wgpu::Buffer,
+    pub type_decl_hir_node_by_token: &'a wgpu::Buffer,
     pub visible_type: &'a wgpu::Buffer,
     pub type_instance_kind: &'a wgpu::Buffer,
     pub type_instance_decl_token: &'a wgpu::Buffer,
@@ -893,6 +924,8 @@ pub struct GpuX86CodeGenerator {
     expr_semantic_type_init_pass: PassData,
     expr_semantic_type_step_pass: PassData,
     enum_records_pass: PassData,
+    struct_field_widths_pass: PassData,
+    struct_field_stream_pass: PassData,
     struct_records_pass: PassData,
     array_records_pass: PassData,
     match_records_pass: PassData,
@@ -946,6 +979,10 @@ pub struct GpuX86CodeGenerator {
     virtual_inst_clear_dispatch_args_pass: PassData,
     virtual_inst_clear_pass: PassData,
     node_inst_gen_pass: PassData,
+    node_inst_gen_function_params_pass: PassData,
+    node_inst_gen_host_calls_pass: PassData,
+    node_inst_gen_for_stmt_pass: PassData,
+    node_inst_gen_control_stmt_pass: PassData,
     aggregate_literal_return_copy_flags_pass: PassData,
     aggregate_literal_return_copy_pass: PassData,
     node_inst_gen_aggregate_copy_pass: PassData,
@@ -965,6 +1002,10 @@ pub struct GpuX86CodeGenerator {
     inst_size_pass: PassData,
     text_scan_local_pass: PassData,
     text_offsets_pass: PassData,
+    rodata_sizes_pass: PassData,
+    rodata_scan_local_pass: PassData,
+    rodata_offsets_pass: PassData,
+    rodata_write_pass: PassData,
     reloc_scan_local_pass: PassData,
     reloc_records_pass: PassData,
     reloc_patch_pass: PassData,
@@ -1082,6 +1123,16 @@ impl GpuX86CodeGenerator {
             "enum_records",
             "codegen/x86/enum_records.spv",
             "codegen/x86/enum_records.reflect.json"
+        );
+        let struct_field_widths_pass = load_x86_pass!(
+            "struct_field_widths",
+            "codegen/x86/struct_field_widths.spv",
+            "codegen/x86/struct_field_widths.reflect.json"
+        );
+        let struct_field_stream_pass = load_x86_pass!(
+            "struct_field_stream",
+            "codegen/x86/struct_field_stream.spv",
+            "codegen/x86/struct_field_stream.reflect.json"
         );
         let struct_records_pass = load_x86_pass!(
             "struct_records",
@@ -1348,6 +1399,26 @@ impl GpuX86CodeGenerator {
             "codegen/x86/node/inst/gen.spv",
             "codegen/x86/node/inst/gen.reflect.json"
         );
+        let node_inst_gen_function_params_pass = load_x86_pass!(
+            "node_inst_gen_function_params",
+            "codegen/x86/node/inst/gen/function_params.spv",
+            "codegen/x86/node/inst/gen/function_params.reflect.json"
+        );
+        let node_inst_gen_host_calls_pass = load_x86_pass!(
+            "node_inst_gen_host_calls",
+            "codegen/x86/node/inst/gen/host_calls.spv",
+            "codegen/x86/node/inst/gen/host_calls.reflect.json"
+        );
+        let node_inst_gen_for_stmt_pass = load_x86_pass!(
+            "node_inst_gen_for_stmt",
+            "codegen/x86/node/inst/gen/for_stmt.spv",
+            "codegen/x86/node/inst/gen/for_stmt.reflect.json"
+        );
+        let node_inst_gen_control_stmt_pass = load_x86_pass!(
+            "node_inst_gen_control_stmt",
+            "codegen/x86/node/inst/gen/control_stmt.spv",
+            "codegen/x86/node/inst/gen/control_stmt.reflect.json"
+        );
         let aggregate_literal_return_copy_flags_pass = load_x86_pass!(
             "aggregate_literal_return_copy_flags",
             "codegen/x86/aggregate/literal/return/copy/flags.spv",
@@ -1443,6 +1514,26 @@ impl GpuX86CodeGenerator {
             "codegen/x86/text/offsets.spv",
             "codegen/x86/text/offsets.reflect.json"
         );
+        let rodata_sizes_pass = load_x86_pass!(
+            "rodata_sizes",
+            "codegen/x86/rodata/sizes.spv",
+            "codegen/x86/rodata/sizes.reflect.json"
+        );
+        let rodata_scan_local_pass = load_x86_pass!(
+            "rodata_scan_local",
+            "codegen/x86/rodata/scan_local.spv",
+            "codegen/x86/rodata/scan_local.reflect.json"
+        );
+        let rodata_offsets_pass = load_x86_pass!(
+            "rodata_offsets",
+            "codegen/x86/rodata/offsets.spv",
+            "codegen/x86/rodata/offsets.reflect.json"
+        );
+        let rodata_write_pass = load_x86_pass!(
+            "rodata_write",
+            "codegen/x86/rodata/write.spv",
+            "codegen/x86/rodata/write.reflect.json"
+        );
         let reloc_scan_local_pass = load_x86_pass!(
             "reloc_scan_local",
             "codegen/x86/reloc/scan_local.spv",
@@ -1493,6 +1584,8 @@ impl GpuX86CodeGenerator {
             expr_semantic_type_init_pass,
             expr_semantic_type_step_pass,
             enum_records_pass,
+            struct_field_widths_pass,
+            struct_field_stream_pass,
             struct_records_pass,
             array_records_pass,
             match_records_pass,
@@ -1546,6 +1639,10 @@ impl GpuX86CodeGenerator {
             virtual_inst_clear_dispatch_args_pass,
             virtual_inst_clear_pass,
             node_inst_gen_pass,
+            node_inst_gen_function_params_pass,
+            node_inst_gen_host_calls_pass,
+            node_inst_gen_for_stmt_pass,
+            node_inst_gen_control_stmt_pass,
             aggregate_literal_return_copy_flags_pass,
             aggregate_literal_return_copy_pass,
             node_inst_gen_aggregate_copy_pass,
@@ -1565,6 +1662,10 @@ impl GpuX86CodeGenerator {
             inst_size_pass,
             text_scan_local_pass,
             text_offsets_pass,
+            rodata_sizes_pass,
+            rodata_scan_local_pass,
+            rodata_offsets_pass,
+            rodata_write_pass,
             reloc_scan_local_pass,
             reloc_records_pass,
             reloc_patch_pass,

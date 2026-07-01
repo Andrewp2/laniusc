@@ -83,6 +83,8 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) match_pattern_owner_step_bind_groups: &'a [wgpu::BindGroup],
     pub(super) match_pattern_records_bind_group: &'a wgpu::BindGroup,
     pub(super) match_pattern_finalize_bind_group: &'a wgpu::BindGroup,
+    pub(super) struct_field_widths_bind_group: &'a wgpu::BindGroup,
+    pub(super) struct_field_stream_bind_group: &'a wgpu::BindGroup,
     pub(super) struct_records_bind_group: &'a wgpu::BindGroup,
     pub(super) array_records_bind_group: &'a wgpu::BindGroup,
     pub(super) enclosing_stmt_init_bind_group: &'a wgpu::BindGroup,
@@ -173,6 +175,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         match_pattern_owner_step_bind_groups,
         match_pattern_records_bind_group,
         match_pattern_finalize_bind_group,
+        struct_field_widths_bind_group,
+        struct_field_stream_bind_group,
         struct_records_bind_group,
         array_records_bind_group,
         enclosing_stmt_init_bind_group,
@@ -465,6 +469,112 @@ pub(super) fn record_metadata_and_call_dispatches(
             active_hir_dispatch_args_buf,
         );
     }
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_widths_seed",
+        &generator.struct_field_widths_pass,
+        struct_field_widths_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_widths",
+        &generator.struct_field_widths_pass,
+        struct_field_widths_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_base_scan_local",
+        &generator.node_inst_scan_local_pass,
+        node_inst_scan_local_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "struct_field_base_scan_blocks",
+        "codegen.x86.struct_field_base_scan_blocks",
+        &generator.node_inst_scan_blocks_pass,
+        node_inst_scan_block_bind_groups,
+        node_inst_scan_params_buf,
+        hir_scan_block,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_stream",
+        &generator.struct_field_stream_pass,
+        struct_field_stream_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_scan_local",
+        &generator.node_inst_scan_local_pass,
+        node_inst_scan_local_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "struct_field_scan_blocks",
+        "codegen.x86.struct_field_scan_blocks",
+        &generator.node_inst_scan_blocks_pass,
+        node_inst_scan_block_bind_groups,
+        node_inst_scan_params_buf,
+        hir_scan_block,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_records_widths",
+        &generator.struct_records_pass,
+        struct_records_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_widths_refine",
+        &generator.struct_field_widths_pass,
+        struct_field_widths_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_base_scan_local_refine",
+        &generator.node_inst_scan_local_pass,
+        node_inst_scan_local_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "struct_field_base_scan_blocks_refine",
+        "codegen.x86.struct_field_base_scan_blocks_refine",
+        &generator.node_inst_scan_blocks_pass,
+        node_inst_scan_block_bind_groups,
+        node_inst_scan_params_buf,
+        hir_scan_block,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_stream_refine",
+        &generator.struct_field_stream_pass,
+        struct_field_stream_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "struct_field_scan_local_refine",
+        &generator.node_inst_scan_local_pass,
+        node_inst_scan_local_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "struct_field_scan_blocks_refine",
+        "codegen.x86.struct_field_scan_blocks_refine",
+        &generator.node_inst_scan_blocks_pass,
+        node_inst_scan_block_bind_groups,
+        node_inst_scan_params_buf,
+        hir_scan_block,
+    );
     dispatch_x86_stages_indirect(
         encoder,
         &[

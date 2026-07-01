@@ -170,6 +170,7 @@ pub fn path_byte_is_windows_component_reserved(value: PathByte) -> PathCapabilit
             return path_byte_is_windows_component_reserved_punctuation(value);
         }
     }
+    return false;
 }
 
 pub fn path_byte_is_nul(value: PathByte) -> PathCapability {
@@ -202,6 +203,7 @@ pub fn path_component_is_unix_hidden(first: PathByte, second: PathByte, length: 
             return !path_component_is_parent_dir(first, second, length);
         }
     }
+    return false;
 }
 
 pub fn path_component_is_root_separator(first: PathByte, length: PathComponentLength) -> PathCapability {
@@ -222,6 +224,7 @@ pub fn path_component_is_windows_drive_prefix(first: PathByte, second: PathByte,
             return path_byte_is_drive_separator(second);
         }
     }
+    return false;
 }
 
 pub fn path_header_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
@@ -318,15 +321,23 @@ pub fn path_component_is_normal_relative(first: PathByte, second: PathByte, leng
             if (length > 1) {
                 if (!path_byte_can_continue_relative_component(second)) {
                     return false;
+                } else {
+                    if (path_component_is_current_or_parent_dir(first, second, length)) {
+                        return false;
+                    } else {
+                        return !path_component_is_windows_drive_prefix(first, second, length);
+                    }
                 }
-            }
-            if (path_component_is_current_or_parent_dir(first, second, length)) {
-                return false;
             } else {
-                return !path_component_is_windows_drive_prefix(first, second, length);
+                if (path_component_is_current_or_parent_dir(first, second, length)) {
+                    return false;
+                } else {
+                    return !path_component_is_windows_drive_prefix(first, second, length);
+                }
             }
         }
     }
+    return false;
 }
 
 pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
@@ -343,13 +354,21 @@ pub fn path_component_header_is_normal_windows_relative(first: PathByte, second:
             if (length > 1) {
                 if (!path_byte_can_continue_windows_component(second)) {
                     return false;
+                } else {
+                    if (path_component_is_current_or_parent_dir(first, second, length)) {
+                        return false;
+                    } else {
+                        return !path_component_is_windows_drive_prefix(first, second, length);
+                    }
                 }
-            }
-            if (path_component_is_current_or_parent_dir(first, second, length)) {
-                return false;
             } else {
-                return !path_component_is_windows_drive_prefix(first, second, length);
+                if (path_component_is_current_or_parent_dir(first, second, length)) {
+                    return false;
+                } else {
+                    return !path_component_is_windows_drive_prefix(first, second, length);
+                }
             }
         }
     }
+    return false;
 }

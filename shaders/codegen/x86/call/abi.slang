@@ -29,6 +29,7 @@ ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
@@ -37,6 +38,9 @@ StructuredBuffer<uint4> x86_call_record;
 StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> call_record_status;
 StructuredBuffer<uint> call_intrinsic_tag;
+StructuredBuffer<uint> call_param_type;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -72,6 +76,71 @@ static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 static const uint INTRINSIC_NONE = 0u;
+static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
+static const uint X86_CALL_TARGET_HOST_TEXT_WRITE = 0xfffffffeu;
+static const uint X86_CALL_TARGET_HOST_I32_TO_F32 = 0xfffffffdu;
+static const uint X86_CALL_TARGET_HOST_OPEN_READ_PATH = 0xfffffffcu;
+static const uint X86_CALL_TARGET_HOST_OPEN_WRITE_PATH = 0xfffffffbu;
+static const uint X86_CALL_TARGET_HOST_READ_I32 = 0xfffffffau;
+static const uint X86_CALL_TARGET_HOST_WRITE_I32 = 0xfffffff9u;
+static const uint X86_CALL_TARGET_HOST_WRITE_BYTE = 0xfffffff8u;
+static const uint X86_CALL_TARGET_HOST_WRITE_NEWLINE = 0xfffffff7u;
+static const uint X86_CALL_TARGET_HOST_CLOSE_FILE = 0xfffffff6u;
+static const uint X86_CALL_TARGET_HOST_PROCESS_EXIT = 0xfffffff5u;
+static const uint X86_CALL_TARGET_HOST_SECURE_U32 = 0xfffffff4u;
+static const uint X86_CALL_TARGET_HOST_ALLOC = 0xfffffff3u;
+static const uint X86_CALL_TARGET_HOST_DEALLOC = 0xfffffff2u;
+static const uint X86_CALL_TARGET_HOST_ARGC = 0xfffffff1u;
+static const uint X86_CALL_TARGET_HOST_ARG_LEN = 0xfffffff0u;
+static const uint X86_CALL_TARGET_HOST_ARG_READ = 0xffffffefu;
+static const uint X86_CALL_TARGET_HOST_UNIX_SECONDS = 0xffffffeeu;
+static const uint X86_CALL_TARGET_HOST_CURRENT_DIR_READ = 0xffffffedu;
+static const uint X86_CALL_TARGET_HOST_VAR_COUNT = 0xffffffecu;
+static const uint X86_CALL_TARGET_HOST_VAR_KEY_LEN = 0xffffffebu;
+static const uint X86_CALL_TARGET_HOST_VAR_KEY_READ = 0xffffffeau;
+static const uint X86_CALL_TARGET_HOST_VAR_LEN = 0xffffffe9u;
+static const uint X86_CALL_TARGET_HOST_VAR_READ = 0xffffffe8u;
+static const uint X86_CALL_TARGET_HOST_FS_READ = 0xffffffe7u;
+static const uint X86_CALL_TARGET_HOST_FS_WRITE = 0xffffffe6u;
+static const uint X86_CALL_TARGET_HOST_FS_OPEN_READ = 0xffffffe5u;
+static const uint X86_CALL_TARGET_HOST_FS_OPEN_WRITE = 0xffffffe4u;
+static const uint X86_CALL_TARGET_HOST_FS_OPEN_APPEND = 0xffffffe3u;
+static const uint X86_CALL_TARGET_HOST_STDIN_READ = 0xffffffe2u;
+static const uint X86_CALL_TARGET_HOST_STDOUT_WRITE = 0xffffffe1u;
+static const uint X86_CALL_TARGET_HOST_STDERR_WRITE = 0xffffffe0u;
+static const uint CALL_PARAM_CACHE_STRIDE = 4u;
+static const uint LANGUAGE_SYMBOL_OPEN_READ_PATH = 20u;
+static const uint LANGUAGE_SYMBOL_OPEN_WRITE_PATH = 21u;
+static const uint LANGUAGE_SYMBOL_READ_I32 = 22u;
+static const uint LANGUAGE_SYMBOL_WRITE_TEXT = 23u;
+static const uint LANGUAGE_SYMBOL_WRITE_I32 = 24u;
+static const uint LANGUAGE_SYMBOL_WRITE_BYTE = 25u;
+static const uint LANGUAGE_SYMBOL_WRITE_NEWLINE = 26u;
+static const uint LANGUAGE_SYMBOL_CLOSE_FILE = 27u;
+static const uint LANGUAGE_SYMBOL_I32_TO_F32 = 28u;
+static const uint LANGUAGE_SYMBOL_EXIT = 29u;
+static const uint LANGUAGE_SYMBOL_SECURE_U32 = 30u;
+static const uint LANGUAGE_SYMBOL_ALLOC = 31u;
+static const uint LANGUAGE_SYMBOL_DEALLOC = 32u;
+static const uint LANGUAGE_SYMBOL_ARGC = 33u;
+static const uint LANGUAGE_SYMBOL_ARG_LEN = 34u;
+static const uint LANGUAGE_SYMBOL_ARG_READ = 35u;
+static const uint LANGUAGE_SYMBOL_UNIX_SECONDS = 36u;
+static const uint LANGUAGE_SYMBOL_CURRENT_DIR_READ = 37u;
+static const uint LANGUAGE_SYMBOL_VAR_COUNT = 38u;
+static const uint LANGUAGE_SYMBOL_VAR_KEY_LEN = 39u;
+static const uint LANGUAGE_SYMBOL_VAR_KEY_READ = 40u;
+static const uint LANGUAGE_SYMBOL_VAR_LEN = 41u;
+static const uint LANGUAGE_SYMBOL_VAR_READ = 42u;
+static const uint LANGUAGE_SYMBOL_CLOSE = 43u;
+static const uint LANGUAGE_SYMBOL_READ = 44u;
+static const uint LANGUAGE_SYMBOL_WRITE = 45u;
+static const uint LANGUAGE_SYMBOL_OPEN_READ = 46u;
+static const uint LANGUAGE_SYMBOL_OPEN_WRITE = 47u;
+static const uint LANGUAGE_SYMBOL_OPEN_APPEND = 48u;
+static const uint LANGUAGE_SYMBOL_WRITE_STDOUT = 49u;
+static const uint LANGUAGE_SYMBOL_WRITE_STDERR = 50u;
+static const uint LANGUAGE_SYMBOL_READ_STDIN = 51u;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
 static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
@@ -81,6 +150,12 @@ static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_LEN_LITERAL = 1u;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_VOID = 1u;
+static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
@@ -176,6 +251,22 @@ bool unsupported_multi_payload_enum_constructor(uint node)
            enum_value_payload_count(record) > 1u;
 }
 
+bool token_has_language_name(uint name_token, uint language_symbol)
+{
+    if (!valid_token(name_token))
+        return false;
+
+    uint name_id = name_id_by_token[name_token];
+    uint language_id = language_name_id[language_symbol];
+    return name_id != INVALID && language_id != INVALID && name_id == language_id;
+}
+
+bool call_has_language_name(uint callee_token, uint resolver_fn_token, uint language_symbol)
+{
+    return token_has_language_name(callee_token, language_symbol) ||
+           token_has_language_name(resolver_fn_token, language_symbol);
+}
+
 bool has_call_record(uint call_node)
 {
     if (!valid_node(call_node))
@@ -183,6 +274,180 @@ bool has_call_record(uint call_node)
 
     uint4 record = x86_call_record[call_node];
     return uint4_any_not_equal(record, INVALID);
+}
+
+bool host_text_write_call(uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width)
+{
+    if (arg_count != 2u ||
+        return_width != 1u ||
+        !call_has_language_name(callee_token, resolver_fn_token, LANGUAGE_SYMBOL_WRITE_TEXT))
+        return false;
+
+    uint param0 = row_major_load<uint>(
+        call_param_type,
+        resolver_fn_token,
+        CALL_PARAM_CACHE_STRIDE,
+        0u,
+        TY_UNKNOWN);
+    uint param1 = row_major_load<uint>(
+        call_param_type,
+        resolver_fn_token,
+        CALL_PARAM_CACHE_STRIDE,
+        1u,
+        TY_UNKNOWN);
+    bool host_signature = param0 == TY_INT && param1 == TY_STRING;
+    return host_signature &&
+           ((!valid_node(target_fn)) ||
+           hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN);
+}
+
+bool host_i32_to_f32_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width)
+{
+    if (arg_count != 1u ||
+        return_width != 1u ||
+        call_type_word(call_node, 0u) != TY_FLOAT ||
+        !call_has_language_name(callee_token, resolver_fn_token, LANGUAGE_SYMBOL_I32_TO_F32))
+        return false;
+
+    uint param0 = row_major_load<uint>(
+        call_param_type,
+        resolver_fn_token,
+        CALL_PARAM_CACHE_STRIDE,
+        0u,
+        TY_UNKNOWN);
+    return param0 == TY_INT &&
+           ((!valid_node(target_fn)) ||
+            hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN);
+}
+
+uint host_param(uint resolver_fn_token, uint ordinal)
+{
+    return row_major_load<uint>(
+        call_param_type,
+        resolver_fn_token,
+        CALL_PARAM_CACHE_STRIDE,
+        ordinal,
+        TY_UNKNOWN);
+}
+
+bool extern_or_unlowered_target(uint target_fn)
+{
+    return (!valid_node(target_fn)) || hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN;
+}
+
+bool host_string_i32_return_call(uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 1u &&
+           return_width == 1u &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_STRING &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_i32_i32_i32_return_call(uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 2u &&
+           return_width == 1u &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_INT &&
+           host_param(resolver_fn_token, 1u) == TY_INT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_i32_i32_return_call(uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 1u &&
+           return_width == 1u &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_INT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_i32_void_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 1u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_VOID &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_INT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_no_arg_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 0u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_UINT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_i32_no_arg_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 0u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_INT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_i32_u32_u32_i32_return_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 3u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_INT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_INT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           host_param(resolver_fn_token, 2u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_u32_u32_return_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 2u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_UINT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_u32_i32_return_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 2u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_INT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_u32_u32_u32_i32_return_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 4u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_INT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           host_param(resolver_fn_token, 2u) == TY_UINT &&
+           host_param(resolver_fn_token, 3u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_u32_u32_void_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 3u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_VOID &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           host_param(resolver_fn_token, 2u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
 }
 
 uint call_type_word(uint call_node, uint slot)
@@ -204,6 +469,8 @@ bool intrinsic_call(uint call_node)
 
 uint semantic_type_width(uint ty)
 {
+    if (ty == TY_STRING)
+        return 2u;
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
         return 2u;
     if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
@@ -331,6 +598,7 @@ void project_call_record(uint call_node)
     uint4 call_record = x86_call_record[call_node];
     uint owner_fn = call_record.x;
     uint target_fn = function_node_for_resolver_target(call_record.y);
+    uint callee_token = call_type_word(call_node, 2u);
     uint arg_count = call_record.w;
     uint return_ty = call_type_word(call_node, 0u);
     uint return_ty_token = call_type_word(call_node, 1u);
@@ -340,7 +608,51 @@ void project_call_record(uint call_node)
         function_return_hir_width(target_fn));
     uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
     bool supported = true;
-    if (!valid_node(target_fn))
+    bool host_text_write = host_text_write_call(call_record.y, callee_token, target_fn, arg_count, return_width);
+    bool host_i32_to_f32 = host_i32_to_f32_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width);
+    bool host_open_read_path = host_string_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_OPEN_READ_PATH);
+    bool host_open_write_path = host_string_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_OPEN_WRITE_PATH);
+    bool host_read_i32 = host_i32_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_READ_I32);
+    bool host_write_i32 = host_i32_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_I32);
+    bool host_write_byte = host_i32_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_BYTE);
+    bool host_write_newline = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_NEWLINE);
+    bool host_close_file = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_CLOSE_FILE);
+    bool host_process_exit = host_i32_void_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_EXIT);
+    bool host_secure_u32 = host_u32_no_arg_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_SECURE_U32);
+    bool host_alloc = host_u32_u32_u32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ALLOC);
+    bool host_dealloc = host_u32_u32_u32_void_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_DEALLOC);
+    bool host_argc = host_i32_no_arg_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ARGC);
+    bool host_arg_len = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ARG_LEN);
+    bool host_arg_read = host_i32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ARG_READ);
+    bool host_unix_seconds = host_i32_no_arg_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_UNIX_SECONDS);
+    bool host_current_dir_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_CURRENT_DIR_READ);
+    bool host_var_count = host_i32_no_arg_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_VAR_COUNT);
+    bool host_var_key_len = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_VAR_KEY_LEN);
+    bool host_var_key_read = host_i32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_VAR_KEY_READ);
+    bool host_var_len = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_VAR_LEN);
+    bool host_var_read = host_u32_u32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_VAR_READ);
+    bool host_close = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_CLOSE);
+    bool host_fs_read = host_i32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_READ);
+    bool host_fs_write = host_i32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE);
+    bool host_fs_open_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_OPEN_READ);
+    bool host_fs_open_write = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_OPEN_WRITE);
+    bool host_fs_open_append = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_OPEN_APPEND);
+    bool host_stdin_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_READ_STDIN);
+    bool host_stdout_write = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_STDOUT);
+    bool host_stderr_write = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_STDERR);
+    bool host_call = host_text_write || host_i32_to_f32 ||
+                     host_open_read_path || host_open_write_path ||
+                     host_read_i32 || host_write_i32 || host_write_byte ||
+                     host_write_newline || host_close_file || host_close ||
+                     host_process_exit || host_secure_u32 || host_alloc ||
+                     host_dealloc || host_argc || host_arg_len || host_arg_read ||
+                     host_unix_seconds || host_current_dir_read ||
+                     host_var_count || host_var_key_len || host_var_key_read ||
+                     host_var_len || host_var_read ||
+                     host_fs_read || host_fs_write ||
+                     host_fs_open_read || host_fs_open_write || host_fs_open_append ||
+                     host_stdin_read || host_stdout_write || host_stderr_write;
+    if (!host_call && !valid_node(target_fn))
     {
         mark_call_abi_error(slot != INVALID ? slot : call_node);
         supported = false;
@@ -369,7 +681,40 @@ void project_call_record(uint call_node)
     }
 
     if (supported)
-        x86_call_abi_record[slot] = uint2(target_fn, abi_info);
+        x86_call_abi_record[slot] = uint2(
+            host_text_write ? X86_CALL_TARGET_HOST_TEXT_WRITE
+          : host_i32_to_f32 ? X86_CALL_TARGET_HOST_I32_TO_F32
+          : host_open_read_path ? X86_CALL_TARGET_HOST_OPEN_READ_PATH
+          : host_open_write_path ? X86_CALL_TARGET_HOST_OPEN_WRITE_PATH
+          : host_read_i32 ? X86_CALL_TARGET_HOST_READ_I32
+          : host_write_i32 ? X86_CALL_TARGET_HOST_WRITE_I32
+          : host_write_byte ? X86_CALL_TARGET_HOST_WRITE_BYTE
+          : host_write_newline ? X86_CALL_TARGET_HOST_WRITE_NEWLINE
+          : (host_close_file || host_close) ? X86_CALL_TARGET_HOST_CLOSE_FILE
+          : host_process_exit ? X86_CALL_TARGET_HOST_PROCESS_EXIT
+          : host_secure_u32 ? X86_CALL_TARGET_HOST_SECURE_U32
+          : host_alloc ? X86_CALL_TARGET_HOST_ALLOC
+          : host_dealloc ? X86_CALL_TARGET_HOST_DEALLOC
+          : host_argc ? X86_CALL_TARGET_HOST_ARGC
+          : host_arg_len ? X86_CALL_TARGET_HOST_ARG_LEN
+          : host_arg_read ? X86_CALL_TARGET_HOST_ARG_READ
+          : host_unix_seconds ? X86_CALL_TARGET_HOST_UNIX_SECONDS
+          : host_current_dir_read ? X86_CALL_TARGET_HOST_CURRENT_DIR_READ
+          : host_var_count ? X86_CALL_TARGET_HOST_VAR_COUNT
+          : host_var_key_len ? X86_CALL_TARGET_HOST_VAR_KEY_LEN
+          : host_var_key_read ? X86_CALL_TARGET_HOST_VAR_KEY_READ
+          : host_var_len ? X86_CALL_TARGET_HOST_VAR_LEN
+          : host_var_read ? X86_CALL_TARGET_HOST_VAR_READ
+          : host_fs_read ? X86_CALL_TARGET_HOST_FS_READ
+          : host_fs_write ? X86_CALL_TARGET_HOST_FS_WRITE
+          : host_fs_open_read ? X86_CALL_TARGET_HOST_FS_OPEN_READ
+          : host_fs_open_write ? X86_CALL_TARGET_HOST_FS_OPEN_WRITE
+          : host_fs_open_append ? X86_CALL_TARGET_HOST_FS_OPEN_APPEND
+          : host_stdin_read ? X86_CALL_TARGET_HOST_STDIN_READ
+          : host_stdout_write ? X86_CALL_TARGET_HOST_STDOUT_WRITE
+          : host_stderr_write ? X86_CALL_TARGET_HOST_STDERR_WRITE
+          : target_fn,
+            abi_info);
 }
 
 [shader("compute")]

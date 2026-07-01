@@ -29,7 +29,7 @@ pub(super) const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 10;
 pub(super) const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 pub(super) const TYPECHECK_CALL_ARG_SLOT_STRIDE: usize = 4;
 pub(super) const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
-pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 20;
+pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 43;
 pub(super) const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
 
 pub(super) const PARALLEL_PASS_CONTRACT_SCHEMA: &str = "lanius.parallel-pass-contracts.v1";

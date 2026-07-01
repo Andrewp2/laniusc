@@ -1,0 +1,33 @@
+module app::main;
+
+import std::fs;
+import std::io;
+
+fn main() -> i32 {
+    let output: std::fs::FileHandle = std::fs::open_write_path("host_runtime_files.txt");
+    if (output < 0) {
+        return 1;
+    }
+    let write_value: i32 = std::io::write_i32(output, 12345);
+    let write_line: i32 = std::io::write_newline(output);
+    let output_close: i32 = std::fs::close_file(output);
+    if (write_value < 0 || write_line < 0 || output_close < 0) {
+        return 2;
+    }
+
+    let input: std::fs::FileHandle = std::fs::open_read_path("host_runtime_files.txt");
+    if (input < 0) {
+        return 3;
+    }
+    let value: i32 = std::fs::read_i32(input, -1);
+    let input_close: i32 = std::fs::close_file(input);
+    if (input_close < 0) {
+        return 4;
+    }
+    if (value != 12345) {
+        return 5;
+    }
+
+    std::io::print_i32(value);
+    return 0;
+}

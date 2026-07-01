@@ -105,6 +105,23 @@ fn runtime_service_values() -> Vec<(&'static str, u32)> {
         .collect()
 }
 
+fn runtime_bound_api_is_compiler_backed(api_name: &str) -> bool {
+    matches!(
+        api_name,
+        "alloc::allocator::alloc"
+            | "alloc::allocator::dealloc"
+            | "std::io::write_stdout"
+            | "std::io::write_stderr"
+            | "std::io::read_stdin"
+            | "std::io::print_i32"
+            | "std::random::secure_u32"
+            | "std::process::argc"
+            | "std::process::arg_len"
+            | "std::process::arg_read"
+            | "std::process::exit"
+    )
+}
+
 fn link_job() -> SourcePackJob {
     SourcePackJob {
         job_index: 7,
@@ -514,7 +531,7 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
     assert!(
         RUNTIME_BOUND_API_DIAGNOSTICS
             .iter()
-            .filter(|api| api.api_name != "std::io::print_i32")
+            .filter(|api| !runtime_bound_api_is_compiler_backed(api.api_name))
             .all(|api| api.diagnostic_code == "LNC0038"
                 && api.current_status == "known-unbound"
                 && !api.executable),
@@ -644,10 +661,28 @@ fn runtime_bound_api_diagnostic_catalog_exposes_extern_abi_namespaces() {
         .as_array()
         .expect("LNC0038 explanation should include runtime-bound API rows");
 
-    for (api_name, service_id, extern_abi) in [
-        ("alloc::allocator::alloc", 1, "lanius_alloc"),
-        ("std::io::write_stdout", 3, "lanius_std"),
-        ("core::panic::panic", 6, "lanius_panic"),
+    for (api_name, service_id, extern_abi, current_status, executable) in [
+        (
+            "alloc::allocator::alloc",
+            1,
+            "lanius_alloc",
+            "executable-compiler-primitive",
+            true,
+        ),
+        (
+            "std::io::write_stdout",
+            3,
+            "compiler_host_stdio",
+            "executable-compiler-primitive",
+            true,
+        ),
+        (
+            "core::panic::panic",
+            6,
+            "lanius_panic",
+            "known-unbound",
+            false,
+        ),
     ] {
         let api = runtime_bound_api_diagnostic_info(api_name)
             .unwrap_or_else(|| panic!("{api_name} should have a runtime-bound API row"));
@@ -656,8 +691,8 @@ fn runtime_bound_api_diagnostic_catalog_exposes_extern_abi_namespaces() {
             row["api_name"] == api_name
                 && row["service_id"] == service_id
                 && row["extern_abi"] == extern_abi
-                && row["current_status"] == "known-unbound"
-                && row["executable"] == false
+                && row["current_status"] == current_status
+                && row["executable"] == executable
         }));
     }
 }
@@ -696,10 +731,18 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                     .contains(&"service_api_name"),
             "{service_api_selector} should remain a public no-run selector"
         );
-        if api.api_name == "std::io::print_i32" {
+        if runtime_bound_api_is_compiler_backed(api.api_name) {
             assert_eq!(api.current_status, "executable-compiler-primitive");
             assert!(api.executable);
-            assert_eq!(api.extern_abi, "compiler_print_i32");
+            if api.api_name == "std::io::print_i32" {
+                assert_eq!(api.extern_abi, "compiler_print_i32");
+            } else if api.api_name.starts_with("std::io::") {
+                assert_eq!(api.extern_abi, "compiler_host_stdio");
+            } else if api.api_name.starts_with("alloc::allocator::") {
+                assert_eq!(api.extern_abi, "lanius_alloc");
+            } else {
+                assert_eq!(api.extern_abi, "lanius_std");
+            }
         } else {
             assert_eq!(api.current_status, "known-unbound");
             assert!(
@@ -735,7 +778,29 @@ fn process_exit_runtime_contract_distinguishes_bound_apis_from_exit_code_helpers
     let process_service = runtime_service_boundary_diagnostic_info(process_service_id)
         .expect("process runtime service boundary should be public");
 
-    for api_name in ["std::process::set_exit_code", "std::process::exit"] {
+    let set_exit_code = runtime_bound_api_diagnostic_info("std::process::set_exit_code")
+        .expect("std::process::set_exit_code should have a public runtime-bound API row");
+    assert_eq!(
+        set_exit_code.service_id, process_service_id,
+        "std::process::set_exit_code should require the process runtime service"
+    );
+    assert_eq!(set_exit_code.module_path, "std::process");
+    assert_eq!(
+        set_exit_code.service_module_path,
+        process_service.module_path
+    );
+    assert_eq!(
+        set_exit_code.service_current_status,
+        process_service.current_status
+    );
+    assert_eq!(set_exit_code.service_executable, process_service.executable);
+    assert_eq!(set_exit_code.current_status, "known-unbound");
+    assert!(
+        !set_exit_code.executable,
+        "std::process::set_exit_code must stay non-executable until it is bound"
+    );
+
+    for api_name in ["std::process::exit"] {
         let api = runtime_bound_api_diagnostic_info(api_name)
             .unwrap_or_else(|| panic!("{api_name} should have a public runtime-bound API row"));
         assert_eq!(
@@ -746,10 +811,10 @@ fn process_exit_runtime_contract_distinguishes_bound_apis_from_exit_code_helpers
         assert_eq!(api.service_module_path, process_service.module_path);
         assert_eq!(api.service_current_status, process_service.current_status);
         assert_eq!(api.service_executable, process_service.executable);
-        assert_eq!(api.current_status, "known-unbound");
+        assert_eq!(api.current_status, "executable-compiler-primitive");
         assert!(
-            !api.executable,
-            "{api_name} must stay non-executable until the process service is bound"
+            api.executable,
+            "{api_name} should be executable through the x86 backend"
         );
     }
 
@@ -855,8 +920,11 @@ fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
         write_stdout["service_executable"],
         stdio_service["executable"]
     );
-    assert_eq!(write_stdout["current_status"], "known-unbound");
-    assert_eq!(write_stdout["executable"], false);
+    assert_eq!(
+        write_stdout["current_status"],
+        "executable-compiler-primitive"
+    );
+    assert_eq!(write_stdout["executable"], true);
     assert!(
         write_stdout["executable_probe"]
             .as_str()
@@ -885,7 +953,11 @@ fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
 
     assert!(
         apis.iter()
-            .filter(|api| api["api_name"] != "std::io::print_i32")
+            .filter(|api| {
+                !api["api_name"]
+                    .as_str()
+                    .is_some_and(runtime_bound_api_is_compiler_backed)
+            })
             .all(|api| {
                 api["diagnostic_code"] == "LNC0038"
                     && api["current_status"] == "known-unbound"
@@ -3539,6 +3611,9 @@ fn main() {
     let allocator_known_unbound: alloc::allocator::AllocatorCapability =
         alloc::allocator::allocator_is_known_but_unbound();
     let declared_binding: AllocatorCapability = ALLOCATOR_HAS_RUNTIME_BINDING;
+    let declared_alloc_binding: AllocatorCapability = ALLOC_HAS_RUNTIME_BINDING;
+    let declared_dealloc_binding: AllocatorCapability =
+        DEALLOC_HAS_RUNTIME_BINDING;
     let allocator_needs_binding: alloc::allocator::AllocatorCapability =
         alloc::allocator::allocator_requires_runtime_binding();
     let imported_needs_binding: AllocatorCapability =
@@ -3587,19 +3662,19 @@ fn main() {
     if (allocator_abi != declared_abi || allocator_abi != runtime_abi) {
         return 1;
     }
-    if (!allocator_known || !allocator_metadata_available || allocator_available || !allocator_blocked || !allocator_known_unbound || declared_binding || !allocator_needs_binding || !imported_needs_binding || !allocator_contract_only || !runtime_needs_binding) {
+    if (!allocator_known || !allocator_metadata_available || allocator_available || !allocator_blocked || !allocator_known_unbound || declared_binding || !declared_alloc_binding || !declared_dealloc_binding || !allocator_needs_binding || !imported_needs_binding || !allocator_contract_only || !runtime_needs_binding) {
         return 1;
     }
-    if (alloc_executable || realloc_executable || dealloc_executable || alloc_failed_executable) {
+    if (!alloc_executable || realloc_executable || !dealloc_executable || alloc_failed_executable) {
         return 1;
     }
-    if (!alloc_blocked || !realloc_blocked || !dealloc_blocked || !alloc_failed_blocked) {
+    if (alloc_blocked || !realloc_blocked || dealloc_blocked || !alloc_failed_blocked) {
         return 1;
     }
-    if (!alloc_known_unbound || !realloc_known_unbound || !dealloc_known_unbound || !alloc_failed_known_unbound) {
+    if (alloc_known_unbound || !realloc_known_unbound || dealloc_known_unbound || !alloc_failed_known_unbound) {
         return 1;
     }
-    if (!alloc_needs_binding || !realloc_needs_binding || !dealloc_needs_binding || !alloc_failed_needs_binding) {
+    if (alloc_needs_binding || !realloc_needs_binding || dealloc_needs_binding || !alloc_failed_needs_binding) {
         return 1;
     }
     return 0;
@@ -3678,7 +3753,7 @@ fn main() {
     if (!unavailable_is_known || unavailable_is_available || !non_null_is_available || non_null_is_unavailable) {
         return 1;
     }
-    if (!allocation_fail_closed || !alloc_fail_closed || !realloc_fail_closed || non_null_allocation_fail_closed) {
+    if (!allocation_fail_closed || alloc_fail_closed || !realloc_fail_closed || non_null_allocation_fail_closed) {
         return 1;
     }
     if (!allocator_blocked || !allocator_known_unbound) {
@@ -3700,7 +3775,7 @@ fn main() {
         "GPU type check stdlib-root alloc::allocator pointer-result contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("alloc::allocator pointer-result helpers should type check while allocation remains unbound");
+    .expect("alloc::allocator pointer-result helpers should type check while allocator service remains incomplete");
 }
 
 #[test]
@@ -3844,16 +3919,16 @@ fn main() {
     if (stdio_available || !stdio_metadata_available || !stdio_blocked || !stdio_known_unbound || !stdio_needs_binding || !stdio_contract_only) {
         return 1;
     }
-    if (output_executable || input_executable || stdout_executable || stderr_executable || stdin_executable || flush_stdout_executable || flush_stderr_executable) {
+    if (!output_executable || !input_executable || !stdout_executable || !stderr_executable || !stdin_executable || flush_stdout_executable || flush_stderr_executable) {
         return 1;
     }
-    if (!output_blocked || !input_blocked || !stdout_blocked || !stderr_blocked || !stdin_blocked || !flush_stdout_blocked || !flush_stderr_blocked) {
+    if (output_blocked || input_blocked || stdout_blocked || stderr_blocked || stdin_blocked || !flush_stdout_blocked || !flush_stderr_blocked) {
         return 1;
     }
-    if (!output_known_unbound || !input_known_unbound || !stdout_known_unbound || !stderr_known_unbound || !stdin_known_unbound || !flush_stdout_known_unbound || !flush_stderr_known_unbound) {
+    if (output_known_unbound || input_known_unbound || stdout_known_unbound || stderr_known_unbound || stdin_known_unbound || !flush_stdout_known_unbound || !flush_stderr_known_unbound) {
         return 1;
     }
-    if (!output_needs_binding || !input_needs_binding || !stdout_needs_binding || !stderr_needs_binding || !stdin_needs_binding || !flush_stdout_needs_binding || !flush_stderr_needs_binding) {
+    if (output_needs_binding || input_needs_binding || stdout_needs_binding || stderr_needs_binding || stdin_needs_binding || !flush_stdout_needs_binding || !flush_stderr_needs_binding) {
         return 1;
     }
     if (!print_i32_executable || print_i32_blocked || print_i32_known_unbound || print_i32_needs_binding) {
@@ -4692,16 +4767,28 @@ fn main() {
     let write_blocked: FilesystemCapability = write_is_blocked();
     let write_known_unbound: FilesystemCapability = write_is_known_but_unbound();
     let write_needs_binding: FilesystemCapability = write_requires_runtime_binding();
-    if (file_io_executable || open_read_executable || open_write_executable || open_append_executable || close_executable || read_executable || write_executable) {
+    if (!file_io_executable || !open_read_executable || !open_write_executable || !open_append_executable) {
         return 1;
     }
-    if (!file_io_blocked || !open_read_blocked || !open_write_blocked || !open_append_blocked || !close_blocked || !read_blocked || !write_blocked) {
+    if (!close_executable || !read_executable || !write_executable) {
         return 1;
     }
-    if (!open_read_known_unbound || !open_write_known_unbound || !open_append_known_unbound || !close_known_unbound || !read_known_unbound || !write_known_unbound) {
+    if (file_io_blocked || open_read_blocked || open_write_blocked || open_append_blocked) {
         return 1;
     }
-    if (!file_io_needs_binding || !open_read_needs_binding || !open_write_needs_binding || !open_append_needs_binding || !close_needs_binding || !read_needs_binding || !write_needs_binding) {
+    if (close_blocked || read_blocked || write_blocked) {
+        return 1;
+    }
+    if (open_read_known_unbound || open_write_known_unbound || open_append_known_unbound) {
+        return 1;
+    }
+    if (close_known_unbound || read_known_unbound || write_known_unbound) {
+        return 1;
+    }
+    if (file_io_needs_binding || open_read_needs_binding || open_write_needs_binding || open_append_needs_binding) {
+        return 1;
+    }
+    if (close_needs_binding || read_needs_binding || write_needs_binding) {
         return 1;
     }
     return 0;
@@ -5779,22 +5866,22 @@ fn main() {
     if (process_available || !process_metadata_available || !process_blocked || !process_known_unbound || !process_needs_binding || !process_contract_only) {
         return 1;
     }
-    if (args_executable || !args_blocked || !args_known_unbound || !args_need_binding) {
+    if (!args_executable || args_blocked || args_known_unbound || args_need_binding) {
         return 1;
     }
-    if (exit_executable || !exit_blocked || !exit_known_unbound || !exit_needs_binding) {
+    if (!exit_executable || exit_blocked || exit_known_unbound || exit_needs_binding) {
         return 1;
     }
-    if (argc_executable || arg_len_executable || arg_read_executable || set_exit_code_executable || exit_call_executable) {
+    if (!argc_executable || !arg_len_executable || !arg_read_executable || set_exit_code_executable || !exit_call_executable) {
         return 1;
     }
-    if (!argc_blocked || !arg_len_blocked || !arg_read_blocked || !set_exit_code_blocked || !exit_call_blocked) {
+    if (argc_blocked || arg_len_blocked || arg_read_blocked || !set_exit_code_blocked || exit_call_blocked) {
         return 1;
     }
-    if (!argc_known_unbound || !arg_len_known_unbound || !arg_read_known_unbound || !set_exit_code_known_unbound || !exit_call_known_unbound) {
+    if (argc_known_unbound || arg_len_known_unbound || arg_read_known_unbound || !set_exit_code_known_unbound || exit_call_known_unbound) {
         return 1;
     }
-    if (!argc_needs_binding || !arg_len_needs_binding || !arg_read_needs_binding || !set_exit_code_needs_binding || !exit_call_needs_binding) {
+    if (argc_needs_binding || arg_len_needs_binding || arg_read_needs_binding || !set_exit_code_needs_binding || exit_call_needs_binding) {
         return 1;
     }
     return 0;
@@ -5877,10 +5964,10 @@ fn main() {
     if (!empty_succeeded || !byte_count_succeeded || !unavailable_failed || !other_failure_failed) {
         return 1;
     }
-    if (!unavailable_is_known || !unavailable_is_fail_closed || other_failure_is_unavailable || other_failure_is_fail_closed) {
+    if (!unavailable_is_known || unavailable_is_fail_closed || other_failure_is_unavailable || other_failure_is_fail_closed) {
         return 1;
     }
-    if (!args_blocked || !args_known_unbound) {
+    if (args_blocked || args_known_unbound) {
         return 1;
     }
     return argc_result + arg_len_result + arg_read_result - argc_result - arg_len_result - arg_read_result;
@@ -5953,7 +6040,7 @@ fn main() {
     if (!success_ok || !failure_ok || !alternate_failure_ok) {
         return 1;
     }
-    if (process_available || !process_blocked || exit_executable || !exit_needs_binding) {
+    if (process_available || !process_blocked || !exit_executable || exit_needs_binding) {
         return 1;
     }
     return success;
@@ -6090,13 +6177,13 @@ fn main() {
     if (!env_known || !env_metadata_available || env_available || !env_blocked || !env_known_unbound || declared_binding || !env_needs_binding || !imported_needs_binding || !env_contract_only || !runtime_needs_binding) {
         return 1;
     }
-    if (env_vars_executable || var_len_executable || var_read_executable || var_count_executable || var_key_len_executable || var_key_read_executable || current_dir_executable || current_dir_len_executable || current_dir_read_executable) {
+    if (!env_vars_executable || !var_len_executable || !var_read_executable || !var_count_executable || !var_key_len_executable || !var_key_read_executable || current_dir_executable || current_dir_len_executable || !current_dir_read_executable) {
         return 1;
     }
-    if (!env_vars_blocked || !env_vars_known_unbound || !var_len_blocked || !var_len_known_unbound || !var_read_blocked || !var_read_known_unbound || !var_count_blocked || !var_count_known_unbound || !var_key_len_blocked || !var_key_len_known_unbound || !var_key_read_blocked || !var_key_read_known_unbound || !current_dir_blocked || !current_dir_known_unbound || !current_dir_len_blocked || !current_dir_len_known_unbound || !current_dir_read_blocked || !current_dir_read_known_unbound) {
+    if (env_vars_blocked || env_vars_known_unbound || var_len_blocked || var_len_known_unbound || var_read_blocked || var_read_known_unbound || var_count_blocked || var_count_known_unbound || var_key_len_blocked || var_key_len_known_unbound || var_key_read_blocked || var_key_read_known_unbound || !current_dir_blocked || !current_dir_known_unbound || !current_dir_len_blocked || !current_dir_len_known_unbound || current_dir_read_blocked || current_dir_read_known_unbound) {
         return 1;
     }
-    if (!env_vars_needs_binding || !var_len_needs_binding || !var_read_needs_binding || !var_count_needs_binding || !var_key_len_needs_binding || !var_key_read_needs_binding || !current_dir_needs_binding || !current_dir_len_needs_binding || !current_dir_read_needs_binding) {
+    if (env_vars_needs_binding || var_len_needs_binding || var_read_needs_binding || var_count_needs_binding || var_key_len_needs_binding || var_key_read_needs_binding || !current_dir_needs_binding || !current_dir_len_needs_binding || current_dir_read_needs_binding) {
         return 1;
     }
     return 0;
@@ -6224,7 +6311,7 @@ fn main() {
     if (!empty_succeeded || !byte_count_succeeded || !unavailable_failed) {
         return 1;
     }
-    if (!unavailable_is_known || !unavailable_is_fail_closed || !env_var_fail_closed || !current_dir_fail_closed) {
+    if (!unavailable_is_known || !unavailable_is_fail_closed || env_var_fail_closed || current_dir_fail_closed) {
         return 1;
     }
     if (other_failure_is_unavailable || other_failure_is_fail_closed) {
@@ -6341,16 +6428,16 @@ fn main() {
     if (secure_rng_executable || !secure_rng_blocked || !secure_rng_known_unbound || !secure_rng_needs_binding) {
         return 1;
     }
-    if (fill_bytes_executable || secure_u32_executable) {
+    if (fill_bytes_executable || !secure_u32_executable) {
         return 1;
     }
-    if (!fill_bytes_blocked || !secure_u32_blocked) {
+    if (!fill_bytes_blocked || secure_u32_blocked) {
         return 1;
     }
-    if (!fill_bytes_known_unbound || !secure_u32_known_unbound) {
+    if (!fill_bytes_known_unbound || secure_u32_known_unbound) {
         return 1;
     }
-    if (!fill_bytes_needs_binding || !secure_u32_needs_binding) {
+    if (!fill_bytes_needs_binding || secure_u32_needs_binding) {
         return 1;
     }
     return fill_status - fill_status;

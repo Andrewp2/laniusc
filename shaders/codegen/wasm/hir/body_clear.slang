@@ -14,6 +14,7 @@ ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> body_fragment_len;
 RWStructuredBuffer<uint4> body_fragment_meta;
+RWStructuredBuffer<uint4> body_fragment_aux;
 
 static const uint INVALID = 0xffffffffu;
 static const uint BODY_FRAGMENT_NONE = 0u;
@@ -29,9 +30,10 @@ uint linear_dispatch_id(uint3 tid)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint token_i = linear_dispatch_id(tid);
-    if (token_i >= gParams.n_tokens)
+    if (token_i >= gParams.n_tokens * 2u)
         return;
 
     body_fragment_len[token_i] = 0u;
     body_fragment_meta[token_i] = uint4(BODY_FRAGMENT_NONE, 0u, 0u, INVALID);
+    body_fragment_aux[token_i] = uint4(INVALID, 0u, 0u, 0u);
 }

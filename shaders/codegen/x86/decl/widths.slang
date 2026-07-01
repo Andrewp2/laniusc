@@ -77,6 +77,7 @@ static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_STRING = 7u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
@@ -294,6 +295,8 @@ bool struct_width_for_decl(uint decl_token, out uint width)
 
 uint semantic_type_storage_width(uint ty)
 {
+    if (ty == TY_STRING)
+        return 2u;
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
         return 2u;
     if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
@@ -349,6 +352,10 @@ uint width_for_decl(uint decl_token)
     if (decl_type_ref_tag[decl_token] == TYPE_REF_INSTANCE)
         return max(
             type_instance_storage_width(decl_type_ref_payload[decl_token]),
+            semantic_type_storage_width(visible_type[decl_token]));
+    if (decl_type_ref_tag[decl_token] == TYPE_REF_SCALAR)
+        return max(
+            semantic_type_storage_width(decl_type_ref_payload[decl_token]),
             semantic_type_storage_width(visible_type[decl_token]));
     uint enum_width = 0u;
     if (enum_width_for_decl(decl_token, enum_width))

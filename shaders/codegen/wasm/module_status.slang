@@ -12,10 +12,15 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> body_plan;
 StructuredBuffer<uint> body_status;
 RWStructuredBuffer<uint> status;
 
-static const uint BODY_OFF = 80u;
+static const uint TYPE_SECTION_LEN = 41u;
+static const uint IMPORT_SECTION_LEN = 118u;
+static const uint MEMORY_SECTION_LEN = 17u;
+static const uint EXPORT_SECTION_LEN = 31u;
+static const uint BODY_PLAN_FUNCTION_COUNT = 31u;
 static const uint MODULE_STATUS_SLOT_COUNT = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -27,6 +32,19 @@ uint linear_dispatch_id(uint3 tid)
 bool prior_module_or_error(uint mode, uint error_code)
 {
     return mode == 1u || mode == 2u || mode == 5u || error_code != 0u;
+}
+
+uint module_body_start(uint function_count)
+{
+    uint function_section_len = 11u + function_count * 5u;
+    uint code_header_len = 11u;
+    return 8u +
+           TYPE_SECTION_LEN +
+           IMPORT_SECTION_LEN +
+           function_section_len +
+           MEMORY_SECTION_LEN +
+           EXPORT_SECTION_LEN +
+           code_header_len;
 }
 
 [shader("compute")]
@@ -44,7 +62,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint body_len = body_status[0u];
     bool body_ok = body_status[1u] != 0u;
-    uint module_len = BODY_OFF + body_len;
+    uint module_len = module_body_start(body_plan[BODY_PLAN_FUNCTION_COUNT]) + body_len;
     bool ok = body_ok && module_len <= gParams.out_capacity;
 
     if (slot == 0u)

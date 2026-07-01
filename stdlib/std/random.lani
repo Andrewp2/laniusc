@@ -14,6 +14,7 @@ pub const RANDOM_RUNTIME_ABI_VERSION: RandomRuntimeAbiVersion = 1;
 pub const RANDOM_SERVICE_ID: RandomServiceId = 9;
 pub const RANDOM_SERVICE_STATUS_UNAVAILABLE: RandomServiceStatus = 1;
 pub const RANDOM_HAS_RUNTIME_BINDING: RandomCapability = false;
+pub const RANDOM_SECURE_U32_HAS_RUNTIME_BINDING: RandomCapability = true;
 pub const RANDOM_OPERATION_OK: RandomOperationResult = 0;
 pub const RANDOM_OPERATION_UNAVAILABLE: RandomOperationResult = -1;
 
@@ -46,7 +47,10 @@ pub fn random_is_blocked() -> RandomCapability {
 }
 
 pub fn random_is_known_but_unbound() -> RandomCapability {
-    return random_service_is_known() && random_is_blocked();
+    if (random_service_is_known()) {
+        return random_is_blocked();
+    }
+    return false;
 }
 
 pub fn random_requires_runtime_binding() -> RandomCapability {
@@ -66,7 +70,10 @@ pub fn secure_rng_api_is_blocked() -> RandomCapability {
 }
 
 pub fn secure_rng_api_is_known_but_unbound() -> RandomCapability {
-    return random_service_is_known() && secure_rng_api_is_blocked();
+    if (random_service_is_known()) {
+        return secure_rng_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn secure_rng_api_requires_runtime_binding() -> RandomCapability {
@@ -94,7 +101,10 @@ pub fn random_operation_is_unavailable(result: RandomOperationResult) -> RandomC
 }
 
 pub fn random_operation_is_fail_closed(result: RandomOperationResult) -> RandomCapability {
-    return random_is_known_but_unbound() && random_operation_is_unavailable(result);
+    if (random_is_known_but_unbound()) {
+        return random_operation_is_unavailable(result);
+    }
+    return false;
 }
 
 pub fn fill_secure_bytes_is_executable() -> RandomCapability {
@@ -106,7 +116,10 @@ pub fn fill_secure_bytes_is_blocked() -> RandomCapability {
 }
 
 pub fn fill_secure_bytes_is_known_but_unbound() -> RandomCapability {
-    return random_service_is_known() && fill_secure_bytes_is_blocked();
+    if (random_service_is_known()) {
+        return fill_secure_bytes_is_blocked();
+    }
+    return false;
 }
 
 pub fn fill_secure_bytes_requires_runtime_binding() -> RandomCapability {
@@ -114,7 +127,7 @@ pub fn fill_secure_bytes_requires_runtime_binding() -> RandomCapability {
 }
 
 pub fn secure_u32_is_executable() -> RandomCapability {
-    return secure_rng_api_is_executable();
+    return RANDOM_SECURE_U32_HAS_RUNTIME_BINDING;
 }
 
 pub fn secure_u32_is_blocked() -> RandomCapability {
@@ -122,7 +135,10 @@ pub fn secure_u32_is_blocked() -> RandomCapability {
 }
 
 pub fn secure_u32_is_known_but_unbound() -> RandomCapability {
-    return random_service_is_known() && secure_u32_is_blocked();
+    if (random_service_is_known()) {
+        return secure_u32_is_blocked();
+    }
+    return false;
 }
 
 pub fn secure_u32_requires_runtime_binding() -> RandomCapability {

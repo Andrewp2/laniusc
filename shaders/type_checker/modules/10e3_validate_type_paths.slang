@@ -19,16 +19,8 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
@@ -58,9 +50,6 @@ static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint TYPECHECK_DETAIL_PATH_TOO_DEEP = 0xffffff05u;
-
-static const uint TK_IMPORT = 96u;
-static const uint TK_MODULE = 97u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -134,14 +123,6 @@ bool metadata_path_record(uint path_i)
     return found;
 }
 
-bool metadata_path_token_context(uint start)
-{
-    if (start == 0u || start >= gParams.n_tokens)
-        return false;
-    uint prev_kind = token_words[start - 1u].kind;
-    return prev_kind == TK_MODULE || prev_kind == TK_IMPORT;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -174,7 +155,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
         return;
-    if (metadata_path_record(path_i) || metadata_path_token_context(owner_token))
+    if (metadata_path_record(path_i))
         return;
     if (owner_token >= gParams.n_tokens || module_value_path_expr_head[owner_token] == 0u)
         return;

@@ -30,6 +30,7 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) feature_params_buf: &'a wgpu::Buffer,
     pub(super) hir_status_buf: &'a wgpu::Buffer,
     pub(super) hir_kind_buf: &'a wgpu::Buffer,
+    pub(super) hir_item_kind_buf: &'a wgpu::Buffer,
     pub(super) parent_buf: &'a wgpu::Buffer,
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
@@ -79,6 +80,7 @@ pub(super) fn create_call_record_bind_groups(
         feature_params_buf,
         hir_status_buf,
         hir_kind_buf,
+        hir_item_kind_buf,
         parent_buf,
         function_metadata,
         expr_metadata,
@@ -132,6 +134,23 @@ pub(super) fn create_call_record_bind_groups(
                 "hir_expr_result_root_node",
                 expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
+            ("path_count_out", call_metadata.path_count_out.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                call_metadata.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "resolved_value_decl",
+                call_metadata.resolved_value_decl.as_entire_binding(),
+            ),
+            (
+                "resolved_value_status",
+                call_metadata.resolved_value_status.as_entire_binding(),
+            ),
+            (
+                "decl_name_token",
+                call_metadata.decl_name_token.as_entire_binding(),
+            ),
             ("x86_node_func", final_node_func_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
             (
@@ -145,6 +164,10 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "hir_call_arg_count",
                 call_metadata.arg_count.as_entire_binding(),
+            ),
+            (
+                "hir_member_receiver_node",
+                call_metadata.member_receiver_node.as_entire_binding(),
             ),
             (
                 "hir_member_name_token",
@@ -163,9 +186,9 @@ pub(super) fn create_call_record_bind_groups(
                 call_metadata.call_return_type_token.as_entire_binding(),
             ),
             (
-                "method_decl_param_offset",
+                "method_decl_receiver_mode",
                 function_metadata
-                    .method_decl_param_offset
+                    .method_decl_receiver_mode
                     .as_entire_binding(),
             ),
             ("x86_call_record", call_record_buf.as_entire_binding()),
@@ -307,6 +330,12 @@ pub(super) fn create_call_record_bind_groups(
                 "method_decl_param_offset",
                 function_metadata
                     .method_decl_param_offset
+                    .as_entire_binding(),
+            ),
+            (
+                "method_decl_receiver_mode",
+                function_metadata
+                    .method_decl_receiver_mode
                     .as_entire_binding(),
             ),
             (
@@ -493,6 +522,7 @@ pub(super) fn create_call_record_bind_groups(
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_item_kind", hir_item_kind_buf.as_entire_binding()),
             (
                 "hir_fn_return_type_node",
                 function_metadata.fn_return_type_node.as_entire_binding(),
@@ -518,6 +548,18 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "call_intrinsic_tag",
                 call_metadata.call_intrinsic_tag.as_entire_binding(),
+            ),
+            (
+                "call_param_type",
+                call_metadata.call_param_type.as_entire_binding(),
+            ),
+            (
+                "name_id_by_token",
+                call_metadata.name_id_by_token.as_entire_binding(),
+            ),
+            (
+                "language_name_id",
+                call_metadata.language_name_id.as_entire_binding(),
             ),
             (
                 "type_instance_kind",

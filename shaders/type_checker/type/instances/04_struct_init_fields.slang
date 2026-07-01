@@ -43,6 +43,7 @@ RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
 RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_node;
+RWStructuredBuffer<uint> struct_init_field_decl_node_by_node;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -261,6 +262,7 @@ void publish_struct_init_field_node(uint field_node)
     struct_init_field_expected_ref_payload[field_token] = payload;
     struct_init_field_ordinal[field_token] = field_ordinal;
     struct_init_field_ordinal_by_node[field_node] = field_ordinal;
+    struct_init_field_decl_node_by_node[field_node] = decl_field_node;
 }
 
 [shader("compute")]
@@ -272,6 +274,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     struct_init_field_ordinal_by_node[i] = INVALID;
+    struct_init_field_decl_node_by_node[i] = INVALID;
 
     if (node_kind[i] != PROD_STRUCT_LIT_FIELD)
         return;

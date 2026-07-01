@@ -32,10 +32,7 @@ impl GpuTypeChecker {
         hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
         passes: &TypeCheckPasses,
-        control_pass: &PassData,
-        scope_pass: &PassData,
         input_fingerprint: u64,
-        uses_hir_control: bool,
         uses_hir_items: bool,
         external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
     ) -> Result<ResidentTypeCheckState> {
@@ -2066,6 +2063,13 @@ impl GpuTypeChecker {
             token_capacity as usize,
             external_scratch.map(|scratch| scratch.member_result_field_ordinal),
         );
+        let member_result_field_node = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.member_result_field_node",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let struct_init_field_expected_ref_tag = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_init_field_expected_ref_tag",
@@ -2105,6 +2109,13 @@ impl GpuTypeChecker {
                 wgpu::BufferUsages::empty(),
             )
         };
+        let struct_init_field_decl_node_by_node = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.struct_init_field_decl_node_by_node",
+            hir_node_capacity.max(1) as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let struct_lit_context_decl_token = typed_storage_u32_rw(
             device,
             "type_check.resident.struct_lit_context_decl_token",
@@ -2650,6 +2661,7 @@ impl GpuTypeChecker {
         resources.buffer("member_result_ref_tag", &member_result_ref_tag);
         resources.buffer("member_result_ref_payload", &member_result_ref_payload);
         resources.buffer("member_result_field_ordinal", &member_result_field_ordinal);
+        resources.buffer("member_result_field_node", &member_result_field_node);
         resources.buffer(
             "struct_init_field_expected_ref_tag",
             &struct_init_field_expected_ref_tag,
@@ -2666,6 +2678,10 @@ impl GpuTypeChecker {
         resources.buffer(
             "struct_init_field_ordinal_by_node",
             &struct_init_field_ordinal_by_node,
+        );
+        resources.buffer(
+            "struct_init_field_decl_node_by_node",
+            &struct_init_field_decl_node_by_node,
         );
         resources.buffer(
             "struct_lit_context_decl_token",
@@ -3370,13 +3386,7 @@ impl GpuTypeChecker {
         let control = reflected_bind_group_from_resources(
             device,
             "type_check_resident_control",
-            control_pass,
-            &resources,
-        )?;
-        let scope = reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_scope",
-            scope_pass,
+            &passes.control_hir,
             &resources,
         )?;
         let scope_hir = reflected_bind_group_from_resources(
@@ -3470,7 +3480,6 @@ impl GpuTypeChecker {
                 hir_node_capacity,
                 parser_hir_node_capacity,
                 input_fingerprint,
-                uses_hir_control,
                 uses_hir_items,
             },
             name_capacity,
@@ -3795,11 +3804,13 @@ impl GpuTypeChecker {
             member_result_ref_tag,
             member_result_ref_payload,
             member_result_field_ordinal,
+            member_result_field_node,
             struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload,
             struct_init_field_context_instance,
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node,
             struct_lit_context_decl_token,
             struct_lit_context_instance,
             name_scan_steps,
@@ -3826,7 +3837,6 @@ impl GpuTypeChecker {
             aggregate_compare_dispatch,
             conditions_aggregate_args,
             control,
-            scope,
             scope_hir,
         })
     }

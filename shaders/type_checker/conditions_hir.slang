@@ -863,6 +863,12 @@ uint call_node_for_expr_anchor(uint node)
         hir_call_callee_node[name_parent] == callee_anchor)
         return name_parent;
 
+    uint child = first_child[callee_anchor];
+    if (valid_node(child) &&
+        hir_kind[child] == HIR_CALL_EXPR &&
+        hir_call_callee_node[child] == callee_anchor)
+        return child;
+
     uint sibling = next_sibling[callee_anchor];
     return valid_node(sibling) && hir_kind[sibling] == HIR_CALL_EXPR ? sibling : INVALID;
 }
@@ -1183,10 +1189,26 @@ bool parser_published_stmt_type_syntax(uint node, uint token_i)
     return token_inside_node_span(type_node, token_i);
 }
 
+bool has_type_syntax_ancestor(uint node)
+{
+    uint cursor = node;
+    for (uint step = 0u; step < 8u; step += 1u)
+    {
+        if (!valid_node(cursor))
+            return false;
+        if (hir_kind[cursor] == HIR_TYPE)
+            return true;
+        uint next = parent[cursor];
+        if (!valid_node(next) || next == cursor)
+            return false;
+        cursor = next;
+    }
+    return false;
+}
+
 bool parser_published_type_syntax(uint node, uint token_i)
 {
-    uint owner = condition_parent_record(node);
-    return (valid_node(owner) && hir_kind[owner] == HIR_TYPE) ||
+    return has_type_syntax_ancestor(node) ||
            parser_published_stmt_type_syntax(node, token_i) ||
            (valid_token(token_i) &&
             module_type_path_status[token_i] != PATH_RESOLVE_STATUS_INVALID) ||
@@ -1252,13 +1274,15 @@ uint direct_node_type(uint node)
 
     if (hir_kind[node] == HIR_CALL_EXPR)
     {
-        uint call_ty = call_result_type_for_token(token_i);
-        if (call_ty != TY_UNKNOWN)
-            return call_ty;
-
         uint callee_node = hir_call_callee_node[node];
         if (!valid_node(callee_node))
-            return call_return_type[token_i];
+            return call_result_type_for_token(token_i);
+        if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+        {
+            uint member_token = hir_member_name_token[callee_node];
+            return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
+        }
+
         uint path_i = path_id_for_callee_node(callee_node);
         if (valid_path(path_i))
         {
@@ -1275,11 +1299,6 @@ uint direct_node_type(uint node)
                     return path_ty;
             }
         }
-        if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
-        {
-            uint member_token = hir_member_name_token[callee_node];
-            return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
-        }
         uint associated_method = associated_callee_method_token_for_call(node);
         if (valid_token(associated_method))
         {
@@ -1295,7 +1314,11 @@ uint direct_node_type(uint node)
             }
         }
         uint callee_token = value_token_for_node(callee_node);
-        return call_result_type_for_token(callee_token);
+        uint callee_ty = call_result_type_for_token(callee_token);
+        if (callee_ty != TY_UNKNOWN)
+            return callee_ty;
+
+        return call_result_type_for_token(token_i);
     }
 
     return TY_UNKNOWN;

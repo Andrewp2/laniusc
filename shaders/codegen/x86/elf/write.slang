@@ -31,6 +31,8 @@ static const uint LAYOUT_FILE_LEN = 2u;
 static const uint LAYOUT_ENTRY_VADDR = 3u;
 static const uint LAYOUT_BASE_VADDR = 4u;
 static const uint LAYOUT_ALIGN = 5u;
+static const uint LAYOUT_RODATA_OFFSET = 6u;
+static const uint LAYOUT_RODATA_LEN = 7u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -113,8 +115,12 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint text_offset = x86_elf_layout[LAYOUT_TEXT_OFFSET];
     uint text_len = x86_elf_layout[LAYOUT_TEXT_LEN];
+    uint rodata_offset = x86_elf_layout[LAYOUT_RODATA_OFFSET];
+    uint rodata_len = x86_elf_layout[LAYOUT_RODATA_LEN];
     uint file_len = x86_elf_layout[LAYOUT_FILE_LEN];
-    bool ok = layout_ok && layout_status[3u] == file_len && file_len == text_offset + text_len &&
+    bool rodata_ok = rodata_offset == text_offset + text_len &&
+                     file_len == rodata_offset + rodata_len;
+    bool ok = layout_ok && layout_status[3u] == file_len && rodata_ok &&
               text_len > 0u && file_len <= gParams.out_capacity;
 
     if (tid.x == 0u && tid.y == 0u)

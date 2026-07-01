@@ -31,6 +31,8 @@ StructuredBuffer<uint> hir_type_len_token;
 
 RWStructuredBuffer<uint> hir_expr_int_value;
 RWStructuredBuffer<uint> hir_expr_float_bits;
+RWStructuredBuffer<uint> hir_expr_string_start;
+RWStructuredBuffer<uint> hir_expr_string_len;
 RWStructuredBuffer<uint> hir_type_len_value;
 
 static const uint INVALID = 0xffffffffu;
@@ -38,6 +40,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_STRING = 28u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -189,6 +192,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     hir_expr_int_value[i] = 0u;
     hir_expr_float_bits[i] = 0u;
+    hir_expr_string_start[i] = INVALID;
+    hir_expr_string_len[i] = 0u;
     hir_type_len_value[i] = INVALID;
 
     if (!valid_node(i))
@@ -198,9 +203,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (token_starts_with_digit(len_token))
         hir_type_len_value[i] = parse_uint_token(len_token);
 
-    if (expr_slot(i, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INT)
+    uint form = expr_slot(i, HIR_EXPR_RECORD_FORM);
+    if (form == HIR_EXPR_STRING)
     {
-        if (expr_slot(i, HIR_EXPR_RECORD_FORM) != HIR_EXPR_FLOAT)
+        uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
+        if (value_token == INVALID)
+            return;
+
+        uint token_start = token_words[value_token].start;
+        uint token_len = token_words[value_token].len;
+        if (token_len >= 2u)
+        {
+            hir_expr_string_start[i] = token_start + 1u;
+            hir_expr_string_len[i] = token_len - 2u;
+        }
+        return;
+    }
+
+    if (form != HIR_EXPR_INT)
+    {
+        if (form != HIR_EXPR_FLOAT)
             return;
 
         uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);

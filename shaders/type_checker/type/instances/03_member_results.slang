@@ -19,10 +19,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
@@ -45,6 +48,7 @@ StructuredBuffer<uint> type_decl_hir_node_by_token;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
+RWStructuredBuffer<uint> member_result_field_node;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -65,6 +69,8 @@ static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
@@ -273,13 +279,33 @@ uint ordinal_for_field_node(uint struct_node, uint field_node)
                : INVALID;
 }
 
+bool member_expr_is_call_callee(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        return false;
+
+    uint owner = parent[node];
+    if (valid_node(owner) &&
+        hir_kind[owner] == HIR_CALL_EXPR &&
+        hir_call_callee_node[owner] == node)
+        return true;
+
+    uint child = first_child[node];
+    return valid_node(child) &&
+           hir_kind[child] == HIR_CALL_EXPR &&
+           hir_call_callee_node[child] == node;
+}
+
 void publish_member_field_ref_for_node(uint member_node)
 {
-    if (!valid_node(member_node) || hir_kind[member_node] != 21u)
+    if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
         return;
 
     uint member_token = hir_member_name_token[member_node];
     if (!valid_token(member_token))
+        return;
+
+    if (member_expr_is_call_callee(member_node))
         return;
 
     uint receiver_tag = member_result_ref_tag[member_token];
@@ -322,6 +348,7 @@ void publish_member_field_ref_for_node(uint member_node)
     }
 
     member_result_field_ordinal[member_token] = ordinal_for_field_node(struct_node, field_node);
+    member_result_field_node[member_token] = field_node;
     member_result_ref_tag[member_token] = tag;
     member_result_ref_payload[member_token] = payload;
 }

@@ -44,6 +44,7 @@ RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
+RWStructuredBuffer<uint> member_result_field_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -115,4 +116,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     member_result_ref_tag[i] = TYPE_REF_INVALID;
     member_result_ref_payload[i] = INVALID;
     member_result_field_ordinal[i] = INVALID;
+    member_result_field_node[i] = INVALID;
 }

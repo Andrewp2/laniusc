@@ -146,6 +146,7 @@ pub(super) fn register_hir_item_resources<'a>(
         &hir_items.array_element_parent_lit,
     );
     resources.buffer("hir_array_element_next", &hir_items.array_element_next);
+    resources.buffer("hir_item_path_node", &hir_items.path_node);
     resources.buffer("hir_call_callee_node", &hir_items.call_callee_node);
     resources.buffer(
         "hir_call_context_stmt_node",
@@ -281,6 +282,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_array_lit_context_stmt_node", &empty_hir.parent);
     resources.buffer("hir_array_element_parent_lit", &empty_hir.parent);
     resources.buffer("hir_array_element_next", &empty_hir.parent);
+    resources.buffer("hir_item_path_node", &empty_hir.parent);
     resources.buffer("hir_call_callee_node", &empty_hir.parent);
     resources.buffer("hir_call_context_stmt_node", &empty_hir.parent);
     resources.buffer("hir_call_arg_start", &empty_hir.parent);

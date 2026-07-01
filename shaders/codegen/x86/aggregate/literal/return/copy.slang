@@ -25,7 +25,13 @@ StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> x86_node_func;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> method_decl_param_offset;
+StructuredBuffer<uint> method_decl_receiver_mode;
+StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
@@ -59,6 +65,9 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint EXPR_RECORD_STRIDE = 4u;
+static const uint EXPR_RECORD_FORM = 0u;
+static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
+static const uint HIR_EXPR_NAME = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
@@ -66,7 +75,15 @@ static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
+static const uint X86_VINST_COPY_AGG_RET = 23u;
+static const uint X86_AGG_SOURCE_LOCAL = 1u;
+static const uint X86_AGG_SOURCE_REG = 3u;
+static const uint X86_AGG_COPY_SEPARATE_ORDINALS = 0x80000000u;
+static const uint X86_DECL_LAYOUT_STRIDE = 4u;
+static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
+static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
+static const uint METHOD_RECEIVER_EXPLICIT = 3u;
+static const uint X86_REG_ESI = 6u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -76,6 +93,11 @@ uint linear_dispatch_id(uint3 tid)
 bool valid_node(uint node)
 {
     return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
 }
 
 bool upstream_ok()
@@ -128,9 +150,96 @@ uint expr_slot(uint node, uint slot)
         INVALID);
 }
 
+uint expr_form(uint node)
+{
+    return valid_node(node) ? expr_slot(node, EXPR_RECORD_FORM) : 0u;
+}
+
+uint expr_value_token(uint node)
+{
+    return valid_node(node) ? expr_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
+}
+
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+}
+
+uint decl_layout_word(uint row, uint slot)
+{
+    return row_major_load<uint>(
+        x86_decl_layout_record,
+        row,
+        X86_DECL_LAYOUT_STRIDE,
+        slot,
+        INVALID);
+}
+
+uint decl_layout_base(uint row)
+{
+    return decl_layout_word(row, 0u);
+}
+
+uint decl_layout_width(uint row)
+{
+    return decl_layout_word(row, 1u);
+}
+
+uint decl_layout_node(uint row)
+{
+    uint info = decl_layout_word(row, 2u);
+    return info == INVALID ? INVALID : info >> X86_DECL_LAYOUT_KIND_BITS;
+}
+
+bool scalar_local_source_for_expr(uint value_node, uint owner_fn, out uint payload)
+{
+    payload = INVALID;
+    value_node = resolve_expr(value_node);
+    if (!valid_node(value_node) || expr_form(value_node) != HIR_EXPR_NAME)
+        return false;
+
+    uint name_token = expr_value_token(value_node);
+    if (!valid_node(owner_fn) || !valid_token(name_token))
+        return false;
+
+    uint decl_token = visible_decl[name_token];
+    if (!valid_token(decl_token) || decl_layout_width(decl_token) != 1u)
+        return false;
+
+    uint decl_node = decl_layout_node(decl_token);
+    uint base = decl_layout_base(decl_token);
+    if (base == INVALID || !valid_node(decl_node) || x86_node_func[decl_node] != owner_fn)
+        return false;
+
+    payload = base;
+    return true;
+}
+
+bool explicit_receiver_reg_source_for_expr(uint value_node, uint owner_fn, out uint payload)
+{
+    payload = INVALID;
+    value_node = resolve_expr(value_node);
+    if (!valid_node(owner_fn) || !valid_node(value_node) || expr_form(value_node) != HIR_EXPR_NAME)
+        return false;
+
+    uint fn_token = hir_token_pos[owner_fn];
+    if (!valid_token(fn_token) || method_decl_receiver_mode[fn_token] != METHOD_RECEIVER_EXPLICIT)
+        return false;
+
+    uint name_token = expr_value_token(value_node);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    if (!valid_token(decl_token) || method_decl_param_offset[fn_token] != decl_token)
+        return false;
+
+    payload = X86_REG_ESI;
+    return true;
+}
+
+uint pack_copy_agg_ret_ordinals(uint source_ordinal, uint dest_ordinal)
+{
+    return X86_AGG_COPY_SEPARATE_ORDINALS |
+           ((source_ordinal & 0x7fffu) << 16u) |
+           (dest_ordinal & 0xffffu);
 }
 
 uint expr_result_root(uint node)
@@ -249,14 +358,27 @@ bool location_for_node_local(uint node, uint local_i, out uint location)
     return true;
 }
 
-bool value_vreg_for_node(uint node, out uint vreg)
+bool value_vreg_for_candidate(uint node, out uint vreg)
 {
     vreg = INVALID;
-    node = resolve_expr(node);
     uint2 range = uint2(INVALID, 0u);
     if (!range_for_node(node, range) || range_count(range) == 0u)
         return false;
     return location_for_node_local(node, 0u, vreg);
+}
+
+bool value_vreg_for_node(uint node, out uint vreg)
+{
+    uint resolved = resolve_expr(node);
+    if (value_vreg_for_candidate(resolved, vreg))
+        return true;
+
+    uint root = expr_result_root(node);
+    if (root != resolved && value_vreg_for_candidate(root, vreg))
+        return true;
+
+    vreg = INVALID;
+    return false;
 }
 
 void write_status_error_detail(uint node, uint detail)
@@ -344,6 +466,43 @@ void emit_struct_field_return_copy(uint node)
     if (ordinal >= X86_AGG_COPY_MAX_WIDTH)
     {
         write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH);
+        return;
+    }
+
+    uint scalar_payload = INVALID;
+    if (explicit_receiver_reg_source_for_expr(value_node, x86_node_func[return_node], scalar_payload))
+    {
+        uint row = INVALID;
+        if (!location_for_node_local(return_node, ordinal, row))
+        {
+            write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION);
+            return;
+        }
+        write_inst(
+            row,
+            return_node,
+            ordinal,
+            X86_VINST_COPY_AGG_RET,
+            INVALID,
+            uint4(X86_AGG_SOURCE_REG, scalar_payload, pack_copy_agg_ret_ordinals(0u, ordinal), 0u));
+        return;
+    }
+
+    if (scalar_local_source_for_expr(value_node, x86_node_func[return_node], scalar_payload))
+    {
+        uint row = INVALID;
+        if (!location_for_node_local(return_node, ordinal, row))
+        {
+            write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION);
+            return;
+        }
+        write_inst(
+            row,
+            return_node,
+            ordinal,
+            X86_VINST_COPY_AGG_RET,
+            INVALID,
+            uint4(X86_AGG_SOURCE_LOCAL, scalar_payload, pack_copy_agg_ret_ordinals(0u, ordinal), 0u));
         return;
     }
 

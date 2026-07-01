@@ -1,0 +1,36 @@
+module app::main;
+
+import std::io;
+
+fn cell_score(x: i32, y: i32, seed: i32) -> i32 {
+    let distance: i32 = 0;
+    if (x > y) {
+        distance = x - y;
+    } else {
+        distance = y - x;
+    }
+    let mixed: i32 = (x * 17 + y * 31 + seed * 13) % 97;
+    if (mixed < 0) {
+        return distance - mixed;
+    }
+    return distance + mixed;
+}
+
+fn checksum(width: i32, height: i32, seed: i32) -> i32 {
+    let total: i32 = 0;
+    let y: i32 = 0;
+    while (y < height) {
+        let x: i32 = 0;
+        while (x < width) {
+            total += cell_score(x, y, seed);
+            x += 1;
+        }
+        y += 1;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    std::io::print_i32(checksum(32, 24, 19));
+    return 0;
+}

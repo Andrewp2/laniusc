@@ -16,6 +16,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> x86_text_len;
+StructuredBuffer<uint> x86_rodata_len;
 StructuredBuffer<uint> encode_status;
 
 RWStructuredBuffer<uint> x86_elf_layout;
@@ -37,6 +38,8 @@ static const uint LAYOUT_FILE_LEN = 2u;
 static const uint LAYOUT_ENTRY_VADDR = 3u;
 static const uint LAYOUT_BASE_VADDR = 4u;
 static const uint LAYOUT_ALIGN = 5u;
+static const uint LAYOUT_RODATA_OFFSET = 6u;
+static const uint LAYOUT_RODATA_LEN = 7u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -51,7 +54,9 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     bool encode_ok = encode_status[0u] == X86_ENCODE_OK && encode_status[1u] == 0u &&
                      encode_status[3u] == x86_text_len[0u] && x86_text_len[0u] > 0u;
-    uint file_len = ELF_TEXT_OFFSET + x86_text_len[0u];
+    uint rodata_len = encode_ok ? x86_rodata_len[0u] : 0u;
+    uint rodata_offset = ELF_TEXT_OFFSET + x86_text_len[0u];
+    uint file_len = rodata_offset + rodata_len;
     bool capacity_ok = file_len <= gParams.out_capacity;
     bool ok = encode_ok && capacity_ok;
 
@@ -61,6 +66,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (lane == LAYOUT_ENTRY_VADDR) x86_elf_layout[LAYOUT_ENTRY_VADDR] = ELF_BASE_VADDR + ELF_TEXT_OFFSET;
     if (lane == LAYOUT_BASE_VADDR) x86_elf_layout[LAYOUT_BASE_VADDR] = ELF_BASE_VADDR;
     if (lane == LAYOUT_ALIGN) x86_elf_layout[LAYOUT_ALIGN] = ELF_ALIGN;
+    if (lane == LAYOUT_RODATA_OFFSET) x86_elf_layout[LAYOUT_RODATA_OFFSET] = encode_ok ? rodata_offset : 0u;
+    if (lane == LAYOUT_RODATA_LEN) x86_elf_layout[LAYOUT_RODATA_LEN] = rodata_len;
 
     if (lane == 0u)
     {

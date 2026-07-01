@@ -39,14 +39,6 @@ StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_param_count;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> module_value_path_call_open;
 StructuredBuffer<uint> module_value_path_associated_method_token;
@@ -75,25 +67,6 @@ static const uint HIR_PATH_EXPR = 33u;
 
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
-static const uint TK_LPAREN = 4u;
-static const uint TK_RPAREN = 5u;
-static const uint TK_LBRACKET = 20u;
-static const uint TK_RBRACKET = 21u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_RBRACE = 23u;
-static const uint TK_CALL_LPAREN = 28u;
-static const uint TK_GROUP_LPAREN = 29u;
-static const uint TK_INDEX_LBRACKET = 30u;
-static const uint TK_ARRAY_LBRACKET = 31u;
-static const uint TK_COMMA = 36u;
-static const uint TK_GROUP_RPAREN = 62u;
-static const uint TK_CALL_RPAREN = 63u;
-static const uint TK_ARRAY_RBRACKET = 64u;
-static const uint TK_INDEX_RBRACKET = 65u;
-static const uint TK_ARG_COMMA = 82u;
-static const uint TK_ARRAY_COMMA = 83u;
-static const uint TK_IF_LBRACE = 88u;
-static const uint TK_IF_RBRACE = 89u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -118,35 +91,6 @@ bool valid_node(uint node)
 bool is_generic_type(uint ty)
 {
     return ty >= TY_GENERIC_BASE;
-}
-
-uint token_kind(uint token)
-{
-    return valid_token(token) ? token_words[token].kind : 0u;
-}
-
-bool syntax_arg_comma(uint kind)
-{
-    return kind == TK_COMMA || kind == TK_ARG_COMMA || kind == TK_ARRAY_COMMA;
-}
-
-bool syntax_open(uint kind)
-{
-    return kind == TK_LPAREN || kind == TK_CALL_LPAREN || kind == TK_GROUP_LPAREN ||
-           kind == TK_LBRACKET || kind == TK_INDEX_LBRACKET || kind == TK_ARRAY_LBRACKET ||
-           kind == TK_LBRACE || kind == TK_IF_LBRACE;
-}
-
-bool syntax_close(uint kind)
-{
-    return kind == TK_RPAREN || kind == TK_CALL_RPAREN || kind == TK_GROUP_RPAREN ||
-           kind == TK_RBRACKET || kind == TK_INDEX_RBRACKET || kind == TK_ARRAY_RBRACKET ||
-           kind == TK_RBRACE || kind == TK_IF_RBRACE;
-}
-
-bool call_close(uint kind)
-{
-    return kind == TK_RPAREN || kind == TK_CALL_RPAREN || kind == TK_GROUP_RPAREN;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -179,7 +123,6 @@ uint call_node_for_marked_head(uint owner_token)
 uint normalized_path_owner_hir(uint owner_hir)
 {
     uint node = owner_hir;
-    [unroll]
     for (uint step = 0u; step < 8u; step += 1u)
     {
         if (!valid_node(node))
@@ -275,14 +218,6 @@ uint call_node_for_owner_token(uint path_i, uint owner_token)
     return valid_token(call_head) ? call_node_for_callee_token(call_head) : INVALID;
 }
 
-bool call_record_is_member_call(uint call_node)
-{
-    if (!valid_node(call_node))
-        return false;
-    uint callee_node = hir_call_callee_node[call_node];
-    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
-}
-
 uint call_arg_count_for_call(uint owner_token, uint call_node)
 {
     uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
@@ -290,60 +225,6 @@ uint call_arg_count_for_call(uint owner_token, uint call_node)
         return record_count;
     uint compact_count = call_arg_row_count[call_node];
     return max(max(record_count, hir_call_arg_count[call_node]), compact_count);
-}
-
-uint syntax_call_arg_count(uint owner_token)
-{
-    if (!valid_token(owner_token))
-        return INVALID;
-
-    uint open_token = module_value_path_call_open[owner_token];
-    if (!valid_token(open_token))
-        return INVALID;
-
-    uint depth = 1u;
-    uint completed_args = 0u;
-    bool saw_arg_token = false;
-    [loop]
-    for (uint step = 1u; step < 256u; step += 1u)
-    {
-        uint token = open_token + step;
-        if (!valid_token(token))
-            return INVALID;
-
-        uint kind = token_kind(token);
-        if (depth == 1u && call_close(kind))
-            return saw_arg_token ? completed_args + 1u : 0u;
-
-        if (depth == 1u && syntax_arg_comma(kind))
-        {
-            if (!saw_arg_token)
-                return INVALID;
-            completed_args += 1u;
-            saw_arg_token = false;
-            continue;
-        }
-
-        if (syntax_open(kind))
-        {
-            if (depth == 1u)
-                saw_arg_token = true;
-            depth += 1u;
-            continue;
-        }
-
-        if (syntax_close(kind))
-        {
-            if (depth <= 1u)
-                return INVALID;
-            depth -= 1u;
-            continue;
-        }
-
-        if (depth == 1u)
-            saw_arg_token = true;
-    }
-    return INVALID;
 }
 
 bool valid_function_decl(uint decl_i, out uint fn_token)
@@ -372,7 +253,7 @@ bool validate_and_infer_call(
     expected_count = valid_token(fn_token) ? call_param_count[fn_token] : 0u;
     actual_count = valid_node(call_node)
         ? call_arg_count_for_call(owner_token, call_node)
-        : syntax_call_arg_count(owner_token);
+        : INVALID;
     if (actual_count == INVALID)
     {
         call_return_type[owner_token] = TY_UNKNOWN;
@@ -409,9 +290,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (valid_token(call_fn_index[owner_token]))
         return;
 
-    uint call_node = call_node_for_owner_token(path_i, owner_token);
-    if (valid_node(call_node) && call_record_is_member_call(call_node))
-        return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
     {
         module_value_path_status[owner_token] = resolved_value_status[path_i];
@@ -441,5 +319,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_fn_index[owner_token] = fn_token;
     if (ret_ty != TY_UNKNOWN)
         call_return_type[owner_token] = ret_ty;
+    uint leaf_token = path_leaf_token(path_i, owner_token);
+    if (leaf_token != owner_token)
+    {
+        call_fn_index[leaf_token] = fn_token;
+        call_return_type[leaf_token] = call_return_type[owner_token];
+        call_return_type_token[leaf_token] = call_return_type_token[owner_token];
+    }
     module_value_path_status[owner_token] = INVALID;
 }

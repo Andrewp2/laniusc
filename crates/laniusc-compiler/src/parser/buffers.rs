@@ -1559,6 +1559,16 @@ impl ParserBuffers {
             "parser.hir_expr_float_bits",
             tree_capacity as usize,
         );
+        let hir_expr_string_start = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_string_start",
+            tree_capacity as usize,
+        );
+        let hir_expr_string_len = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_string_len",
+            tree_capacity as usize,
+        );
         let hir_member_receiver_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_member_receiver_node",
@@ -2136,6 +2146,8 @@ impl ParserBuffers {
             hir_binary_span_start_b,
             hir_expr_int_value,
             hir_expr_float_bits,
+            hir_expr_string_start,
+            hir_expr_string_len,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,

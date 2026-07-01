@@ -81,6 +81,14 @@ impl HirLiteralValuesPass {
                 buffers.hir_expr_float_bits.as_entire_binding(),
             ),
             (
+                "hir_expr_string_start".into(),
+                buffers.hir_expr_string_start.as_entire_binding(),
+            ),
+            (
+                "hir_expr_string_len".into(),
+                buffers.hir_expr_string_len.as_entire_binding(),
+            ),
+            (
                 "hir_type_len_value".into(),
                 buffers.hir_type_len_value.as_entire_binding(),
             ),

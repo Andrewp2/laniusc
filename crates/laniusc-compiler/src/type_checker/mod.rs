@@ -199,6 +199,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub visibility: &'a wgpu::Buffer,
     pub path_start: &'a wgpu::Buffer,
     pub path_end: &'a wgpu::Buffer,
+    pub path_node: &'a wgpu::Buffer,
     pub file_id: &'a wgpu::Buffer,
     pub import_target_kind: &'a wgpu::Buffer,
     pub call_callee_node: &'a wgpu::Buffer,
@@ -408,7 +409,6 @@ struct ResidentTypeCheckCacheKey {
     hir_node_capacity: u32,
     parser_hir_node_capacity: u32,
     input_fingerprint: u64,
-    uses_hir_control: bool,
     uses_hir_items: bool,
 }
 
@@ -538,9 +538,7 @@ struct TypeCheckPasses {
     returns_validate: PassData,
     conditions_hir: PassData,
     conditions_aggregate_args: PassData,
-    control: PassData,
     control_hir: PassData,
-    scope: PassData,
     scope_hir: PassData,
     calls_clear: PassData,
     calls_return_refs: PassData,
@@ -931,11 +929,13 @@ struct ResidentTypeCheckState {
     member_result_ref_tag: LaniusBuffer<u32>,
     member_result_ref_payload: LaniusBuffer<u32>,
     member_result_field_ordinal: LaniusBuffer<u32>,
+    member_result_field_node: LaniusBuffer<u32>,
     struct_init_field_expected_ref_tag: LaniusBuffer<u32>,
     struct_init_field_expected_ref_payload: LaniusBuffer<u32>,
     struct_init_field_context_instance: LaniusBuffer<u32>,
     struct_init_field_ordinal: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_node: LaniusBuffer<u32>,
+    struct_init_field_decl_node_by_node: LaniusBuffer<u32>,
     struct_lit_context_decl_token: LaniusBuffer<u32>,
     struct_lit_context_instance: LaniusBuffer<u32>,
     name_scan_steps: Vec<NameScanStep>,
@@ -962,7 +962,6 @@ struct ResidentTypeCheckState {
     aggregate_compare_dispatch: wgpu::BindGroup,
     conditions_aggregate_args: wgpu::BindGroup,
     control: wgpu::BindGroup,
-    scope: wgpu::BindGroup,
     scope_hir: wgpu::BindGroup,
 }
 
@@ -973,7 +972,6 @@ impl ResidentTypeCheckState {
             && self.cache_key.hir_node_capacity >= key.hir_node_capacity
             && self.cache_key.parser_hir_node_capacity >= key.parser_hir_node_capacity
             && self.cache_key.input_fingerprint == key.input_fingerprint
-            && self.cache_key.uses_hir_control == key.uses_hir_control
             && self.cache_key.uses_hir_items == key.uses_hir_items
     }
 }
@@ -985,6 +983,7 @@ impl ResidentTypeCheckState {
 /// is owned by `OwnedGpuCodegenBuffers`.
 pub struct GpuCodegenBuffers<'a> {
     pub name_id_by_token: &'a wgpu::Buffer,
+    pub language_name_id: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
     pub visible_decl: &'a wgpu::Buffer,
     pub visible_type: &'a wgpu::Buffer,
@@ -1017,6 +1016,9 @@ pub struct GpuCodegenBuffers<'a> {
     pub call_return_type_token: &'a wgpu::Buffer,
     pub call_param_count: &'a wgpu::Buffer,
     pub call_param_type: &'a wgpu::Buffer,
+    pub call_arg_row_node: &'a wgpu::Buffer,
+    pub call_arg_row_start: &'a wgpu::Buffer,
+    pub call_arg_row_count: &'a wgpu::Buffer,
     pub method_decl_module_id: &'a wgpu::Buffer,
     pub method_decl_name_token: &'a wgpu::Buffer,
     pub method_decl_name_id: &'a wgpu::Buffer,
@@ -1045,10 +1047,12 @@ pub struct GpuCodegenBuffers<'a> {
     pub member_result_ref_tag: &'a wgpu::Buffer,
     pub member_result_ref_payload: &'a wgpu::Buffer,
     pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub member_result_field_node: &'a wgpu::Buffer,
     pub struct_init_field_expected_ref_tag: &'a wgpu::Buffer,
     pub struct_init_field_expected_ref_payload: &'a wgpu::Buffer,
     pub struct_init_field_ordinal: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+    pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
 }
 
 /// Owned copy of generic backend semantic metadata produced by type checking.
@@ -1057,6 +1061,7 @@ pub struct GpuCodegenBuffers<'a> {
 /// and later backend recording.
 pub struct OwnedGpuCodegenBuffers {
     name_id_by_token: LaniusBuffer<u32>,
+    language_name_id: LaniusBuffer<u32>,
     enclosing_fn: LaniusBuffer<u32>,
     visible_decl: LaniusBuffer<u32>,
     visible_type: LaniusBuffer<u32>,
@@ -1089,6 +1094,9 @@ pub struct OwnedGpuCodegenBuffers {
     call_return_type_token: LaniusBuffer<u32>,
     call_param_count: LaniusBuffer<u32>,
     call_param_type: LaniusBuffer<u32>,
+    call_arg_row_node: LaniusBuffer<u32>,
+    call_arg_row_start: LaniusBuffer<u32>,
+    call_arg_row_count: LaniusBuffer<u32>,
     method_decl_module_id: LaniusBuffer<u32>,
     method_decl_name_token: LaniusBuffer<u32>,
     method_decl_name_id: LaniusBuffer<u32>,
@@ -1117,10 +1125,12 @@ pub struct OwnedGpuCodegenBuffers {
     member_result_ref_tag: LaniusBuffer<u32>,
     member_result_ref_payload: LaniusBuffer<u32>,
     member_result_field_ordinal: LaniusBuffer<u32>,
+    member_result_field_node: LaniusBuffer<u32>,
     struct_init_field_expected_ref_tag: LaniusBuffer<u32>,
     struct_init_field_expected_ref_payload: LaniusBuffer<u32>,
     struct_init_field_ordinal: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_node: LaniusBuffer<u32>,
+    struct_init_field_decl_node_by_node: LaniusBuffer<u32>,
 }
 
 /// Borrowed x86-specific semantic metadata produced by type checking.
@@ -1129,6 +1139,8 @@ pub struct OwnedGpuCodegenBuffers {
 /// backend.
 #[derive(Clone, Copy)]
 pub struct GpuX86CodegenBuffers<'a> {
+    pub name_id_by_token: &'a wgpu::Buffer,
+    pub language_name_id: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
     pub visible_decl: &'a wgpu::Buffer,
     pub visible_type: &'a wgpu::Buffer,
@@ -1144,6 +1156,10 @@ pub struct GpuX86CodegenBuffers<'a> {
     pub decl_parent_type_decl: &'a wgpu::Buffer,
     pub decl_type_ref_tag: &'a wgpu::Buffer,
     pub decl_type_ref_payload: &'a wgpu::Buffer,
+    pub type_expr_ref_tag: &'a wgpu::Buffer,
+    pub type_expr_ref_payload: &'a wgpu::Buffer,
+    pub module_type_path_type: &'a wgpu::Buffer,
+    pub type_decl_hir_node_by_token: &'a wgpu::Buffer,
     pub call_fn_index: &'a wgpu::Buffer,
     pub call_intrinsic_tag: &'a wgpu::Buffer,
     pub fn_entrypoint_tag: &'a wgpu::Buffer,
@@ -1156,6 +1172,7 @@ pub struct GpuX86CodegenBuffers<'a> {
     pub method_decl_receiver_ref_tag: &'a wgpu::Buffer,
     pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
+    pub method_decl_receiver_mode: &'a wgpu::Buffer,
     pub type_instance_kind: &'a wgpu::Buffer,
     pub type_instance_decl_token: &'a wgpu::Buffer,
     pub type_instance_elem_ref_tag: &'a wgpu::Buffer,
@@ -1163,12 +1180,16 @@ pub struct GpuX86CodegenBuffers<'a> {
     pub type_instance_len_kind: &'a wgpu::Buffer,
     pub type_instance_len_payload: &'a wgpu::Buffer,
     pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub member_result_field_node: &'a wgpu::Buffer,
     pub struct_init_field_ordinal: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+    pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
 }
 
 /// Owned copy of x86 backend semantic metadata produced by type checking.
 pub struct OwnedGpuX86CodegenBuffers {
+    name_id_by_token: LaniusBuffer<u32>,
+    language_name_id: LaniusBuffer<u32>,
     enclosing_fn: LaniusBuffer<u32>,
     visible_decl: LaniusBuffer<u32>,
     visible_type: LaniusBuffer<u32>,
@@ -1184,6 +1205,10 @@ pub struct OwnedGpuX86CodegenBuffers {
     decl_parent_type_decl: LaniusBuffer<u32>,
     decl_type_ref_tag: LaniusBuffer<u32>,
     decl_type_ref_payload: LaniusBuffer<u32>,
+    type_expr_ref_tag: LaniusBuffer<u32>,
+    type_expr_ref_payload: LaniusBuffer<u32>,
+    module_type_path_type: LaniusBuffer<u32>,
+    type_decl_hir_node_by_token: LaniusBuffer<u32>,
     call_fn_index: LaniusBuffer<u32>,
     call_intrinsic_tag: LaniusBuffer<u32>,
     fn_entrypoint_tag: LaniusBuffer<u32>,
@@ -1196,6 +1221,7 @@ pub struct OwnedGpuX86CodegenBuffers {
     method_decl_receiver_ref_tag: LaniusBuffer<u32>,
     method_decl_receiver_ref_payload: LaniusBuffer<u32>,
     method_decl_param_offset: LaniusBuffer<u32>,
+    method_decl_receiver_mode: LaniusBuffer<u32>,
     type_instance_kind: LaniusBuffer<u32>,
     type_instance_decl_token: LaniusBuffer<u32>,
     type_instance_elem_ref_tag: LaniusBuffer<u32>,
@@ -1203,14 +1229,18 @@ pub struct OwnedGpuX86CodegenBuffers {
     type_instance_len_kind: LaniusBuffer<u32>,
     type_instance_len_payload: LaniusBuffer<u32>,
     member_result_field_ordinal: LaniusBuffer<u32>,
+    member_result_field_node: LaniusBuffer<u32>,
     struct_init_field_ordinal: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_node: LaniusBuffer<u32>,
+    struct_init_field_decl_node_by_node: LaniusBuffer<u32>,
 }
 
 impl OwnedGpuX86CodegenBuffers {
     /// Borrows the owned x86 metadata as the backend-facing view.
     pub fn as_ref(&self) -> GpuX86CodegenBuffers<'_> {
         GpuX86CodegenBuffers {
+            name_id_by_token: &self.name_id_by_token,
+            language_name_id: &self.language_name_id,
             enclosing_fn: &self.enclosing_fn,
             visible_decl: &self.visible_decl,
             visible_type: &self.visible_type,
@@ -1226,6 +1256,10 @@ impl OwnedGpuX86CodegenBuffers {
             decl_parent_type_decl: &self.decl_parent_type_decl,
             decl_type_ref_tag: &self.decl_type_ref_tag,
             decl_type_ref_payload: &self.decl_type_ref_payload,
+            type_expr_ref_tag: &self.type_expr_ref_tag,
+            type_expr_ref_payload: &self.type_expr_ref_payload,
+            module_type_path_type: &self.module_type_path_type,
+            type_decl_hir_node_by_token: &self.type_decl_hir_node_by_token,
             call_fn_index: &self.call_fn_index,
             call_intrinsic_tag: &self.call_intrinsic_tag,
             fn_entrypoint_tag: &self.fn_entrypoint_tag,
@@ -1238,6 +1272,7 @@ impl OwnedGpuX86CodegenBuffers {
             method_decl_receiver_ref_tag: &self.method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload: &self.method_decl_receiver_ref_payload,
             method_decl_param_offset: &self.method_decl_param_offset,
+            method_decl_receiver_mode: &self.method_decl_receiver_mode,
             type_instance_kind: &self.type_instance_kind,
             type_instance_decl_token: &self.type_instance_decl_token,
             type_instance_elem_ref_tag: &self.type_instance_elem_ref_tag,
@@ -1245,8 +1280,10 @@ impl OwnedGpuX86CodegenBuffers {
             type_instance_len_kind: &self.type_instance_len_kind,
             type_instance_len_payload: &self.type_instance_len_payload,
             member_result_field_ordinal: &self.member_result_field_ordinal,
+            member_result_field_node: &self.member_result_field_node,
             struct_init_field_ordinal: &self.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &self.struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node: &self.struct_init_field_decl_node_by_node,
         }
     }
 }
@@ -1256,6 +1293,7 @@ impl OwnedGpuCodegenBuffers {
     pub fn as_ref(&self) -> GpuCodegenBuffers<'_> {
         GpuCodegenBuffers {
             name_id_by_token: &self.name_id_by_token,
+            language_name_id: &self.language_name_id,
             enclosing_fn: &self.enclosing_fn,
             visible_decl: &self.visible_decl,
             visible_type: &self.visible_type,
@@ -1288,6 +1326,9 @@ impl OwnedGpuCodegenBuffers {
             call_return_type_token: &self.call_return_type_token,
             call_param_count: &self.call_param_count,
             call_param_type: &self.call_param_type,
+            call_arg_row_node: &self.call_arg_row_node,
+            call_arg_row_start: &self.call_arg_row_start,
+            call_arg_row_count: &self.call_arg_row_count,
             method_decl_module_id: &self.method_decl_module_id,
             method_decl_name_token: &self.method_decl_name_token,
             method_decl_name_id: &self.method_decl_name_id,
@@ -1316,10 +1357,12 @@ impl OwnedGpuCodegenBuffers {
             member_result_ref_tag: &self.member_result_ref_tag,
             member_result_ref_payload: &self.member_result_ref_payload,
             member_result_field_ordinal: &self.member_result_field_ordinal,
+            member_result_field_node: &self.member_result_field_node,
             struct_init_field_expected_ref_tag: &self.struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload: &self.struct_init_field_expected_ref_payload,
             struct_init_field_ordinal: &self.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &self.struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node: &self.struct_init_field_decl_node_by_node,
         }
     }
 }

@@ -1,6 +1,10 @@
 mod common;
 
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 fn laniusc_bin() -> PathBuf {
     option_env!("CARGO_BIN_EXE_laniusc")
@@ -70,6 +74,96 @@ fn cli_stdlib_root_x86_sample_build_command_runs_stdio_print_i32() {
     common::assert_command_success("stdio_print_i32 sample execution", &output);
     let stdout = common::stdout_utf8("stdio_print_i32 sample stdout", output.stdout);
     assert_eq!(stdout, expected_stdout);
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+#[test]
+fn cli_stdlib_root_x86_build_command_runs_host_runtime_samples() {
+    for sample_name in ["host_runtime_smoke", "host_runtime_files"] {
+        let stdout = compile_and_run_x86_sample_with_stdlib_root(sample_name);
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let expected_stdout = fs::read_to_string(
+            repo_root
+                .join("sample_programs")
+                .join(format!("{sample_name}.stdout")),
+        )
+        .unwrap_or_else(|err| panic!("read {sample_name} expected stdout: {err}"));
+        assert_eq!(stdout, expected_stdout, "{sample_name} stdout mismatch");
+    }
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn compile_and_run_x86_sample_with_stdlib_root(sample_name: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sample = repo_root
+        .join("sample_programs")
+        .join(format!("{sample_name}.lani"));
+    let work_dir = TempDir::new(sample_name);
+    let exe_path = work_dir.path().join(sample_name);
+
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("--stdlib-root")
+        .arg(repo_root.join("stdlib"))
+        .arg("--emit")
+        .arg("x86_64")
+        .arg("-o")
+        .arg(&exe_path)
+        .arg(&sample);
+    let context = format!("laniusc --stdlib-root --emit x86_64 {sample_name}");
+    let output = common::codegen_command_output_with_timeout(&context, &mut command);
+    common::assert_command_success(&context, &output);
+
+    let mut permissions = fs::metadata(&exe_path)
+        .unwrap_or_else(|err| panic!("stat emitted executable {}: {err}", exe_path.display()))
+        .permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&exe_path, permissions)
+        .unwrap_or_else(|err| panic!("chmod emitted executable {}: {err}", exe_path.display()));
+
+    let mut command = Command::new(&exe_path);
+    command.current_dir(work_dir.path());
+    let output = common::short_process_output_with_timeout(
+        format!("run x86 sample {sample_name} from CLI artifact"),
+        &mut command,
+    );
+    common::assert_command_success(format!("{sample_name} CLI artifact execution"), &output);
+    common::stdout_utf8(format!("{sample_name} CLI artifact stdout"), output.stdout)
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+struct TempDir {
+    path: PathBuf,
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+impl TempDir {
+    fn new(stem: &str) -> Self {
+        let path = common::temp_artifact_path("laniusc_cli_stdlib_root", stem, None);
+        fs::create_dir(&path)
+            .unwrap_or_else(|err| panic!("create temp directory {}: {err}", path.display()));
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        match fs::remove_dir_all(&self.path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => eprintln!(
+                "failed to remove temp directory {}: {err}",
+                self.path.display()
+            ),
+        }
+    }
 }
 
 #[test]

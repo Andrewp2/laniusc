@@ -78,6 +78,9 @@ static const uint HIR_EXPR_LT = 9u;
 static const uint HIR_EXPR_GT = 10u;
 static const uint HIR_EXPR_LE = 11u;
 static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
 static const uint HIR_EXPR_MOD = 19u;
 static const uint HIR_EXPR_DIV = 20u;
 static const uint HIR_EXPR_SHR = 25u;
@@ -94,7 +97,9 @@ static const uint X86_LOCATION_META_PARAM_DECL = 0xd0000000u;
 static const uint X86_LOCATION_META_PAYLOAD_MASK = 0x0fffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
 static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
+static const uint EXPR_SEMANTIC_FLOAT_FLAG = 0x80000000u;
 static const uint X86_NODE_INST_LOCATION_ERR_BRANCH = 1u;
 static const uint X86_NODE_INST_LOCATION_ERR_MATCH = 2u;
 static const uint X86_NODE_INST_LOCATION_ERR_LOOP = 3u;
@@ -411,6 +416,9 @@ bool compare_expr_form(uint form)
 bool semantic_metadata_expr_form(uint form)
 {
     return compare_expr_form(form) ||
+           form == HIR_EXPR_ADD ||
+           form == HIR_EXPR_SUB ||
+           form == HIR_EXPR_MUL ||
            form == HIR_EXPR_MOD ||
            form == HIR_EXPR_DIV;
 }
@@ -456,7 +464,11 @@ uint expr_semantic_compare_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
     uint record = x86_expr_semantic_type[node];
-    return (record & EXPR_SEMANTIC_UINT_FLAG) != 0u ? TY_UINT : TY_UNKNOWN;
+    if ((record & EXPR_SEMANTIC_UINT_FLAG) != 0u)
+        return TY_UINT;
+    if ((record & EXPR_SEMANTIC_FLOAT_FLAG) != 0u)
+        return TY_FLOAT;
+    return TY_UNKNOWN;
 }
 
 uint4 attach_expr_semantic_type_metadata(uint node, uint4 locations)

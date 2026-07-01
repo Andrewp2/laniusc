@@ -25,6 +25,7 @@ StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> method_decl_param_offset;
+StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> call_return_type;
@@ -80,12 +81,16 @@ static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_STRING = 7u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint X86_DECL_AGG_ARRAY = 1u;
 static const uint X86_DECL_AGG_ENUM = 2u;
 static const uint X86_DECL_AGG_STRUCT = 3u;
+static const uint X86_DECL_AGG_STRING = 4u;
+static const uint METHOD_RECEIVER_NONE = 0u;
+static const uint METHOD_RECEIVER_EXPLICIT = 3u;
 static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
 static const uint X86_PARAM_REG_KIND_BITS = 4u;
@@ -265,6 +270,8 @@ bool struct_width_for_decl(uint decl_token, out uint width)
 
 uint semantic_type_width(uint ty)
 {
+    if (ty == TY_STRING)
+        return 2u;
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
         return 2u;
     if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
@@ -321,8 +328,22 @@ uint decl_type_width(uint decl_token)
     return 1u;
 }
 
+uint decl_semantic_type(uint decl_token, uint fallback_ty)
+{
+    if (!valid_token(decl_token))
+        return fallback_ty;
+    uint visible_ty = visible_type[decl_token];
+    if (visible_ty != TY_UNKNOWN)
+        return visible_ty;
+    if (decl_type_ref_tag[decl_token] == TYPE_REF_SCALAR)
+        return decl_type_ref_payload[decl_token];
+    return fallback_ty;
+}
+
 uint decl_aggregate_kind(uint decl_token, uint semantic_ty)
 {
+    if (semantic_ty == TY_STRING)
+        return X86_DECL_AGG_STRING;
     uint len = 0u;
     if (array_len_for_decl(decl_token, len))
         return X86_DECL_AGG_ARRAY;
@@ -349,6 +370,8 @@ uint type_ref_width(uint tag, uint payload)
 uint method_receiver_width(uint fn_decl_token, uint decl_token)
 {
     if (!valid_token(fn_decl_token) || !valid_token(decl_token))
+        return 1u;
+    if (method_decl_receiver_mode[fn_decl_token] == METHOD_RECEIVER_NONE)
         return 1u;
     if (method_decl_param_offset[fn_decl_token] != decl_token)
         return 1u;
@@ -487,6 +510,40 @@ void write_param_reg_record(
         aggregate_kind);
 }
 
+void maybe_write_explicit_receiver_param_record(
+    uint fn_decl_token,
+    uint fn_node,
+    uint source_param_node,
+    uint fn_return_width,
+    uint ordinal)
+{
+    if (!valid_token(fn_decl_token) ||
+        method_decl_receiver_mode[fn_decl_token] != METHOD_RECEIVER_EXPLICIT)
+        return;
+
+    uint receiver_decl = method_decl_param_offset[fn_decl_token];
+    if (!valid_token(receiver_decl))
+        return;
+
+    uint abi_ordinal = fn_return_width > 1u ? 1u : 0u;
+    uint arg_reg = sysv_integer_arg_reg(abi_ordinal);
+    if (arg_reg == INVALID)
+        return;
+
+    uint semantic_ty = visible_type[receiver_decl];
+    uint width = method_receiver_width(fn_decl_token, receiver_decl);
+    uint aggregate_kind = decl_aggregate_kind(receiver_decl, semantic_ty);
+    write_param_reg_record_at(
+        receiver_decl,
+        fn_node,
+        source_param_node,
+        0u,
+        arg_reg,
+        width,
+        semantic_ty,
+        aggregate_kind);
+}
+
 void scatter_param_reg(uint param_node)
 {
     uint4 record = hir_param_record[param_node];
@@ -504,17 +561,23 @@ void scatter_param_reg(uint param_node)
         return;
     }
 
+    uint fn_decl_token = function_decl_token(fn_node);
+    if (!valid_token(fn_decl_token))
+        return;
+
     if (ordinal >= X86_SYSV_MAX_INTEGER_ARGS)
     {
         publish_param_reg_count_error(source_param_node);
         return;
     }
 
-    uint fn_decl_token = function_decl_token(fn_node);
-    if (!valid_token(fn_decl_token))
-        return;
-
     uint fn_return_width = function_return_width(fn_node);
+    maybe_write_explicit_receiver_param_record(
+        fn_decl_token,
+        fn_node,
+        source_param_node,
+        fn_return_width,
+        ordinal);
     uint abi_ordinal = ordinal + (fn_return_width > 1u ? 1u : 0u);
     uint arg_reg = sysv_integer_arg_reg(abi_ordinal);
     if (arg_reg == INVALID)
@@ -529,14 +592,13 @@ void scatter_param_reg(uint param_node)
         PARAM_CACHE_STRIDE,
         ordinal,
         TY_UNKNOWN);
+    uint semantic_ty = decl_semantic_type(decl_token, param_type);
     uint width = decl_is_unsized_array(decl_token)
                      ? 0u
                      : max(
-                           max(
-                               max(decl_type_width(decl_token), semantic_type_width(param_type)),
+                           max(decl_type_width(decl_token),
                                method_receiver_width(fn_decl_token, decl_token)),
                            1u);
-    uint semantic_ty = param_type != TY_UNKNOWN ? param_type : visible_type[decl_token];
     uint aggregate_kind = decl_aggregate_kind(decl_token, semantic_ty);
     write_param_reg_record(
         decl_token,

@@ -7,7 +7,9 @@ fn abs_i32(value: i32) -> i32 {
 }
 
 fn distance_weight(dx: i32, dy: i32) -> i32 {
-    let dist: i32 = abs_i32(dx) + abs_i32(dy);
+    let ax: i32 = abs_i32(dx);
+    let ay: i32 = abs_i32(dy);
+    let dist: i32 = ax + ay;
     let weight: i32 = 64 - dist;
     if (weight < 0) {
         return 0;
@@ -17,8 +19,10 @@ fn distance_weight(dx: i32, dy: i32) -> i32 {
 }
 
 fn grid_value(x: i32, y: i32) -> i32 {
-    let dx: i32 = x * 16 - 24;
-    let dy: i32 = y * 16 - 24;
+    let scaled_x: i32 = x * 16;
+    let scaled_y: i32 = y * 16;
+    let dx: i32 = scaled_x - 24;
+    let dy: i32 = scaled_y - 24;
     return distance_weight(dx, dy);
 }
 

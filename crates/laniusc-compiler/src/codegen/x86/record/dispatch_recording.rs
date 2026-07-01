@@ -59,6 +59,10 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) virtual_inst_clear_dispatch_args: &'a wgpu::BindGroup,
     pub(super) virtual_inst_clear: &'a wgpu::BindGroup,
     pub(super) node_inst_gen: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_function_params: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_host_calls: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_for_stmt: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_control_stmt: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_aggregate_copy: &'a wgpu::BindGroup,
     pub(super) aggregate_literal_return_copy_flags: &'a wgpu::BindGroup,
     pub(super) aggregate_literal_return_copy: &'a wgpu::BindGroup,
@@ -108,6 +112,10 @@ pub(super) fn record_instruction_dispatches(
         virtual_inst_clear_dispatch_args,
         virtual_inst_clear,
         node_inst_gen,
+        node_inst_gen_function_params,
+        node_inst_gen_host_calls,
+        node_inst_gen_for_stmt,
+        node_inst_gen_control_stmt,
         node_inst_gen_aggregate_copy,
         aggregate_literal_return_copy_flags,
         aggregate_literal_return_copy,
@@ -349,6 +357,34 @@ pub(super) fn record_instruction_dispatches(
     );
     dispatch_x86_stage_indirect(
         encoder,
+        "node_inst_gen_function_params",
+        &generator.node_inst_gen_function_params_pass,
+        node_inst_gen_function_params,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "node_inst_gen_host_calls",
+        &generator.node_inst_gen_host_calls_pass,
+        node_inst_gen_host_calls,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "node_inst_gen_for_stmt",
+        &generator.node_inst_gen_for_stmt_pass,
+        node_inst_gen_for_stmt,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "node_inst_gen_control_stmt",
+        &generator.node_inst_gen_control_stmt_pass,
+        node_inst_gen_control_stmt,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
         "node_inst_gen_aggregate_copy",
         &generator.node_inst_gen_aggregate_copy_pass,
         node_inst_gen_aggregate_copy,
@@ -411,6 +447,9 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) virtual_next_call_params: &'a UniformBindingArray,
     pub(super) virtual_regalloc_params: &'a UniformBindingArray,
     pub(super) text_scan_params: &'a UniformBindingArray,
+    pub(super) rodata_scan_params: &'a UniformBindingArray,
+    pub(super) active_hir_dispatch_args: &'a wgpu::Buffer,
+    pub(super) hir_scan_block: &'a wgpu::Buffer,
     pub(super) function_dispatch: &'a wgpu::Buffer,
     pub(super) virtual_inst: &'a wgpu::Buffer,
     pub(super) virtual_next_call_dispatch: &'a wgpu::Buffer,
@@ -441,6 +480,11 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) reloc_scan_local: &'a wgpu::BindGroup,
     pub(super) reloc_scan_block: &'a [wgpu::BindGroup],
     pub(super) reloc_records: &'a wgpu::BindGroup,
+    pub(super) rodata_sizes: &'a wgpu::BindGroup,
+    pub(super) rodata_scan_local: &'a wgpu::BindGroup,
+    pub(super) rodata_scan_block: &'a [wgpu::BindGroup],
+    pub(super) rodata_offsets: &'a wgpu::BindGroup,
+    pub(super) rodata_write: &'a wgpu::BindGroup,
     pub(super) output_dispatch_args: &'a wgpu::BindGroup,
     pub(super) encode: &'a wgpu::BindGroup,
     pub(super) reloc_patch: &'a wgpu::BindGroup,
@@ -460,6 +504,9 @@ pub(super) fn record_virtual_emit_dispatches(
         virtual_next_call_params,
         virtual_regalloc_params,
         text_scan_params,
+        rodata_scan_params,
+        active_hir_dispatch_args,
+        hir_scan_block,
         function_dispatch,
         virtual_inst,
         virtual_next_call_dispatch,
@@ -490,6 +537,11 @@ pub(super) fn record_virtual_emit_dispatches(
         reloc_scan_local,
         reloc_scan_block,
         reloc_records,
+        rodata_sizes,
+        rodata_scan_local,
+        rodata_scan_block,
+        rodata_offsets,
+        rodata_write,
         output_dispatch_args,
         encode,
         reloc_patch,
@@ -687,6 +739,37 @@ pub(super) fn record_virtual_emit_dispatches(
         selected_inst,
     );
     stamp_timer(timer, encoder, "x86.reloc_records.done");
+    dispatch_x86_stage_indirect(
+        encoder,
+        "rodata_sizes",
+        &generator.rodata_sizes_pass,
+        rodata_sizes,
+        active_hir_dispatch_args,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "rodata_scan_local",
+        &generator.rodata_scan_local_pass,
+        rodata_scan_local,
+        active_hir_dispatch_args,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "rodata_scan_blocks",
+        "codegen.x86.rodata_scan_blocks",
+        &generator.node_inst_scan_blocks_pass,
+        rodata_scan_block,
+        rodata_scan_params,
+        hir_scan_block,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "rodata_offsets",
+        &generator.rodata_offsets_pass,
+        rodata_offsets,
+        active_hir_dispatch_args,
+    );
+    stamp_timer(timer, encoder, "x86.rodata_offsets.done");
     dispatch_x86_stage(
         encoder,
         "output_dispatch_args",
@@ -726,6 +809,13 @@ pub(super) fn record_virtual_emit_dispatches(
         &generator.elf_write_pass,
         elf,
         elf_header_word,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "rodata_write",
+        &generator.rodata_write_pass,
+        rodata_write,
+        active_hir_dispatch_args,
     );
     stamp_timer(timer, encoder, "x86.emit.done");
 }

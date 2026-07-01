@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_name_token;
@@ -211,13 +212,24 @@ uint direct_node_type(uint node)
     if (hir_kind[node] == HIR_INDEX_EXPR || hir_kind[node] == HIR_MATCH_EXPR)
         return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
 
-    if (hir_kind[node] == HIR_CALL_EXPR && valid_token(token))
+    if (hir_kind[node] == HIR_CALL_EXPR)
     {
-        uint ty = call_return_type[token];
-        if (ty != TY_UNKNOWN)
-            return ty;
-        if (token > 0u)
-            return call_return_type[token - 1u];
+        uint callee_node = hir_call_callee_node[node];
+        if (valid_node(callee_node))
+        {
+            if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+            {
+                uint member_token = hir_member_name_token[callee_node];
+                return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
+            }
+
+            uint callee_token = hir_token_pos[callee_node];
+            uint callee_ty = valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
+            if (callee_ty != TY_UNKNOWN)
+                return callee_ty;
+        }
+
+        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
     }
 
     return TY_UNKNOWN;

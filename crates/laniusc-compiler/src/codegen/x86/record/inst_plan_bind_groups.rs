@@ -770,6 +770,10 @@ pub(super) fn create_inst_plan_bind_groups(
             ),
             ("x86_param_reg_record", param_reg_record.as_entire_binding()),
             (
+                "x86_struct_access_record",
+                struct_access_record.as_entire_binding(),
+            ),
+            (
                 "x86_expr_semantic_record",
                 expr_semantic_type_a.as_entire_binding(),
             ),
@@ -897,6 +901,10 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "x86_node_inst_gen_input_status",
                 node_inst_gen_input_status.as_entire_binding(),
+            ),
+            (
+                "x86_node_inst_count_status",
+                node_inst_count_status.as_entire_binding(),
             ),
             (
                 "active_node_inst_gen_dispatch_args",

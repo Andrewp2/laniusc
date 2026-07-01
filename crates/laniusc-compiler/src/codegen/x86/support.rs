@@ -1116,6 +1116,15 @@ fn x86_error_name(error_code: usize, error_detail: usize) -> &'static str {
         error if error == X86_ERR_NESTED_AGGREGATE_MEMBER as usize => {
             "unsupported x86 nested aggregate member"
         }
+        error if error == super::X86_ERR_RODATA_SIZE as usize => {
+            "unsupported x86 rodata size planning"
+        }
+        error if error == super::X86_ERR_RODATA_OFFSET as usize => {
+            "unsupported x86 rodata offset planning"
+        }
+        error if error == super::X86_ERR_RODATA_WRITE as usize => {
+            "unsupported x86 rodata byte emission"
+        }
         _ => "unsupported source shape",
     }
 }
@@ -1165,7 +1174,7 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         x86_readback_timeout(),
     )?;
     let data = readback.slice(..).get_mapped_range();
-    let words: [u32; 114] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
+    let words: [u32; 120] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
     drop(data);
     readback.unmap();
 
@@ -1195,7 +1204,7 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         ("enum_records", 4usize),
         ("struct_records", 4),
         ("decl_layout", 4),
-        ("node_inst_count", 4),
+        ("node_inst_count", 5),
         ("node_inst_order", 4),
         ("node_inst_range", 4),
         ("node_inst_subtree_bounds", 4),
@@ -1210,6 +1219,8 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         ("select", 4),
         ("size", 4),
         ("text", 4),
+        ("rodata", 4),
+        ("rodata_len", 1),
         ("reloc", 4),
         ("encode", 4),
         ("elf_layout", 4),

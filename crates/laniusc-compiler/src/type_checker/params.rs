@@ -183,17 +183,21 @@ pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
 /// Maximum number of source bytes inspected for one compacted name key.
 pub(in crate::type_checker) const NAME_RADIX_MAX_BYTES: u32 = 64;
 /// Number of builtin symbols materialized before user names are resolved.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 20;
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 53;
 /// Concatenated builtin symbol spelling table.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_BYTES: &[u8] =
-    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_";
+    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptr";
 /// Start offsets into `LANGUAGE_SYMBOL_BYTES` for each builtin symbol.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_STARTS: &[u32] = &[
-    0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73,
+    0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73, 74, 88, 103, 111,
+    121, 130, 140, 153, 163, 173, 177, 187, 192, 199, 203, 210, 218, 230, 246, 255, 266, 278, 285,
+    293, 298, 302, 307, 316, 326, 337, 349, 361, 371,
 ];
 /// Byte lengths for each builtin symbol spelling.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] =
-    &[4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1];
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] = &[
+    4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1, 14, 15, 8, 10, 9, 10, 13, 10, 10,
+    4, 10, 5, 7, 4, 7, 8, 12, 16, 9, 11, 12, 7, 8, 5, 4, 5, 9, 10, 11, 12, 12, 10, 18,
+];
 /// Number of language declarations materialized from builtin symbols.
 pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 19;
 const LANGUAGE_DECL_KIND_ENTRYPOINT: u32 = 1;

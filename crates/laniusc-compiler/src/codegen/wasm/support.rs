@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 
-use super::{WasmOutputError, WasmParams, WasmScanParams};
+use super::{WASM_BODY_PLAN_WORDS, WasmOutputError, WasmParams, WasmScanParams};
 use crate::gpu::buffers::LaniusBuffer;
 
 /// Emits a WASM backend trace line when `LANIUS_WASM_TRACE` is enabled.
@@ -40,13 +40,14 @@ pub(super) fn body_status_init_bytes() -> [u8; 16] {
 /// Returns initial body-plan aggregate/final words.
 pub(super) fn body_plan_init_bytes() -> Vec<u8> {
     const INVALID: u32 = u32::MAX;
-    let mut words = [0u32; 24];
+    let mut words = [0u32; WASM_BODY_PLAN_WORDS];
     words[1] = INVALID;
     words[2] = INVALID;
     words[7] = INVALID;
     words[9] = INVALID;
     words[13] = INVALID;
     words[23] = INVALID;
+    words[34] = INVALID;
 
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for word in words {
@@ -180,7 +181,8 @@ fn trace_body_plan_readback(
     )?;
 
     let data = body_plan_readback.slice(..).get_mapped_range();
-    let words: [u32; 24] = crate::gpu::readback::read_u32_words(&data, "WASM body plan")?;
+    let words: [u32; WASM_BODY_PLAN_WORDS] =
+        crate::gpu::readback::read_u32_words(&data, "WASM body plan")?;
     drop(data);
     body_plan_readback.unmap();
     eprintln!("[laniusc][wasm-codegen] readback.body_plan words={words:?}");

@@ -590,25 +590,18 @@ void resolve_method_member_node(uint member_node)
         return;
 
     if (method_call_name_id[method_i] == INVALID)
-    {
-        record_error(2u, ERR_CALL_MISMATCH, 9102u);
         return;
-    }
 
     uint fn_i = call_fn_index[method_i];
     if (fn_i == INVALID || fn_i >= active_token_count())
     {
-        record_error(3u, ERR_CALL_MISMATCH, 9103u);
         record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
         return;
     }
 
     uint receiver_i = receiver_token_for_member(member_node);
     if (receiver_i == INVALID || receiver_i >= active_token_count())
-    {
-        record_error(4u, ERR_CALL_MISMATCH, 9104u);
         return;
-    }
     uint receiver_ty = visible_type[receiver_i];
     if (receiver_ty == TY_UNKNOWN)
         receiver_ty = call_return_type[receiver_i];
@@ -630,23 +623,14 @@ void resolve_method_member_node(uint member_node)
     if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
         is_generic_type(ret_ty))
     {
-        record_error(5u, ERR_CALL_MISMATCH, 9105u);
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
         return;
     }
-    if (ret_ty == TY_VOID)
-        record_error(7u, ERR_CALL_MISMATCH, ret_ty);
-    else if (ret_ty == TY_INT)
-        record_error(8u, ERR_CALL_MISMATCH, ret_ty);
-    else
-        record_error(9u, ERR_CALL_MISMATCH, ret_ty);
     call_fn_index[method_i] = fn_i;
     call_return_type[method_i] = ret_ty;
     call_return_type_token[method_i] = ret_token;
     if (ret_ty != TY_UNKNOWN)
         visible_type[method_i] = ret_ty;
-    if (call_return_type[receiver_i] != TY_UNKNOWN)
-        call_return_type[receiver_i] = ret_ty;
 
     validate_method_args(method_i, fn_i, receiver_ty, call_node);
 }

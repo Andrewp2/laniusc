@@ -215,7 +215,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_kind", path_kind.as_entire_binding()),
             ("path_segment_count", path_segment_count.as_entire_binding()),
@@ -341,11 +340,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("gParams", params.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("parent", hir_items.parent.as_entire_binding()),
+            ("first_child", hir_items.first_child.as_entire_binding()),
             ("next_sibling", hir_items.next_sibling.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
             (
                 "hir_type_path_leaf_node",
                 hir_items.type_path_leaf_node.as_entire_binding(),
@@ -366,10 +365,12 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 "path_id_by_owner_token",
                 path_id_by_owner_token.as_entire_binding(),
             ),
+            ("path_owner_token", path_owner_token.as_entire_binding()),
             ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
             ("path_segment_count", path_segment_count.as_entire_binding()),
             ("path_segment_base", path_segment_base.as_entire_binding()),
             ("path_segment_token", path_segment_token.as_entire_binding()),
+            ("name_id_by_token", name_id_by_token.as_entire_binding()),
             (
                 "module_value_path_call_head",
                 module_value_path_call_head.as_entire_binding(),
@@ -472,7 +473,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 "module_value_path_associated_method_token",
                 module_value_path_associated_method_token.as_entire_binding(),
             ),
-            ("token_words", token_buf.as_entire_binding()),
             (
                 "module_value_path_status",
                 module_value_path_status.as_entire_binding(),
@@ -523,7 +523,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             ("call_arg_record", call_arg_record.as_entire_binding()),
             ("call_arg_row_count", call_arg_row_count.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
             (
                 "module_value_path_call_head",
                 module_value_path_call_head.as_entire_binding(),
@@ -1044,6 +1043,10 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("node_kind", hir_items.node_kind.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            (
+                "hir_call_callee_node",
+                hir_items.call_callee_node.as_entire_binding(),
+            ),
             ("hir_expr_record", hir_items.expr_record.as_entire_binding()),
             (
                 "hir_expr_result_root_node",

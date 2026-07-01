@@ -1001,7 +1001,7 @@ fn main() {
 fn type_checker_accepts_loop_control_inside_nested_hir_control_contexts() {
     assert_gpu_type_check_ok(
         r#"
-fn main(limit: i32) {
+fn main(limit: i32) -> i32 {
     let i: i32 = 0;
     while (i < limit) {
         i += 1;
@@ -1012,6 +1012,7 @@ fn main(limit: i32) {
             break;
         }
     }
+    return i;
 }
 "#,
     );

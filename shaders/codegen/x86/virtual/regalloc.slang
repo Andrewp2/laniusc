@@ -85,8 +85,8 @@ static const uint FUNC_META_REGALLOC_RECORDED_CHUNKS = 7u;
 // is intentionally small and fail-closed; source scaling is carried by the
 // recorded regalloc chunk count, not by this shader loop bound.
 static const uint REGALLOC_LOCAL_CHUNK_WIDTH = 32u;
-static const int X86_TEMP_REG_RANK_COUNT = 14;
-static const uint X86_TEMP_REG_RANK_MASK = 0x3fffu;
+static const int X86_TEMP_REG_RANK_COUNT = 13;
+static const uint X86_TEMP_REG_RANK_MASK = 0x1fffu;
 static const uint X86_RANK_MASK_EAX = 0x0001u;
 static const uint X86_RANK_MASK_R10D = 0x0002u;
 static const uint X86_RANK_MASK_R8D = 0x0004u;
@@ -151,7 +151,6 @@ uint temp_register_for_rank(uint rank)
     if (rank == 10u) return X86_REG_R12D;
     if (rank == 11u) return X86_REG_R13D;
     if (rank == 12u) return X86_REG_R14D;
-    if (rank == 13u) return X86_REG_R15D;
     return INVALID;
 }
 
@@ -190,6 +189,26 @@ uint call_live_mask_for_rank(uint rank)
     if (rank == 7u) return 1u << 3u; // EDI
     if (rank == 8u) return 1u << 7u; // R11D
     return 0u;
+}
+
+uint call_live_mask_for_rank_mask(uint rank_mask)
+{
+    uint mask = 0u;
+    if ((rank_mask & (1u << 0u)) != 0u) mask |= call_live_mask_for_rank(0u);
+    if ((rank_mask & (1u << 1u)) != 0u) mask |= call_live_mask_for_rank(1u);
+    if ((rank_mask & (1u << 2u)) != 0u) mask |= call_live_mask_for_rank(2u);
+    if ((rank_mask & (1u << 3u)) != 0u) mask |= call_live_mask_for_rank(3u);
+    if ((rank_mask & (1u << 4u)) != 0u) mask |= call_live_mask_for_rank(4u);
+    if ((rank_mask & (1u << 5u)) != 0u) mask |= call_live_mask_for_rank(5u);
+    if ((rank_mask & (1u << 6u)) != 0u) mask |= call_live_mask_for_rank(6u);
+    if ((rank_mask & (1u << 7u)) != 0u) mask |= call_live_mask_for_rank(7u);
+    if ((rank_mask & (1u << 8u)) != 0u) mask |= call_live_mask_for_rank(8u);
+    if ((rank_mask & (1u << 9u)) != 0u) mask |= call_live_mask_for_rank(9u);
+    if ((rank_mask & (1u << 10u)) != 0u) mask |= call_live_mask_for_rank(10u);
+    if ((rank_mask & (1u << 11u)) != 0u) mask |= call_live_mask_for_rank(11u);
+    if ((rank_mask & (1u << 12u)) != 0u) mask |= call_live_mask_for_rank(12u);
+    if ((rank_mask & (1u << 13u)) != 0u) mask |= call_live_mask_for_rank(13u);
+    return mask;
 }
 
 uint active_rank_available_bit(uint start, uint active_end[X86_TEMP_REG_RANK_COUNT], uint rank)
@@ -506,7 +525,6 @@ void load_active_end(uint func_i, inout uint active_end[X86_TEMP_REG_RANK_COUNT]
     active_end[10u] = load_active_end_rank(func_i, 10u);
     active_end[11u] = load_active_end_rank(func_i, 11u);
     active_end[12u] = load_active_end_rank(func_i, 12u);
-    active_end[13u] = load_active_end_rank(func_i, 13u);
 }
 
 void store_active_end(uint func_i, uint active_end[X86_TEMP_REG_RANK_COUNT])
@@ -524,14 +542,14 @@ void store_active_end(uint func_i, uint active_end[X86_TEMP_REG_RANK_COUNT])
     x86_virtual_regalloc_active_end[active_end_slot(func_i, 10u)] = active_end[10u];
     x86_virtual_regalloc_active_end[active_end_slot(func_i, 11u)] = active_end[11u];
     x86_virtual_regalloc_active_end[active_end_slot(func_i, 12u)] = active_end[12u];
-    x86_virtual_regalloc_active_end[active_end_slot(func_i, 13u)] = active_end[13u];
 }
 
 uint load_param_rank_mask(uint func_i, uint fn_slot)
 {
-    return gRegalloc.chunk_start == 0u
+    uint mask = gRegalloc.chunk_start == 0u
         ? param_disallowed_rank_mask(x86_func_param_reg_mask[fn_slot])
         : x86_virtual_regalloc_param_rank_mask[func_i];
+    return mask | rank_mask_for_register(X86_REG_EDI);
 }
 
 void activate_rank(uint selected_rank, uint end, inout uint active_end[X86_TEMP_REG_RANK_COUNT])
@@ -549,7 +567,6 @@ void activate_rank(uint selected_rank, uint end, inout uint active_end[X86_TEMP_
     if (selected_rank == 10u) active_end[10u] = end;
     if (selected_rank == 11u) active_end[11u] = end;
     if (selected_rank == 12u) active_end[12u] = end;
-    if (selected_rank == 13u) active_end[13u] = end;
 }
 
 bool allocate_virtual_row(
@@ -573,7 +590,7 @@ bool allocate_virtual_row(
         uint call_live_mask = 0u;
         active_rank_masks(start, call_result, active_end, available_rank_mask, call_live_mask);
         if (call_result)
-            x86_virtual_call_live_reg_mask[row] = call_live_mask;
+            x86_virtual_call_live_reg_mask[row] = call_live_mask | call_live_mask_for_rank_mask(current_param_rank_mask);
 
         uint candidate_rank_mask = available_rank_mask &
             ~disallowed_rank_mask(

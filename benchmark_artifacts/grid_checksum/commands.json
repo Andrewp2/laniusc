@@ -1,0 +1,70 @@
+{
+  "commands": {
+    "c": {
+      "compile": [
+        "gcc",
+        "-O2",
+        "benchmark_artifacts/grid_checksum/src/grid_checksum.c",
+        "-o",
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_c"
+      ],
+      "run": [
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_c"
+      ]
+    },
+    "cpp": {
+      "compile": [
+        "g++",
+        "-O2",
+        "benchmark_artifacts/grid_checksum/src/grid_checksum.cpp",
+        "-o",
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_cpp"
+      ],
+      "run": [
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_cpp"
+      ]
+    },
+    "lanius": {
+      "compile": [
+        "target/debug/laniusc",
+        "--stdlib-root",
+        "stdlib",
+        "--emit",
+        "x86_64",
+        "-o",
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_lanius",
+        "benchmark_artifacts/grid_checksum/src/grid_checksum.lani"
+      ],
+      "run": [
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_lanius"
+      ]
+    },
+    "rust": {
+      "compile": [
+        "rustc",
+        "-O",
+        "benchmark_artifacts/grid_checksum/src/grid_checksum.rs",
+        "-o",
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_rust"
+      ],
+      "run": [
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_rust"
+      ]
+    },
+    "zig": {
+      "compile": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "benchmark_artifacts/grid_checksum/src/grid_checksum.zig",
+        "-femit-bin=target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_zig"
+      ],
+      "run": [
+        "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_zig"
+      ]
+    }
+  },
+  "schema": "lanius.benchmark-commands.v1"
+}

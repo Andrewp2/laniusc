@@ -1,0 +1,68 @@
+module app::main;
+
+import alloc::allocator;
+import std::env;
+import std::io;
+import std::process;
+import std::random;
+import std::time;
+
+fn main() -> i32 {
+    let capacity: usize = 256;
+    let capacity_i32: i32 = 256;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 1;
+    }
+
+    let arg_count: i32 = std::process::argc();
+    if (arg_count < 1) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 2;
+    }
+    let first_arg_len: i32 = std::process::arg_len(0);
+    if (first_arg_len <= 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 3;
+    }
+
+    let cwd_len: i32 = std::env::current_dir_read(ptr, capacity);
+    if (cwd_len <= 0 || cwd_len > capacity_i32) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 4;
+    }
+
+    let var_count: i32 = std::env::var_count();
+    if (var_count < 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 5;
+    }
+    if (var_count > 0) {
+        let first_key_len: i32 = std::env::var_key_len(0);
+        if (first_key_len <= 0) {
+            alloc::allocator::dealloc(ptr, capacity, align);
+            return 6;
+        }
+        let first_key_read: i32 = std::env::var_key_read(0, ptr, capacity);
+        if (first_key_read <= 0 || first_key_read > capacity_i32) {
+            alloc::allocator::dealloc(ptr, capacity, align);
+            return 7;
+        }
+    }
+
+    let seconds: i32 = std::time::unix_seconds();
+    if (seconds <= 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 8;
+    }
+
+    let random_value: u32 = std::random::secure_u32();
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (random_value != random_value) {
+        return 9;
+    }
+
+    std::io::print_i32(99);
+    return 0;
+}

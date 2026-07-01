@@ -92,3 +92,7 @@ pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
         return when_false;
     }
 }
+
+pub fn i32_array_data_ptr<const N: usize>(values: [i32; N]) -> u32 {
+    return 0;
+}

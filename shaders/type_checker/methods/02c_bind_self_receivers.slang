@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> method_decl_param_offset;
+StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 
@@ -35,6 +36,7 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint METHOD_RECEIVER_NONE = 0u;
 
 static const uint HIR_MEMBER_EXPR = 21u;
 
@@ -74,6 +76,8 @@ void bind_self_token(uint self_token)
 
     uint fn_token = enclosing_function_token_for_receiver(self_token);
     if (!valid_token(fn_token))
+        return;
+    if (method_decl_receiver_mode[fn_token] == METHOD_RECEIVER_NONE)
         return;
 
     uint self_decl = method_decl_param_offset[fn_token];

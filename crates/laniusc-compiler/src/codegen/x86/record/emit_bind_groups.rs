@@ -3,6 +3,7 @@ use anyhow::Result;
 use super::{
     super::{
         GpuX86CodeGenerator,
+        GpuX86ExprMetadataBuffers,
         support::{UniformBindingArray, reflected_bind_group},
     },
     bind_helpers::scan_block_groups,
@@ -19,6 +20,11 @@ pub(super) struct EmitBindGroups {
     pub(super) reloc_scan_local: wgpu::BindGroup,
     pub(super) reloc_scan_block: Vec<wgpu::BindGroup>,
     pub(super) reloc_records: wgpu::BindGroup,
+    pub(super) rodata_sizes: wgpu::BindGroup,
+    pub(super) rodata_scan_local: wgpu::BindGroup,
+    pub(super) rodata_scan_block: Vec<wgpu::BindGroup>,
+    pub(super) rodata_offsets: wgpu::BindGroup,
+    pub(super) rodata_write: wgpu::BindGroup,
     pub(super) encode: wgpu::BindGroup,
     pub(super) reloc_patch: wgpu::BindGroup,
     pub(super) elf_layout: wgpu::BindGroup,
@@ -29,6 +35,10 @@ pub(super) struct EmitBindGroups {
 pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
+    pub(super) rodata_scan_params: &'a UniformBindingArray,
+    pub(super) source_bytes: &'a wgpu::Buffer,
+    pub(super) hir_status: &'a wgpu::Buffer,
+    pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) func_meta: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) virtual_inst_record: &'a wgpu::Buffer,
@@ -39,6 +49,7 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) virtual_regalloc_status: &'a wgpu::Buffer,
     pub(super) virtual_func_first_row: &'a wgpu::Buffer,
     pub(super) virtual_func_first_row_status: &'a wgpu::Buffer,
+    pub(super) func_param_reg_mask: &'a wgpu::Buffer,
     pub(super) virtual_func_slot: &'a wgpu::Buffer,
     pub(super) virtual_value_def_flag: &'a wgpu::Buffer,
     pub(super) inst_kind: &'a wgpu::Buffer,
@@ -54,6 +65,14 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) text_scan_prefix_a: &'a wgpu::Buffer,
     pub(super) text_scan_prefix_b: &'a wgpu::Buffer,
     pub(super) text_len: &'a wgpu::Buffer,
+    pub(super) rodata_len: &'a wgpu::Buffer,
+    pub(super) rodata_size_by_node: &'a wgpu::Buffer,
+    pub(super) rodata_offset_by_node: &'a wgpu::Buffer,
+    pub(super) rodata_status: &'a wgpu::Buffer,
+    pub(super) rodata_scan_local_prefix: &'a wgpu::Buffer,
+    pub(super) rodata_scan_block_sum: &'a wgpu::Buffer,
+    pub(super) rodata_scan_prefix_a: &'a wgpu::Buffer,
+    pub(super) rodata_scan_prefix_b: &'a wgpu::Buffer,
     pub(super) text_status: &'a wgpu::Buffer,
     pub(super) reloc_count: &'a wgpu::Buffer,
     pub(super) reloc_kind: &'a wgpu::Buffer,
@@ -76,6 +95,10 @@ pub(super) fn create_emit_bind_groups(
     let EmitBindGroupInputs {
         params,
         text_scan_params,
+        rodata_scan_params,
+        source_bytes,
+        hir_status,
+        expr_metadata,
         func_meta,
         decl_layout_status,
         virtual_inst_record,
@@ -86,6 +109,7 @@ pub(super) fn create_emit_bind_groups(
         virtual_regalloc_status,
         virtual_func_first_row,
         virtual_func_first_row_status,
+        func_param_reg_mask,
         virtual_func_slot,
         virtual_value_def_flag,
         inst_kind,
@@ -101,6 +125,14 @@ pub(super) fn create_emit_bind_groups(
         text_scan_prefix_a,
         text_scan_prefix_b,
         text_len,
+        rodata_len,
+        rodata_size_by_node,
+        rodata_offset_by_node,
+        rodata_status,
+        rodata_scan_local_prefix,
+        rodata_scan_block_sum,
+        rodata_scan_prefix_a,
+        rodata_scan_prefix_b,
         text_status,
         reloc_count,
         reloc_kind,
@@ -149,6 +181,10 @@ pub(super) fn create_emit_bind_groups(
             (
                 "x86_func_first_virtual_row_status",
                 virtual_func_first_row_status.as_entire_binding(),
+            ),
+            (
+                "x86_func_param_reg_mask",
+                func_param_reg_mask.as_entire_binding(),
             ),
             (
                 "x86_decl_layout_status",
@@ -324,6 +360,101 @@ pub(super) fn create_emit_bind_groups(
             ("reloc_status", reloc_status.as_entire_binding()),
         ],
     )?;
+    let rodata_sizes = reflected_bind_group(
+        device,
+        Some("codegen.x86.rodata_sizes.bind_group"),
+        &generator.rodata_sizes_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("source_bytes", source_bytes.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_string_start",
+                expr_metadata.string_start.as_entire_binding(),
+            ),
+            (
+                "hir_expr_string_len",
+                expr_metadata.string_len.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            ("x86_rodata_status", rodata_status.as_entire_binding()),
+        ],
+    )?;
+    let rodata_scan_local = reflected_bind_group(
+        device,
+        Some("codegen.x86.rodata_scan_local.bind_group"),
+        &generator.rodata_scan_local_pass,
+        0,
+        &[
+            ("gScan", rodata_scan_params.binding(0)),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            ("x86_rodata_status", rodata_status.as_entire_binding()),
+            (
+                "x86_rodata_scan_local_prefix",
+                rodata_scan_local_prefix.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_scan_block_sum",
+                rodata_scan_block_sum.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let rodata_scan_block = scan_block_groups(
+        device,
+        [
+            "codegen.x86.rodata_scan_blocks.even.bind_group",
+            "codegen.x86.rodata_scan_blocks.odd.bind_group",
+        ],
+        &generator.node_inst_scan_blocks_pass,
+        rodata_scan_params,
+        "gNodeInstBlockScan",
+        "x86_node_inst_scan_block_sum",
+        "x86_node_inst_scan_block_prefix_in",
+        "x86_node_inst_scan_block_prefix_out",
+        rodata_scan_block_sum,
+        rodata_scan_prefix_a,
+        rodata_scan_prefix_b,
+    )?;
+    let final_rodata_scan_prefix = final_ping_pong_scan_prefix(
+        rodata_scan_params,
+        rodata_scan_prefix_a,
+        rodata_scan_prefix_b,
+    );
+    let rodata_offsets = reflected_bind_group(
+        device,
+        Some("codegen.x86.rodata_offsets.bind_group"),
+        &generator.rodata_offsets_pass,
+        0,
+        &[
+            ("gScan", rodata_scan_params.binding(0)),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_scan_local_prefix",
+                rodata_scan_local_prefix.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_scan_block_prefix",
+                final_rodata_scan_prefix.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_offset_by_node",
+                rodata_offset_by_node.as_entire_binding(),
+            ),
+            ("x86_rodata_len", rodata_len.as_entire_binding()),
+            ("x86_rodata_status", rodata_status.as_entire_binding()),
+        ],
+    )?;
     let encode = reflected_bind_group(
         device,
         Some("codegen.x86.encode.bind_group"),
@@ -342,6 +473,14 @@ pub(super) fn create_emit_bind_groups(
                 decl_layout_status.as_entire_binding(),
             ),
             ("x86_text_len", text_len.as_entire_binding()),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_offset_by_node",
+                rodata_offset_by_node.as_entire_binding(),
+            ),
             ("text_status", text_status.as_entire_binding()),
             ("reloc_status", reloc_status.as_entire_binding()),
             ("out_words", out.as_entire_binding()),
@@ -387,6 +526,7 @@ pub(super) fn create_emit_bind_groups(
         &[
             ("gParams", params.as_entire_binding()),
             ("x86_text_len", text_len.as_entire_binding()),
+            ("x86_rodata_len", rodata_len.as_entire_binding()),
             ("encode_status", encode_status.as_entire_binding()),
             ("x86_elf_layout", elf_layout.as_entire_binding()),
             ("layout_status", layout_status.as_entire_binding()),
@@ -405,6 +545,39 @@ pub(super) fn create_emit_bind_groups(
             ("status", status.as_entire_binding()),
         ],
     )?;
+    let rodata_write = reflected_bind_group(
+        device,
+        Some("codegen.x86.rodata_write.bind_group"),
+        &generator.rodata_write_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("source_bytes", source_bytes.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            (
+                "hir_expr_string_start",
+                expr_metadata.string_start.as_entire_binding(),
+            ),
+            (
+                "hir_expr_string_len",
+                expr_metadata.string_len.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_offset_by_node",
+                rodata_offset_by_node.as_entire_binding(),
+            ),
+            ("x86_rodata_len", rodata_len.as_entire_binding()),
+            ("x86_rodata_status", rodata_status.as_entire_binding()),
+            ("x86_elf_layout", elf_layout.as_entire_binding()),
+            ("layout_status", layout_status.as_entire_binding()),
+            ("out_words", out.as_entire_binding()),
+            ("status", status.as_entire_binding()),
+        ],
+    )?;
 
     Ok(EmitBindGroups {
         select,
@@ -415,6 +588,11 @@ pub(super) fn create_emit_bind_groups(
         reloc_scan_local,
         reloc_scan_block,
         reloc_records,
+        rodata_sizes,
+        rodata_scan_local,
+        rodata_scan_block,
+        rodata_offsets,
+        rodata_write,
         encode,
         reloc_patch,
         elf_layout: elf_layout_bind_group,

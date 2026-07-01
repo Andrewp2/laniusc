@@ -8,6 +8,7 @@ pub type ClockCapability = bool;
 pub type ClockRuntimeAbiVersion = u32;
 pub type ClockServiceId = u32;
 pub type ClockServiceStatus = u32;
+pub type ClockSecondsResult = i32;
 pub type ClockReadResult = i64;
 pub type ClockSleepResult = i32;
 
@@ -15,6 +16,8 @@ pub const CLOCK_RUNTIME_ABI_VERSION: ClockRuntimeAbiVersion = 1;
 pub const CLOCK_SERVICE_ID: ClockServiceId = 4;
 pub const CLOCK_SERVICE_STATUS_UNAVAILABLE: ClockServiceStatus = 1;
 pub const CLOCK_HAS_RUNTIME_BINDING: ClockCapability = false;
+pub const CLOCK_UNIX_SECONDS_HAS_RUNTIME_BINDING: ClockCapability = true;
+pub const CLOCK_SECONDS_UNAVAILABLE: ClockSecondsResult = -1;
 pub const CLOCK_READ_UNAVAILABLE: ClockReadResult = -1;
 pub const CLOCK_SLEEP_OK: ClockSleepResult = 0;
 pub const CLOCK_SLEEP_UNAVAILABLE: ClockSleepResult = -1;
@@ -48,7 +51,10 @@ pub fn clock_is_blocked() -> ClockCapability {
 }
 
 pub fn clock_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && clock_is_blocked();
+    if (clock_service_is_known()) {
+        return clock_is_blocked();
+    }
+    return false;
 }
 
 pub fn clock_requires_runtime_binding() -> ClockCapability {
@@ -68,7 +74,10 @@ pub fn clock_read_api_is_blocked() -> ClockCapability {
 }
 
 pub fn clock_read_api_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && clock_read_api_is_blocked();
+    if (clock_service_is_known()) {
+        return clock_read_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn clock_read_api_requires_runtime_binding() -> ClockCapability {
@@ -77,6 +86,22 @@ pub fn clock_read_api_requires_runtime_binding() -> ClockCapability {
 
 pub fn clock_read_unavailable() -> ClockReadResult {
     return CLOCK_READ_UNAVAILABLE;
+}
+
+pub fn clock_seconds_unavailable() -> ClockSecondsResult {
+    return CLOCK_SECONDS_UNAVAILABLE;
+}
+
+pub fn clock_seconds_result_succeeded(result: ClockSecondsResult) -> ClockCapability {
+    return result >= 0;
+}
+
+pub fn clock_seconds_result_failed(result: ClockSecondsResult) -> ClockCapability {
+    return result < 0;
+}
+
+pub fn clock_seconds_result_is_unavailable(result: ClockSecondsResult) -> ClockCapability {
+    return result == CLOCK_SECONDS_UNAVAILABLE;
 }
 
 pub fn clock_read_result_succeeded(result: ClockReadResult) -> ClockCapability {
@@ -92,7 +117,10 @@ pub fn clock_read_result_is_unavailable(result: ClockReadResult) -> ClockCapabil
 }
 
 pub fn clock_read_result_is_fail_closed(result: ClockReadResult) -> ClockCapability {
-    return clock_read_api_is_known_but_unbound() && clock_read_result_is_unavailable(result);
+    if (clock_read_api_is_known_but_unbound()) {
+        return clock_read_result_is_unavailable(result);
+    }
+    return false;
 }
 
 pub fn clock_sleep_api_is_executable() -> ClockCapability {
@@ -104,7 +132,10 @@ pub fn clock_sleep_api_is_blocked() -> ClockCapability {
 }
 
 pub fn clock_sleep_api_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && clock_sleep_api_is_blocked();
+    if (clock_service_is_known()) {
+        return clock_sleep_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn clock_sleep_api_requires_runtime_binding() -> ClockCapability {
@@ -132,7 +163,10 @@ pub fn clock_sleep_result_is_unavailable(result: ClockSleepResult) -> ClockCapab
 }
 
 pub fn clock_sleep_result_is_fail_closed(result: ClockSleepResult) -> ClockCapability {
-    return clock_sleep_api_is_known_but_unbound() && clock_sleep_result_is_unavailable(result);
+    if (clock_sleep_api_is_known_but_unbound()) {
+        return clock_sleep_result_is_unavailable(result);
+    }
+    return false;
 }
 
 pub fn monotonic_now_ns_is_executable() -> ClockCapability {
@@ -144,7 +178,10 @@ pub fn monotonic_now_ns_is_blocked() -> ClockCapability {
 }
 
 pub fn monotonic_now_ns_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && monotonic_now_ns_is_blocked();
+    if (clock_service_is_known()) {
+        return monotonic_now_ns_is_blocked();
+    }
+    return false;
 }
 
 pub fn monotonic_now_ns_requires_runtime_binding() -> ClockCapability {
@@ -160,11 +197,33 @@ pub fn system_now_unix_ms_is_blocked() -> ClockCapability {
 }
 
 pub fn system_now_unix_ms_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && system_now_unix_ms_is_blocked();
+    if (clock_service_is_known()) {
+        return system_now_unix_ms_is_blocked();
+    }
+    return false;
 }
 
 pub fn system_now_unix_ms_requires_runtime_binding() -> ClockCapability {
     return !system_now_unix_ms_is_executable();
+}
+
+pub fn unix_seconds_is_executable() -> ClockCapability {
+    return CLOCK_UNIX_SECONDS_HAS_RUNTIME_BINDING;
+}
+
+pub fn unix_seconds_is_blocked() -> ClockCapability {
+    return !unix_seconds_is_executable();
+}
+
+pub fn unix_seconds_is_known_but_unbound() -> ClockCapability {
+    if (clock_service_is_known()) {
+        return unix_seconds_is_blocked();
+    }
+    return false;
+}
+
+pub fn unix_seconds_requires_runtime_binding() -> ClockCapability {
+    return !unix_seconds_is_executable();
 }
 
 pub fn sleep_ms_is_executable() -> ClockCapability {
@@ -176,7 +235,10 @@ pub fn sleep_ms_is_blocked() -> ClockCapability {
 }
 
 pub fn sleep_ms_is_known_but_unbound() -> ClockCapability {
-    return clock_service_is_known() && sleep_ms_is_blocked();
+    if (clock_service_is_known()) {
+        return sleep_ms_is_blocked();
+    }
+    return false;
 }
 
 pub fn sleep_ms_requires_runtime_binding() -> ClockCapability {
@@ -186,5 +248,7 @@ pub fn sleep_ms_requires_runtime_binding() -> ClockCapability {
 pub extern "lanius_std" fn monotonic_now_ns() -> ClockReadResult;
 
 pub extern "lanius_std" fn system_now_unix_ms() -> ClockReadResult;
+
+pub extern "lanius_std" fn unix_seconds() -> ClockSecondsResult;
 
 pub extern "lanius_std" fn sleep_ms(milliseconds: i64) -> ClockSleepResult;

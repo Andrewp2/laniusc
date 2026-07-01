@@ -88,12 +88,14 @@ static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_STRING = 7u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint X86_DECL_AGG_ARRAY = 1u;
 static const uint X86_DECL_AGG_ENUM = 2u;
 static const uint X86_DECL_AGG_STRUCT = 3u;
+static const uint X86_DECL_AGG_STRING = 4u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
@@ -316,6 +318,8 @@ bool struct_width_for_decl(uint decl_token, out uint width)
 
 uint semantic_type_storage_width(uint ty)
 {
+    if (ty == TY_STRING)
+        return 2u;
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
         return 2u;
     if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
@@ -372,6 +376,10 @@ uint width_for_decl(uint decl_token)
         return max(
             type_instance_storage_width(decl_type_ref_payload[decl_token]),
             semantic_type_storage_width(visible_type[decl_token]));
+    if (decl_type_ref_tag[decl_token] == TYPE_REF_SCALAR)
+        return max(
+            semantic_type_storage_width(decl_type_ref_payload[decl_token]),
+            semantic_type_storage_width(visible_type[decl_token]));
     uint enum_width = 0u;
     if (enum_width_for_decl(decl_token, enum_width))
         return max(enum_width, visible_type[decl_token] != TY_UNKNOWN
@@ -388,6 +396,12 @@ bool semantic_aggregate_kind_width(uint semantic_ty, out uint kind, out uint wid
 {
     kind = 0u;
     width = 0u;
+    if (semantic_ty == TY_STRING)
+    {
+        kind = X86_DECL_AGG_STRING;
+        width = 2u;
+        return true;
+    }
     if (semantic_ty >= TY_ENUM_BASE && semantic_ty < TY_GENERIC_BASE)
     {
         uint enum_token = semantic_ty - TY_ENUM_BASE;
@@ -447,6 +461,8 @@ bool type_instance_aggregate_kind_width(uint ty, out uint kind, out uint width)
 
 uint decl_aggregate_kind(uint decl_token, uint semantic_ty)
 {
+    if (semantic_ty == TY_STRING)
+        return X86_DECL_AGG_STRING;
     uint len = 0u;
     if (array_len_for_decl(decl_token, len))
         return X86_DECL_AGG_ARRAY;
@@ -726,7 +742,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint array_len = 0u;
     uint enum_width = 0u;
     uint struct_width = 0u;
-    uint agg_kind = array_len_for_decl(decl_token, array_len) ? X86_DECL_AGG_ARRAY : 0u;
+    uint semantic_ty = semantic_type_for_decl(decl_token);
+    uint agg_kind = semantic_ty == TY_STRING ? X86_DECL_AGG_STRING :
+                    (array_len_for_decl(decl_token, array_len) ? X86_DECL_AGG_ARRAY : 0u);
     if (agg_kind == 0u && array_literal_width_for_decl_node(node, array_len))
         agg_kind = X86_DECL_AGG_ARRAY;
     if (agg_kind == 0u && enum_width_for_decl(decl_token, enum_width))

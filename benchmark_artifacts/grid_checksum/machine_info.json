@@ -1,0 +1,13 @@
+{
+  "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "laniusc": "laniusc 0.1.0",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "python": "3.12.3",
+  "release": "6.17.0-35-generic",
+  "rustc": "rustc 1.97.0-nightly (b954122bb 2026-05-20)",
+  "schema": "lanius.benchmark-machine.v1",
+  "system": "Linux",
+  "zig": "0.16.0"
+}

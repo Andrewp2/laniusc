@@ -32,6 +32,7 @@ StructuredBuffer<uint> x86_virtual_call_live_reg_mask;
 StructuredBuffer<uint> x86_virtual_regalloc_status;
 StructuredBuffer<uint> x86_func_first_virtual_row;
 StructuredBuffer<uint> x86_func_first_virtual_row_status;
+StructuredBuffer<uint> x86_func_param_reg_mask;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> x86_func_meta;
 StructuredBuffer<uint> x86_virtual_func_slot;
@@ -86,6 +87,37 @@ static const uint X86_VINST_COPY_LOCAL = 29u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
 static const uint X86_VINST_FOR_PARAM_ARRAY_LOAD = 31u;
 static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
+static const uint X86_VINST_STORE_LOCAL_RODATA_PTR = 33u;
+static const uint X86_VINST_HOST_TEXT_WRITE = 34u;
+static const uint X86_VINST_HOST_OPEN_WRITE_PATH = 35u;
+static const uint X86_VINST_HOST_WRITE_I32 = 36u;
+static const uint X86_VINST_HOST_WRITE_BYTE = 37u;
+static const uint X86_VINST_HOST_WRITE_NEWLINE = 38u;
+static const uint X86_VINST_HOST_OPEN_READ_PATH = 39u;
+static const uint X86_VINST_HOST_READ_I32 = 40u;
+static const uint X86_VINST_HOST_PROCESS_EXIT = 41u;
+static const uint X86_VINST_HOST_SECURE_U32 = 42u;
+static const uint X86_VINST_HOST_ALLOC = 43u;
+static const uint X86_VINST_HOST_DEALLOC = 44u;
+static const uint X86_VINST_HOST_ARGC = 45u;
+static const uint X86_VINST_HOST_ARG_LEN = 46u;
+static const uint X86_VINST_HOST_ARG_READ = 47u;
+static const uint X86_VINST_HOST_UNIX_SECONDS = 48u;
+static const uint X86_VINST_HOST_CURRENT_DIR_READ = 49u;
+static const uint X86_VINST_HOST_VAR_COUNT = 50u;
+static const uint X86_VINST_HOST_VAR_KEY_LEN = 51u;
+static const uint X86_VINST_HOST_VAR_KEY_READ = 52u;
+static const uint X86_VINST_HOST_VAR_LEN = 53u;
+static const uint X86_VINST_HOST_VAR_READ = 54u;
+static const uint X86_VINST_HOST_CLOSE_FILE = 55u;
+static const uint X86_VINST_HOST_FS_READ = 56u;
+static const uint X86_VINST_HOST_FS_WRITE = 57u;
+static const uint X86_VINST_HOST_FS_OPEN_READ = 58u;
+static const uint X86_VINST_HOST_FS_OPEN_WRITE = 59u;
+static const uint X86_VINST_HOST_FS_OPEN_APPEND = 60u;
+static const uint X86_VINST_HOST_STDIN_READ = 61u;
+static const uint X86_VINST_HOST_STDOUT_WRITE = 62u;
+static const uint X86_VINST_HOST_STDERR_WRITE = 63u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -123,6 +155,37 @@ static const uint X86_INST_V_COPY_LOCAL_R32 = 79u;
 static const uint X86_INST_V_STORE_LOCAL_INDEX_R32 = 80u;
 static const uint X86_INST_V_FOR_PARAM_ARRAY_LOAD = 81u;
 static const uint X86_INST_V_STORE_PARAM_INDEX_R32 = 82u;
+static const uint X86_INST_V_STORE_LOCAL_RODATA_PTR = 83u;
+static const uint X86_INST_V_HOST_TEXT_WRITE = 84u;
+static const uint X86_INST_V_HOST_OPEN_WRITE_PATH = 85u;
+static const uint X86_INST_V_HOST_WRITE_I32 = 86u;
+static const uint X86_INST_V_HOST_WRITE_BYTE = 87u;
+static const uint X86_INST_V_HOST_WRITE_NEWLINE = 88u;
+static const uint X86_INST_V_HOST_OPEN_READ_PATH = 89u;
+static const uint X86_INST_V_HOST_READ_I32 = 90u;
+static const uint X86_INST_V_HOST_PROCESS_EXIT = 91u;
+static const uint X86_INST_V_HOST_SECURE_U32 = 92u;
+static const uint X86_INST_V_HOST_ALLOC = 93u;
+static const uint X86_INST_V_HOST_DEALLOC = 94u;
+static const uint X86_INST_V_HOST_ARGC = 95u;
+static const uint X86_INST_V_HOST_ARG_LEN = 96u;
+static const uint X86_INST_V_HOST_ARG_READ = 97u;
+static const uint X86_INST_V_HOST_UNIX_SECONDS = 98u;
+static const uint X86_INST_V_HOST_CURRENT_DIR_READ = 99u;
+static const uint X86_INST_V_HOST_VAR_COUNT = 100u;
+static const uint X86_INST_V_HOST_VAR_KEY_LEN = 101u;
+static const uint X86_INST_V_HOST_VAR_KEY_READ = 102u;
+static const uint X86_INST_V_HOST_VAR_LEN = 103u;
+static const uint X86_INST_V_HOST_VAR_READ = 104u;
+static const uint X86_INST_V_HOST_CLOSE_FILE = 105u;
+static const uint X86_INST_V_HOST_FS_READ = 106u;
+static const uint X86_INST_V_HOST_FS_WRITE = 107u;
+static const uint X86_INST_V_HOST_FS_OPEN_READ = 108u;
+static const uint X86_INST_V_HOST_FS_OPEN_WRITE = 109u;
+static const uint X86_INST_V_HOST_FS_OPEN_APPEND = 110u;
+static const uint X86_INST_V_HOST_STDIN_READ = 111u;
+static const uint X86_INST_V_HOST_STDOUT_WRITE = 112u;
+static const uint X86_INST_V_HOST_STDERR_WRITE = 113u;
 static const uint X86_INTRINSIC_TEXT_WRITE = 1u;
 static const uint X86_OP_ADD_I32 = 1u;
 static const uint X86_OP_MUL_I32 = 3u;
@@ -131,6 +194,8 @@ static const uint X86_OP_OR_BOOL = 5u;
 static const uint X86_OP_BIT_AND_I32 = 8u;
 static const uint X86_OP_BIT_OR_I32 = 9u;
 static const uint X86_OP_BIT_XOR = 10u;
+static const uint X86_OP_ADD_F32 = 16u;
+static const uint X86_OP_MUL_F32 = 18u;
 
 static const uint FUNC_META_MAIN_COUNT = 1u;
 static const uint FUNC_META_MAIN_SLOT = 2u;
@@ -327,6 +392,8 @@ bool binary_op_commutative(uint op)
 {
     return op == X86_OP_ADD_I32 ||
            op == X86_OP_MUL_I32 ||
+           op == X86_OP_ADD_F32 ||
+           op == X86_OP_MUL_F32 ||
            op == X86_OP_AND_BOOL ||
            op == X86_OP_OR_BOOL ||
            op == X86_OP_BIT_AND_I32 ||
@@ -531,13 +598,32 @@ uint call_arg_save_mask(
     uint arg5,
     bool aggregate_return)
 {
-    uint mask = 0u;
+    uint mask = aggregate_return ? call_saved_reg_mask_bit(X86_REG_EDI) : 0u;
     mask |= call_arg_save_mask_for_ordinal(info, 0u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     mask |= call_arg_save_mask_for_ordinal(info, 1u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     mask |= call_arg_save_mask_for_ordinal(info, 2u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     mask |= call_arg_save_mask_for_ordinal(info, 3u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     mask |= call_arg_save_mask_for_ordinal(info, 4u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     mask |= call_arg_save_mask_for_ordinal(info, 5u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    return mask;
+}
+
+uint function_param_call_save_mask(uint row)
+{
+    uint fn_slot = row < virtual_inst_count() ? x86_virtual_func_slot[row] : INVALID;
+    if (fn_slot >= gParams.function_slot_capacity)
+        return 0u;
+
+    uint regs = x86_func_param_reg_mask[fn_slot];
+    uint mask = 0u;
+    if ((regs & (1u << X86_REG_ECX)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_ECX);
+    if ((regs & (1u << X86_REG_EDX)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_EDX);
+    if ((regs & (1u << X86_REG_ESI)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_ESI);
+    if ((regs & (1u << X86_REG_EDI)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_EDI);
+    if ((regs & (1u << X86_REG_R8D)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_R8D);
+    if ((regs & (1u << X86_REG_R9D)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_R9D);
+    if ((regs & (1u << X86_REG_R10D)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_R10D);
+    if ((regs & (1u << X86_REG_R11D)) != 0u) mask |= call_saved_reg_mask_bit(X86_REG_R11D);
     return mask;
 }
 
@@ -551,13 +637,13 @@ uint mixed_arg_payload(uint row, uint ordinal)
     uint payload_row = INVALID;
     if (!mixed_arg_payload_row(row, payload_row) || ordinal >= 6u)
         return INVALID;
-    if (ordinal < 4u)
+    if (ordinal < 3u)
         return x86_virtual_inst_args[payload_row][ordinal];
 
     uint payload_row_hi = x86_virtual_inst_record[payload_row].w;
     if (payload_row_hi == INVALID || payload_row_hi >= virtual_inst_count())
         return INVALID;
-    return x86_virtual_inst_args[payload_row_hi][ordinal - 4u];
+    return x86_virtual_inst_args[payload_row_hi][ordinal - 3u];
 }
 
 bool selected_mixed_arg_payload(uint row, uint info, uint ordinal, uint inst_count, out uint payload)
@@ -575,19 +661,75 @@ bool selected_mixed_arg_payload(uint row, uint info, uint ordinal, uint inst_cou
     return false;
 }
 
-bool mixed_args_fit_extended_scalar_pack(uint info, uint arg_count)
+bool select_mixed_payload_side_row(uint row, uint inst_count, out uint kind_record, out uint4 payloads)
 {
-    if (arg_count <= 4u)
-        return true;
+    kind_record = 0u;
+    payloads = uint4(INVALID, INVALID, INVALID, INVALID);
+
+    uint4 payload_inst = x86_virtual_inst_record[row];
+    if (payload_inst.z != 0u || (payload_inst.y != 1u && payload_inst.y != 2u))
+        return false;
+
+    uint call_row = x86_virtual_inst_args[row].w;
+    if (call_row == INVALID || call_row >= virtual_inst_count())
+        return false;
+    uint4 call_inst = x86_virtual_inst_record[call_row];
+    uint4 call_args = x86_virtual_inst_args[call_row];
+    if (call_inst.x != payload_inst.x ||
+        call_inst.z != X86_VINST_CALL_MIXED ||
+        call_args.z == INVALID ||
+        call_args.z >= virtual_inst_count())
+        return false;
+
+    uint4 payload_low_inst = x86_virtual_inst_record[call_args.z];
+    if (payload_low_inst.x != payload_inst.x ||
+        payload_low_inst.y != 1u ||
+        payload_low_inst.z != 0u)
+        return false;
+    if (payload_inst.y == 1u && call_args.z != row)
+        return false;
+    if (payload_inst.y == 2u && payload_low_inst.w != row)
+        return false;
+
+    uint info = call_args.w;
+    uint arg_count = mixed_arg_count(info);
     if (arg_count > 6u)
         return false;
-    if (arg_count >= 1u && mixed_arg_kind(info, 0u) != X86_ARG_SCALAR) return false;
-    if (arg_count >= 2u && mixed_arg_kind(info, 1u) != X86_ARG_SCALAR) return false;
-    if (arg_count >= 3u && mixed_arg_kind(info, 2u) != X86_ARG_SCALAR) return false;
-    if (arg_count >= 4u && mixed_arg_kind(info, 3u) != X86_ARG_SCALAR) return false;
-    if (arg_count >= 5u && mixed_arg_kind(info, 4u) != X86_ARG_SCALAR) return false;
-    if (arg_count >= 6u && mixed_arg_kind(info, 5u) != X86_ARG_SCALAR) return false;
+
+    uint base_ordinal = payload_inst.y == 1u ? 0u : 3u;
+    uint payload0 = INVALID;
+    uint payload1 = INVALID;
+    uint payload2 = INVALID;
+    uint kind0 = 0u;
+    uint kind1 = 0u;
+    uint kind2 = 0u;
+    if (base_ordinal < arg_count)
+    {
+        if (!selected_mixed_arg_payload(call_row, info, base_ordinal, inst_count, payload0))
+            return false;
+        kind0 = mixed_arg_kind(info, base_ordinal);
+    }
+    if (base_ordinal + 1u < arg_count)
+    {
+        if (!selected_mixed_arg_payload(call_row, info, base_ordinal + 1u, inst_count, payload1))
+            return false;
+        kind1 = mixed_arg_kind(info, base_ordinal + 1u);
+    }
+    if (base_ordinal + 2u < arg_count)
+    {
+        if (!selected_mixed_arg_payload(call_row, info, base_ordinal + 2u, inst_count, payload2))
+            return false;
+        kind2 = mixed_arg_kind(info, base_ordinal + 2u);
+    }
+
+    kind_record = pack_u2x4_at_offset(8u, kind0, kind1, kind2, 0u);
+    payloads = uint4(payload0, payload1, payload2, INVALID);
     return true;
+}
+
+bool mixed_args_fit_extended_scalar_pack(uint info, uint arg_count)
+{
+    return arg_count <= 6u;
 }
 
 bool selected_payloads_fit_extended_scalar_pack(
@@ -599,14 +741,7 @@ bool selected_payloads_fit_extended_scalar_pack(
     uint arg4,
     uint arg5)
 {
-    if (arg_count <= 4u)
-        return true;
-    return (arg_count < 1u || arg0 < 16u) &&
-           (arg_count < 2u || arg1 < 16u) &&
-           (arg_count < 3u || arg2 < 16u) &&
-           (arg_count < 4u || arg3 < 16u) &&
-           (arg_count < 5u || arg4 < 16u) &&
-           (arg_count < 6u || arg5 < 16u);
+    return arg_count <= 6u;
 }
 
 uint pack_selected_call_arg_payloads(
@@ -618,14 +753,7 @@ uint pack_selected_call_arg_payloads(
     uint arg4,
     uint arg5)
 {
-    if (arg_count <= 4u)
-        return pack_u8x4(arg0, arg1, arg2, arg3);
-    return ((arg0 & 0xfu) << 0u) |
-           ((arg1 & 0xfu) << 4u) |
-           ((arg2 & 0xfu) << 8u) |
-           ((arg3 & 0xfu) << 12u) |
-           ((arg4 & 0xfu) << 16u) |
-           ((arg5 & 0xfu) << 20u);
+    return arg0;
 }
 
 bool select_virtual_inst(uint row, uint inst_count)
@@ -636,8 +764,28 @@ bool select_virtual_inst(uint row, uint inst_count)
     uint out_row = row + 1u;
     clear_selected_inst(out_row);
 
-    if (inst.x == INVALID || op == 0u)
+    if (inst.x == INVALID)
         return true;
+
+    if (op == 0u)
+    {
+        uint kind_record = 0u;
+        uint4 payloads = uint4(INVALID, INVALID, INVALID, INVALID);
+        if (select_mixed_payload_side_row(row, inst_count, kind_record, payloads))
+        {
+            x86_inst_kind[out_row] = kind_record;
+            x86_inst_arg0[out_row] = payloads.x;
+            x86_inst_arg1[out_row] = payloads.y;
+            x86_inst_arg2[out_row] = payloads.z;
+        }
+        else
+        {
+            x86_inst_arg0[out_row] = args.x;
+            x86_inst_arg1[out_row] = args.y;
+            x86_inst_arg2[out_row] = args.z;
+        }
+        return true;
+    }
 
     if (optimized_dead_value_def(row, inst_count))
         return true;
@@ -665,6 +813,15 @@ bool select_virtual_inst(uint row, uint inst_count)
         x86_inst_kind[out_row] = X86_INST_V_PARAM_R32;
         x86_inst_arg0[out_row] = dst;
         x86_inst_arg1[out_row] = args.z;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_STORE_LOCAL_RODATA_PTR)
+    {
+        x86_inst_kind[out_row] = X86_INST_V_STORE_LOCAL_RODATA_PTR;
+        x86_inst_arg0[out_row] = args.x;
+        x86_inst_arg1[out_row] = args.y;
         x86_inst_arg2[out_row] = 0u;
         return true;
     }
@@ -766,6 +923,7 @@ bool select_virtual_inst(uint row, uint inst_count)
             return false;
 
         uint save_mask = x86_virtual_call_live_reg_mask[row] |
+                         function_param_call_save_mask(row) |
                          call_arg_save_mask(
                              info,
                              arg_count,
@@ -793,7 +951,7 @@ bool select_virtual_inst(uint row, uint inst_count)
                                      mixed_arg_kind(info, 3u));
         x86_inst_arg2[out_row] = pack_selected_call_arg_payloads(
             arg_count,
-            arg0,
+            args.z + 1u,
             arg1,
             arg2,
             arg3,
@@ -812,6 +970,371 @@ bool select_virtual_inst(uint row, uint inst_count)
         x86_inst_kind[out_row] = X86_INST_V_PRINT_I32;
         x86_inst_arg0[out_row] = src;
         x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_TEXT_WRITE)
+    {
+        uint handle = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_TEXT_WRITE;
+        x86_inst_arg0[out_row] = pack_regs(handle, dst);
+        x86_inst_arg1[out_row] = args.y;
+        x86_inst_arg2[out_row] = args.z;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_OPEN_WRITE_PATH ||
+        op == X86_VINST_HOST_OPEN_READ_PATH)
+    {
+        uint dst = INVALID;
+        if (!phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_OPEN_WRITE_PATH
+                                     ? X86_INST_V_HOST_OPEN_WRITE_PATH
+                                     : X86_INST_V_HOST_OPEN_READ_PATH;
+        x86_inst_arg0[out_row] = dst;
+        x86_inst_arg1[out_row] = args.x;
+        x86_inst_arg2[out_row] = args.z;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_WRITE_I32 ||
+        op == X86_VINST_HOST_WRITE_BYTE)
+    {
+        uint handle = INVALID;
+        uint value = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(args.y, inst_count, value) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_WRITE_I32
+                                     ? X86_INST_V_HOST_WRITE_I32
+                                     : X86_INST_V_HOST_WRITE_BYTE;
+        x86_inst_arg0[out_row] = pack_regs(handle, value);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_READ_I32)
+    {
+        uint handle = INVALID;
+        uint fallback = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(args.y, inst_count, fallback) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_READ_I32;
+        x86_inst_arg0[out_row] = pack_regs(handle, fallback);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_WRITE_NEWLINE)
+    {
+        uint handle = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_WRITE_NEWLINE;
+        x86_inst_arg0[out_row] = pack_regs(handle, dst);
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_CLOSE_FILE)
+    {
+        uint handle = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_CLOSE_FILE;
+        x86_inst_arg0[out_row] = pack_regs(handle, dst);
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_FS_READ ||
+        op == X86_VINST_HOST_FS_WRITE)
+    {
+        uint handle = INVALID;
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, handle) ||
+            !phys_reg_for_value(args.y, inst_count, ptr) ||
+            !phys_reg_for_value(args.z, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_FS_READ
+                                     ? X86_INST_V_HOST_FS_READ
+                                     : X86_INST_V_HOST_FS_WRITE;
+        x86_inst_arg0[out_row] = pack_regs(handle, ptr);
+        x86_inst_arg1[out_row] = len;
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_FS_OPEN_READ ||
+        op == X86_VINST_HOST_FS_OPEN_WRITE ||
+        op == X86_VINST_HOST_FS_OPEN_APPEND)
+    {
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_FS_OPEN_READ
+                                     ? X86_INST_V_HOST_FS_OPEN_READ
+                                     : op == X86_VINST_HOST_FS_OPEN_WRITE
+                                         ? X86_INST_V_HOST_FS_OPEN_WRITE
+                                         : X86_INST_V_HOST_FS_OPEN_APPEND;
+        x86_inst_arg0[out_row] = pack_regs(ptr, len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_STDIN_READ ||
+        op == X86_VINST_HOST_STDOUT_WRITE ||
+        op == X86_VINST_HOST_STDERR_WRITE)
+    {
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_STDIN_READ
+                                     ? X86_INST_V_HOST_STDIN_READ
+                                     : op == X86_VINST_HOST_STDOUT_WRITE
+                                         ? X86_INST_V_HOST_STDOUT_WRITE
+                                         : X86_INST_V_HOST_STDERR_WRITE;
+        x86_inst_arg0[out_row] = pack_regs(ptr, len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_PROCESS_EXIT)
+    {
+        uint code = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, code))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_PROCESS_EXIT;
+        x86_inst_arg0[out_row] = code;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_SECURE_U32)
+    {
+        uint dst = INVALID;
+        if (!phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_SECURE_U32;
+        x86_inst_arg0[out_row] = dst;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_ALLOC)
+    {
+        uint size = INVALID;
+        uint align = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, size) ||
+            !phys_reg_for_value(args.y, inst_count, align) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_ALLOC;
+        x86_inst_arg0[out_row] = pack_regs(size, align);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_ARGC)
+    {
+        uint dst = INVALID;
+        if (!phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_ARGC;
+        x86_inst_arg0[out_row] = dst;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_UNIX_SECONDS)
+    {
+        uint dst = INVALID;
+        if (!phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_UNIX_SECONDS;
+        x86_inst_arg0[out_row] = dst;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_ARG_LEN)
+    {
+        uint index = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, index) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_ARG_LEN;
+        x86_inst_arg0[out_row] = index;
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_ARG_READ)
+    {
+        uint index = INVALID;
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, index) ||
+            !phys_reg_for_value(args.y, inst_count, ptr) ||
+            !phys_reg_for_value(args.z, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_ARG_READ;
+        x86_inst_arg0[out_row] = pack_regs(index, ptr);
+        x86_inst_arg1[out_row] = len;
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_CURRENT_DIR_READ)
+    {
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_CURRENT_DIR_READ;
+        x86_inst_arg0[out_row] = pack_regs(ptr, len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_VAR_COUNT)
+    {
+        uint dst = INVALID;
+        if (!phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_VAR_COUNT;
+        x86_inst_arg0[out_row] = dst;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_VAR_KEY_LEN)
+    {
+        uint index = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, index) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_VAR_KEY_LEN;
+        x86_inst_arg0[out_row] = index;
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_VAR_KEY_READ)
+    {
+        uint index = INVALID;
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, index) ||
+            !phys_reg_for_value(args.y, inst_count, ptr) ||
+            !phys_reg_for_value(args.z, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_VAR_KEY_READ;
+        x86_inst_arg0[out_row] = pack_regs(index, ptr);
+        x86_inst_arg1[out_row] = len;
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_VAR_LEN)
+    {
+        uint key_ptr = INVALID;
+        uint key_len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, key_ptr) ||
+            !phys_reg_for_value(args.y, inst_count, key_len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_VAR_LEN;
+        x86_inst_arg0[out_row] = pack_regs(key_ptr, key_len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_VAR_READ)
+    {
+        uint key_ptr = INVALID;
+        uint key_len = INVALID;
+        uint value_ptr = INVALID;
+        uint value_len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, key_ptr) ||
+            !phys_reg_for_value(args.y, inst_count, key_len) ||
+            !phys_reg_for_value(args.z, inst_count, value_ptr) ||
+            !phys_reg_for_value(args.w, inst_count, value_len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_VAR_READ;
+        x86_inst_arg0[out_row] = pack_regs(key_ptr, key_len);
+        x86_inst_arg1[out_row] = pack_regs(value_ptr, value_len);
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_DEALLOC)
+    {
+        uint ptr = INVALID;
+        uint size = INVALID;
+        uint align = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, size) ||
+            !phys_reg_for_value(args.z, inst_count, align))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_DEALLOC;
+        x86_inst_arg0[out_row] = pack_regs(ptr, size);
+        x86_inst_arg1[out_row] = align;
         x86_inst_arg2[out_row] = 0u;
         return true;
     }

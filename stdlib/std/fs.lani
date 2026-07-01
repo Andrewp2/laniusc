@@ -16,6 +16,12 @@ pub const FILESYSTEM_RUNTIME_ABI_VERSION: FilesystemRuntimeAbiVersion = 1;
 pub const FILESYSTEM_SERVICE_ID: FilesystemServiceId = 2;
 pub const FILESYSTEM_SERVICE_STATUS_UNAVAILABLE: FilesystemServiceStatus = 1;
 pub const FILESYSTEM_HAS_RUNTIME_BINDING: FilesystemCapability = false;
+pub const FILESYSTEM_OPEN_READ_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_OPEN_WRITE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_OPEN_APPEND_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_CLOSE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_READ_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_WRITE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_OPERATION_OK: FilesystemOperationResult = 0;
 pub const FILESYSTEM_OPERATION_UNAVAILABLE: FilesystemOperationResult = -1;
 pub const FILE_HANDLE_INVALID: FileHandle = -1;
@@ -49,7 +55,10 @@ pub fn filesystem_is_blocked() -> FilesystemCapability {
 }
 
 pub fn filesystem_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && filesystem_is_blocked();
+    if (filesystem_service_is_known()) {
+        return filesystem_is_blocked();
+    }
+    return false;
 }
 
 pub fn filesystem_requires_runtime_binding() -> FilesystemCapability {
@@ -61,7 +70,12 @@ pub fn filesystem_host_abi_is_contract_only() -> FilesystemCapability {
 }
 
 pub fn file_io_is_executable() -> FilesystemCapability {
-    return FILESYSTEM_HAS_RUNTIME_BINDING;
+    return FILESYSTEM_OPEN_READ_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_OPEN_WRITE_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_OPEN_APPEND_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_CLOSE_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_READ_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_WRITE_HAS_RUNTIME_BINDING;
 }
 
 pub fn file_io_is_blocked() -> FilesystemCapability {
@@ -69,7 +83,10 @@ pub fn file_io_is_blocked() -> FilesystemCapability {
 }
 
 pub fn file_io_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && file_io_is_blocked();
+    if (filesystem_service_is_known()) {
+        return file_io_is_blocked();
+    }
+    return false;
 }
 
 pub fn file_io_requires_runtime_binding() -> FilesystemCapability {
@@ -97,7 +114,10 @@ pub fn filesystem_operation_is_unavailable(result: FilesystemOperationResult) ->
 }
 
 pub fn filesystem_operation_is_fail_closed(result: FilesystemOperationResult) -> FilesystemCapability {
-    return filesystem_is_known_but_unbound() && filesystem_operation_is_unavailable(result);
+    if (filesystem_is_known_but_unbound()) {
+        return filesystem_operation_is_unavailable(result);
+    }
+    return false;
 }
 
 pub fn file_handle_invalid() -> FileHandle {
@@ -113,7 +133,7 @@ pub fn file_handle_is_invalid(handle: FileHandle) -> FilesystemCapability {
 }
 
 pub fn open_read_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_OPEN_READ_HAS_RUNTIME_BINDING;
 }
 
 pub fn open_read_is_blocked() -> FilesystemCapability {
@@ -121,7 +141,10 @@ pub fn open_read_is_blocked() -> FilesystemCapability {
 }
 
 pub fn open_read_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && open_read_is_blocked();
+    if (filesystem_service_is_known()) {
+        return open_read_is_blocked();
+    }
+    return false;
 }
 
 pub fn open_read_requires_runtime_binding() -> FilesystemCapability {
@@ -129,7 +152,7 @@ pub fn open_read_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn open_write_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_OPEN_WRITE_HAS_RUNTIME_BINDING;
 }
 
 pub fn open_write_is_blocked() -> FilesystemCapability {
@@ -137,7 +160,10 @@ pub fn open_write_is_blocked() -> FilesystemCapability {
 }
 
 pub fn open_write_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && open_write_is_blocked();
+    if (filesystem_service_is_known()) {
+        return open_write_is_blocked();
+    }
+    return false;
 }
 
 pub fn open_write_requires_runtime_binding() -> FilesystemCapability {
@@ -145,7 +171,7 @@ pub fn open_write_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn open_append_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_OPEN_APPEND_HAS_RUNTIME_BINDING;
 }
 
 pub fn open_append_is_blocked() -> FilesystemCapability {
@@ -153,7 +179,10 @@ pub fn open_append_is_blocked() -> FilesystemCapability {
 }
 
 pub fn open_append_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && open_append_is_blocked();
+    if (filesystem_service_is_known()) {
+        return open_append_is_blocked();
+    }
+    return false;
 }
 
 pub fn open_append_requires_runtime_binding() -> FilesystemCapability {
@@ -161,7 +190,7 @@ pub fn open_append_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn close_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_CLOSE_HAS_RUNTIME_BINDING;
 }
 
 pub fn close_is_blocked() -> FilesystemCapability {
@@ -169,7 +198,10 @@ pub fn close_is_blocked() -> FilesystemCapability {
 }
 
 pub fn close_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && close_is_blocked();
+    if (filesystem_service_is_known()) {
+        return close_is_blocked();
+    }
+    return false;
 }
 
 pub fn close_requires_runtime_binding() -> FilesystemCapability {
@@ -177,7 +209,7 @@ pub fn close_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn read_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_READ_HAS_RUNTIME_BINDING;
 }
 
 pub fn read_is_blocked() -> FilesystemCapability {
@@ -185,7 +217,10 @@ pub fn read_is_blocked() -> FilesystemCapability {
 }
 
 pub fn read_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && read_is_blocked();
+    if (filesystem_service_is_known()) {
+        return read_is_blocked();
+    }
+    return false;
 }
 
 pub fn read_requires_runtime_binding() -> FilesystemCapability {
@@ -193,7 +228,7 @@ pub fn read_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn write_is_executable() -> FilesystemCapability {
-    return file_io_is_executable();
+    return FILESYSTEM_WRITE_HAS_RUNTIME_BINDING;
 }
 
 pub fn write_is_blocked() -> FilesystemCapability {
@@ -201,7 +236,10 @@ pub fn write_is_blocked() -> FilesystemCapability {
 }
 
 pub fn write_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && write_is_blocked();
+    if (filesystem_service_is_known()) {
+        return write_is_blocked();
+    }
+    return false;
 }
 
 pub fn write_requires_runtime_binding() -> FilesystemCapability {
@@ -217,7 +255,10 @@ pub fn path_mutation_api_is_blocked() -> FilesystemCapability {
 }
 
 pub fn path_mutation_api_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && path_mutation_api_is_blocked();
+    if (filesystem_service_is_known()) {
+        return path_mutation_api_is_blocked();
+    }
+    return false;
 }
 
 pub fn path_mutation_api_requires_runtime_binding() -> FilesystemCapability {
@@ -233,7 +274,10 @@ pub fn remove_file_is_blocked() -> FilesystemCapability {
 }
 
 pub fn remove_file_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && remove_file_is_blocked();
+    if (filesystem_service_is_known()) {
+        return remove_file_is_blocked();
+    }
+    return false;
 }
 
 pub fn remove_file_requires_runtime_binding() -> FilesystemCapability {
@@ -249,7 +293,10 @@ pub fn create_dir_is_blocked() -> FilesystemCapability {
 }
 
 pub fn create_dir_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && create_dir_is_blocked();
+    if (filesystem_service_is_known()) {
+        return create_dir_is_blocked();
+    }
+    return false;
 }
 
 pub fn create_dir_requires_runtime_binding() -> FilesystemCapability {
@@ -265,7 +312,10 @@ pub fn remove_dir_is_blocked() -> FilesystemCapability {
 }
 
 pub fn remove_dir_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && remove_dir_is_blocked();
+    if (filesystem_service_is_known()) {
+        return remove_dir_is_blocked();
+    }
+    return false;
 }
 
 pub fn remove_dir_requires_runtime_binding() -> FilesystemCapability {
@@ -281,7 +331,10 @@ pub fn rename_is_blocked() -> FilesystemCapability {
 }
 
 pub fn rename_is_known_but_unbound() -> FilesystemCapability {
-    return filesystem_service_is_known() && rename_is_blocked();
+    if (filesystem_service_is_known()) {
+        return rename_is_blocked();
+    }
+    return false;
 }
 
 pub fn rename_requires_runtime_binding() -> FilesystemCapability {
@@ -312,3 +365,11 @@ pub extern "lanius_std" fn rename(
     to_ptr: u32,
     to_len: usize,
 ) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn open_read_path(path: str) -> FileHandle;
+
+pub extern "lanius_std" fn open_write_path(path: str) -> FileHandle;
+
+pub extern "lanius_std" fn read_i32(handle: FileHandle, fallback: i32) -> i32;
+
+pub extern "lanius_std" fn close_file(handle: FileHandle) -> FilesystemOperationResult;

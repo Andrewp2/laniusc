@@ -81,6 +81,8 @@ pub(super) struct InitializerInputs<'a> {
     pub select_status_buf: &'a wgpu::Buffer,
     pub size_status_buf: &'a wgpu::Buffer,
     pub text_len_buf: &'a wgpu::Buffer,
+    pub rodata_len_buf: &'a wgpu::Buffer,
+    pub rodata_status_buf: &'a wgpu::Buffer,
     pub text_status_buf: &'a wgpu::Buffer,
     pub encode_status_buf: &'a wgpu::Buffer,
     pub elf_layout_buf: &'a wgpu::Buffer,
@@ -164,6 +166,8 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         select_status_buf,
         size_status_buf,
         text_len_buf,
+        rodata_len_buf,
+        rodata_status_buf,
         text_status_buf,
         encode_status_buf,
         elf_layout_buf,
@@ -388,7 +392,7 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
     // node_inst_subtree_slot_bounds reuses call_record storage, which has
     // already been initialized to the same INVALID pattern. node_inst_order
     // overwrites every active node row before subtree_bounds reads it.
-    write_u32_words(queue, node_inst_count_status_buf, &[1, 0, u32::MAX, 0]);
+    write_u32_words(queue, node_inst_count_status_buf, &[1, 0, u32::MAX, 0, 0]);
     write_u32_words(queue, node_inst_order_status_buf, &[0, 0, u32::MAX, 0]);
     // Node scan local/block passes overwrite the active local-prefix, block-sum,
     // and ping-pong prefix rows before consumers read them.
@@ -452,6 +456,8 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
     queue.write_buffer(select_status_buf, 0, &[0u8; 16]);
     write_u32_words(queue, size_status_buf, &[1, 0, u32::MAX, 0]);
     write_u32_words(queue, text_len_buf, &[0]);
+    write_u32_words(queue, rodata_len_buf, &[0]);
+    write_u32_words(queue, rodata_status_buf, &[1, 0, u32::MAX, 0]);
     write_u32_words(queue, text_status_buf, &[0, 0, u32::MAX, 0]);
     write_u32_words(queue, encode_status_buf, &[0, 0, u32::MAX, 0]);
     queue.write_buffer(elf_layout_buf, 0, &[0u8; 32]);

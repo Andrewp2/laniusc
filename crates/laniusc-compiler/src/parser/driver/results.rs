@@ -279,6 +279,8 @@ pub struct ParseResult {
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
+    pub hir_expr_string_start: Vec<u32>,
+    pub hir_expr_string_len: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
     pub hir_member_name_token: Vec<u32>,

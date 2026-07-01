@@ -24,8 +24,10 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
 static const uint EXPR_SEMANTIC_LINK_MASK = 0x3fffffffu;
 static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
+static const uint EXPR_SEMANTIC_FLOAT_FLAG = 0x80000000u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -44,7 +46,11 @@ bool valid_node(uint node)
 
 uint record_type(uint record)
 {
-    return (record & EXPR_SEMANTIC_UINT_FLAG) != 0u ? TY_UINT : TY_UNKNOWN;
+    if ((record & EXPR_SEMANTIC_UINT_FLAG) != 0u)
+        return TY_UINT;
+    if ((record & EXPR_SEMANTIC_FLOAT_FLAG) != 0u)
+        return TY_FLOAT;
+    return TY_UNKNOWN;
 }
 
 uint record_link(uint record)
@@ -59,7 +65,9 @@ uint pack_expr_semantic_record(uint ty, uint link)
         valid_node(link) && link < EXPR_SEMANTIC_LINK_MASK
             ? link
             : EXPR_SEMANTIC_LINK_MASK;
-    uint type_bits = ty == TY_UINT ? EXPR_SEMANTIC_UINT_FLAG : 0u;
+    uint type_bits = ty == TY_UINT ? EXPR_SEMANTIC_UINT_FLAG
+                   : ty == TY_FLOAT ? EXPR_SEMANTIC_FLOAT_FLAG
+                   : 0u;
     return type_bits | packed_link;
 }
 

@@ -74,7 +74,6 @@ fn raytracer_fixture_oracle_matches_reference_renderer() {
 
 #[cfg(all(unix, target_arch = "x86_64"))]
 #[test]
-#[ignore = "pending f32 lowering, string/file runtime bindings, and native filesystem execution"]
 fn raytracer_ppm_compiles_runs_and_matches_oracle() {
     use std::os::unix::fs::PermissionsExt;
 

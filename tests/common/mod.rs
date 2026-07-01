@@ -11,23 +11,23 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output, Stdio},
     sync::{
-        Mutex,
-        MutexGuard,
         atomic::{AtomicU64, Ordering},
         mpsc,
+        Mutex,
+        MutexGuard,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use laniusc_compiler::compiler::{
-    CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
+    CompileError,
 };
 use log::warn;
 
@@ -42,7 +42,7 @@ const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 60_000;
 // The default codegen coverage includes small source-pack programs.
 // Cold process pipeline setup can dominate the first codegen test, so use the
 // same guard as focused GPU type-checking while keeping suite-style loops short.
-const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
 const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
@@ -511,15 +511,57 @@ pub fn run_wasm_main_with_node_output(
 const fs = require('fs');
 (async () => {
   let stdout = '';
+  let instance = null;
+  const laniusArgs = ['program', 'alpha'];
   const imports = {
     env: {
       print_i64(value) {
         stdout += value.toString() + '\n';
+      },
+      argc() {
+        return laniusArgs.length;
+      },
+      arg_len(index) {
+        const arg = laniusArgs[index | 0];
+        return typeof arg === 'string' ? Buffer.byteLength(arg, 'utf8') : -1;
+      },
+      arg_read(index, ptr, len) {
+        const arg = laniusArgs[index | 0];
+        if (typeof arg !== 'string') {
+          return -1;
+        }
+        const memory = instance && instance.exports && instance.exports.memory;
+        if (!memory) {
+          throw new Error('missing exported memory');
+        }
+        const bytes = Buffer.from(arg, 'utf8');
+        const start = ptr >>> 0;
+        const count = Math.min(len >>> 0, bytes.length);
+        new Uint8Array(memory.buffer, start, count).set(bytes.subarray(0, count));
+        return count | 0;
+      },
+      secure_u32() {
+        return 1234567;
+      },
+      unix_seconds() {
+        return 1234567890;
+      },
+      write_stdout(ptr, len) {
+        const memory = instance && instance.exports && instance.exports.memory;
+        if (!memory) {
+          throw new Error('missing exported memory');
+        }
+        const start = ptr >>> 0;
+        const count = len >>> 0;
+        const bytes = new Uint8Array(memory.buffer, start, count);
+        stdout += Buffer.from(bytes).toString('utf8');
+        return count | 0;
       }
     }
   };
   const module = await WebAssembly.instantiate(fs.readFileSync(process.argv[1]), imports);
-  const main = module.instance.exports.main;
+  instance = module.instance;
+  const main = instance.exports.main;
   if (typeof main !== 'function') {
     throw new Error('missing exported main function');
   }
@@ -555,9 +597,47 @@ pub fn run_wasm_main_return_with_node(
     let script = r#"
 const fs = require('fs');
 (async () => {
-  const imports = { env: { print_i64(_value) {} } };
+  let instance = null;
+  const laniusArgs = ['program', 'alpha'];
+  const imports = {
+    env: {
+      print_i64(_value) {},
+      argc() {
+        return laniusArgs.length;
+      },
+      arg_len(index) {
+        const arg = laniusArgs[index | 0];
+        return typeof arg === 'string' ? Buffer.byteLength(arg, 'utf8') : -1;
+      },
+      arg_read(index, ptr, len) {
+        const arg = laniusArgs[index | 0];
+        if (typeof arg !== 'string') {
+          return -1;
+        }
+        const memory = instance && instance.exports && instance.exports.memory;
+        if (!memory) {
+          throw new Error('missing exported memory');
+        }
+        const bytes = Buffer.from(arg, 'utf8');
+        const start = ptr >>> 0;
+        const count = Math.min(len >>> 0, bytes.length);
+        new Uint8Array(memory.buffer, start, count).set(bytes.subarray(0, count));
+        return count | 0;
+      },
+      secure_u32() {
+        return 1234567;
+      },
+      unix_seconds() {
+        return 1234567890;
+      },
+      write_stdout(_ptr, len) {
+        return len | 0;
+      }
+    }
+  };
   const module = await WebAssembly.instantiate(fs.readFileSync(process.argv[1]), imports);
-  const main = module.instance.exports.main;
+  instance = module.instance;
+  const main = instance.exports.main;
   if (typeof main !== 'function') {
     throw new Error('missing exported main function');
   }

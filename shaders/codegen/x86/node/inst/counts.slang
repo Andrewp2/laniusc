@@ -7,6 +7,7 @@
 
 import gpu_index;
 import status;
+import atomics;
 
 struct Params
 {
@@ -127,6 +128,7 @@ static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
 static const uint X86_DECL_LAYOUT_KIND_MASK = 0x0fu;
 static const uint X86_DECL_AGG_ARRAY = 1u;
+static const uint X86_DECL_AGG_STRING = 4u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
@@ -200,7 +202,7 @@ static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_AGG_STORE_ARRAY = 2u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
+static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -564,7 +566,7 @@ uint direct_call_payload_rows(uint node)
 {
     if (!has_call_record(node))
         return 0u;
-    return x86_call_record[node].w > 4u ? 2u : 1u;
+    return 2u;
 }
 
 bool enum_value_record_is_supported(uint2 record)
@@ -781,6 +783,48 @@ bool decl_is_aggregate(uint decl_token)
     return decl_aggregate_width(decl_token, width);
 }
 
+bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
+{
+    decl_token = INVALID;
+    if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
+        return false;
+
+    uint path_i = path_id_by_owner_hir[name_node];
+    if (path_i < active_path_count() &&
+        resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK)
+    {
+        uint decl_i = resolved_value_decl[path_i];
+        if (decl_i < active_hir_node_count())
+        {
+            uint resolved_token = decl_name_token[decl_i];
+            if (valid_token(resolved_token))
+            {
+                decl_token = resolved_token;
+                return true;
+            }
+        }
+    }
+
+    uint name_token = expr_value_token(name_node);
+    if (!valid_token(name_token))
+        return false;
+    decl_token = visible_decl[name_token];
+    return valid_token(decl_token);
+}
+
+bool decl_token_for_name_expr(uint node, out uint decl_token)
+{
+    decl_token = INVALID;
+    uint resolved = resolve_expr(node);
+    if (valid_node(resolved) &&
+        expr_form(resolved) == HIR_EXPR_NAME &&
+        resolved_decl_token_for_name_node(resolved, decl_token))
+        return true;
+    return valid_node(node) &&
+           expr_form(node) == HIR_EXPR_NAME &&
+           resolved_decl_token_for_name_node(node, decl_token);
+}
+
 bool for_iterable_has_array_layout(uint node)
 {
     if (!node_is_stmt_kind(node, STMT_RECORD_KIND_FOR))
@@ -790,12 +834,8 @@ bool for_iterable_has_array_layout(uint node)
     if (!valid_node(iterable_node))
         return false;
 
-    uint iterable_token = expr_value_token(iterable_node);
-    if (!valid_token(iterable_token))
-        return false;
-
-    uint decl_token = visible_decl[iterable_token];
-    if (!valid_token(decl_token))
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(iterable_node, decl_token))
         return false;
     uint element_width = for_element_width(node);
     if (element_width == 0u)
@@ -835,39 +875,101 @@ bool for_iterable_has_supported_layout(uint node)
 
 bool name_expr_is_aggregate_local(uint node)
 {
-    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(node, decl_token))
         return false;
-    uint name_token = expr_value_token(node);
-    if (!valid_token(name_token))
-        return false;
-    uint decl_token = visible_decl[name_token];
     return decl_is_aggregate(decl_token);
+}
+
+bool scalar_name_expr_has_value_instr(uint node)
+{
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(node, decl_token))
+        return false;
+    if (!valid_token(decl_token) || decl_is_aggregate(decl_token))
+        return false;
+
+    if (decl_layout_base(decl_token) != INVALID &&
+        decl_layout_width(decl_token) == 1u)
+        return true;
+
+    return param_reg_owner(decl_token) == x86_node_func[node] &&
+           param_reg_arg_reg(decl_token) != INVALID &&
+           param_reg_width(decl_token) == 1u;
+}
+
+bool struct_literal_child_has_scalar_value_instr(uint node)
+{
+    uint kind = valid_node(node) ? hir_kind[node] : 0u;
+    uint form = expr_form(node);
+    if (kind == HIR_LITERAL_EXPR)
+        return true;
+    if (form == HIR_EXPR_NAME)
+        return scalar_name_expr_has_value_instr(node);
+    return expression_form_has_value_instr(form);
 }
 
 bool name_expr_aggregate_width(uint node, out uint width)
 {
     width = 0u;
-    node = resolve_expr(node);
-    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(node, decl_token))
         return false;
-    uint name_token = expr_value_token(node);
-    if (!valid_token(name_token))
-        return false;
-    uint decl_token = visible_decl[name_token];
     return decl_aggregate_width(decl_token, width);
 }
 
 bool name_expr_storage_aggregate_width(uint node, out uint width)
 {
     width = 0u;
-    node = resolve_expr(node);
-    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(node, decl_token))
         return false;
-    uint name_token = expr_value_token(node);
-    if (!valid_token(name_token))
-        return false;
-    uint decl_token = visible_decl[name_token];
     return decl_storage_aggregate_width(decl_token, width);
+}
+
+bool aggregate_storage_source_width(uint node, out uint width)
+{
+    width = 0u;
+    uint current = node;
+    uint offset = 0u;
+    uint limit = active_hir_node_count();
+    for (uint i = 0u; i < limit; i++)
+    {
+        if (valid_node(current) &&
+            hir_kind[current] == HIR_MEMBER_EXPR &&
+            struct_access_kind(current) == X86_STRUCT_ACCESS_MEMBER)
+        {
+            uint member_offset = struct_access_payload1(current);
+            uint receiver = struct_access_payload0(current);
+            if (member_offset == INVALID || !valid_node(receiver))
+                return false;
+            offset += member_offset;
+            current = receiver;
+            continue;
+        }
+
+        uint resolved = resolve_expr(current);
+        if (valid_node(resolved) && resolved != current)
+        {
+            current = resolved;
+            continue;
+        }
+
+        if (valid_node(current) && expr_form(current) == HIR_EXPR_NAME)
+        {
+            uint decl_token = INVALID;
+            if (!decl_token_for_name_expr(current, decl_token))
+                return false;
+            if (!decl_storage_aggregate_width(decl_token, width) || offset >= width)
+                return false;
+            width -= offset;
+            return true;
+        }
+
+        return false;
+    }
+
+    return false;
 }
 
 bool scalar_param_decl_node(uint node)
@@ -896,7 +998,7 @@ bool aggregate_let_copy_width(uint node, out uint width)
         return false;
 
     uint source_width = 0u;
-    if (!name_expr_aggregate_width(stmt_slot(node, 2u), source_width) ||
+    if (!aggregate_storage_source_width(stmt_slot(node, 2u), source_width) ||
         source_width < dest_width)
         return false;
 
@@ -950,7 +1052,7 @@ bool aggregate_return_width(uint return_node, out uint width)
         return true;
     if (array_literal_width(expr_node, width))
         return true;
-    return name_expr_aggregate_width(expr_node, width);
+    return aggregate_storage_source_width(expr_node, width);
 }
 
 bool enum_value_belongs_to_aggregate_return(uint node)
@@ -976,8 +1078,7 @@ bool is_struct_literal_head_or_path_child(uint node)
     uint token = expr_value_token(node);
     if (valid_token(token) && x86_struct_type_record[token] != 0u)
         return true;
-    uint parent = valid_node(node) ? x86_tree_parent[node] : INVALID;
-    return valid_node(parent) && is_struct_literal_head_node(parent);
+    return false;
 }
 
 bool array_element_store_for_value_node(uint node, out uint decl_token, out uint ordinal)
@@ -985,11 +1086,17 @@ bool array_element_store_for_value_node(uint node, out uint decl_token, out uint
     decl_token = INVALID;
     ordinal = INVALID;
 
-    uint value_node = resolve_expr(node);
-    if (!has_aggregate_feature() || !valid_node(value_node))
+    if (!has_aggregate_feature() || !valid_node(node))
         return false;
 
-    uint4 record = x86_struct_store_record[value_node];
+    uint4 record = x86_struct_store_record[node];
+    if (record.x == INVALID || record.y == INVALID)
+    {
+        uint value_node = resolve_expr(node);
+        if (!valid_node(value_node))
+            return false;
+        record = x86_struct_store_record[value_node];
+    }
     decl_token = record.x;
     ordinal = record.y;
     uint len = 0u;
@@ -1007,10 +1114,16 @@ bool struct_field_store_for_value_node(uint node, out uint decl_token, out uint 
     decl_token = INVALID;
     ordinal = INVALID;
 
-    uint value_node = resolve_expr(node);
-    if (!has_aggregate_feature() || !valid_node(value_node))
+    if (!has_aggregate_feature() || !valid_node(node))
         return false;
-    uint4 record = x86_struct_store_record[value_node];
+    uint4 record = x86_struct_store_record[node];
+    if (record.x == INVALID || record.y == INVALID)
+    {
+        uint value_node = resolve_expr(node);
+        if (!valid_node(value_node))
+            return false;
+        record = x86_struct_store_record[value_node];
+    }
     if (record.w != 0u)
         return false;
     decl_token = record.x;
@@ -1020,6 +1133,32 @@ bool struct_field_store_for_value_node(uint node, out uint decl_token, out uint 
            decl_storage_aggregate_width(decl_token, width) && ordinal < width;
 }
 
+bool struct_field_aggregate_copy_width(uint node, out uint width)
+{
+    width = 0u;
+    uint decl_token = INVALID;
+    uint ordinal = INVALID;
+    if (!struct_field_store_for_value_node(node, decl_token, ordinal))
+        return false;
+
+    uint dest_width = 0u;
+    if (!decl_storage_aggregate_width(decl_token, dest_width) ||
+        ordinal >= dest_width)
+        return false;
+
+    uint source_node = resolve_expr(node);
+    if (!valid_node(source_node))
+        source_node = node;
+
+    uint source_width = 0u;
+    if (!aggregate_storage_source_width(source_node, source_width) ||
+        source_width <= 1u)
+        return false;
+
+    width = min(source_width, dest_width - ordinal);
+    return width > 1u;
+}
+
 uint aggregate_element_store_count(uint node)
 {
     uint decl_token = INVALID;
@@ -1027,7 +1166,9 @@ uint aggregate_element_store_count(uint node)
     uint count = 0u;
     if (array_element_store_for_value_node(node, decl_token, ordinal))
         count += 1u;
-    if (struct_field_store_for_value_node(node, decl_token, ordinal))
+    uint copy_width = 0u;
+    if (struct_field_store_for_value_node(node, decl_token, ordinal) &&
+        !struct_field_aggregate_copy_width(node, copy_width))
         count += 1u;
     return count;
 }
@@ -1073,7 +1214,7 @@ bool member_receiver_has_supported_aggregate_source(uint member_node)
     uint width = 0u;
     return valid_node(receiver_node) &&
            ordinal != INVALID &&
-           name_expr_storage_aggregate_width(receiver_node, width) &&
+           aggregate_storage_source_width(receiver_node, width) &&
            ordinal < width;
 }
 
@@ -1091,10 +1232,9 @@ bool assignment_target_param_aggregate_member(uint target_node)
     uint receiver = resolve_expr(struct_access_payload0(member_node));
     if (!valid_node(receiver) || expr_form(receiver) != HIR_EXPR_NAME)
         return false;
-    uint receiver_token = expr_value_token(receiver);
-    if (!valid_token(receiver_token))
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(receiver, decl_token))
         return false;
-    uint decl_token = visible_decl[receiver_token];
     uint width = param_reg_width(decl_token);
     return param_reg_owner(decl_token) == x86_node_func[member_node] &&
            param_reg_arg_reg(decl_token) != INVALID &&
@@ -1223,6 +1363,12 @@ void write_count(uint node, uint count, uint kind, uint payload)
         increment_stage_count4(x86_node_inst_count_status, 1u);
 }
 
+void record_aggregate_copy_width(uint width)
+{
+    if (width != 0u)
+        atomic_u32_max(x86_node_inst_count_status, 4u, width);
+}
+
 void publish_aggregate_copy_width_error(uint node)
 {
     publish_stage_error_min_detail4(
@@ -1279,8 +1425,26 @@ bool unsupported_literal_expr(uint node)
     if (kind != HIR_LITERAL_EXPR)
         return false;
     uint form = expr_form(node);
-    return form == HIR_EXPR_STRING ||
-           form == HIR_EXPR_CHAR;
+    return form == HIR_EXPR_CHAR;
+}
+
+bool string_literal_initializer_stores_to_local(uint node)
+{
+    if (!valid_node(node) ||
+        !(node_is_stmt_kind(node, STMT_RECORD_KIND_LET) ||
+          (hir_kind[node] == HIR_STMT && stmt_slot(node, 0u) == STMT_RECORD_KIND_CONST)))
+        return false;
+
+    uint decl_token = stmt_slot(node, 1u);
+    if (!valid_token(decl_token) ||
+        decl_layout_base(decl_token) == INVALID ||
+        decl_layout_width(decl_token) < 2u)
+        return false;
+
+    uint init_node = resolve_expr(stmt_slot(node, 2u));
+    return valid_node(init_node) &&
+           hir_kind[init_node] == HIR_LITERAL_EXPR &&
+           expr_form(init_node) == HIR_EXPR_STRING;
 }
 
 void publish_unsupported_literal_expr_error(uint node)
@@ -1402,6 +1566,19 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
+    uint field_copy_width = 0u;
+    if (struct_field_aggregate_copy_width(node, field_copy_width))
+    {
+        if (field_copy_width > X86_AGG_COPY_MAX_WIDTH)
+        {
+            publish_aggregate_copy_width_error(node);
+            return;
+        }
+        record_aggregate_copy_width(field_copy_width);
+        write_count(node, field_copy_width * 2u + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
+        return;
+    }
+
     if (kind == HIR_CALL_EXPR && (has_call_record(node) || has_intrinsic_call_record(node)))
     {
         uint extra_store = aggregate_element_store_count(node);
@@ -1428,6 +1605,7 @@ void main(uint3 tid: SV_DispatchThreadID)
             publish_aggregate_copy_width_error(node);
             return;
         }
+        record_aggregate_copy_width(return_width);
         uint transfer_count = return_width > 0u ? return_width + 1u : 1u;
         write_count(node, transfer_count + padding, X86_NODE_INST_TRANSFER, stmt_slot(node, 1u));
         return;
@@ -1467,7 +1645,14 @@ void main(uint3 tid: SV_DispatchThreadID)
                 publish_aggregate_copy_width_error(node);
                 return;
             }
+            record_aggregate_copy_width(copy_width);
             write_count(node, copy_width * 2u + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
+            return;
+        }
+
+        if (string_literal_initializer_stores_to_local(node))
+        {
+            write_count(node, 2u + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
             return;
         }
 
@@ -1529,7 +1714,9 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint form = expr_form(node);
     uint extra_store = aggregate_element_store_count(node);
-    if (is_struct_literal_head_or_path_child(node))
+    if (is_struct_literal_head_or_path_child(node) &&
+        extra_store == 0u &&
+        !struct_literal_child_has_scalar_value_instr(node))
     {
         write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
         return;
@@ -1540,6 +1727,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         kind == HIR_UNARY_EXPR ||
         kind == HIR_NAME_EXPR ||
         kind == HIR_LITERAL_EXPR ||
+        (kind == HIR_POSTFIX_EXPR && extra_store != 0u) ||
         (kind == HIR_EXPR && extra_store != 0u);
     if (expression_value_node &&
         expression_form_has_value_instr(form))

@@ -504,9 +504,7 @@ impl TypeCheckPasses {
                 "type_check_conditions_aggregate_args",
                 "type_checker/conditions/aggregate_args"
             ),
-            control: pass!("type_check_control", "type_checker/control"),
             control_hir: pass!("type_check_control_hir", "type_checker/control/hir"),
-            scope: pass!("type_check_scope", "type_checker/scope"),
             scope_hir: pass!("type_check_scope_hir", "type_checker/scope/hir"),
             calls_clear: pass!(
                 "type_check_calls_01_resolve",

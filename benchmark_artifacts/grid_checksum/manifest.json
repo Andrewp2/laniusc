@@ -1,0 +1,76 @@
+{
+  "files": [
+    {
+      "path": "commands.json",
+      "sha256": "7b054e279302b16e769cc304e211fa0644301764afeda192dcdd7910d97f9bb1"
+    },
+    {
+      "path": "generator_config.json",
+      "sha256": "a92ddbc9048dd622d549393ba46c91c69c8c565b9efe60c3fac7959fca84bc57"
+    },
+    {
+      "path": "machine_info.json",
+      "sha256": "f4daf8bda286a2666a83ee9825f12ff86da0c88c181022ac3732de81317e3c1b"
+    },
+    {
+      "path": "outputs/c.stdout",
+      "sha256": "c257c0246108667481d37bb0b868c4f28c768c8ef95af2b62130c15d3b8f48a4"
+    },
+    {
+      "path": "outputs/cpp.stdout",
+      "sha256": "c257c0246108667481d37bb0b868c4f28c768c8ef95af2b62130c15d3b8f48a4"
+    },
+    {
+      "path": "outputs/lanius.stdout",
+      "sha256": "c257c0246108667481d37bb0b868c4f28c768c8ef95af2b62130c15d3b8f48a4"
+    },
+    {
+      "path": "outputs/rust.stdout",
+      "sha256": "c257c0246108667481d37bb0b868c4f28c768c8ef95af2b62130c15d3b8f48a4"
+    },
+    {
+      "path": "outputs/zig.stdout",
+      "sha256": "c257c0246108667481d37bb0b868c4f28c768c8ef95af2b62130c15d3b8f48a4"
+    },
+    {
+      "path": "results.tsv",
+      "sha256": "8b677a7999a83364d90585785667658166b59c186df016721bf76852c00c963b"
+    },
+    {
+      "path": "src/grid_checksum.c",
+      "sha256": "daee9090f0452d43c71fd2ca2d2e833bea40f7bd40486359b716fe897c3fab7e"
+    },
+    {
+      "path": "src/grid_checksum.cpp",
+      "sha256": "c50688169712562a4bdc0c80012388479f40e3e6fee9e322fe2a1b1afaebee45"
+    },
+    {
+      "path": "src/grid_checksum.lani",
+      "sha256": "3e4240ec5b838c1c55298a586842d4e66c048e66cc7092b0c5672137157e0053"
+    },
+    {
+      "path": "src/grid_checksum.rs",
+      "sha256": "24f1a01a681775de2f32f53d3effdd7279b791461b40b086fc0a17399ff748e4"
+    },
+    {
+      "path": "src/grid_checksum.zig",
+      "sha256": "423b84ff641ac413cecc9099031fbc23c90e7c3c94182e56c7cc0aee1e762880"
+    }
+  ],
+  "languages": [
+    "rust",
+    "c",
+    "cpp",
+    "zig",
+    "lanius"
+  ],
+  "result_status": {
+    "c": "ok",
+    "cpp": "ok",
+    "lanius": "ok",
+    "rust": "ok",
+    "zig": "ok"
+  },
+  "schema": "lanius.benchmark-artifacts.v1",
+  "workload": "grid_checksum"
+}

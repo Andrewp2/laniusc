@@ -311,7 +311,6 @@ impl GpuTypeChecker {
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
 
-        let uses_hir_control = hir_node_capacity > 0;
         let uses_hir_items = hir_items.is_some();
         let mut fingerprint_buffers = vec![
             token_buf,
@@ -401,23 +400,12 @@ impl GpuTypeChecker {
             fingerprint_buffers.push(scratch.path_kind);
         }
         let input_fingerprint = buffer_fingerprint(&fingerprint_buffers);
-        let control_pass = if uses_hir_control {
-            &self.passes.control_hir
-        } else {
-            &self.passes.control
-        };
-        let scope_pass = if uses_hir_control {
-            &self.passes.scope_hir
-        } else {
-            &self.passes.scope
-        };
         let cache_key = ResidentTypeCheckCacheKey {
             source_file_capacity,
             token_capacity,
             hir_node_capacity,
             parser_hir_node_capacity,
             input_fingerprint,
-            uses_hir_control,
             uses_hir_items,
         };
 
@@ -450,10 +438,7 @@ impl GpuTypeChecker {
                     hir_status_buf,
                     hir_items,
                     &self.passes,
-                    control_pass,
-                    scope_pass,
                     input_fingerprint,
-                    uses_hir_control,
                     uses_hir_items,
                     external_scratch,
                 )?);
@@ -825,12 +810,8 @@ impl GpuTypeChecker {
             }
             record_compute_indirect(
                 encoder,
-                scope_pass,
-                if uses_hir_control {
-                    &bind_groups.scope_hir
-                } else {
-                    &bind_groups.scope
-                },
+                &self.passes.scope_hir,
+                &bind_groups.scope_hir,
                 "type_check.resident.scope.pass",
                 &bind_groups.token_active_dispatch_args,
             )?;
@@ -1357,7 +1338,7 @@ impl GpuTypeChecker {
             // whole-token syntax scans.
             record_compute_indirect(
                 encoder,
-                control_pass,
+                &self.passes.control_hir,
                 &bind_groups.control,
                 "type_check.resident.control.pass",
                 &bind_groups.token_hir_active_dispatch_args,
@@ -1456,6 +1437,7 @@ impl GpuTypeChecker {
         let module_path = bind_groups.module_path.as_ref()?;
         Some(consume(GpuCodegenBuffers {
             name_id_by_token: &bind_groups.name_id_by_token,
+            language_name_id: &bind_groups.language_name_id,
             enclosing_fn: &bind_groups.enclosing_fn,
             visible_decl: &bind_groups.visible_decl,
             visible_type: &bind_groups.visible_type,
@@ -1488,6 +1470,9 @@ impl GpuTypeChecker {
             call_return_type_token: &bind_groups.call_return_type_token,
             call_param_count: &bind_groups.call_param_count,
             call_param_type: &bind_groups.call_param_type,
+            call_arg_row_node: &bind_groups.call_arg_row_node,
+            call_arg_row_start: &bind_groups.call_arg_row_start,
+            call_arg_row_count: &bind_groups.call_arg_row_count,
             method_decl_module_id: &bind_groups.method_decl_module_id,
             method_decl_name_token: &bind_groups.method_decl_name_token,
             method_decl_name_id: &bind_groups.method_decl_name_id,
@@ -1516,11 +1501,14 @@ impl GpuTypeChecker {
             member_result_ref_tag: &bind_groups.member_result_ref_tag,
             member_result_ref_payload: &bind_groups.member_result_ref_payload,
             member_result_field_ordinal: &bind_groups.member_result_field_ordinal,
+            member_result_field_node: &bind_groups.member_result_field_node,
             struct_init_field_expected_ref_tag: &bind_groups.struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload: &bind_groups
                 .struct_init_field_expected_ref_payload,
             struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &bind_groups.struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node: &bind_groups
+                .struct_init_field_decl_node_by_node,
         }))
     }
 
@@ -1536,6 +1524,7 @@ impl GpuTypeChecker {
         let bind_groups = guard.take()?;
         let ResidentTypeCheckState {
             name_id_by_token,
+            language_name_id,
             enclosing_fn,
             visible_decl,
             visible_type,
@@ -1551,6 +1540,9 @@ impl GpuTypeChecker {
             call_return_type_token,
             call_param_count,
             call_param_type,
+            call_arg_row_node,
+            call_arg_row_start,
+            call_arg_row_count,
             method_decl_module_id,
             method_decl_name_token,
             method_decl_name_id,
@@ -1583,10 +1575,12 @@ impl GpuTypeChecker {
             member_result_ref_tag,
             member_result_ref_payload,
             member_result_field_ordinal,
+            member_result_field_node,
             struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload,
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node,
             ..
         } = bind_groups;
         let ModulePathState {
@@ -1609,6 +1603,7 @@ impl GpuTypeChecker {
 
         Some(OwnedGpuCodegenBuffers {
             name_id_by_token,
+            language_name_id,
             enclosing_fn,
             visible_decl,
             visible_type,
@@ -1641,6 +1636,9 @@ impl GpuTypeChecker {
             call_return_type_token,
             call_param_count,
             call_param_type,
+            call_arg_row_node,
+            call_arg_row_start,
+            call_arg_row_count,
             method_decl_module_id,
             method_decl_name_token,
             method_decl_name_id,
@@ -1669,10 +1667,12 @@ impl GpuTypeChecker {
             member_result_ref_tag,
             member_result_ref_payload,
             member_result_field_ordinal,
+            member_result_field_node,
             struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload,
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node,
         })
     }
 
@@ -1686,6 +1686,8 @@ impl GpuTypeChecker {
             .expect("GpuTypeChecker.resident_state poisoned");
         let bind_groups = guard.take()?;
         let ResidentTypeCheckState {
+            name_id_by_token,
+            language_name_id,
             enclosing_fn,
             visible_decl,
             visible_type,
@@ -1702,6 +1704,7 @@ impl GpuTypeChecker {
             method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload,
             method_decl_param_offset,
+            method_decl_receiver_mode,
             type_instance_kind,
             type_instance_decl_token,
             type_instance_elem_ref_tag,
@@ -1710,9 +1713,15 @@ impl GpuTypeChecker {
             type_instance_len_payload,
             decl_type_ref_tag,
             decl_type_ref_payload,
+            type_expr_ref_tag,
+            type_expr_ref_payload,
+            module_type_path_type,
+            type_decl_hir_node_by_token,
             member_result_field_ordinal,
+            member_result_field_node,
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node,
             ..
         } = bind_groups;
         let ModulePathState {
@@ -1730,6 +1739,8 @@ impl GpuTypeChecker {
         } = module_path?;
 
         Some(OwnedGpuX86CodegenBuffers {
+            name_id_by_token,
+            language_name_id,
             enclosing_fn,
             visible_decl,
             visible_type,
@@ -1745,6 +1756,10 @@ impl GpuTypeChecker {
             decl_parent_type_decl,
             decl_type_ref_tag,
             decl_type_ref_payload,
+            type_expr_ref_tag,
+            type_expr_ref_payload,
+            module_type_path_type,
+            type_decl_hir_node_by_token,
             call_fn_index,
             call_intrinsic_tag,
             fn_entrypoint_tag,
@@ -1757,6 +1772,7 @@ impl GpuTypeChecker {
             method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload,
             method_decl_param_offset,
+            method_decl_receiver_mode,
             type_instance_kind,
             type_instance_decl_token,
             type_instance_elem_ref_tag,
@@ -1764,8 +1780,10 @@ impl GpuTypeChecker {
             type_instance_len_kind,
             type_instance_len_payload,
             member_result_field_ordinal,
+            member_result_field_node,
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
+            struct_init_field_decl_node_by_node,
         })
     }
 

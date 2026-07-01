@@ -220,6 +220,8 @@ pub struct ParserReadbacks {
     pub hir_array_element_parent_lit: wgpu::Buffer,
     pub hir_array_element_ordinal: wgpu::Buffer,
     pub hir_array_element_next: wgpu::Buffer,
+    pub hir_expr_string_start: wgpu::Buffer,
+    pub hir_expr_string_len: wgpu::Buffer,
     pub hir_member_receiver_node: wgpu::Buffer,
     pub hir_member_receiver_token: wgpu::Buffer,
     pub hir_member_name_token: wgpu::Buffer,
@@ -511,6 +513,14 @@ impl ParserReadbacks {
             "rb.parser.hir_array_element_next",
             bufs.hir_array_element_next.byte_size as u64,
         );
+        let hir_expr_string_start = mk(
+            "rb.parser.hir_expr_string_start",
+            bufs.hir_expr_string_start.byte_size as u64,
+        );
+        let hir_expr_string_len = mk(
+            "rb.parser.hir_expr_string_len",
+            bufs.hir_expr_string_len.byte_size as u64,
+        );
         let hir_member_receiver_node = mk(
             "rb.parser.hir_member_receiver_node",
             bufs.hir_member_receiver_node.byte_size as u64,
@@ -645,6 +655,8 @@ impl ParserReadbacks {
             hir_array_element_parent_lit,
             hir_array_element_ordinal,
             hir_array_element_next,
+            hir_expr_string_start,
+            hir_expr_string_len,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
@@ -1174,6 +1186,20 @@ impl ParserReadbacks {
             bufs.hir_array_element_next.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_expr_string_start,
+            0,
+            &self.hir_expr_string_start,
+            0,
+            bufs.hir_expr_string_start.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_expr_string_len,
+            0,
+            &self.hir_expr_string_len,
+            0,
+            bufs.hir_expr_string_len.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_member_receiver_node,
             0,
             &self.hir_member_receiver_node,
@@ -1370,6 +1396,8 @@ pub struct ParserHirItemReadbacks {
     pub hir_array_element_parent_lit: wgpu::Buffer,
     pub hir_array_element_ordinal: wgpu::Buffer,
     pub hir_array_element_next: wgpu::Buffer,
+    pub hir_expr_string_start: wgpu::Buffer,
+    pub hir_expr_string_len: wgpu::Buffer,
     pub hir_member_receiver_node: wgpu::Buffer,
     pub hir_member_receiver_token: wgpu::Buffer,
     pub hir_member_name_token: wgpu::Buffer,
@@ -1475,6 +1503,8 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
+    pub hir_expr_string_start: Vec<u32>,
+    pub hir_expr_string_len: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
     pub hir_member_name_token: Vec<u32>,
@@ -2095,6 +2125,14 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.hir_array_element_next",
                 bufs.hir_array_element_next.byte_size as u64,
             ),
+            hir_expr_string_start: mk(
+                "rb.parser.hir_item_records.hir_expr_string_start",
+                bufs.hir_expr_string_start.byte_size as u64,
+            ),
+            hir_expr_string_len: mk(
+                "rb.parser.hir_item_records.hir_expr_string_len",
+                bufs.hir_expr_string_len.byte_size as u64,
+            ),
             hir_member_receiver_node: mk(
                 "rb.parser.hir_item_records.hir_member_receiver_node",
                 bufs.hir_member_receiver_node.byte_size as u64,
@@ -2686,6 +2724,20 @@ impl ParserHirItemReadbacks {
             bufs.hir_array_element_next.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_expr_string_start,
+            0,
+            &self.hir_expr_string_start,
+            0,
+            bufs.hir_expr_string_start.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_expr_string_len,
+            0,
+            &self.hir_expr_string_len,
+            0,
+            bufs.hir_expr_string_len.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_member_receiver_node,
             0,
             &self.hir_member_receiver_node,
@@ -2985,6 +3037,8 @@ impl ParserHirItemReadbacks {
         );
         map("hir_array_element_ordinal", &self.hir_array_element_ordinal);
         map("hir_array_element_next", &self.hir_array_element_next);
+        map("hir_expr_string_start", &self.hir_expr_string_start);
+        map("hir_expr_string_len", &self.hir_expr_string_len);
         map("hir_member_receiver_node", &self.hir_member_receiver_node);
         map("hir_member_receiver_token", &self.hir_member_receiver_token);
         map("hir_member_name_token", &self.hir_member_name_token);
@@ -3195,6 +3249,8 @@ impl ParserHirItemReadbacks {
             ),
             hir_array_element_ordinal: read_u32_vec(&self.hir_array_element_ordinal, tree_len),
             hir_array_element_next: read_u32_vec(&self.hir_array_element_next, tree_len),
+            hir_expr_string_start: read_u32_vec(&self.hir_expr_string_start, tree_len),
+            hir_expr_string_len: read_u32_vec(&self.hir_expr_string_len, tree_len),
             hir_member_receiver_node: read_u32_vec(&self.hir_member_receiver_node, tree_len),
             hir_member_receiver_token: read_u32_vec(&self.hir_member_receiver_token, tree_len),
             hir_member_name_token: read_u32_vec(&self.hir_member_name_token, tree_len),
@@ -3573,6 +3629,8 @@ pub struct DecodedParserReadbacks {
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
+    pub hir_expr_string_start: Vec<u32>,
+    pub hir_expr_string_len: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
     pub hir_member_name_token: Vec<u32>,
@@ -3706,6 +3764,8 @@ impl DecodedParserReadbacks {
         );
         map("hir_array_element_ordinal", &rb.hir_array_element_ordinal);
         map("hir_array_element_next", &rb.hir_array_element_next);
+        map("hir_expr_string_start", &rb.hir_expr_string_start);
+        map("hir_expr_string_len", &rb.hir_expr_string_len);
         map("hir_member_receiver_node", &rb.hir_member_receiver_node);
         map("hir_member_receiver_token", &rb.hir_member_receiver_token);
         map("hir_member_name_token", &rb.hir_member_name_token);
@@ -3857,6 +3917,8 @@ impl DecodedParserReadbacks {
         let hir_array_element_parent_lit = decode_tree_vec(&rb.hir_array_element_parent_lit);
         let hir_array_element_ordinal = decode_tree_vec(&rb.hir_array_element_ordinal);
         let hir_array_element_next = decode_tree_vec(&rb.hir_array_element_next);
+        let hir_expr_string_start = decode_tree_vec(&rb.hir_expr_string_start);
+        let hir_expr_string_len = decode_tree_vec(&rb.hir_expr_string_len);
         let hir_member_receiver_node = decode_tree_vec(&rb.hir_member_receiver_node);
         let hir_member_receiver_token = decode_tree_vec(&rb.hir_member_receiver_token);
         let hir_member_name_token = decode_tree_vec(&rb.hir_member_name_token);
@@ -3953,6 +4015,8 @@ impl DecodedParserReadbacks {
             hir_array_element_parent_lit,
             hir_array_element_ordinal,
             hir_array_element_next,
+            hir_expr_string_start,
+            hir_expr_string_len,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
@@ -5059,11 +5123,6 @@ pub fn validate_hir_method_records(
             {
                 return Err(anyhow!(
                     "parser HIR method row {method_node} published a first parameter token outside the ordinal-zero parameter span"
-                ));
-            }
-            if receiver_mode == HIR_METHOD_RECEIVER_NONE {
-                return Err(anyhow!(
-                    "parser HIR method row {method_node} published a first parameter token without a receiver mode"
                 ));
             }
             if receiver_mode == HIR_METHOD_RECEIVER_EXPLICIT {

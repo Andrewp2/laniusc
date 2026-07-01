@@ -5,6 +5,7 @@
 // these records instead of binding the full HIR aggregate surface.
 
 import gpu_index;
+import prefix_scan;
 import status;
 
 struct Params
@@ -25,6 +26,9 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> hir_struct_field_ordinal;
+StructuredBuffer<uint> hir_struct_decl_field_start;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
@@ -39,7 +43,14 @@ StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
 StructuredBuffer<uint> hir_array_element_next;
 StructuredBuffer<uint> member_result_field_ordinal;
+StructuredBuffer<uint> member_result_field_node;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
+StructuredBuffer<uint> struct_init_field_decl_node_by_node;
+StructuredBuffer<uint> x86_struct_field_width_by_node;
+StructuredBuffer<uint> x86_struct_field_stream_width;
+StructuredBuffer<uint> x86_struct_field_stream_index_by_node;
+StructuredBuffer<uint> x86_struct_field_scan_local_prefix;
+StructuredBuffer<uint> x86_struct_field_scan_block_prefix;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
@@ -76,6 +87,7 @@ static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_STRUCT_ACCESS_PAYLOAD_MAX = 0x0fffffffu;
 static const uint MAX_STRUCT_LITERAL_ROOT_WALK = 64u;
+static const uint WG_SIZE = 256u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -130,6 +142,73 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
+uint scanned_field_prefix(uint stream_i)
+{
+    return global_exclusive_prefix(
+        stream_i,
+        WG_SIZE,
+        x86_struct_field_scan_local_prefix,
+        x86_struct_field_scan_block_prefix);
+}
+
+uint field_scalar_width(uint field_node)
+{
+    return valid_node(field_node) ? x86_struct_field_width_by_node[field_node] : 0u;
+}
+
+uint field_scalar_offset(uint decl_field_node)
+{
+    if (!valid_node(decl_field_node))
+        return INVALID;
+    uint stream_i = x86_struct_field_stream_index_by_node[decl_field_node];
+    uint ordinal = hir_struct_field_ordinal[decl_field_node];
+    if (stream_i == INVALID || ordinal == INVALID || stream_i < ordinal)
+        return INVALID;
+    uint base_i = stream_i - ordinal;
+    uint field_prefix = scanned_field_prefix(stream_i);
+    uint base_prefix = scanned_field_prefix(base_i);
+    return field_prefix >= base_prefix ? field_prefix - base_prefix : INVALID;
+}
+
+uint struct_scalar_width(uint struct_node)
+{
+    if (!valid_node(struct_node))
+        return 0u;
+    uint count = hir_struct_decl_field_count[struct_node];
+    if (count == 0u)
+        return 0u;
+    uint first_field = hir_struct_decl_field_start[struct_node];
+    if (!valid_node(first_field))
+        return 0u;
+    uint first_stream = x86_struct_field_stream_index_by_node[first_field];
+    uint first_ordinal = hir_struct_field_ordinal[first_field];
+    if (first_stream == INVALID || first_ordinal == INVALID || first_stream < first_ordinal)
+        return 0u;
+    uint base_i = first_stream - first_ordinal;
+    uint last_i = base_i + count - 1u;
+    if (!valid_node(last_i))
+        return 0u;
+    uint base_prefix = scanned_field_prefix(base_i);
+    uint last_prefix = scanned_field_prefix(last_i);
+    uint last_width = x86_struct_field_stream_width[last_i];
+    return last_prefix >= base_prefix ? last_prefix - base_prefix + last_width : 0u;
+}
+
+uint literal_scalar_width(uint literal_node)
+{
+    if (!valid_node(literal_node))
+        return 0u;
+    uint first_field = hir_struct_lit_field_start[literal_node];
+    uint decl_field = valid_node(first_field)
+                          ? struct_init_field_decl_node_by_node[first_field]
+                          : INVALID;
+    uint struct_node = valid_node(decl_field)
+                           ? hir_struct_field_parent_struct[decl_field]
+                           : INVALID;
+    uint width = struct_scalar_width(struct_node);
+    return width != 0u ? width : hir_struct_lit_field_count[literal_node];
+}
+
 void publish_error(uint detail)
 {
     publish_stage_error_min_detail4(
@@ -169,8 +248,9 @@ void publish_member_access_record(uint node)
     uint member_token = hir_member_name_token[node];
     if (!valid_token(member_token))
         return;
-    uint ordinal = member_result_field_ordinal[member_token];
-    if (ordinal == INVALID)
+    uint field_node = member_result_field_node[member_token];
+    uint offset = field_scalar_offset(field_node);
+    if (offset == INVALID)
         return;
     uint receiver_node = hir_member_receiver_node[node];
     if (!valid_node(receiver_node))
@@ -180,14 +260,14 @@ void publish_member_access_record(uint node)
         node,
         X86_STRUCT_ACCESS_MEMBER,
         receiver_node,
-        ordinal,
+        offset,
         member_token);
 }
 
 void publish_struct_type_record(uint node)
 {
     uint decl_token = hir_item_name_token[node];
-    uint width = hir_struct_decl_field_count[node];
+    uint width = struct_scalar_width(node);
     if (!valid_token(decl_token) || width == 0u)
         return;
     x86_struct_type_record[decl_token] = width;
@@ -195,7 +275,7 @@ void publish_struct_type_record(uint node)
 
 void publish_literal_access_record(uint node)
 {
-    uint width = hir_struct_lit_field_count[node];
+    uint width = literal_scalar_width(node);
     if (width == 0u)
         return;
     uint first_field = hir_struct_lit_field_start[node];
@@ -375,14 +455,14 @@ bool let_initializer_is_array_literal(uint let_node, uint array_node)
 void publish_array_struct_field_store_record(
     uint literal_node,
     uint value_node,
-    uint field_ordinal)
+    uint field_offset)
 {
     uint array_node = INVALID;
     uint element_ordinal = INVALID;
-    uint element_width = hir_struct_lit_field_count[literal_node];
+    uint element_width = literal_scalar_width(literal_node);
     if (!array_element_record_for_struct_literal(literal_node, array_node, element_ordinal) ||
         !valid_node(array_node) || element_ordinal == INVALID ||
-        field_ordinal == INVALID || element_width == 0u)
+        field_offset == INVALID || element_width == 0u)
         return;
 
     uint let_node = x86_enclosing_let_node[array_node];
@@ -392,7 +472,7 @@ void publish_array_struct_field_store_record(
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);
-    uint storage_ordinal = element_ordinal * element_width + field_ordinal;
+    uint storage_ordinal = element_ordinal * element_width + field_offset;
     if (!valid_node(value_node) || !valid_token(decl_token))
         return;
     x86_struct_store_record[value_node] = uint4(
@@ -457,12 +537,13 @@ void publish_struct_field_store_record(uint field_node)
     if (!valid_node(value_node))
         return;
 
-    uint ordinal = struct_init_field_ordinal_by_node[field_node];
-    if (ordinal != INVALID)
+    uint decl_field_node = struct_init_field_decl_node_by_node[field_node];
+    uint offset = field_scalar_offset(decl_field_node);
+    if (offset != INVALID)
     {
         uint next_field = hir_struct_lit_field_next[field_node];
-        x86_struct_store_record[field_node] = uint4(value_node, ordinal, literal_node, next_field);
-        publish_array_struct_field_store_record(literal_node, value_node, ordinal);
+        x86_struct_store_record[field_node] = uint4(value_node, offset, literal_node, next_field);
+        publish_array_struct_field_store_record(literal_node, value_node, offset);
     }
     if (struct_literal_is_array_element(literal_node))
         return;
@@ -476,8 +557,8 @@ void publish_struct_field_store_record(uint field_node)
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);
-    publish_store_record_for_value(value_node, decl_token, ordinal, literal_node);
-    publish_store_record_for_value(resolve_expr(value_node), decl_token, ordinal, literal_node);
+    publish_store_record_for_value(value_node, decl_token, offset, literal_node);
+    publish_store_record_for_value(resolve_expr(value_node), decl_token, offset, literal_node);
 }
 
 [shader("compute")]

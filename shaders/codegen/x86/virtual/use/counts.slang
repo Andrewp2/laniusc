@@ -41,6 +41,31 @@ static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
 static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
+static const uint X86_VINST_HOST_TEXT_WRITE = 34u;
+static const uint X86_VINST_HOST_OPEN_WRITE_PATH = 35u;
+static const uint X86_VINST_HOST_WRITE_I32 = 36u;
+static const uint X86_VINST_HOST_WRITE_BYTE = 37u;
+static const uint X86_VINST_HOST_WRITE_NEWLINE = 38u;
+static const uint X86_VINST_HOST_READ_I32 = 40u;
+static const uint X86_VINST_HOST_PROCESS_EXIT = 41u;
+static const uint X86_VINST_HOST_ALLOC = 43u;
+static const uint X86_VINST_HOST_DEALLOC = 44u;
+static const uint X86_VINST_HOST_ARG_LEN = 46u;
+static const uint X86_VINST_HOST_ARG_READ = 47u;
+static const uint X86_VINST_HOST_CURRENT_DIR_READ = 49u;
+static const uint X86_VINST_HOST_VAR_KEY_LEN = 51u;
+static const uint X86_VINST_HOST_VAR_KEY_READ = 52u;
+static const uint X86_VINST_HOST_VAR_LEN = 53u;
+static const uint X86_VINST_HOST_VAR_READ = 54u;
+static const uint X86_VINST_HOST_CLOSE_FILE = 55u;
+static const uint X86_VINST_HOST_FS_READ = 56u;
+static const uint X86_VINST_HOST_FS_WRITE = 57u;
+static const uint X86_VINST_HOST_FS_OPEN_READ = 58u;
+static const uint X86_VINST_HOST_FS_OPEN_WRITE = 59u;
+static const uint X86_VINST_HOST_FS_OPEN_APPEND = 60u;
+static const uint X86_VINST_HOST_STDIN_READ = 61u;
+static const uint X86_VINST_HOST_STDOUT_WRITE = 62u;
+static const uint X86_VINST_HOST_STDERR_WRITE = 63u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -101,8 +126,44 @@ uint operand_count_for_row(uint row)
         return args.x == INVALID ? 0u : 1u;
     if (op == X86_VINST_INTRINSIC)
         return 1u;
+    if (op == X86_VINST_HOST_TEXT_WRITE)
+        return 1u;
+    if (op == X86_VINST_HOST_WRITE_NEWLINE)
+        return 1u;
+    if (op == X86_VINST_HOST_PROCESS_EXIT)
+        return 1u;
+    if (op == X86_VINST_HOST_ARG_LEN)
+        return 1u;
+    if (op == X86_VINST_HOST_VAR_KEY_LEN)
+        return 1u;
+    if (op == X86_VINST_HOST_CLOSE_FILE)
+        return 1u;
+    if (op == X86_VINST_HOST_READ_I32 ||
+        op == X86_VINST_HOST_WRITE_I32 ||
+        op == X86_VINST_HOST_WRITE_BYTE ||
+        op == X86_VINST_HOST_ALLOC ||
+        op == X86_VINST_HOST_CURRENT_DIR_READ ||
+        op == X86_VINST_HOST_VAR_LEN ||
+        op == X86_VINST_HOST_FS_OPEN_READ ||
+        op == X86_VINST_HOST_FS_OPEN_WRITE ||
+        op == X86_VINST_HOST_FS_OPEN_APPEND ||
+        op == X86_VINST_HOST_STDIN_READ ||
+        op == X86_VINST_HOST_STDOUT_WRITE ||
+        op == X86_VINST_HOST_STDERR_WRITE)
+        return 2u;
     if (op == X86_VINST_CALL_MIXED)
         return mixed_scalar_operand_count(row);
+    if (op == X86_VINST_HOST_DEALLOC)
+        return 3u;
+    if (op == X86_VINST_HOST_ARG_READ)
+        return 3u;
+    if (op == X86_VINST_HOST_VAR_KEY_READ)
+        return 3u;
+    if (op == X86_VINST_HOST_FS_READ ||
+        op == X86_VINST_HOST_FS_WRITE)
+        return 3u;
+    if (op == X86_VINST_HOST_VAR_READ)
+        return 4u;
     if (op == X86_VINST_BINARY ||
         op == X86_VINST_COMPARE ||
         op == X86_VINST_STORE_LOCAL_INDEX ||

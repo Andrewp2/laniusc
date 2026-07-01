@@ -1,10 +1,10 @@
 mod common;
 
 use laniusc_compiler::compiler::{
-    CompileError,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
+    CompileError,
 };
 
 fn make_x86_test_pass(
@@ -165,6 +165,21 @@ fn x86_buffer_from_u32s(
     })
 }
 
+fn x86_buffer_from_bytes(
+    device: &wgpu::Device,
+    label: &str,
+    usage: wgpu::BufferUsages,
+    bytes: &[u8],
+) -> wgpu::Buffer {
+    use wgpu::util::DeviceExt;
+
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytes,
+        usage,
+    })
+}
+
 fn x86_read_u32s(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -206,6 +221,427 @@ fn x86_read_u32s(
     words
 }
 
+fn x86_read_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &wgpu::Buffer,
+    label: &str,
+    byte_len: usize,
+) -> Vec<u8> {
+    let words = x86_read_u32s(device, queue, buffer, label, byte_len.div_ceil(4));
+    let mut bytes = x86_words_as_bytes(&words);
+    bytes.truncate(byte_len);
+    bytes
+}
+
+#[test]
+fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
+    common::run_gpu_codegen_with_timeout("x86 rodata string offsets", || {
+        const INVALID: u32 = 0xffff_ffff;
+        const HIR_EXPR_STRING: u32 = 28;
+        const X86_RODATA_OK: u32 = 1;
+
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let sizes_pass =
+            make_x86_test_pass(device, "test.x86_rodata_sizes", "codegen/x86/rodata/sizes");
+        let scan_pass = make_x86_test_pass(
+            device,
+            "test.x86_rodata_scan",
+            "codegen/x86/rodata/scan_local",
+        );
+        let offsets_pass = make_x86_test_pass(
+            device,
+            "test.x86_rodata_offsets",
+            "codegen/x86/rodata/offsets",
+        );
+
+        let params = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.params",
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            &[8, 8, 512, 4],
+        );
+        let source = x86_buffer_from_bytes(
+            device,
+            "x86_rodata.source",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            b"xabcx\\n ",
+        );
+        let scan_params = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.scan_params",
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            &[4, 1, 0, 4],
+        );
+        let hir_status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.hir_status",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[1, 0, INVALID, 0, 0, 4],
+        );
+        let expr_record = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.expr_record",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[
+                HIR_EXPR_STRING,
+                INVALID,
+                INVALID,
+                0,
+                0,
+                INVALID,
+                INVALID,
+                INVALID,
+                HIR_EXPR_STRING,
+                INVALID,
+                INVALID,
+                2,
+                0,
+                INVALID,
+                INVALID,
+                INVALID,
+            ],
+        );
+        let string_start = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.string_start",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[1, INVALID, 5, INVALID],
+        );
+        let string_len = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.string_len",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[3, 0, 2, 0],
+        );
+        let size_by_node = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.size_by_node",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 4],
+        );
+        let scan_local = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.scan_local",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 4],
+        );
+        let scan_block_prefix = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.scan_block_prefix",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0],
+        );
+        let scan_block_sum = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.scan_block_sum",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0],
+        );
+        let offset_by_node = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.offset_by_node",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 4],
+        );
+        let rodata_len = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.len",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0],
+        );
+        let rodata_status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata.status",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[X86_RODATA_OK, 0, INVALID, 0],
+        );
+
+        let sizes_bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_rodata_sizes.bind_group"),
+                &sizes_pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("source_bytes", source.as_entire_binding()),
+                    ("hir_status", hir_status.as_entire_binding()),
+                    ("hir_expr_record", expr_record.as_entire_binding()),
+                    ("hir_expr_string_start", string_start.as_entire_binding()),
+                    ("hir_expr_string_len", string_len.as_entire_binding()),
+                    ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
+                    ("x86_rodata_status", rodata_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86 rodata sizes bind group");
+        let scan_bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_rodata_scan.bind_group"),
+                &scan_pass,
+                0,
+                &[
+                    ("gScan", scan_params.as_entire_binding()),
+                    ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
+                    ("x86_rodata_status", rodata_status.as_entire_binding()),
+                    (
+                        "x86_rodata_scan_local_prefix",
+                        scan_local.as_entire_binding(),
+                    ),
+                    (
+                        "x86_rodata_scan_block_sum",
+                        scan_block_sum.as_entire_binding(),
+                    ),
+                ],
+            )
+            .expect("create x86 rodata scan bind group");
+        let offsets_bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_rodata_offsets.bind_group"),
+                &offsets_pass,
+                0,
+                &[
+                    ("gScan", scan_params.as_entire_binding()),
+                    ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
+                    (
+                        "x86_rodata_scan_local_prefix",
+                        scan_local.as_entire_binding(),
+                    ),
+                    (
+                        "x86_rodata_scan_block_prefix",
+                        scan_block_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "x86_rodata_offset_by_node",
+                        offset_by_node.as_entire_binding(),
+                    ),
+                    ("x86_rodata_len", rodata_len.as_entire_binding()),
+                    ("x86_rodata_status", rodata_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86 rodata offsets bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test.x86_rodata.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.x86_rodata"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&sizes_pass.pipeline);
+            compute.set_bind_group(0, &sizes_bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+            compute.set_pipeline(&scan_pass.pipeline);
+            compute.set_bind_group(0, &scan_bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+            compute.set_pipeline(&offsets_pass.pipeline);
+            compute.set_bind_group(0, &offsets_bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        queue.submit(Some(encoder.finish()));
+
+        assert_eq!(
+            x86_read_u32s(device, queue, &size_by_node, "x86 rodata sizes", 4),
+            vec![4, 0, 2, 0],
+        );
+        assert_eq!(
+            x86_read_u32s(device, queue, &offset_by_node, "x86 rodata offsets", 4),
+            vec![0, 4, 4, 6],
+        );
+        assert_eq!(
+            x86_read_u32s(device, queue, &rodata_len, "x86 rodata len", 1),
+            vec![6],
+        );
+        assert_eq!(
+            x86_read_u32s(device, queue, &rodata_status, "x86 rodata status", 4),
+            vec![X86_RODATA_OK, 0, INVALID, 4],
+        );
+    });
+}
+
+#[test]
+fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
+    common::run_gpu_codegen_with_timeout("x86 rodata byte write", || {
+        const INVALID: u32 = 0xffff_ffff;
+        const X86_RODATA_OK: u32 = 1;
+        const X86_LAYOUT_OK: u32 = 1;
+        const RODATA_OFFSET: usize = 0x7e;
+        const RODATA_LEN: usize = 6;
+        const FILE_LEN: usize = RODATA_OFFSET + RODATA_LEN;
+
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let write_pass =
+            make_x86_test_pass(device, "test.x86_rodata_write", "codegen/x86/rodata/write");
+
+        let params = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.params",
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            &[8, 8, 160, 4],
+        );
+        let source = x86_buffer_from_bytes(
+            device,
+            "x86_rodata_write.source",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            b"xabcx\\n ",
+        );
+        let hir_status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.hir_status",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[1, 0, INVALID, 0, 0, 4],
+        );
+        let string_start = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.string_start",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[1, INVALID, 5, INVALID],
+        );
+        let string_len = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.string_len",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[3, 0, 2, 0],
+        );
+        let size_by_node = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.size_by_node",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[4, 0, 2, 0],
+        );
+        let offset_by_node = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.offset_by_node",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0, 4, 4, 6],
+        );
+        let rodata_len = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.len",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[RODATA_LEN as u32],
+        );
+        let rodata_status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.rodata_status",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[X86_RODATA_OK, 0, INVALID, RODATA_LEN as u32],
+        );
+        let elf_layout = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.layout",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[
+                0x78,
+                6,
+                FILE_LEN as u32,
+                0x400078,
+                0x400000,
+                0x1000,
+                RODATA_OFFSET as u32,
+                RODATA_LEN as u32,
+            ],
+        );
+        let layout_status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.layout_status",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[X86_LAYOUT_OK, 0, INVALID, FILE_LEN as u32],
+        );
+        let out_words = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.out_words",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 40],
+        );
+        let status = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.status",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[FILE_LEN as u32, 1, 0, INVALID],
+        );
+
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_rodata_write.bind_group"),
+                &write_pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("source_bytes", source.as_entire_binding()),
+                    ("hir_status", hir_status.as_entire_binding()),
+                    ("hir_expr_string_start", string_start.as_entire_binding()),
+                    ("hir_expr_string_len", string_len.as_entire_binding()),
+                    ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
+                    (
+                        "x86_rodata_offset_by_node",
+                        offset_by_node.as_entire_binding(),
+                    ),
+                    ("x86_rodata_len", rodata_len.as_entire_binding()),
+                    ("x86_rodata_status", rodata_status.as_entire_binding()),
+                    ("x86_elf_layout", elf_layout.as_entire_binding()),
+                    ("layout_status", layout_status.as_entire_binding()),
+                    ("out_words", out_words.as_entire_binding()),
+                    ("status", status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86 rodata write bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test.x86_rodata_write.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.x86_rodata_write"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&write_pass.pipeline);
+            compute.set_bind_group(0, &bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        queue.submit(Some(encoder.finish()));
+
+        let bytes = x86_read_bytes(
+            device,
+            queue,
+            &out_words,
+            "x86 rodata write bytes",
+            FILE_LEN,
+        );
+        assert_eq!(&bytes[RODATA_OFFSET..FILE_LEN], b"abc\0\n\0");
+        assert_eq!(
+            x86_read_u32s(device, queue, &status, "x86 rodata write status", 4),
+            vec![FILE_LEN as u32, 1, 0, INVALID],
+        );
+    });
+}
+
 fn assert_source_exit(name: &str, source: &str, expected: i32) {
     let bytes = compile_source(&format!("x86 source {name}"), source);
 
@@ -219,6 +655,111 @@ fn assert_source_exit(name: &str, source: &str, expected: i32) {
     );
 }
 
+#[test]
+fn x86_elf_layout_accounts_for_rodata_after_text() {
+    common::run_gpu_codegen_with_timeout("x86 ELF rodata layout", || {
+        const INVALID: u32 = 0xffff_ffff;
+        const X86_ENCODE_OK: u32 = 1;
+        const X86_LAYOUT_OK: u32 = 1;
+        const ELF_TEXT_OFFSET: u32 = 0x78;
+        const TEXT_LEN: u32 = 16;
+        const RODATA_LEN: u32 = 7;
+
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let pass = make_x86_test_pass(device, "test.x86_elf_layout", "codegen/x86/elf/layout");
+
+        let params = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.params",
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            &[0, 0, 512, 0],
+        );
+        let text_len = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.text_len",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[TEXT_LEN],
+        );
+        let rodata_len = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.rodata_len",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[RODATA_LEN],
+        );
+        let encode_status = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.encode_status",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[X86_ENCODE_OK, 0, INVALID, TEXT_LEN],
+        );
+        let layout = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.layout",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 8],
+        );
+        let layout_status = x86_buffer_from_u32s(
+            device,
+            "x86_elf_layout.status",
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            &[0; 4],
+        );
+
+        let bind_group =
+            laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("test.x86_elf_layout.bind_group"),
+                &pass,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("x86_text_len", text_len.as_entire_binding()),
+                    ("x86_rodata_len", rodata_len.as_entire_binding()),
+                    ("encode_status", encode_status.as_entire_binding()),
+                    ("x86_elf_layout", layout.as_entire_binding()),
+                    ("layout_status", layout_status.as_entire_binding()),
+                ],
+            )
+            .expect("create x86 ELF layout bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test.x86_elf_layout.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.x86_elf_layout"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, &bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        queue.submit(Some(encoder.finish()));
+
+        let layout_words = x86_read_u32s(device, queue, &layout, "x86 ELF layout", 8);
+        let status_words = x86_read_u32s(device, queue, &layout_status, "x86 layout status", 4);
+        let rodata_offset = ELF_TEXT_OFFSET + TEXT_LEN;
+        let file_len = rodata_offset + RODATA_LEN;
+
+        assert_eq!(layout_words[0], ELF_TEXT_OFFSET, "text file offset");
+        assert_eq!(layout_words[1], TEXT_LEN, "text byte length");
+        assert_eq!(layout_words[2], file_len, "file byte length");
+        assert_eq!(layout_words[6], rodata_offset, "rodata file offset");
+        assert_eq!(layout_words[7], RODATA_LEN, "rodata byte length");
+        assert_eq!(
+            status_words,
+            vec![X86_LAYOUT_OK, 0, INVALID, file_len],
+            "layout status should publish the final file length"
+        );
+    });
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn assert_x86_stdout(context: &str, artifact_stem: &str, bytes: &[u8], expected: &str) {
     let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
@@ -227,6 +768,61 @@ fn assert_x86_stdout(context: &str, artifact_stem: &str, bytes: &[u8], expected:
         common::stdout_utf8(format!("{context}: native stdout"), output.stdout),
         expected
     );
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn run_x86_64_elf_output_in_dir(
+    context: &str,
+    artifact_stem: &str,
+    bytes: &[u8],
+    dir: &std::path::Path,
+) -> std::process::Output {
+    use std::os::unix::fs::PermissionsExt;
+
+    let exe_path = dir.join(artifact_stem);
+    std::fs::write(&exe_path, bytes)
+        .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
+    let mut permissions = std::fs::metadata(&exe_path)
+        .unwrap_or_else(|err| panic!("{context}: stat native ELF {}: {err}", exe_path.display()))
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&exe_path, permissions)
+        .unwrap_or_else(|err| panic!("{context}: chmod native ELF {}: {err}", exe_path.display()));
+
+    let mut command = std::process::Command::new(&exe_path);
+    command.current_dir(dir);
+    common::short_process_output_with_timeout(
+        format!("{context}: run native ELF {}", exe_path.display()),
+        &mut command,
+    )
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn run_x86_64_elf_output_in_dir_with_args(
+    context: &str,
+    artifact_stem: &str,
+    bytes: &[u8],
+    dir: &std::path::Path,
+    args: &[&str],
+) -> std::process::Output {
+    use std::os::unix::fs::PermissionsExt;
+
+    let exe_path = dir.join(artifact_stem);
+    std::fs::write(&exe_path, bytes)
+        .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
+    let mut permissions = std::fs::metadata(&exe_path)
+        .unwrap_or_else(|err| panic!("{context}: stat native ELF {}: {err}", exe_path.display()))
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&exe_path, permissions)
+        .unwrap_or_else(|err| panic!("{context}: chmod native ELF {}: {err}", exe_path.display()));
+
+    let mut command = std::process::Command::new(&exe_path);
+    command.current_dir(dir).args(args);
+    common::short_process_output_with_timeout(
+        format!("{context}: run native ELF {}", exe_path.display()),
+        &mut command,
+    )
 }
 
 #[test]
@@ -2579,6 +3175,63 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_lanius_std_write_i32_stdout() {
+    let bytes = compile_source(
+        "x86 lanius_std write_i32 stdout",
+        r#"
+extern "lanius_std" fn write_i32(handle: i32, value: i32) -> i32;
+
+fn main() {
+    let result: i32 = write_i32(1, 42);
+    if (result < 0) {
+        return 1;
+    }
+    return result;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 lanius_std write_i32 stdout",
+        "x86_lanius_std_write_i32_stdout",
+        &bytes,
+        "42",
+    );
+}
+
+#[test]
+fn x86_executes_lanius_std_write_i32_nested_status_check() {
+    let bytes = compile_source(
+        "x86 lanius_std write_i32 nested status",
+        r#"
+extern "lanius_std" fn write_i32(handle: i32, value: i32) -> i32;
+
+fn operation_failed(result: i32) -> bool {
+    return result < 0;
+}
+
+fn main() {
+    if (operation_failed(write_i32(1, 7))) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 lanius_std write_i32 nested status",
+        "x86_lanius_std_write_i32_nested_status",
+        &bytes,
+        "7",
+    );
+}
+
+#[test]
 fn x86_executes_multi_argument_method_call() {
     assert_source_exit(
         "multi_argument_method_call",
@@ -3787,7 +4440,7 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_loop_control_outside_loop_with_diagnostic() {
+fn x86_rejects_break_continue_outside_repetition_with_diagnostic() {
     let cases = [
         (
             "break",
@@ -3814,26 +4467,23 @@ fn main() {
     for (name, source, expected_line) in cases {
         let source = source.to_owned();
         let err = common::run_gpu_codegen_with_timeout(
-            &format!("x86 loop control outside loop {name}"),
+            &format!("x86 break continue outside repetition {name}"),
             move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
         )
-        .expect_err("loop control outside a loop should fail before native branches are emitted");
+        .expect_err(
+            "break/continue outside repetition should fail before native branches are emitted",
+        );
 
         match err {
             CompileError::Diagnostic(diagnostic) => {
                 let message = diagnostic.render();
                 assert_eq!(
                     diagnostic.code, "LNC0041",
-                    "loop-control rejection should use the stable frontend diagnostic: {message}"
+                    "break/continue rejection should use the stable frontend diagnostic: {message}"
                 );
                 assert_eq!(
                     diagnostic.category, "type checking",
-                    "loop-control rejection should fail before native codegen: {message}"
-                );
-                assert!(
-                    diagnostic.message.contains("invalid loop control")
-                        && message.contains("loop control statement is outside a loop"),
-                    "diagnostic should identify the source-level loop-control error: {message}"
+                    "break/continue rejection should fail before native codegen: {message}"
                 );
                 let label = diagnostic
                     .primary_label
@@ -3842,7 +4492,7 @@ fn main() {
                 assert_eq!(
                     label.source_line.as_deref(),
                     Some(expected_line),
-                    "diagnostic should point at the unsupported loop-control statement: {message}"
+                    "diagnostic should point at the unsupported break/continue statement: {message}"
                 );
             }
             CompileError::GpuCodegen(message) => {
@@ -3966,6 +4616,68 @@ fn main() -> i32 {
 }
 "#,
         11,
+    );
+}
+
+#[test]
+fn x86_executes_numeric_range_for_loop_with_struct_field_end() {
+    assert_source_exit(
+        "numeric_range_for_loop_struct_field_end",
+        r#"
+struct Settings {
+    samples: i32,
+}
+
+fn count_samples(settings: Settings) -> i32 {
+    let samples: i32 = settings.samples;
+    let total: i32 = 0;
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            total += 1;
+        }
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    let settings: Settings = Settings { samples: 3 };
+    return count_samples(settings);
+}
+"#,
+        9,
+    );
+}
+
+#[test]
+fn x86_executes_nested_range_f32_accumulation() {
+    assert_source_exit(
+        "nested_range_f32_accumulation",
+        r#"
+struct Settings {
+    samples: i32,
+}
+
+fn accumulate(settings: Settings) -> f32 {
+    let samples: i32 = settings.samples;
+    let total: f32 = 0.0;
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            total = total + 0.25;
+        }
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    let settings: Settings = Settings { samples: 2 };
+    let value: f32 = accumulate(settings);
+    if (value > 0.99 && value < 1.01) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
     );
 }
 
@@ -5116,79 +5828,1892 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_string_and_char_literals_before_silent_noop() {
-    for (context, source, expected_line, literal) in [
-        (
-            "x86 string literal",
-            r#"
+fn x86_executes_f32_arithmetic_and_comparison() {
+    assert_source_exit(
+        "f32_arithmetic_and_comparison",
+        r#"
 fn main() {
-    let value: str = "ready";
-    return 0;
-}
-"#,
-            r#"    let value: str = "ready";"#,
-            r#""ready""#,
-        ),
-        (
-            "x86 char literal",
-            r#"
-fn main() {
-    let value: char = 'x';
-    return 0;
-}
-"#,
-            "    let value: char = 'x';",
-            "'x'",
-        ),
-    ] {
-        let source = source.to_owned();
-        let err = common::run_gpu_codegen_with_timeout(context, move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err("string and char literals should fail closed until x86 scalar lowering exists");
-
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                let message = diagnostic.render();
-                assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "x86 rejection should use the stable backend diagnostic: {message}"
-                );
-                assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 literal expression")
-                        && message.contains("native x86 backend"),
-                    "diagnostic should identify the unsupported literal boundary: {message}"
-                );
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("x86 diagnostic should include a primary source label");
-                assert_eq!(
-                    label.source_line.as_deref(),
-                    Some(expected_line),
-                    "diagnostic should point at the unsupported literal statement: {message}"
-                );
-                let source_line = label
-                    .source_line
-                    .as_deref()
-                    .expect("x86 diagnostic should include the literal source line");
-                let literal_start_column = source_line
-                    .find(literal)
-                    .map(|column| column + 1)
-                    .expect("fixture should contain the unsupported literal");
-                let literal_end_column = literal_start_column + literal.len();
-                assert!(
-                    (literal_start_column..=literal_end_column).contains(&label.column),
-                    "diagnostic column should fall inside the unsupported literal: {message}"
-                );
-            }
-            CompileError::GpuCodegen(message) => {
-                panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-            }
-            other => panic!("expected x86 diagnostic rejection, got {other:?}"),
+    let value: f32 = (1.5 + 2.5) * 3.0 / 2.0 - 1.0;
+    if (value > 4.9) {
+        if (value < 5.1) {
+            return 0;
         }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_addition() {
+    assert_source_exit(
+        "f32_addition",
+        r#"
+fn main() {
+    let value: f32 = 1.5 + 2.5;
+    if (value > 3.9) {
+        if (value < 4.1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_sum_of_products() {
+    assert_source_exit(
+        "f32_sum_of_products",
+        r#"
+fn main() {
+    let value: f32 = 1.5 * 2.0 + 3.0 * 4.0;
+    if (value > 14.9) {
+        if (value < 15.1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_negation() {
+    assert_source_exit(
+        "f32_negation",
+        r#"
+fn main() {
+    let value: f32 = -2.5;
+    if (value < 0.0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_negative_literal_comparison_bounds() {
+    assert_source_exit(
+        "f32_negative_literal_comparison_bounds",
+        r#"
+fn main() {
+    let value: f32 = -1.0;
+    if (value > -1.01 && value < -0.99) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_lanius_std_i32_to_f32_conversion() {
+    assert_source_exit(
+        "lanius_std_i32_to_f32",
+        r#"
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+fn main() {
+    let value: f32 = i32_to_f32(7) / 2.0;
+    if (value > 3.4) {
+        if (value < 3.6) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_mutable_f32_threshold_loop() {
+    assert_source_exit(
+        "mutable_f32_threshold_loop",
+        r#"
+fn count_to_scaled(value: f32) -> i32 {
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= value && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn main() {
+    return count_to_scaled(4.0);
+}
+"#,
+        4,
+    );
+}
+
+#[test]
+fn x86_executes_raytracer_color_to_byte_shape() {
+    assert_source_exit(
+        "raytracer_color_to_byte_shape",
+        r#"
+fn sqrt_approx(value: f32) -> f32 {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+    let guess: f32 = value;
+    if (guess < 1.0) {
+        guess = 1.0;
+    }
+    let iteration: i32 = 0;
+    while (iteration < 8) {
+        guess = 0.5 * (guess + value / guess);
+        iteration += 1;
+    }
+    return guess;
+}
+
+fn clamp01(value: f32) -> f32 {
+    if (value < 0.0) {
+        return 0.0;
+    }
+    if (value > 0.999) {
+        return 0.999;
+    }
+    return value;
+}
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = sqrt_approx(clamp01(value)) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn main() {
+    let r: i32 = color_to_byte(0.625);
+    let g: i32 = color_to_byte(0.781);
+    let b: i32 = color_to_byte(1.0);
+    if (!(r > 200 && r < 204)) {
+        return 10;
+    }
+    if (!(g > 225 && g < 228)) {
+        return 11;
+    }
+    if (!(b == 255)) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_member_argument_to_scalar_call() {
+    assert_source_exit(
+        "f32_member_argument_to_scalar_call",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn sqrt_approx(value: f32) -> f32 {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+    let guess: f32 = value;
+    if (guess < 1.0) {
+        guess = 1.0;
+    }
+    let iteration: i32 = 0;
+    while (iteration < 8) {
+        guess = 0.5 * (guess + value / guess);
+        iteration += 1;
+    }
+    return guess;
+}
+
+fn clamp01(value: f32) -> f32 {
+    if (value < 0.0) {
+        return 0.0;
+    }
+    if (value > 0.999) {
+        return 0.999;
+    }
+    return value;
+}
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = sqrt_approx(clamp01(value)) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn main() {
+    let color: Vec3 = Vec3 { x: 0.625, y: 0.781, z: 1.0 };
+    let r: i32 = color_to_byte(color.x);
+    if (r > 200 && r < 204) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_struct_method_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::vec3;
+
+pub struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    pub fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::vec3;
+
+fn main() {
+    let base: helpers::vec3::Vec3 = helpers::vec3::Vec3::new(0.5, 0.7, 1.0);
+    let value: helpers::vec3::Vec3 = base.mul_scalar(0.5);
+    if (value.x > 0.24 && value.x < 0.26) {
+        if (value.y > 0.34 && value.y < 0.36) {
+            if (value.z > 0.49 && value.z < 0.51) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack f32 struct method return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack f32 struct method return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack f32 struct method return member reads",
+        "x86_source_pack_f32_struct_method_return_member_reads",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_struct_constructor_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::vec3;
+
+pub struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::vec3;
+
+fn main() {
+    let value: helpers::vec3::Vec3 = helpers::vec3::Vec3::new(0.5, 0.7, 1.0);
+    let byte: i32 = 0;
+    let threshold: f32 = 0.0;
+    while (threshold < value.x && byte < 20) {
+        byte += 1;
+        threshold += 0.1;
+    }
+    return byte;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack f32 struct constructor return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack f32 struct constructor return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack f32 struct constructor return member reads",
+        "x86_source_pack_f32_struct_constructor_return_member_reads",
+        &bytes,
+        5,
+    );
+}
+
+#[test]
+fn x86_executes_f32_free_struct_constructor_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::vec3;
+
+pub struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+pub fn new_vec3(x: f32, y: f32, z: f32) -> Vec3 {
+    return Vec3 { x: x, y: y, z: z };
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::vec3;
+
+fn main() {
+    let value: helpers::vec3::Vec3 = helpers::vec3::new_vec3(0.5, 0.7, 1.0);
+    let byte: i32 = 0;
+    let threshold: f32 = 0.0;
+    while (threshold < value.x && byte < 20) {
+        byte += 1;
+        threshold += 0.1;
+    }
+    return byte;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack f32 free struct constructor return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack f32 free struct constructor return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack f32 free struct constructor return member reads",
+        "x86_source_pack_f32_free_struct_constructor_return_member_reads",
+        &bytes,
+        5,
+    );
+}
+
+#[test]
+fn x86_executes_f32_struct_constant_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::vec3;
+
+pub struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+pub fn constant() -> Vec3 {
+    return Vec3 { x: 0.5, y: 0.7, z: 1.0 };
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::vec3;
+
+fn main() {
+    let value: helpers::vec3::Vec3 = helpers::vec3::constant();
+    if (!(value.x > 0.49 && value.x < 0.51)) {
+        return 2;
+    }
+    if (!(value.y > 0.69 && value.y < 0.71)) {
+        return 3;
+    }
+    if (!(value.z > 0.99 && value.z < 1.01)) {
+        return 4;
+    }
+    return 0;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack f32 struct constant return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack f32 struct constant return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack f32 struct constant return member reads",
+        "x86_source_pack_f32_struct_constant_return_member_reads",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_local_struct_literal_member_reads() {
+    assert_source_exit(
+        "f32_local_struct_literal_member_reads",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn main() {
+    let value: Vec3 = Vec3 { x: 0.5, y: 0.7, z: 1.0 };
+    if (!(value.x > 0.49 && value.x < 0.51)) {
+        return 2;
+    }
+    if (!(value.y > 0.69 && value.y < 0.71)) {
+        return 3;
+    }
+    if (!(value.z > 0.99 && value.z < 1.01)) {
+        return 4;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_local_struct_literal_negative_member_reads() {
+    assert_source_exit(
+        "f32_local_struct_literal_negative_member_reads",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn main() {
+    let value: Vec3 = Vec3 { x: 0.5, y: 0.7, z: -1.0 };
+    if (!(value.x > 0.49 && value.x < 0.51)) {
+        return 2;
+    }
+    if (!(value.y > 0.69 && value.y < 0.71)) {
+        return 3;
+    }
+    if (!(value.z > -1.01 && value.z < -0.99)) {
+        return 4;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_width3_struct_constructor_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::triple;
+
+pub struct Triple {
+    x: i32,
+    y: i32,
+    z: i32,
+}
+
+pub fn new(x: i32, y: i32, z: i32) -> Triple {
+    return Triple { x: x, y: y, z: z };
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::triple;
+
+fn main() {
+    let value: helpers::triple::Triple = helpers::triple::new(5, 7, 11);
+    return value.x * 16 + value.y * 4 + value.z;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack width3 struct constructor return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack width3 struct constructor return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack width3 struct constructor return member reads",
+        "x86_source_pack_width3_struct_constructor_return_member_reads",
+        &bytes,
+        119,
+    );
+}
+
+#[test]
+fn x86_executes_width3_assoc_struct_constructor_return_and_member_reads() {
+    let sources = [
+        r#"
+module helpers::triple;
+
+pub struct Triple {
+    x: i32,
+    y: i32,
+    z: i32,
+}
+
+impl Triple {
+    pub fn new(x: i32, y: i32, z: i32) -> Triple {
+        return Triple { x: x, y: y, z: z };
+    }
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::triple;
+
+fn main() {
+    let value: helpers::triple::Triple = helpers::triple::Triple::new(5, 7, 11);
+    return value.x * 16 + value.y * 4 + value.z;
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack width3 associated struct constructor return member reads",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack width3 associated struct constructor return should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack width3 associated struct constructor return member reads",
+        "x86_source_pack_width3_assoc_struct_constructor_return_member_reads",
+        &bytes,
+        119,
+    );
+}
+
+#[test]
+fn x86_executes_camera_like_explicit_receiver_aggregate_return() {
+    assert_source_exit(
+        "camera_like_explicit_receiver_aggregate_return",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+impl Ray {
+    fn at(self, t: f32) -> Vec3 {
+        let scale: f32 = t;
+        let direction: Vec3 = self.direction;
+        let offset: Vec3 = direction.mul_scalar(scale);
+        let origin: Vec3 = self.origin;
+        return origin.add(offset);
+    }
+}
+
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+impl Camera {
+    fn ray(self, u: f32, v: f32) -> Ray {
+        let horizontal: Vec3 = self.horizontal;
+        let vertical: Vec3 = self.vertical;
+        let lower_left_corner: Vec3 = self.lower_left_corner;
+        let origin: Vec3 = self.origin;
+        let across: Vec3 = horizontal.mul_scalar(u);
+        let up: Vec3 = vertical.mul_scalar(v);
+        let corner_across: Vec3 = lower_left_corner.add(across);
+        let target: Vec3 = corner_across.add(up);
+        let direction: Vec3 = target.sub(origin);
+        let result: Ray = Ray { origin: origin, direction: direction };
+        return result;
+    }
+}
+
+fn main() {
+    let origin: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let lower_left_corner: Vec3 = Vec3::new(-2.0, -1.0, -1.0);
+    let horizontal: Vec3 = Vec3::new(4.0, 0.0, 0.0);
+    let vertical: Vec3 = Vec3::new(0.0, 2.0, 0.0);
+    let camera: Camera = Camera {
+        origin: origin,
+        lower_left_corner: lower_left_corner,
+        horizontal: horizontal,
+        vertical: vertical,
+    };
+    let ray: Ray = camera.ray(0.5, 0.5);
+    let direction: Vec3 = ray.direction;
+    if (!(direction.x > -0.01 && direction.x < 0.01)) {
+        return 1;
+    }
+    if (!(direction.y > -0.01 && direction.y < 0.01)) {
+        return 2;
+    }
+    if (!(direction.z > -1.01 && direction.z < -0.99)) {
+        return 3;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_camera_sky_pixel_color_byte() {
+    assert_source_exit(
+        "camera_sky_pixel_color_byte",
+        r#"
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+
+    fn length(self) -> f32 {
+        return sqrt_approx(self.dot(self));
+    }
+
+    fn unit(self) -> Vec3 {
+        let len: f32 = self.length();
+        if (len == 0.0) {
+            return self;
+        }
+        return self.mul_scalar(1.0 / len);
+    }
+
+    fn lerp(self, right: Vec3, t: f32) -> Vec3 {
+        let left_part: Vec3 = self.mul_scalar(1.0 - t);
+        let right_part: Vec3 = right.mul_scalar(t);
+        return left_part.add(right_part);
+    }
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+impl Camera {
+    fn ray(self, u: f32, v: f32) -> Ray {
+        let horizontal: Vec3 = self.horizontal;
+        let vertical: Vec3 = self.vertical;
+        let lower_left_corner: Vec3 = self.lower_left_corner;
+        let origin: Vec3 = self.origin;
+        let across: Vec3 = horizontal.mul_scalar(u);
+        let up: Vec3 = vertical.mul_scalar(v);
+        let corner_across: Vec3 = lower_left_corner.add(across);
+        let target: Vec3 = corner_across.add(up);
+        let direction: Vec3 = target.sub(origin);
+        let result: Ray = Ray {
+            origin: origin,
+            direction: direction,
+        };
+        return result;
+    }
+}
+
+struct RenderSettings {
+    width: i32,
+    height: i32,
+    samples_per_pixel: i32,
+}
+
+fn sqrt_approx(value: f32) -> f32 {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+    let guess: f32 = value;
+    if (guess < 1.0) {
+        guess = 1.0;
+    }
+    let iteration: i32 = 0;
+    while (iteration < 8) {
+        guess = 0.5 * (guess + value / guess);
+        iteration += 1;
+    }
+    return guess;
+}
+
+fn sky_color(ray: Ray) -> Vec3 {
+    let direction: Vec3 = ray.direction;
+    let dir: Vec3 = direction.unit();
+    let t: f32 = 0.5 * (dir.y + 1.0);
+    let white: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+    let blue: Vec3 = Vec3::new(0.5, 0.7, 1.0);
+    return white.lerp(blue, t);
+}
+
+fn make_camera(settings: RenderSettings) -> Camera {
+    let aspect_ratio: f32 = i32_to_f32(settings.width) / i32_to_f32(settings.height);
+    let viewport_height: f32 = 2.0;
+    let viewport_width: f32 = aspect_ratio * viewport_height;
+    let focal_length: f32 = 1.0;
+    let origin: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let horizontal: Vec3 = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical: Vec3 = Vec3::new(0.0, viewport_height, 0.0);
+    let half_horizontal: Vec3 = horizontal.mul_scalar(0.5);
+    let half_vertical: Vec3 = vertical.mul_scalar(0.5);
+    let focal: Vec3 = Vec3::new(0.0, 0.0, focal_length);
+    let lower_step0: Vec3 = origin.sub(half_horizontal);
+    let lower_step1: Vec3 = lower_step0.sub(half_vertical);
+    let lower_left_corner: Vec3 = lower_step1.sub(focal);
+    let result: Camera = Camera {
+        origin: origin,
+        lower_left_corner: lower_left_corner,
+        horizontal: horizontal,
+        vertical: vertical,
+    };
+    return result;
+}
+
+fn clamp01(value: f32) -> f32 {
+    if (value < 0.0) {
+        return 0.0;
+    }
+    if (value > 0.999) {
+        return 0.999;
+    }
+    return value;
+}
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = sqrt_approx(clamp01(value)) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn pixel_color(camera: Camera, settings: RenderSettings, x: i32, y: i32) -> Vec3 {
+    let samples: i32 = settings.samples_per_pixel;
+    let samples_f: f32 = i32_to_f32(samples);
+    let color_x: f32 = 0.0;
+    let color_y: f32 = 0.0;
+    let color_z: f32 = 0.0;
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            let x_offset: f32 = (i32_to_f32(sample_x) + 0.5) / samples_f;
+            let y_offset: f32 = (i32_to_f32(sample_y) + 0.5) / samples_f;
+            let u: f32 = (i32_to_f32(x) + x_offset) / i32_to_f32(settings.width - 1);
+            let row_from_top: i32 = settings.height - 1 - y;
+            let v: f32 =
+                (i32_to_f32(row_from_top) + y_offset) / i32_to_f32(settings.height - 1);
+            let ray: Ray = camera.ray(u, v);
+            let sample_color: Vec3 = sky_color(ray);
+            color_x = color_x + sample_color.x;
+            color_y = color_y + sample_color.y;
+            color_z = color_z + sample_color.z;
+        }
+    }
+    let sample_scale: f32 = 1.0 / (samples_f * samples_f);
+    return Vec3::new(color_x * sample_scale, color_y * sample_scale, color_z * sample_scale);
+}
+
+fn main() {
+    let settings: RenderSettings = RenderSettings {
+        width: 16,
+        height: 9,
+        samples_per_pixel: 1,
+    };
+    let camera: Camera = make_camera(settings);
+    let color: Vec3 = pixel_color(camera, settings, 0, 0);
+    if (!(color.x > 0.60 && color.x < 0.65)) {
+        return 20;
+    }
+    if (!(color.y > 0.75 && color.y < 0.80)) {
+        return 21;
+    }
+    if (!(color.z > 0.99 && color.z < 1.01)) {
+        return 22;
+    }
+    let r: i32 = color_to_byte(color.x);
+    let g: i32 = color_to_byte(color.y);
+    let b: i32 = color_to_byte(color.z);
+    if (!(r > 200 && r < 205)) {
+        return 10;
+    }
+    if (!(g > 223 && g < 228)) {
+        return 11;
+    }
+    if (!(b == 255)) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_hit_like_bool_and_f32_aggregate_return() {
+    assert_source_exit(
+        "hit_like_bool_f32_aggregate_return",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+    point: Vec3,
+    normal: Vec3,
+    albedo: Vec3,
+}
+
+fn make_hit() -> Hit {
+    let point: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let normal: Vec3 = Vec3::new(0.0, 1.0, 0.0);
+    let albedo: Vec3 = Vec3::new(0.7, 0.3, 0.3);
+    let result: Hit = Hit {
+        ok: true,
+        t: 1.0,
+        point: point,
+        normal: normal,
+        albedo: albedo,
+    };
+    return result;
+}
+
+fn color_to_digit(value: f32) -> i32 {
+    let digit: i32 = 0;
+    let threshold: f32 = 0.1;
+    while (threshold <= value && digit < 9) {
+        digit += 1;
+        threshold += 0.1;
+    }
+    return digit;
+}
+
+fn main() {
+    let hit: Hit = make_hit();
+    if (hit.ok) {
+        let color: Vec3 = hit.albedo.mul_scalar(1.0);
+        if (color.x > 0.69 && color.x < 0.71) {
+            return 0;
+        }
+        if (color.x > 0.99 && color.x < 1.01) {
+            return 1;
+        }
+        if (color.x > -0.01 && color.x < 0.01) {
+            return 2;
+        }
+        return color_to_digit(color.x);
+    }
+    return 3;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_false_bool_local_in_aggregate_return() {
+    assert_source_exit(
+        "false_bool_local_in_aggregate_return",
+        r#"
+struct Hit {
+    ok: bool,
+    t: f32,
+}
+
+fn make_miss() -> Hit {
+    let result_ok: bool = false;
+    let result_t: f32 = 0.0;
+    let result: Hit = Hit {
+        ok: result_ok,
+        t: result_t,
+    };
+    return result;
+}
+
+fn main() {
+    let hit: Hit = make_miss();
+    if (hit.ok) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_bool_accumulator_survives_aggregate_return_temp() {
+    assert_source_exit(
+        "bool_accumulator_survives_aggregate_return_temp",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+    point: Vec3,
+    normal: Vec3,
+    albedo: Vec3,
+}
+
+fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
+    return Vec3 { x: x, y: y, z: z };
+}
+
+fn miss() -> Hit {
+    let point: Vec3 = vec3(0.0, 0.0, 0.0);
+    let normal: Vec3 = vec3(0.0, 0.0, 0.0);
+    let albedo: Vec3 = vec3(0.0, 0.0, 0.0);
+    let result: Hit = Hit {
+        ok: false,
+        t: 0.0,
+        point: point,
+        normal: normal,
+        albedo: albedo,
+    };
+    return result;
+}
+
+fn combine() -> Hit {
+    let result_ok: bool = false;
+    let result_t: f32 = 0.0;
+    let result_point_x: f32 = 0.0;
+    let result_point_y: f32 = 0.0;
+    let result_point_z: f32 = 0.0;
+    let result_normal_x: f32 = 0.0;
+    let result_normal_y: f32 = 0.0;
+    let result_normal_z: f32 = 0.0;
+    let result_albedo_x: f32 = 0.0;
+    let result_albedo_y: f32 = 0.0;
+    let result_albedo_z: f32 = 0.0;
+    let hit_ground: Hit = miss();
+    if (hit_ground.ok) {
+        result_ok = true;
+        result_t = hit_ground.t;
+    }
+    let hit_center: Hit = miss();
+    if (hit_center.ok) {
+        result_ok = true;
+        result_t = hit_center.t;
+    }
+    let result_point: Vec3 = vec3(result_point_x, result_point_y, result_point_z);
+    let result_normal: Vec3 = vec3(result_normal_x, result_normal_y, result_normal_z);
+    let result_albedo: Vec3 = vec3(result_albedo_x, result_albedo_y, result_albedo_z);
+    let result: Hit = Hit {
+        ok: result_ok,
+        t: result_t,
+        point: result_point,
+        normal: result_normal,
+        albedo: result_albedo,
+    };
+    return result;
+}
+
+fn main() {
+    let hit: Hit = combine();
+    if (hit.ok) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_aggregate_parameter_reused_after_aggregate_call() {
+    assert_source_exit(
+        "aggregate_parameter_reused_after_aggregate_call",
+        r#"
+struct Ray {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+}
+
+fn miss_if_direction_x_negative(ray: Ray) -> Hit {
+    let ok: bool = false;
+    if (ray.x > 0.0) {
+        ok = true;
+    }
+    return Hit { ok: ok, t: 0.0 };
+}
+
+fn reuse(ray: Ray) -> Hit {
+    let first: Hit = miss_if_direction_x_negative(ray);
+    if (first.ok) {
+        return first;
+    }
+    let second: Hit = miss_if_direction_x_negative(ray);
+    return second;
+}
+
+fn main() {
+    let ray: Ray = Ray { x: -1.0, y: 0.0, z: -1.0 };
+    let hit: Hit = reuse(ray);
+    if (hit.ok) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_second_aggregate_parameter_reused_after_call() {
+    assert_source_exit(
+        "second_aggregate_parameter_reused_after_call",
+        r#"
+struct Sphere {
+    x: f32,
+    radius: f32,
+}
+
+struct Ray {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+}
+
+fn miss_if_sum_positive(sphere: Sphere, ray: Ray) -> Hit {
+    let ok: bool = false;
+    let sum: f32 = sphere.x + ray.x;
+    if (sum > 0.0) {
+        ok = true;
+    }
+    return Hit { ok: ok, t: 0.0 };
+}
+
+fn reuse(ray: Ray) -> Hit {
+    let left: Sphere = Sphere { x: 0.25, radius: 1.0 };
+    let first: Hit = miss_if_sum_positive(left, ray);
+    if (first.ok) {
+        return Hit { ok: true, t: 2.0 };
+    }
+    let right: Sphere = Sphere { x: 0.5, radius: 1.0 };
+    let second: Hit = miss_if_sum_positive(right, ray);
+    return second;
+}
+
+fn main() {
+    let ray: Ray = Ray { x: -1.0, y: 0.0, z: -1.0 };
+    let hit: Hit = reuse(ray);
+    if (hit.ok) {
+        if (hit.t > 1.9 && hit.t < 2.1) {
+            return 2;
+        }
+        return 1;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_aggregate_parameter_identity_return() {
+    assert_source_exit(
+        "aggregate_parameter_identity_return",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn keep(value: Vec3) -> Vec3 {
+    return value;
+}
+
+fn main() {
+    let input: Vec3 = Vec3 { x: 0.5, y: 0.7, z: 1.0 };
+    let output: Vec3 = keep(input);
+    if (!(output.x > 0.49 && output.x < 0.51)) {
+        return 1;
+    }
+    if (!(output.y > 0.69 && output.y < 0.71)) {
+        return 2;
+    }
+    if (!(output.z > 0.99 && output.z < 1.01)) {
+        return 3;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_parameter_aggregate_member_copy_after_disp8_range() {
+    let fields = (0..33)
+        .map(|i| format!("    p{i}: i32,"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let init_fields = (0..33)
+        .map(|i| format!("        p{i}: {i},"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        r#"
+struct Vec3 {{
+    x: i32,
+    y: i32,
+    z: i32,
+}}
+
+struct Wide {{
+{fields}
+    tail: Vec3,
+}}
+
+impl Wide {{
+    fn tail_vec(self) -> Vec3 {{
+        let value: Vec3 = self.tail;
+        return value;
+    }}
+}}
+
+fn main() {{
+    let tail: Vec3 = Vec3 {{ x: 7, y: 8, z: 9 }};
+    let wide: Wide = Wide {{
+{init_fields}
+        tail: tail,
+    }};
+    let read: Vec3 = wide.tail_vec();
+    return read.z;
+}}
+"#
+    );
+    assert_source_exit(
+        "parameter_aggregate_member_copy_after_disp8_range",
+        &source,
+        9,
+    );
+}
+
+#[test]
+fn x86_executes_wide_parameter_member_as_direct_call_receiver() {
+    let fields = (0..33)
+        .map(|i| format!("    p{i}: i32,"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let init_fields = (0..33)
+        .map(|i| format!("        p{i}: {i},"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        r#"
+struct Vec3 {{
+    x: i32,
+    y: i32,
+    z: i32,
+}}
+
+impl Vec3 {{
+    fn z_value(self) -> i32 {{
+        return self.z;
+    }}
+}}
+
+struct Wide {{
+{fields}
+    tail: Vec3,
+}}
+
+impl Wide {{
+    fn tail_z(self) -> i32 {{
+        return self.tail.z_value();
+    }}
+}}
+
+fn main() {{
+    let tail: Vec3 = Vec3 {{ x: 7, y: 8, z: 9 }};
+    let wide: Wide = Wide {{
+{init_fields}
+        tail: tail,
+    }};
+    return wide.tail_z();
+}}
+"#
+    );
+    assert_source_exit("wide_parameter_member_as_direct_call_receiver", &source, 9);
+}
+
+#[test]
+fn x86_executes_nested_struct_literal_member_reads() {
+    assert_source_exit(
+        "nested_struct_literal_member_reads",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+fn main() {
+    let origin: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
+    let direction: Vec3 = Vec3 { x: 0.0, y: 0.0, z: -1.0 };
+    let ray: Ray = Ray { origin: origin, direction: direction };
+    let read_direction: Vec3 = ray.direction;
+    if (!(read_direction.z > -1.01 && read_direction.z < -0.99)) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_aggregate_parameter_member_copy() {
+    assert_source_exit(
+        "aggregate_parameter_member_copy",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+fn direction(ray: Ray) -> Vec3 {
+    return ray.direction;
+}
+
+fn main() {
+    let origin: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
+    let dir: Vec3 = Vec3 { x: -1.86, y: 1.125, z: -1.0 };
+    let ray: Ray = Ray { origin: origin, direction: dir };
+    let read: Vec3 = direction(ray);
+    if (read.x > -1.87 && read.x < -1.85 &&
+        read.y > 1.12 && read.y < 1.13 &&
+        read.z > -1.01 && read.z < -0.99) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_two_aggregate_parameters_return_first() {
+    assert_source_exit(
+        "two_aggregate_parameters_return_first",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn first(left: Vec3, right: Vec3, t: f32) -> Vec3 {
+    return left;
+}
+
+fn main() {
+    let left: Vec3 = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
+    let right: Vec3 = Vec3 { x: 4.0, y: 5.0, z: 6.0 };
+    let value: Vec3 = first(left, right, 0.5);
+    if (value.x > 0.99 && value.x < 1.01 &&
+        value.y > 1.99 && value.y < 2.01 &&
+        value.z > 2.99 && value.z < 3.01) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_scalar_parameter_after_two_aggregates() {
+    assert_source_exit(
+        "scalar_parameter_after_two_aggregates",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+fn scale(left: Vec3, right: Vec3, t: f32) -> f32 {
+    return 1.0 - t;
+}
+
+fn main() {
+    let left: Vec3 = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
+    let right: Vec3 = Vec3 { x: 4.0, y: 5.0, z: 6.0 };
+    let value: f32 = scale(left, right, 0.735);
+    if (value > 0.26 && value < 0.27) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_aggregate_method_call_on_aggregate_parameter() {
+    assert_source_exit(
+        "aggregate_method_call_on_aggregate_parameter",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+}
+
+fn scale(value: Vec3, factor: f32) -> Vec3 {
+    return value.mul_scalar(1.0 - factor);
+}
+
+fn main() {
+    let value: Vec3 = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
+    let scaled: Vec3 = scale(value, 0.5);
+    if (scaled.x > 0.49 && scaled.x < 0.51 &&
+        scaled.y > 0.99 && scaled.y < 1.01 &&
+        scaled.z > 1.49 && scaled.z < 1.51) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_sum_of_three_products() {
+    assert_source_exit(
+        "f32_sum_of_three_products",
+        r#"
+fn main() {
+    let value: f32 = 1.5 * 2.0 + 3.0 * 4.0 + 5.0 * 6.0;
+    if (value > 44.9) {
+        if (value < 45.1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_member_sum_of_three_products() {
+    assert_source_exit(
+        "f32_member_sum_of_three_products",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+}
+
+fn main() {
+    let value: Vec3 = Vec3 { x: -1.86, y: 1.125, z: -1.0 };
+    let dot: f32 = value.dot(value);
+    if (dot > 5.70) {
+        if (dot < 5.75) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_vec3_lerp_method_chain() {
+    assert_source_exit(
+        "f32_vec3_lerp_method_chain",
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+    fn lerp(self, right: Vec3, t: f32) -> Vec3 {
+        let left_part: Vec3 = self.mul_scalar(1.0 - t);
+        let right_part: Vec3 = right.mul_scalar(t);
+        return left_part.add(right_part);
+    }
+}
+
+fn main() {
+    let white: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+    let blue: Vec3 = Vec3::new(0.5, 0.7, 1.0);
+    let color: Vec3 = white.lerp(blue, 0.735);
+    if (color.x > 0.62 && color.x < 0.64 &&
+        color.y > 0.77 && color.y < 0.79 &&
+        color.z > 0.99 && color.z < 1.01) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_helper_parameters() {
+    assert_source_exit(
+        "f32_helper_parameters",
+        r#"
+fn scaled(value: f32, factor: f32) -> f32 {
+    return value * factor;
+}
+
+fn main() {
+    let value: f32 = scaled(0.7, 0.5);
+    if (value > 0.34 && value < 0.36) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_single_helper_parameter() {
+    assert_source_exit(
+        "f32_single_helper_parameter",
+        r#"
+fn id(value: f32) -> f32 {
+    return value;
+}
+
+fn main() {
+    let value: f32 = id(0.7);
+    if (value > 0.69 && value < 0.71) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_second_helper_parameter() {
+    assert_source_exit(
+        "f32_second_helper_parameter",
+        r#"
+fn second(left: f32, right: f32) -> f32 {
+    return right;
+}
+
+fn main() {
+    let value: f32 = second(0.7, 0.5);
+    if (value > 0.49 && value < 0.51) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_f32_first_of_three_helper_parameters() {
+    assert_source_exit(
+        "f32_first_of_three_helper_parameters",
+        r#"
+fn first(x: f32, y: f32, z: f32) -> f32 {
+    return x;
+}
+
+fn main() {
+    let value: f32 = first(0.5, 0.7, 1.0);
+    if (value > 0.49 && value < 0.51) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_rejects_same_signature_extern_as_i32_to_f32_host_binding() {
+    let source = r#"
+extern "lanius_std" fn convert(value: i32) -> f32;
+
+fn main() {
+    let value: f32 = convert(7);
+    if (value > 0.0) {
+        return 0;
+    }
+    return 1;
+}
+"#
+    .to_owned();
+
+    let err = common::run_gpu_codegen_with_timeout(
+        "x86 same-signature i32_to_f32 host binding",
+        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
+    )
+    .expect_err("same-signature externs should not be treated as i32_to_f32 host bindings");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            let message = diagnostic.render();
+            assert_eq!(diagnostic.code, "LNC0017", "{message}");
+            assert!(
+                diagnostic.message.contains("unsupported x86 call ABI"),
+                "diagnostic should keep same-signature externs at the explicit host-binding boundary: {message}"
+            );
+            assert!(
+                message.contains("convert(7)"),
+                "diagnostic should point at the unbound extern call: {message}"
+            );
+        }
+        other => panic!("expected x86 host-binding diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn x86_accepts_string_literal_locals_as_rodata_pairs() {
+    assert_source_exit(
+        "string_literal_rodata_pairs",
+        r#"
+fn main() {
+    let first: str = "ready";
+    let second: str = "go";
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_lanius_std_text_write_direct_string_result() {
+    let bytes = compile_source(
+        "x86 lanius_std direct text write stdout",
+        r#"
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn main() {
+    let result: i32 = write_text(1, "ready");
+    if (result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 lanius_std direct text write stdout",
+        "x86_lanius_std_direct_text_write_stdout",
+        &bytes,
+        "ready",
+    );
+}
+
+#[test]
+fn x86_executes_lanius_std_open_read_path_stub_as_negative() {
+    let bytes = compile_source(
+        "x86 lanius_std open_read_path negative stub",
+        r#"
+extern "lanius_std" fn open_read_path(path: str) -> i32;
+
+fn main() {
+    let file: i32 = open_read_path("missing.txt");
+    if (file < 0) {
+        return 7;
+    }
+    return 1;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 lanius_std open_read_path negative stub",
+        "x86_lanius_std_open_read_path_negative_stub",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_open_read_path_stub_as_negative() {
+    let sources = [r#"
+module app::main;
+
+extern "lanius_std" fn open_read_path(path: str) -> i32;
+
+fn main() {
+    let file: i32 = open_read_path("missing.txt");
+    if (file < 0) {
+        return 7;
+    }
+    return 1;
+}
+"#];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack open_read_path negative stub",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack open_read_path negative stub",
+        "x86_source_pack_open_read_path_negative_stub",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_rejects_same_signature_extern_as_write_text_host_binding() {
+    let source = r#"
+extern "lanius_std" fn write_bytes(handle: i32, text: str) -> i32;
+
+fn main() {
+    let result: i32 = write_bytes(1, "ready");
+    return result;
+}
+"#
+    .to_owned();
+
+    let err = common::run_gpu_codegen_with_timeout(
+        "x86 same-signature write_text host binding",
+        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
+    )
+    .expect_err("same-signature externs should not be treated as write_text host bindings");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            let message = diagnostic.render();
+            assert_eq!(diagnostic.code, "LNC0017", "{message}");
+            assert!(
+                diagnostic.message.contains("unsupported x86 call ABI"),
+                "diagnostic should keep same-signature externs at the explicit host-binding boundary: {message}"
+            );
+            assert!(
+                message.contains("write_bytes(1, \"ready\")"),
+                "diagnostic should point at the unbound extern call: {message}"
+            );
+        }
+        other => panic!("expected x86 host-binding diagnostic, got {other:?}"),
     }
 }
 
@@ -6010,6 +8535,31 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_lanius_std_text_write_stdout() {
+    let bytes = compile_source(
+        "x86 lanius_std text write stdout",
+        r#"
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn main() {
+    let text: str = "host text";
+    write_text(1, text);
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 lanius_std text write stdout",
+        "x86_lanius_std_text_write_stdout",
+        &bytes,
+        "host text",
+    );
+}
+
+#[test]
 fn x86_executes_void_helper_fallthrough_return() {
     let bytes = compile_source(
         "x86 void helper fallthrough return",
@@ -6167,15 +8717,15 @@ fn x86_executes_source_pack_for_array_with_imported_break_continue_limits() {
         "module app::main;\nimport helpers::limits;\nfn main() {\n    let values: [i32; 6] = [1, 2, 3, 4, 5, 6];\n    let total: i32 = 0;\n    for value in values {\n        if (value == helpers::limits::SKIP) {\n            continue;\n        }\n        if (value == helpers::limits::STOP) {\n            break;\n        }\n        total += value;\n    }\n    return total;\n}\n",
     ];
     let bytes = common::run_gpu_codegen_with_timeout(
-        "x86 source pack for array imported break continue limits",
+        "x86 source pack array imported branch limits",
         move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
     )
-    .expect("source-pack array for loop with imported branch limits should compile to x86_64");
+    .expect("source-pack array with imported branch limits should compile to x86_64");
 
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
-        "x86 source pack for array imported break continue limits",
+        "x86 source pack array imported branch limits",
         "x86_source_pack_for_array_imported_break_continue",
         &bytes,
         8,
@@ -6249,6 +8799,1081 @@ fn x86_executes_source_pack_function_call() {
         "x86_source_pack_call",
         &bytes,
         7,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_text_write_direct_string_result() {
+    let sources = [r#"
+module app::main;
+
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn main() {
+    let result: i32 = write_text(1, "ready");
+    if (result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack lanius_std direct text write stdout",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 source pack lanius_std direct text write stdout",
+        "x86_source_pack_lanius_std_direct_text_write_stdout",
+        &bytes,
+        "ready",
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_namespaced_text_write() {
+    let sources = [
+        r#"
+module runtime::io;
+
+pub extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+"#,
+        r#"
+module app::main;
+
+import runtime::io;
+
+fn main() {
+    let result: i32 = runtime::io::write_text(1, "ready");
+    if (result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack namespaced lanius_std text write stdout",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 source pack namespaced lanius_std text write stdout",
+        "x86_source_pack_namespaced_lanius_std_text_write_stdout",
+        &bytes,
+        "ready",
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_io_text_write() {
+    let sources = [
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import std::io;
+
+fn main() {
+    let result: i32 = std::io::write_text(1, "ready");
+    if (result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::io text write stdout",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 source pack std::io text write stdout",
+        "x86_source_pack_std_io_text_write_stdout",
+        &bytes,
+        "ready",
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_io_raw_stdout_and_stderr() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::io;
+import std::process;
+
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let align: usize = 4;
+    let out_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (out_ptr == 0) {
+        return 1;
+    }
+    let err_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (err_ptr == 0) {
+        alloc::allocator::dealloc(out_ptr, capacity, align);
+        return 2;
+    }
+    let one: i32 = 1;
+    let two: i32 = 2;
+    let out_len_i32: i32 = std::process::arg_read(one, out_ptr, capacity);
+    let err_len_i32: i32 = std::process::arg_read(two, err_ptr, capacity);
+    if (out_len_i32 <= 0 || err_len_i32 <= 0) {
+        alloc::allocator::dealloc(err_ptr, capacity, align);
+        alloc::allocator::dealloc(out_ptr, capacity, align);
+        return 3;
+    }
+    let out_len: usize = out_len_i32;
+    let err_len: usize = err_len_i32;
+    let out_written: i32 = std::io::write_stdout(out_ptr, out_len);
+    let err_written: i32 = std::io::write_stderr(err_ptr, err_len);
+    alloc::allocator::dealloc(err_ptr, capacity, align);
+    alloc::allocator::dealloc(out_ptr, capacity, align);
+    if (out_written != out_len_i32 || err_written != err_len_i32) {
+        return 4;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::io raw stdout stderr", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_io_raw", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create std::io raw run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let output = run_x86_64_elf_output_in_dir_with_args(
+            "x86 source pack std::io raw stdout stderr",
+            "x86_source_pack_std_io_raw_stdout_stderr",
+            &bytes,
+            run_dir.path(),
+            &["stdout-bytes", "stderr-bytes"],
+        );
+        common::assert_command_success("x86 source pack std::io raw stdout stderr", &output);
+        assert_eq!(
+            common::stdout_utf8("x86 std::io raw stdout", output.stdout),
+            "stdout-bytes"
+        );
+        assert_eq!(
+            String::from_utf8(output.stderr)
+                .expect("x86 std::io raw stderr should be valid UTF-8"),
+            "stderr-bytes"
+        );
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove std::io raw run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
+}
+
+#[test]
+fn x86_executes_source_pack_std_io_read_stdin() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::io;
+
+fn main() -> i32 {
+    let capacity: usize = 32;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 1;
+    }
+    let count: i32 = std::io::read_stdin(ptr, capacity);
+    if (count <= 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 2;
+    }
+    let count_len: usize = count;
+    let written: i32 = std::io::write_stdout(ptr, count_len);
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (written != count) {
+        return 3;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 source pack std::io stdin", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_io_stdin", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create std::io stdin run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let exe_path = run_dir.path().join("x86_source_pack_std_io_read_stdin");
+        std::fs::write(&exe_path, &bytes)
+            .unwrap_or_else(|err| panic!("write std::io stdin ELF {}: {err}", exe_path.display()));
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&exe_path)
+                .unwrap_or_else(|err| panic!("stat std::io stdin ELF {}: {err}", exe_path.display()))
+                .permissions();
+            permissions.set_mode(0o700);
+            std::fs::set_permissions(&exe_path, permissions)
+                .unwrap_or_else(|err| panic!("chmod std::io stdin ELF {}: {err}", exe_path.display()));
+        }
+        let mut command = std::process::Command::new("bash");
+        command
+            .current_dir(run_dir.path())
+            .arg("-c")
+            .arg("printf stdin-bytes | \"$1\"")
+            .arg("stdio-stdin")
+            .arg(&exe_path);
+        let output = common::short_process_output_with_timeout(
+            "x86 source pack std::io read stdin",
+            &mut command,
+        );
+        common::assert_command_success("x86 source pack std::io read stdin", &output);
+        assert_eq!(
+            common::stdout_utf8("x86 std::io stdin stdout", output.stdout),
+            "stdin-bytes"
+        );
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove std::io stdin run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
+}
+
+#[test]
+fn x86_executes_source_pack_std_fs_text_write() {
+    let sources = [
+        include_str!("../stdlib/std/io.lani"),
+        include_str!("../stdlib/std/fs.lani"),
+        r#"
+module app::main;
+
+import std::fs;
+import std::io;
+
+fn main() {
+    let file: std::fs::FileHandle = std::fs::open_write_path("std_output.txt");
+    if (file < 0) {
+        return 1;
+    }
+    let result: i32 = std::io::write_text(file, "saved");
+    let close_result: i32 = std::fs::close_file(file);
+    if (result < 0 || close_result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::fs text write", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_fs", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create std::fs run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let output = run_x86_64_elf_output_in_dir(
+            "x86 source pack std::fs text write",
+            "x86_source_pack_std_fs_text_write",
+            &bytes,
+            run_dir.path(),
+        );
+        common::assert_command_success("x86 source pack std::fs text write", &output);
+        let output_path = run_dir.path().join("std_output.txt");
+        let text = std::fs::read_to_string(&output_path)
+            .unwrap_or_else(|err| panic!("read std::fs output {}: {err}", output_path.display()));
+        assert_eq!(text, "saved");
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove std::fs run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
+}
+
+#[test]
+fn x86_executes_source_pack_std_fs_buffer_copy() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/fs.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::fs;
+
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 1;
+    }
+
+    let input: std::fs::FileHandle = std::fs::open_read_path("fs_raw_input.bin");
+    if (input < 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 2;
+    }
+    let count: i32 = std::fs::read(input, ptr, capacity);
+    let input_close: i32 = std::fs::close(input);
+    if (count <= 0 || input_close < 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 3;
+    }
+
+    let output: std::fs::FileHandle = std::fs::open_write_path("fs_raw_output.bin");
+    if (output < 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 4;
+    }
+    let count_len: usize = count;
+    let written: i32 = std::fs::write(output, ptr, count_len);
+    let output_close: i32 = std::fs::close(output);
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (written != count || output_close < 0) {
+        return 5;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::fs buffer copy", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_fs_buffer", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create std::fs buffer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let input = b"raw\x00bytes\nsecond line\n";
+        let input_path = run_dir.path().join("fs_raw_input.bin");
+        std::fs::write(&input_path, input)
+            .unwrap_or_else(|err| panic!("write std::fs buffer input {}: {err}", input_path.display()));
+        let output = run_x86_64_elf_output_in_dir(
+            "x86 source pack std::fs buffer copy",
+            "x86_source_pack_std_fs_buffer_copy",
+            &bytes,
+            run_dir.path(),
+        );
+        common::assert_command_success("x86 source pack std::fs buffer copy", &output);
+        let output_path = run_dir.path().join("fs_raw_output.bin");
+        let copied = std::fs::read(&output_path)
+            .unwrap_or_else(|err| panic!("read std::fs buffer output {}: {err}", output_path.display()));
+        assert_eq!(copied, input);
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove std::fs buffer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
+}
+
+#[test]
+fn x86_executes_source_pack_std_fs_pointer_path_open() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/fs.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::fs;
+import std::process;
+
+fn main() -> i32 {
+    let path_capacity: usize = 4096;
+    let data_capacity: usize = 4;
+    let align: usize = 4;
+    let input_path: u32 = alloc::allocator::alloc(path_capacity, align);
+    if (input_path == 0) {
+        return 1;
+    }
+    let output_path: u32 = alloc::allocator::alloc(path_capacity, align);
+    if (output_path == 0) {
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 2;
+    }
+    let data: u32 = alloc::allocator::alloc(data_capacity, align);
+    if (data == 0) {
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 3;
+    }
+
+    let zero: i32 = 0;
+    let one: i32 = 1;
+    let input_len_i32: i32 = std::process::arg_read(zero, input_path, path_capacity);
+    let output_len_i32: i32 = std::process::arg_read(one, output_path, path_capacity);
+    if (input_len_i32 <= 0 || output_len_i32 <= 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 4;
+    }
+
+    let input_len: usize = input_len_i32;
+    let input: std::fs::FileHandle = std::fs::open_read(input_path, input_len);
+    if (input < 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 5;
+    }
+    let read_count: i32 = std::fs::read(input, data, data_capacity);
+    let input_close: i32 = std::fs::close(input);
+    if (read_count != 4 || input_close < 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 6;
+    }
+
+    let output_len: usize = output_len_i32;
+    let output: std::fs::FileHandle = std::fs::open_write(output_path, output_len);
+    if (output < 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 7;
+    }
+    let first_write: i32 = std::fs::write(output, data, data_capacity);
+    let output_close: i32 = std::fs::close(output);
+    if (first_write != 4 || output_close < 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 8;
+    }
+
+    let appended: std::fs::FileHandle = std::fs::open_append(output_path, output_len);
+    if (appended < 0) {
+        alloc::allocator::dealloc(data, data_capacity, align);
+        alloc::allocator::dealloc(output_path, path_capacity, align);
+        alloc::allocator::dealloc(input_path, path_capacity, align);
+        return 9;
+    }
+    let second_write: i32 = std::fs::write(appended, data, data_capacity);
+    let appended_close: i32 = std::fs::close(appended);
+    alloc::allocator::dealloc(data, data_capacity, align);
+    alloc::allocator::dealloc(output_path, path_capacity, align);
+    alloc::allocator::dealloc(input_path, path_capacity, align);
+    if (second_write != 4 || appended_close < 0) {
+        return 10;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::fs pointer path open", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_fs_pointer", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create std::fs pointer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let output_name = "fs_pointer_output.bin";
+        let output = run_x86_64_elf_output_in_dir_with_args(
+            "x86 source pack std::fs pointer path open",
+            "x86_source_pack_std_fs_pointer_path_open",
+            &bytes,
+            run_dir.path(),
+            &[output_name],
+        );
+        common::assert_command_success("x86 source pack std::fs pointer path open", &output);
+        let output_path = run_dir.path().join(output_name);
+        let copied = std::fs::read(&output_path).unwrap_or_else(|err| {
+            panic!(
+                "read std::fs pointer output {}: {err}",
+                output_path.display()
+            )
+        });
+        assert_eq!(copied, b"\x7fELF\x7fELF");
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove std::fs pointer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
+}
+
+#[test]
+fn x86_executes_source_pack_std_process_exit() {
+    let sources = [
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import std::process;
+
+fn finish(code: i32) {
+    std::process::exit(code);
+}
+
+fn main() {
+    finish(7);
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::process exit", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::process exit",
+        "x86_source_pack_std_process_exit",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_process_argc_from_helper() {
+    let sources = [
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import std::process;
+
+fn observed_argc() -> i32 {
+    return std::process::argc();
+}
+
+fn main() {
+    return observed_argc() - 1;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::process argc", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::process argc",
+        "x86_source_pack_std_process_argc",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_process_args_from_helper() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::process;
+
+fn first_arg_len(index: i32) -> i32 {
+    return std::process::arg_len(index);
+}
+
+fn first_arg_read(index: i32, ptr: u32, len: usize) -> i32 {
+    return std::process::arg_read(index, ptr, len);
+}
+
+fn main() -> i32 {
+    let zero: i32 = 0;
+    let arg_count: i32 = std::process::argc();
+    if (arg_count < 1) {
+        return 10;
+    }
+    let len: i32 = first_arg_len(zero);
+    if (len <= 0) {
+        return 11;
+    }
+    if (std::process::arg_len(arg_count) != -1) {
+        return 12;
+    }
+    let capacity: usize = 16;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 13;
+    }
+    let read: i32 = first_arg_read(zero, ptr, capacity);
+    let negative: i32 = zero - 1;
+    if (std::process::arg_read(negative, ptr, capacity) != -1) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 14;
+    }
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (read <= 0) {
+        return 15;
+    }
+    if (read > 16) {
+        return 16;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::process args", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack std::process args should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::process args",
+        "x86_source_pack_std_process_args",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_process_arg_len_from_helper() {
+    let sources = [
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import std::process;
+
+fn first_arg_len(index: i32) -> i32 {
+    return std::process::arg_len(index);
+}
+
+fn main() -> i32 {
+    let zero: i32 = 0;
+    let arg_count: i32 = std::process::argc();
+    if (arg_count < 1) {
+        return 10;
+    }
+    let len: i32 = first_arg_len(zero);
+    if (len <= 0) {
+        return 11;
+    }
+    if (std::process::arg_len(arg_count) != -1) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::process arg_len", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack std::process arg_len should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::process arg_len",
+        "x86_source_pack_std_process_arg_len",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_random_secure_u32() {
+    let sources = [
+        include_str!("../stdlib/std/random.lani"),
+        r#"
+module app::main;
+
+import std::random;
+
+fn main() {
+    let a: u32 = std::random::secure_u32();
+    let b: u32 = std::random::secure_u32();
+    let c: u32 = std::random::secure_u32();
+    let d: u32 = std::random::secure_u32();
+    if (a != b) {
+        return 0;
+    }
+    if (b != c) {
+        return 0;
+    }
+    if (c != d) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::random secure_u32", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::random secure_u32",
+        "x86_source_pack_std_random_secure_u32",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_time_unix_seconds() {
+    let sources = [
+        include_str!("../stdlib/std/time.lani"),
+        r#"
+module app::main;
+
+import std::time;
+
+fn main() -> i32 {
+    let seconds: i32 = std::time::unix_seconds();
+    if (seconds > 0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::time unix_seconds", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack std::time unix_seconds should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::time unix_seconds",
+        "x86_source_pack_std_time_unix_seconds",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_env_current_dir_read() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/env.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::env;
+
+fn read_current_dir(ptr: u32, capacity: usize) -> i32 {
+    return std::env::current_dir_read(ptr, capacity);
+}
+
+fn main() -> i32 {
+    let capacity: usize = 256;
+    let capacity_i32: i32 = 256;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 10;
+    }
+    let read: i32 = read_current_dir(ptr, capacity);
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (read <= 0) {
+        return 11;
+    }
+    if (read > capacity_i32) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::env current_dir_read",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack std::env current_dir_read should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::env current_dir_read",
+        "x86_source_pack_std_env_current_dir_read",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_env_var_key_enumeration() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/env.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::env;
+
+fn first_key_len(index: i32) -> i32 {
+    return std::env::var_key_len(index);
+}
+
+fn first_key_read(index: i32, ptr: u32, capacity: usize) -> i32 {
+    return std::env::var_key_read(index, ptr, capacity);
+}
+
+fn main() -> i32 {
+    let count: i32 = std::env::var_count();
+    if (count < 0) {
+        return 10;
+    }
+    if (count == 0) {
+        return 0;
+    }
+    let zero: i32 = 0;
+    let len: i32 = first_key_len(zero);
+    if (len <= 0) {
+        return 11;
+    }
+    if (std::env::var_key_len(count) != -1) {
+        return 12;
+    }
+    let capacity: usize = 4096;
+    let capacity_i32: i32 = 4096;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (ptr == 0) {
+        return 13;
+    }
+    let read: i32 = first_key_read(zero, ptr, capacity);
+    let invalid_read: i32 = std::env::var_key_read(count, ptr, capacity);
+    alloc::allocator::dealloc(ptr, capacity, align);
+    if (invalid_read != -1) {
+        return 14;
+    }
+    if (read <= 0) {
+        return 15;
+    }
+    if (read > capacity_i32) {
+        return 16;
+    }
+    if (len <= capacity_i32 && read != len) {
+        return 17;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::env var key enumeration",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack std::env var key enumeration should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::env var key enumeration",
+        "x86_source_pack_std_env_var_key_enumeration",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_std_env_var_lookup() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/env.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::env;
+
+fn value_len_for_key(ptr: u32, len: usize) -> i32 {
+    return std::env::var_len(ptr, len);
+}
+
+fn value_read_for_key(key_ptr: u32, key_len: usize, value_ptr: u32, value_capacity: usize) -> i32 {
+    return std::env::var_read(key_ptr, key_len, value_ptr, value_capacity);
+}
+
+fn main() -> i32 {
+    let count: i32 = std::env::var_count();
+    if (count < 0) {
+        return 10;
+    }
+    if (count == 0) {
+        return 0;
+    }
+    let capacity: usize = 4096;
+    let capacity_i32: i32 = 4096;
+    let align: usize = 4;
+    let key_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (key_ptr == 0) {
+        return 11;
+    }
+    let value_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (value_ptr == 0) {
+        alloc::allocator::dealloc(key_ptr, capacity, align);
+        return 12;
+    }
+    let zero: i32 = 0;
+    let key_len_i32: i32 = std::env::var_key_read(zero, key_ptr, capacity);
+    if (key_len_i32 <= 0) {
+        alloc::allocator::dealloc(value_ptr, capacity, align);
+        alloc::allocator::dealloc(key_ptr, capacity, align);
+        return 13;
+    }
+    let key_len: usize = key_len_i32;
+    let value_len: i32 = value_len_for_key(key_ptr, key_len);
+    if (value_len < 0) {
+        alloc::allocator::dealloc(value_ptr, capacity, align);
+        alloc::allocator::dealloc(key_ptr, capacity, align);
+        return 14;
+    }
+    let value_read: i32 = value_read_for_key(key_ptr, key_len, value_ptr, capacity);
+    alloc::allocator::dealloc(value_ptr, capacity, align);
+    alloc::allocator::dealloc(key_ptr, capacity, align);
+    if (value_read < 0) {
+        return 15;
+    }
+    if (value_read > capacity_i32) {
+        return 16;
+    }
+    if (value_len <= capacity_i32 && value_read != value_len) {
+        return 17;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::env var lookup",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack std::env var lookup should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::env var lookup",
+        "x86_source_pack_std_env_var_lookup",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_alloc_allocator_alloc_dealloc() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+
+fn main() {
+    let ptr: u32 = alloc::allocator::alloc(64, 8);
+    if (ptr == 0) {
+        return 1;
+    }
+    alloc::allocator::dealloc(ptr, 64, 8);
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack alloc::allocator alloc/dealloc",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack alloc::allocator alloc/dealloc",
+        "x86_source_pack_alloc_allocator_alloc_dealloc",
+        &bytes,
+        0,
     );
 }
 
@@ -6864,6 +10489,427 @@ fn x86_executes_stdlib_helper_from_source_pack() {
         &bytes,
         1,
     );
+}
+
+#[test]
+fn x86_executes_stdlib_f32_sqrt_from_source_pack() {
+    let sources = [
+        include_str!("../stdlib/core/f32.lani"),
+        r#"
+module app::main;
+
+import core::f32;
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = core::f32::sqrt(value) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn main() {
+    let r: i32 = color_to_byte(0.625);
+    if (r > 200 && r < 204) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack stdlib f32 sqrt", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("stdlib f32 sqrt helper should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack stdlib f32 sqrt",
+        "x86_stdlib_f32_sqrt",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_camera_sky_with_stdlib_sqrt() {
+    let sources = [
+        include_str!("../stdlib/core/f32.lani"),
+        r#"
+module app::main;
+
+import core::f32;
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+
+    fn length(self) -> f32 {
+        return core::f32::sqrt(self.dot(self));
+    }
+
+    fn unit(self) -> Vec3 {
+        let len: f32 = self.length();
+        if (len == 0.0) {
+            return self;
+        }
+        return self.mul_scalar(1.0 / len);
+    }
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f32,
+    albedo: Vec3,
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+    point: Vec3,
+    normal: Vec3,
+    albedo: Vec3,
+}
+
+struct RenderSettings {
+    width: i32,
+    height: i32,
+    samples_per_pixel: i32,
+}
+
+impl Camera {
+    fn ray(self, u: f32, v: f32) -> Ray {
+        let horizontal: Vec3 = self.horizontal;
+        let vertical: Vec3 = self.vertical;
+        let lower_left_corner: Vec3 = self.lower_left_corner;
+        let origin: Vec3 = self.origin;
+        let across: Vec3 = horizontal.mul_scalar(u);
+        let up: Vec3 = vertical.mul_scalar(v);
+        let corner_across: Vec3 = lower_left_corner.add(across);
+        let target: Vec3 = corner_across.add(up);
+        let direction: Vec3 = target.sub(origin);
+        let result: Ray = Ray {
+            origin: origin,
+            direction: direction,
+        };
+        return result;
+    }
+}
+
+fn make_camera(settings: RenderSettings) -> Camera {
+    let aspect_ratio: f32 = i32_to_f32(settings.width) / i32_to_f32(settings.height);
+    let viewport_width: f32 = aspect_ratio * 2.0;
+    let origin: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let horizontal: Vec3 = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical: Vec3 = Vec3::new(0.0, 2.0, 0.0);
+    let half_horizontal: Vec3 = horizontal.mul_scalar(0.5);
+    let half_vertical: Vec3 = vertical.mul_scalar(0.5);
+    let focal: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+    let lower_step0: Vec3 = origin.sub(half_horizontal);
+    let lower_step1: Vec3 = lower_step0.sub(half_vertical);
+    let lower_left_corner: Vec3 = lower_step1.sub(focal);
+    let result: Camera = Camera {
+        origin: origin,
+        lower_left_corner: lower_left_corner,
+        horizontal: horizontal,
+        vertical: vertical,
+    };
+    return result;
+}
+
+fn default_settings() -> RenderSettings {
+    let result: RenderSettings = RenderSettings {
+        width: 16,
+        height: 9,
+        samples_per_pixel: 1,
+    };
+    return result;
+}
+
+fn sky_color(ray: Ray) -> Vec3 {
+    let direction: Vec3 = ray.direction;
+    let dir: Vec3 = direction.unit();
+    let t: f32 = 0.5 * (dir.y + 1.0);
+    let white: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+    let blue: Vec3 = Vec3::new(0.5, 0.7, 1.0);
+    let left_part: Vec3 = white.mul_scalar(1.0 - t);
+    let right_part: Vec3 = blue.mul_scalar(t);
+    return left_part.add(right_part);
+}
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = core::f32::sqrt(value) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn main() -> i32 {
+    let settings: RenderSettings = default_settings();
+    let camera: Camera = make_camera(settings);
+    let camera_vertical: Vec3 = camera.vertical;
+    if (!(camera_vertical.y > 1.9 && camera_vertical.y < 2.1)) {
+        return 60;
+    }
+    let camera_lower_left: Vec3 = camera.lower_left_corner;
+    if (!(camera_lower_left.y < -0.9 && camera_lower_left.y > -1.1)) {
+        return 61;
+    }
+    let ray: Ray = camera.ray(0.033333, 0.9375);
+    let sky: Vec3 = sky_color(ray);
+    let byte: i32 = color_to_byte(sky.x);
+    if (byte > 204 && byte < 209) {
+        return 0;
+    }
+    return byte;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack camera sky stdlib sqrt", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack camera sky stdlib sqrt should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack camera sky stdlib sqrt",
+        "x86_source_pack_camera_sky_stdlib_sqrt",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_raytracer_first_pixel_from_source_pack() {
+    let source = include_str!("fixtures/raytracer_ppm/raytracer.lani").replace(
+        r#"fn main() -> i32 {
+    let settings_path: str = "render_settings.txt";
+    let settings: RenderSettings = load_settings(settings_path);
+    let file: i32 = open_write_path("lanius_ray.ppm");
+    if (file < 0) {
+        print(-1);
+        return 1;
+    }
+
+    let pixels_written: i32 = render(file, settings);
+    let close_status: i32 = close_file(file);
+    if (operation_failed(pixels_written)) {
+        print(-2);
+        return 1;
+    }
+    if (operation_failed(close_status)) {
+        print(-2);
+        return 1;
+    }
+
+    print(pixels_written);
+    return 0;
+}
+"#,
+        r#"fn main() -> i32 {
+    let settings: RenderSettings = default_settings();
+    let camera: Camera = make_camera(settings);
+    let ray: Ray = camera.ray(0.033333, 0.9375);
+    let ray_direction: Vec3 = ray.direction;
+    if (!(ray_direction.y > 0.85 && ray_direction.y < 0.90)) {
+        if (ray_direction.x < -1.6 && ray_direction.x > -1.8) {
+            return 62;
+        }
+        if (ray_direction.z < -0.9 && ray_direction.z > -1.1) {
+            return 63;
+        }
+        return color_to_byte(ray_direction.y);
+    }
+    let sky_before_hit_world: Vec3 = sky_color(ray);
+    if (!(sky_before_hit_world.x > 0.60 && sky_before_hit_world.x < 0.65)) {
+        return color_to_byte(sky_before_hit_world.x);
+    }
+    let ground_center: Vec3 = Vec3::new(0.0, -100.5, -1.0);
+    let ground_albedo: Vec3 = Vec3::new(0.8, 0.8, 0.0);
+    let ground: Sphere = Sphere {
+        center: ground_center,
+        radius: 100.0,
+        albedo: ground_albedo,
+    };
+    let hit_ground: Hit = hit_sphere(ground, ray, 0.001, 1000000.0);
+    if (hit_ground.ok) {
+        return 40;
+    }
+    let center_center: Vec3 = Vec3::new(0.0, 0.0, -1.0);
+    let center_albedo: Vec3 = Vec3::new(0.7, 0.3, 0.3);
+    let center: Sphere = Sphere {
+        center: center_center,
+        radius: 0.5,
+        albedo: center_albedo,
+    };
+    let hit_center: Hit = hit_sphere(center, ray, 0.001, 1000000.0);
+    if (hit_center.ok) {
+        return 41;
+    }
+    let side_center: Vec3 = Vec3::new(1.0, 0.0, -1.6);
+    let side_albedo: Vec3 = Vec3::new(0.2, 0.4, 0.8);
+    let side: Sphere = Sphere {
+        center: side_center,
+        radius: 0.5,
+        albedo: side_albedo,
+    };
+    let hit_side: Hit = hit_sphere(side, ray, 0.001, 1000000.0);
+    if (hit_side.ok) {
+        return 42;
+    }
+    let hit: Hit = hit_world(ray);
+    if (hit.ok) {
+        return 30;
+    }
+    let sky: Vec3 = sky_color(ray);
+    if (!(sky.x > 0.60 && sky.x < 0.65)) {
+        return color_to_byte(sky.x);
+    }
+    let color: Vec3 = pixel_color(camera, settings, 0, 0);
+    if (!(color.x > 0.60 && color.x < 0.65)) {
+        return 20;
+    }
+    if (!(color.y > 0.75 && color.y < 0.80)) {
+        return 21;
+    }
+    if (!(color.z > 0.99 && color.z < 1.01)) {
+        return 22;
+    }
+    let r: i32 = color_to_byte(color.x);
+    let g: i32 = color_to_byte(color.y);
+    let b: i32 = color_to_byte(color.z);
+    if (!(r > 200 && r < 205)) {
+        return 10;
+    }
+    if (!(g > 223 && g < 228)) {
+        return 11;
+    }
+    if (!(b == 255)) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+    );
+    let sources = vec![include_str!("../stdlib/core/f32.lani").to_string(), source];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack raytracer first pixel", move || {
+            let source_refs = sources.iter().map(String::as_str).collect::<Vec<_>>();
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&source_refs))
+        })
+        .expect("raytracer first pixel source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack raytracer first pixel",
+        "x86_raytracer_first_pixel",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_raytracer_ppm_from_source_pack() {
+    let sources = [
+        include_str!("../stdlib/core/f32.lani"),
+        include_str!("fixtures/raytracer_ppm/raytracer.lani"),
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 source pack raytracer PPM", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("raytracer source pack should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_raytracer_ppm", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "create raytracer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+        let output = run_x86_64_elf_output_in_dir(
+            "x86 source pack raytracer PPM",
+            "x86_raytracer_ppm",
+            &bytes,
+            run_dir.path(),
+        );
+        common::assert_command_success("x86 source pack raytracer PPM", &output);
+        assert_eq!(
+            common::stdout_utf8("x86 raytracer stdout", output.stdout),
+            "144\n"
+        );
+
+        let ppm_path = run_dir.path().join("lanius_ray.ppm");
+        let ppm = std::fs::read_to_string(&ppm_path)
+            .unwrap_or_else(|err| panic!("read raytracer PPM {}: {err}", ppm_path.display()));
+        assert!(
+            ppm.starts_with("P3\n16 9\n255\n"),
+            "raytracer PPM should start with the expected header, got {:?}",
+            ppm.lines().take(3).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ppm.lines().count(),
+            147,
+            "raytracer PPM should contain a three-line header and 144 pixel rows"
+        );
+        std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
+            panic!(
+                "remove raytracer run directory {}: {err}",
+                run_dir.path().display()
+            )
+        });
+    }
 }
 
 #[test]
