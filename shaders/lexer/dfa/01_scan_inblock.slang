@@ -84,7 +84,6 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
     if (lane < N_STATES)
     {
         uint state = lane;
-        [unroll]
         for (uint chunk = 0u; chunk < CHUNK_COUNT; chunk += 1u)
         {
             state = chunk_summaries[chunk * N_STATES + state];

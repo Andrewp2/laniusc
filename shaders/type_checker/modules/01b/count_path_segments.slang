@@ -138,7 +138,6 @@ uint count_segments(uint root)
 
     uint count = 0u;
     uint container = root;
-    [loop]
     for (uint segment_i = 0u; segment_i < PATH_TOO_DEEP_SENTINEL; segment_i += 1u)
     {
         if (!valid_node(container) || !is_path_container(node_kind[container]))

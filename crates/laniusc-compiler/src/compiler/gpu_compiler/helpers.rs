@@ -431,9 +431,9 @@ mod tests {
                 assert!(!rendered.contains("frontend error"));
                 assert!(!rendered.contains("lex source"));
             }
-            other => panic!(
-                "expected structured source-pack tokenization diagnostic, got {other:?}"
-            ),
+            other => {
+                panic!("expected structured source-pack tokenization diagnostic, got {other:?}")
+            }
         }
     }
 

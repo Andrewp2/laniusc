@@ -713,7 +713,6 @@ bool compact_type_arg_rows_valid(uint instance_i, uint arg_count)
         return false;
 
     uint total_rows = type_instance_arg_row_count_out[0u];
-    [loop]
     for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
     {
         uint row_i = row_start + ordinal;
@@ -737,7 +736,6 @@ bool publish_compact_type_arg_refs(uint instance_i, uint arg_count)
         return false;
 
     uint total_rows = type_instance_arg_row_count_out[0u];
-    [loop]
     for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
     {
         uint row_i = row_start + ordinal;
@@ -838,7 +836,6 @@ uint type_instance_arg_ref_hash(uint instance_i)
 {
     uint count = type_instance_arg_count[instance_i];
     uint hash = mix_hash(2166136261u, count);
-    [loop]
     for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
         uint tag;
@@ -868,7 +865,6 @@ bool publish_token_type_arg_refs(uint instance_i, out uint arg_count)
 
     uint depth = 0u;
     bool expect_arg = false;
-    [unroll]
     for (uint step = 1u; step < 128u; step += 1u)
     {
         uint token = instance_i + step;

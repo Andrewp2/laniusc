@@ -454,6 +454,14 @@ impl TypeCheckPasses {
                 "type_check_predicates_01_collect",
                 "type_checker/predicates/01_collect"
             ),
+            predicates_collect_impls: pass!(
+                "type_check_predicates_01_collect_impls",
+                "type_checker/predicates/01_collect_impls"
+            ),
+            predicates_collect_methods: pass!(
+                "type_check_predicates_01_collect_methods",
+                "type_checker/predicates/01_collect_methods"
+            ),
             predicates_seed_key_order: pass!(
                 "type_check_predicates_01b_seed_key_order",
                 "type_checker/predicates/01b_seed_key_order"

@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
+    cli::common::{CliError, explicit_source_pack_manifest_invalid_error},
     codegen::unit::SourcePackArtifactTarget,
-    cli::common::{explicit_source_pack_manifest_invalid_error, CliError},
     compiler::ExplicitSourceLibraryPathDependencyStream,
 };
 
@@ -234,12 +234,11 @@ pub(super) fn store_progress(artifact_root: &Path, progress: &Progress) -> Manif
             ))
         })?;
     }
-    let bytes = serde_json::to_vec_pretty(progress)
-        .map_err(|err| {
-            manifest_error(format!(
-                "serialize source-pack library manifest progress: {err}"
-            ))
-        })?;
+    let bytes = serde_json::to_vec_pretty(progress).map_err(|err| {
+        manifest_error(format!(
+            "serialize source-pack library manifest progress: {err}"
+        ))
+    })?;
     fs::write(&path, bytes).map_err(|err| {
         manifest_error(format!(
             "write source-pack library manifest progress {}: {err}",

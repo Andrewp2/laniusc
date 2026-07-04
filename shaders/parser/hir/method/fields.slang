@@ -147,7 +147,6 @@ bool is_impl_owner_node(uint prod)
 uint impl_owner_child(uint node)
 {
     uint child = first_child_node(node);
-    [loop]
     while (valid_node(child))
     {
         if (is_impl_owner_node(node_kind[child]))
@@ -165,7 +164,6 @@ uint preceding_impl_owner_sibling(uint node)
 
     uint child = first_child_node(owner);
     uint impl_node = INVALID;
-    [loop]
     while (valid_node(child) && child < node)
     {
         uint prod = node_kind[child];
@@ -191,7 +189,6 @@ uint preceding_inherent_impl_header(uint node)
 
     uint start = hir_token_pos[node];
     uint cursor = node;
-    [loop]
     while (cursor > 0u)
     {
         cursor -= 1u;
@@ -208,7 +205,6 @@ uint preceding_inherent_impl_header(uint node)
 uint impl_owner_from_item_list(uint node)
 {
     uint child = first_child_node(node);
-    [loop]
     while (valid_node(child))
     {
         if (is_impl_item_wrapper(node_kind[child]))
@@ -251,7 +247,6 @@ uint method_impl_node_for_fn(uint fn_node)
 
     bool saw_method_wrapper = false;
     uint ancestor = parent_node(fn_node);
-    [loop]
     while (valid_node(ancestor))
     {
         uint prod = node_kind[ancestor];
@@ -283,7 +278,6 @@ uint method_impl_node_for_fn(uint fn_node)
 
     uint row = hir_semantic_parent[fn_row];
     uint remaining = active_semantic_count();
-    [loop]
     while (valid_semantic_row(row) && remaining > 0u)
     {
         remaining -= 1u;

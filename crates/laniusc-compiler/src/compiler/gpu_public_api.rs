@@ -217,11 +217,13 @@ pub(super) fn global_gpu_compiler_for(
 ) -> Result<&'static GpuCompiler<'static>, CompileError> {
     compiler
         .get_or_init(|| {
-            pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
                 device::global(),
                 backends,
             ))
-            .map_err(|err| err.to_string())
+            .map_err(|err| err.to_string());
+            device::persist_pipeline_cache();
+            compiler
         })
         .as_ref()
         .map_err(|err| {

@@ -73,7 +73,7 @@ public struct ReduceU32x2MaxKeyMinValue : IPrefixScanOp<uint2>
     }
 }
 
-public inline T group_reduce_power_of_two<
+public T group_reduce_power_of_two<
     T,
     TOp: IPrefixScanOp<T>,
     let GSIZE: int>(
@@ -94,7 +94,7 @@ public inline T group_reduce_power_of_two<
     return scratch[0u];
 }
 
-public inline T group_reduce_active_power_of_two<
+public T group_reduce_active_power_of_two<
     T,
     TOp: IPrefixScanOp<T>,
     let GSIZE: int>(

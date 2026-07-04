@@ -1374,10 +1374,53 @@ uint semicolon_kind_after_braced_rhs(uint token_i)
     return 0u;
 }
 
+uint nearest_statement_start_before(uint token_i)
+{
+    for (uint step = 1u; step <= 64u; step += 1u)
+    {
+        if (token_i < step)
+            return INVALID;
+        uint i = token_i - step;
+        uint kind = raw_token_kind(i);
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE)
+            return INVALID;
+        if (kind == TK_FN || kind == TK_EXTERN || kind == TK_PUB ||
+            kind == TK_IMPORT || kind == TK_MODULE || kind == TK_CONST ||
+            kind == TK_TYPE || kind == TK_STRUCT || kind == TK_ENUM ||
+            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_LET ||
+            kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
+            kind == TK_FOR || kind == TK_BREAK || kind == TK_CONTINUE)
+        {
+            return i;
+        }
+    }
+    return INVALID;
+}
+
+bool raw_extern_fn_signature_start(uint start_i)
+{
+    if (start_i == INVALID)
+        return false;
+    uint kind = raw_token_kind(start_i);
+    if (kind == TK_EXTERN)
+    {
+        if (raw_token_kind(start_i + 1u) == TK_STRING)
+            return raw_token_kind(start_i + 2u) == TK_FN;
+        return raw_token_kind(start_i + 1u) == TK_FN;
+    }
+    if (kind == TK_PUB && raw_token_kind(start_i + 1u) == TK_EXTERN)
+    {
+        if (raw_token_kind(start_i + 2u) == TK_STRING)
+            return raw_token_kind(start_i + 3u) == TK_FN;
+        return raw_token_kind(start_i + 2u) == TK_FN;
+    }
+    return false;
+}
+
 bool extern_fn_signature_context_before(uint token_i)
 {
     if (statement_context_token_kind(token_i) != TK_FN)
-        return false;
+        return raw_extern_fn_signature_start(nearest_statement_start_before(token_i));
 
     uint fn_i = statement_event_token_at(token_i);
     if (fn_i == INVALID)
@@ -1389,6 +1432,14 @@ bool extern_fn_signature_context_before(uint token_i)
     return fn_i > 1u &&
            raw_token_kind(fn_i - 1u) == TK_STRING &&
            raw_token_kind(fn_i - 2u) == TK_EXTERN;
+}
+
+bool extern_abi_string_context_before(uint token_i)
+{
+    if (statement_context_token_kind(token_i) == TK_EXTERN)
+        return true;
+    uint start = nearest_statement_start_before(token_i);
+    return raw_extern_fn_signature_start(start);
 }
 
 uint semantic_semicolon_kind_for(uint parser_i, uint count)
@@ -1442,7 +1493,7 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
     }
     if (raw_kind == TK_STRING && statement_context_token_kind(parser_i - 1u) == TK_IMPORT)
         return TK_IMPORT_STRING;
-    if (raw_kind == TK_STRING && statement_context_token_kind(parser_i - 1u) == TK_EXTERN)
+    if (raw_kind == TK_STRING && extern_abi_string_context_before(parser_i - 1u))
         return TK_EXTERN_ABI_STRING;
     if (raw_kind == TK_LPAREN || raw_kind == TK_LBRACKET)
         return semantic_open_kind_for(parser_i, count, raw_kind);

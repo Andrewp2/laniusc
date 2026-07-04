@@ -134,7 +134,10 @@ pub(super) fn create_call_record_bind_groups(
                 "hir_expr_result_root_node",
                 expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
-            ("path_count_out", call_metadata.path_count_out.as_entire_binding()),
+            (
+                "path_count_out",
+                call_metadata.path_count_out.as_entire_binding(),
+            ),
             (
                 "path_id_by_owner_hir",
                 call_metadata.path_id_by_owner_hir.as_entire_binding(),

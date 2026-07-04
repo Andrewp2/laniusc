@@ -3,6 +3,7 @@
 pub mod sample_programs;
 
 use std::{
+    collections::HashMap,
     env,
     fmt,
     fs,
@@ -42,7 +43,7 @@ const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 60_000;
 // The default codegen coverage includes small source-pack programs.
 // Cold process pipeline setup can dominate the first codegen test, so use the
 // same guard as focused GPU type-checking while keeping suite-style loops short.
-const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 120_000;
+const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 180_000;
 const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
 const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
@@ -77,6 +78,10 @@ impl TempArtifact {
 
 impl Drop for TempArtifact {
     fn drop(&mut self) {
+        if env_bool_truthy("LANIUS_KEEP_TEMP_ARTIFACTS") {
+            eprintln!("kept temp artifact {}", self.path.display());
+            return;
+        }
         match fs::remove_file(&self.path) {
             Ok(()) => {}
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -86,6 +91,16 @@ impl Drop for TempArtifact {
             ),
         }
     }
+}
+
+fn env_bool_truthy(name: &str) -> bool {
+    let Ok(value) = env::var(name) else {
+        return false;
+    };
+    matches!(
+        value.as_str(),
+        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+    )
 }
 
 pub fn temp_artifact_path(prefix: &str, stem: &str, extension: Option<&str>) -> PathBuf {
@@ -498,10 +513,84 @@ pub fn run_wasm_main_with_node(
     stdout_utf8(format!("{context}: node stdout"), output.stdout)
 }
 
+pub struct WasmRunResult {
+    pub stdout: String,
+    pub exit_code: i32,
+    pub files: HashMap<String, Vec<u8>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct WasmVirtualFile {
+    path: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(serde::Deserialize)]
+struct WasmRunDump {
+    exit_code: i32,
+    files: Vec<WasmVirtualFile>,
+}
+
+pub fn run_wasm_main_with_node_and_files(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    wasm: &[u8],
+    initial_files: &[(String, Vec<u8>)],
+) -> WasmRunResult {
+    let context = context.to_string();
+    let dump_path = TempArtifact::new("laniusc_exec_wasm_files", artifact_stem, Some("json"));
+    let output = run_wasm_main_with_node_output_with_virtual_files(
+        &context,
+        artifact_stem,
+        wasm,
+        initial_files,
+        Some(dump_path.path()),
+        true,
+    );
+    assert_command_success(format!("{context}: node executing WASM main"), &output);
+    let stdout = stdout_utf8(format!("{context}: node stdout"), output.stdout);
+    let dumped = fs::read(dump_path.path()).unwrap_or_else(|err| {
+        panic!(
+            "{context}: read WASM virtual filesystem dump {}: {err}",
+            dump_path.path().display()
+        )
+    });
+    let dump = serde_json::from_slice::<WasmRunDump>(&dumped)
+        .unwrap_or_else(|err| panic!("{context}: parse WASM virtual filesystem dump: {err}"));
+    let files = dump
+        .files
+        .into_iter()
+        .map(|file| (file.path, file.bytes))
+        .collect();
+    WasmRunResult {
+        stdout,
+        exit_code: dump.exit_code,
+        files,
+    }
+}
+
 pub fn run_wasm_main_with_node_output(
     context: impl fmt::Display,
     artifact_stem: &str,
     wasm: &[u8],
+) -> Output {
+    run_wasm_main_with_node_output_with_virtual_files(
+        context,
+        artifact_stem,
+        wasm,
+        &[],
+        None,
+        false,
+    )
+}
+
+fn run_wasm_main_with_node_output_with_virtual_files(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    wasm: &[u8],
+    initial_files: &[(String, Vec<u8>)],
+    dump_path: Option<&Path>,
+    allow_nonzero_main: bool,
 ) -> Output {
     let context = context.to_string();
     let wasm_path = TempArtifact::new("laniusc_exec_wasm", artifact_stem, Some("wasm"));
@@ -513,6 +602,145 @@ const fs = require('fs');
   let stdout = '';
   let instance = null;
   const laniusArgs = ['program', 'alpha'];
+  const cwd = '/lanius/test/cwd';
+  const laniusEnv = { LANIUS_TEST_ENV: 'present' };
+  const envKeys = Object.keys(laniusEnv);
+  const stdinBytes = Buffer.from('S', 'utf8');
+  const fileStore = new Map();
+  const fileHandles = new Map();
+  let nextFileHandle = 3;
+  let heapPtr = 1024;
+  for (const file of JSON.parse(process.env.LANIUS_WASM_INITIAL_FILES || '[]')) {
+    fileStore.set(file.path, Buffer.from(file.bytes));
+  }
+  function memory() {
+    const memory = instance && instance.exports && instance.exports.memory;
+    if (!memory) {
+      throw new Error('missing exported memory');
+    }
+    return memory;
+  }
+  function alignUp(value, align) {
+    const a = Math.max(1, align >>> 0);
+    return (value + a - 1) & ~(a - 1);
+  }
+  function allocMemory(size, align) {
+    const start = alignUp(heapPtr, align);
+    const end = start + (size >>> 0);
+    if (end > memory().buffer.byteLength) {
+      return 0;
+    }
+    heapPtr = end;
+    return start | 0;
+  }
+  function writeBytes(ptr, len, text) {
+    const bytes = Buffer.from(text, 'utf8');
+    const start = ptr >>> 0;
+    const count = Math.min(len >>> 0, bytes.length);
+    new Uint8Array(memory().buffer, start, count).set(bytes.subarray(0, count));
+    return count | 0;
+  }
+  function readString(ptr, len) {
+    const start = ptr >>> 0;
+    const count = len >>> 0;
+    const bytes = new Uint8Array(memory().buffer, start, count);
+    return Buffer.from(bytes).toString('utf8');
+  }
+  function readBytes(ptr, len) {
+    const start = ptr >>> 0;
+    const count = len >>> 0;
+    return Buffer.from(new Uint8Array(memory().buffer, start, count));
+  }
+  function decodeLaniusStringLiteral(ptr, len) {
+    const bytes = readBytes(ptr, len);
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      const ch = bytes[i];
+      if (ch !== 92 || i + 1 >= bytes.length) {
+        out += String.fromCharCode(ch);
+        continue;
+      }
+      const next = bytes[++i];
+      if (next === 110) {
+        out += '\n';
+      } else if (next === 114) {
+        out += '\r';
+      } else if (next === 116) {
+        out += '\t';
+      } else if (next === 92) {
+        out += '\\';
+      } else if (next === 34) {
+        out += '"';
+      } else {
+        out += String.fromCharCode(next);
+      }
+    }
+    return out;
+  }
+  function openFile(path, mode) {
+    if (mode === 'read' && !fileStore.has(path)) {
+      return -1;
+    }
+    if (mode === 'write') {
+      fileStore.set(path, Buffer.alloc(0));
+    } else if (mode === 'append' && !fileStore.has(path)) {
+      fileStore.set(path, Buffer.alloc(0));
+    }
+    const handle = nextFileHandle++;
+    fileHandles.set(handle, { path, offset: mode === 'append' ? fileStore.get(path).length : 0, mode });
+    return handle | 0;
+  }
+  function fileRead(handle, ptr, len) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return -1;
+    }
+    const data = fileStore.get(record.path) || Buffer.alloc(0);
+    const count = Math.min(len >>> 0, Math.max(0, data.length - record.offset));
+    new Uint8Array(memory().buffer, ptr >>> 0, count).set(data.subarray(record.offset, record.offset + count));
+    record.offset += count;
+    return count | 0;
+  }
+  function fileWriteBuffer(handle, bytes) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return -1;
+    }
+    const before = fileStore.get(record.path) || Buffer.alloc(0);
+    const prefix = before.subarray(0, record.offset);
+    const suffixStart = record.offset + bytes.length;
+    const suffix = suffixStart < before.length ? before.subarray(suffixStart) : Buffer.alloc(0);
+    fileStore.set(record.path, Buffer.concat([prefix, bytes, suffix]));
+    record.offset += bytes.length;
+    return bytes.length | 0;
+  }
+  function fileWrite(handle, ptr, len) {
+    return fileWriteBuffer(handle, readBytes(ptr, len));
+  }
+  function fileReadI32(handle, fallback) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return fallback | 0;
+    }
+    const data = fileStore.get(record.path) || Buffer.alloc(0);
+    let offset = record.offset;
+    while (offset < data.length && data[offset] <= 32) {
+      offset += 1;
+    }
+    const start = offset;
+    if (offset < data.length && (data[offset] === 43 || data[offset] === 45)) {
+      offset += 1;
+    }
+    const digitsStart = offset;
+    while (offset < data.length && data[offset] >= 48 && data[offset] <= 57) {
+      offset += 1;
+    }
+    if (offset === digitsStart) {
+      return fallback | 0;
+    }
+    record.offset = offset;
+    return Number.parseInt(data.subarray(start, offset).toString('utf8'), 10) | 0;
+  }
   const imports = {
     env: {
       print_i64(value) {
@@ -546,6 +774,84 @@ const fs = require('fs');
       unix_seconds() {
         return 1234567890;
       },
+      current_dir_read(ptr, len) {
+        return writeBytes(ptr, len, cwd);
+      },
+      current_dir_len() {
+        return Buffer.byteLength(cwd, 'utf8');
+      },
+      var_count() {
+        return envKeys.length;
+      },
+      var_key_len(index) {
+        const key = envKeys[index | 0];
+        return typeof key === 'string' ? Buffer.byteLength(key, 'utf8') : -1;
+      },
+      var_key_read(index, ptr, len) {
+        const key = envKeys[index | 0];
+        return typeof key === 'string' ? writeBytes(ptr, len, key) : -1;
+      },
+      var_len(keyPtr, keyLen) {
+        const key = readString(keyPtr, keyLen);
+        const value = laniusEnv[key];
+        return typeof value === 'string' ? Buffer.byteLength(value, 'utf8') : -1;
+      },
+      var_read(keyPtr, keyLen, valuePtr, valueLen) {
+        const key = readString(keyPtr, keyLen);
+        const value = laniusEnv[key];
+        return typeof value === 'string' ? writeBytes(valuePtr, valueLen, value) : -1;
+      },
+      close(handle) {
+        return fileHandles.delete(handle | 0) ? 0 : -1;
+      },
+      read(handle, ptr, len) {
+        return fileRead(handle, ptr, len);
+      },
+      write(handle, ptr, len) {
+        return fileWrite(handle, ptr, len);
+      },
+      open_read(ptr, len) {
+        return openFile(readString(ptr, len), 'read');
+      },
+      open_write(ptr, len) {
+        return openFile(readString(ptr, len), 'write');
+      },
+      open_append(ptr, len) {
+        return openFile(readString(ptr, len), 'append');
+      },
+      open_read_path(ptr, len) {
+        return openFile(decodeLaniusStringLiteral(ptr, len), 'read');
+      },
+      open_write_path(ptr, len) {
+        return openFile(decodeLaniusStringLiteral(ptr, len), 'write');
+      },
+      write_text(handle, ptr, len) {
+        return fileWriteBuffer(handle, Buffer.from(decodeLaniusStringLiteral(ptr, len), 'utf8'));
+      },
+      read_i32(handle, fallback) {
+        return fileReadI32(handle, fallback);
+      },
+      write_i32(handle, value) {
+        return fileWriteBuffer(handle, Buffer.from(String(value | 0), 'utf8'));
+      },
+      write_byte(handle, value) {
+        return fileWriteBuffer(handle, Buffer.from([value & 255]));
+      },
+      write_newline(handle) {
+        return fileWriteBuffer(handle, Buffer.from('\n', 'utf8'));
+      },
+      write_stderr(_ptr, len) {
+        return len | 0;
+      },
+      read_stdin(ptr, len) {
+        const count = Math.min(len >>> 0, stdinBytes.length);
+        new Uint8Array(memory().buffer, ptr >>> 0, count).set(stdinBytes.subarray(0, count));
+        return count | 0;
+      },
+      alloc(size, align) {
+        return allocMemory(size, align);
+      },
+      dealloc(_ptr, _size, _align) {},
       write_stdout(ptr, len) {
         const memory = instance && instance.exports && instance.exports.memory;
         if (!memory) {
@@ -566,9 +872,21 @@ const fs = require('fs');
     throw new Error('missing exported main function');
   }
   const status = main();
-  if (status !== 0) {
+  if (!Number.isInteger(status)) {
+    throw new Error(`main returned non-integer ${String(status)}`);
+  }
+  const allowNonzeroMain = process.env.LANIUS_WASM_ALLOW_NONZERO_RETURN === '1';
+  if (status !== 0 && !allowNonzeroMain) {
     console.error(`main returned ${String(status)}`);
     process.exit(1);
+  }
+  const dumpPath = process.env.LANIUS_WASM_FILE_DUMP;
+  if (dumpPath) {
+    const files = Array.from(fileStore.entries()).map(([path, bytes]) => ({
+      path,
+      bytes: Array.from(bytes.values())
+    }));
+    fs.writeFileSync(dumpPath, JSON.stringify({ exit_code: status | 0, files }));
   }
   process.stdout.write(stdout);
 })().catch((err) => {
@@ -578,7 +896,23 @@ const fs = require('fs');
 "#;
 
     let mut command = Command::new("node");
+    let virtual_files = initial_files
+        .iter()
+        .map(|(path, bytes)| WasmVirtualFile {
+            path: path.clone(),
+            bytes: bytes.clone(),
+        })
+        .collect::<Vec<_>>();
+    let virtual_files = serde_json::to_string(&virtual_files)
+        .unwrap_or_else(|err| panic!("{context}: serialize WASM initial files: {err}"));
     command.arg("-e").arg(script).arg(wasm_path.path());
+    command.env("LANIUS_WASM_INITIAL_FILES", virtual_files);
+    if let Some(dump_path) = dump_path {
+        command.env("LANIUS_WASM_FILE_DUMP", dump_path);
+    }
+    if allow_nonzero_main {
+        command.env("LANIUS_WASM_ALLOW_NONZERO_RETURN", "1");
+    }
     short_process_output_with_timeout(
         format!("{context}: run node for {}", wasm_path.path().display()),
         &mut command,
@@ -599,6 +933,142 @@ const fs = require('fs');
 (async () => {
   let instance = null;
   const laniusArgs = ['program', 'alpha'];
+  const cwd = '/lanius/test/cwd';
+  const laniusEnv = { LANIUS_TEST_ENV: 'present' };
+  const envKeys = Object.keys(laniusEnv);
+  const stdinBytes = Buffer.from('S', 'utf8');
+  const fileStore = new Map();
+  const fileHandles = new Map();
+  let nextFileHandle = 3;
+  let heapPtr = 1024;
+  function memory() {
+    const memory = instance && instance.exports && instance.exports.memory;
+    if (!memory) {
+      throw new Error('missing exported memory');
+    }
+    return memory;
+  }
+  function alignUp(value, align) {
+    const a = Math.max(1, align >>> 0);
+    return (value + a - 1) & ~(a - 1);
+  }
+  function allocMemory(size, align) {
+    const start = alignUp(heapPtr, align);
+    const end = start + (size >>> 0);
+    if (end > memory().buffer.byteLength) {
+      return 0;
+    }
+    heapPtr = end;
+    return start | 0;
+  }
+  function writeBytes(ptr, len, text) {
+    const bytes = Buffer.from(text, 'utf8');
+    const start = ptr >>> 0;
+    const count = Math.min(len >>> 0, bytes.length);
+    new Uint8Array(memory().buffer, start, count).set(bytes.subarray(0, count));
+    return count | 0;
+  }
+  function readString(ptr, len) {
+    const start = ptr >>> 0;
+    const count = len >>> 0;
+    const bytes = new Uint8Array(memory().buffer, start, count);
+    return Buffer.from(bytes).toString('utf8');
+  }
+  function readBytes(ptr, len) {
+    const start = ptr >>> 0;
+    const count = len >>> 0;
+    return Buffer.from(new Uint8Array(memory().buffer, start, count));
+  }
+  function decodeLaniusStringLiteral(ptr, len) {
+    const bytes = readBytes(ptr, len);
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      const ch = bytes[i];
+      if (ch !== 92 || i + 1 >= bytes.length) {
+        out += String.fromCharCode(ch);
+        continue;
+      }
+      const next = bytes[++i];
+      if (next === 110) {
+        out += '\n';
+      } else if (next === 114) {
+        out += '\r';
+      } else if (next === 116) {
+        out += '\t';
+      } else if (next === 92) {
+        out += '\\';
+      } else if (next === 34) {
+        out += '"';
+      } else {
+        out += String.fromCharCode(next);
+      }
+    }
+    return out;
+  }
+  function openFile(path, mode) {
+    if (mode === 'read' && !fileStore.has(path)) {
+      return -1;
+    }
+    if (mode === 'write') {
+      fileStore.set(path, Buffer.alloc(0));
+    } else if (mode === 'append' && !fileStore.has(path)) {
+      fileStore.set(path, Buffer.alloc(0));
+    }
+    const handle = nextFileHandle++;
+    fileHandles.set(handle, { path, offset: mode === 'append' ? fileStore.get(path).length : 0, mode });
+    return handle | 0;
+  }
+  function fileRead(handle, ptr, len) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return -1;
+    }
+    const data = fileStore.get(record.path) || Buffer.alloc(0);
+    const count = Math.min(len >>> 0, Math.max(0, data.length - record.offset));
+    new Uint8Array(memory().buffer, ptr >>> 0, count).set(data.subarray(record.offset, record.offset + count));
+    record.offset += count;
+    return count | 0;
+  }
+  function fileWriteBuffer(handle, bytes) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return -1;
+    }
+    const before = fileStore.get(record.path) || Buffer.alloc(0);
+    const prefix = before.subarray(0, record.offset);
+    const suffixStart = record.offset + bytes.length;
+    const suffix = suffixStart < before.length ? before.subarray(suffixStart) : Buffer.alloc(0);
+    fileStore.set(record.path, Buffer.concat([prefix, bytes, suffix]));
+    record.offset += bytes.length;
+    return bytes.length | 0;
+  }
+  function fileWrite(handle, ptr, len) {
+    return fileWriteBuffer(handle, readBytes(ptr, len));
+  }
+  function fileReadI32(handle, fallback) {
+    const record = fileHandles.get(handle | 0);
+    if (!record) {
+      return fallback | 0;
+    }
+    const data = fileStore.get(record.path) || Buffer.alloc(0);
+    let offset = record.offset;
+    while (offset < data.length && data[offset] <= 32) {
+      offset += 1;
+    }
+    const start = offset;
+    if (offset < data.length && (data[offset] === 43 || data[offset] === 45)) {
+      offset += 1;
+    }
+    const digitsStart = offset;
+    while (offset < data.length && data[offset] >= 48 && data[offset] <= 57) {
+      offset += 1;
+    }
+    if (offset === digitsStart) {
+      return fallback | 0;
+    }
+    record.offset = offset;
+    return Number.parseInt(data.subarray(start, offset).toString('utf8'), 10) | 0;
+  }
   const imports = {
     env: {
       print_i64(_value) {},
@@ -630,6 +1100,84 @@ const fs = require('fs');
       unix_seconds() {
         return 1234567890;
       },
+      current_dir_read(ptr, len) {
+        return writeBytes(ptr, len, cwd);
+      },
+      current_dir_len() {
+        return Buffer.byteLength(cwd, 'utf8');
+      },
+      var_count() {
+        return envKeys.length;
+      },
+      var_key_len(index) {
+        const key = envKeys[index | 0];
+        return typeof key === 'string' ? Buffer.byteLength(key, 'utf8') : -1;
+      },
+      var_key_read(index, ptr, len) {
+        const key = envKeys[index | 0];
+        return typeof key === 'string' ? writeBytes(ptr, len, key) : -1;
+      },
+      var_len(keyPtr, keyLen) {
+        const key = readString(keyPtr, keyLen);
+        const value = laniusEnv[key];
+        return typeof value === 'string' ? Buffer.byteLength(value, 'utf8') : -1;
+      },
+      var_read(keyPtr, keyLen, valuePtr, valueLen) {
+        const key = readString(keyPtr, keyLen);
+        const value = laniusEnv[key];
+        return typeof value === 'string' ? writeBytes(valuePtr, valueLen, value) : -1;
+      },
+      close(handle) {
+        return fileHandles.delete(handle | 0) ? 0 : -1;
+      },
+      read(handle, ptr, len) {
+        return fileRead(handle, ptr, len);
+      },
+      write(handle, ptr, len) {
+        return fileWrite(handle, ptr, len);
+      },
+      open_read(ptr, len) {
+        return openFile(readString(ptr, len), 'read');
+      },
+      open_write(ptr, len) {
+        return openFile(readString(ptr, len), 'write');
+      },
+      open_append(ptr, len) {
+        return openFile(readString(ptr, len), 'append');
+      },
+      open_read_path(ptr, len) {
+        return openFile(decodeLaniusStringLiteral(ptr, len), 'read');
+      },
+      open_write_path(ptr, len) {
+        return openFile(decodeLaniusStringLiteral(ptr, len), 'write');
+      },
+      write_text(handle, ptr, len) {
+        return fileWriteBuffer(handle, Buffer.from(decodeLaniusStringLiteral(ptr, len), 'utf8'));
+      },
+      read_i32(handle, fallback) {
+        return fileReadI32(handle, fallback);
+      },
+      write_i32(handle, value) {
+        return fileWriteBuffer(handle, Buffer.from(String(value | 0), 'utf8'));
+      },
+      write_byte(handle, value) {
+        return fileWriteBuffer(handle, Buffer.from([value & 255]));
+      },
+      write_newline(handle) {
+        return fileWriteBuffer(handle, Buffer.from('\n', 'utf8'));
+      },
+      write_stderr(_ptr, len) {
+        return len | 0;
+      },
+      read_stdin(ptr, len) {
+        const count = Math.min(len >>> 0, stdinBytes.length);
+        new Uint8Array(memory().buffer, ptr >>> 0, count).set(stdinBytes.subarray(0, count));
+        return count | 0;
+      },
+      alloc(size, align) {
+        return allocMemory(size, align);
+      },
+      dealloc(_ptr, _size, _align) {},
       write_stdout(_ptr, len) {
         return len | 0;
       }

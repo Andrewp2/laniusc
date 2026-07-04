@@ -357,7 +357,6 @@ uint direct_struct_literal_node(uint node)
     uint end = subtree_end[node];
     if (end != INVALID && end > node && end <= active_hir_node_count())
     {
-        [loop]
         for (uint cursor = node + 1u; cursor < end; cursor += 1u)
         {
             if ((hir_kind[cursor] == HIR_STRUCT_LITERAL_EXPR ||

@@ -653,7 +653,6 @@ bool same_type_instance_ref(uint lhs, uint rhs)
     if (lhs_count == 0u)
         return true;
 
-    [loop]
     for (uint slot = 0u; slot < lhs_count; slot += 1u)
     {
         uint lhs_tag;

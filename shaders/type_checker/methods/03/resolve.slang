@@ -263,7 +263,6 @@ uint receiver_decl_generic_slot(uint fn_i, uint generic_token)
         return INVALID;
 
     uint arg_count = type_instance_arg_count[receiver_payload];
-    [loop]
     for (uint slot = 0u; slot < arg_count; slot += 1u)
     {
         uint tag;

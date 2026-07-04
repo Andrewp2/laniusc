@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
-use super::{invalid_cli_directory_path_error, CliError};
+use super::{CliError, invalid_cli_directory_path_error};
 
 /// Canonicalizes a CLI path and verifies that it names a directory.
 pub(crate) fn canonical_directory_path(label: &str, path: PathBuf) -> Result<PathBuf, CliError> {

@@ -144,7 +144,6 @@ uint call_node_for_requirement(uint requirement_i)
     uint node_count = active_hir_node_count();
     uint lo = 0u;
     uint hi = node_count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)
@@ -197,7 +196,6 @@ uint lower_bound_generic_claim(uint callee_token, uint slot, uint concrete)
     uint count = active_generic_claim_count();
     uint lo = 0u;
     uint hi = count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)

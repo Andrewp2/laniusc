@@ -70,10 +70,7 @@ fn assert_explicit_source_pack_manifest_error(err: &CliError, note_fragment: &st
     match err {
         CliError::Diagnostic(diagnostic) => {
             assert_eq!(diagnostic.code, "LNC0049");
-            assert_eq!(
-                diagnostic.message,
-                "explicit source-pack manifest invalid"
-            );
+            assert_eq!(diagnostic.message, "explicit source-pack manifest invalid");
             assert!(
                 diagnostic
                     .notes

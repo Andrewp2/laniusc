@@ -21,6 +21,7 @@ StructuredBuffer<uint> wasm_func_flag;
 StructuredBuffer<uint> wasm_func_slot_by_token;
 StructuredBuffer<uint> wasm_func_body_len_by_token;
 StructuredBuffer<uint> wasm_func_local_max_by_token;
+StructuredBuffer<uint> call_return_type;
 
 RWStructuredBuffer<uint> body_fragment_len;
 RWStructuredBuffer<uint4> body_fragment_meta;
@@ -32,6 +33,7 @@ static const uint HIR_BLOCK = 6u;
 static const uint BODY_FRAGMENT_FUNCTION_HEADER = 22u;
 static const uint BODY_FRAGMENT_FUNCTION_END = 28u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint TY_VOID = 1u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -75,7 +77,7 @@ uint local_decl_fragment_len_from_count(uint local_count)
 {
     if (local_count == 0u)
         return 1u;
-    return 1u + u32_leb_len(local_count) + 1u;
+    return 1u + (u32_leb_len(local_count) + 1u) * 2u;
 }
 
 uint local_decl_count_for_function_token(uint fn_token)
@@ -140,6 +142,6 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     publish_fragment_slot(
         end_token * 2u + 1u,
-        2u,
+        call_return_type[fn_token] == TY_VOID ? 1u : 2u,
         uint4(BODY_FRAGMENT_FUNCTION_END, 0u, 0u, end_token));
 }

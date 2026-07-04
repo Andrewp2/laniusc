@@ -22,7 +22,6 @@ public int fixed_u32_row_key_compare<
     TKey key,
     uint lane_count)
 {
-    [loop]
     for (uint lane = 0u; lane < FIXED_U32_KEY_MAX_LANES; lane += 1u)
     {
         if (lane >= lane_count)

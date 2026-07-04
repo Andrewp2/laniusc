@@ -174,7 +174,6 @@ uint generic_param_slot_segment_start(uint owner, uint kind)
     uint count = active_generic_param_count();
     uint lo = 0u;
     uint hi = count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)
@@ -204,7 +203,6 @@ uint generic_param_slot_order_index_for_row(uint row)
     uint count = active_generic_param_count();
     uint lo = 0u;
     uint hi = count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)
@@ -289,7 +287,6 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
     uint count = active_generic_param_count();
     uint lo = 0u;
     uint hi = count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)

@@ -10,6 +10,9 @@ fn x86_sample_programs_compile_run_and_match_stdout() {
         if !sample.checked_for_target("x86_64") {
             continue;
         }
+        if !sample.selected_by_env_filter() {
+            continue;
+        }
 
         let name = sample.name().to_owned();
         let path = sample.path().to_path_buf();
@@ -22,17 +25,30 @@ fn x86_sample_programs_compile_run_and_match_stdout() {
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
-            let stdout = run_sample_x86(&context, &format!("x86_sample_{name}"), &bytes);
-            sample.assert_stdout_eq("x86", &stdout);
+            let result = run_sample_x86(&context, &format!("x86_sample_{name}"), &bytes, &sample);
+            sample.assert_exit_code_eq("x86", result.exit_code);
+            sample.assert_stdout_eq("x86", &result.stdout);
         }
     }
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
-fn run_sample_x86(context: &str, artifact_stem: &str, bytes: &[u8]) -> String {
+struct SampleRunResult {
+    stdout: String,
+    exit_code: i32,
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn run_sample_x86(
+    context: &str,
+    artifact_stem: &str,
+    bytes: &[u8],
+    sample: &common::sample_programs::SampleProgram,
+) -> SampleRunResult {
     use std::os::unix::fs::PermissionsExt;
 
     let work_dir = TempDir::new("sample_program");
+    sample.stage_input_files(work_dir.path());
     let exe_path = work_dir.path().join(artifact_stem);
     fs::write(&exe_path, bytes)
         .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
@@ -49,8 +65,18 @@ fn run_sample_x86(context: &str, artifact_stem: &str, bytes: &[u8]) -> String {
         format!("{context}: run native ELF {}", exe_path.display()),
         &mut command,
     );
-    common::assert_command_success(format!("{context}: native ELF execution"), &output);
-    common::stdout_utf8(format!("{context}: native stdout"), output.stdout)
+    let exit_code = output.status.code().unwrap_or_else(|| {
+        panic!(
+            "{context}: native ELF terminated without an exit code\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    sample.assert_output_files_eq_dir("x86", work_dir.path());
+    SampleRunResult {
+        stdout: common::stdout_utf8(format!("{context}: native stdout"), output.stdout),
+        exit_code,
+    }
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]

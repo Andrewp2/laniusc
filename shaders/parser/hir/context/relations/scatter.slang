@@ -82,7 +82,6 @@ uint fallback_nearest_containing(uint row, uint node, uint wanted_kind)
     if (!has_span(node))
         return INVALID;
 
-    [loop]
     for (uint offset = 1u; offset <= row; offset += 1u)
     {
         uint candidate_row = row - offset;

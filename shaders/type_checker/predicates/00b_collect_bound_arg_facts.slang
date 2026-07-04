@@ -181,7 +181,6 @@ bool bound_ident_has_arg_list(uint node)
         return false;
 
     uint child = first_child_node(node);
-    [loop]
     while (valid_node(child))
     {
         uint kind = node_kind[child];

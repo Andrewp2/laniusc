@@ -77,31 +77,26 @@ static const uint INTRINSIC_NONE = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-[noinline]
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-[noinline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);
 }
 
-[noinline]
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-[noinline]
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
 }
 
-[noinline]
 bool valid_token(uint token)
 {
     return token != INVALID && token < active_token_count();
@@ -117,25 +112,21 @@ uint active_import_visible_count()
     return min(import_visible_value_count_out[0], gParams.n_tokens);
 }
 
-[noinline]
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
 }
 
-[noinline]
 uint expr_record_slot(uint node, uint slot)
 {
     return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
-[noinline]
 uint expr_value_token(uint node)
 {
     return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN) : INVALID;
 }
 
-[noinline]
 bool call_record_is_member_call(uint call_node)
 {
     if (!valid_node(call_node))
@@ -144,7 +135,6 @@ bool call_record_is_member_call(uint call_node)
     return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
 }
 
-[noinline]
 bool call_record_is_qualified_path_call(uint call_node)
 {
     if (!valid_node(call_node))
@@ -170,7 +160,6 @@ bool call_record_is_qualified_path_call(uint call_node)
     return start != INVALID && end != INVALID && end > start + 1u;
 }
 
-[noinline]
 uint callee_token_for_hir_call(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -191,7 +180,6 @@ uint callee_token_for_hir_call(uint call_node)
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
-[noinline]
 uint call_arg_count_for_callee(uint callee_i)
 {
     if (!valid_token(callee_i))
@@ -203,7 +191,6 @@ uint call_arg_count_for_callee(uint callee_i)
     return max(record.w, hir_call_arg_count[call_node]);
 }
 
-[noinline]
 uint path_node_for_call(uint call_node)
 {
     if (!valid_node(call_node))
@@ -394,7 +381,6 @@ bool check_call_arity(uint callee_i, uint fn_i)
     return false;
 }
 
-[noinline]
 void resolve_callee_token(uint callee_i, uint call_node)
 {
     if (!valid_token(callee_i))

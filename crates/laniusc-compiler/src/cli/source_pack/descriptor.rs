@@ -18,7 +18,7 @@ use super::{
     max_ready_items,
 };
 use crate::{
-    cli::common::{source_pack_artifact_store_cli_error, CliError},
+    cli::common::{CliError, source_pack_artifact_store_cli_error},
     compiler::{
         FilesystemArtifactStore,
         FilesystemWorkQueueWorkerRunExecutionResult,

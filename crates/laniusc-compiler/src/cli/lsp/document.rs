@@ -279,7 +279,10 @@ mod tests {
         assert_eq!(items.len(), 1);
         let diagnostic = &items[0];
         assert_eq!(diagnostic["code"], "LNC0016");
-        assert_eq!(diagnostic["data"]["primary_label"]["path"], "/workspace/current.lani");
+        assert_eq!(
+            diagnostic["data"]["primary_label"]["path"],
+            "/workspace/current.lani"
+        );
         assert_eq!(
             diagnostic["data"]["primary_label"]["message"],
             "expected an expression here"

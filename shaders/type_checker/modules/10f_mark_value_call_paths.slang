@@ -201,7 +201,6 @@ void mark_associated_receiver_span(uint owner_token, uint method_token)
     if (!valid_token(owner_token) || !valid_token(method_token) || owner_token >= method_token)
         return;
 
-    [loop]
     for (uint token = owner_token; token < method_token; token += 1u)
         module_value_path_associated_method_token[token] = method_token;
 }

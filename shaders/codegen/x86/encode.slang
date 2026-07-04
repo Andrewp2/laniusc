@@ -5209,7 +5209,6 @@ void scatter_instruction_bytes(uint inst_i)
     if (offset > text_len || size > text_len - offset)
         return;
 
-    [unroll]
     for (uint byte_i = 0u; byte_i < X86_MAX_ENCODED_INST_BYTES; byte_i += 1u)
     {
         if (byte_i < size)

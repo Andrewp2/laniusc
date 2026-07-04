@@ -381,7 +381,6 @@ bool array_element_expr_matches_struct_literal(uint element_node, uint literal_n
 
     uint literal_cursor = literal_node;
     uint head_cursor = head_node;
-    [loop]
     for (uint depth = 0u; depth < MAX_STRUCT_LITERAL_ROOT_WALK; depth += 1u)
     {
         if (literal_cursor == resolved || head_cursor == resolved)
@@ -421,7 +420,6 @@ bool array_element_record_for_struct_literal(
 
     uint count = hir_array_lit_element_count[literal_array];
     uint element = hir_array_lit_first_element[literal_array];
-    [loop]
     for (uint i = 0u; i < count && i < gParams.n_hir_nodes && valid_node(element); i += 1u)
     {
         if (array_element_expr_matches_struct_literal(element, literal_node, head_node))

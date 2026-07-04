@@ -144,7 +144,6 @@ uint unary_operand_token(uint i)
 {
     uint n_active = active_token_count();
     uint cur = i + 1u;
-    [loop]
     while (cur < n_active)
     {
         uint kind = token_kind(cur);
@@ -202,7 +201,6 @@ uint binary_left_operand_token(uint i)
 
     uint depth = 0u;
     uint j = cur + 1u;
-    [loop]
     while (j > 0u)
     {
         j -= 1u;

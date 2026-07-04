@@ -147,7 +147,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (total_name_count > name_radix_item_capacity())
             record_error(0u, ERR_NAME_LIMIT, total_name_count);
 
-        [unroll]
         for (uint symbol_i = 0u; symbol_i < LANGUAGE_SYMBOL_COUNT; symbol_i += 1u)
         {
             uint slot = token_name_count + symbol_i;

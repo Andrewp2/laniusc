@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    let one: f32 = 1.0;
+    return 0;
+}

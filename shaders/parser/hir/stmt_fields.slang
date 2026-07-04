@@ -250,7 +250,6 @@ uint direct_expr_child(uint node)
 uint direct_expr_child_scan(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    [loop]
     while (valid_node(child))
     {
         if (is_hir_expression_kind(hir_kind[child]))
@@ -271,7 +270,6 @@ bool is_for_iterable_production(uint prod)
 uint direct_for_iterable_child(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    [loop]
     while (valid_node(child))
     {
         if (is_for_iterable_production(node_kind[child]))
@@ -292,7 +290,6 @@ uint direct_production_child_after(uint node, uint prod, uint after_node)
 
     uint child = direct_child_or_invalid(node);
     bool after_seen = after_node == INVALID;
-    [loop]
     while (valid_node(child))
     {
         if (child == after_node)
@@ -366,7 +363,6 @@ uint if_then_block(uint node)
 uint else_block_for_if(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    [loop]
     while (valid_node(child))
     {
         if (node_kind[child] == PROD_ELSE_STMT)

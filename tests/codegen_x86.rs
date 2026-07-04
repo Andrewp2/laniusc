@@ -1,10 +1,10 @@
 mod common;
 
 use laniusc_compiler::compiler::{
+    CompileError,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
-    CompileError,
 };
 
 fn make_x86_test_pass(
@@ -8952,11 +8952,11 @@ fn main() -> i32 {
 }
 "#,
     ];
-    let bytes =
-        common::run_gpu_codegen_with_timeout("x86 source pack std::io raw stdout stderr", move || {
-            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        })
-        .expect("source pack should compile to x86_64");
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::io raw stdout stderr",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
 
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
@@ -8981,8 +8981,7 @@ fn main() -> i32 {
             "stdout-bytes"
         );
         assert_eq!(
-            String::from_utf8(output.stderr)
-                .expect("x86 std::io raw stderr should be valid UTF-8"),
+            String::from_utf8(output.stderr).expect("x86 std::io raw stderr should be valid UTF-8"),
             "stderr-bytes"
         );
         std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
@@ -9048,11 +9047,14 @@ fn main() -> i32 {
         {
             use std::os::unix::fs::PermissionsExt;
             let mut permissions = std::fs::metadata(&exe_path)
-                .unwrap_or_else(|err| panic!("stat std::io stdin ELF {}: {err}", exe_path.display()))
+                .unwrap_or_else(|err| {
+                    panic!("stat std::io stdin ELF {}: {err}", exe_path.display())
+                })
                 .permissions();
             permissions.set_mode(0o700);
-            std::fs::set_permissions(&exe_path, permissions)
-                .unwrap_or_else(|err| panic!("chmod std::io stdin ELF {}: {err}", exe_path.display()));
+            std::fs::set_permissions(&exe_path, permissions).unwrap_or_else(|err| {
+                panic!("chmod std::io stdin ELF {}: {err}", exe_path.display())
+            });
         }
         let mut command = std::process::Command::new("bash");
         command
@@ -9205,8 +9207,9 @@ fn main() -> i32 {
         });
         let input = b"raw\x00bytes\nsecond line\n";
         let input_path = run_dir.path().join("fs_raw_input.bin");
-        std::fs::write(&input_path, input)
-            .unwrap_or_else(|err| panic!("write std::fs buffer input {}: {err}", input_path.display()));
+        std::fs::write(&input_path, input).unwrap_or_else(|err| {
+            panic!("write std::fs buffer input {}: {err}", input_path.display())
+        });
         let output = run_x86_64_elf_output_in_dir(
             "x86 source pack std::fs buffer copy",
             "x86_source_pack_std_fs_buffer_copy",
@@ -9215,8 +9218,12 @@ fn main() -> i32 {
         );
         common::assert_command_success("x86 source pack std::fs buffer copy", &output);
         let output_path = run_dir.path().join("fs_raw_output.bin");
-        let copied = std::fs::read(&output_path)
-            .unwrap_or_else(|err| panic!("read std::fs buffer output {}: {err}", output_path.display()));
+        let copied = std::fs::read(&output_path).unwrap_or_else(|err| {
+            panic!(
+                "read std::fs buffer output {}: {err}",
+                output_path.display()
+            )
+        });
         assert_eq!(copied, input);
         std::fs::remove_dir_all(run_dir.path()).unwrap_or_else(|err| {
             panic!(
@@ -9324,11 +9331,11 @@ fn main() -> i32 {
 }
 "#,
     ];
-    let bytes =
-        common::run_gpu_codegen_with_timeout("x86 source pack std::fs pointer path open", move || {
-            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        })
-        .expect("source pack should compile to x86_64");
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::fs pointer path open",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack should compile to x86_64");
 
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
@@ -9826,11 +9833,11 @@ fn main() -> i32 {
 }
 "#,
     ];
-    let bytes = common::run_gpu_codegen_with_timeout(
-        "x86 source pack std::env var lookup",
-        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
-    )
-    .expect("source pack std::env var lookup should compile to x86_64");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::env var lookup", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack std::env var lookup should compile to x86_64");
 
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]

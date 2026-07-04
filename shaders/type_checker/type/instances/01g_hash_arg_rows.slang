@@ -147,7 +147,6 @@ uint type_instance_arg_row_hash(uint instance_i)
     uint count = type_instance_arg_count[instance_i];
     uint hash = mix_hash(2166136261u, count);
     uint total_rows = type_instance_arg_row_count_out[0u];
-    [loop]
     for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
         if (ordinal >= total_rows)

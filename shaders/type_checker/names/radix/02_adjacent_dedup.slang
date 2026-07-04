@@ -84,7 +84,6 @@ bool byte_equal_name_spans(uint left_name_i, uint right_name_i)
     if (a.len > NAME_RADIX_MAX_BYTES)
         return false;
 
-    [loop]
     for (uint i = 0u; i < NAME_RADIX_MAX_BYTES; i += 1u)
     {
         if (i >= a.len)

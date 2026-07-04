@@ -5,8 +5,13 @@ use std::{
 
 use anyhow::Result;
 
-use super::{WASM_BODY_PLAN_WORDS, WasmOutputError, WasmParams, WasmScanParams};
+use super::{WASM_BODY_PLAN_WORDS, WasmParams, WasmScanParams};
 use crate::gpu::buffers::LaniusBuffer;
+
+pub(super) struct WasmPrefixPlan {
+    pub status: [u32; 4],
+    pub body_plan: [u32; WASM_BODY_PLAN_WORDS],
+}
 
 /// Emits a WASM backend trace line when `LANIUS_WASM_TRACE` is enabled.
 pub(super) fn trace_wasm_codegen(stage: &str) {
@@ -72,6 +77,53 @@ pub(super) fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
     bytes
 }
 
+pub(super) fn read_wasm_prefix_plan(
+    device: &wgpu::Device,
+    status_readback: &wgpu::Buffer,
+    body_plan_readback: &wgpu::Buffer,
+) -> Result<WasmPrefixPlan> {
+    let status_slice = status_readback.slice(..);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &status_slice,
+        "codegen.wasm.prefix.status",
+        wasm_readback_timeout(),
+    )?;
+    let status = {
+        let data = status_readback.slice(..).get_mapped_range();
+        let words = crate::gpu::readback::read_u32_words(&data, "WASM prefix status")?;
+        drop(data);
+        status_readback.unmap();
+        words
+    };
+
+    let plan_slice = body_plan_readback.slice(..);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &plan_slice,
+        "codegen.wasm.prefix.body_plan",
+        wasm_readback_timeout(),
+    )?;
+    let body_plan = {
+        let data = body_plan_readback.slice(..).get_mapped_range();
+        let words: [u32; WASM_BODY_PLAN_WORDS] =
+            crate::gpu::readback::read_u32_words(&data, "WASM prefix body plan")?;
+        drop(data);
+        body_plan_readback.unmap();
+        words
+    };
+
+    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+        eprintln!(
+            "[laniusc][wasm-codegen] readback.prefix.status len={} mode={} error={} detail={}",
+            status[0], status[1], status[2], status[3]
+        );
+        eprintln!("[laniusc][wasm-codegen] readback.prefix.body_plan={body_plan:?}");
+    }
+
+    Ok(WasmPrefixPlan { status, body_plan })
+}
+
 /// Reads WASM backend status and exact output bytes from readback buffers.
 pub(super) fn read_wasm_output(
     device: &wgpu::Device,
@@ -80,6 +132,9 @@ pub(super) fn read_wasm_output(
     packed_out_buf: &wgpu::Buffer,
     status_readback: &wgpu::Buffer,
     body_plan_readback: &wgpu::Buffer,
+    body_fragment_len_readback: &wgpu::Buffer,
+    wasm_func_invalid_count_readback: &wgpu::Buffer,
+    wasm_func_detail_readback: &wgpu::Buffer,
     out_readback: &wgpu::Buffer,
     output_capacity: usize,
     token_capacity: u32,
@@ -103,22 +158,17 @@ pub(super) fn read_wasm_output(
                 "[laniusc][wasm-codegen] readback.status len={len} mode={mode} error={error_code} detail={error_detail}"
             );
             trace_body_plan_readback(device, body_plan_readback)?;
+            trace_body_fragment_len_readback(device, body_fragment_len_readback, token_capacity)?;
+            trace_func_invalid_readback(
+                device,
+                wasm_func_invalid_count_readback,
+                wasm_func_detail_readback,
+            )?;
         }
         let len = len as usize;
         let ok = matches!(mode, 1 | 2 | 3 | 5);
         if error_code != 0 {
-            let error_name = match error_code {
-                2 => "unsupported for loop",
-                3 => "unsupported WASM body HIR-node budget",
-                830 => "unsupported array-helper body token budget",
-                831 => "unsupported array-helper body HIR-node budget",
-                800..=899 => "unsupported array-helper body shape",
-                902 => "retired enum-match module token budget",
-                903 => "retired enum-match module HIR-node budget",
-                900..=999 => "unsupported retired enum-match module shape",
-                _ => "unsupported source shape",
-            };
-            return Err(WasmOutputError::new(error_name, error_code, error_detail).into());
+            return Err(super::wasm_output_error_from_status(error_code, error_detail).into());
         }
         if !ok || len > output_capacity {
             return Err(anyhow::anyhow!(
@@ -165,7 +215,87 @@ pub(super) fn read_wasm_output(
         out_readback.unmap();
         bytes
     };
+    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+        trace_wasm_output_bytes(&bytes);
+    }
     Ok(bytes)
+}
+
+fn trace_wasm_output_bytes(bytes: &[u8]) {
+    let prefix_len = bytes.len().min(320);
+    let prefix = bytes
+        .iter()
+        .take(prefix_len)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.output len={} prefix={prefix}",
+        bytes.len()
+    );
+
+    let mut offset = 8usize;
+    while offset < bytes.len() {
+        let section_id = bytes[offset];
+        offset += 1;
+        let Some((payload_len, next_offset)) = read_u32_leb(bytes, offset) else {
+            eprintln!(
+                "[laniusc][wasm-codegen] readback.output.section id={section_id} malformed_leb_at={offset}"
+            );
+            break;
+        };
+        offset = next_offset;
+        let payload_end = offset.saturating_add(payload_len as usize);
+        eprintln!(
+            "[laniusc][wasm-codegen] readback.output.section id={section_id} payload_len={payload_len} payload_start={offset} payload_end={payload_end}"
+        );
+        if section_id == 10 {
+            let code_len = payload_end.saturating_sub(offset).min(160);
+            let code = bytes[offset..offset + code_len]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            eprintln!("[laniusc][wasm-codegen] readback.output.code_prefix={code}");
+        }
+        if payload_end > bytes.len() {
+            break;
+        }
+        offset = payload_end;
+    }
+}
+
+fn read_u32_leb(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
+    let mut value = 0u32;
+    let mut shift = 0u32;
+    for _ in 0..5 {
+        let byte = *bytes.get(offset)?;
+        offset += 1;
+        value |= u32::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some((value, offset));
+        }
+        shift += 7;
+    }
+    None
+}
+
+fn read_u32_vec_from_readback(
+    device: &wgpu::Device,
+    readback: &wgpu::Buffer,
+    label: &'static str,
+) -> Result<Vec<u32>> {
+    let slice = readback.slice(..);
+    crate::gpu::passes_core::wait_for_readback_map(device, &slice, label, wasm_readback_timeout())?;
+
+    let data = readback.slice(..).get_mapped_range();
+    let words = data
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("u32 chunk")))
+        .collect::<Vec<_>>();
+    drop(data);
+    readback.unmap();
+    Ok(words)
 }
 
 fn trace_body_plan_readback(
@@ -186,6 +316,59 @@ fn trace_body_plan_readback(
     drop(data);
     body_plan_readback.unmap();
     eprintln!("[laniusc][wasm-codegen] readback.body_plan words={words:?}");
+    Ok(())
+}
+
+pub(super) fn trace_body_fragment_len_readback(
+    device: &wgpu::Device,
+    body_fragment_len_readback: &wgpu::Buffer,
+    token_capacity: u32,
+) -> Result<()> {
+    let words = read_u32_vec_from_readback(
+        device,
+        body_fragment_len_readback,
+        "codegen.wasm.body_fragment_len",
+    )?;
+
+    let nonzero = words
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, len)| *len != 0)
+        .map(|(slot, len)| format!("{slot}:{len}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.body_fragment_len items={} token_capacity={} nonzero=[{nonzero}]",
+        words.len(),
+        token_capacity
+    );
+    Ok(())
+}
+
+pub(super) fn trace_func_invalid_readback(
+    device: &wgpu::Device,
+    invalid_count_readback: &wgpu::Buffer,
+    detail_readback: &wgpu::Buffer,
+) -> Result<()> {
+    let invalid_counts = read_u32_vec_from_readback(
+        device,
+        invalid_count_readback,
+        "codegen.wasm.func_invalid_count",
+    )?;
+    let details = read_u32_vec_from_readback(device, detail_readback, "codegen.wasm.func_detail")?;
+    let invalid = invalid_counts
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, count)| *count != 0)
+        .map(|(token, count)| {
+            let detail = details.get(token).copied().unwrap_or(u32::MAX);
+            format!("{token}:{count}/{detail}")
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!("[laniusc][wasm-codegen] readback.func_invalid token:count/detail=[{invalid}]");
     Ok(())
 }
 

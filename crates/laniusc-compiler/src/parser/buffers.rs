@@ -859,9 +859,12 @@ impl ParserBuffers {
         let hir_semantic_prefix_scan_steps =
             make_hir_semantic_prefix_scan_steps(device, tree_n_node_blocks);
         let hir_semantic_flag =
-            alias_storage_buffer::<i32, u32>(&tree_prefix, tree_capacity as usize);
-        let hir_semantic_local_prefix =
-            alias_storage_buffer::<i32, u32>(&tree_prefix_inblock, tree_capacity as usize);
+            storage_rw_for_array::<u32>(device, "parser.hir_semantic_flag", tree_capacity as usize);
+        let hir_semantic_local_prefix = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_semantic_local_prefix",
+            tree_capacity as usize,
+        );
         let hir_semantic_block_prefix_a =
             alias_storage_buffer::<i32, u32>(&tree_block_prefix_a, tree_n_node_blocks as usize);
         let hir_semantic_block_prefix_b =

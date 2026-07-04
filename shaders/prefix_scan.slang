@@ -103,7 +103,7 @@ groupshared int prefix_scan_i32_values[256];
 groupshared uint prefix_scan_u32_values[256];
 groupshared uint2 prefix_scan_u32x2_values[256];
 
-public inline T prefix_scan_inclusive<T, TOp: IPrefixScanOp<T>, let GSIZE: int>(
+public T prefix_scan_inclusive<T, TOp: IPrefixScanOp<T>, let GSIZE: int>(
     uint lane,
     T value,
     inout T scan_values[GSIZE])
@@ -126,7 +126,7 @@ public inline T prefix_scan_inclusive<T, TOp: IPrefixScanOp<T>, let GSIZE: int>(
     return scan_values[lane];
 }
 
-public inline void prefix_scan_inclusive_2<
+public void prefix_scan_inclusive_2<
     T,
     TOp: IPrefixScanOp<T>,
     let WG_SIZE: int,
@@ -165,7 +165,7 @@ public inline void prefix_scan_inclusive_2<
     inclusive1 = scan_values[slot1];
 }
 
-public inline void prefix_scan_inclusive_4<
+public void prefix_scan_inclusive_4<
     T,
     TOp: IPrefixScanOp<T>,
     let WG_SIZE: int,
@@ -224,7 +224,7 @@ public inline void prefix_scan_inclusive_4<
     inclusive3 = scan_values[slot3];
 }
 
-public inline void prefix_scan_inclusive_8<
+public void prefix_scan_inclusive_8<
     T,
     TOp: IPrefixScanOp<T>,
     let WG_SIZE: int,
@@ -323,7 +323,7 @@ public inline void prefix_scan_inclusive_8<
     inclusive7 = scan_values[slot7];
 }
 
-public inline void prefix_scan_inclusive_16<
+public void prefix_scan_inclusive_16<
     T,
     TOp: IPrefixScanOp<T>,
     let WG_SIZE: int,
@@ -502,7 +502,7 @@ public inline void prefix_scan_inclusive_16<
     inclusive15 = scan_values[slot15];
 }
 
-public inline int prefix_scan_i32_256(uint lane, int value)
+public int prefix_scan_i32_256(uint lane, int value)
 {
     return prefix_scan_inclusive<int, PrefixScanI32Add, 256>(
         lane,
@@ -510,7 +510,7 @@ public inline int prefix_scan_i32_256(uint lane, int value)
         prefix_scan_i32_values);
 }
 
-public inline uint prefix_scan_u32_256(uint lane, uint value)
+public uint prefix_scan_u32_256(uint lane, uint value)
 {
     return prefix_scan_inclusive<uint, PrefixScanU32Add, 256>(
         lane,
@@ -518,7 +518,7 @@ public inline uint prefix_scan_u32_256(uint lane, uint value)
         prefix_scan_u32_values);
 }
 
-public inline uint prefix_scan_u32_max_256(uint lane, uint value)
+public uint prefix_scan_u32_max_256(uint lane, uint value)
 {
     return prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,
@@ -526,7 +526,7 @@ public inline uint prefix_scan_u32_max_256(uint lane, uint value)
         prefix_scan_u32_values);
 }
 
-public inline uint2 prefix_scan_u32x2_256(uint lane, uint2 value)
+public uint2 prefix_scan_u32x2_256(uint lane, uint2 value)
 {
     return prefix_scan_inclusive<uint2, PrefixScanU32x2Add, 256>(
         lane,

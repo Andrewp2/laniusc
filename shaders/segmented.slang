@@ -27,7 +27,7 @@ public bool segment_is_tail(uint lane, uint active_count, uint next_segment_head
     return lane + 1u >= active_count || segment_is_head(next_segment_head);
 }
 
-public inline T segmented_scan_inclusive<
+public T segmented_scan_inclusive<
     T,
     TOp: IPrefixScanOp<T>,
     let GSIZE: int>(
@@ -67,7 +67,7 @@ public inline T segmented_scan_inclusive<
     return scan_values[lane];
 }
 
-public inline void segmented_scan_prefixes<
+public void segmented_scan_prefixes<
     T,
     TOp: IPrefixScanOp<T>,
     let GSIZE: int>(
@@ -92,7 +92,7 @@ public inline void segmented_scan_prefixes<
         exclusive = scan_values[lane - 1u];
 }
 
-public inline T segmented_scan_exclusive<
+public T segmented_scan_exclusive<
     T,
     TOp: IPrefixScanOp<T>,
     let GSIZE: int>(
@@ -115,7 +115,7 @@ public inline T segmented_scan_exclusive<
     return exclusive;
 }
 
-public inline T segment_total_or_identity<T, TOp: IPrefixScanOp<T>>(
+public T segment_total_or_identity<T, TOp: IPrefixScanOp<T>>(
     bool segment_tail,
     T inclusive)
 {

@@ -1,0 +1,556 @@
+module app::main;
+
+import core::f32;
+extern "lanius_std" fn open_read_path(path: str) -> i32;
+extern "lanius_std" fn open_write_path(path: str) -> i32;
+extern "lanius_std" fn read_i32(handle: i32, fallback: i32) -> i32;
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+extern "lanius_std" fn write_i32(handle: i32, value: i32) -> i32;
+extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;
+extern "lanius_std" fn write_newline(handle: i32) -> i32;
+extern "lanius_std" fn close_file(handle: i32) -> i32;
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        let result: Vec3 = Vec3 { x: x, y: y, z: z };
+        return result;
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+
+    fn length(self) -> f32 {
+        return core::f32::sqrt(self.dot(self));
+    }
+
+    fn unit(self) -> Vec3 {
+        let len: f32 = self.length();
+        if (len == 0.0) {
+            return self;
+        }
+        return self.mul_scalar(1.0 / len);
+    }
+
+    fn lerp(self, right: Vec3, t: f32) -> Vec3 {
+        let left_part: Vec3 = self.mul_scalar(1.0 - t);
+        let right_part: Vec3 = right.mul_scalar(t);
+        return left_part.add(right_part);
+    }
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+impl Ray {
+    fn at(self, t: f32) -> Vec3 {
+        let scale: f32 = t;
+        let direction: Vec3 = self.direction;
+        let offset: Vec3 = direction.mul_scalar(scale);
+        let origin: Vec3 = self.origin;
+        return origin.add(offset);
+    }
+}
+
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+impl Camera {
+    fn ray(self, u: f32, v: f32) -> Ray {
+        let horizontal: Vec3 = self.horizontal;
+        let vertical: Vec3 = self.vertical;
+        let lower_left_corner: Vec3 = self.lower_left_corner;
+        let origin: Vec3 = self.origin;
+        let across: Vec3 = horizontal.mul_scalar(u);
+        let up: Vec3 = vertical.mul_scalar(v);
+        let corner_across: Vec3 = lower_left_corner.add(across);
+        let target: Vec3 = corner_across.add(up);
+        let direction: Vec3 = target.sub(origin);
+        let result: Ray = Ray {
+            origin: origin,
+            direction: direction,
+        };
+        return result;
+    }
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f32,
+    albedo: Vec3,
+}
+
+struct Hit {
+    ok: bool,
+    t: f32,
+    point: Vec3,
+    normal: Vec3,
+    albedo: Vec3,
+}
+
+struct RenderSettings {
+    width: i32,
+    height: i32,
+    samples_per_pixel: i32,
+}
+
+fn miss() -> Hit {
+    let point: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let normal: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let albedo: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let result: Hit = Hit {
+        ok: false,
+        t: 0.0,
+        point: point,
+        normal: normal,
+        albedo: albedo,
+    };
+    return result;
+}
+
+fn hit_sphere(sphere: Sphere, ray: Ray, t_min: f32, t_max: f32) -> Hit {
+    let ray_origin: Vec3 = ray.origin;
+    let ray_direction: Vec3 = ray.direction;
+    let sphere_center: Vec3 = sphere.center;
+    let oc: Vec3 = ray_origin.sub(sphere_center);
+    let a: f32 = ray_direction.dot(ray_direction);
+    let half_b: f32 = oc.dot(ray_direction);
+    let c: f32 = oc.dot(oc) - sphere.radius * sphere.radius;
+    let discriminant: f32 = half_b * half_b - a * c;
+    if (discriminant < 0.0) {
+        let point: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let normal: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let albedo: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let result: Hit = Hit {
+            ok: false,
+            t: 0.0,
+            point: point,
+            normal: normal,
+            albedo: albedo,
+        };
+        return result;
+    }
+
+    let sqrtd: f32 = core::f32::sqrt(discriminant);
+    let root: f32 = (-half_b - sqrtd) / a;
+    if (root < t_min || root > t_max) {
+        root = (-half_b + sqrtd) / a;
+        if (root < t_min || root > t_max) {
+            let point: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+            let normal: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+            let albedo: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+            let result: Hit = Hit {
+                ok: false,
+                t: 0.0,
+                point: point,
+                normal: normal,
+                albedo: albedo,
+            };
+            return result;
+        }
+    }
+
+    let point: Vec3 = ray.at(root);
+    let outward: Vec3 = point.sub(sphere.center);
+    let outward_normal: Vec3 = outward.mul_scalar(1.0 / sphere.radius);
+    let normal: Vec3 = outward_normal.unit();
+    let result: Hit = Hit {
+        ok: true,
+        t: root,
+        point: point,
+        normal: normal,
+        albedo: sphere.albedo,
+    };
+    return result;
+}
+
+fn hit_world(ray: Ray) -> Hit {
+    let closest_so_far: f32 = 1000000.0;
+    let result_ok: bool = false;
+    let result_t: f32 = 0.0;
+    let result_point_x: f32 = 0.0;
+    let result_point_y: f32 = 0.0;
+    let result_point_z: f32 = 0.0;
+    let result_normal_x: f32 = 0.0;
+    let result_normal_y: f32 = 0.0;
+    let result_normal_z: f32 = 0.0;
+    let result_albedo_x: f32 = 0.0;
+    let result_albedo_y: f32 = 0.0;
+    let result_albedo_z: f32 = 0.0;
+
+    let ground_center: Vec3 = Vec3::new(0.0, -100.5, -1.0);
+    let ground_albedo: Vec3 = Vec3::new(0.8, 0.8, 0.0);
+    let ground: Sphere = Sphere {
+        center: ground_center,
+        radius: 100.0,
+        albedo: ground_albedo,
+    };
+    let hit_ground: Hit = hit_sphere(ground, ray, 0.001, closest_so_far);
+    if (hit_ground.ok) {
+        closest_so_far = hit_ground.t;
+        let hit_point: Vec3 = hit_ground.point;
+        let hit_normal: Vec3 = hit_ground.normal;
+        let hit_albedo: Vec3 = hit_ground.albedo;
+        result_ok = true;
+        result_t = hit_ground.t;
+        result_point_x = hit_point.x;
+        result_point_y = hit_point.y;
+        result_point_z = hit_point.z;
+        result_normal_x = hit_normal.x;
+        result_normal_y = hit_normal.y;
+        result_normal_z = hit_normal.z;
+        result_albedo_x = hit_albedo.x;
+        result_albedo_y = hit_albedo.y;
+        result_albedo_z = hit_albedo.z;
+    }
+
+    let center_center: Vec3 = Vec3::new(0.0, 0.0, -1.0);
+    let center_albedo: Vec3 = Vec3::new(0.7, 0.3, 0.3);
+    let center: Sphere = Sphere {
+        center: center_center,
+        radius: 0.5,
+        albedo: center_albedo,
+    };
+    let hit_center: Hit = hit_sphere(center, ray, 0.001, closest_so_far);
+    if (hit_center.ok) {
+        closest_so_far = hit_center.t;
+        let hit_point: Vec3 = hit_center.point;
+        let hit_normal: Vec3 = hit_center.normal;
+        let hit_albedo: Vec3 = hit_center.albedo;
+        result_ok = true;
+        result_t = hit_center.t;
+        result_point_x = hit_point.x;
+        result_point_y = hit_point.y;
+        result_point_z = hit_point.z;
+        result_normal_x = hit_normal.x;
+        result_normal_y = hit_normal.y;
+        result_normal_z = hit_normal.z;
+        result_albedo_x = hit_albedo.x;
+        result_albedo_y = hit_albedo.y;
+        result_albedo_z = hit_albedo.z;
+    }
+
+    let side_center: Vec3 = Vec3::new(1.0, 0.0, -1.6);
+    let side_albedo: Vec3 = Vec3::new(0.2, 0.4, 0.8);
+    let side: Sphere = Sphere {
+        center: side_center,
+        radius: 0.5,
+        albedo: side_albedo,
+    };
+    let hit_side: Hit = hit_sphere(side, ray, 0.001, closest_so_far);
+    if (hit_side.ok) {
+        let hit_point: Vec3 = hit_side.point;
+        let hit_normal: Vec3 = hit_side.normal;
+        let hit_albedo: Vec3 = hit_side.albedo;
+        result_ok = true;
+        result_t = hit_side.t;
+        result_point_x = hit_point.x;
+        result_point_y = hit_point.y;
+        result_point_z = hit_point.z;
+        result_normal_x = hit_normal.x;
+        result_normal_y = hit_normal.y;
+        result_normal_z = hit_normal.z;
+        result_albedo_x = hit_albedo.x;
+        result_albedo_y = hit_albedo.y;
+        result_albedo_z = hit_albedo.z;
+    }
+
+    let result_point: Vec3 = Vec3::new(result_point_x, result_point_y, result_point_z);
+    let result_normal: Vec3 = Vec3::new(result_normal_x, result_normal_y, result_normal_z);
+    let result_albedo: Vec3 = Vec3::new(result_albedo_x, result_albedo_y, result_albedo_z);
+    let result: Hit = Hit {
+        ok: result_ok,
+        t: result_t,
+        point: result_point,
+        normal: result_normal,
+        albedo: result_albedo,
+    };
+    return result;
+}
+
+fn sky_color(ray: Ray) -> Vec3 {
+    let direction: Vec3 = ray.direction;
+    let dir: Vec3 = direction.unit();
+    let t: f32 = 0.5 * (dir.y + 1.0);
+    let white: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+    let blue: Vec3 = Vec3::new(0.5, 0.7, 1.0);
+    return white.lerp(blue, t);
+}
+
+fn ray_color(ray: Ray) -> Vec3 {
+    let hit: Hit = hit_world(ray);
+    if (hit.ok) {
+        let light: Vec3 = Vec3::new(-0.4, 0.9, -0.6);
+        let light_dir: Vec3 = light.unit();
+        let normal: Vec3 = hit.normal;
+        let diffuse: f32 = normal.dot(light_dir);
+        let shade: f32 = 0.18;
+        if (diffuse > 0.0) {
+            shade = shade + 0.82 * diffuse;
+        }
+        let albedo: Vec3 = hit.albedo;
+        return albedo.mul_scalar(shade);
+    }
+    return sky_color(ray);
+}
+
+fn make_camera(settings: RenderSettings) -> Camera {
+    let aspect_ratio: f32 = i32_to_f32(settings.width) / i32_to_f32(settings.height);
+    let viewport_height: f32 = 2.0;
+    let viewport_width: f32 = aspect_ratio * viewport_height;
+    let focal_length: f32 = 1.0;
+    let origin: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let horizontal: Vec3 = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical: Vec3 = Vec3::new(0.0, viewport_height, 0.0);
+    let half_horizontal: Vec3 = horizontal.mul_scalar(0.5);
+    let half_vertical: Vec3 = vertical.mul_scalar(0.5);
+    let focal: Vec3 = Vec3::new(0.0, 0.0, focal_length);
+    let lower_step0: Vec3 = origin.sub(half_horizontal);
+    let lower_step1: Vec3 = lower_step0.sub(half_vertical);
+    let lower_left_corner: Vec3 = lower_step1.sub(focal);
+    let result: Camera = Camera {
+        origin: origin,
+        lower_left_corner: lower_left_corner,
+        horizontal: horizontal,
+        vertical: vertical,
+    };
+    return result;
+}
+
+fn default_settings() -> RenderSettings {
+    let result: RenderSettings = RenderSettings {
+        width: 16,
+        height: 9,
+        samples_per_pixel: 1,
+    };
+    return result;
+}
+
+fn sanitize_settings(settings: RenderSettings) -> RenderSettings {
+    let width: i32 = settings.width;
+    let height: i32 = settings.height;
+    let samples_per_pixel: i32 = settings.samples_per_pixel;
+    if (width < 2) {
+        width = 2;
+    }
+    if (height < 2) {
+        height = 2;
+    }
+    if (samples_per_pixel < 1) {
+        samples_per_pixel = 1;
+    }
+    let result: RenderSettings = RenderSettings {
+        width: width,
+        height: height,
+        samples_per_pixel: samples_per_pixel,
+    };
+    return result;
+}
+
+fn load_settings(path: str) -> RenderSettings {
+    let fallback: RenderSettings = default_settings();
+    let file: i32 = open_read_path(path);
+    if (file < 0) {
+        return fallback;
+    }
+
+    let width: i32 = read_i32(file, fallback.width);
+    let height: i32 = read_i32(file, fallback.height);
+    let samples_per_pixel: i32 = read_i32(file, fallback.samples_per_pixel);
+    close_file(file);
+    let settings: RenderSettings = RenderSettings {
+        width: width,
+        height: height,
+        samples_per_pixel: samples_per_pixel,
+    };
+    return sanitize_settings(settings);
+}
+
+fn operation_failed(result: i32) -> bool {
+    return result < 0;
+}
+
+fn write_space(file: i32) -> i32 {
+    let status: i32 = write_text(file, " ");
+    return status;
+}
+
+fn write_header(file: i32, settings: RenderSettings) -> i32 {
+    let width: i32 = settings.width;
+    let height: i32 = settings.height;
+    if (operation_failed(write_text(file, "P3"))) {
+        return -1;
+    }
+    if (operation_failed(write_text(file, "\n"))) {
+        return -1;
+    }
+    if (operation_failed(write_i32(file, width))) {
+        return -1;
+    }
+    if (operation_failed(write_space(file))) {
+        return -1;
+    }
+    if (operation_failed(write_i32(file, height))) {
+        return -1;
+    }
+    if (operation_failed(write_text(file, "\n"))) {
+        return -1;
+    }
+    if (operation_failed(write_text(file, "255"))) {
+        return -1;
+    }
+    let status: i32 = write_text(file, "\n");
+    return status;
+}
+
+fn clamp01(value: f32) -> f32 {
+    if (value < 0.0) {
+        return 0.0;
+    }
+    if (value > 0.999) {
+        return 0.999;
+    }
+    return value;
+}
+
+fn linear_to_gamma(value: f32) -> f32 {
+    return core::f32::sqrt(clamp01(value));
+}
+
+fn color_to_byte(value: f32) -> i32 {
+    let scaled: f32 = linear_to_gamma(value) * 256.0;
+    let byte: i32 = 0;
+    let threshold: f32 = 1.0;
+    while (threshold <= scaled && byte < 255) {
+        byte += 1;
+        threshold += 1.0;
+    }
+    return byte;
+}
+
+fn write_color(file: i32, color: Vec3) -> i32 {
+    let r: i32 = color_to_byte(color.x);
+    let g: i32 = color_to_byte(color.y);
+    let b: i32 = color_to_byte(color.z);
+    if (operation_failed(write_i32(file, r))) {
+        return -1;
+    }
+    if (operation_failed(write_space(file))) {
+        return -1;
+    }
+    if (operation_failed(write_i32(file, g))) {
+        return -1;
+    }
+    if (operation_failed(write_space(file))) {
+        return -1;
+    }
+    if (operation_failed(write_i32(file, b))) {
+        return -1;
+    }
+    let status: i32 = write_text(file, "\n");
+    return status;
+}
+
+fn pixel_color(
+    camera: Camera,
+    settings: RenderSettings,
+    x: i32,
+    y: i32,
+) -> Vec3 {
+    let samples: i32 = settings.samples_per_pixel;
+    let samples_f: f32 = i32_to_f32(samples);
+    let color_x: f32 = 0.0;
+    let color_y: f32 = 0.0;
+    let color_z: f32 = 0.0;
+
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            let x_offset: f32 = (i32_to_f32(sample_x) + 0.5) / samples_f;
+            let y_offset: f32 = (i32_to_f32(sample_y) + 0.5) / samples_f;
+            let u: f32 = (i32_to_f32(x) + x_offset) / i32_to_f32(settings.width - 1);
+            let row_from_top: i32 = settings.height - 1 - y;
+            let v: f32 =
+                (i32_to_f32(row_from_top) + y_offset) / i32_to_f32(settings.height - 1);
+            let ray: Ray = camera.ray(u, v);
+            let sample_color: Vec3 = ray_color(ray);
+            color_x = color_x + sample_color.x;
+            color_y = color_y + sample_color.y;
+            color_z = color_z + sample_color.z;
+        }
+    }
+
+    let sample_scale: f32 = 1.0 / (samples_f * samples_f);
+    return Vec3::new(color_x * sample_scale, color_y * sample_scale, color_z * sample_scale);
+}
+
+fn render(file: i32, settings: RenderSettings) -> i32 {
+    if (operation_failed(write_header(file, settings))) {
+        return -1;
+    }
+
+    let camera: Camera = make_camera(settings);
+    let pixel_count: i32 = 0;
+    let image_width: i32 = settings.width;
+    let image_height: i32 = settings.height;
+
+    for y in 0..image_height {
+        for x in 0..image_width {
+            let color: Vec3 = pixel_color(camera, settings, x, y);
+            if (operation_failed(write_color(file, color))) {
+                return -1;
+            }
+            pixel_count += 1;
+        }
+    }
+
+    return pixel_count;
+}
+
+fn main() -> i32 {
+    let settings_path: str = "render_settings.txt";
+    let settings: RenderSettings = load_settings(settings_path);
+    let file: i32 = open_write_path("lanius_ray.ppm");
+    if (file < 0) {
+        print(-1);
+        return 1;
+    }
+
+    let pixels_written: i32 = render(file, settings);
+    let close_status: i32 = close_file(file);
+    if (operation_failed(pixels_written)) {
+        print(-2);
+        return 1;
+    }
+    if (operation_failed(close_status)) {
+        print(-2);
+        return 1;
+    }
+
+    print(pixels_written);
+    return 0;
+}

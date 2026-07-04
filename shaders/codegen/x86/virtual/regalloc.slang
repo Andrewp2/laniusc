@@ -641,7 +641,6 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count, ou
     // blocker for a map/scan/scatter allocator. Splitting these rows into
     // parallel threads without a new state-composition relation would race and
     // produce non-deterministic register choices.
-    [unroll]
     for (uint local_i = 0u; local_i < REGALLOC_LOCAL_CHUNK_WIDTH; local_i += 1u)
     {
         if (local_i < chunk_len)

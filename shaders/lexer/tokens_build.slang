@@ -86,7 +86,7 @@ uint2 file_start_and_id_for_token_end(uint end_excl)
     return uint2(0u, INVALID);
 }
 
-inline uint retag_keyword(uint kind, uint start, uint len)
+uint retag_keyword(uint kind, uint start, uint len)
 {
     if (kind != TK_IDENT)
         return kind;
@@ -192,14 +192,14 @@ inline uint retag_keyword(uint kind, uint start, uint len)
     return kind;
 }
 
-inline uint compact_token_start(uint token_index)
+uint compact_token_start(uint token_index)
 {
     uint all_idx = all_index_compact[token_index];
     uint all_zero = (all_idx == 0u) ? 0u : (all_idx - 1u);
     return (all_zero == 0u) ? 0u : end_positions_all[all_zero - 1u];
 }
 
-inline uint retag_compact_kind(uint token_index, uint start, uint end_excl)
+uint retag_compact_kind(uint token_index, uint start, uint end_excl)
 {
     uint kind = types_compact[token_index];
     if (kind == TK_IDENT)
@@ -209,20 +209,20 @@ inline uint retag_compact_kind(uint token_index, uint start, uint end_excl)
     return kind;
 }
 
-inline bool token_is_single_dot(uint token_index, uint start, uint end_excl)
+bool token_is_single_dot(uint token_index, uint start, uint end_excl)
 {
     return retag_compact_kind(token_index, start, end_excl) == TK_DOT
         && end_excl == start + 1u;
 }
 
-inline bool float_token_ends_with_dot(uint kind, uint start, uint end_excl)
+bool float_token_ends_with_dot(uint kind, uint start, uint end_excl)
 {
     return kind == TK_FLOAT
         && end_excl > start
         && load_byte_at(in_bytes, end_excl - 1u) == 46u;
 }
 
-inline bool next_token_is_adjacent_dot(uint token_index, uint end_excl, uint file_id, uint total)
+bool next_token_is_adjacent_dot(uint token_index, uint end_excl, uint file_id, uint total)
 {
     uint next_index = token_index + 1u;
     if (next_index >= total)
@@ -238,7 +238,7 @@ inline bool next_token_is_adjacent_dot(uint token_index, uint end_excl, uint fil
     return next_start == end_excl && token_is_single_dot(next_index, next_start, next_end);
 }
 
-inline bool next_token_is_adjacent_assign(uint token_index, uint end_excl, uint file_id, uint total)
+bool next_token_is_adjacent_assign(uint token_index, uint end_excl, uint file_id, uint total)
 {
     uint next_index = token_index + 1u;
     if (next_index >= total)
@@ -256,7 +256,7 @@ inline bool next_token_is_adjacent_assign(uint token_index, uint end_excl, uint 
            next_end == next_start + 1u;
 }
 
-inline bool previous_token_is_adjacent_float_dot(uint token_index, uint start, uint file_id)
+bool previous_token_is_adjacent_float_dot(uint token_index, uint start, uint file_id)
 {
     if (token_index == 0u)
         return false;

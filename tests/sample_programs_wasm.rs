@@ -13,6 +13,9 @@ fn wasm_sample_programs_compile_run_and_match_stdout() {
         if !sample.checked_for_target("wasm") {
             continue;
         }
+        if !sample.selected_by_env_filter() {
+            continue;
+        }
 
         let name = sample.name().to_owned();
         let path = sample.path().to_path_buf();
@@ -23,8 +26,21 @@ fn wasm_sample_programs_compile_run_and_match_stdout() {
         })
         .unwrap_or_else(|err| panic!("{context} should compile to WASM: {err}"));
 
-        let stdout =
-            common::run_wasm_main_with_node(&context, &format!("wasm_sample_{name}"), &bytes);
-        sample.assert_stdout_eq("wasm", &stdout);
+        let initial_files = sample.wasm_initial_files();
+        let result = common::run_wasm_main_with_node_and_files(
+            &context,
+            &format!("wasm_sample_{name}"),
+            &bytes,
+            &initial_files,
+        );
+        sample.assert_exit_code_eq("wasm", result.exit_code);
+        sample.assert_stdout_eq("wasm", &result.stdout);
+        sample.assert_output_files_eq_virtual(
+            "wasm",
+            result
+                .files
+                .iter()
+                .map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
+        );
     }
 }

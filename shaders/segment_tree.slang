@@ -106,7 +106,6 @@ public bool range_search_tree_first_block_at_or_after<
             range_search_tree_frame(1u, 0u, leaf_base)))
         return false;
 
-    [loop]
     for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
         if (fixed_stack_empty(sp))
@@ -183,7 +182,6 @@ public bool range_search_tree_last_block_before<
             range_search_tree_frame(1u, 0u, leaf_base)))
         return false;
 
-    [loop]
     for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
         if (fixed_stack_empty(sp))
@@ -265,7 +263,6 @@ public bool range_search_tree_last_block_between<
             range_search_tree_frame(1u, 0u, leaf_base)))
         return false;
 
-    [loop]
     for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
         if (fixed_stack_empty(sp))
@@ -338,7 +335,6 @@ public bool range_search_first_index_in_block_at_or_after<
     uint start = max(lo_index, block * block_size);
     uint end = min(count, (block + 1u) * block_size);
     uint span = (end > start) ? (end - start) : 0u;
-    [loop]
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
         if (offset >= span)
@@ -375,7 +371,6 @@ public bool range_search_last_index_in_block_before<
     uint end = min(count, (block + 1u) * block_size);
     uint scan_end = min(hi_index, end);
     uint span = (scan_end > start) ? (scan_end - start) : 0u;
-    [loop]
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
         if (offset >= span)
@@ -412,7 +407,6 @@ public bool range_search_last_index_in_block_between<
     uint start = max(lo_index, block * block_size);
     uint end = min(min(hi_index, count), (block + 1u) * block_size);
     uint span = (end > start) ? (end - start) : 0u;
-    [loop]
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
         if (offset >= span)

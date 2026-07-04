@@ -278,7 +278,6 @@ bool return_instance_is_receiver_projection(
         return false;
     }
 
-    [loop]
     for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
     {
         uint ret_arg_tag;
@@ -332,7 +331,6 @@ bool return_instance_is_call_receiver_slot_projection(
     if (arg_count == 0u || receiver_arg_count(TYPE_REF_INSTANCE, ret_payload) != arg_count)
         return false;
 
-    [loop]
     for (uint slot_i = 0u; slot_i < arg_count; slot_i += 1u)
     {
         uint ret_arg_tag;
@@ -434,7 +432,6 @@ uint substituted_receiver_return_type(
             uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
             uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
             uint ty = TY_UNKNOWN;
-            [loop]
             for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
             {
                 if (substituted_receiver_return_type_slot(
@@ -522,7 +519,6 @@ uint encoded_hash_value(uint value, uint invalid)
 uint generic_receiver_arg_hash(uint count)
 {
     uint hash = mix_hash(2166136261u, count);
-    [loop]
     for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
         hash = mix_hash(hash, encoded_hash_value(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID));
@@ -644,7 +640,6 @@ bool method_receiver_args_match(uint fn_i, MethodLookupKey key)
     if (receiver_arg_count(decl_tag, decl_payload) != count)
         return false;
 
-    [loop]
     for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
         uint decl_arg_tag;
@@ -692,7 +687,6 @@ uint matching_method_in_range(QueryRange range, MethodLookupKey key)
         return INVALID;
 
     uint found_fn_i = INVALID;
-    [loop]
     for (uint row = range.begin; row < range.end; row += 1u)
     {
         uint fn_i = sorted_method_key_order[row];
@@ -756,7 +750,6 @@ bool unique_visible_method_in_range(
     if (range.end > active_token_count() || range.end < range.begin)
         return false;
 
-    [loop]
     for (uint row = range.begin; row < range.end; row += 1u)
     {
         uint fn_i = sorted_method_key_order[row];

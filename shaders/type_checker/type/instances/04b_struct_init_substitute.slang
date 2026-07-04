@@ -114,7 +114,6 @@ bool instance_ref_needs_leaf_rows(uint instance_i)
     if (arg_count == 0u)
         return false;
 
-    [loop]
     for (uint slot = 0u; slot < arg_count; slot += 1u)
     {
         if (instance_arg_unsupported_for_field_substitution(instance_i, slot))

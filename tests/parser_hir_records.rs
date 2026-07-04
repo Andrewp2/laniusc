@@ -19,6 +19,7 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_LE,
                 HIR_EXPR_FORM_MUL,
                 HIR_EXPR_FORM_NAME,
+                HIR_EXPR_FORM_NEG,
                 HIR_EXPR_FORM_NONE,
                 HIR_EXPR_FORM_NOT,
                 HIR_EXPR_FORM_RANGE,
@@ -657,6 +658,36 @@ struct Vec3 {
 }
 
 #[test]
+fn parser_semantic_tokens_accept_public_void_extern() {
+    let source = r#"
+module alloc::allocator;
+pub extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    assert!(
+        kinds.contains(&(TokenKind::ExternAbiString as u32)),
+        "extern ABI strings should not remain expression string literals: {:?}",
+        token_kind_names(&kinds)
+    );
+    assert!(
+        kinds.contains(&(TokenKind::ExternSemicolon as u32)),
+        "public extern declarations without return types should retain extern semicolon boundaries: {:?}",
+        token_kind_names(&kinds)
+    );
+}
+
+fn token_kind_names(kinds: &[u32]) -> Vec<String> {
+    kinds
+        .iter()
+        .map(|&kind| {
+            TokenKind::try_from(kind)
+                .map(|kind| format!("{kind:?}"))
+                .unwrap_or_else(|()| format!("Unknown({kind})"))
+        })
+        .collect()
+}
+
+#[test]
 fn parser_semantic_tokens_qualified_generic_constructor_value_path() {
     let kinds = parser_semantic_token_kinds_for_source(
         r#"
@@ -1047,6 +1078,74 @@ fn main() {
     assert_eq!(
         valid_arg_rows, 4,
         "fixture should not publish extra call-argument owners"
+    );
+}
+
+#[test]
+fn parser_hir_call_argument_records_preserve_unary_negative_arguments() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn mix(left: i32, right: i32) -> i32 {
+    return left + right;
+}
+
+fn main() {
+    return mix(-17, 23);
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let call_node = parsed
+        .hir_call_arg_count
+        .iter()
+        .enumerate()
+        .find_map(|(node, &count)| {
+            (count == 2 && parsed.hir_kind[node] == HIR_NODE_CALL_EXPR).then_some(node)
+        })
+        .expect("fixture should contain one two-argument call");
+
+    let mut args = parsed
+        .hir_call_arg_parent_call
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &parent)| (parent as usize == call_node).then_some(node))
+        .collect::<Vec<_>>();
+    args.sort_unstable_by_key(|&node| parsed.hir_call_arg_ordinal[node]);
+    assert_eq!(args.len(), 2, "call should own exactly two argument rows");
+
+    let neg_node = resolve_forward_expr_record(&parsed, args[0], "first call argument");
+    assert_eq!(
+        parsed.hir_expr_record_form[neg_node], HIR_EXPR_FORM_NEG,
+        "first call argument should resolve to the parser-owned unary-negative record"
+    );
+    assert_eq!(
+        parsed.hir_expr_record_right[neg_node], INVALID,
+        "unary-negative call arguments should leave the unused right operand empty"
+    );
+    assert_eq!(
+        parsed.hir_expr_record_value_token[neg_node], INVALID,
+        "unary-negative call arguments should not publish a value token"
+    );
+
+    let operand = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[neg_node],
+            "unary-negative operand",
+        ),
+        "unary-negative operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[operand], HIR_EXPR_FORM_INT,
+        "unary-negative operand should resolve to the integer literal"
     );
 }
 
@@ -4393,6 +4492,52 @@ fn main() -> i32 {
 }
 
 #[test]
+fn parser_hir_accepts_public_void_extern_item() {
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module alloc::allocator;
+pub extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
+"#,
+        r#"
+module app::main;
+import alloc::allocator;
+
+fn main() -> i32 {
+    return 0;
+}
+"#,
+    ]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept public void externs: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let extern_nodes = parsed
+        .hir_item_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| (kind == HIR_ITEM_KIND_EXTERN_FN).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        extern_nodes.len(),
+        1,
+        "fixture should publish exactly one extern function item row"
+    );
+    let extern_node = extern_nodes[0];
+    assert_eq!(
+        parsed.hir_item_visibility[extern_node], HIR_ITEM_VIS_PUBLIC,
+        "pub void externs should retain public parser visibility"
+    );
+    assert_eq!(
+        parsed.hir_fn_return_type_node[extern_node], INVALID,
+        "void externs should not publish a return type node"
+    );
+}
+
+#[test]
 fn parser_hir_item_decl_tokens_are_source_addressable_in_source_packs() {
     let parsed = parse_resident_source_pack(&[
         r#"
@@ -7233,6 +7378,53 @@ fn main() -> f32 {
         "float literal expressions should publish a scalar HIR expression form"
     );
     assert_expr_record_value_token_inside(&parsed, float_node, "float literal");
+}
+
+#[test]
+fn parser_hir_let_records_publish_float_literal_initializers_in_source_packs() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main() -> i32 {
+    let one: f32 = 1.0;
+    return 0;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let let_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_LET && parsed.hir_kind[node] == HIR_NODE_LET_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish the local declaration");
+    let init_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[let_node],
+        "float local initializer",
+    );
+    let init_root = resolve_forward_expr_record(&parsed, init_expr, "float local initializer");
+
+    assert_eq!(
+        parsed.hir_expr_record_form[init_root], HIR_EXPR_FORM_FLOAT,
+        "float literal local initializers should publish a scalar HIR expression form"
+    );
+    assert_expr_record_value_token_inside(&parsed, init_root, "float local initializer");
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        let_node,
+        init_root,
+        "float local initializer",
+    );
 }
 
 #[test]

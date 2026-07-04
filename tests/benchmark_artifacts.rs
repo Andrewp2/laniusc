@@ -99,8 +99,53 @@ fn grid_checksum_benchmark_artifacts_are_checked() {
     }
 }
 
+#[test]
+fn grid_checksum_sources_match_generator() {
+    let repo = repo_root();
+    let out_rel = Path::new("target")
+        .join("benchmark-artifact-regeneration")
+        .join("grid_checksum");
+    let out_abs = repo.join(&out_rel);
+    let _ = fs::remove_dir_all(&out_abs);
+
+    let output = Command::new("python3")
+        .arg("tools/generate_benchmark_artifacts.py")
+        .arg("--out")
+        .arg(&out_rel)
+        .current_dir(&repo)
+        .output()
+        .expect("run benchmark artifact generator");
+    assert!(
+        output.status.success(),
+        "benchmark artifact generator should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert_eq!(
+        read_json(out_abs.join("generator_config.json")),
+        read_json(artifact_root().join("generator_config.json")),
+        "checked generator config should match regenerated config"
+    );
+    for language in LANGUAGES {
+        let source = source_name(language);
+        let regenerated = fs::read_to_string(out_abs.join("src").join(source))
+            .unwrap_or_else(|err| panic!("read regenerated {source}: {err}"));
+        let checked = fs::read_to_string(artifact_root().join("src").join(source))
+            .unwrap_or_else(|err| panic!("read checked {source}: {err}"));
+        assert_eq!(
+            regenerated, checked,
+            "checked {language} benchmark source should match generator output"
+        );
+    }
+}
+
 fn artifact_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmark_artifacts/grid_checksum")
+    repo_root().join("benchmark_artifacts/grid_checksum")
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
 fn read_json(path: PathBuf) -> Value {
@@ -124,12 +169,18 @@ fn assert_command_array(command: &Value, key: &str, language: &str) {
     let parts = command[key]
         .as_array()
         .unwrap_or_else(|| panic!("{language} {key} command should be an array"));
-    assert!(!parts.is_empty(), "{language} {key} command should be nonempty");
+    assert!(
+        !parts.is_empty(),
+        "{language} {key} command should be nonempty"
+    );
     for part in parts {
         let text = part
             .as_str()
             .unwrap_or_else(|| panic!("{language} {key} command part should be a string"));
-        assert!(!text.is_empty(), "{language} {key} command part should be nonempty");
+        assert!(
+            !text.is_empty(),
+            "{language} {key} command part should be nonempty"
+        );
         assert!(
             !text.starts_with('/'),
             "{language} {key} command should use repo-relative paths: {text}"

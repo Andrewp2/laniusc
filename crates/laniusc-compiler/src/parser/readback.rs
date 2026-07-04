@@ -4361,8 +4361,13 @@ pub fn validate_hir_semantic_tree_records(
     for (node, &kind) in kinds.iter().enumerate() {
         let published_prefix = semantic_prefix_before_node[node] as usize;
         if published_prefix != expected_prefix {
+            let start = node.saturating_sub(4);
+            let end = (node + 5).min(row_count);
             return Err(anyhow!(
-                "parser HIR semantic-tree node {node} published prefix {published_prefix}, expected {expected_prefix}"
+                "parser HIR semantic-tree node {node} published prefix {published_prefix}, expected {expected_prefix}; kinds[{start}..{end}]={:?}; semantic_prefix[{start}..{end}]={:?}; dense_prefix={:?}",
+                &kinds[start..end],
+                &semantic_prefix_before_node[start..end],
+                &semantic_dense_node[..semantic_count.min(8)]
             ));
         }
         if kind == HIR_NODE_NONE {

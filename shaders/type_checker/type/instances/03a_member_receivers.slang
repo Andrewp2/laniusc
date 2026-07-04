@@ -267,15 +267,15 @@ void publish_receiver_ref_for_node(uint member_node)
     uint receiver_token = receiver_token_for_member(member_node);
     if (!valid_token(receiver_token))
         receiver_token = name_token_for_expr(hir_member_receiver_node[member_node]);
-    if (!valid_token(receiver_token))
-        return;
 
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
     if (!indexed_receiver_type_ref(member_node, tag, payload) &&
-        !receiver_decl_type_ref(receiver_token, tag, payload) &&
+        !(valid_token(receiver_token) && receiver_decl_type_ref(receiver_token, tag, payload)) &&
         member_receiver_is_self(member_node))
+    {
         enclosing_method_receiver_type_ref(member_node, tag, payload);
+    }
     if (tag == TYPE_REF_INVALID || payload == INVALID)
         return;
 

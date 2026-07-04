@@ -11,7 +11,13 @@ fn main() -> i32 {
     let write_value: i32 = std::io::write_i32(output, 12345);
     let write_line: i32 = std::io::write_newline(output);
     let output_close: i32 = std::fs::close_file(output);
-    if (write_value < 0 || write_line < 0 || output_close < 0) {
+    if (write_value < 0) {
+        return 2;
+    }
+    if (write_line < 0) {
+        return 2;
+    }
+    if (output_close < 0) {
         return 2;
     }
 

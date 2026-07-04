@@ -26,6 +26,7 @@ pub struct GpuDevice {
     pipeline_cache_path: Option<PathBuf>,
     pipeline_cache_identity_hash: Option<u64>,
     pipeline_cache_should_persist: bool,
+    pipeline_cache_persisted_hash: Mutex<Option<u64>>,
 }
 
 impl GpuDevice {
@@ -46,13 +47,6 @@ impl GpuDevice {
         let Some(identity_hash) = self.pipeline_cache_identity_hash else {
             return;
         };
-        if !self.pipeline_cache_should_persist
-            && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
-        {
-            let now = Instant::now();
-            timer.span("skipped.loaded_from_disk", now, now);
-            return;
-        }
         let total_start = Instant::now();
         let start = Instant::now();
         let Some(data) = cache.get_data() else {
@@ -64,6 +58,19 @@ impl GpuDevice {
         let end = Instant::now();
         timer.span("get_data", start, end);
         timer.bytes("pipeline_cache.persist.bytes", end, data.len());
+        let data_hash = stable_hash_u64(&data);
+        let force_persist =
+            crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
+        let already_persisted = self
+            .pipeline_cache_persisted_hash
+            .lock()
+            .ok()
+            .and_then(|hash| *hash)
+            == Some(data_hash);
+        if !self.pipeline_cache_should_persist && !force_persist && already_persisted {
+            timer.span("skipped.unchanged", total_start, end);
+            return;
+        }
         if let Some(parent) = path.parent() {
             let start = Instant::now();
             if let Err(err) = std::fs::create_dir_all(parent) {
@@ -105,6 +112,9 @@ impl GpuDevice {
         }
         let end = Instant::now();
         timer.span("rename", start, end);
+        if let Ok(mut persisted_hash) = self.pipeline_cache_persisted_hash.lock() {
+            *persisted_hash = Some(data_hash);
+        }
         timer.span("total", total_start, end);
     }
 
@@ -286,10 +296,11 @@ fn create_context() -> GpuDevice {
         pipeline_cache_path,
         pipeline_cache_identity_hash,
         pipeline_cache_should_persist,
+        pipeline_cache_persisted_hash,
     ) = if pipeline_cache_supported {
         create_pipeline_cache(&device, &adapter_info)
     } else {
-        (None, None, None, false)
+        (None, None, None, false, None)
     };
     let device = Arc::new(device);
     let pipeline_cache = pipeline_cache.map(Arc::new);
@@ -303,6 +314,7 @@ fn create_context() -> GpuDevice {
         pipeline_cache_path,
         pipeline_cache_identity_hash,
         pipeline_cache_should_persist,
+        pipeline_cache_persisted_hash: Mutex::new(pipeline_cache_persisted_hash),
     }
 }
 
@@ -315,6 +327,14 @@ pub fn global() -> &'static GpuDevice {
 /// Persists the process-global device's pipeline cache.
 pub fn persist_pipeline_cache() {
     global().persist_pipeline_cache();
+}
+
+/// Persists the process-global cache when `device` is the process-global device.
+pub fn persist_pipeline_cache_for_device(device: &wgpu::Device) {
+    let global = global();
+    if Arc::as_ptr(&global.device) == device as *const wgpu::Device {
+        global.persist_pipeline_cache();
+    }
 }
 
 /// Returns the pipeline cache registered for a wgpu device.
@@ -359,12 +379,13 @@ fn create_pipeline_cache(
     Option<PathBuf>,
     Option<u64>,
     bool,
+    Option<u64>,
 ) {
     let timer = PipelineCachePersistTimer::new();
     let total_start = Instant::now();
     let Some(adapter_key) = wgpu::util::pipeline_cache_key(adapter_info) else {
         timer.span_prefixed("create", "unsupported_key", total_start, Instant::now());
-        return (None, None, None, false);
+        return (None, None, None, false, None);
     };
     let start = Instant::now();
     let cache_dir = crate::gpu::env::env_path(
@@ -406,6 +427,7 @@ fn create_pipeline_cache(
             None
         }
     };
+    let mut persisted_hash = None;
     let cache_data = cache_file_data.as_deref().and_then(|file_data| {
         let start = Instant::now();
         match decode_pipeline_cache_file(file_data, identity_hash) {
@@ -418,6 +440,7 @@ fn create_pipeline_cache(
                     end,
                     data.len(),
                 );
+                persisted_hash = Some(stable_hash_u64(data));
                 Some(data)
             }
             Err(err) => {
@@ -448,6 +471,7 @@ fn create_pipeline_cache(
         Some(cache_path),
         Some(identity_hash),
         should_persist,
+        persisted_hash,
     )
 }
 

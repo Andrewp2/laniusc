@@ -240,268 +240,282 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         ],
     )?;
 
-    let collect = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_predicates_collect"),
+    let create_collect_bind_group = |label: &'static str, pass: &PassData| {
+        bind_group::create_bind_group_from_bindings(
+            device,
+            Some(label),
+            pass,
+            0,
+            &[
+                ("gParams", input.params.as_entire_binding()),
+                ("hir_status", input.hir_status.as_entire_binding()),
+                ("node_kind", items.node_kind.as_entire_binding()),
+                ("parent", items.parent.as_entire_binding()),
+                ("first_child", items.first_child.as_entire_binding()),
+                ("next_sibling", items.next_sibling.as_entire_binding()),
+                ("subtree_end", items.subtree_end.as_entire_binding()),
+                ("hir_token_pos", input.hir_token_pos.as_entire_binding()),
+                (
+                    "hir_type_len_value",
+                    items.type_len_value.as_entire_binding(),
+                ),
+                (
+                    "hir_type_path_leaf_node",
+                    items.type_path_leaf_node.as_entire_binding(),
+                ),
+                ("hir_type_file_id", items.type_file_id.as_entire_binding()),
+                (
+                    "hir_type_arg_start",
+                    items.type_arg_start.as_entire_binding(),
+                ),
+                (
+                    "hir_type_arg_count",
+                    items.type_arg_count.as_entire_binding(),
+                ),
+                ("hir_type_arg_next", items.type_arg_next.as_entire_binding()),
+                ("hir_item_kind", items.kind.as_entire_binding()),
+                ("hir_item_name_token", items.name_token.as_entire_binding()),
+                ("hir_item_visibility", items.visibility.as_entire_binding()),
+                (
+                    "hir_method_impl_receiver_type_node",
+                    items.method_impl_receiver_type_node.as_entire_binding(),
+                ),
+                (
+                    "name_id_by_token",
+                    input.name_id_by_token.as_entire_binding(),
+                ),
+                (
+                    "type_decl_generic_param_count_by_node",
+                    input.generic_param_count_by_node.as_entire_binding(),
+                ),
+                (
+                    "type_generic_param_slot_by_token",
+                    input.generic_param_slot_by_token.as_entire_binding(),
+                ),
+                (
+                    "generic_decl_owner_by_node",
+                    resident_resources["generic_decl_owner_by_node"].clone(),
+                ),
+                (
+                    "generic_param_count_out",
+                    resident_resources["generic_param_count_out"].clone(),
+                ),
+                (
+                    "generic_param_owner_node",
+                    resident_resources["generic_param_owner_node"].clone(),
+                ),
+                (
+                    "generic_param_name_id",
+                    resident_resources["generic_param_name_id"].clone(),
+                ),
+                (
+                    "generic_param_token",
+                    resident_resources["generic_param_token"].clone(),
+                ),
+                (
+                    "generic_param_kind",
+                    resident_resources["generic_param_kind"].clone(),
+                ),
+                (
+                    "generic_param_key_order",
+                    resident_resources["generic_param_key_order"].clone(),
+                ),
+                (
+                    "type_expr_ref_tag",
+                    input.type_expr_ref_tag.as_entire_binding(),
+                ),
+                (
+                    "type_expr_ref_payload",
+                    input.type_expr_ref_payload.as_entire_binding(),
+                ),
+                (
+                    "language_type_code_by_name_id",
+                    input.type_code_by_name.as_entire_binding(),
+                ),
+                ("decl_count_out", path.decl_count_out.as_entire_binding()),
+                ("decl_name_id", path.decl_name_id.as_entire_binding()),
+                ("decl_kind", path.decl_kind.as_entire_binding()),
+                ("decl_namespace", path.decl_namespace.as_entire_binding()),
+                ("decl_hir_node", path.decl_hir_node.as_entire_binding()),
+                ("decl_visibility", path.decl_visibility.as_entire_binding()),
+                (
+                    "module_table_count_out",
+                    path.module_table_count_out.as_entire_binding(),
+                ),
+                (
+                    "sorted_module_key_order",
+                    path.module_key_to_module_id.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_count",
+                    path.module_key_segment_count.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_base",
+                    path.module_key_segment_base.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_name_id",
+                    path.module_key_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "decl_type_key_count_out",
+                    path.decl_type_key_count_out.as_entire_binding(),
+                ),
+                (
+                    "decl_type_key_to_decl_id",
+                    path.decl_type_key_to_decl_id.as_entire_binding(),
+                ),
+                (
+                    "decl_id_by_name_token",
+                    path.decl_id_by_name_token.as_entire_binding(),
+                ),
+                ("decl_module_id", path.decl_module_id.as_entire_binding()),
+                ("path_count_out", path.path_count_out.as_entire_binding()),
+                (
+                    "path_segment_count",
+                    path.path_segment_count.as_entire_binding(),
+                ),
+                (
+                    "path_segment_base",
+                    path.path_segment_base.as_entire_binding(),
+                ),
+                (
+                    "path_segment_name_id",
+                    path.path_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "path_segment_token",
+                    path.path_segment_token.as_entire_binding(),
+                ),
+                (
+                    "path_id_by_owner_hir",
+                    path.path_id_by_owner_hir.as_entire_binding(),
+                ),
+                (
+                    "path_owner_module_id",
+                    path.path_owner_module_id.as_entire_binding(),
+                ),
+                (
+                    "module_id_by_file_id",
+                    path.module_id_by_file_id.as_entire_binding(),
+                ),
+                (
+                    "import_visible_type_count_out",
+                    path.import_visible_type_count_out.as_entire_binding(),
+                ),
+                (
+                    "import_visible_type_key_module_id",
+                    path.import_visible_type_key_module_id.as_entire_binding(),
+                ),
+                (
+                    "import_visible_type_key_name_id",
+                    path.import_visible_type_key_name_id.as_entire_binding(),
+                ),
+                (
+                    "import_visible_type_key_to_decl_id",
+                    path.import_visible_type_key_to_decl_id.as_entire_binding(),
+                ),
+                (
+                    "import_visible_type_status",
+                    path.import_visible_type_status.as_entire_binding(),
+                ),
+                ("predicate_owner_node", rows.owner_node.as_entire_binding()),
+                (
+                    "predicate_subject_token",
+                    rows.subject_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_token",
+                    rows.bound_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_decl_id",
+                    rows.bound_decl_id.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_arg_count",
+                    rows.bound_arg_count.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_first_arg_token",
+                    rows.first_arg_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_second_arg_token",
+                    rows.second_arg_token.as_entire_binding(),
+                ),
+                ("predicate_status", rows.status.as_entire_binding()),
+                (
+                    "predicate_syntax_token",
+                    resident_resources["predicate_syntax_token"].clone(),
+                ),
+                (
+                    "predicate_method_contract_owner_node",
+                    rows.method_contract_owner_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_name_token",
+                    rows.method_contract_name_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_name_id",
+                    rows.method_contract_name_id.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_param_count",
+                    rows.method_contract_param_count.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_first_param_node",
+                    rows.method_contract_first_param_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_return_type_node",
+                    rows.method_contract_return_type_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_visibility",
+                    rows.method_contract_visibility.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_status",
+                    rows.method_contract_status.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_param_next_node",
+                    rows.method_contract_param_next_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_param_type_node",
+                    rows.method_contract_param_type_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_key_order",
+                    rows.method_contract_order.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_owner_range_first",
+                    rows.method_contract_owner_range_first.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_owner_range_count",
+                    rows.method_contract_owner_range_count.as_entire_binding(),
+                ),
+            ],
+        )
+    };
+    let collect = create_collect_bind_group(
+        "type_check_resident_predicates_collect",
         &passes.predicates_collect,
-        0,
-        &[
-            ("gParams", input.params.as_entire_binding()),
-            ("hir_status", input.hir_status.as_entire_binding()),
-            ("node_kind", items.node_kind.as_entire_binding()),
-            ("parent", items.parent.as_entire_binding()),
-            ("first_child", items.first_child.as_entire_binding()),
-            ("next_sibling", items.next_sibling.as_entire_binding()),
-            ("subtree_end", items.subtree_end.as_entire_binding()),
-            ("hir_token_pos", input.hir_token_pos.as_entire_binding()),
-            (
-                "hir_type_len_value",
-                items.type_len_value.as_entire_binding(),
-            ),
-            (
-                "hir_type_path_leaf_node",
-                items.type_path_leaf_node.as_entire_binding(),
-            ),
-            ("hir_type_file_id", items.type_file_id.as_entire_binding()),
-            (
-                "hir_type_arg_start",
-                items.type_arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_type_arg_count",
-                items.type_arg_count.as_entire_binding(),
-            ),
-            ("hir_type_arg_next", items.type_arg_next.as_entire_binding()),
-            ("hir_item_kind", items.kind.as_entire_binding()),
-            ("hir_item_name_token", items.name_token.as_entire_binding()),
-            ("hir_item_visibility", items.visibility.as_entire_binding()),
-            (
-                "hir_method_impl_receiver_type_node",
-                items.method_impl_receiver_type_node.as_entire_binding(),
-            ),
-            (
-                "name_id_by_token",
-                input.name_id_by_token.as_entire_binding(),
-            ),
-            (
-                "type_decl_generic_param_count_by_node",
-                input.generic_param_count_by_node.as_entire_binding(),
-            ),
-            (
-                "type_generic_param_slot_by_token",
-                input.generic_param_slot_by_token.as_entire_binding(),
-            ),
-            (
-                "generic_decl_owner_by_node",
-                resident_resources["generic_decl_owner_by_node"].clone(),
-            ),
-            (
-                "generic_param_count_out",
-                resident_resources["generic_param_count_out"].clone(),
-            ),
-            (
-                "generic_param_owner_node",
-                resident_resources["generic_param_owner_node"].clone(),
-            ),
-            (
-                "generic_param_name_id",
-                resident_resources["generic_param_name_id"].clone(),
-            ),
-            (
-                "generic_param_token",
-                resident_resources["generic_param_token"].clone(),
-            ),
-            (
-                "generic_param_kind",
-                resident_resources["generic_param_kind"].clone(),
-            ),
-            (
-                "generic_param_key_order",
-                resident_resources["generic_param_key_order"].clone(),
-            ),
-            (
-                "type_expr_ref_tag",
-                input.type_expr_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_payload",
-                input.type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "language_type_code_by_name_id",
-                input.type_code_by_name.as_entire_binding(),
-            ),
-            ("decl_count_out", path.decl_count_out.as_entire_binding()),
-            ("decl_name_id", path.decl_name_id.as_entire_binding()),
-            ("decl_kind", path.decl_kind.as_entire_binding()),
-            ("decl_namespace", path.decl_namespace.as_entire_binding()),
-            ("decl_hir_node", path.decl_hir_node.as_entire_binding()),
-            ("decl_visibility", path.decl_visibility.as_entire_binding()),
-            (
-                "module_table_count_out",
-                path.module_table_count_out.as_entire_binding(),
-            ),
-            (
-                "sorted_module_key_order",
-                path.module_key_to_module_id.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_count",
-                path.module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                path.module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                path.module_key_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_count_out",
-                path.decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_to_decl_id",
-                path.decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_id_by_name_token",
-                path.decl_id_by_name_token.as_entire_binding(),
-            ),
-            ("decl_module_id", path.decl_module_id.as_entire_binding()),
-            ("path_count_out", path.path_count_out.as_entire_binding()),
-            (
-                "path_segment_count",
-                path.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_segment_base",
-                path.path_segment_base.as_entire_binding(),
-            ),
-            (
-                "path_segment_name_id",
-                path.path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_segment_token",
-                path.path_segment_token.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_hir",
-                path.path_id_by_owner_hir.as_entire_binding(),
-            ),
-            (
-                "path_owner_module_id",
-                path.path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "module_id_by_file_id",
-                path.module_id_by_file_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_count_out",
-                path.import_visible_type_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_module_id",
-                path.import_visible_type_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_name_id",
-                path.import_visible_type_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_to_decl_id",
-                path.import_visible_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_status",
-                path.import_visible_type_status.as_entire_binding(),
-            ),
-            ("predicate_owner_node", rows.owner_node.as_entire_binding()),
-            (
-                "predicate_subject_token",
-                rows.subject_token.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_token",
-                rows.bound_token.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_decl_id",
-                rows.bound_decl_id.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_arg_count",
-                rows.bound_arg_count.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_first_arg_token",
-                rows.first_arg_token.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_second_arg_token",
-                rows.second_arg_token.as_entire_binding(),
-            ),
-            ("predicate_status", rows.status.as_entire_binding()),
-            (
-                "predicate_syntax_token",
-                resident_resources["predicate_syntax_token"].clone(),
-            ),
-            (
-                "predicate_method_contract_owner_node",
-                rows.method_contract_owner_node.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_name_token",
-                rows.method_contract_name_token.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_name_id",
-                rows.method_contract_name_id.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_param_count",
-                rows.method_contract_param_count.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_first_param_node",
-                rows.method_contract_first_param_node.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_return_type_node",
-                rows.method_contract_return_type_node.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_visibility",
-                rows.method_contract_visibility.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_status",
-                rows.method_contract_status.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_param_next_node",
-                rows.method_contract_param_next_node.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_param_type_node",
-                rows.method_contract_param_type_node.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_key_order",
-                rows.method_contract_order.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_owner_range_first",
-                rows.method_contract_owner_range_first.as_entire_binding(),
-            ),
-            (
-                "predicate_method_contract_owner_range_count",
-                rows.method_contract_owner_range_count.as_entire_binding(),
-            ),
-        ],
+    )?;
+    let collect_impls = create_collect_bind_group(
+        "type_check_resident_predicates_collect_impls",
+        &passes.predicates_collect_impls,
+    )?;
+    let collect_methods = create_collect_bind_group(
+        "type_check_resident_predicates_collect_methods",
+        &passes.predicates_collect_methods,
     )?;
 
     let method_contract_keys = create_predicate_key_bind_groups(
@@ -900,6 +914,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         collect_bound_arg_facts,
         collect_method_contracts,
         collect,
+        collect_impls,
+        collect_methods,
         _method_contract_key_radix_steps: method_contract_keys.steps,
         _method_param_key_radix_steps: method_param_keys.steps,
         seed_method_contract_key_order: method_contract_keys.seed_key_order,

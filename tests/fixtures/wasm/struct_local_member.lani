@@ -1,0 +1,15 @@
+module app::main;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 17, right: 25 };
+    let total: i32 = pair.left + pair.right;
+    if (total == 42) {
+        return 0;
+    }
+    return total;
+}

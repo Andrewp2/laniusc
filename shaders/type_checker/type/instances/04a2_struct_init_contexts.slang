@@ -248,7 +248,6 @@ uint enclosing_array_element_node(uint literal_node)
         return INVALID;
 
     uint found = INVALID;
-    [loop]
     for (uint node = 0u; node < literal_node; node += 1u)
     {
         uint array_node = hir_array_element_parent_lit[node];

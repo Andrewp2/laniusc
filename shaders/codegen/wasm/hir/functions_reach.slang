@@ -24,6 +24,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -35,6 +36,7 @@ RWStructuredBuffer<uint> wasm_func_flag;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint EXPR_RECORD_STRIDE = 4u;
@@ -149,11 +151,70 @@ uint call_callee_token(uint call_node)
 
     if (!valid_node(raw_callee_node))
         return INVALID;
+    if (hir_kind[raw_callee_node] == HIR_MEMBER_EXPR)
+    {
+        uint member_token = hir_member_name_token[raw_callee_node];
+        return valid_token(member_token) ? member_token : INVALID;
+    }
 
     uint callee_token = expr_record_slot(raw_callee_node, EXPR_RECORD_VALUE_TOKEN);
     if (!valid_token(callee_token))
         callee_token = hir_token_pos[raw_callee_node];
     return valid_token(callee_token) ? callee_token : INVALID;
+}
+
+uint call_site_token(uint call_node)
+{
+    return valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
+}
+
+uint semantic_callee_token_for_call(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint call_token = call_site_token(call_node);
+    uint callee_node = hir_call_callee_node[call_node];
+    if (!valid_node(callee_node))
+        return valid_token(call_token) ? call_token : INVALID;
+
+    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    {
+        uint member_token = hir_member_name_token[callee_node];
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+
+    if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
+        return call_token;
+
+    uint callee_token = expr_record_slot(callee_node, EXPR_RECORD_VALUE_TOKEN);
+    if (!valid_token(callee_token))
+        callee_token = hir_token_pos[callee_node];
+    if (!valid_token(callee_token))
+        callee_token = call_token;
+    return valid_token(callee_token) ? callee_token : INVALID;
+}
+
+uint call_metadata_token(uint call_node, uint callee_token)
+{
+    uint site_token = call_site_token(call_node);
+    if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
+        return site_token;
+
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+    if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
+        return semantic_token;
+
+    if (valid_token(callee_token) && valid_token(call_fn_index[callee_token]))
+        return callee_token;
+
+    return callee_token;
+}
+
+uint call_fn_token_for_call(uint call_node, uint callee_token)
+{
+    uint metadata_token = call_metadata_token(call_node, callee_token);
+    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
 }
 
 [shader("compute")]
@@ -172,7 +233,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_token(callee_token) || call_intrinsic_tag[callee_token] != 0u)
         return;
 
-    uint fn_token = call_fn_index[callee_token];
+    uint fn_token = call_fn_token_for_call(node, callee_token);
     if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR) ||
         token_has_language_name(fn_token, LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR))
         return;

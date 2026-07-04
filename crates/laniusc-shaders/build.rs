@@ -1,12 +1,13 @@
 // build.rs — compile Slang entrypoints (no duplicate module sources).
 
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     env,
     fs,
     io,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::{Arc, Mutex, mpsc},
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -19,8 +20,15 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-env-changed=SLANGC");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_MINIMUM_SLANG_OPT");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_SKIP_SPIRV_VALIDATION");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_DOWNSTREAM_TIME");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_PERF");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_DETAILED_PERF");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_MAX_SPV_BYTES");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_BUILD_JOBS");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
 
     let workspace_root = workspace_root()?;
@@ -44,6 +52,7 @@ fn main() -> Result<()> {
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
     let mut shader_artifacts = Vec::new();
+    let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
 
     // Only compile files that contain an entrypoint attribute, e.g. [shader("compute")]
@@ -70,11 +79,26 @@ fn main() -> Result<()> {
                 .with_context(|| format!("create shader artifact dir {}", parent.display()))?;
         }
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
-        let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
-        let opt_level = shader_opt_level();
+        let extra_args = slangc_extra_args(&extra)?;
+        let opt_level = shader_opt_level_for_artifact(&artifact_key)?;
+        let minimum_slang_opt = shader_minimum_slang_optimization();
+        let disable_non_essential_validations =
+            env_truthy("LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS");
+        let skip_spirv_validation = env_truthy("LANIUS_SHADER_SKIP_SPIRV_VALIDATION");
+        let report_downstream_time = env_truthy("LANIUS_SHADER_REPORT_DOWNSTREAM_TIME");
+        let report_perf = env_truthy("LANIUS_SHADER_REPORT_PERF");
+        let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
         let compile_stamp = format!(
-            "slangc={}\nopt={opt_level}\nextra={extra}\n",
-            slangc.display()
+            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nextra={}\n",
+            slangc.display(),
+            opt_level,
+            minimum_slang_opt,
+            disable_non_essential_validations,
+            skip_spirv_validation,
+            report_downstream_time,
+            report_perf,
+            report_detailed_perf,
+            extra
         );
         if shader_outputs_fresh(
             &shader_root,
@@ -89,65 +113,31 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let mut cmd = Command::new(&slangc);
-        cmd.arg("-target")
-            .arg("spirv")
-            .arg("-profile")
-            .arg("glsl_450")
-            .arg("-fvk-use-entrypoint-name")
-            .arg("-reflection-json")
-            .arg(&refl_out)
-            .arg("-emit-spirv-directly")
-            .arg(format!("-O{opt_level}"))
-            // Let `import utils;` and other modules resolve from source by search path:
-            .arg("-I")
-            .arg(&shader_root)
-            .arg("-I")
-            .arg(shader_root.join("lexer"))
-            .arg("-I")
-            .arg(shader_root.join("parser"))
-            .arg("-I")
-            .arg(shader_root.join("type_checker"))
-            .arg("-I")
-            .arg(shader_root.join("codegen"))
-            .arg("-o")
-            .arg(&spv_out);
-
-        if env_truthy("LANIUS_SHADER_DEBUG") {
-            cmd.arg("-g3");
-        }
-
-        for a in &extra_args {
-            cmd.arg(a);
-        }
-
-        // Finally, the entrypoint source itself (no module/library sources added!)
-        cmd.arg(&ep);
-
-        let out = command_output_with_timeout(&mut cmd, shader_compile_timeout)
-            .with_context(|| format!("failed running slangc for {ep:?}"))?;
-        if !out.stdout.is_empty() {
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                println!("cargo:warning=slangc STDOUT: {line}");
-            }
-        }
-        if !out.stderr.is_empty() {
-            for line in String::from_utf8_lossy(&out.stderr).lines() {
-                eprintln!("slangc: {line}");
-            }
-        }
-        if !out.status.success() {
-            return Err(anyhow!(
-                "slangc failed on {:?} (exit: {:?}). See diagnostics above.",
-                ep,
-                out.status.code()
-            ));
-        }
-        validate_shader_artifact_size(&ep, &spv_out, max_shader_spv_bytes)?;
-        fs::write(&stamp_out, compile_stamp)
-            .with_context(|| format!("write shader stamp {}", stamp_out.display()))?;
-        shader_artifacts.push((artifact_key, spv_out, refl_out));
+        shader_compile_jobs.push(ShaderCompileJob {
+            ep,
+            artifact_key,
+            spv_out,
+            refl_out,
+            stamp_out,
+            opt_level,
+            minimum_slang_opt,
+            disable_non_essential_validations,
+            skip_spirv_validation,
+            report_downstream_time,
+            report_perf,
+            report_detailed_perf,
+            debug: env_truthy("LANIUS_SHADER_DEBUG"),
+            extra_args,
+            compile_stamp,
+        });
     }
+    shader_artifacts.extend(compile_shader_jobs(
+        shader_compile_jobs,
+        &shader_root,
+        &slangc,
+        shader_compile_timeout,
+        max_shader_spv_bytes,
+    )?);
     let active_artifact_keys: HashSet<String> = shader_artifacts
         .iter()
         .map(|(artifact_key, _, _)| artifact_key.clone())
@@ -209,8 +199,106 @@ fn env_truthy(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn shader_opt_level() -> String {
-    env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
+fn shader_opt_level() -> Result<String> {
+    let value = match env::var("LANIUS_SHADER_OPT_LEVEL") {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok("1".into()),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(anyhow!(
+                "LANIUS_SHADER_OPT_LEVEL must be a UTF-8 Slang optimization level"
+            ));
+        }
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok("1".into());
+    }
+    match value {
+        "0" | "1" | "2" | "3" | "none" | "default" | "high" | "maximal" => Ok(value.into()),
+        _ => Err(anyhow!(
+            "LANIUS_SHADER_OPT_LEVEL={value:?} is not a supported Slang optimization level; use 0, 1, 2, 3, none, default, high, or maximal"
+        )),
+    }
+}
+
+fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
+    let default = shader_opt_level()?;
+    if default != "0" && force_minimum_wasm_body_artifact_optimization(artifact_key) {
+        return Ok("0".to_string());
+    }
+    Ok(default)
+}
+
+fn force_minimum_wasm_body_artifact_optimization(artifact_key: &str) -> bool {
+    matches!(
+        artifact_key,
+        "codegen/wasm/module"
+            | "codegen/wasm/hir/body_plan"
+            | "codegen/wasm/hir/body_plan_validate"
+            | "codegen/wasm/hir/body_plan_validate_return"
+            | "codegen/wasm/hir/body_plan_validate_return_call"
+            | "codegen/wasm/hir/body_plan_validate_return_agg_call"
+            | "codegen/wasm/hir/body_plan_validate_return_nested_call"
+            | "codegen/wasm/hir/body_plan_validate_assign"
+            | "codegen/wasm/hir/body_plan_validate_control"
+            | "codegen/wasm/hir/body_plan_validate_call"
+            | "codegen/wasm/hir/body_plan_validate_let_host"
+            | "codegen/wasm/hir/body_plan_validate_let_host_env"
+            | "codegen/wasm/hir/body_plan_validate_let_host_io"
+            | "codegen/wasm/hir/body_plan_validate_let_call"
+            | "codegen/wasm/hir/body_plan_validate_let_call_status"
+            | "codegen/wasm/hir/body_plan_agg_direct_call"
+            | "codegen/wasm/hir/body_plan_agg_struct"
+            | "codegen/wasm/hir/body_plan_arrays"
+            | "codegen/wasm/hir/body_agg_call_arg_counts"
+            | "codegen/wasm/hir/body_agg_call_arg_records"
+            | "codegen/wasm/hir/body_agg_call_finalize"
+            | "codegen/wasm/hir/body_scatter_expr_control"
+            | "codegen/wasm/hir/body_scatter_host"
+            | "codegen/wasm/hir/body_scatter_arrays"
+            | "codegen/wasm/hir/body_scatter_agg_copy"
+            | "codegen/wasm/hir/body_scatter_agg_call_args"
+            | "codegen/wasm/hir/body_scatter_agg_direct_call"
+            | "codegen/wasm/hir/body_scatter_member_expr"
+            | "codegen/wasm/hir/body_scatter_binary_direct_call"
+            | "codegen/wasm/hir/body_scatter_return_agg_direct_call"
+    )
+}
+
+fn shader_minimum_slang_optimization() -> bool {
+    env::var("LANIUS_SHADER_MINIMUM_SLANG_OPT")
+        .map(|value| {
+            let value = value.to_ascii_lowercase();
+            value != "0" && value != "false" && value != "off"
+        })
+        .unwrap_or(true)
+}
+
+fn slangc_extra_args(extra: &str) -> Result<Vec<String>> {
+    let args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
+    for arg in &args {
+        if is_build_policy_slangc_flag(arg) {
+            return Err(anyhow!(
+                "SLANGC_EXTRA_FLAGS contains {arg:?}, but this build owns Slang optimization, validation, and timing flags through named Lanius env vars. Use LANIUS_SHADER_OPT_LEVEL, LANIUS_SHADER_MINIMUM_SLANG_OPT, LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS, LANIUS_SHADER_SKIP_SPIRV_VALIDATION, LANIUS_SHADER_REPORT_DOWNSTREAM_TIME, LANIUS_SHADER_REPORT_PERF, or LANIUS_SHADER_REPORT_DETAILED_PERF instead."
+            ));
+        }
+    }
+    Ok(args.into_iter().map(str::to_string).collect())
+}
+
+fn is_build_policy_slangc_flag(arg: &str) -> bool {
+    arg == "-minimum-slang-optimization"
+        || arg == "-disable-non-essential-validations"
+        || arg == "-skip-spirv-validation"
+        || arg == "-report-downstream-time"
+        || arg == "-report-perf-benchmark"
+        || arg == "-report-detailed-perf-benchmark"
+        || arg == "-optimization-level"
+        || arg.starts_with("-optimization-level=")
+        || matches!(
+            arg,
+            "-O" | "-O0" | "-O1" | "-O2" | "-O3" | "-Onone" | "-Odefault" | "-Ohigh" | "-Omaximal"
+        )
 }
 
 fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> {
@@ -232,7 +320,7 @@ fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> 
 }
 
 fn shader_max_spv_bytes() -> Result<Option<u64>> {
-    const DEFAULT_MAX_SPV_BYTES: u64 = 4 * 1024 * 1024;
+    const DEFAULT_MAX_SPV_BYTES: u64 = 5 * 1024 * 1024;
 
     let value = match env::var("LANIUS_SHADER_MAX_SPV_BYTES") {
         Ok(value) => value,
@@ -271,6 +359,186 @@ fn validate_shader_artifact_size(ep: &Path, spv_out: &Path, max_bytes: Option<u6
         size,
         max_bytes
     ))
+}
+
+struct ShaderCompileJob {
+    ep: PathBuf,
+    artifact_key: String,
+    spv_out: PathBuf,
+    refl_out: PathBuf,
+    stamp_out: PathBuf,
+    opt_level: String,
+    minimum_slang_opt: bool,
+    disable_non_essential_validations: bool,
+    skip_spirv_validation: bool,
+    report_downstream_time: bool,
+    report_perf: bool,
+    report_detailed_perf: bool,
+    debug: bool,
+    extra_args: Vec<String>,
+    compile_stamp: String,
+}
+
+fn compile_shader_jobs(
+    jobs: Vec<ShaderCompileJob>,
+    shader_root: &Path,
+    slangc: &Path,
+    timeout: Option<Duration>,
+    max_shader_spv_bytes: Option<u64>,
+) -> Result<Vec<(String, PathBuf, PathBuf)>> {
+    let job_count = jobs.len();
+    if job_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let worker_count = shader_build_jobs(job_count)?;
+    let queue = Arc::new(Mutex::new(VecDeque::from(jobs)));
+    let (tx, rx) = mpsc::channel();
+
+    thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let queue = Arc::clone(&queue);
+            let tx = tx.clone();
+            let shader_root = shader_root.to_path_buf();
+            let slangc = slangc.to_path_buf();
+            scope.spawn(move || {
+                loop {
+                    let job = {
+                        let mut queue = queue
+                            .lock()
+                            .expect("shader compile queue lock should not be poisoned");
+                        queue.pop_front()
+                    };
+                    let Some(job) = job else {
+                        break;
+                    };
+                    let result = compile_shader_job(
+                        job,
+                        &shader_root,
+                        &slangc,
+                        timeout,
+                        max_shader_spv_bytes,
+                    );
+                    if tx.send(result).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tx);
+
+        let mut compiled = Vec::with_capacity(job_count);
+        for result in rx {
+            compiled.push(result?);
+        }
+        Ok(compiled)
+    })
+}
+
+fn shader_build_jobs(job_count: usize) -> Result<usize> {
+    let default = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .clamp(1, 8)
+        .min(job_count);
+    let value = match env::var("LANIUS_SHADER_BUILD_JOBS") {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(default),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(anyhow!(
+                "LANIUS_SHADER_BUILD_JOBS must be a UTF-8 positive integer"
+            ));
+        }
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(default);
+    }
+    let parsed = value
+        .parse::<usize>()
+        .with_context(|| format!("parse LANIUS_SHADER_BUILD_JOBS={value:?}"))?;
+    Ok(parsed.clamp(1, job_count))
+}
+
+fn compile_shader_job(
+    job: ShaderCompileJob,
+    shader_root: &Path,
+    slangc: &Path,
+    timeout: Option<Duration>,
+    max_shader_spv_bytes: Option<u64>,
+) -> Result<(String, PathBuf, PathBuf)> {
+    let mut cmd = Command::new(slangc);
+    cmd.arg("-target")
+        .arg("spirv")
+        .arg("-profile")
+        .arg("glsl_450")
+        .arg("-fvk-use-entrypoint-name")
+        .arg("-reflection-json")
+        .arg(&job.refl_out)
+        .arg("-emit-spirv-directly")
+        .arg(format!("-O{}", job.opt_level))
+        .arg("-I")
+        .arg(shader_root)
+        .arg("-I")
+        .arg(shader_root.join("lexer"))
+        .arg("-I")
+        .arg(shader_root.join("parser"))
+        .arg("-I")
+        .arg(shader_root.join("type_checker"))
+        .arg("-I")
+        .arg(shader_root.join("codegen"))
+        .arg("-o")
+        .arg(&job.spv_out);
+
+    if job.minimum_slang_opt {
+        cmd.arg("-minimum-slang-optimization");
+    }
+    if job.disable_non_essential_validations {
+        cmd.arg("-disable-non-essential-validations");
+    }
+    if job.skip_spirv_validation {
+        cmd.arg("-skip-spirv-validation");
+    }
+    if job.report_downstream_time {
+        cmd.arg("-report-downstream-time");
+    }
+    if job.report_perf {
+        cmd.arg("-report-perf-benchmark");
+    }
+    if job.report_detailed_perf {
+        cmd.arg("-report-detailed-perf-benchmark");
+    }
+    if job.debug {
+        cmd.arg("-g3");
+    }
+    for arg in &job.extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg(&job.ep);
+
+    let out = command_output_with_timeout(&mut cmd, timeout)
+        .with_context(|| format!("failed running slangc for {:?}", job.ep))?;
+    if !out.stdout.is_empty() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            println!("cargo:warning=slangc {} STDOUT: {line}", job.artifact_key);
+        }
+    }
+    if !out.stderr.is_empty() {
+        for line in String::from_utf8_lossy(&out.stderr).lines() {
+            eprintln!("slangc {}: {line}", job.artifact_key);
+        }
+    }
+    if !out.status.success() {
+        return Err(anyhow!(
+            "slangc failed on {:?} (exit: {:?}). See diagnostics above.",
+            job.ep,
+            out.status.code()
+        ));
+    }
+    validate_shader_artifact_size(&job.ep, &job.spv_out, max_shader_spv_bytes)?;
+    fs::write(&job.stamp_out, &job.compile_stamp)
+        .with_context(|| format!("write shader stamp {}", job.stamp_out.display()))?;
+    Ok((job.artifact_key, job.spv_out, job.refl_out))
 }
 
 fn command_output_with_timeout(
@@ -558,6 +826,7 @@ fn is_unwired_shader_entrypoint(shader_root: &Path, path: &Path) -> Result<bool>
             | "codegen/x86/virtual/use/edges.slang"
             | "codegen/x86/virtual/use/scan/blocks.slang"
             | "codegen/x86/virtual/use/scan/local.slang"
+            | "codegen/wasm/hir/body_scatter_direct.slang"
     ))
 }
 

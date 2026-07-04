@@ -282,14 +282,32 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.language_name_id,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
+                                                    member_receiver_node: &parse_bufs
+                                                        .hir_member_receiver_node,
+                                                    struct_decl_field_count: &parse_bufs
+                                                        .hir_struct_decl_field_count,
                                                     lit_field_parent_lit: &parse_bufs
                                                         .hir_struct_lit_field_parent_lit,
+                                                    lit_context_stmt_node: &parse_bufs
+                                                        .hir_struct_lit_context_stmt_node,
+                                                    lit_field_start: &parse_bufs
+                                                        .hir_struct_lit_field_start,
+                                                    lit_field_count: &parse_bufs
+                                                        .hir_struct_lit_field_count,
+                                                    lit_field_value_node: &parse_bufs
+                                                        .hir_struct_lit_field_value_node,
+                                                    lit_field_next: &parse_bufs
+                                                        .hir_struct_lit_field_next,
                                                     member_name_token: &parse_bufs
                                                         .hir_member_name_token,
                                                     member_result_field_ordinal: codegen
                                                         .member_result_field_ordinal,
+                                                    member_result_field_node: codegen
+                                                        .member_result_field_node,
                                                     struct_init_field_ordinal_by_node: codegen
                                                         .struct_init_field_ordinal_by_node,
+                                                    struct_init_field_decl_node_by_node: codegen
+                                                        .struct_init_field_decl_node_by_node,
                                                 },
                                                 wasm::GpuWasmEnumMatchMetadataBuffers {
                                                     variant_ordinal: &parse_bufs
@@ -320,7 +338,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     arg_end: &parse_bufs.hir_call_arg_end,
                                                     arg_count: &parse_bufs.hir_call_arg_count,
                                                     arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
+                                                    param_row_count_out: codegen
+                                                        .call_param_row_count_out,
+                                                    param_row_fn_token: codegen
+                                                        .call_param_row_fn_token,
+                                                    param_row_ordinal: codegen
+                                                        .call_param_row_ordinal,
+                                                    param_row_type: codegen.call_param_row_type,
+                                                    param_row_start: codegen.call_param_row_start,
+                                                    param_row_count: codegen.call_param_row_count,
                                                     arg_row_node: codegen.call_arg_row_node,
+                                                    arg_row_call_node: codegen
+                                                        .call_arg_row_call_node,
+                                                    arg_row_ordinal: codegen.call_arg_row_ordinal,
                                                     arg_row_start: codegen.call_arg_row_start,
                                                     arg_row_count: codegen.call_arg_row_count,
                                                 },
@@ -329,6 +359,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     result_root_node: &parse_bufs
                                                         .hir_expr_result_root_node,
                                                     int_value: &parse_bufs.hir_expr_int_value,
+                                                    float_bits: &parse_bufs.hir_expr_float_bits,
+                                                    string_start: &parse_bufs.hir_expr_string_start,
+                                                    string_len: &parse_bufs.hir_expr_string_len,
                                                     stmt_record: &parse_bufs.hir_stmt_record,
                                                     nearest_stmt_node: &parse_bufs
                                                         .hir_nearest_stmt_node,
@@ -360,6 +393,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     segment_token: codegen.path_segment_token,
                                                     id_by_owner_hir: codegen.path_id_by_owner_hir,
                                                 },
+                                                wasm::GpuWasmSemanticHirBuffers {
+                                                    count: &parse_bufs.hir_semantic_count,
+                                                    prefix_before_node: &parse_bufs
+                                                        .hir_semantic_prefix_before_node,
+                                                    dense_node: &parse_bufs.hir_semantic_dense_node,
+                                                    subtree_end: &parse_bufs
+                                                        .hir_semantic_subtree_end,
+                                                    parent: &parse_bufs.hir_semantic_parent,
+                                                    first_child: &parse_bufs
+                                                        .hir_semantic_first_child,
+                                                    next_sibling: &parse_bufs
+                                                        .hir_semantic_next_sibling,
+                                                    depth: &parse_bufs.hir_semantic_depth,
+                                                    child_index: &parse_bufs
+                                                        .hir_semantic_child_index,
+                                                },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,
                                                 codegen.type_expr_ref_payload,
@@ -385,6 +434,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.type_instance_arg_count,
                                                 codegen.type_instance_arg_ref_tag,
                                                 codegen.type_instance_arg_ref_payload,
+                                                codegen.type_decl_hir_node_by_token,
                                                 codegen.fn_return_ref_tag,
                                                 codegen.fn_return_ref_payload,
                                                 codegen.member_result_ref_tag,
@@ -765,14 +815,32 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.language_name_id,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
+                                                    member_receiver_node: &parse_bufs
+                                                        .hir_member_receiver_node,
+                                                    struct_decl_field_count: &parse_bufs
+                                                        .hir_struct_decl_field_count,
                                                     lit_field_parent_lit: &parse_bufs
                                                         .hir_struct_lit_field_parent_lit,
+                                                    lit_context_stmt_node: &parse_bufs
+                                                        .hir_struct_lit_context_stmt_node,
+                                                    lit_field_start: &parse_bufs
+                                                        .hir_struct_lit_field_start,
+                                                    lit_field_count: &parse_bufs
+                                                        .hir_struct_lit_field_count,
+                                                    lit_field_value_node: &parse_bufs
+                                                        .hir_struct_lit_field_value_node,
+                                                    lit_field_next: &parse_bufs
+                                                        .hir_struct_lit_field_next,
                                                     member_name_token: &parse_bufs
                                                         .hir_member_name_token,
                                                     member_result_field_ordinal: codegen
                                                         .member_result_field_ordinal,
+                                                    member_result_field_node: codegen
+                                                        .member_result_field_node,
                                                     struct_init_field_ordinal_by_node: codegen
                                                         .struct_init_field_ordinal_by_node,
+                                                    struct_init_field_decl_node_by_node: codegen
+                                                        .struct_init_field_decl_node_by_node,
                                                 },
                                                 wasm::GpuWasmEnumMatchMetadataBuffers {
                                                     variant_ordinal: &parse_bufs
@@ -803,7 +871,20 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     arg_end: &parse_bufs.hir_call_arg_end,
                                                     arg_count: &parse_bufs.hir_call_arg_count,
                                                     arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
+                                                    param_row_count_out: codegen
+                                                        .call_param_row_count_out,
+                                                    param_row_fn_token: codegen
+                                                        .call_param_row_fn_token,
+                                                    param_row_ordinal: codegen
+                                                        .call_param_row_ordinal,
+                                                    param_row_type: codegen.call_param_row_type,
+                                                    param_row_start: codegen.call_param_row_start,
+                                                    param_row_count: codegen.call_param_row_count,
                                                     arg_row_node: codegen.call_arg_row_node,
+                                                    arg_row_call_node: codegen
+                                                        .call_arg_row_call_node,
+                                                    arg_row_ordinal: codegen
+                                                        .call_arg_row_ordinal,
                                                     arg_row_start: codegen.call_arg_row_start,
                                                     arg_row_count: codegen.call_arg_row_count,
                                                 },
@@ -812,6 +893,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     result_root_node: &parse_bufs
                                                         .hir_expr_result_root_node,
                                                     int_value: &parse_bufs.hir_expr_int_value,
+                                                    float_bits: &parse_bufs.hir_expr_float_bits,
+                                                    string_start: &parse_bufs.hir_expr_string_start,
+                                                    string_len: &parse_bufs.hir_expr_string_len,
                                                     stmt_record: &parse_bufs.hir_stmt_record,
                                                     nearest_stmt_node: &parse_bufs
                                                         .hir_nearest_stmt_node,
@@ -843,6 +927,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     segment_token: codegen.path_segment_token,
                                                     id_by_owner_hir: codegen.path_id_by_owner_hir,
                                                 },
+                                                wasm::GpuWasmSemanticHirBuffers {
+                                                    count: &parse_bufs.hir_semantic_count,
+                                                    prefix_before_node: &parse_bufs
+                                                        .hir_semantic_prefix_before_node,
+                                                    dense_node: &parse_bufs.hir_semantic_dense_node,
+                                                    subtree_end: &parse_bufs
+                                                        .hir_semantic_subtree_end,
+                                                    parent: &parse_bufs.hir_semantic_parent,
+                                                    first_child: &parse_bufs
+                                                        .hir_semantic_first_child,
+                                                    next_sibling: &parse_bufs
+                                                        .hir_semantic_next_sibling,
+                                                    depth: &parse_bufs.hir_semantic_depth,
+                                                    child_index: &parse_bufs
+                                                        .hir_semantic_child_index,
+                                                },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,
                                                 codegen.type_expr_ref_payload,
@@ -866,10 +966,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.type_instance_decl_token,
                                                 codegen.type_instance_arg_start,
                                                 codegen.type_instance_arg_count,
-                                                codegen.type_instance_arg_ref_tag,
-                                                codegen.type_instance_arg_ref_payload,
-                                                codegen.fn_return_ref_tag,
-                                                codegen.fn_return_ref_payload,
+                                            codegen.type_instance_arg_ref_tag,
+                                            codegen.type_instance_arg_ref_payload,
+                                            codegen.type_decl_hir_node_by_token,
+                                            codegen.fn_return_ref_tag,
+                                            codegen.fn_return_ref_payload,
                                                 codegen.member_result_ref_tag,
                                                 codegen.member_result_ref_payload,
                                                 codegen.struct_init_field_expected_ref_tag,
@@ -1089,6 +1190,9 @@ fn wasm_backend_execution_failed_for_source(
     src: &str,
     err: impl std::fmt::Display,
 ) -> CompileError {
+    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+        eprintln!("[laniusc][wasm] backend execution error: {err:#}");
+    }
     stage_execution_failed_for_source(wasm_backend_execution_failure(), diagnostic_path, src, err)
 }
 
@@ -1096,6 +1200,9 @@ fn wasm_backend_execution_failed_for_source_pack(
     diagnostic_files: &[DiagnosticSourceFile],
     err: impl std::fmt::Display,
 ) -> CompileError {
+    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+        eprintln!("[laniusc][wasm] backend execution error: {err:#}");
+    }
     stage_execution_failed_for_source_pack(wasm_backend_execution_failure(), diagnostic_files, err)
 }
 

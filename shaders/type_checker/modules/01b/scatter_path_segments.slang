@@ -189,7 +189,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint root = path_root_for_owner(path_owner_hir[path_slot]);
     uint count = path_segment_count[path_slot];
-    [loop]
     for (uint segment_i = 0u; segment_i < count; segment_i += 1u)
         write_segment(path_slot, root, segment_i);
 }

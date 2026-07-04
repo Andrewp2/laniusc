@@ -208,7 +208,6 @@ bool receiver_args_valid(uint fn_i)
     if (arg_count == 0u)
         return true;
 
-    [loop]
     for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
     {
         uint tag_i;
@@ -286,7 +285,6 @@ bool receiver_arg_rows_equal(uint left_fn_i, uint right_fn_i)
     if (count != type_instance_arg_count[right_payload])
         return false;
 
-    [loop]
     for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
         uint left_arg_tag;

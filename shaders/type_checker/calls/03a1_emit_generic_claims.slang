@@ -725,7 +725,6 @@ uint call_arg_row_for_claim(uint claim_i)
     uint row_count = min(call_arg_row_count_out[0u], active_hir_node_count());
     uint lo = 0u;
     uint hi = row_count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)

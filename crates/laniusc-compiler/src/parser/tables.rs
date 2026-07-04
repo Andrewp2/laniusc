@@ -203,9 +203,9 @@ impl std::fmt::Display for Ll1ParseError {
                 "parse error: unexpected trailing input at parser position {}",
                 self.pos
             ),
-            Ll1ParseErrorCode::BadSymbol => f.write_str(
-                "parser table error: an invalid parser symbol was encountered",
-            ),
+            Ll1ParseErrorCode::BadSymbol => {
+                f.write_str("parser table error: an invalid parser symbol was encountered")
+            }
             Ll1ParseErrorCode::TablesUnavailable => {
                 f.write_str("parser table error: parser tables are unavailable")
             }
@@ -744,7 +744,10 @@ mod tests {
         };
 
         let message = error.to_string();
-        assert_eq!(message, "parse error: unexpected token at parser position 2");
+        assert_eq!(
+            message,
+            "parse error: unexpected token at parser position 2"
+        );
         assert!(!message.contains("LL(1)"));
         assert!(!message.contains("TerminalMismatch"));
         assert!(!message.contains("(3)"));

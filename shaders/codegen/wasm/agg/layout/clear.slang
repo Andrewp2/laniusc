@@ -23,6 +23,8 @@ RWStructuredBuffer<uint> struct_field_scalar_offset;
 RWStructuredBuffer<uint> struct_field_scalar_width;
 RWStructuredBuffer<uint> struct_init_field_index;
 RWStructuredBuffer<uint> member_result_field_index;
+RWStructuredBuffer<uint> wasm_agg_local_width_by_token;
+RWStructuredBuffer<uint> wasm_agg_local_base_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -51,4 +53,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     struct_field_scalar_width[i] = 0u;
     struct_init_field_index[i] = INVALID;
     member_result_field_index[i] = INVALID;
+    wasm_agg_local_width_by_token[i] = 0u;
+    wasm_agg_local_base_by_token[i] = 0u;
 }

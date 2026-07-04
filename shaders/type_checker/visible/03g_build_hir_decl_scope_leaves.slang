@@ -58,7 +58,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint end = min(active_count, start + HIR_VISIBLE_DECL_ROW_BLOCK_SIZE);
     uint max_scope_end = 0u;
 
-    [loop]
     for (uint offset = 0u; offset < HIR_VISIBLE_DECL_ROW_BLOCK_SIZE; offset += 1u)
     {
         uint row = start + offset;

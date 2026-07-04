@@ -480,6 +480,8 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) collect_bound_arg_facts: wgpu::BindGroup,
     pub(in crate::type_checker) collect_method_contracts: wgpu::BindGroup,
     pub(in crate::type_checker) collect: wgpu::BindGroup,
+    pub(in crate::type_checker) collect_impls: wgpu::BindGroup,
+    pub(in crate::type_checker) collect_methods: wgpu::BindGroup,
     pub(in crate::type_checker) seed_method_contract_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) sort_method_contract_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_bucket_prefix: Vec<wgpu::BindGroup>,

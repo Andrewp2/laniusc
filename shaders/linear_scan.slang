@@ -2,7 +2,6 @@ public void linear_scan_active_clear<let REG_COUNT: int>(
     inout uint active_end[REG_COUNT],
     uint invalid)
 {
-    [unroll]
     for (uint rank = 0u; rank < uint(REG_COUNT); rank += 1u)
         active_end[rank] = invalid;
 }
@@ -34,7 +33,6 @@ public uint linear_scan_first_available_rank<let REG_COUNT: int>(
     inout uint active_end[REG_COUNT],
     uint invalid)
 {
-    [unroll]
     for (uint rank = 0u; rank < uint(REG_COUNT); rank += 1u)
     {
         uint bit = 1u << rank;

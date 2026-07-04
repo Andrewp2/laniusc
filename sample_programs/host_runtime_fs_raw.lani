@@ -1,0 +1,52 @@
+module app::main;
+
+import core::mem;
+import std::fs;
+import std::io;
+
+fn main() -> i32 {
+    let path: [i32; 1] = [102];
+    let payload: [i32; 1] = [82];
+    let newline: [i32; 1] = [10];
+    let read_buffer: [i32; 1] = [0];
+    let path_ptr: u32 = core::mem::i32_array_data_ptr(path);
+    let payload_ptr: u32 = core::mem::i32_array_data_ptr(payload);
+    let newline_ptr: u32 = core::mem::i32_array_data_ptr(newline);
+    let read_ptr: u32 = core::mem::i32_array_data_ptr(read_buffer);
+
+    let output: i32 = std::fs::open_write(path_ptr, 1);
+    if (output < 0) {
+        return 1;
+    }
+    let written: i32 = std::fs::write(output, payload_ptr, 1);
+    if (written != 1) {
+        return 2;
+    }
+    let output_closed: i32 = std::fs::close(output);
+    if (output_closed < 0) {
+        return 3;
+    }
+
+    let input: i32 = std::fs::open_read(path_ptr, 1);
+    if (input < 0) {
+        return 4;
+    }
+    let read_count: i32 = std::fs::read(input, read_ptr, 1);
+    if (read_count != 1) {
+        return 5;
+    }
+    let input_closed: i32 = std::fs::close(input);
+    if (input_closed < 0) {
+        return 6;
+    }
+
+    let copied: i32 = std::io::write_stdout(read_ptr, 1);
+    if (copied != 1) {
+        return 7;
+    }
+    let newline_copied: i32 = std::io::write_stdout(newline_ptr, 1);
+    if (newline_copied != 1) {
+        return 8;
+    }
+    return 0;
+}

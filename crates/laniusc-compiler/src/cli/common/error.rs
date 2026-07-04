@@ -1,7 +1,9 @@
 use std::path::Path;
 
-use crate::cli::fallback::cli_operation_failed_diagnostic;
-use crate::compiler::{CompileError, Diagnostic};
+use crate::{
+    cli::fallback::cli_operation_failed_diagnostic,
+    compiler::{CompileError, Diagnostic},
+};
 
 /// CLI error wrapper that preserves structured compiler diagnostics when
 /// possible.
@@ -170,8 +172,10 @@ mod tests {
                 .any(|note| note == "tooling detail: copy linked output: broken pipe")
         );
         assert!(
-            diagnostic.help.as_deref().is_some_and(|help| help
-                .contains("serialization, protocol, or output failure"))
+            diagnostic
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("serialization, protocol, or output failure"))
         );
     }
 }

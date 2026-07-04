@@ -56,7 +56,6 @@ public bool open_address_publish_min_u32_buffer<
         return false;
 
     uint hash = TKeyOps.hash(key);
-    [loop]
     for (uint probe = 0u; probe < capacity; probe += 1u)
     {
         uint slot = open_address_probe_hash(hash, capacity, probe);

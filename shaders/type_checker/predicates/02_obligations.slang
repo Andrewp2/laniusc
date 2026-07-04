@@ -610,7 +610,6 @@ uint generic_claim_type_for_slot(uint callee_token, uint slot)
     uint count = min(call_generic_claim_count_out[0u], active_hir_node_count());
     uint lo = 0u;
     uint hi = count;
-    [unroll]
     for (uint step = 0u; step < 32u; step += 1u)
     {
         if (lo >= hi)
@@ -721,7 +720,6 @@ uint actual_type_for_generic_slot_with_detail(
 
     uint found = TY_UNKNOWN;
     bool participates = false;
-    [loop]
     for (uint ordinal = 0u; ordinal < PARAM_CACHE_STRIDE; ordinal += 1u)
     {
         if (ordinal >= count)

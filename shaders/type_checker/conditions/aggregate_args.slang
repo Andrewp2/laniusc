@@ -74,7 +74,6 @@ uint request_node_for_compare(uint row)
     uint count = active_hir_node_count();
     uint lo = 0u;
     uint hi = count;
-    [loop]
     for (uint step = 0u; step < 32u && lo < hi; step += 1u)
     {
         uint mid = lo + (hi - lo) / 2u;

@@ -14,10 +14,10 @@ use super::{
 };
 use crate::{
     cli::common::{
+        CliError,
         explicit_source_pack_manifest_invalid_error,
         incompatible_cli_options_error,
         missing_cli_argument_error,
-        CliError,
     },
     codegen::unit::{
         CodegenUnitLimits,
@@ -499,19 +499,23 @@ fn validate_persisted_path_manifest_prefix(
     };
     let persisted_library_count = prepared_library_prefix_count(artifact_root, target);
     if persisted_library_count > libraries.len() {
-        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
-            "source-pack artifact root {} contains {persisted_library_count} persisted metadata partitions, but package source-pack metadata has only {} libraries",
-            artifact_root.display(),
-            libraries.len()
-        ))));
+        return Err(CliError::from_compile_error(
+            library_partition_contract_error(format!(
+                "source-pack artifact root {} contains {persisted_library_count} persisted metadata partitions, but package source-pack metadata has only {} libraries",
+                artifact_root.display(),
+                libraries.len()
+            )),
+        ));
     }
     if let Some(complete_library_count) = complete_library_count {
         if complete_library_count != libraries.len() {
-            return Err(CliError::from_compile_error(library_partition_contract_error(format!(
-                "source-pack artifact root {} has a complete metadata index with {complete_library_count} libraries, but package source-pack metadata has {} libraries",
-                artifact_root.display(),
-                libraries.len()
-            ))));
+            return Err(CliError::from_compile_error(
+                library_partition_contract_error(format!(
+                    "source-pack artifact root {} has a complete metadata index with {complete_library_count} libraries, but package source-pack metadata has {} libraries",
+                    artifact_root.display(),
+                    libraries.len()
+                )),
+            ));
         }
     }
     for (partition_index, expected) in libraries.iter().take(persisted_library_count).enumerate() {
@@ -539,32 +543,38 @@ fn validate_persisted_path_manifest_library(
     expected: &PathManifestLibrary,
 ) -> Result<(), CliError> {
     if partition.library_id != expected.library_id {
-        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
-            "source-pack artifact root {} partition {partition_index} is library {}, but package source-pack metadata expects library {}",
-            artifact_root.display(),
-            partition.library_id,
-            expected.library_id
-        ))));
+        return Err(CliError::from_compile_error(
+            library_partition_contract_error(format!(
+                "source-pack artifact root {} partition {partition_index} is library {}, but package source-pack metadata expects library {}",
+                artifact_root.display(),
+                partition.library_id,
+                expected.library_id
+            )),
+        ));
     }
     if partition.source_file_count != expected.paths.len() {
-        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
-            "source-pack artifact root {} partition {partition_index} for library {} stores {} source files, but package source-pack metadata declares {}",
-            artifact_root.display(),
-            partition.library_id,
-            partition.source_file_count,
-            expected.paths.len()
-        ))));
+        return Err(CliError::from_compile_error(
+            library_partition_contract_error(format!(
+                "source-pack artifact root {} partition {partition_index} for library {} stores {} source files, but package source-pack metadata declares {}",
+                artifact_root.display(),
+                partition.library_id,
+                partition.source_file_count,
+                expected.paths.len()
+            )),
+        ));
     }
     let stored_dependency_ids = stored_partition_dependency_ids(store, target, partition)
         .map_err(CliError::from_compile_error)?;
     if stored_dependency_ids != expected.dependency_library_ids {
-        return Err(CliError::from_compile_error(library_partition_contract_error(format!(
-            "source-pack artifact root {} partition {partition_index} for library {} stores dependency libraries {:?}, but package source-pack metadata declares {:?}",
-            artifact_root.display(),
-            partition.library_id,
-            stored_dependency_ids,
-            expected.dependency_library_ids
-        ))));
+        return Err(CliError::from_compile_error(
+            library_partition_contract_error(format!(
+                "source-pack artifact root {} partition {partition_index} for library {} stores dependency libraries {:?}, but package source-pack metadata declares {:?}",
+                artifact_root.display(),
+                partition.library_id,
+                stored_dependency_ids,
+                expected.dependency_library_ids
+            )),
+        ));
     }
     Ok(())
 }

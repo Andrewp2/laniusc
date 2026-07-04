@@ -686,9 +686,7 @@ mod tests {
 
     #[test]
     fn gpu_syntax_backend_error_display_omits_internal_detail() {
-        let error = GpuSyntaxError::Gpu(anyhow::anyhow!(
-            "parser.syntax.status readback failed"
-        ));
+        let error = GpuSyntaxError::Gpu(anyhow::anyhow!("parser.syntax.status readback failed"));
 
         let message = error.to_string();
         assert_eq!(
@@ -1154,8 +1152,16 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 token_count_buf.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                buffers.depth_paren_inblock.as_entire_binding(),
+            ),
+            (
                 "depth_bracket_inblock".into(),
                 buffers.depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                buffers.block_prefix_paren.as_entire_binding(),
             ),
             (
                 "block_prefix_bracket".into(),
@@ -1250,8 +1256,16 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 buffers.depth_bracket_inblock.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                buffers.depth_paren_inblock.as_entire_binding(),
+            ),
+            (
                 "block_prefix_bracket".into(),
                 buffers.block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                buffers.block_prefix_paren.as_entire_binding(),
             ),
             (
                 "statement_event_block_prefix".into(),

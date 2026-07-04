@@ -100,7 +100,7 @@ public uint radix_active_block_count(
     return min(min(blocks, n_blocks), max_blocks);
 }
 
-public inline void radix_bucket_prefix_scan_4<
+public void radix_bucket_prefix_scan_4<
     let WG_SIZE: int,
     let SCAN_SLOTS: int>(
     uint lane,
@@ -162,7 +162,7 @@ public inline void radix_bucket_prefix_scan_4<
         radix_bucket_total[bucket] = inclusive3;
 }
 
-public inline void radix_bucket_prefix_scan_8<
+public void radix_bucket_prefix_scan_8<
     let WG_SIZE: int,
     let SCAN_SLOTS: int>(
     uint lane,
@@ -264,7 +264,7 @@ public inline void radix_bucket_prefix_scan_8<
         radix_bucket_total[bucket] = inclusive7;
 }
 
-public inline void radix_bucket_prefix_scan_16<
+public void radix_bucket_prefix_scan_16<
     let WG_SIZE: int,
     let SCAN_SLOTS: int>(
     uint lane,
@@ -446,7 +446,7 @@ public inline void radix_bucket_prefix_scan_16<
         radix_bucket_total[bucket] = inclusive15;
 }
 
-public inline void radix_bucket_base_scan_2<
+public void radix_bucket_base_scan_2<
     let WG_SIZE: int,
     let SCAN_SLOTS: int>(
     uint lane,

@@ -1193,6 +1193,20 @@ impl GpuTypeChecker {
                     "type_check.resident.predicates_collect.pass",
                     &bind_groups.hir_active_dispatch_args,
                 )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_collect_impls,
+                    &predicates.collect_impls,
+                    "type_check.resident.predicates_collect_impls.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_collect_methods,
+                    &predicates.collect_methods,
+                    "type_check.resident.predicates_collect_methods.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.predicates_collect.done");
                 }
@@ -1470,7 +1484,15 @@ impl GpuTypeChecker {
             call_return_type_token: &bind_groups.call_return_type_token,
             call_param_count: &bind_groups.call_param_count,
             call_param_type: &bind_groups.call_param_type,
+            call_param_row_count_out: &bind_groups.call_param_row_count_out,
+            call_param_row_fn_token: &bind_groups.call_param_row_fn_token,
+            call_param_row_ordinal: &bind_groups.call_param_row_ordinal,
+            call_param_row_type: &bind_groups.call_param_row_type,
+            call_param_row_start: &bind_groups.call_param_row_start,
+            call_param_row_count: &bind_groups.call_param_row_count,
             call_arg_row_node: &bind_groups.call_arg_row_node,
+            call_arg_row_call_node: &bind_groups.call_arg_row_call_node,
+            call_arg_row_ordinal: &bind_groups.call_arg_row_ordinal,
             call_arg_row_start: &bind_groups.call_arg_row_start,
             call_arg_row_count: &bind_groups.call_arg_row_count,
             method_decl_module_id: &bind_groups.method_decl_module_id,
@@ -1494,6 +1516,7 @@ impl GpuTypeChecker {
             type_instance_arg_ref_tag: &bind_groups.type_instance_arg_ref_tag,
             type_instance_arg_ref_payload: &bind_groups.type_instance_arg_ref_payload,
             type_instance_arg_hash: &bind_groups.type_instance_arg_hash,
+            type_decl_hir_node_by_token: &bind_groups.type_decl_hir_node_by_token,
             type_instance_len_kind: &bind_groups.type_instance_len_kind,
             type_instance_len_payload: &bind_groups.type_instance_len_payload,
             fn_return_ref_tag: &bind_groups.fn_return_ref_tag,
@@ -1507,8 +1530,7 @@ impl GpuTypeChecker {
                 .struct_init_field_expected_ref_payload,
             struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &bind_groups.struct_init_field_ordinal_by_node,
-            struct_init_field_decl_node_by_node: &bind_groups
-                .struct_init_field_decl_node_by_node,
+            struct_init_field_decl_node_by_node: &bind_groups.struct_init_field_decl_node_by_node,
         }))
     }
 
@@ -1540,7 +1562,15 @@ impl GpuTypeChecker {
             call_return_type_token,
             call_param_count,
             call_param_type,
+            call_param_row_count_out,
+            call_param_row_fn_token,
+            call_param_row_ordinal,
+            call_param_row_type,
+            call_param_row_start,
+            call_param_row_count,
             call_arg_row_node,
+            call_arg_row_call_node,
+            call_arg_row_ordinal,
             call_arg_row_start,
             call_arg_row_count,
             method_decl_module_id,
@@ -1564,6 +1594,7 @@ impl GpuTypeChecker {
             type_instance_arg_ref_tag,
             type_instance_arg_ref_payload,
             type_instance_arg_hash,
+            type_decl_hir_node_by_token,
             type_instance_len_kind,
             type_instance_len_payload,
             fn_return_ref_tag,
@@ -1636,7 +1667,15 @@ impl GpuTypeChecker {
             call_return_type_token,
             call_param_count,
             call_param_type,
+            call_param_row_count_out,
+            call_param_row_fn_token,
+            call_param_row_ordinal,
+            call_param_row_type,
+            call_param_row_start,
+            call_param_row_count,
             call_arg_row_node,
+            call_arg_row_call_node,
+            call_arg_row_ordinal,
             call_arg_row_start,
             call_arg_row_count,
             method_decl_module_id,
@@ -1660,6 +1699,7 @@ impl GpuTypeChecker {
             type_instance_arg_ref_tag,
             type_instance_arg_ref_payload,
             type_instance_arg_hash,
+            type_decl_hir_node_by_token,
             type_instance_len_kind,
             type_instance_len_payload,
             fn_return_ref_tag,

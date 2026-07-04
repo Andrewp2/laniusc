@@ -96,7 +96,6 @@ bool type_params_list_param_node(uint node)
 uint impl_generic_param_owner_from_parents(uint node)
 {
     uint p = valid_node(node) ? parent[node] : INVALID;
-    [loop]
     while (valid_node(p))
     {
         if (impl_node_kind(node_kind[p]))
@@ -117,7 +116,6 @@ uint impl_generic_param_owner_from_span(uint node)
         return INVALID;
 
     uint cursor = node;
-    [loop]
     while (cursor > 0u)
     {
         cursor -= 1u;

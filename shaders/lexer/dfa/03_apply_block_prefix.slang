@@ -35,7 +35,7 @@ StructuredBuffer<uint> next_emit; // u16 packed: next_state (low 15) | HIGH_BIT 
 RWStructuredBuffer<uint> flags_packed;
 RWStructuredBuffer<uint> tok_types;
 
-inline bool is_skip(uint tk)
+bool is_skip(uint tk)
 {
     return (tk == gParams.skip0) || (tk == gParams.skip1) || (tk == gParams.skip2) || (tk == gParams.skip3);
 }
@@ -83,7 +83,6 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
 
     const uint chunk_width = (block_len + CHUNK_COUNT - 1u) / CHUNK_COUNT;
     const uint chunk = min(tIdx / chunk_width, CHUNK_COUNT - 1u);
-    [unroll]
     for (uint c = 0u; c < CHUNK_COUNT; c += 1u)
     {
         if (c >= chunk)
