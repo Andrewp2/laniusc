@@ -19,7 +19,7 @@ mod finish;
 mod record;
 mod support;
 
-pub use record::RecordElfInputs;
+pub use record::{RecordElfInputs, RecordedX86FeatureMeasurement};
 use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
 
 /// Target-level error reported by the GPU x86_64 emitter.

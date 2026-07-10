@@ -25,6 +25,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &passes.counted_scan_apply,
         &passes.visible_scatter_hir_decl_records,
         &passes.visible_seed_hir_decl_order,
+        &passes.visible_sort_hir_decl_keys_small,
         &passes.visible_sort_hir_decl_keys,
         &passes.visible_sort_hir_decl_keys_scatter,
         &passes.visible_build_hir_decl_scope_leaves,
@@ -76,6 +77,7 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     counted_scan_apply_pass: &PassData,
     scatter_hir_decl_records_pass: &PassData,
     seed_hir_decl_order_pass: &PassData,
+    sort_hir_decl_keys_small_pass: &PassData,
     sort_hir_decl_keys_pass: &PassData,
     sort_hir_decl_keys_scatter_pass: &PassData,
     build_hir_decl_scope_leaves_pass: &PassData,
@@ -231,6 +233,43 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
             ),
         ],
     )?;
+
+    let sort_hir_decl_keys_small = if hir_decl_capacity <= VISIBLE_DECL_SMALL_SORT_CAPACITY {
+        Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_visible_03d2_sort_hir_decl_keys_small"),
+            sort_hir_decl_keys_small_pass,
+            0,
+            &[
+                (
+                    "gParams",
+                    hir_decl_key_radix_dispatch_params.as_entire_binding(),
+                ),
+                (
+                    "hir_visible_decl_count_out",
+                    hir_visible_decl_count_out.as_entire_binding(),
+                ),
+                (
+                    "hir_visible_decl_owner_fn",
+                    hir_visible_decl_owner_fn.as_entire_binding(),
+                ),
+                (
+                    "hir_visible_decl_name_id",
+                    hir_visible_decl_name_id.as_entire_binding(),
+                ),
+                (
+                    "hir_visible_decl_token",
+                    hir_visible_decl_token.as_entire_binding(),
+                ),
+                (
+                    "hir_visible_decl_key_order",
+                    hir_visible_decl_key_order.as_entire_binding(),
+                ),
+            ],
+        )?)
+    } else {
+        None
+    };
 
     let mut hir_decl_key_radix_step_params = Vec::with_capacity(hir_decl_key_radix_steps as usize);
     let mut sort_hir_decl_key_histogram = Vec::with_capacity(hir_decl_key_radix_steps as usize);
@@ -485,6 +524,7 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         _hir_semantic_dispatch_params: hir_semantic_dispatch_params,
         _hir_decl_key_radix_dispatch_params: hir_decl_key_radix_dispatch_params,
         _hir_decl_key_radix_steps: hir_decl_key_radix_step_params,
+        sort_hir_decl_keys_small,
         sort_hir_decl_key_histogram,
         sort_hir_decl_key_bucket_prefix,
         sort_hir_decl_key_bucket_bases,

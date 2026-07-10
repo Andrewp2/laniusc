@@ -29,6 +29,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         Ok(GpuLiveCapacityEstimateResult {
             token_count: parse.token_count,
             parser_tree_capacity: parse.parser_tree_capacity,
+            parser_feature_flags: parse.parser_feature_flags,
             parser_emit_len: parse.ll1.emit_len,
             semantic_hir_count: parse.semantic_hir_count,
         })
@@ -46,9 +47,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 &src,
                 |_, _, bufs, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
+                    let parser_capacity = self
                         .parser
-                        .read_resident_partial_parse_tree_capacity(
+                        .measure_resident_partial_parse_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -58,9 +59,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
                         })?;
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
                     let (parser_check, parse_result) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -70,6 +72,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_capacity.parser_feature_flags,
                             &mut timer,
                             |parse_bufs, encoder, timer| {
                                 self.parser
@@ -92,12 +95,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                         semantic_count,
                         token_count,
                         parser_tree_capacity,
+                        parser_capacity.parser_feature_flags,
                     ))
                 },
                 |_,
                  _,
                  _bufs: &ResidentLexerParserInputs,
-                 (parser_check, semantic_count, token_count, parser_tree_capacity)| {
+                 (
+                    parser_check,
+                    semantic_count,
+                    token_count,
+                    parser_tree_capacity,
+                    parser_feature_flags,
+                )| {
                     let ll1 = self
                         .parser
                         .finish_recorded_resident_ll1_hir_check_result(&parser_check)
@@ -114,11 +124,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                         ll1,
                         token_count,
                         parser_tree_capacity,
+                        parser_feature_flags,
                         semantic_hir_count,
                     })
                 },
             )
             .await
-            .map_err(|err| source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err))?
+            .map_err(|err| {
+                source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err)
+            })?
     }
 }

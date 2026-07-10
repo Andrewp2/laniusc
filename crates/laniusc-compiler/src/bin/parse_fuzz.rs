@@ -83,7 +83,7 @@ struct TestCpuBrackets {
     valid: bool,
     final_depth: i32,
     min_depth: i32,
-    _match_for_index: Vec<u32>,
+    match_for_index: Vec<u32>,
 }
 
 /// Test-only CPU oracle for validating the parallel GPU bracket matcher.
@@ -135,7 +135,7 @@ fn test_cpu_brackets(sc_stream: &[u32]) -> TestCpuBrackets {
         valid,
         final_depth: depth,
         min_depth,
-        _match_for_index: match_for_index,
+        match_for_index,
     }
 }
 
@@ -594,6 +594,26 @@ async fn run_source(
             test_cpu.valid,
             test_cpu.final_depth,
             test_cpu.min_depth
+        );
+    }
+    if test_cpu.match_for_index != res.brackets.match_for_index {
+        let first = test_cpu
+            .match_for_index
+            .iter()
+            .zip(&res.brackets.match_for_index)
+            .position(|(oracle, gpu)| oracle != gpu)
+            .unwrap_or(
+                test_cpu
+                    .match_for_index
+                    .len()
+                    .min(res.brackets.match_for_index.len()),
+            );
+        anyhow::bail!(
+            "test CPU oracle/GPU bracket map mismatch for {} at index {} (gpu={:?}, oracle={:?})",
+            label,
+            first,
+            res.brackets.match_for_index.get(first),
+            test_cpu.match_for_index.get(first)
         );
     }
     assert_involutive(&res.brackets.match_for_index)?;

@@ -2,6 +2,8 @@
 pub mod apply_prefix;
 /// Builds per-layer bracket histogram counts.
 pub mod histogram_layers;
+/// Stable radix ordering for large bracket streams.
+pub mod pair_radix;
 /// Pairs pseudo-edge bracket records after layer scattering.
 pub mod pse_pair;
 /// Scans bracket block totals into global prefix offsets.

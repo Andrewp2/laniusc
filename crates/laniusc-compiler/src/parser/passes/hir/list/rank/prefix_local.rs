@@ -74,13 +74,13 @@ impl HirListRankPrefixLocalPass {
             [tgsx, tgsy, 1],
         )?;
 
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("hir_list_rank_prefix_00_local"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        crate::gpu::passes_core::record_or_defer_compute_direct(
+            encoder,
+            &self.data,
+            &bind_group,
+            "hir_list_rank_prefix_00_local",
+            (gx, gy, gz),
+        );
         Ok(())
     }
 }

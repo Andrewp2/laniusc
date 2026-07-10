@@ -14,19 +14,20 @@ fibonacci_loop	fibonacci_loop.stdout	0	-	-	repeated fibonacci values	x86_64,wasm
 grid_distance_checksum	grid_distance_checksum.stdout	0	-	-	integer grid distance checksum exit status	x86_64,wasm	checked by sample_programs target tests
 host_runtime_files	host_runtime_files.stdout	0	-	-	filesystem host API smoke	x86_64,wasm	checked by sample_programs target tests
 host_runtime_fs_raw	host_runtime_fs_raw.stdout	0	-	-	low-level filesystem pointer-length host API smoke	wasm	checked by sample_programs target tests
+host_runtime_input	host_runtime_input.stdout	0	-	-	stdin process argument and environment value byte reads	x86_64,wasm	checked by sample_programs target tests
 host_runtime_smoke	host_runtime_smoke.stdout	0	-	-	host runtime allocation process env time random and stdout	x86_64,wasm	checked by sample_programs target tests
-for_array_control	for_array_control.stdout	0	-	-	for-loop array control	x86_64	checked by sample_programs target tests
+for_array_control	for_array_control.stdout	0	-	-	for-loop array control	x86_64,wasm	checked by sample_programs target tests
 function_calls	function_calls.stdout	0	-	-	direct function calls	x86_64,wasm	checked by sample_programs target tests
 loop_control	loop_control.stdout	0	-	-	break and continue control flow	x86_64,wasm	checked by sample_programs target tests
 nested_blocks_shadowing	nested_blocks_shadowing.stdout	0	-	-	nested scopes and shadowing	x86_64,wasm	checked by sample_programs target tests
 numeric_range_sum	numeric_range_sum.stdout	0	-	-	numeric range accumulation	x86_64,wasm	checked by sample_programs target tests
 option_result_helpers	option_result_helpers.stdout	0	-	-	core option and result helpers	-	documentation-smoke only; not backend or conformance evidence
 process_exit_status	process_exit_status.stdout	7	-	-	nonzero process exit status	x86_64,wasm	checked by sample_programs target tests
-range_sum	range_sum.stdout	0	-	-	range iteration helper surface	-	documentation-smoke only; not backend or conformance evidence
+range_sum	range_sum.stdout	0	-	-	range iteration helper surface	x86_64,wasm	checked by sample_programs target tests
 raytracer_ppm	raytracer_ppm.stdout	0	render_settings.txt=raytracer_ppm.render_settings.txt	lanius_ray.ppm=raytracer_ppm.expected.ppm	PPM raytracer file output	x86_64,wasm	checked by sample_programs target tests
 slice_helpers	slice_helpers.stdout	0	-	-	slice helper surface	-	documentation-smoke only; not backend or conformance evidence
 stdio_print_i32	stdio_print_i32.stdout	0	-	-	stdlib stdout integer wrapper	x86_64,wasm	checked by sample_programs target tests
-struct_fields	struct_fields.stdout	0	-	-	struct fields and access	x86_64	checked by sample_programs target tests
+struct_fields	struct_fields.stdout	0	-	-	struct fields and access	x86_64,wasm	checked by sample_programs target tests
 top_level_script	top_level_script.stdout	0	-	-	top-level script entry behavior	x86_64,wasm	checked by sample_programs target tests
 unary_abs	unary_abs.stdout	0	-	-	unary expressions	x86_64,wasm	checked by sample_programs target tests
 while_sum	while_sum.stdout	0	-	-	repeated accumulation	x86_64,wasm	checked by sample_programs target tests

@@ -12,6 +12,8 @@ pub(crate) enum Command {
     Fmt(Vec<String>),
     /// Forward remaining args to `laniusc doctor`.
     Doctor(Vec<String>),
+    /// Forward remaining args to `laniusc daemon`.
+    Daemon(Vec<String>),
     /// Forward remaining args to `laniusc package`.
     Package(Vec<String>),
     /// Forward remaining args to `laniusc lsp`.

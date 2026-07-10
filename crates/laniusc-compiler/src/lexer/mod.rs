@@ -10,6 +10,8 @@ pub mod buffers;
 pub mod debug;
 /// GPU lexer driver and global lexer entry points.
 pub mod driver;
+/// GPU-produced conservative parser-family feature flags.
+pub mod features;
 /// GPU shader pass declarations for lexing.
 pub mod passes;
 /// Lexer DFA and token tables.

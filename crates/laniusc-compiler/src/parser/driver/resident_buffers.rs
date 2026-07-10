@@ -1,5 +1,8 @@
 use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
-use crate::parser::{buffers::ParserBuffers, tables::PrecomputedParseTables};
+use crate::{
+    lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES,
+    parser::{buffers::ParserBuffers, tables::PrecomputedParseTables},
+};
 
 impl GpuParser {
     /// Returns cached resident parser buffers sized for the current token/table pair.
@@ -15,6 +18,7 @@ impl GpuParser {
             tables,
             None,
             false,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
         )
     }
 
@@ -31,6 +35,7 @@ impl GpuParser {
             tables,
             None,
             true,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
         )
     }
 
@@ -48,6 +53,27 @@ impl GpuParser {
             tables,
             tree_capacity_override,
             false,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+        )
+    }
+
+    /// Returns resident buffers whose optional HIR families match a
+    /// conservative GPU-lexer feature summary.
+    pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity_and_features<'a>(
+        &self,
+        slot: &'a mut Option<ResidentParserBufferCache>,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
+    ) -> &'a ParserBuffers {
+        self.resident_buffers_for_with_tree_capacity_and_debug(
+            slot,
+            token_capacity,
+            tables,
+            tree_capacity_override,
+            false,
+            parser_feature_flags,
         )
     }
 
@@ -58,20 +84,24 @@ impl GpuParser {
         tables: &PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
+        parser_feature_flags: u32,
     ) -> &'a ParserBuffers {
         let fingerprint = table_fingerprint(tables);
         let wanted_capacity = token_capacity.max(1);
+        let wanted_tree_capacity = tree_capacity_override
+            .map(|capacity| capacity.max(1))
+            .unwrap_or_else(|| {
+                crate::parser::buffers::resident_partial_parse_tree_capacity_for_tables(
+                    wanted_capacity,
+                    tables,
+                )
+            });
         let needs_allocate = slot.as_ref().is_none_or(|cached| {
             cached.table_fingerprint != fingerprint
                 || cached.token_capacity != wanted_capacity
                 || cached.retain_debug_hir_buffers != retain_debug_hir_buffers
-                || match (cached.tree_capacity_override, tree_capacity_override) {
-                    (None, None) => false,
-                    (Some(_), None) | (None, Some(_)) => true,
-                    (Some(_), Some(wanted_tree_capacity)) => {
-                        cached.buffers.tree_capacity != wanted_tree_capacity.max(1)
-                    }
-                }
+                || cached.parser_feature_flags != parser_feature_flags
+                || cached.buffers.tree_capacity < wanted_tree_capacity
         });
 
         if needs_allocate {
@@ -93,10 +123,10 @@ impl GpuParser {
             let action_table_bytes = tables.to_action_header_grid_bytes();
             *slot = Some(ResidentParserBufferCache {
                 token_capacity: allocated_capacity,
-                tree_capacity_override,
                 table_fingerprint: fingerprint,
                 retain_debug_hir_buffers,
-                buffers: ParserBuffers::new_resident_capacity_with_tree_capacity_and_debug(
+                parser_feature_flags,
+                buffers: ParserBuffers::new_resident_capacity_with_tree_capacity_debug_and_features(
                     &self.device,
                     wanted_capacity,
                     tables.n_kinds,
@@ -104,6 +134,7 @@ impl GpuParser {
                     tables,
                     tree_capacity_override,
                     retain_debug_hir_buffers,
+                    parser_feature_flags,
                 ),
             });
             self.bg_cache

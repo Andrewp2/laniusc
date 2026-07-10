@@ -180,8 +180,6 @@ pub(in crate::type_checker) const GENERIC_CLAIM_CAPACITY_MULTIPLIER: u32 = 32;
 
 /// Bucket count for byte-wise radix sorting plus an end-of-name bucket.
 pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
-/// Maximum number of source bytes inspected for one compacted name key.
-pub(in crate::type_checker) const NAME_RADIX_MAX_BYTES: u32 = 64;
 /// Number of builtin symbols materialized before user names are resolved.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 53;
 /// Concatenated builtin symbol spelling table.
@@ -261,14 +259,26 @@ pub(in crate::type_checker) const MODULE_KEY_SEGMENT_ROW_WIDTH: usize =
     MODULE_KEY_SORT_SEGMENTS as usize;
 /// Full byte-step count for module-key sorting.
 pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = MODULE_KEY_SORT_SEGMENTS * 4;
+/// Largest source-file table sorted cooperatively by one 256-lane workgroup.
+pub(in crate::type_checker) const MODULE_KEY_SMALL_SORT_CAPACITY: u32 = 256;
 /// Byte-step count for declaration-key sorting.
 pub(in crate::type_checker) const DECL_KEY_RADIX_STEPS: u32 = 12;
+/// Largest compact module relation sorted by one cooperative 256-lane workgroup.
+pub(in crate::type_checker) const MODULE_RELATION_SMALL_SORT_CAPACITY: u32 = 2048;
 /// Byte-step count for import-edge sorting.
 pub(in crate::type_checker) const IMPORT_EDGE_KEY_RADIX_STEPS: u32 = 8;
 /// Byte-step count for visible-import sorting.
 pub(in crate::type_checker) const IMPORT_VISIBLE_KEY_RADIX_STEPS: u32 = 8;
 /// Byte-step count for method-key sorting.
 pub(in crate::type_checker) const METHOD_KEY_RADIX_STEPS: u32 = 24;
+/// Largest token-indexed method table sorted cooperatively by one 256-lane workgroup.
+pub(in crate::type_checker) const METHOD_KEY_SMALL_SORT_CAPACITY: u32 = 2048;
+/// Largest compact generic-parameter table sorted cooperatively in one dispatch.
+pub(in crate::type_checker) const GENERIC_PARAM_SMALL_SORT_CAPACITY: u32 = 2048;
+/// Largest compact visible-declaration table sorted by one cooperative workgroup.
+pub(in crate::type_checker) const VISIBLE_DECL_SMALL_SORT_CAPACITY: u32 = 2048;
+/// Largest sparse predicate table sorted by one 32 KiB cooperative workgroup.
+pub(in crate::type_checker) const PREDICATE_KEY_SMALL_SORT_CAPACITY: u32 = 8192;
 /// Predicate key mode for grouping predicates by owner.
 pub(in crate::type_checker) const PREDICATE_KEY_MODE_OWNER: u32 = 0;
 /// Predicate key mode for impl lookup.

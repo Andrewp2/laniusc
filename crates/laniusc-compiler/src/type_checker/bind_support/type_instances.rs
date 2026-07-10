@@ -145,6 +145,48 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         ],
     )?;
 
+    let sort_generic_params_small = if param_capacity <= GENERIC_PARAM_SMALL_SORT_CAPACITY {
+        Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_type_instances_00b2_sort_generic_params_small"),
+            &passes.type_instances_sort_generic_params_small,
+            0,
+            &[
+                ("gParams", radix_params.as_entire_binding()),
+                (
+                    "generic_param_count_out",
+                    resources["generic_param_count_out"].clone(),
+                ),
+                (
+                    "generic_param_owner_node",
+                    resources["generic_param_owner_node"].clone(),
+                ),
+                (
+                    "generic_param_name_id",
+                    resources["generic_param_name_id"].clone(),
+                ),
+                (
+                    "generic_param_node",
+                    resources["generic_param_node"].clone(),
+                ),
+                (
+                    "generic_param_kind",
+                    resources["generic_param_kind"].clone(),
+                ),
+                (
+                    "generic_param_key_order",
+                    resources["generic_param_key_order"].clone(),
+                ),
+                (
+                    "generic_param_slot_order",
+                    resources["generic_param_slot_order"].clone(),
+                ),
+            ],
+        )?)
+    } else {
+        None
+    };
+
     let mut sort_generic_param_key_histogram = Vec::with_capacity(radix_steps as usize);
     let mut sort_generic_param_key_bucket_prefix = Vec::with_capacity(radix_steps as usize);
     let mut sort_generic_param_key_bucket_bases = Vec::with_capacity(radix_steps as usize);
@@ -796,6 +838,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         )?,
         generic_param_key_radix_dispatch_args: (*generic_param_key_radix_dispatch_args).clone(),
         generic_param_key_radix_dispatch,
+        sort_generic_params_small,
         sort_generic_param_key_histogram,
         sort_generic_param_key_bucket_prefix,
         sort_generic_param_key_bucket_bases,

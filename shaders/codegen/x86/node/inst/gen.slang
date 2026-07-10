@@ -44,6 +44,8 @@ StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> hir_expr_string_len;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
@@ -1086,6 +1088,20 @@ bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
     if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
         return false;
 
+    uint name_token = expr_value_token(name_node);
+    if (!valid_token(name_token))
+        return false;
+
+    // Lexical declarations shadow module-level path candidates. Module path
+    // consumers may also publish their resolved token into visible_decl, so
+    // this ordering covers both cases without inspecting source spellings.
+    uint lexical_decl_token = visible_decl[name_token];
+    if (valid_token(lexical_decl_token))
+    {
+        decl_token = lexical_decl_token;
+        return true;
+    }
+
     uint path_i = path_id_by_owner_hir[name_node];
     if (path_i < active_path_count() &&
         resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK)
@@ -1101,12 +1117,7 @@ bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
             }
         }
     }
-
-    uint name_token = expr_value_token(name_node);
-    if (!valid_token(name_token))
-        return false;
-    decl_token = visible_decl[name_token];
-    return valid_token(decl_token);
+    return false;
 }
 
 bool decl_token_for_name_expr(uint node, out uint decl_token)
@@ -1234,7 +1245,14 @@ bool aggregate_return_width(uint return_node, out uint width)
         return true;
     if (array_literal_width(expr_node, width))
         return true;
-    return name_expr_aggregate_width(expr_node, width);
+    uint source_kind = 0u;
+    uint source_payload = INVALID;
+    return aggregate_source_for_expr(
+        expr_node,
+        x86_node_func[return_node],
+        source_kind,
+        source_payload,
+        width);
 }
 
 bool validate_array_literal_to_ret_ptr(uint expr_node, uint width)
@@ -1675,6 +1693,13 @@ uint name_failure_detail(uint node)
     uint decl_token = INVALID;
     if (!decl_token_for_name_expr(query, decl_token))
         return X86_VINST_ERROR_NAME_DECL;
+    if (decl_layout_base(decl_token) == INVALID)
+        return X86_VINST_ERROR_NAME_VALUE;
+    uint decl_node = decl_layout_node(decl_token);
+    if (!valid_node(decl_node))
+        return X86_VINST_ERROR_NAME_VALUE;
+    if (x86_node_func[decl_node] != x86_node_func[node])
+        return X86_VINST_ERROR_NAME_VALUE;
     return X86_VINST_ERROR_NAME_VALUE;
 }
 
@@ -1862,6 +1887,18 @@ bool semantic_struct_aggregate_width(uint semantic_ty, out uint width)
     return width > 1u;
 }
 
+bool member_aggregate_width(uint member_token, out uint width)
+{
+    width = 0u;
+    if (!valid_token(member_token))
+        return false;
+    uint field_node = member_result_field_node[member_token];
+    if (!valid_node(field_node))
+        return false;
+    width = x86_struct_field_width_by_node[field_node];
+    return width > 1u;
+}
+
 bool aggregate_source_for_member_expr(uint member_node, uint owner_fn, out uint source_kind, out uint payload, out uint width)
 {
     source_kind = 0u;
@@ -1886,7 +1923,7 @@ bool aggregate_source_for_member_expr(uint member_node, uint owner_fn, out uint 
     {
         field_width = receiver_width - ordinal;
     }
-    else if (!semantic_struct_aggregate_width(visible_type[member_token], field_width))
+    else if (!member_aggregate_width(member_token, field_width))
     {
         field_width = 1u;
     }

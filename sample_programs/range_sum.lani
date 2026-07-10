@@ -8,6 +8,10 @@ fn main() {
     for index in range {
         total += index;
     }
-    print(total + core::range::start_i32(range) + core::range::end_i32(range) + range.start() + range.end());
+    let free_start: i32 = core::range::start_i32(range);
+    let free_end: i32 = core::range::end_i32(range);
+    let method_start: i32 = range.start();
+    let method_end: i32 = range.end();
+    print(total + free_start + free_end + method_start + method_end);
     return 0;
 }

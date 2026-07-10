@@ -53,6 +53,7 @@ impl HirTypeArgRankStepPass {
         }
 
         if steps % 2 == 1 {
+            crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
             for (src, dst) in [
                 (&buffers.hir_type_arg_owner_b, &buffers.hir_type_arg_owner_a),
@@ -139,22 +140,28 @@ impl HirTypeArgRankStepPass {
             &resources,
         )?;
 
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("hir_type_arg_rank_step"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
         if let Some(dispatch_args) = dispatch_args {
-            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+            crate::gpu::passes_core::record_or_defer_compute_indirect(
+                encoder,
+                &self.data,
+                &bind_group,
+                "hir_type_arg_rank_step",
+                dispatch_args,
+            );
         } else {
             let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let (gx, gy, gz) = plan_workgroups(
+            let groups = plan_workgroups(
                 DispatchDim::D1,
                 InputElements::Elements1D(buffers.tree_capacity),
                 [tgsx, tgsy, 1],
             )?;
-            pass.dispatch_workgroups(gx, gy, gz);
+            crate::gpu::passes_core::record_or_defer_compute_direct(
+                encoder,
+                &self.data,
+                &bind_group,
+                "hir_type_arg_rank_step",
+                groups,
+            );
         }
         Ok(())
     }

@@ -30,6 +30,15 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (i >= n)
         return;
 
+    // Large streams are stably ordered by the following radix passes. Seed
+    // their first order buffer in source order; the small cooperative path
+    // below continues to use the per-layer arrays directly.
+    if (n > 2048u)
+    {
+        pushes_by_layer[i] = i;
+        return;
+    }
+
     uint l = layer[i];
     if (l >= gParams.n_layers)
         return;

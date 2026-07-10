@@ -50,6 +50,7 @@ static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -236,6 +237,23 @@ uint call_param_type_value(uint fn_token, uint ordinal)
     return ty == 0u && method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : ty;
 }
 
+uint wasm_param_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_signature_param_count(uint fn_token)
+{
+    if (fn_token == INVALID)
+        return 0u;
+
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_param_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
 uint function_signature_result_type(uint fn_token)
 {
     uint ret = fn_token == INVALID ? 0u : call_return_type[fn_token];
@@ -248,20 +266,29 @@ uint function_signature_result_type(uint fn_token)
 
 uint function_signature_param_type(uint fn_token, uint ordinal)
 {
-    uint ty = call_param_type_value(fn_token, ordinal);
-    return ty == TY_FLOAT ? WASM_VALTYPE_F32 : WASM_VALTYPE_I32;
+    uint count = fn_token == INVALID ? 0u : call_param_count[fn_token];
+    uint flat = 0u;
+    for (uint param_i = 0u; param_i < count; param_i += 1u)
+    {
+        uint ty = call_param_type_value(fn_token, param_i);
+        uint width = wasm_param_abi_width(ty);
+        if (ordinal >= flat && ordinal < flat + width)
+            return ty == TY_FLOAT ? WASM_VALTYPE_F32 : WASM_VALTYPE_I32;
+        flat += width;
+    }
+    return WASM_VALTYPE_I32;
 }
 
 uint function_signature_type_entry_len(uint fn_token)
 {
-    uint param_count = fn_token == INVALID ? 0u : call_param_count[fn_token];
+    uint param_count = function_signature_param_count(fn_token);
     uint result_count = function_signature_result_type(fn_token) == 0u ? 0u : 1u;
     return 1u + 5u + param_count + 1u + result_count;
 }
 
 uint function_signature_type_entry_byte(uint fn_token, uint byte_i)
 {
-    uint param_count = fn_token == INVALID ? 0u : call_param_count[fn_token];
+    uint param_count = function_signature_param_count(fn_token);
     if (byte_i == 0u)
         return 0x60u;
     if (byte_i >= 1u && byte_i < 6u)

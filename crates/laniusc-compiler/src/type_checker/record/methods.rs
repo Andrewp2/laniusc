@@ -8,39 +8,38 @@ const METHOD_CALL_RESULT_RECEIVER_PASSES: usize = 8;
 pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    token_capacity: u32,
     token_active_dispatch_args: &wgpu::Buffer,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    method_token_dispatch_args: &wgpu::Buffer,
+    method_hir_dispatch_args: &wgpu::Buffer,
     groups: &MethodBindGroups,
 ) -> Result<()> {
-    let lookup_work = token_capacity.max(1);
-    record_compute(
+    record_compute_indirect(
         encoder,
         &passes.methods_clear,
         &groups.clear,
         "type_check.methods.clear",
-        lookup_work,
+        token_active_dispatch_args,
     )?;
     record_compute_indirect(
         encoder,
         &passes.methods_collect,
         &groups.collect,
         "type_check.methods.collect",
-        hir_active_dispatch_args,
+        method_hir_dispatch_args,
     )?;
     record_compute_indirect(
         encoder,
         &passes.methods_attach_metadata,
         &groups.attach_metadata,
         "type_check.methods.attach_metadata",
-        token_active_dispatch_args,
+        method_token_dispatch_args,
     )?;
     record_compute_indirect(
         encoder,
         &passes.methods_bind_self_receivers,
         &groups.bind_self_receivers,
         "type_check.methods.bind_self_receivers",
-        hir_active_dispatch_args,
+        method_hir_dispatch_args,
     )
 }
 
@@ -48,7 +47,9 @@ pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
 pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    token_active_dispatch_args: &wgpu::Buffer,
+    method_token_dispatch_args: &wgpu::Buffer,
+    method_radix_prefix_dispatch_args: &wgpu::Buffer,
+    method_radix_bases_dispatch_args: &wgpu::Buffer,
     groups: &MethodBindGroups,
 ) -> Result<()> {
     record_compute_indirect(
@@ -56,44 +57,54 @@ pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
         &passes.methods_seed_key_order,
         &groups.keys.seed_key_order,
         "type_check.methods.seed_key_order",
-        token_active_dispatch_args,
+        method_token_dispatch_args,
     )?;
-    for i in 0..groups.keys.sort_key_scatter.len() {
+    if let Some(sort_key_small) = &groups.keys.sort_key_small {
         record_compute_indirect(
             encoder,
-            &passes.methods_sort_keys,
-            &groups.keys.sort_key_histogram[i],
-            "type_check.methods.sort_keys_histogram",
-            token_active_dispatch_args,
+            &passes.methods_sort_keys_small,
+            sort_key_small,
+            "type_check.methods.sort_keys_small",
+            method_radix_bases_dispatch_args,
         )?;
-        record_compute(
-            encoder,
-            &passes.names_radix_bucket_prefix,
-            &groups.keys.sort_key_bucket_prefix[i],
-            "type_check.methods.sort_keys_bucket_prefix",
-            NAME_RADIX_BUCKETS.saturating_mul(256),
-        )?;
-        record_compute(
-            encoder,
-            &passes.names_radix_bucket_bases,
-            &groups.keys.sort_key_bucket_bases[i],
-            "type_check.methods.sort_keys_bucket_bases",
-            256,
-        )?;
-        record_compute_indirect(
-            encoder,
-            &passes.methods_sort_keys_scatter,
-            &groups.keys.sort_key_scatter[i],
-            "type_check.methods.sort_keys_scatter",
-            token_active_dispatch_args,
-        )?;
+    } else {
+        for i in 0..groups.keys.sort_key_scatter.len() {
+            record_compute_indirect(
+                encoder,
+                &passes.methods_sort_keys,
+                &groups.keys.sort_key_histogram[i],
+                "type_check.methods.sort_keys_histogram",
+                method_token_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &passes.names_radix_bucket_prefix,
+                &groups.keys.sort_key_bucket_prefix[i],
+                "type_check.methods.sort_keys_bucket_prefix",
+                method_radix_prefix_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &passes.names_radix_bucket_bases,
+                &groups.keys.sort_key_bucket_bases[i],
+                "type_check.methods.sort_keys_bucket_bases",
+                method_radix_bases_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &passes.methods_sort_keys_scatter,
+                &groups.keys.sort_key_scatter[i],
+                "type_check.methods.sort_keys_scatter",
+                method_token_dispatch_args,
+            )?;
+        }
     }
     record_compute_indirect(
         encoder,
         &passes.methods_validate_keys,
         &groups.keys.validate_keys,
         "type_check.methods.validate_keys",
-        token_active_dispatch_args,
+        method_token_dispatch_args,
     )?;
     Ok(())
 }
@@ -102,9 +113,9 @@ pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
 pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    token_active_dispatch_args: &wgpu::Buffer,
-    token_hir_active_dispatch_args: &wgpu::Buffer,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    method_token_dispatch_args: &wgpu::Buffer,
+    method_token_hir_dispatch_args: &wgpu::Buffer,
+    method_hir_dispatch_args: &wgpu::Buffer,
     groups: &MethodBindGroups,
 ) -> Result<()> {
     record_compute_indirect(
@@ -112,7 +123,7 @@ pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
         &passes.methods_mark_call_keys,
         &groups.mark_call_keys,
         "type_check.methods.mark_call_keys",
-        token_hir_active_dispatch_args,
+        method_token_hir_dispatch_args,
     )?;
     for _ in 0..METHOD_CALL_RESULT_RECEIVER_PASSES {
         record_compute_indirect(
@@ -120,14 +131,14 @@ pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
             &passes.methods_mark_call_return_keys,
             &groups.mark_call_return_keys,
             "type_check.methods.mark_call_return_keys",
-            hir_active_dispatch_args,
+            method_hir_dispatch_args,
         )?;
         record_compute_indirect(
             encoder,
             &passes.methods_resolve_table,
             &groups.resolve_table,
             "type_check.methods.resolve_table",
-            token_active_dispatch_args,
+            method_token_dispatch_args,
         )?;
     }
     Ok(())

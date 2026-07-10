@@ -22,7 +22,7 @@ pub(super) fn print_timer_trace(
         let start_ms = total;
         total += dt_ms;
         if print_enabled && dt_ms >= min_ms {
-            println!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+            eprintln!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
         }
         let lane = if label.starts_with("x86.") {
             "gpu.x86"
@@ -66,7 +66,7 @@ impl HostCompileTimer {
         let dt_ms = now.duration_since(self.last).as_secs_f64() * 1000.0;
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
         if self.print_enabled {
-            println!("[gpu_compile_host_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+            eprintln!("[gpu_compile_host_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
         }
         if self.trace_enabled {
             crate::gpu::trace::record_host_span("host.lexer", label, self.last, now);

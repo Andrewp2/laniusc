@@ -62,6 +62,8 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
     let scatter = include_str!("../shaders/codegen/wasm/hir/body_scatter.slang");
     let scatter_expr_control =
         include_str!("../shaders/codegen/wasm/hir/body_scatter_expr_control.slang");
+    let scatter_return_expr =
+        include_str!("../shaders/codegen/wasm/hir/body_scatter_return_expr.slang");
     let scatter_let_direct =
         include_str!("../shaders/codegen/wasm/hir/body_scatter_let_direct.slang");
     let scatter_direct_nested_call =
@@ -70,6 +72,8 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
         include_str!("../shaders/codegen/wasm/hir/body_scatter_agg_direct_call.slang");
     let scatter_agg_call_args =
         include_str!("../shaders/codegen/wasm/hir/body_scatter_agg_call_args.slang");
+    let scatter_array_lean =
+        include_str!("../shaders/codegen/wasm/hir/body_scatter_array_lean.slang");
     let scatter_agg_copy = include_str!("../shaders/codegen/wasm/hir/body_scatter_agg_copy.slang");
     let scatter_return_agg_direct_call =
         include_str!("../shaders/codegen/wasm/hir/body_scatter_return_agg_direct_call.slang");
@@ -207,14 +211,31 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
         "WASM body offsets should scan block totals with the shared block-scan primitive"
     );
     assert!(
+        validate_common.contains("BODY_FEATURE_RETURN_EXPR")
+            && validate_common.contains("BODY_FEATURE_RETURN_SCALAR | BODY_FEATURE_RETURN_EXPR")
+            && validate_all.contains("BODY_FRAGMENT_RETURN_EXPR_I32")
+            && scatter_return_expr.contains("BODY_FRAGMENT_RETURN_EXPR_I32")
+            && scatter_return_expr.contains("return_expr_fragment_byte(")
+            && scatter_return_expr.contains("body_words[offset + byte_i]")
+            && scatter_return_expr.contains("global_exclusive_prefix(")
+            && backend.contains("hir_body_scatter_return_expr_pass")
+            && backend.contains("features.has(WASM_BODY_FEATURE_RETURN_EXPR)")
+            && backend.contains("record.phase2.dispatch.hir_body_scatter_return_expr.start")
+            && !scatter_return_expr.contains("BODY_FRAGMENT_LET_EXPR_I32")
+            && !scatter_return_expr.contains("BODY_FRAGMENT_PRINT_EXPR_I64"),
+        "WASM scalar return-expression bytes should use a dedicated byte-lane scatter pass instead of the broad expression-control scatter"
+    );
+    assert!(
         scatter.contains("global_exclusive_prefix(")
             && scatter_let_direct.contains("global_exclusive_prefix(")
             && scatter.contains("body_words[offset + byte_i] = fragment_byte(meta, len, byte_i);")
             && scatter_let_direct.contains("body_fragment_aux[token_i]")
-            && scatter_let_direct.contains("for (uint i = 0u; i < arg_count; i += 1u)")
             && scatter_let_direct.contains("let_direct_call_i32_fragment_byte(")
             && scatter_let_direct.contains("return_direct_call_i32_fragment_byte(")
             && scatter_let_direct.contains("print_direct_call_i64_fragment_byte(")
+            && scatter_let_direct
+                .contains("uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;")
+            && scatter_let_direct.contains("if (byte_i < arg_len)")
             && scatter_let_direct.contains("BODY_FRAGMENT_RETURN_DIRECT_CALL_I32")
             && scatter_let_direct.contains("BODY_FRAGMENT_LET_DIRECT_CALL_I32")
             && scatter_let_direct.contains("BODY_FRAGMENT_PRINT_DIRECT_CALL_I64")
@@ -223,8 +244,12 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
             && scatter_let_direct.contains("assign_compound_direct_call_i32_fragment_byte(")
             && scatter_let_direct.contains("body_words[offset + byte_i]")
             && backend.contains("features.has(WASM_BODY_FEATURE_DIRECT)")
+            && backend.contains("features.has(WASM_BODY_FEATURE_STMT_PRINT_DIRECT)")
+            && backend.contains("let has_direct_arg_scatter =")
+            && backend.contains("if has_direct_arg_scatter || has_agg_or_binary_arg_scatter")
             && !scatter.contains("for (uint byte_i = 0u; byte_i < len; byte_i += 1u)")
             && !scatter_let_direct.contains("for (uint byte_i = 0u; byte_i < len; byte_i += 1u)")
+            && !scatter_let_direct.contains("for (uint i = 0u; i < arg_count; i += 1u)")
             && !scatter.contains("accept_body_status(")
             && !scatter.contains("reject_capacity("),
         "WASM body scatter should place fragment bytes with per-byte-slot lanes from fragment records"
@@ -232,10 +257,11 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
     assert!(
         !validate_return_call.contains("return_direct_call_nested_arg")
             && !validate_return_call.contains("aux.w = ((nested_arg_count + 1u) & 0xffu)")
-            && validate_return_call.contains("return_binary_direct_call_fragment_and_len(")
-            && validate_return_call.contains("BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32")
+            && !validate_return_call.contains("return_binary_direct_call_fragment_and_len(")
+            && validate_return_call.contains("BODY_FRAGMENT_RETURN_DIRECT_CALL_I32")
+            && validate_return_call.contains("direct_call_header_aux(")
             && !scatter_let_direct.contains("MAX_EXPR_EMIT_STACK"),
-        "WASM scalar return-call validation should not carry nested-call planning or capped argument ordinals"
+        "WASM scalar return-call validation should publish compact direct-call headers and leave argument sizing to scanned records"
     );
     assert!(
         backend.contains("hir_body_scatter_direct_nested_call_pass")
@@ -285,18 +311,15 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
                 .contains("record.body_plan.dispatch.hir_body_agg_call_arg_byte_scan_local.start")
             && backend.contains("record.body_plan.dispatch.hir_body_agg_call_finalize.start")
             && !backend.contains("record.phase2.dispatch.hir_body_agg_call_arg_counts.start")
-            && !backend
-                .contains("record.phase2.dispatch.hir_body_agg_call_arg_records.start")
+            && !backend.contains("record.phase2.dispatch.hir_body_agg_call_arg_records.start")
             && backend.contains("record.phase2.dispatch.hir_body_scatter_agg_call_args.start")
             && backend.contains("record.phase2.dispatch.hir_body_scatter_agg_direct_call.start")
             && backend.contains("record.phase2.dispatch.hir_body_scatter_agg_copy.start")
-            && backend.contains(
-                "record.phase2.dispatch.hir_body_scatter_return_agg_direct_call.start"
-            )
+            && backend
+                .contains("record.phase2.dispatch.hir_body_scatter_return_agg_direct_call.start")
             && backend.contains("hir_body_plan_validate_return_agg_call_pass")
-            && backend.contains(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_agg_call.start"
-            )
+            && backend
+                .contains("record.body_plan.dispatch.hir_body_plan_validate_return_agg_call.start")
             && validate_return_agg_call.contains("BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32")
             && !validate_return_agg_call.contains("for (uint i = 0u; i < arg_count; i += 1u)")
             && validate_return_agg_call.contains("call_tail_len")
@@ -314,7 +337,8 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
             && !plan_arrays.contains("account_struct_field_store(node, owner_fn, token)")
             && agg_call_arg_counts.contains("wasm_agg_call_arg_count_by_fragment[fragment_i]")
             && agg_call_arg_records.contains("fragment_for_arg_record(record_i")
-            && agg_call_arg_records.contains("direct_call_abi_arg_node(call_node, fn_token, ordinal)")
+            && agg_call_arg_records
+                .contains("direct_call_abi_arg_node(call_node, fn_token, ordinal)")
             && agg_call_arg_records.contains("wasm_agg_call_arg_len[record_i] = len;")
             && agg_call_arg_records.contains("atomic_u32_add(wasm_func_invalid_count_by_token")
             && agg_call_finalize.contains("arg_bytes_for_fragment(fragment_i)")
@@ -335,8 +359,19 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
             && scatter_return_agg_direct_call.contains("BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32")
             && scatter_return_agg_direct_call.contains("return_agg_direct_call_i32_fragment_byte(")
             && scatter_return_agg_direct_call.contains("arg_bytes_for_fragment(token_i)")
-            && !scatter_return_agg_direct_call.contains("for (uint i = 0u; i < arg_count; i += 1u)")
-            && scatter_agg_copy.contains("BODY_FRAGMENT_LET_ARRAY_I32")
+            && !scatter_return_agg_direct_call
+                .contains("for (uint i = 0u; i < arg_count; i += 1u)")
+            && backend.contains("hir_body_scatter_array_lean_pass")
+            && backend.contains("record.phase2.dispatch.hir_body_scatter_array_lean.start")
+            && scatter_array_lean.contains("BODY_FRAGMENT_LET_ARRAY_I32")
+            && scatter_array_lean.contains("BODY_FRAGMENT_ARRAY_STORE_ATOM_I32")
+            && scatter_array_lean.contains("BODY_FRAGMENT_ASSIGN_INDEX_I32")
+            && scatter_array_lean.contains("BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32")
+            && scatter_array_lean.contains("lean_array_atom_and_len(")
+            && scatter_array_lean.contains("body_words[offset + byte_i]")
+            && !scatter_agg_copy.contains("BODY_FRAGMENT_LET_ARRAY_I32")
+            && !scatter_agg_copy.contains("BODY_FRAGMENT_ARRAY_STORE_ATOM_I32")
+            && !scatter_agg_copy.contains("BODY_FRAGMENT_ASSIGN_INDEX_I32")
             && scatter_agg_copy.contains("BODY_FRAGMENT_AGG_DIRECT_COPY_I32")
             && scatter_agg_copy.contains("aggregate_direct_copy_i32_fragment_byte(")
             && !scatter_arrays.contains("WASM_MAX_DIRECT_CALL_ARGS")
@@ -384,7 +419,8 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
             && backend.contains("record.body_plan.dispatch.hir_body_scan_local.start")
             && backend.contains("record.body_plan.dispatch.hir_body_scan_blocks")
             && backend.contains("record.body_plan.dispatch.hir_body_status.start")
-            && backend.contains("record.phase2.dispatch.hir_body_scatter.start")
+            && backend.contains("\"hir_body_scatter_frame\"")
+            && backend.contains("record.phase2.dispatch.hir_body_scatter_binary_direct_call.start")
             && backend.contains("record.phase2.dispatch.module_status.start")
             && backend.contains("WASM_BODY_PLAN_FINALIZE_GROUPS")
             && backend.contains("WASM_BODY_STATUS_GROUPS")
@@ -423,9 +459,10 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
         .expect("body-plan validate completion should be recorded");
     let validate_dispatch = &backend[validate_pos..validate_done_pos];
     assert!(
-        validate_dispatch
-            .contains("compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);"),
-        "WASM body-plan validation must dispatch over HIR nodes so expression and statement fragments are all published"
+        validate_dispatch.contains(
+            "compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);"
+        ),
+        "WASM body-plan validation must dispatch over active HIR nodes so expression and statement fragments are all published"
     );
     let finalize_pos = backend
         .find("record.body_plan.dispatch.hir_body_plan_finalize.start")
@@ -440,7 +477,7 @@ fn wasm_hir_body_uses_fragment_count_scan_scatter_pipeline() {
         .find("record.body_plan.dispatch.hir_body_status.start")
         .expect("body-status dispatch should be recorded");
     let scatter_pos = backend
-        .find("record.phase2.dispatch.hir_body_scatter.start")
+        .find("record.phase2.dispatch.{body_scatter_stage}.start")
         .expect("body-scatter dispatch should be recorded");
     let enum_match_pos = backend
         .find("record.phase2.dispatch.hir_enum_match_records.start")
@@ -889,6 +926,47 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_lanius_std_string_local_through_user_function_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+extern "lanius_std" fn open_write_path(path: str) -> i32;
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn write_named(path: str) -> i32 {
+    let file: i32 = open_write_path(path);
+    if (file < 0) {
+        return 100;
+    }
+    return write_text(file, "saved");
+}
+
+fn main() -> i32 {
+    let path: str = "dynamic_path.txt";
+    let written: i32 = write_named(path);
+    if (written != 5) {
+        return written;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("string locals and string params should compile to WASM");
+
+    let result = common::run_wasm_main_with_node_and_files(
+        "WASM lanius_std string local through user function",
+        "string_local_user_function",
+        &wasm,
+        &[],
+    );
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.files.get("dynamic_path.txt").map(Vec::as_slice),
+        Some(b"saved".as_slice())
+    );
+}
+
+#[test]
 fn wasm_executes_std_fs_path_text_write_decodes_escapes_with_node() {
     common::require_node();
     let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
@@ -1019,6 +1097,35 @@ fn main() {
     let stdout =
         common::run_wasm_main_with_node("WASM scalar local assignments", "local_assigns", &wasm);
     assert_eq!(stdout, "3\n");
+}
+
+#[test]
+fn wasm_executes_constant_assignment_inside_if_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let ok: bool = false;
+    let count: i32 = 0;
+    if (true) {
+        ok = true;
+        count += 1;
+    }
+    if (ok && count == 1) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("constant assignment inside an if should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM constant assignment inside if",
+        "constant_assignment_inside_if",
+        &wasm,
+    );
+    assert_eq!(status, 0);
 }
 
 #[test]
@@ -1163,6 +1270,333 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_i32_to_f32_inside_composite_let_expression() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+fn main() -> i32 {
+    let divisor: f32 = 2.0;
+    let value: f32 = (i32_to_f32(7) + 1.0) / divisor;
+    if (value > 3.9 && value < 4.1) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("i32_to_f32 inside a composite let should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM i32_to_f32 composite let",
+        "i32_to_f32_composite_let",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_ray_coordinate_conversion_formula() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+struct Settings {
+    width: i32,
+    height: i32,
+}
+
+fn coordinate_status(settings: Settings, x: i32, y: i32) -> i32 {
+    let x_offset: f32 = (i32_to_f32(0) + 0.5) / 1.0;
+    if (!(x_offset > 0.49 && x_offset < 0.51)) {
+        return 10;
+    }
+    let width_minus_one: i32 = settings.width - 1;
+    if (width_minus_one != 15) {
+        return 14;
+    }
+    let width_divisor: f32 = i32_to_f32(settings.width - 1);
+    if (!(width_divisor > 14.9 && width_divisor < 15.1)) {
+        return 15;
+    }
+    let x_value: f32 = i32_to_f32(x);
+    if (!(x_value > 0.9 && x_value < 1.1)) {
+        return 16;
+    }
+    let u: f32 = (i32_to_f32(x) + x_offset) / i32_to_f32(settings.width - 1);
+    if (!(u > 0.09 && u < 0.11)) {
+        return 11;
+    }
+    let row_from_top: i32 = settings.height - 1 - y;
+    if (row_from_top != 8) {
+        return 12;
+    }
+    let v: f32 = (i32_to_f32(row_from_top) + 0.5) / i32_to_f32(settings.height - 1);
+    if (!(v > 1.06 && v < 1.07)) {
+        return 13;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let settings: Settings = Settings { width: 16, height: 9 };
+    return coordinate_status(settings, 1, 0);
+}
+"#,
+    )
+    .expect("ray coordinate conversion formula should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM ray coordinate conversion formula",
+        "ray_coordinate_conversion_formula",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_camera_ray_with_nonzero_coordinates() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        let result: Vec3 = Vec3 { x: x, y: y, z: z };
+        return result;
+    }
+
+    fn add(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+impl Camera {
+    fn ray(self, u: f32, v: f32) -> Ray {
+        let horizontal: Vec3 = self.horizontal;
+        let vertical: Vec3 = self.vertical;
+        let lower_left_corner: Vec3 = self.lower_left_corner;
+        let origin: Vec3 = self.origin;
+        let across: Vec3 = horizontal.mul_scalar(u);
+        let up: Vec3 = vertical.mul_scalar(v);
+        let corner_across: Vec3 = lower_left_corner.add(across);
+        let target: Vec3 = corner_across.add(up);
+        let direction: Vec3 = target.sub(origin);
+        let result: Ray = Ray { origin: origin, direction: direction };
+        return result;
+    }
+}
+
+fn main() -> i32 {
+    let origin: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    let lower_left: Vec3 = Vec3::new(-1.777778, -1.0, -1.0);
+    let horizontal: Vec3 = Vec3::new(3.555556, 0.0, 0.0);
+    let vertical: Vec3 = Vec3::new(0.0, 2.0, 0.0);
+    let camera: Camera = Camera {
+        origin: origin,
+        lower_left_corner: lower_left,
+        horizontal: horizontal,
+        vertical: vertical,
+    };
+    let first_ray: Ray = camera.ray(0.033333, 1.0625);
+    let first_direction: Vec3 = first_ray.direction;
+    if (!(first_direction.x > -1.67 && first_direction.x < -1.65)) {
+        return 9;
+    }
+    let second_ray: Ray = camera.ray(0.1, 1.0625);
+    let direction: Vec3 = second_ray.direction;
+    if (!(direction.x > -1.43 && direction.x < -1.41)) {
+        return 10;
+    }
+    if (!(direction.y > 1.12 && direction.y < 1.13)) {
+        return 11;
+    }
+    if (!(direction.z > -1.01 && direction.z < -0.99)) {
+        return 12;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("camera ray with nonzero coordinates should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM camera ray with nonzero coordinates",
+        "camera_ray_nonzero_coordinates",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_passes_loop_coordinates_after_aggregate_call_args() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn observe(first: Pair, second: Pair, x: i32, y: i32) -> i32 {
+    return first.left + second.right + x * 10 + y;
+}
+
+fn main() -> i32 {
+    let first: Pair = Pair { left: 1, right: 2 };
+    let second: Pair = Pair { left: 3, right: 4 };
+    let sum: i32 = 0;
+    let height: i32 = 3;
+    let width: i32 = 4;
+    for y in 0..height {
+        for x in 0..width {
+            let observed: i32 = observe(first, second, x, y);
+            sum = sum + observed;
+        }
+    }
+    if (sum == 252) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("loop coordinates after aggregate call args should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM loop coordinates after aggregate call args",
+        "loop_coordinates_after_aggregate_call_args",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_passes_f32_bounds_after_aggregate_call_args() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn bounds_ok(first: Pair, second: Pair, lower: f32, upper: f32) -> i32 {
+    if (first.left == 1 && second.right == 4 &&
+        lower > 0.0009 && lower < 0.0011 &&
+        upper > 999999.0) {
+        return 0;
+    }
+    return 1;
+}
+
+fn main() -> i32 {
+    let first: Pair = Pair { left: 1, right: 2 };
+    let second: Pair = Pair { left: 3, right: 4 };
+    return bounds_ok(first, second, 0.001, 1000000.0);
+}
+"#,
+    )
+    .expect("f32 bounds after aggregate call args should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM f32 bounds after aggregate call args",
+        "f32_bounds_after_aggregate_call_args",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_preserves_valid_f32_root_through_or_guard() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn select_root(candidate: f32, lower: f32, upper: f32) -> f32 {
+    let root: f32 = candidate;
+    if (root < lower || root > upper) {
+        root = 100.0;
+    }
+    return root;
+}
+
+fn main() -> i32 {
+    let root: f32 = select_root(0.572, 0.001, 1000000.0);
+    if (root > 0.57 && root < 0.58) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("valid f32 root OR guard should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM valid f32 root OR guard",
+        "valid_f32_root_or_guard",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_computes_near_quadratic_root_expression() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn near_root(half_b: f32, sqrtd: f32, a: f32) -> f32 {
+    let root: f32 = (-half_b - sqrtd) / a;
+    return root;
+}
+
+fn main() -> i32 {
+    let root: f32 = near_root(-88.9375, 87.92786, 1.765625);
+    if (root > 0.57 && root < 0.58) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("near quadratic root expression should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM near quadratic root expression",
+        "near_quadratic_root_expression",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
 fn wasm_executes_nested_f32_direct_call_argument_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -1293,6 +1727,151 @@ fn main() -> i32 {
     let status = common::run_wasm_main_return_with_node(
         "WASM nested f32 return call with aggregate receiver arg",
         "nested_f32_return_call_aggregate_receiver_arg",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_normalized_vector_dot_product() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/core/f32.lani"),
+        r#"
+module app::main;
+
+import core::f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+
+    fn length(self) -> f32 {
+        return core::f32::sqrt(self.dot(self));
+    }
+
+    fn mul_scalar(self, scale: f32) -> Vec3 {
+        return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+
+    fn unit(self) -> Vec3 {
+        let len: f32 = self.length();
+        if (len == 0.0) {
+            return self;
+        }
+        return self.mul_scalar(1.0 / len);
+    }
+}
+
+fn main() -> i32 {
+    let sphere_center: Vec3 = Vec3::new(0.0, -100.5, -1.0);
+    let point: Vec3 = Vec3::new(0.0, -0.5009, -0.5724);
+    let outward: Vec3 = point.sub(sphere_center);
+    let outward_normal: Vec3 = outward.mul_scalar(0.01);
+    let normal: Vec3 = outward_normal.unit();
+    let light_value: Vec3 = Vec3::new(-0.4, 0.9, -0.6);
+    let light: Vec3 = light_value.unit();
+    if (!(normal.x > -0.1 && normal.x < 0.1 &&
+          normal.y > 0.9 && normal.z > -0.1 && normal.z < 0.1)) {
+        return 10;
+    }
+    if (!(light.x < -0.3 && light.y > 0.7 && light.z < -0.4)) {
+        return 11;
+    }
+    let diffuse: f32 = normal.dot(light);
+    if (diffuse > 0.5) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    ])
+    .expect("normalized vector dot product should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM normalized vector dot product",
+        "normalized_vector_dot_product",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_binary_member_expression_return_without_control_flow() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+}
+
+fn main() -> i32 {
+    let value: Vec3 = Vec3 { x: 2.0, y: 3.0, z: 4.0 };
+    let result: f32 = value.dot(value);
+    return 0;
+}
+"#,
+    )
+    .expect("binary member-expression return should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM binary member-expression return",
+        "binary_member_expression_return",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_bool_member_condition_on_aggregate_call_result() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Hit {
+    ok: bool,
+}
+
+fn make_hit() -> Hit {
+    return Hit { ok: true };
+}
+
+fn main() -> i32 {
+    let hit: Hit = make_hit();
+    if (hit.ok) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("bool member condition on aggregate call result should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM bool member condition on aggregate call result",
+        "bool_member_condition_aggregate_call_result",
         &wasm,
     );
     assert_eq!(status, 0);
@@ -1455,6 +2034,205 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_aggregate_member_value_copy_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Hit {
+    ok: bool,
+    point: Vec3,
+}
+
+fn main() -> i32 {
+    let point: Vec3 = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
+    let hit: Hit = Hit { ok: true, point: point };
+    let copied: Vec3 = hit.point;
+    if (copied.x < 0.9) {
+        return 11;
+    }
+    if (copied.y < 1.9) {
+        return 12;
+    }
+    if (copied.z < 2.9) {
+        return 13;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("aggregate-valued member lets should compile to WASM value copies");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate member value copy",
+        "aggregate_member_value_copy",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_copies_aggregate_local_and_updates_scalar_members() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn bump(pair: Pair) -> Pair {
+    let next: Pair = pair;
+    next.left += 2;
+    next.right = next.left - 1;
+    return next;
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, right: 5 };
+    let next: Pair = bump(pair);
+    if (next.left != 9) {
+        return 1;
+    }
+    if (next.right != 8) {
+        return 2;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("aggregate local copies and scalar member assignments should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate local copy and scalar member assignments",
+        "aggregate_local_copy_member_assignments",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_copies_nested_aggregate_member_from_returned_aggregate() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+}
+
+struct Hit {
+    ok: bool,
+    normal: Vec3,
+}
+
+fn make_hit() -> Hit {
+    let normal: Vec3 = Vec3::new(0.0, 1.0, 0.0);
+    return Hit { ok: true, normal: normal };
+}
+
+fn forward_hit() -> Hit {
+    let source: Hit = make_hit();
+    let source_normal: Vec3 = source.normal;
+    let normal_x: f32 = source_normal.x;
+    let normal_y: f32 = source_normal.y;
+    let normal_z: f32 = source_normal.z;
+    let normal: Vec3 = Vec3::new(normal_x, normal_y, normal_z);
+    return Hit { ok: source.ok, normal: normal };
+}
+
+fn main() -> i32 {
+    let hit: Hit = forward_hit();
+    let normal: Vec3 = hit.normal;
+    let light: Vec3 = Vec3::new(-0.4, 0.9, -0.6);
+    let diffuse: f32 = normal.dot(light);
+    if (diffuse > 0.8 && diffuse < 1.0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("nested aggregate member from returned aggregate should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM returned nested aggregate member copy",
+        "returned_nested_aggregate_member_copy",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_passes_aggregate_member_as_aggregate_call_argument() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Vec3 {
+    fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    fn sub(self, right: Vec3) -> Vec3 {
+        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
+    }
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f32,
+}
+
+fn subtract_center(point: Vec3, sphere: Sphere) -> Vec3 {
+    return point.sub(sphere.center);
+}
+
+fn main() -> i32 {
+    let center: Vec3 = Vec3::new(0.0, -100.5, -1.0);
+    let sphere: Sphere = Sphere { center: center, radius: 100.0 };
+    let point: Vec3 = Vec3::new(0.0, -0.5, -0.57);
+    let outward: Vec3 = subtract_center(point, sphere);
+    if (outward.y > 99.9 && outward.y < 100.1 &&
+        outward.z > 0.4 && outward.z < 0.5) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("aggregate member call argument should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate member call argument",
+        "aggregate_member_call_argument",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
 fn wasm_executes_aggregate_return_direct_call_with_member_expr_args() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -1533,6 +2311,34 @@ fn main() -> i32 {
         &wasm,
     );
     assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_compound_assignment_with_direct_call_rhs() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn add(x: i32, y: i32) -> i32 {
+    return x + y;
+}
+
+fn main() -> i32 {
+    let total: i32 = 1;
+    let x: i32 = 2;
+    let y: i32 = 3;
+    total += add(x, y);
+    return total;
+}
+"#,
+    )
+    .expect("compound assignment with a direct-call RHS should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM compound assignment with direct-call RHS",
+        "compound_assign_direct_call_rhs",
+        &wasm,
+    );
+    assert_eq!(status, 6);
 }
 
 #[test]
@@ -1720,6 +2526,63 @@ fn main() {
         &wasm,
     );
     assert_eq!(stdout, "16\n");
+}
+
+#[test]
+fn wasm_executes_array_for_loop_with_break_continue_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let values: [i32; 6] = [1, 2, 3, 4, 5, 6];
+    let total: i32 = 0;
+    for value in values {
+        if (value == 2) {
+            continue;
+        }
+        if (value == 5) {
+            break;
+        }
+        total += value;
+    }
+    return total;
+}
+"#,
+    )
+    .expect("array for-loop with break/continue should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM array for-loop with break/continue",
+        "array_for_break_continue",
+        &wasm,
+    );
+    assert_eq!(status, 8);
+}
+
+#[test]
+fn wasm_executes_simple_range_loop_then_prints_local_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() {
+    let end: i32 = 6;
+    let total: i32 = 0;
+    for value in 2..end {
+        total += value;
+    }
+    print(total);
+    return 0;
+}
+"#,
+    )
+    .expect("simple numeric range and trailing local print should compile to WASM");
+
+    let stdout = common::run_wasm_main_with_node(
+        "WASM simple range with trailing local print",
+        "simple_range_print_local",
+        &wasm,
+    );
+    assert_eq!(stdout, "14\n");
 }
 
 #[test]

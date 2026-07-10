@@ -342,6 +342,8 @@ static const uint BODY_FRAGMENT_LET_HOST_STR_CALL_I32 = 39u;
 static const uint BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32 = 41u;
 static const uint BODY_FRAGMENT_IF_OPEN_LOCAL_I32 = 42u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
+static const uint BODY_FRAGMENT_RETURN_HOST_CALL_I32 = 47u;
+static const uint BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32 = 48u;
 static const uint MAX_CONST_EVAL_STACK = 16u;
 static const uint MAX_CONST_EVAL_STEPS = 48u;
 static const uint MAX_EXPR_EMIT_STACK = 16u;
@@ -458,7 +460,7 @@ bool type_is_i32_value(uint ty)
 
 bool type_is_i32_abi_value(uint ty)
 {
-    return type_is_i32_value(ty) || ty >= TY_ARRAY_BASE;
+    return type_is_i32_value(ty) || ty == TY_STRING || ty >= TY_ARRAY_BASE;
 }
 
 bool method_receiver_param(uint fn_token, uint ordinal)
@@ -489,11 +491,44 @@ uint local_decl_count_for_function_token(uint fn_token)
     return local_max == INVALID ? 0u : local_max + 1u;
 }
 
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
 uint local_decl_fragment_len_from_count(uint local_count)
 {
     if (local_count == 0u)
         return 1u;
-    return 1u + (u32_leb_len(local_count) + 1u) * 2u;
+    uint i32_count = local_count * 2u;
+    return 1u + u32_leb_len(i32_count) + 1u + u32_leb_len(local_count) + 1u;
 }
 
 bool function_param_local_index(uint decl_token, uint fn_token, out uint local_index)
@@ -507,7 +542,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
 
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -517,11 +554,11 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
 
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     uint local_count = local_decl_count_for_function_token(fn_token);
     local_index = param_count + decl_token;
     if (local_decl_type(decl_token) == TY_FLOAT)
-        local_index += local_count;
+        local_index += local_count * 2u;
     return true;
 }
 
@@ -535,11 +572,37 @@ bool function_non_param_local_index_for_type(
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
 
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     uint local_count = local_decl_count_for_function_token(fn_token);
     local_index = param_count + decl_token;
     if (local_ty == TY_FLOAT)
-        local_index += local_count;
+        local_index += local_count * 2u;
+    return true;
+}
+
+bool function_string_len_local_index(uint decl_token, uint fn_token, out uint local_index)
+{
+    local_index = INVALID;
+    if (!valid_token(decl_token) || !valid_token(fn_token))
+        return false;
+
+    uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+    if (ordinal != INVALID && ordinal < call_param_count[fn_token])
+    {
+        if (call_param_type_value(fn_token, ordinal) != TY_STRING)
+            return false;
+        uint ptr_index = function_param_abi_ordinal(fn_token, ordinal);
+        if (ptr_index == INVALID)
+            return false;
+        local_index = ptr_index + 1u;
+        return true;
+    }
+
+    if (local_decl_type(decl_token) != TY_STRING)
+        return false;
+    local_index = function_param_abi_count(fn_token) +
+                  local_decl_count_for_function_token(fn_token) +
+                  decl_token;
     return true;
 }
 
@@ -1712,6 +1775,9 @@ uint expr_binary_op_byte(uint form)
 
 bool expr_contains_member(uint node)
 {
+    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR &&
+        valid_token(hir_member_name_token[node]))
+        return true;
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
@@ -1723,11 +1789,16 @@ bool expr_contains_member(uint node)
     {
         if (sp == 0u)
             return false;
-        node = resolve_expr_node(nodes[sp - 1u]);
+        node = nodes[sp - 1u];
         sp -= 1u;
         if (!valid_node(node))
             continue;
-        if (hir_kind[node] == HIR_MEMBER_EXPR)
+        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
+            return true;
+        node = resolve_expr_node(node);
+        if (!valid_node(node))
+            continue;
+        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
             return true;
         uint form = expr_form(node);
         if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
@@ -1865,7 +1936,7 @@ bool aggregate_decl_for_name_expr(uint node, out uint decl_token)
     return aggregate_lit_for_decl_token(decl_token, lit_node);
 }
 
-bool aggregate_address_expr_and_len(uint node, out uint len)
+bool aggregate_name_address_expr_and_len(uint node, out uint len)
 {
     len = 0u;
     node = resolve_expr_node(node);
@@ -1885,14 +1956,15 @@ bool aggregate_address_expr_and_len(uint node, out uint len)
         uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
         if (ordinal != INVALID)
         {
-            local_index = ordinal;
+            local_index = function_param_abi_ordinal(owner_fn, ordinal);
             is_param = true;
         }
     }
     if (is_param)
     {
         uint decl_ty = visible_type_for_token(decl_token);
-        uint param_ty = call_param_type_value(owner_fn, local_index);
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        uint param_ty = call_param_type_value(owner_fn, ordinal);
         if (decl_ty != TY_UNKNOWN &&
             decl_ty < TY_ARRAY_BASE &&
             param_ty < TY_ARRAY_BASE &&
@@ -1922,7 +1994,7 @@ bool aggregate_address_expr_and_len(uint node, out uint len)
     return false;
 }
 
-uint aggregate_address_expr_byte(uint node, uint byte_i)
+uint aggregate_name_address_expr_byte(uint node, uint byte_i)
 {
     node = resolve_expr_node(node);
     if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
@@ -1957,6 +2029,123 @@ uint aggregate_address_expr_byte(uint node, uint byte_i)
         return local_get_byte(local_index, byte_i);
     }
 
+    return 0u;
+}
+
+bool aggregate_member_address_base_and_offset(uint node, out uint base_node, out uint offset)
+{
+    base_node = INVALID;
+    offset = 0u;
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        return false;
+
+    uint top_member_name = hir_member_name_token[node];
+    if (!valid_token(top_member_name) || visible_type_for_token(top_member_name) < TY_ARRAY_BASE)
+        return false;
+
+    uint current = node;
+    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step++)
+    {
+        current = resolve_expr_node(current);
+        if (!valid_node(current))
+            return false;
+
+        if (hir_kind[current] != HIR_MEMBER_EXPR)
+        {
+            uint base_len = 0u;
+            if (!aggregate_name_address_expr_and_len(current, base_len))
+                return false;
+            base_node = current;
+            return true;
+        }
+
+        uint member_name = hir_member_name_token[current];
+        if (!valid_token(member_name))
+            return false;
+
+        uint field_index = member_result_field_index[member_name];
+        if (field_index == INVALID)
+            return false;
+
+        offset += field_index * 4u;
+        current = hir_member_receiver_node[current];
+    }
+
+    return false;
+}
+
+bool aggregate_address_expr_and_len(uint node, out uint len)
+{
+    len = 0u;
+    uint name_len = 0u;
+    if (aggregate_name_address_expr_and_len(node, name_len))
+    {
+        len = name_len;
+        return true;
+    }
+
+    node = resolve_expr_node(node);
+    uint depth = 0u;
+    uint load_len = 0u;
+    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step += 1u)
+    {
+        if (!valid_node(node)) return false;
+        if (hir_kind[node] != HIR_MEMBER_EXPR)
+        {
+            uint base_len = 0u;
+            if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len))
+                return false;
+            len = base_len + load_len;
+            return true;
+        }
+        uint member_name = hir_member_name_token[node];
+        uint field_index = valid_token(member_name)
+                               ? member_result_field_index[member_name]
+                               : INVALID;
+        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
+            return false;
+        load_len += memarg_len(field_index * 4u);
+        depth += 1u;
+        node = resolve_expr_node(hir_member_receiver_node[node]);
+    }
+    return false;
+}
+
+uint aggregate_address_expr_byte(uint node, uint byte_i)
+{
+    uint name_len = 0u;
+    if (aggregate_name_address_expr_and_len(node, name_len))
+        return aggregate_name_address_expr_byte(node, byte_i);
+
+    uint fields[MAX_EXPR_EMIT_STACK];
+    uint depth = 0u;
+    node = resolve_expr_node(node);
+    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step += 1u)
+    {
+        if (!valid_node(node)) return 0u;
+        if (hir_kind[node] != HIR_MEMBER_EXPR) break;
+        uint member_name = hir_member_name_token[node];
+        uint field_index = valid_token(member_name)
+                               ? member_result_field_index[member_name]
+                               : INVALID;
+        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
+            return 0u;
+        fields[depth++] = field_index;
+        node = resolve_expr_node(hir_member_receiver_node[node]);
+    }
+    uint base_len = 0u;
+    if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len)) return 0u;
+    if (byte_i < base_len) return aggregate_name_address_expr_byte(node, byte_i);
+    uint offset = base_len;
+    for (uint i = 0u; i < depth; i += 1u)
+    {
+        uint field_offset = fields[depth - i - 1u] * 4u;
+        uint load_len = memarg_len(field_offset);
+        if (byte_i < offset + load_len)
+            return memarg_load_byte(WASM_I32_LOAD, field_offset, byte_i - offset);
+        offset += load_len;
+    }
     return 0u;
 }
 
@@ -2230,6 +2419,9 @@ bool direct_call_arg_expr_and_len(uint node, out uint len)
         return true;
     }
 
+    if (host_string_i32_expr_and_len(node, len))
+        return true;
+
     uint form = expr_form(node);
     if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
     {
@@ -2308,9 +2500,20 @@ uint direct_call_arg_expr_byte(uint node, uint byte_i)
 uint direct_call_abi_arg_byte(uint node, uint fn_token, uint ordinal, uint byte_i)
 {
     uint param_ty = call_param_type_value(fn_token, ordinal);
+    if (param_ty == TY_STRING)
+        return string_value_expr_byte(node, byte_i);
     if (param_ty >= TY_ARRAY_BASE)
         return aggregate_address_expr_byte(node, byte_i);
     return direct_call_arg_expr_byte(node, byte_i);
+}
+
+bool direct_call_arg_abi_expr_and_len(uint node, uint param_ty, out uint len)
+{
+    if (param_ty == TY_STRING)
+        return host_string_value_expr_and_len(node, len);
+    if (param_ty >= TY_ARRAY_BASE)
+        return aggregate_address_expr_and_len(node, len);
+    return direct_call_arg_expr_and_len(node, len);
 }
 
 bool direct_call_arg_scalar_and_len(uint node, out uint len)
@@ -2349,6 +2552,110 @@ bool string_literal_ptr_len(uint node, out uint ptr, out uint len)
     ptr = source_data_base() + start;
     len = raw_len;
     return true;
+}
+
+bool string_value_expr_and_len(uint node, out uint len)
+{
+    len = 0u;
+    uint ptr = 0u;
+    uint str_len = 0u;
+    if (string_literal_ptr_len(node, ptr, str_len))
+    {
+        len = 1u + i32_sleb_len(ptr) + 1u + i32_sleb_len(str_len);
+        return true;
+    }
+
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+        return false;
+
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!valid_token(decl_token) ||
+        visible_type_for_token(decl_token) != TY_STRING ||
+        !function_decl_local_index(decl_token, owner_fn, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return false;
+    }
+
+    len = local_get_len(ptr_local) + local_get_len(len_local);
+    return true;
+}
+
+bool host_string_value_expr_and_len(uint node, out uint len)
+{
+    len = 0u;
+    uint ptr = 0u;
+    uint str_len = 0u;
+    if (string_literal_ptr_len(node, ptr, str_len))
+    {
+        len = 1u + i32_sleb_len(ptr) + 1u + i32_sleb_len(str_len);
+        return true;
+    }
+
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+        return false;
+
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    if (!valid_token(decl_token) ||
+        !valid_token(owner_fn) ||
+        visible_type_for_token(decl_token) != TY_STRING)
+    {
+        return false;
+    }
+
+    uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+    if (ordinal != INVALID && ordinal < call_param_count[owner_fn])
+    {
+        uint ptr_local = function_param_abi_ordinal(owner_fn, ordinal);
+        if (ptr_local == INVALID)
+            return false;
+        len = local_get_len(ptr_local) + local_get_len(ptr_local + 1u);
+        return true;
+    }
+
+    uint local_count = local_decl_count_for_function_token(owner_fn);
+    uint ptr_local = function_param_abi_count(owner_fn) + decl_token;
+    uint len_local = function_param_abi_count(owner_fn) + local_count + decl_token;
+    len = local_get_len(ptr_local) + local_get_len(len_local);
+    return true;
+}
+
+uint string_value_expr_byte(uint node, uint byte_i)
+{
+    uint ptr = 0u;
+    uint str_len = 0u;
+    if (string_literal_ptr_len(node, ptr, str_len))
+    {
+        uint ptr_len = 1u + i32_sleb_len(ptr);
+        if (byte_i < ptr_len)
+            return i32_const_byte(ptr, byte_i);
+        return i32_const_byte(str_len, byte_i - ptr_len);
+    }
+
+    node = resolve_expr_node(node);
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!function_decl_local_index(decl_token, owner_fn, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return 0u;
+    }
+
+    uint ptr_len = local_get_len(ptr_local);
+    if (byte_i < ptr_len)
+        return local_get_byte(ptr_local, byte_i);
+    return local_get_byte(len_local, byte_i - ptr_len);
 }
 
 bool host_string_i32_call_node(
@@ -2394,13 +2701,10 @@ bool host_string_i32_call_expr_and_len(
     {
         if (!host_string_i32_call_node(call_node, language_symbol, 1u))
             return false;
-        uint ptr = 0u;
-        uint str_len = 0u;
-        if (!string_literal_ptr_len(direct_call_arg_node(call_node, 0u), ptr, str_len))
+        uint string_len = 0u;
+        if (!host_string_value_expr_and_len(direct_call_arg_node(call_node, 0u), string_len))
             return false;
-        len = 1u + i32_sleb_len(ptr) +
-              1u + i32_sleb_len(str_len) +
-              1u + u32_leb_len(wasm_func_index);
+        len = string_len + 1u + u32_leb_len(wasm_func_index);
         return true;
     }
 
@@ -2409,21 +2713,41 @@ bool host_string_i32_call_expr_and_len(
         if (!host_string_i32_call_node(call_node, language_symbol, 2u))
             return false;
         uint handle_len = 0u;
-        uint ptr = 0u;
-        uint str_len = 0u;
+        uint string_len = 0u;
         if (!direct_call_arg_scalar_and_len(direct_call_arg_node(call_node, 0u), handle_len) ||
-            !string_literal_ptr_len(direct_call_arg_node(call_node, 1u), ptr, str_len))
+            !host_string_value_expr_and_len(direct_call_arg_node(call_node, 1u), string_len))
         {
             return false;
         }
-        len = handle_len +
-              1u + i32_sleb_len(ptr) +
-              1u + i32_sleb_len(str_len) +
-              1u + u32_leb_len(wasm_func_index);
+        len = handle_len + string_len + 1u + u32_leb_len(wasm_func_index);
         return true;
     }
 
     return false;
+}
+
+bool host_string_i32_expr_and_len(uint node, out uint len)
+{
+    if (host_string_i32_call_expr_and_len(
+            node,
+            LANGUAGE_SYMBOL_OPEN_READ_PATH,
+            WASM_STD_OPEN_READ_PATH_FUNC_INDEX,
+            HOST_STR_CALL_OPEN_READ_PATH,
+            len))
+        return true;
+    if (host_string_i32_call_expr_and_len(
+            node,
+            LANGUAGE_SYMBOL_OPEN_WRITE_PATH,
+            WASM_STD_OPEN_WRITE_PATH_FUNC_INDEX,
+            HOST_STR_CALL_OPEN_WRITE_PATH,
+            len))
+        return true;
+    return host_string_i32_call_expr_and_len(
+        node,
+        LANGUAGE_SYMBOL_WRITE_TEXT,
+        WASM_STD_WRITE_TEXT_FUNC_INDEX,
+        HOST_STR_CALL_WRITE_TEXT,
+        len);
 }
 
 bool direct_call_expr_and_len(uint node, out uint len)
@@ -2442,10 +2766,7 @@ bool direct_call_expr_and_len(uint node, out uint len)
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
         uint arg_len = 0u;
         uint param_ty = call_param_type_value(fn_token, i);
-        bool ok = param_ty >= TY_ARRAY_BASE
-                      ? aggregate_address_expr_and_len(arg_node, arg_len)
-                      : direct_call_arg_expr_and_len(arg_node, arg_len);
-        if (!ok || arg_len == 0u)
+        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
             return false;
         total += arg_len;
     }
@@ -2469,10 +2790,7 @@ bool direct_call_simple_args_expr_and_len(uint node, out uint len)
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
         uint arg_len = 0u;
         uint param_ty = call_param_type_value(fn_token, i);
-        bool ok = param_ty >= TY_ARRAY_BASE
-                      ? aggregate_address_expr_and_len(arg_node, arg_len)
-                      : direct_call_arg_expr_and_len(arg_node, arg_len);
-        if (!ok || arg_len == 0u)
+        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
             return false;
         total += arg_len;
     }
@@ -3395,7 +3713,7 @@ bool supported_assign_direct_call_fragment(
     }
 
     uint target = stmt_record_slot(node, 1u);
-    rhs_node = stmt_record_slot(node, 2u);
+    rhs_node = resolve_expr_node(stmt_record_slot(node, 2u));
     op = stmt_record_slot(node, 3u);
     uint rhs_len = 0u;
     if (!assign_op_supported(op) ||
@@ -4055,565 +4373,4 @@ bool function_end_fragment_for_node(
     fragment_len = len;
     fragment_meta = uint4(BODY_FRAGMENT_FUNCTION_END, 0u, 0u, end_token);
     return true;
-}
-
-bool body_fragment_for_node(
-    uint node,
-    uint main_token,
-    uint return_token,
-    uint let_count,
-    uint let_max_token,
-    out uint token_i,
-    out uint4 fragment_meta,
-    out uint fragment_len)
-{
-    token_i = INVALID;
-    fragment_meta = uint4(BODY_FRAGMENT_NONE, 0u, 0u, INVALID);
-    fragment_len = 0u;
-    if (!valid_node(node))
-        return false;
-
-    uint token = hir_token_pos[node];
-    if (!valid_token(token))
-        return false;
-
-    if (hir_kind[node] == HIR_FN &&
-        supported_function_token(token))
-    {
-        token_i = token;
-        uint local_count = local_decl_count_for_function_token(token);
-        uint body_size = wasm_func_body_len_by_token[token];
-        fragment_len = 5u + local_decl_fragment_len_from_count(local_count);
-        fragment_meta = uint4(
-            BODY_FRAGMENT_FUNCTION_HEADER,
-            body_size,
-            local_count,
-            token);
-        return true;
-    }
-
-    uint owner_fn = node_enclosing_fn_token(node);
-    if (!supported_function_token(owner_fn))
-        return false;
-    return_token = wasm_func_return_token_by_token[owner_fn];
-    if (!valid_token(return_token))
-        return false;
-
-    if (hir_kind[node] == HIR_RETURN_STMT)
-    {
-        uint return_expr_node = INVALID;
-        uint return_value = 0u;
-        uint return_len = 0u;
-        uint return_decl = INVALID;
-        uint return_call_node = INVALID;
-        uint return_atom_node = INVALID;
-        uint return_op = 0u;
-        uint return_call_side = 0u;
-        if (return_binary_direct_call_fragment_and_len(
-                node,
-                return_call_node,
-                return_atom_node,
-                return_op,
-                return_call_side,
-                return_len))
-        {
-            token_i = token;
-            fragment_len = return_len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32,
-                return_call_node,
-                return_atom_node,
-                return_op | (return_call_side << 8u));
-            return true;
-        }
-        if (return_direct_call_fragment_and_len(node, return_expr_node, return_len))
-        {
-            token_i = token;
-            fragment_len = return_len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_RETURN_DIRECT_CALL_I32,
-                return_expr_node,
-                fragment_len,
-                token_i);
-            return true;
-        }
-        if (return_expr_local_and_len(node, return_decl, return_len))
-        {
-            token_i = token;
-            fragment_len = return_len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_RETURN_LOCAL_I32,
-                return_decl,
-                fragment_len,
-                token_i);
-            return true;
-        }
-        if (return_expr_value_and_len(node, return_value, return_len))
-        {
-            token_i = token;
-            fragment_len = return_len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_RETURN_I32,
-                return_value,
-                fragment_len,
-                token_i);
-            return true;
-        }
-        if (return_expr_fragment_and_len(node, return_expr_node, return_len))
-        {
-            token_i = token;
-            fragment_len = return_len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_RETURN_EXPR_I32,
-                return_expr_node,
-                fragment_len,
-                token_i);
-            return true;
-        }
-        return false;
-    }
-
-    if (hir_kind[node] == HIR_CALL_EXPR &&
-        print_call_node(node))
-    {
-        uint expr_node = INVALID;
-        uint value = 0u;
-        uint len = 0u;
-        uint decl_token = INVALID;
-        if (print_call_direct_call_and_len(node, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_PRINT_DIRECT_CALL_I64,
-                expr_node,
-                fragment_len,
-                token_i);
-            return true;
-        }
-        if (print_call_local_and_len(node, decl_token, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_PRINT_LOCAL_I64,
-                decl_token,
-                fragment_len,
-                token_i);
-            return true;
-        }
-
-        if (print_call_value_and_len(node, value, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_PRINT_I64,
-                value,
-                fragment_len,
-                token_i);
-            return true;
-        }
-
-        if (print_call_expr_and_len(node, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_PRINT_EXPR_I64,
-                expr_node,
-                fragment_len,
-                token_i);
-            return true;
-        }
-    }
-
-    if (hir_kind[node] == HIR_LET_STMT)
-    {
-        uint raw_decl_token = stmt_record_slot(node, 1u);
-        if (valid_token(raw_decl_token) && wasm_agg_local_width_by_token[raw_decl_token] != 0u)
-            return false;
-
-        uint decl_token = INVALID;
-        uint expr_node = INVALID;
-        uint value = 0u;
-        uint len = 0u;
-        if (supported_let_i32_array_data_ptr_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_I32_ARRAY_DATA_PTR,
-                decl_token,
-                expr_node,
-                token_i);
-            return true;
-        }
-        if (supported_let_host_stdout_write_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_STDOUT_WRITE_I32,
-                decl_token,
-                expr_node,
-                token_i);
-            return true;
-        }
-        if (supported_let_host_process_argc_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_NO_ARG_I32,
-                decl_token,
-                expr_node,
-                WASM_PROCESS_ARGC_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_process_arg_len_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_PROCESS_ARG_LEN_I32,
-                decl_token,
-                expr_node,
-                token_i);
-            return true;
-        }
-        if (supported_let_host_process_arg_read_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_PROCESS_ARG_READ_I32,
-                decl_token,
-                expr_node,
-                token_i);
-            return true;
-        }
-        if (supported_let_host_secure_u32_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_NO_ARG_I32,
-                decl_token,
-                expr_node,
-                WASM_RANDOM_SECURE_U32_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_unix_seconds_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_NO_ARG_I32,
-                decl_token,
-                expr_node,
-                WASM_TIME_UNIX_SECONDS_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_CURRENT_DIR_READ,
-                WASM_ENV_CURRENT_DIR_READ_FUNC_INDEX,
-                2u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_CURRENT_DIR_READ_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_VAR_COUNT,
-                WASM_ENV_VAR_COUNT_FUNC_INDEX,
-                0u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_VAR_COUNT_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_VAR_KEY_LEN,
-                WASM_ENV_VAR_KEY_LEN_FUNC_INDEX,
-                1u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_VAR_KEY_LEN_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_VAR_KEY_READ,
-                WASM_ENV_VAR_KEY_READ_FUNC_INDEX,
-                3u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_VAR_KEY_READ_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_VAR_LEN,
-                WASM_ENV_VAR_LEN_FUNC_INDEX,
-                2u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_VAR_LEN_FUNC_INDEX);
-            return true;
-        }
-        if (supported_let_host_i32_call_fragment(
-                node,
-                LANGUAGE_SYMBOL_VAR_READ,
-                WASM_ENV_VAR_READ_FUNC_INDEX,
-                4u,
-                decl_token,
-                expr_node,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                WASM_ENV_VAR_READ_FUNC_INDEX);
-            return true;
-        }
-        uint wasm_func_index = INVALID;
-        uint arg_count = 0u;
-        uint mode = 0u;
-        if (supported_let_host_string_call_fragment(
-                node,
-                decl_token,
-                expr_node,
-                wasm_func_index,
-                mode,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_STR_CALL_I32,
-                decl_token,
-                expr_node,
-                wasm_func_index);
-            return true;
-        }
-        if (supported_let_file_stdio_host_i32_call_fragment(
-                node,
-                decl_token,
-                expr_node,
-                wasm_func_index,
-                arg_count,
-                len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_HOST_CALL_I32,
-                decl_token,
-                expr_node,
-                wasm_func_index);
-            return true;
-        }
-        if (supported_let_direct_call_fragment(node, decl_token, expr_node, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_DIRECT_CALL_I32,
-                decl_token,
-                expr_node,
-                token_i);
-            return true;
-        }
-        if (supported_let_const_fragment(node, decl_token, value, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                BODY_FRAGMENT_LET_CONST_I32,
-                decl_token,
-                value,
-                token_i);
-            return true;
-        }
-        if (!supported_let_expr_fragment(node, decl_token, expr_node, len))
-            return false;
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(
-            BODY_FRAGMENT_LET_EXPR_I32,
-            decl_token,
-            expr_node,
-            token_i);
-        return true;
-    }
-
-    if (hir_kind[node] == HIR_STMT &&
-        stmt_record_slot(node, 0u) == STMT_RECORD_KIND_ASSIGN)
-    {
-        uint target_decl = INVALID;
-        uint rhs_node = INVALID;
-        uint rhs_value = 0u;
-        uint op = 0u;
-        uint len = 0u;
-        if (supported_assign_direct_call_fragment(node, target_decl, rhs_node, op, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                op == ASSIGN_OP_SET
-                    ? BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32
-                    : BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32,
-                target_decl,
-                rhs_node,
-                op);
-            return true;
-        }
-        if (supported_assign_const_fragment(node, target_decl, rhs_value, op, len))
-        {
-            token_i = token;
-            fragment_len = len;
-            fragment_meta = uint4(
-                op == ASSIGN_OP_SET
-                    ? BODY_FRAGMENT_ASSIGN_CONST_I32
-                    : BODY_FRAGMENT_ASSIGN_COMPOUND_CONST_I32,
-                target_decl,
-                rhs_value,
-                op);
-            return true;
-        }
-        if (!supported_assign_expr_fragment(node, target_decl, rhs_node, op, len))
-            return false;
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(
-            op == ASSIGN_OP_SET
-                ? BODY_FRAGMENT_ASSIGN_EXPR_I32
-                : BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32,
-            target_decl,
-            rhs_node,
-            op);
-        return true;
-    }
-
-    if (hir_kind[node] == HIR_WHILE_STMT &&
-        stmt_record_slot(node, 0u) == STMT_RECORD_KIND_WHILE)
-    {
-        uint condition_node = INVALID;
-        uint len = 0u;
-        if (!while_open_fragment_and_len(node, condition_node, len))
-            return false;
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(
-            BODY_FRAGMENT_WHILE_OPEN_I32,
-            condition_node,
-            fragment_len,
-            token_i);
-        return true;
-    }
-
-    if (hir_kind[node] == HIR_IF_STMT &&
-        stmt_record_slot(node, 0u) == STMT_RECORD_KIND_IF)
-    {
-        uint condition_node = INVALID;
-        uint len = 0u;
-        if (!if_open_fragment_and_len(node, condition_node, len))
-            return false;
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(
-            BODY_FRAGMENT_IF_OPEN_I32,
-            condition_node,
-            fragment_len,
-            token_i);
-        return true;
-    }
-
-    if ((hir_kind[node] == HIR_FOR_STMT || hir_kind[node] == HIR_STMT) &&
-        stmt_record_slot(node, 0u) == STMT_RECORD_KIND_FOR)
-    {
-        uint binding_token = INVALID;
-        uint range_node = INVALID;
-        uint end_local_token = INVALID;
-        uint len = 0u;
-        if (!for_open_range_fragment_and_len(
-                node,
-                binding_token,
-                range_node,
-                end_local_token,
-                len))
-        {
-            return false;
-        }
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(
-            BODY_FRAGMENT_FOR_OPEN_RANGE_I32,
-            binding_token,
-            range_node,
-            end_local_token);
-        return true;
-    }
-
-    if ((hir_kind[node] == HIR_BREAK_STMT ||
-         hir_kind[node] == HIR_CONTINUE_STMT))
-    {
-        uint depth = 0u;
-        uint len = 0u;
-        if (!loop_control_fragment_and_len(node, depth, len))
-            return false;
-        token_i = token;
-        fragment_len = len;
-        fragment_meta = uint4(BODY_FRAGMENT_BRANCH, depth, fragment_len, token_i);
-        return true;
-    }
-
-    return false;
 }

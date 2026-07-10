@@ -83,13 +83,13 @@ impl PackTotalsStatusPass {
             0,
             &resources,
         )?;
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("pack_totals_status"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(1, 1, 1);
+        crate::gpu::passes_core::record_or_defer_compute_direct(
+            encoder,
+            &self.data,
+            &bind_group,
+            "pack_totals_status",
+            (1, 1, 1),
+        );
         Ok(())
     }
 }

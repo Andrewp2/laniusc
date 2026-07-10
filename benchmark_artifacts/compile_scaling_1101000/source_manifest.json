@@ -1,0 +1,36 @@
+{
+  "function_count": 6927,
+  "generator_path": "tools/generate_compile_scaling_sources.py",
+  "generator_sha256": "c3c68ed25db4e72a581111306e19649e69c9602b9e3146c1cdd923cb21aee47c",
+  "schema": "lanius.compile-scaling-sources.v1",
+  "variants": {
+    "19": {
+      "expected_stdout": "36\n",
+      "sources": {
+        "lanius": {"bytes": 1101000, "sha256": "235efe28ba1dcf1cfdb025b63f4153c88a742fc49e2eee745d2b535c49d46590"}
+      }
+    },
+    "20": {
+      "expected_stdout": "47\n",
+      "sources": {
+        "c": {"bytes": 878415, "sha256": "501aca52f2f4eb4daf4e01d82dc4435932cf1d66dced8dd31bddc65f8e6cb98c"},
+        "cpp": {"bytes": 954612, "sha256": "8d4e1bd90634690ec70bfacc35537966eda8e44eaba1b0f5ababb0711a72e0f8"},
+        "lanius": {"bytes": 1101000, "sha256": "21cfb64abc5d0b15dffc85153db0086bdc16aeda43dcdf5dbb7ce336878a193d"},
+        "rust": {"bytes": 892256, "sha256": "15fd3abff62e06b50aa44473f2ff649e9e876df8d21b7b2b59731b4b18f74b9f"},
+        "zig": {"bytes": 1023910, "sha256": "12e47ba3b16403318ca90de5e84c00344c397dea4bc35430bfdbee103db5989a"}
+      }
+    },
+    "21": {
+      "expected_stdout": "58\n",
+      "sources": {
+        "lanius": {"bytes": 1101000, "sha256": "996aef4feb767f04cf0b3adb7bb58c8711d060cb018d7a3d21987d23cc30cf63"}
+      }
+    },
+    "22": {
+      "expected_stdout": "69\n",
+      "sources": {
+        "lanius": {"bytes": 1101000, "sha256": "8eba00518627e4d31a712092a71aa74825b6517216fda360ba8a78fdddd173c9"}
+      }
+    }
+  }
+}

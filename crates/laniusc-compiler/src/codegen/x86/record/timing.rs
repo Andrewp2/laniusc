@@ -31,7 +31,7 @@ impl HostTimer {
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
         let name = format!("codegen.x86.record.{stage}");
         if self.print_enabled {
-            println!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+            eprintln!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
         }
         if self.trace_enabled {
             crate::gpu::trace::record_host_span("host.x86.record", &name, self.last, now);

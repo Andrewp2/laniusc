@@ -9,10 +9,27 @@ impl TypeCheckPasses {
             }};
         }
 
+        let predicates_sort_keys_small =
+            if device.limits().max_compute_workgroup_storage_size >= 32 * 1024 {
+                Some(pass!(
+                    "type_check_predicates_01b2_sort_keys_small",
+                    "type_checker/predicates/01b2_sort_keys_small"
+                ))
+            } else {
+                None
+            };
         Ok(Self {
             hir_active_dispatch_args: pass!(
                 "type_check_hir_active_dispatch_args",
                 "type_checker/hir_active_dispatch_args"
+            ),
+            semantic_features_collect: pass!(
+                "type_check_semantic_features_00_collect",
+                "type_checker/semantic/features/00_collect"
+            ),
+            semantic_features_dispatch_args: pass!(
+                "type_check_semantic_features_01_dispatch_args",
+                "type_checker/semantic/features/01_dispatch_args"
             ),
             names_mark_lexemes: pass!(
                 "type_check_names_00_mark_lexemes",
@@ -42,25 +59,21 @@ impl TypeCheckPasses {
                 "type_check_names_01_scatter_lexemes",
                 "type_checker/names/01_scatter_lexemes"
             ),
+            names_hash_prepare: pass!(
+                "type_check_names_hash_00_prepare",
+                "type_checker/names/hash/00_prepare"
+            ),
+            names_hash_insert: pass!(
+                "type_check_names_hash_01_insert",
+                "type_checker/names/hash/01_insert"
+            ),
+            names_hash_assign_ids: pass!(
+                "type_check_names_hash_02_assign_ids",
+                "type_checker/names/hash/02_assign_ids"
+            ),
             names_radix_dispatch_args: pass!(
                 "type_check_names_radix_dispatch_args",
                 "type_checker/names/radix/dispatch_args"
-            ),
-            names_radix_byte_dispatch_args: pass!(
-                "type_check_names_radix_byte_dispatch_args",
-                "type_checker/names/radix/byte_dispatch_args"
-            ),
-            names_radix_histogram: pass!(
-                "type_check_names_radix_00_histogram",
-                "type_checker/names/radix/00_histogram"
-            ),
-            names_radix_bucket_prefix_active: pass!(
-                "type_check_names_radix_00b_bucket_prefix_active",
-                "type_checker/names/radix/00b/bucket/prefix/active"
-            ),
-            names_radix_bucket_bases_active: pass!(
-                "type_check_names_radix_00c_bucket_bases_active",
-                "type_checker/names/radix/00c/bucket/bases/active"
             ),
             names_radix_bucket_prefix: pass!(
                 "type_check_names_radix_00b_bucket_prefix",
@@ -69,18 +82,6 @@ impl TypeCheckPasses {
             names_radix_bucket_bases: pass!(
                 "type_check_names_radix_00c_bucket_bases",
                 "type_checker/names/radix/00c/bucket/bases"
-            ),
-            names_radix_scatter: pass!(
-                "type_check_names_radix_01_scatter",
-                "type_checker/names/radix/01_scatter"
-            ),
-            names_radix_dedup: pass!(
-                "type_check_names_radix_02_adjacent_dedup",
-                "type_checker/names/radix/02_adjacent_dedup"
-            ),
-            names_radix_assign_ids: pass!(
-                "type_check_names_radix_03_assign_ids",
-                "type_checker/names/radix/03_assign_ids"
             ),
             language_names_clear: pass!(
                 "type_check_language_names_00_clear",
@@ -138,6 +139,10 @@ impl TypeCheckPasses {
                 "type_check_modules_02e_build_module_keys",
                 "type_checker/modules/02e_build_module_keys"
             ),
+            modules_sort_module_keys_small: pass!(
+                "type_check_modules_02f_sort_module_keys_small",
+                "type_checker/modules/02f_sort_module_keys_small"
+            ),
             modules_sort_module_keys_histogram: pass!(
                 "type_check_modules_03_sort_module_keys_histogram",
                 "type_checker/modules/03_sort_module_keys_histogram"
@@ -157,6 +162,10 @@ impl TypeCheckPasses {
             modules_seed_import_edge_key_order: pass!(
                 "type_check_modules_05e_seed_import_edge_key_order",
                 "type_checker/modules/05e_seed_import_edge_key_order"
+            ),
+            modules_sort_import_edges_small: pass!(
+                "type_check_modules_05e2_sort_import_edges_small",
+                "type_checker/modules/05e2_sort_import_edges_small"
             ),
             modules_sort_import_edges: pass!(
                 "type_check_modules_05f_sort_import_edges",
@@ -185,6 +194,10 @@ impl TypeCheckPasses {
             modules_seed_decl_key_order: pass!(
                 "type_check_modules_06a_seed_decl_key_order",
                 "type_checker/modules/06a_seed_decl_key_order"
+            ),
+            modules_sort_decl_keys_small: pass!(
+                "type_check_modules_06a2_sort_decl_keys_small",
+                "type_checker/modules/06a2_sort_decl_keys_small"
             ),
             modules_sort_decl_keys: pass!(
                 "type_check_modules_06_sort_decl_keys",
@@ -217,6 +230,10 @@ impl TypeCheckPasses {
             modules_scatter_import_visibility: pass!(
                 "type_check_modules_09b_scatter_import_visibility",
                 "type_checker/modules/09b_scatter_import_visibility"
+            ),
+            modules_sort_import_visible_keys_small: pass!(
+                "type_check_modules_09b2_sort_import_visible_keys_small",
+                "type_checker/modules/09b2_sort_import_visible_keys_small"
             ),
             modules_sort_import_visible_keys: pass!(
                 "type_check_modules_09c_sort_import_visible_keys",
@@ -329,6 +346,10 @@ impl TypeCheckPasses {
             type_instances_decl_generic_params: pass!(
                 "type_check_type_instances_00b_decl_generic_params",
                 "type_checker/type/instances/00b_decl_generic_params"
+            ),
+            type_instances_sort_generic_params_small: pass!(
+                "type_check_type_instances_00b2_sort_generic_params_small",
+                "type_checker/type/instances/00b2_sort_generic_params_small"
             ),
             type_instances_sort_generic_param_keys: pass!(
                 "type_check_type_instances_00c_sort_generic_param_keys",
@@ -466,6 +487,7 @@ impl TypeCheckPasses {
                 "type_check_predicates_01b_seed_key_order",
                 "type_checker/predicates/01b_seed_key_order"
             ),
+            predicates_sort_keys_small,
             predicates_sort_keys: pass!(
                 "type_check_predicates_01c_sort_keys",
                 "type_checker/predicates/01c_sort_keys"
@@ -646,6 +668,10 @@ impl TypeCheckPasses {
                 "type_check_methods_03_seed_key_order",
                 "type_checker/methods/03/seed_key_order"
             ),
+            methods_sort_keys_small: pass!(
+                "type_check_methods_03b_sort_key_order_small",
+                "type_checker/methods/03b_sort_key_order_small"
+            ),
             methods_sort_keys: pass!(
                 "type_check_methods_04_sort_keys",
                 "type_checker/methods/04_sort_keys"
@@ -689,6 +715,10 @@ impl TypeCheckPasses {
             visible_seed_hir_decl_order: pass!(
                 "type_check_visible_03d_seed_hir_decl_order",
                 "type_checker/visible/03d_seed_hir_decl_order"
+            ),
+            visible_sort_hir_decl_keys_small: pass!(
+                "type_check_visible_03d2_sort_hir_decl_keys_small",
+                "type_checker/visible/03d2_sort_hir_decl_keys_small"
             ),
             visible_sort_hir_decl_keys: pass!(
                 "type_check_visible_03e_sort_hir_decl_keys",

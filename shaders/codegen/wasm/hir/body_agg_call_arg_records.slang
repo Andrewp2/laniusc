@@ -1,7 +1,7 @@
-// Build dense ABI argument records for aggregate direct-call body fragments.
+// Build dense ABI argument records for direct-call body fragments.
 
 import atomics;
-import body_common;
+import body_arg_byte_common;
 
 struct ScanParams
 {
@@ -22,10 +22,20 @@ StructuredBuffer<uint> wasm_agg_call_arg_count_block_prefix;
 RWStructuredBuffer<uint> wasm_agg_call_arg_len;
 RWStructuredBuffer<uint4> wasm_agg_call_arg_meta;
 RWStructuredBuffer<uint4> wasm_agg_call_arg_aux;
+RWStructuredBuffer<uint> wasm_func_invalid_count_by_token;
+RWStructuredBuffer<uint> wasm_func_detail_by_token;
 
+static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
+static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
+static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
+static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
+static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
+static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
+static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 static const uint ARG_WG_SIZE = 256u;
+static const uint TY_BOOL = 2u;
 
 uint arg_count_prefix_for_fragment(uint fragment_i)
 {
@@ -69,6 +79,78 @@ bool fragment_for_arg_record(uint record_i, out uint fragment_i, out uint ordina
     return true;
 }
 
+uint direct_fragment_call_node(uint kind, uint4 meta)
+{
+    return kind == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32
+               ? meta.y
+               : meta.z;
+}
+
+bool direct_record_fragment_kind(uint kind)
+{
+    return kind == BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32;
+}
+
+bool type_is_i32_abi_param(uint fn_token, uint ordinal, uint ty)
+{
+    if (ty == TY_BOOL || ty == TY_INT || ty == TY_UINT || ty == TY_STRING || ty >= TY_ARRAY_BASE)
+        return true;
+    return method_receiver_param(fn_token, ordinal);
+}
+
+bool direct_call_expr_and_len(uint node, out uint len)
+{
+    len = 0u;
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || hir_kind[node] != HIR_CALL_EXPR)
+        return false;
+
+    uint callee_token = call_callee_token(node);
+    uint fn_token = call_fn_token_for_call(node, callee_token);
+    if (!supported_function_token(fn_token))
+        return false;
+
+    uint total = 1u + u32_leb_len(wasm_func_slot_by_token[fn_token] + 31u);
+    uint arg_count = call_param_count[fn_token];
+    for (uint i = 0u; i < arg_count; i += 1u)
+    {
+        uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
+        uint param_ty = call_param_type_value(fn_token, i);
+        uint arg_len = 0u;
+        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
+            return false;
+        total += arg_len;
+    }
+
+    len = total;
+    return true;
+}
+
+bool direct_call_record_arg_expr_and_len(uint arg_node, uint param_ty, out uint len)
+{
+    len = 0u;
+    uint resolved = resolve_expr_node(arg_node);
+    if (valid_node(resolved) &&
+        hir_kind[resolved] == HIR_CALL_EXPR &&
+        param_ty != TY_STRING &&
+        param_ty < TY_ARRAY_BASE)
+    {
+        return direct_call_expr_and_len(resolved, len);
+    }
+    return direct_call_arg_abi_expr_and_len(arg_node, param_ty, len);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -88,15 +170,18 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint4 meta = body_fragment_meta[fragment_i];
+    uint kind = meta.x;
+    if (!direct_record_fragment_kind(kind))
+        return;
+
     uint4 aux = body_fragment_aux[fragment_i];
-    uint call_node = meta.x == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 ? meta.y : meta.z;
+    uint call_node = direct_fragment_call_node(kind, meta);
     uint fn_token = aux.z;
     uint arg_node = direct_call_abi_arg_node(call_node, fn_token, ordinal);
     uint param_ty = call_param_type_value(fn_token, ordinal);
     uint len = 0u;
-    bool ok = param_ty >= TY_ARRAY_BASE
-                  ? aggregate_address_expr_and_len(arg_node, len)
-                  : direct_call_arg_expr_and_len(arg_node, len);
+    bool param_ok = type_is_i32_abi_param(fn_token, ordinal, param_ty) || param_ty == TY_FLOAT;
+    bool ok = param_ok && direct_call_record_arg_expr_and_len(arg_node, param_ty, len);
     if (!ok || len == 0u)
     {
         uint owner_fn = node_enclosing_fn_token(call_node);

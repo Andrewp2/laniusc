@@ -77,9 +77,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 src,
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
+                    let parser_capacity = self
                         .parser
-                        .read_resident_partial_parse_tree_capacity(
+                        .measure_resident_partial_parse_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -89,6 +89,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.parser-boundary.encoder"),
@@ -96,7 +98,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let mut parser_timer: Option<&mut GpuTimer> = None;
                     let (parser_check, parser_recorded) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             &mut parser_encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -106,6 +108,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_feature_flags,
                             &mut parser_timer,
                             |_parse_bufs, encoder, timer| {
                                 if let Some(timer) = timer.as_deref_mut() {
@@ -148,14 +151,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let typecheck_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
-                    self.parser.release_current_resident_buffers();
-                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,
@@ -215,9 +217,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 sources,
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
+                    let parser_capacity = self
                         .parser
-                        .read_resident_partial_parse_tree_capacity(
+                        .measure_resident_partial_parse_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -227,6 +229,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),
@@ -234,7 +238,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let mut parser_timer: Option<&mut GpuTimer> = None;
                     let (parser_check, parser_recorded) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             &mut parser_encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -244,6 +248,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_feature_flags,
                             &mut parser_timer,
                             |_parse_bufs, encoder, timer| {
                                 if let Some(timer) = timer.as_deref_mut() {
@@ -285,14 +290,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let typecheck_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
-                    self.parser.release_current_resident_buffers();
-                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,

@@ -172,6 +172,10 @@ where
             args.next();
             Some(Command::Doctor(args.collect()))
         }
+        "daemon" => {
+            args.next();
+            Some(Command::Daemon(args.collect()))
+        }
         "package" => {
             args.next();
             Some(Command::Package(args.collect()))

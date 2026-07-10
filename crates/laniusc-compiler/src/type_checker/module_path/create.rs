@@ -66,6 +66,7 @@ pub(in crate::type_checker) fn create_with_passes(
         build_module_keys,
         module_key_radix_dispatch_params,
         module_key_radix_dispatch,
+        sort_module_keys_small,
         sort_module_key_histogram,
         sort_module_key_bucket_prefix,
         sort_module_key_bucket_bases,
@@ -75,6 +76,7 @@ pub(in crate::type_checker) fn create_with_passes(
         resolve_imports,
         seed_import_edge_key_order,
         import_edge_key_radix_dispatch,
+        sort_import_edges_small,
         sort_import_edge_key_histogram,
         sort_import_edge_key_bucket_prefix,
         sort_import_edge_key_bucket_bases,
@@ -389,6 +391,28 @@ pub(in crate::type_checker) fn create_with_passes(
         &decl_count_out,
         &decl_key_radix_dispatch_args,
     )?;
+
+    let sort_decl_keys_small = if record_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
+        Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_06a2_sort_decl_keys_small"),
+            &passes.modules_sort_decl_keys_small,
+            0,
+            &[
+                (
+                    "gParams",
+                    decl_key_radix_dispatch_params.as_entire_binding(),
+                ),
+                ("decl_count_out", decl_count_out.as_entire_binding()),
+                ("decl_module_id", decl_module_id.as_entire_binding()),
+                ("decl_namespace", decl_namespace.as_entire_binding()),
+                ("decl_name_id", decl_name_id.as_entire_binding()),
+                ("decl_key_order", decl_key_to_decl_id.as_entire_binding()),
+            ],
+        )?)
+    } else {
+        None
+    };
 
     let mut sort_decl_key_histogram = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
     let mut sort_decl_key_bucket_prefix = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
@@ -913,6 +937,40 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visible_type_key_radix_dispatch_args,
     )?;
 
+    let sort_import_visible_type_keys_small =
+        if import_visible_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
+            Some(bind_group::create_bind_group_from_bindings(
+                device,
+                Some("type_check_modules_09b2_sort_import_visible_type_keys_small"),
+                &passes.modules_sort_import_visible_keys_small,
+                0,
+                &[
+                    (
+                        "gParams",
+                        import_visible_type_key_radix_dispatch_params.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_count_out",
+                        import_visible_type_count_out.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_module_id",
+                        import_visible_type_module_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_name_id",
+                        import_visible_type_name_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_key_order",
+                        import_visible_type_key_order.as_entire_binding(),
+                    ),
+                ],
+            )?)
+        } else {
+            None
+        };
+
     let mut sort_import_visible_type_key_histogram =
         Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
     let mut sort_import_visible_type_key_bucket_prefix =
@@ -1049,6 +1107,40 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visible_value_count_out,
         &import_visible_value_key_radix_dispatch_args,
     )?;
+
+    let sort_import_visible_value_keys_small =
+        if import_visible_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
+            Some(bind_group::create_bind_group_from_bindings(
+                device,
+                Some("type_check_modules_09b2_sort_import_visible_value_keys_small"),
+                &passes.modules_sort_import_visible_keys_small,
+                0,
+                &[
+                    (
+                        "gParams",
+                        import_visible_value_key_radix_dispatch_params.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_count_out",
+                        import_visible_value_count_out.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_module_id",
+                        import_visible_value_module_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_name_id",
+                        import_visible_value_name_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_key_order",
+                        import_visible_value_key_order.as_entire_binding(),
+                    ),
+                ],
+            )?)
+        } else {
+            None
+        };
 
     let mut sort_import_visible_value_key_histogram =
         Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
@@ -1918,6 +2010,7 @@ pub(in crate::type_checker) fn create_with_passes(
             scatter_decl_span_records,
             build_module_keys,
             module_key_radix_dispatch,
+            sort_module_keys_small,
             sort_module_key_histogram,
             sort_module_key_bucket_prefix,
             sort_module_key_bucket_bases,
@@ -1926,6 +2019,7 @@ pub(in crate::type_checker) fn create_with_passes(
             resolve_imports,
             seed_import_edge_key_order,
             import_edge_key_radix_dispatch,
+            sort_import_edges_small,
             sort_import_edge_key_histogram,
             sort_import_edge_key_bucket_prefix,
             sort_import_edge_key_bucket_bases,
@@ -1937,6 +2031,7 @@ pub(in crate::type_checker) fn create_with_passes(
             import_dispatch_args: import_dispatch_args_group,
             seed_decl_key_order,
             decl_key_radix_dispatch,
+            sort_decl_keys_small,
             sort_decl_key_histogram,
             sort_decl_key_bucket_prefix,
             sort_decl_key_bucket_bases,
@@ -1955,11 +2050,13 @@ pub(in crate::type_checker) fn create_with_passes(
             scatter_import_visible_type,
             scatter_import_visible_value,
             import_visible_type_key_radix_dispatch,
+            sort_import_visible_type_keys_small,
             sort_import_visible_type_key_histogram,
             sort_import_visible_type_key_bucket_prefix,
             sort_import_visible_type_key_bucket_bases,
             sort_import_visible_type_key_scatter,
             import_visible_value_key_radix_dispatch,
+            sort_import_visible_value_keys_small,
             sort_import_visible_value_key_histogram,
             sort_import_visible_value_key_bucket_prefix,
             sort_import_visible_value_key_bucket_bases,

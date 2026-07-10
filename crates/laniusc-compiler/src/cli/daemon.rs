@@ -1,0 +1,548 @@
+use std::{
+    fs,
+    io::{self, BufRead, Write},
+    path::{Path, PathBuf},
+    time::{Instant, SystemTime},
+};
+
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use super::common::{
+    CliError,
+    missing_cli_option_value_error,
+    unknown_cli_option_error,
+    unsupported_cli_option_value_error,
+};
+use crate::{
+    compiler::{ExplicitSourcePack, GpuCompiler, GpuCompilerBackends, load_entry_with_stdlib},
+    gpu::device,
+};
+
+const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone, Copy, Debug)]
+enum BackendSelection {
+    Both,
+    Wasm,
+    X86,
+}
+
+impl BackendSelection {
+    fn compiler_backends(self) -> GpuCompilerBackends {
+        match self {
+            Self::Both => GpuCompilerBackends::all(),
+            Self::Wasm => GpuCompilerBackends::wasm_only(),
+            Self::X86 => GpuCompilerBackends::x86_only(),
+        }
+    }
+
+    fn targets(self) -> &'static [&'static str] {
+        match self {
+            Self::Both => &["x86_64", "wasm"],
+            Self::Wasm => &["wasm"],
+            Self::X86 => &["x86_64"],
+        }
+    }
+
+    fn supports(self, emit: &str) -> bool {
+        match self {
+            Self::Both => emit == "x86_64" || emit == "wasm",
+            Self::Wasm => emit == "wasm",
+            Self::X86 => emit == "x86_64",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DaemonOptions {
+    backend: BackendSelection,
+    stdlib_root: Option<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct DaemonRequest {
+    #[serde(default)]
+    id: Value,
+    command: String,
+    #[serde(default)]
+    emit: Option<String>,
+    #[serde(default)]
+    input: Option<PathBuf>,
+    #[serde(default)]
+    output: Option<PathBuf>,
+    #[serde(default)]
+    stdlib_root: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SourceFileStamp {
+    path: PathBuf,
+    len: u64,
+    modified: SystemTime,
+}
+
+struct CachedSourcePack {
+    input: PathBuf,
+    stdlib_root: PathBuf,
+    source_pack: ExplicitSourcePack,
+    file_stamps: Vec<SourceFileStamp>,
+}
+
+#[derive(Default)]
+struct SourcePackCache {
+    entry: Option<CachedSourcePack>,
+    transient: Option<ExplicitSourcePack>,
+}
+
+impl SourcePackCache {
+    fn load<'a>(
+        &'a mut self,
+        input: &Path,
+        stdlib_root: &Path,
+    ) -> Result<&'a ExplicitSourcePack, crate::compiler::CompileError> {
+        let cache_hit = self.entry.as_ref().is_some_and(|entry| {
+            entry.input == input
+                && entry.stdlib_root == stdlib_root
+                && file_stamps_match(&entry.file_stamps)
+        });
+        if cache_hit {
+            return Ok(&self
+                .entry
+                .as_ref()
+                .expect("source-pack cache hit lost its entry")
+                .source_pack);
+        }
+
+        self.entry = None;
+        self.transient = None;
+
+        let source_pack = load_entry_with_stdlib(input, stdlib_root)?;
+        if let Some(file_stamps) = source_file_stamps(&source_pack) {
+            self.entry = Some(CachedSourcePack {
+                input: input.to_path_buf(),
+                stdlib_root: stdlib_root.to_path_buf(),
+                source_pack,
+                file_stamps,
+            });
+            Ok(&self
+                .entry
+                .as_ref()
+                .expect("stored source-pack cache entry disappeared")
+                .source_pack)
+        } else {
+            self.transient = Some(source_pack);
+            Ok(self
+                .transient
+                .as_ref()
+                .expect("stored transient source pack disappeared"))
+        }
+    }
+}
+
+fn source_file_stamps(source_pack: &ExplicitSourcePack) -> Option<Vec<SourceFileStamp>> {
+    source_pack
+        .source_paths
+        .iter()
+        .map(|path| source_file_stamp(path.as_deref()?))
+        .collect()
+}
+
+fn source_file_stamp(path: &Path) -> Option<SourceFileStamp> {
+    let metadata = fs::metadata(path).ok()?;
+    Some(SourceFileStamp {
+        path: path.to_path_buf(),
+        len: metadata.len(),
+        modified: metadata.modified().ok()?,
+    })
+}
+
+fn file_stamps_match(stamps: &[SourceFileStamp]) -> bool {
+    stamps
+        .iter()
+        .all(|expected| source_file_stamp(&expected.path).as_ref() == Some(expected))
+}
+
+pub(super) fn run(args: Vec<String>) -> Result<(), CliError> {
+    if args.len() == 1 && matches!(args[0].as_str(), "-h" | "--help") {
+        print_help();
+        return Ok(());
+    }
+    let options = parse_options(args)?;
+    pollster::block_on(run_stdio(options))
+}
+
+fn print_help() {
+    eprintln!(
+        "Usage: laniusc daemon --stdio [--backend both|x86_64|wasm] [--stdlib-root dir]\n\
+         Starts one GPU-resident compiler and accepts newline-delimited JSON compile and shutdown requests on stdio."
+    );
+}
+
+fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
+    let mut backend = BackendSelection::Both;
+    let mut stdlib_root = None;
+    let mut stdio = false;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--stdio" => stdio = true,
+            "--backend" => {
+                backend = parse_backend(args.next().ok_or_else(|| {
+                    missing_cli_option_value_error("--backend", "both, x86_64, or wasm")
+                })?)?;
+            }
+            "--stdlib-root" => {
+                stdlib_root = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    missing_cli_option_value_error("--stdlib-root", "a directory path")
+                })?));
+            }
+            value if value.starts_with("--backend=") => {
+                backend = parse_backend(value.trim_start_matches("--backend=").to_string())?;
+            }
+            value if value.starts_with("--stdlib-root=") => {
+                stdlib_root = Some(PathBuf::from(value.trim_start_matches("--stdlib-root=")));
+            }
+            flag => {
+                return Err(unknown_cli_option_error(
+                    "laniusc daemon",
+                    flag,
+                    "--stdio, --backend, --stdlib-root",
+                ));
+            }
+        }
+    }
+    if !stdio {
+        return Err(CliError::from("laniusc daemon currently requires --stdio"));
+    }
+    Ok(DaemonOptions {
+        backend,
+        stdlib_root,
+    })
+}
+
+fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
+    match value.as_str() {
+        "both" => Ok(BackendSelection::Both),
+        "wasm" => Ok(BackendSelection::Wasm),
+        "x86_64" => Ok(BackendSelection::X86),
+        _ => Err(unsupported_cli_option_value_error(
+            "--backend",
+            &value,
+            "both, x86_64, wasm",
+            None,
+        )),
+    }
+}
+
+async fn run_stdio(options: DaemonOptions) -> Result<(), CliError> {
+    let startup = Instant::now();
+    let compiler = GpuCompiler::new_with_device_and_backends(
+        device::global(),
+        options.backend.compiler_backends(),
+    )
+    .await
+    .map_err(CliError::from_compile_error)?;
+    let startup_ms = startup.elapsed().as_secs_f64() * 1000.0;
+
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+    write_response(
+        &mut output,
+        &json!({
+            "schema": DAEMON_SCHEMA,
+            "event": "ready",
+            "startup_ms": startup_ms,
+            "pid": std::process::id(),
+            "resident_set_bytes": resident_set_bytes(),
+            "targets": options.backend.targets(),
+        }),
+    )?;
+
+    let mut line = String::new();
+    let mut source_pack_cache = SourcePackCache::default();
+    loop {
+        line.clear();
+        let read = input
+            .read_line(&mut line)
+            .map_err(|err| CliError::from(format!("read daemon request: {err}")))?;
+        if read == 0 {
+            break;
+        }
+        if line.len() > MAX_REQUEST_BYTES {
+            write_response(
+                &mut output,
+                &protocol_error(Value::Null, "request exceeds the 1 MiB limit"),
+            )?;
+            continue;
+        }
+        let request = match serde_json::from_str::<DaemonRequest>(&line) {
+            Ok(request) => request,
+            Err(err) => {
+                write_response(
+                    &mut output,
+                    &protocol_error(Value::Null, &format!("invalid request JSON: {err}")),
+                )?;
+                continue;
+            }
+        };
+        if request.command == "shutdown" {
+            write_response(
+                &mut output,
+                &json!({
+                    "schema": DAEMON_SCHEMA,
+                    "id": request.id,
+                    "ok": true,
+                    "event": "shutdown",
+                }),
+            )?;
+            break;
+        }
+        if request.command != "compile" {
+            write_response(
+                &mut output,
+                &protocol_error(request.id, "command must be compile or shutdown"),
+            )?;
+            continue;
+        }
+        let response = compile_request(&compiler, &options, &mut source_pack_cache, request).await;
+        write_response(&mut output, &response)?;
+    }
+    crate::gpu::trace::flush();
+    device::persist_pipeline_cache();
+    Ok(())
+}
+
+async fn compile_request(
+    compiler: &GpuCompiler<'_>,
+    options: &DaemonOptions,
+    source_pack_cache: &mut SourcePackCache,
+    request: DaemonRequest,
+) -> Value {
+    let started = Instant::now();
+    let id = request.id;
+    let emit = request.emit.unwrap_or_default();
+    if !options.backend.supports(&emit) {
+        return job_error(
+            id,
+            started,
+            format!("emit target {emit:?} was not initialized by this daemon"),
+        );
+    }
+    let Some(input) = request.input else {
+        return job_error(id, started, "compile request is missing input".into());
+    };
+    let Some(output) = request.output else {
+        return job_error(id, started, "compile request is missing output".into());
+    };
+    let Some(stdlib_root) = request.stdlib_root.or_else(|| options.stdlib_root.clone()) else {
+        return job_error(
+            id,
+            started,
+            "compile request needs stdlib_root or daemon --stdlib-root".into(),
+        );
+    };
+
+    let load_started = Instant::now();
+    let source_pack = match source_pack_cache.load(&input, &stdlib_root) {
+        Ok(source_pack) => source_pack,
+        Err(err) => return compile_error_response(id, started, err),
+    };
+    let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
+    let compile_started = Instant::now();
+    let emitted = match emit.as_str() {
+        "wasm" => {
+            compiler
+                .compile_source_pack_manifest_to_wasm(source_pack)
+                .await
+        }
+        "x86_64" => {
+            compiler
+                .compile_source_pack_manifest_to_x86_64(source_pack)
+                .await
+        }
+        _ => unreachable!("backend support check accepted an unknown target"),
+    };
+    let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+    let bytes = match emitted {
+        Ok(bytes) => bytes,
+        Err(err) => return compile_error_response(id, started, err),
+    };
+    let write_started = Instant::now();
+    if let Err(err) = write_artifact(&output, &bytes, &emit) {
+        return job_error(id, started, err);
+    }
+    let write_ms = write_started.elapsed().as_secs_f64() * 1000.0;
+    json!({
+        "schema": DAEMON_SCHEMA,
+        "id": id,
+        "ok": true,
+        "emit": emit,
+        "input": input,
+        "output": output,
+        "output_bytes": bytes.len(),
+        "load_ms": load_ms,
+        "compile_ms": compile_ms,
+        "write_ms": write_ms,
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "resident_set_bytes": resident_set_bytes(),
+    })
+}
+
+fn compile_error_response(
+    id: Value,
+    started: Instant,
+    err: crate::compiler::CompileError,
+) -> Value {
+    json!({
+        "schema": DAEMON_SCHEMA,
+        "id": id,
+        "ok": false,
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "diagnostic": err.into_public_diagnostic(),
+    })
+}
+
+fn protocol_error(id: Value, message: &str) -> Value {
+    json!({
+        "schema": DAEMON_SCHEMA,
+        "id": id,
+        "ok": false,
+        "protocol_error": message,
+    })
+}
+
+fn job_error(id: Value, started: Instant, message: String) -> Value {
+    json!({
+        "schema": DAEMON_SCHEMA,
+        "id": id,
+        "ok": false,
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "job_error": message,
+    })
+}
+
+fn write_response(output: &mut impl Write, response: &Value) -> Result<(), CliError> {
+    serde_json::to_writer(&mut *output, response)
+        .map_err(|err| CliError::from(format!("serialize daemon response: {err}")))?;
+    output
+        .write_all(b"\n")
+        .and_then(|()| output.flush())
+        .map_err(|err| CliError::from(format!("write daemon response: {err}")))
+}
+
+fn write_artifact(path: &Path, bytes: &[u8], emit: &str) -> Result<(), String> {
+    fs::write(path, bytes).map_err(|err| format!("write output {}: {err}", path.display()))?;
+    #[cfg(unix)]
+    if emit == "x86_64" {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(path)
+            .map_err(|err| format!("stat output {}: {err}", path.display()))?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions)
+            .map_err(|err| format!("chmod output {}: {err}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn resident_set_bytes() -> Option<u64> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
+    let kib = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
+    kib.checked_mul(1024)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    #[test]
+    fn daemon_options_select_one_backend_and_default_stdlib() {
+        let options = parse_options(vec![
+            "--stdio".into(),
+            "--backend=x86_64".into(),
+            "--stdlib-root".into(),
+            "stdlib".into(),
+        ])
+        .expect("daemon options should parse");
+        assert!(matches!(options.backend, BackendSelection::X86));
+        assert_eq!(options.stdlib_root, Some(PathBuf::from("stdlib")));
+    }
+
+    #[test]
+    fn daemon_requires_explicit_stdio_transport() {
+        let err = parse_options(Vec::new()).expect_err("missing transport should fail");
+        assert!(err.to_string().contains("requires --stdio"));
+    }
+
+    #[test]
+    fn source_pack_file_stamps_invalidate_after_change_and_removal() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "laniusc-daemon-source-cache-{}-{unique}.lani",
+            std::process::id()
+        ));
+        fs::write(&path, "fn main() {}\n").expect("write source cache fixture");
+        let source_pack = ExplicitSourcePack::new(vec!["fn main() {}\n".into()], vec![1])
+            .and_then(|pack| pack.with_source_paths(vec![Some(path.clone())]))
+            .expect("build source cache fixture pack");
+        let stamps = source_file_stamps(&source_pack).expect("source paths should be cacheable");
+        assert!(file_stamps_match(&stamps));
+
+        fs::write(&path, "fn main() { return; }\n").expect("change source cache fixture");
+        assert!(!file_stamps_match(&stamps));
+
+        fs::remove_file(&path).expect("remove source cache fixture");
+        assert!(!file_stamps_match(&stamps));
+    }
+
+    #[test]
+    fn source_pack_cache_reloads_changed_entry_source() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-daemon-load-cache-{}-{unique}",
+            std::process::id()
+        ));
+        let stdlib_root = root.join("stdlib");
+        let entry = root.join("main.lani");
+        fs::create_dir_all(&stdlib_root).expect("create source cache stdlib fixture");
+        fs::write(&entry, "fn main() { return; }\n").expect("write cached entry fixture");
+
+        let mut cache = SourcePackCache::default();
+        let first = cache
+            .load(&entry, &stdlib_root)
+            .expect("load initial cached source pack");
+        assert!(
+            first
+                .sources
+                .iter()
+                .any(|source| source.contains("return;"))
+        );
+
+        fs::write(&entry, "fn main() { print(17); return; }\n")
+            .expect("change cached entry fixture");
+        let second = cache
+            .load(&entry, &stdlib_root)
+            .expect("reload changed source pack");
+        assert!(
+            second
+                .sources
+                .iter()
+                .any(|source| source.contains("print(17)"))
+        );
+
+        fs::remove_dir_all(root).expect("remove source cache fixture tree");
+    }
+}

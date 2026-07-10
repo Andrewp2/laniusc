@@ -26,7 +26,7 @@
     },
     "lanius": {
       "compile": [
-        "target/debug/laniusc",
+        "target/release/laniusc",
         "--stdlib-root",
         "stdlib",
         "--emit",
@@ -34,6 +34,22 @@
         "-o",
         "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_lanius",
         "benchmark_artifacts/grid_checksum/src/grid_checksum.lani"
+      ],
+      "compile_request": {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "benchmark",
+        "input": "benchmark_artifacts/grid_checksum/src/grid_checksum.lani",
+        "output": "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_lanius"
+      },
+      "daemon_start": [
+        "target/release/laniusc",
+        "daemon",
+        "--stdio",
+        "--backend",
+        "x86_64",
+        "--stdlib-root",
+        "stdlib"
       ],
       "run": [
         "target/lanius-benchmark-artifacts/grid_checksum/grid_checksum_lanius"

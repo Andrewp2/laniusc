@@ -80,6 +80,7 @@ static const uint X86_VINST_FOR_ARRAY_BRANCH = 17u;
 static const uint X86_VINST_FOR_ARRAY_LOAD = 18u;
 static const uint X86_VINST_FOR_ARRAY_INC_JMP = 19u;
 static const uint X86_VINST_FOR_INTERVAL_BRANCH = 28u;
+static const uint X86_VINST_COPY_LOCAL = 29u;
 static const uint X86_VINST_FOR_PARAM_ARRAY_LOAD = 31u;
 
 bool valid_node(uint node)
@@ -517,6 +518,34 @@ bool numeric_range_iterable_for_for_node(uint node, out uint start_node, out uin
     return valid_node(start_node) && valid_node(end_node);
 }
 
+bool local_range_aggregate_iterable_for_for_node(uint node, out uint start_slot, out uint end_slot)
+{
+    start_slot = INVALID;
+    end_slot = INVALID;
+    if (!valid_node(node) || for_element_width(node) != 1u)
+        return false;
+
+    uint iterable_node = x86_for_iterable_node[node];
+    uint decl_token = INVALID;
+    uint base_slot = INVALID;
+    if (!decl_token_for_name_expr(iterable_node, decl_token) ||
+        !local_slot_for_decl(decl_token, x86_node_func[node], base_slot))
+    {
+        return false;
+    }
+
+    if (decl_layout_kind(decl_token) == 0u ||
+        decl_layout_kind(decl_token) == X86_DECL_AGG_ARRAY ||
+        decl_layout_width(decl_token) != 2u)
+    {
+        return false;
+    }
+
+    start_slot = base_slot;
+    end_slot = base_slot + 1u;
+    return true;
+}
+
 uint aggregate_source_payload_offset(uint source_kind, uint payload, uint offset)
 {
     if (source_kind == X86_AGG_SOURCE_PARAM)
@@ -562,6 +591,8 @@ bool emit_for_stmt(uint node)
     uint array_element_width = 1u;
     uint range_start_node = INVALID;
     uint range_end_node = INVALID;
+    uint range_start_slot = INVALID;
+    uint range_end_slot = INVALID;
     uint init_row = INVALID;
     uint branch_row = INVALID;
     uint load_row = INVALID;
@@ -594,6 +625,23 @@ bool emit_for_stmt(uint node)
         }
         write_inst(init_row, node, 0u, X86_VINST_STORE_LOCAL, INVALID, uint4(value_slot, start_vreg, 0u, 0u));
         write_inst(load_row, node, 1u, X86_VINST_STORE_LOCAL, INVALID, uint4(index_slot, end_vreg, 0u, 0u));
+        write_inst(branch_row, node, 2u, X86_VINST_FOR_INTERVAL_BRANCH, INVALID, uint4(value_slot, index_slot, after_target, 0u));
+        write_inst(inc_row, node, 3u, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(value_slot, branch_row, 1u, 0u));
+        return true;
+    }
+    if (local_range_aggregate_iterable_for_for_node(node, range_start_slot, range_end_slot))
+    {
+        if (!location_for_node_local(node, 0u, init_row) ||
+            !location_for_node_local(node, 1u, load_row) ||
+            !location_for_node_local(node, 2u, branch_row) ||
+            !location_for_node_local(body_node, 0u, inc_row) ||
+            !row_after_subtree(node, after_target))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_FOR_LOCATION);
+            return false;
+        }
+        write_inst(init_row, node, 0u, X86_VINST_COPY_LOCAL, INVALID, uint4(value_slot, range_start_slot, 0u, 0u));
+        write_inst(load_row, node, 1u, X86_VINST_COPY_LOCAL, INVALID, uint4(index_slot, range_end_slot, 0u, 0u));
         write_inst(branch_row, node, 2u, X86_VINST_FOR_INTERVAL_BRANCH, INVALID, uint4(value_slot, index_slot, after_target, 0u));
         write_inst(inc_row, node, 3u, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(value_slot, branch_row, 1u, 0u));
         return true;

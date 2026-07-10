@@ -1,7 +1,10 @@
 use anyhow::Result;
 
 use super::{GpuParser, Ll1AcceptResult, ParserFailure, support::read_u32_words};
-use crate::parser::tables::PrecomputedParseTables;
+use crate::{
+    lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES,
+    parser::tables::PrecomputedParseTables,
+};
 
 impl GpuParser {
     /// Builds a structured parser failure from the current resident parser buffers.
@@ -33,15 +36,38 @@ impl GpuParser {
         tables: &PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
     ) -> Result<Vec<u32>> {
+        let parser_feature_flags = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned")
+            .as_ref()
+            .map(|cached| cached.parser_feature_flags)
+            .unwrap_or(LEXICALLY_PROVEN_PARSER_FEATURES);
+        self.read_current_resident_semantic_token_kinds_with_features(
+            token_capacity,
+            tables,
+            tree_capacity_override,
+            parser_feature_flags,
+        )
+    }
+
+    fn read_current_resident_semantic_token_kinds_with_features(
+        &self,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
+    ) -> Result<Vec<u32>> {
         let mut resident_guard = self
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
             &mut resident_guard,
             token_capacity,
             tables,
             tree_capacity_override,
+            parser_feature_flags,
         );
 
         let mut encoder = self

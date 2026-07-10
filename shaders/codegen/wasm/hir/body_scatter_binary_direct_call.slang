@@ -42,6 +42,12 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_field_index;
 StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_fn_token;
+StructuredBuffer<uint> call_param_row_ordinal;
+StructuredBuffer<uint> call_param_row_type;
+StructuredBuffer<uint> call_param_row_start;
+StructuredBuffer<uint> call_param_row_count;
 StructuredBuffer<uint> wasm_func_param_ordinal_by_decl_token;
 StructuredBuffer<uint> wasm_func_local_max_by_token;
 StructuredBuffer<uint> wasm_agg_local_width_by_token;
@@ -58,9 +64,11 @@ RWStructuredBuffer<uint> body_words;
 
 static const uint INVALID = 0xffffffffu;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
+static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
@@ -91,6 +99,7 @@ static const uint WASM_F32_CONST = 0x43u;
 static const uint WASM_LOCAL_GET = 0x20u;
 static const uint WASM_LOCAL_SET = 0x21u;
 static const uint WASM_CALL = 0x10u;
+static const uint WASM_RETURN = 0x0fu;
 static const uint WASM_I32_LOAD = 0x28u;
 static const uint WASM_F32_LOAD = 0x2au;
 static const uint WASM_I32_EQZ = 0x45u;
@@ -285,6 +294,54 @@ uint node_enclosing_fn_token(uint node)
     return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
 }
 
+uint call_param_type_value(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return TY_UNKNOWN;
+    uint start = call_param_row_start[fn_token];
+    uint count = call_param_row_count[fn_token];
+    uint row_limit = call_param_row_count_out[0u];
+    if (start == INVALID || ordinal >= count || start > row_limit || ordinal > row_limit - start)
+        return TY_UNKNOWN;
+    uint row = start + ordinal;
+    if (row >= row_limit ||
+        call_param_row_fn_token[row] != fn_token ||
+        call_param_row_ordinal[row] != ordinal)
+    {
+        return TY_UNKNOWN;
+    }
+    return call_param_row_type[row];
+}
+
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
 bool function_param_local_index(uint decl_token, uint fn_token, out uint local_index)
 {
     local_index = INVALID;
@@ -294,7 +351,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -323,14 +382,14 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     uint local_count = 0u;
     uint local_max = wasm_func_local_max_by_token[fn_token];
     if (local_max != INVALID)
         local_count = local_max + 1u;
     local_index = param_count + decl_token;
     if (local_decl_type(decl_token) == TY_FLOAT)
-        local_index += local_count;
+        local_index += local_count * 2u;
     return true;
 }
 
@@ -641,6 +700,47 @@ uint tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
     return local_set_byte(meta.y, expr_i - expr_len - 1u);
 }
 
+uint return_tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
+{
+    uint arg_bytes = arg_bytes_for_fragment(fragment_i);
+    uint call_tail_len = 1u + u32_leb_len(aux.x);
+    uint packed_op = meta.w;
+    uint op = packed_op & 0xffu;
+    uint call_side = packed_op >> 8u;
+    uint expr_len = expr_side_len(meta.z);
+
+    if (call_side == 0u)
+    {
+        if (byte_i < arg_bytes)
+            return 0u;
+        uint tail_i = byte_i - arg_bytes;
+        if (tail_i == 0u)
+            return WASM_CALL;
+        if (tail_i < call_tail_len)
+            return u32_leb_byte(aux.x, tail_i - 1u);
+        uint expr_i = tail_i - call_tail_len;
+        if (expr_i < expr_len)
+            return expr_side_byte(meta.z, expr_i);
+        if (expr_i == expr_len)
+            return op;
+        return WASM_RETURN;
+    }
+
+    if (byte_i < expr_len)
+        return expr_side_byte(meta.z, byte_i);
+    uint arg_i = byte_i - expr_len;
+    if (arg_i < arg_bytes)
+        return 0u;
+    uint call_i = arg_i - arg_bytes;
+    if (call_i == 0u)
+        return WASM_CALL;
+    if (call_i < call_tail_len)
+        return u32_leb_byte(aux.x, call_i - 1u);
+    if (call_i == call_tail_len)
+        return op;
+    return WASM_RETURN;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -652,12 +752,21 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!fragment_for_body_byte(body_byte_i, fragment_i))
         return;
     uint4 meta = body_fragment_meta[fragment_i];
-    if (meta.x != BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32)
+    if (meta.x != BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 &&
+        meta.x != BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32)
         return;
     uint offset = body_prefix_for_token(fragment_i);
     uint byte_i = body_byte_i - offset;
     uint arg_bytes = arg_bytes_for_fragment(fragment_i);
-    if (byte_i < arg_bytes)
+    uint arg_base =
+        meta.x == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 &&
+        (meta.w >> 8u) != 0u
+            ? expr_side_len(meta.z)
+            : 0u;
+    if (byte_i >= arg_base && byte_i < arg_base + arg_bytes)
         return;
-    body_words[body_byte_i] = tail_byte(fragment_i, meta, body_fragment_aux[fragment_i], byte_i);
+    body_words[body_byte_i] =
+        meta.x == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32
+            ? return_tail_byte(fragment_i, meta, body_fragment_aux[fragment_i], byte_i)
+            : tail_byte(fragment_i, meta, body_fragment_aux[fragment_i], byte_i);
 }

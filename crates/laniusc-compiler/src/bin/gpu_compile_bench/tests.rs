@@ -545,3 +545,20 @@ fn generated_capacity_snapshots_scale_monotonically_without_gpu_work() {
         }
     }
 }
+
+#[test]
+fn parser_floor_removes_only_absent_optional_family_rows() {
+    let tree_capacity = 1_000usize;
+    let full = super::capacity::parser_tree_floor_bytes_for_features(
+        tree_capacity,
+        laniusc_compiler::lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES
+            | laniusc_compiler::lexer::features::PARSER_FEATURE_STRUCTS,
+    );
+    let no_optional_families =
+        super::capacity::parser_tree_floor_bytes_for_features(tree_capacity, 0);
+
+    // Six array scalars, fifteen enum/match scalars, one u32x4 enum payload
+    // record, and eleven struct scalars are reduced to one binding-safe row.
+    let expected_saved = 36usize.saturating_mul(tree_capacity - 1).saturating_mul(4);
+    assert_eq!(full - no_optional_families, expected_saved);
+}

@@ -346,6 +346,71 @@ pub(super) fn trace_body_fragment_len_readback(
     Ok(())
 }
 
+pub(super) fn trace_body_fragment_aux_readback(
+    device: &wgpu::Device,
+    body_fragment_aux_readback: &wgpu::Buffer,
+    token_capacity: u32,
+) -> Result<()> {
+    let words = read_u32_vec_from_readback(
+        device,
+        body_fragment_aux_readback,
+        "codegen.wasm.body_fragment_aux",
+    )?;
+    let records = words
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, record)| {
+            !record.iter().all(|word| *word == 0)
+                && (record[0] != u32::MAX || record[1] != 0 || record[2] != 0 || record[3] != 0)
+        })
+        .map(|(slot, record)| {
+            format!(
+                "{slot}:[{},{},{},{}]",
+                record[0], record[1], record[2], record[3]
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.body_fragment_aux items={} token_capacity={} records=[{records}]",
+        words.len() / 4,
+        token_capacity
+    );
+    Ok(())
+}
+
+pub(super) fn trace_body_fragment_meta_readback(
+    device: &wgpu::Device,
+    body_fragment_meta_readback: &wgpu::Buffer,
+    token_capacity: u32,
+) -> Result<()> {
+    let words = read_u32_vec_from_readback(
+        device,
+        body_fragment_meta_readback,
+        "codegen.wasm.body_fragment_meta",
+    )?;
+    let records = words
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, record)| {
+            record[0] != 0 || record[1] != 0 || record[2] != 0 || record[3] != u32::MAX
+        })
+        .map(|(slot, record)| {
+            format!(
+                "{slot}:[{},{},{},{}]",
+                record[0], record[1], record[2], record[3]
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.body_fragment_meta items={} token_capacity={} records=[{records}]",
+        words.len() / 4,
+        token_capacity
+    );
+    Ok(())
+}
+
 pub(super) fn trace_func_invalid_readback(
     device: &wgpu::Device,
     invalid_count_readback: &wgpu::Buffer,

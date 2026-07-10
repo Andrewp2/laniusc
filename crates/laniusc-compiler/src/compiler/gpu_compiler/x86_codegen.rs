@@ -6,6 +6,16 @@ use crate::{
     type_checker::GpuTypeCheckError,
 };
 
+enum RecordedSourcePackX86 {
+    Fused {
+        check: x86::RecordedX86Codegen,
+        plan: SourcePackX86Plan,
+    },
+    Split {
+        features: x86::RecordedX86FeatureMeasurement,
+    },
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
     /// Returns the initialized x86 code generator or its deferred initialization error.
     pub(super) fn x86_generator(&self) -> Result<&x86::GpuX86CodeGenerator, &str> {
@@ -290,28 +300,50 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.source_pack.record");
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
-                        .parser
-                        .read_resident_partial_parse_tree_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    host_timer.stamp("partial_parse_tree_capacity");
-                    let mut parser_encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("compiler.x86.source_pack.parser-boundary.encoder"),
-                        });
-                    let mut parser_timer: Option<&mut GpuTimer> = None;
+                    let parser_capacity =
+                        if let Some(cached) = self.cached_source_pack_parser_capacity(sources) {
+                            host_timer.stamp("partial_parse_tree_capacity.cache_hit");
+                            cached
+                        } else {
+                            let measured = self
+                                .parser
+                                .measure_resident_partial_parse_capacity(
+                                    token_capacity,
+                                    &bufs.tokens_out,
+                                    &bufs.token_count,
+                                    Some(&bufs.token_file_id),
+                                    &self.parse_tables,
+                                )
+                                .map_err(|err| {
+                                    parser_execution_failed_for_source_pack(
+                                        &diagnostic_files,
+                                        err,
+                                    )
+                                })?;
+                            self.remember_source_pack_parser_capacity(sources, measured);
+                            host_timer.stamp("partial_parse_tree_capacity.measured");
+                            measured
+                        };
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
+                    if crate::gpu::env::env_bool_truthy(
+                        "LANIUS_GPU_COMPILE_HOST_TIMING",
+                        false,
+                    ) {
+                        let conservative_tree_capacity = self
+                            .parser
+                            .partial_parse_resident_tree_capacity(
+                                token_capacity,
+                                &self.parse_tables,
+                            );
+                        eprintln!(
+                            "[gpu_compile_host_timer] compiler.x86.source_pack.parser_capacity: exact={parser_tree_capacity} conservative={conservative_tree_capacity} tokens={token_capacity}"
+                        );
+                    }
                     let (parser_check, semantic_count) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
-                            &mut parser_encoder,
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+                            encoder,
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -320,7 +352,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
-                            &mut parser_timer,
+                            parser_feature_flags,
+                            &mut timer,
                             |parse_bufs, encoder, timer| {
                                 if let Some(timer) = timer.as_deref_mut() {
                                     timer.stamp(encoder, "parser.ll1_hir.done");
@@ -339,60 +372,90 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
+                    let semantic_count = semantic_count?;
+                    // Submit the parser boundary before allocating typecheck
+                    // resident state. At large input sizes, exact emit and
+                    // semantic counts save far more allocation time and memory
+                    // than overlapping parser execution with conservative
+                    // typecheck allocation.
+                    let next_encoder = device.create_command_encoder(
+                        &wgpu::CommandEncoderDescriptor {
+                            label: Some("compiler.x86.source_pack.typecheck-x86.encoder"),
+                        },
+                    );
+                    let parser_encoder = std::mem::replace(encoder, next_encoder);
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
                         "compiler.x86.source_pack.parser-boundary",
                         parser_encoder.finish(),
                     );
                     host_timer.stamp("parser_submitted");
-                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
-                        parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                    })?;
-                    if !ll1.accepted {
-                        let parser_failure = self
-                            .parser
-                            .current_resident_parser_failure_for_ll1_rejection(
-                                token_capacity,
-                                &self.parse_tables,
-                                Some(parser_tree_capacity),
-                                ll1,
-                            );
-                        return Err(parser_failure_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &bufs.tokens_out.buffer,
-                            &diagnostic_files,
-                            &parser_failure,
-                        ));
-                    }
-                    let semantic_hir_count = self
-                        .parser
-                        .finish_recorded_hir_semantic_count(&semantic_count?)
-                        .map_err(|err| {
+                    let early_parser_metadata = if exact_typecheck_capacity_boundary_required(
+                        parser_tree_capacity,
+                    ) {
+                        let ll1 = parser_check.read_status_result(device).map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
-                    let active_tree_capacity =
-                        hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
-                    host_timer.stamp("parser_finished");
+                        if !ll1.accepted {
+                            let parser_failure = self
+                                .parser
+                                .current_resident_parser_failure_for_ll1_rejection(
+                                    token_capacity,
+                                    &self.parse_tables,
+                                    Some(parser_tree_capacity),
+                                    ll1,
+                                );
+                            return Err(parser_failure_to_compile_error_for_source_pack(
+                                device,
+                                queue,
+                                &bufs.tokens_out.buffer,
+                                &diagnostic_files,
+                                &parser_failure,
+                            ));
+                        }
+                        let semantic_hir_count = self
+                            .parser
+                            .finish_recorded_hir_semantic_count(&semantic_count)
+                            .map_err(|err| {
+                                parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                            })?;
+                        host_timer.stamp("parser_capacity_finished");
+                        Some((ll1, semantic_hir_count))
+                    } else {
+                        None
+                    };
+                    let active_tree_capacity = early_parser_metadata
+                        .as_ref()
+                        .map(|(ll1, _semantic_hir_count)| {
+                            hir_node_capacity_for_parser_emit(
+                                parser_tree_capacity,
+                                ll1.emit_len,
+                            )
+                        })
+                        .unwrap_or(parser_tree_capacity);
                     let typecheck_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
                     let x86_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedX86ParserBuffers::from_parser_buffers,
                         );
-                    self.parser.release_current_resident_buffers();
-                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
-                    host_timer.stamp("parser_cache_released");
+                    // Keep parser buffers resident across daemon jobs. The cloned
+                    // handles below and the type-check bind groups refer to these
+                    // same buffers, so releasing the parser cache here only forces
+                    // identical jobs to recreate both parser and type-check state.
+                    host_timer.stamp("parser_cache_retained");
                     let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
                     let x86_source_bytes = bufs.in_bytes.clone();
                     let type_check = self.record_typecheck_from_parse_buffers(
@@ -413,32 +476,159 @@ impl<'gpu> GpuCompiler<'gpu> {
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
+                    if timer.is_none()
+                        && !crate::gpu::passes_core::validation_scopes_enabled()
+                        && typecheck_submission_overlap_enabled()
+                    {
+                        let next_encoder = device.create_command_encoder(
+                            &wgpu::CommandEncoderDescriptor {
+                                label: Some("compiler.x86.source_pack.x86.overlap.encoder"),
+                            },
+                        );
+                        let typecheck_encoder = std::mem::replace(encoder, next_encoder);
+                        crate::gpu::passes_core::submit_with_progress(
+                            queue,
+                            "compiler.x86.source_pack.typecheck.overlap",
+                            typecheck_encoder.finish(),
+                        );
+                        host_timer.stamp("typecheck_submitted_overlap");
+                    }
+                    let x86_recorded = if let Some(plan) =
+                        self.cached_source_pack_x86_plan(sources)
+                    {
+                        let codegen_buffers = self
+                            .type_checker
+                            .clone_x86_codegen_buffers()
+                            .ok_or_else(|| {
+                                x86_backend_execution_failed_for_source_pack(
+                                    &diagnostic_files,
+                                    "x86 type metadata buffers are unavailable",
+                                )
+                            })?;
+                        let x86_check = self.record_x86_from_parse_buffers_with_codegen(
+                            device,
+                            queue,
+                            encoder,
+                            x86_diagnostics.source_len,
+                            &x86_source_bytes,
+                            token_capacity,
+                            plan.active_tree_capacity.max(1),
+                            x86_inst_hir_node_count_for_backend_capacity(
+                                plan.active_tree_capacity,
+                                plan.semantic_hir_count,
+                            ),
+                            &x86_parse,
+                            codegen_buffers.as_ref(),
+                            plan.feature_summary,
+                            None,
+                            |err| {
+                                x86_backend_execution_failed_for_source_pack(
+                                    &diagnostic_files,
+                                    err,
+                                )
+                            },
+                        )?;
+                        host_timer.stamp("x86_fused_recorded");
+                        RecordedSourcePackX86::Fused {
+                            check: x86_check,
+                            plan,
+                        }
+                    } else {
+                        let features = self
+                            .x86_generator()
+                            .map_err(|err| {
+                                x86_backend_execution_failed_for_source_pack(
+                                    &diagnostic_files,
+                                    err,
+                                )
+                            })?
+                            .record_feature_measurement(
+                                device,
+                                queue,
+                                encoder,
+                                token_capacity,
+                                active_tree_capacity,
+                                &x86_parse.ll1_status,
+                                &x86_parse.hir_kind,
+                                &x86_parse.hir_stmt_record,
+                                &x86_parse.hir_expr_record,
+                            )
+                            .map_err(|err| {
+                                x86_backend_execution_failed_for_source_pack(
+                                    &diagnostic_files,
+                                    err.to_string(),
+                                )
+                            })?;
+                        host_timer.stamp("x86_features_recorded");
+                        RecordedSourcePackX86::Split { features }
+                    };
                     Ok((
                         type_check,
+                        parser_check,
+                        semantic_count,
+                        early_parser_metadata,
                         token_count,
-                        active_tree_capacity,
-                        semantic_hir_count,
+                        parser_tree_capacity,
                         x86_diagnostics,
                         x86_source_bytes,
                         x86_parse,
+                        x86_recorded,
                     ))
                 },
                 |device,
                  queue,
                  (
                     type_check,
+                    parser_check,
+                    semantic_count,
+                    early_parser_metadata,
                     token_count,
-                    active_tree_capacity,
-                    semantic_hir_count,
+                    parser_tree_capacity,
                     x86_diagnostics,
                     x86_source_bytes,
                     x86_parse,
+                    x86_recorded,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.source_pack.finish");
                     self.x86_generator().map_err(|err| {
                         x86_backend_execution_failed_for_source_pack(&diagnostic_files, err)
                     })?;
                     host_timer.stamp("x86_generator_ready");
+                    let (ll1, semantic_hir_count) = if let Some(metadata) = early_parser_metadata {
+                        metadata
+                    } else {
+                        let ll1 = parser_check.read_status_result(device).map_err(|err| {
+                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                        })?;
+                        if !ll1.accepted {
+                            let token_capacity = token_count.max(1);
+                            let parser_failure = self
+                                .parser
+                                .current_resident_parser_failure_for_ll1_rejection(
+                                    token_capacity,
+                                    &self.parse_tables,
+                                    Some(parser_tree_capacity),
+                                    ll1,
+                                );
+                            return Err(parser_failure_to_compile_error_for_source_pack(
+                                device,
+                                queue,
+                                &x86_diagnostics.tokens_out.buffer,
+                                &diagnostic_files,
+                                &parser_failure,
+                            ));
+                        }
+                        let semantic_hir_count = self
+                            .parser
+                            .finish_recorded_hir_semantic_count(&semantic_count)
+                            .map_err(|err| {
+                                parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                            })?;
+                        (ll1, semantic_hir_count)
+                    };
+                    let active_tree_capacity =
+                        hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
+                    host_timer.stamp("parser_finished");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
                         .map_err(|err| {
@@ -451,66 +641,107 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                     host_timer.stamp("typecheck_finish");
-                    let codegen_buffers =
-                        self.type_checker
-                            .take_x86_codegen_buffers()
-                            .ok_or_else(|| {
-                                x86_backend_execution_failed_for_source_pack(
+                    let x86_check = match x86_recorded {
+                        RecordedSourcePackX86::Fused { check, plan } => {
+                            if plan.active_tree_capacity != active_tree_capacity
+                                || plan.semantic_hir_count != semantic_hir_count
+                            {
+                                return Err(x86_backend_execution_failed_for_source_pack(
                                     &diagnostic_files,
-                                    "x86 type metadata buffers are unavailable",
-                                )
-                            })?;
-                    host_timer.stamp("typecheck_x86_codegen_buffers_retained");
-                    let token_capacity = token_count.max(1);
-                    let x86_hir_node_count = active_tree_capacity.max(1);
-                    let x86_inst_hir_node_count = x86_inst_hir_node_count_for_backend_capacity(
-                        active_tree_capacity,
-                        semantic_hir_count,
-                    );
-                    let mut x86_encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("compiler.x86.source_pack.backend.encoder"),
-                        });
-                    let feature_summary = self
-                        .x86_generator()
-                        .map_err(|err| {
-                            x86_backend_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?
-                        .measure_features(
-                            device,
-                            queue,
-                            token_capacity,
-                            x86_hir_node_count,
-                            &x86_parse.ll1_status,
-                            &x86_parse.hir_kind,
-                            &x86_parse.hir_stmt_record,
-                            &x86_parse.hir_expr_record,
-                        )
-                        .map_err(|err| {
-                            x86_backend_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    let x86_check = self.record_x86_from_parse_buffers_with_codegen(
-                        device,
-                        queue,
-                        &mut x86_encoder,
-                        x86_diagnostics.source_len,
-                        &x86_source_bytes,
-                        token_capacity,
-                        x86_hir_node_count,
-                        x86_inst_hir_node_count,
-                        &x86_parse,
-                        codegen_buffers.as_ref(),
-                        feature_summary,
-                        None,
-                        |err| x86_backend_execution_failed_for_source_pack(&diagnostic_files, err),
-                    )?;
-                    host_timer.stamp("x86_recorded");
-                    crate::gpu::passes_core::submit_with_progress(
-                        queue,
-                        "compiler.x86.source_pack.backend",
-                        x86_encoder.finish(),
-                    );
-                    host_timer.stamp("x86_submitted");
+                                    format!(
+                                        "cached x86 frontend plan drifted: active tree {} -> {}, semantic HIR {} -> {}",
+                                        plan.active_tree_capacity,
+                                        active_tree_capacity,
+                                        plan.semantic_hir_count,
+                                        semantic_hir_count,
+                                    ),
+                                ));
+                            }
+                            host_timer.stamp("x86_fused_ready");
+                            check
+                        }
+                        RecordedSourcePackX86::Split { features } => {
+                            let codegen_buffers = self
+                                .type_checker
+                                .clone_x86_codegen_buffers()
+                                .ok_or_else(|| {
+                                    x86_backend_execution_failed_for_source_pack(
+                                        &diagnostic_files,
+                                        "x86 type metadata buffers are unavailable",
+                                    )
+                                })?;
+                            trace_x86_name_bindings(
+                                device,
+                                queue,
+                                token_count.max(1),
+                                codegen_buffers.as_ref(),
+                            );
+                            host_timer.stamp("typecheck_x86_codegen_buffers_retained");
+                            let feature_summary = self
+                                .x86_generator()
+                                .map_err(|err| {
+                                    x86_backend_execution_failed_for_source_pack(
+                                        &diagnostic_files,
+                                        err,
+                                    )
+                                })?
+                                .finish_feature_measurement(device, features)
+                                .map_err(|err| {
+                                    x86_backend_execution_failed_for_source_pack(
+                                        &diagnostic_files,
+                                        err.to_string(),
+                                    )
+                                })?;
+                            host_timer.stamp("x86_features_finished");
+                            let plan = SourcePackX86Plan {
+                                feature_summary,
+                                active_tree_capacity,
+                                semantic_hir_count,
+                            };
+                            self.remember_source_pack_x86_plan(sources, plan);
+                            let mut x86_encoder = device.create_command_encoder(
+                                &wgpu::CommandEncoderDescriptor {
+                                    label: Some("compiler.x86.source_pack.backend.encoder"),
+                                },
+                            );
+                            let mut x86_timer = x86_gpu_timer(device, queue);
+                            let check = self.record_x86_from_parse_buffers_with_codegen(
+                                device,
+                                queue,
+                                &mut x86_encoder,
+                                x86_diagnostics.source_len,
+                                &x86_source_bytes,
+                                token_count.max(1),
+                                active_tree_capacity.max(1),
+                                x86_inst_hir_node_count_for_backend_capacity(
+                                    active_tree_capacity,
+                                    semantic_hir_count,
+                                ),
+                                &x86_parse,
+                                codegen_buffers.as_ref(),
+                                feature_summary,
+                                x86_timer.as_mut(),
+                                |err| {
+                                    x86_backend_execution_failed_for_source_pack(
+                                        &diagnostic_files,
+                                        err,
+                                    )
+                                },
+                            )?;
+                            if let Some(timer) = x86_timer.as_ref() {
+                                timer.resolve(&mut x86_encoder);
+                            }
+                            host_timer.stamp("x86_recorded");
+                            crate::gpu::passes_core::submit_with_progress(
+                                queue,
+                                "compiler.x86.source_pack.backend",
+                                x86_encoder.finish(),
+                            );
+                            host_timer.stamp("x86_submitted");
+                            print_x86_gpu_timer(device, x86_timer.as_ref());
+                            check
+                        }
+                    };
                     let result = x86_check.read_output(device, queue).map_err(|err| {
                         x86_codegen_error_to_compile_error_for_source_pack(
                             device,
@@ -561,9 +792,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.record");
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
+                    let parser_capacity = self
                         .parser
-                        .read_resident_partial_parse_tree_capacity(
+                        .measure_resident_partial_parse_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -573,6 +804,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
                     host_timer.stamp("partial_parse_tree_capacity");
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -581,7 +814,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let mut parser_timer: Option<&mut GpuTimer> = None;
                     let (parser_check, semantic_count) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             &mut parser_encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -591,6 +824,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_feature_flags,
                             &mut parser_timer,
                             |parse_bufs, encoder, timer| {
                                 self.parser
@@ -646,23 +880,25 @@ impl<'gpu> GpuCompiler<'gpu> {
                     host_timer.stamp("parser_finished");
                     let typecheck_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
                     let x86_parse = self
                         .parser
-                        .with_current_resident_buffers_with_tree_capacity(
+                        .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
+                            parser_feature_flags,
                             OwnedX86ParserBuffers::from_parser_buffers,
                         );
-                    self.parser.release_current_resident_buffers();
-                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
-                    host_timer.stamp("parser_cache_released");
+                    // See the source-pack path above: retaining the sequentially
+                    // reused parser allocation also preserves type-check bind groups.
+                    host_timer.stamp("parser_cache_retained");
                     let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
                     let x86_source_bytes = bufs.in_bytes.clone();
                     let type_check = self.record_typecheck_from_parse_buffers(
@@ -683,6 +919,30 @@ impl<'gpu> GpuCompiler<'gpu> {
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
+                    let x86_features = self
+                        .x86_generator()
+                        .map_err(|err| {
+                            x86_backend_execution_failed_for_source(&diagnostic_path, src, err)
+                        })?
+                        .record_feature_measurement(
+                            device,
+                            queue,
+                            encoder,
+                            token_capacity,
+                            active_tree_capacity,
+                            &x86_parse.ll1_status,
+                            &x86_parse.hir_kind,
+                            &x86_parse.hir_stmt_record,
+                            &x86_parse.hir_expr_record,
+                        )
+                        .map_err(|err| {
+                            x86_backend_execution_failed_for_source(
+                                &diagnostic_path,
+                                src,
+                                err.to_string(),
+                            )
+                        })?;
+                    host_timer.stamp("x86_features_recorded");
                     Ok((
                         type_check,
                         token_count,
@@ -691,6 +951,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         x86_diagnostics,
                         x86_source_bytes,
                         x86_parse,
+                        x86_features,
                     ))
                 },
                 |device,
@@ -703,6 +964,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     x86_diagnostics,
                     x86_source_bytes,
                     x86_parse,
+                    x86_features,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.finish");
                     self.x86_generator().map_err(|err| {
@@ -722,17 +984,37 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                     host_timer.stamp("typecheck_finish");
-                    let codegen_buffers =
-                        self.type_checker
-                            .take_x86_codegen_buffers()
-                            .ok_or_else(|| {
-                                x86_backend_execution_failed_for_source(
-                                    &diagnostic_path,
-                                    src,
-                                    "x86 type metadata buffers are unavailable",
-                                )
-                            })?;
+                    let codegen_buffers = self
+                        .type_checker
+                        .clone_x86_codegen_buffers()
+                        .ok_or_else(|| {
+                            x86_backend_execution_failed_for_source(
+                                &diagnostic_path,
+                                src,
+                                "x86 type metadata buffers are unavailable",
+                            )
+                        })?;
+                    trace_x86_name_bindings(
+                        device,
+                        queue,
+                        token_count.max(1),
+                        codegen_buffers.as_ref(),
+                    );
                     host_timer.stamp("typecheck_x86_codegen_buffers_retained");
+                    let feature_summary = self
+                        .x86_generator()
+                        .map_err(|err| {
+                            x86_backend_execution_failed_for_source(&diagnostic_path, src, err)
+                        })?
+                        .finish_feature_measurement(device, x86_features)
+                        .map_err(|err| {
+                            x86_backend_execution_failed_for_source(
+                                &diagnostic_path,
+                                src,
+                                err.to_string(),
+                            )
+                        })?;
+                    host_timer.stamp("x86_features_finished");
                     let token_capacity = token_count.max(1);
                     let x86_hir_node_count = active_tree_capacity.max(1);
                     let x86_inst_hir_node_count = x86_inst_hir_node_count_for_backend_capacity(
@@ -743,24 +1025,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.x86.backend.encoder"),
                         });
-                    let feature_summary = self
-                        .x86_generator()
-                        .map_err(|err| {
-                            x86_backend_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?
-                        .measure_features(
-                            device,
-                            queue,
-                            token_capacity,
-                            x86_hir_node_count,
-                            &x86_parse.ll1_status,
-                            &x86_parse.hir_kind,
-                            &x86_parse.hir_stmt_record,
-                            &x86_parse.hir_expr_record,
-                        )
-                        .map_err(|err| {
-                            x86_backend_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
+                    let mut x86_timer = x86_gpu_timer(device, queue);
                     let x86_check = self.record_x86_from_parse_buffers_with_codegen(
                         device,
                         queue,
@@ -773,9 +1038,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                         &x86_parse,
                         codegen_buffers.as_ref(),
                         feature_summary,
-                        None,
+                        x86_timer.as_mut(),
                         |err| x86_backend_execution_failed_for_source(&diagnostic_path, src, err),
                     )?;
+                    if let Some(timer) = x86_timer.as_ref() {
+                        timer.resolve(&mut x86_encoder);
+                    }
                     host_timer.stamp("x86_recorded");
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
@@ -783,6 +1051,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         x86_encoder.finish(),
                     );
                     host_timer.stamp("x86_submitted");
+                    print_x86_gpu_timer(device, x86_timer.as_ref());
                     let result = x86_check.read_output(device, queue).map_err(|err| {
                         x86_codegen_error_to_compile_error_for_source(
                             device,
@@ -801,6 +1070,46 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))?
     }
+}
+
+fn typecheck_submission_overlap_enabled() -> bool {
+    match std::env::var("LANIUS_OVERLAP_TYPECHECK_SUBMISSION") {
+        Ok(value) => !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false"),
+        Err(_) => true,
+    }
+}
+
+fn x86_gpu_timer(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<GpuTimer> {
+    let enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
+        || crate::gpu::trace::enabled();
+    (enabled && device.features().contains(wgpu::Features::TIMESTAMP_QUERY))
+        .then(|| GpuTimer::new(device, queue, 64))
+}
+
+fn print_x86_gpu_timer(device: &wgpu::Device, timer: Option<&GpuTimer>) {
+    let Some(timer) = timer else {
+        return;
+    };
+    let Some(values) = timer.try_read(device) else {
+        return;
+    };
+    let Some((_, first)) = values.first() else {
+        return;
+    };
+    let period_ns = timer.period_ns() as f64;
+    let mut previous = *first;
+    for (label, timestamp) in values {
+        let elapsed_ms = ((timestamp - previous) as f64 * period_ns) / 1.0e6;
+        eprintln!("[gpu_compile_timer] {label}: {elapsed_ms:.3}ms");
+        previous = timestamp;
+    }
+}
+
+const EXACT_TYPECHECK_CAPACITY_MIN_HIR_NODES: u32 = 1 << 20;
+
+fn exact_typecheck_capacity_boundary_required(parser_tree_capacity: u32) -> bool {
+    parser_tree_capacity >= EXACT_TYPECHECK_CAPACITY_MIN_HIR_NODES
 }
 
 fn x86_codegen_error_to_compile_error_for_source(
@@ -1179,6 +1488,80 @@ fn read_u32_from_buffer_for_diagnostic(
     Ok(word)
 }
 
+fn trace_x86_name_bindings(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_count: u32,
+    buffers: crate::type_checker::GpuX86CodegenBuffers<'_>,
+) {
+    if !std::env::var("LANIUS_X86_STATUS_TRACE").is_ok_and(|value| {
+        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES")
+    }) {
+        return;
+    }
+
+    let count = u64::from(token_count);
+    let section_bytes = count.saturating_mul(4);
+    let total_bytes = section_bytes.saturating_mul(3);
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rb.compiler.x86.name_bindings"),
+        size: total_bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("compiler.x86.name-bindings-readback.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(buffers.name_id_by_token, 0, &readback, 0, section_bytes);
+    encoder.copy_buffer_to_buffer(
+        buffers.enclosing_fn,
+        0,
+        &readback,
+        section_bytes,
+        section_bytes,
+    );
+    encoder.copy_buffer_to_buffer(
+        buffers.visible_decl,
+        0,
+        &readback,
+        section_bytes * 2,
+        section_bytes,
+    );
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "compiler.x86.name-bindings-readback",
+        encoder.finish(),
+    );
+    let slice = readback.slice(..);
+    if crate::gpu::passes_core::map_readback_blocking(
+        device,
+        &slice,
+        "compiler.x86.name-bindings",
+    )
+    .is_err()
+    {
+        return;
+    }
+    let mapped = slice.get_mapped_range();
+    let words = mapped
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("u32 trace word")))
+        .collect::<Vec<_>>();
+    let n = token_count as usize;
+    for token in 0..n {
+        let name = words[token];
+        let owner = words[n + token];
+        let visible = words[n * 2 + token];
+        if name != u32::MAX || visible != u32::MAX {
+            eprintln!(
+                "[laniusc][x86-name] token={token} name={name} owner={owner} visible={visible}"
+            );
+        }
+    }
+    drop(mapped);
+    readback.unmap();
+}
+
 fn read_single_owned_token_for_diagnostic(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1240,6 +1623,16 @@ fn read_single_owned_token_for_diagnostic(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_typecheck_capacity_boundary_is_reserved_for_large_hir() {
+        assert!(!exact_typecheck_capacity_boundary_required(
+            EXACT_TYPECHECK_CAPACITY_MIN_HIR_NODES - 1
+        ));
+        assert!(exact_typecheck_capacity_boundary_required(
+            EXACT_TYPECHECK_CAPACITY_MIN_HIR_NODES
+        ));
+    }
 
     #[test]
     fn x86_backend_execution_failure_for_source_is_structured_diagnostic() {

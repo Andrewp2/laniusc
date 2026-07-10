@@ -19,7 +19,17 @@ use laniusc_compiler::{
         },
     },
     compiler::GpuLiveCapacityEstimateResult,
-    lexer::test_cpu::lex_on_test_cpu,
+    lexer::{
+        features::{
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+            PARSER_FEATURE_ARRAYS,
+            PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_MATCHES,
+            PARSER_FEATURE_STRUCTS,
+        },
+        tables::tokens::TokenKind,
+        test_cpu::lex_on_test_cpu,
+    },
     parser::tables::PrecomputedParseTables,
 };
 
@@ -167,8 +177,10 @@ pub(super) fn reject_large_interactive_run(
     let token_capacity = token_capacity_estimate_for_source(src);
     let estimate =
         parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
-    let floor_bytes = parser_tree_floor_bytes(estimate.tree_capacity);
-    let parser_floor = parser_allocation_floor_bytes(&estimate);
+    let parser_feature_flags = parser_feature_flags_for_source(src);
+    let floor_bytes =
+        parser_tree_floor_bytes_for_features(estimate.tree_capacity, parser_feature_flags);
+    let parser_floor = parser_allocation_floor_bytes_for_features(&estimate, parser_feature_flags);
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity.lexer_token_capacity,
         estimate.tree_capacity,
@@ -247,6 +259,7 @@ pub(super) fn print_capacity_estimate(
     let token_capacity = token_capacity_estimate_for_source(src);
     let parse_capacity =
         parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
+    let parser_feature_flags = parser_feature_flags_for_source(src);
     println!(
         "estimate lines={source_lines} source_bytes={source_bytes} source_file_capacity={} lexer_byte_capacity={} lexer_token_capacity={} parser_token_capacity={} token_capacity_basis={}",
         source_file_capacity.max(1),
@@ -260,6 +273,7 @@ pub(super) fn print_capacity_estimate(
         &parse_capacity,
         None,
         source_file_capacity,
+        parser_feature_flags,
     );
     print_codegen_unit_estimate(sources, library_ids, library_dependencies);
     print_parallel_pass_contract_estimate();
@@ -420,7 +434,9 @@ pub(super) fn compile_capacity_snapshot_for_source(
     let token_capacity = token_capacity_estimate_for_source(src);
     let parse_capacity =
         parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
-    let parser_floor = parser_allocation_floor_bytes(&parse_capacity);
+    let parser_feature_flags = parser_feature_flags_for_source(src);
+    let parser_floor =
+        parser_allocation_floor_bytes_for_features(&parse_capacity, parser_feature_flags);
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity.lexer_token_capacity,
         parse_capacity.tree_capacity,
@@ -461,8 +477,8 @@ pub(super) fn print_live_capacity_estimate(
         tables,
     );
     println!(
-        "estimate_live lines={source_lines} source_bytes={source_bytes} gpu_token_count={} token_capacity={token_capacity} parser_emit_len={} semantic_hir_count={}",
-        live.token_count, live.parser_emit_len, live.semantic_hir_count
+        "estimate_live lines={source_lines} source_bytes={source_bytes} gpu_token_count={} token_capacity={token_capacity} parser_feature_flags=0x{:08x} parser_emit_len={} semantic_hir_count={}",
+        live.token_count, live.parser_feature_flags, live.parser_emit_len, live.semantic_hir_count
     );
     let x86_hir_words = (live.parser_emit_len as usize).max(1);
     let semantic_hir_words = (live.semantic_hir_count as usize).max(1);
@@ -471,6 +487,7 @@ pub(super) fn print_live_capacity_estimate(
         &parse_capacity,
         Some((x86_hir_words, semantic_hir_words)),
         1,
+        live.parser_feature_flags,
     );
     print_parallel_pass_contract_estimate();
     if x86_hir_words < parse_capacity.tree_capacity {
@@ -531,8 +548,10 @@ pub(super) fn print_capacity_floors(
     parse_capacity: &ParserCapacityEstimate,
     x86_words_override: Option<(usize, usize)>,
     source_file_capacity: usize,
+    parser_feature_flags: u32,
 ) {
-    let allocation_floor = parser_allocation_floor_bytes(parse_capacity);
+    let allocation_floor =
+        parser_allocation_floor_bytes_for_features(parse_capacity, parser_feature_flags);
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity,
         parse_capacity.tree_capacity,
@@ -541,7 +560,7 @@ pub(super) fn print_capacity_floors(
     );
 
     println!(
-        "estimate parser_path={} parser_tree_capacity={} one_tree_u32_buffer={} parser_tree_buffer_floor={}",
+        "estimate parser_path={} parser_tree_capacity={} parser_feature_flags=0x{parser_feature_flags:08x} one_tree_u32_buffer={} parser_tree_buffer_floor={}",
         parse_capacity.path,
         parse_capacity.tree_capacity,
         human_bytes(parse_capacity.tree_capacity.saturating_mul(4)),
@@ -1091,10 +1110,12 @@ pub(super) struct ParserAllocationFloor {
     pack_streams: usize,
 }
 
-pub(super) fn parser_allocation_floor_bytes(
+pub(super) fn parser_allocation_floor_bytes_for_features(
     estimate: &ParserCapacityEstimate,
+    parser_feature_flags: u32,
 ) -> ParserAllocationFloor {
-    let tree_hir = parser_tree_floor_bytes(estimate.tree_capacity);
+    let tree_hir =
+        parser_tree_floor_bytes_for_features(estimate.tree_capacity, parser_feature_flags);
     let brackets = parser_bracket_floor_bytes(estimate.total_sc);
     let pack_streams = parser_pack_stream_floor_bytes(estimate);
     ParserAllocationFloor {
@@ -1107,18 +1128,68 @@ pub(super) fn parser_allocation_floor_bytes(
     }
 }
 
-pub(super) fn parser_tree_floor_bytes(tree_capacity: usize) -> usize {
+pub(super) fn parser_tree_floor_bytes_for_features(
+    tree_capacity: usize,
+    parser_feature_flags: u32,
+) -> usize {
     // Resident parser/HIR tree-capacity allocations after shared pointer-jump
-    // list scratch. This counts actual allocations, not alias views.
-    const PARSER_TREE_SCALAR_U32_BUFFERS: usize = 78;
-    const PARSER_TREE_U32X4_RECORD_BUFFERS: usize = 3;
-    let parser_tree_scalar_floor_bytes = PARSER_TREE_SCALAR_U32_BUFFERS
+    // list scratch. This counts actual allocations, not alias views. Optional
+    // families retain one binding-safe row when absent; that fixed tail is
+    // included instead of charging them at tree capacity.
+    const ALWAYS_TREE_SCALAR_U32_BUFFERS: usize = 46;
+    const ALWAYS_TREE_U32X4_RECORD_BUFFERS: usize = 2;
+    const ARRAY_SCALAR_U32_BUFFERS: usize = 6;
+    const ENUM_MATCH_SCALAR_U32_BUFFERS: usize = 15;
+    const ENUM_MATCH_U32X4_RECORD_BUFFERS: usize = 1;
+    const STRUCT_SCALAR_U32_BUFFERS: usize = 11;
+    let array_capacity =
+        feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_ARRAYS);
+    let enum_match_capacity = feature_capacity(
+        tree_capacity,
+        parser_feature_flags,
+        PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES,
+    );
+    let struct_capacity =
+        feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_STRUCTS);
+    let parser_tree_scalar_floor_bytes = ALWAYS_TREE_SCALAR_U32_BUFFERS
         .saturating_mul(tree_capacity)
+        .saturating_add(ARRAY_SCALAR_U32_BUFFERS.saturating_mul(array_capacity))
+        .saturating_add(ENUM_MATCH_SCALAR_U32_BUFFERS.saturating_mul(enum_match_capacity))
+        .saturating_add(STRUCT_SCALAR_U32_BUFFERS.saturating_mul(struct_capacity))
         .saturating_mul(4);
-    let parser_tree_wide_floor_bytes = PARSER_TREE_U32X4_RECORD_BUFFERS
+    let parser_tree_wide_floor_bytes = ALWAYS_TREE_U32X4_RECORD_BUFFERS
         .saturating_mul(tree_capacity)
+        .saturating_add(ENUM_MATCH_U32X4_RECORD_BUFFERS.saturating_mul(enum_match_capacity))
         .saturating_mul(16);
     parser_tree_scalar_floor_bytes.saturating_add(parser_tree_wide_floor_bytes)
+}
+
+fn feature_capacity(tree_capacity: usize, parser_feature_flags: u32, mask: u32) -> usize {
+    if parser_feature_flags & mask == 0 {
+        1
+    } else {
+        tree_capacity.max(1)
+    }
+}
+
+fn parser_feature_flags_for_source(src: &str) -> u32 {
+    let Ok(tokens) = lex_on_test_cpu(src) else {
+        return LEXICALLY_PROVEN_PARSER_FEATURES | PARSER_FEATURE_STRUCTS;
+    };
+    // Raw lexical tokens cannot distinguish every imported-type struct literal
+    // from a typed function signature. Keep structs conservative in CPU-only
+    // projections; live estimates and compilation use the exact GPU semantic mask.
+    let mut flags = PARSER_FEATURE_STRUCTS;
+    for token in &tokens {
+        flags |= match token.kind {
+            TokenKind::LBracket | TokenKind::RBracket => PARSER_FEATURE_ARRAYS,
+            TokenKind::Enum => PARSER_FEATURE_ENUMS,
+            TokenKind::Match => PARSER_FEATURE_MATCHES,
+            TokenKind::Struct => PARSER_FEATURE_STRUCTS,
+            _ => 0,
+        };
+    }
+    flags
 }
 
 pub(super) fn parser_bracket_floor_bytes(total_sc: usize) -> usize {

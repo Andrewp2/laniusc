@@ -77,7 +77,8 @@ uint local_decl_fragment_len_from_count(uint local_count)
 {
     if (local_count == 0u)
         return 1u;
-    return 1u + (u32_leb_len(local_count) + 1u) * 2u;
+    uint i32_count = local_count * 2u;
+    return 1u + u32_leb_len(i32_count) + 1u + u32_leb_len(local_count) + 1u;
 }
 
 uint local_decl_count_for_function_token(uint fn_token)

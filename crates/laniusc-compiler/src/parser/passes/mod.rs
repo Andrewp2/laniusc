@@ -7,6 +7,28 @@ use crate::{
     parser::{buffers::ParserBuffers, debug::DebugOutput},
 };
 
+fn parser_clear_buffer(
+    encoder: &mut wgpu::CommandEncoder,
+    buffer: &wgpu::Buffer,
+    offset: u64,
+    size: Option<u64>,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    encoder.clear_buffer(buffer, offset, size);
+}
+
+fn parser_copy_buffer_to_buffer(
+    encoder: &mut wgpu::CommandEncoder,
+    source: &wgpu::Buffer,
+    source_offset: u64,
+    destination: &wgpu::Buffer,
+    destination_offset: u64,
+    size: u64,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
+}
+
 /// Delimiter pairing and bracket-layer passes.
 pub mod brackets;
 /// HIR classification, topology, and typed record passes.
@@ -41,6 +63,7 @@ pub struct ParserPasses {
     pub b04: brackets::histogram_layers::BracketsHistogramLayersPass,
     pub b05: brackets::scan_histograms::BracketsScanHistogramsPass,
     pub b06: brackets::scatter_by_layer::BracketsScatterByLayerPass,
+    pub pair_radix: brackets::pair_radix::BracketsPairRadixPass,
     pub pse04: brackets::pse_pair::BracketsPsePairPass, // Replaces b07
 
     // Tree building pass
@@ -141,6 +164,8 @@ pub struct ParserPasses {
     pub hir_struct_fields: hir::structs::fields::HirStructFieldsPass,
     pub hir_context_relations_init: hir::context::relations::init::HirContextRelationsInitPass,
     pub hir_context_relations_step: hir::context::relations::step::HirContextRelationsStepPass,
+    pub hir_context_relations_step_small:
+        hir::context::relations::step_small::HirContextRelationsStepSmallPass,
     pub hir_context_relations_scatter:
         hir::context::relations::scatter::HirContextRelationsScatterPass,
     pub hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass,
@@ -173,6 +198,7 @@ impl ParserPasses {
             b04: brackets::histogram_layers::BracketsHistogramLayersPass::new(device)?,
             b05: brackets::scan_histograms::BracketsScanHistogramsPass::new(device)?,
             b06: brackets::scatter_by_layer::BracketsScatterByLayerPass::new(device)?,
+            pair_radix: brackets::pair_radix::BracketsPairRadixPass::new(device)?,
             pse04: brackets::pse_pair::BracketsPsePairPass::new(device)?,
 
             tree_parent: tree::parent::TreeParentPass::new(device)?,
@@ -321,6 +347,8 @@ impl ParserPasses {
                 hir::context::relations::init::HirContextRelationsInitPass::new(device)?,
             hir_context_relations_step:
                 hir::context::relations::step::HirContextRelationsStepPass::new(device)?,
+            hir_context_relations_step_small:
+                hir::context::relations::step_small::HirContextRelationsStepSmallPass::new(device)?,
             hir_context_relations_scatter:
                 hir::context::relations::scatter::HirContextRelationsScatterPass::new(device)?,
             hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass::new(
@@ -355,7 +383,8 @@ pub fn record_all_passes(
         .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
     p.pack_varlen
         .record_pass(&mut ctx, E1D(n_pairs.saturating_mul(256)))?;
-    ctx.encoder.copy_buffer_to_buffer(
+    parser_copy_buffer_to_buffer(
+        ctx.encoder,
         &ctx.buffers.partial_parse_status,
         0,
         &ctx.buffers.ll1_status,
@@ -428,7 +457,8 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_type_path_leaf_step
         .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
-    ctx.encoder.clear_buffer(
+    parser_clear_buffer(
+        ctx.encoder,
         &ctx.buffers.hir_type_path_leaf_link_b.buffer,
         0,
         Some(u64::from(ctx.buffers.tree_capacity) * 4),
@@ -436,8 +466,7 @@ pub fn record_all_passes(
     p.hir_type_path_leaf_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     let token_input_capacity = ctx.buffers.token_input_capacity;
-    ctx.encoder
-        .clear_buffer(&ctx.buffers.source_file_token_end, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.source_file_token_end, 0, None);
     p.source_file_token_end
         .record_pass(&mut ctx, E1D(token_input_capacity))?;
     p.hir_spans.record_pass(&mut ctx, E1D(n_tree))?;
@@ -626,12 +655,19 @@ pub fn record_all_passes(
     p.hir_struct_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_context_relations_init
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_context_relations_step.record_steps_indirect(
-        ctx.device,
-        ctx.encoder,
-        ctx.buffers,
-        &hir_semantic_dispatch_args,
-    )?;
+    if ctx.buffers.tree_capacity
+        <= hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+    {
+        p.hir_context_relations_step_small
+            .record_pass(&mut ctx, E1D(1))?;
+    } else {
+        p.hir_context_relations_step.record_steps_indirect(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            &hir_semantic_dispatch_args,
+        )?;
+    }
     p.hir_context_relations_scatter
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_stmt_scope.record_pass(&mut ctx, E1D(n_tree))?;
@@ -670,8 +706,8 @@ pub fn record_stack_effect_validation(
     let n_sc = ctx.buffers.total_sc.max(1);
     let n_layers = ctx.buffers.b_n_layers.max(1);
 
-    ctx.encoder.clear_buffer(&ctx.buffers.b_hist_push, 0, None);
-    ctx.encoder.clear_buffer(&ctx.buffers.b_hist_pop, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_push, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_pop, 0, None);
 
     p.b01.record_pass(ctx, E1D(n_sc))?;
     p.b02.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
@@ -680,17 +716,31 @@ pub fn record_stack_effect_validation(
     p.b05.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
 
     let bytes = (n_layers * 4) as u64;
-    ctx.encoder.copy_buffer_to_buffer(
+    parser_copy_buffer_to_buffer(
+        ctx.encoder,
         &ctx.buffers.b_off_push,
         0,
         &ctx.buffers.b_cur_push,
         0,
         bytes,
     );
-    ctx.encoder
-        .copy_buffer_to_buffer(&ctx.buffers.b_off_pop, 0, &ctx.buffers.b_cur_pop, 0, bytes);
+    parser_copy_buffer_to_buffer(
+        ctx.encoder,
+        &ctx.buffers.b_off_pop,
+        0,
+        &ctx.buffers.b_cur_pop,
+        0,
+        bytes,
+    );
 
     p.b06.record_pass(ctx, E1D(n_sc))?;
+    let mut temporary_pair_radix_cache = crate::gpu::passes_core::BindGroupCache::new();
+    let pair_radix_cache = ctx
+        .bg_cache
+        .as_deref_mut()
+        .unwrap_or(&mut temporary_pair_radix_cache);
+    p.pair_radix
+        .record_sort(ctx.device, ctx.encoder, ctx.buffers, pair_radix_cache)?;
     p.pse04.record_pass(ctx, E1D(n_sc))?;
     p.status_from_brackets.record_pass(ctx, E1D(1))?;
 
@@ -704,6 +754,6 @@ fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuf
         &buffers.hir_type_arg_link_b,
         &buffers.hir_type_arg_rank_b,
     ] {
-        encoder.clear_buffer(&buffer.buffer, 0, Some(bytes));
+        parser_clear_buffer(encoder, &buffer.buffer, 0, Some(bytes));
     }
 }

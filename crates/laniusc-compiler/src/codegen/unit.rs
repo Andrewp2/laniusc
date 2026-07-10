@@ -15,7 +15,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 /// Default upper bound for source bytes in one frontend/codegen unit.
-pub const DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES: usize = 512 * 1024;
+pub const DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 /// Default upper bound for source files in one frontend/codegen unit.
 pub const DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES: usize = 64;
 /// Default number of link inputs represented by one compact link batch page.

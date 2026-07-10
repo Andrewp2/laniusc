@@ -50,6 +50,11 @@ pub struct ParserBuffers {
     pub total_emit: u32,
     pub tree_count_uses_status: bool,
     pub tree_capacity: u32,
+    /// Conservative GPU-lexer feature summary used to size optional HIR families.
+    pub parser_feature_flags: u32,
+    pub hir_array_capacity: u32,
+    pub hir_enum_match_capacity: u32,
+    pub hir_struct_capacity: u32,
 
     // canonical LL(1) parser tables and outputs
     pub ll1_predict: LaniusBuffer<u32>,
@@ -156,6 +161,7 @@ pub struct ParserBuffers {
     pub b06_params: LaniusBuffer<super::super::passes::brackets::scatter_by_layer::Params>,
     pub b07_params: LaniusBuffer<super::super::passes::brackets::pse_pair::Params>, // PSE-style pair-by-layer
     pub b05_scan_steps: Vec<BracketsHistogramScanStep>,
+    pub b_pair_radix_steps: Vec<super::BracketsPairRadixStep>,
 
     pub b_exscan_inblock: LaniusBuffer<i32>,
     pub b_block_sum: LaniusBuffer<i32>,
@@ -182,6 +188,10 @@ pub struct ParserBuffers {
     pub b_pushes_by_layer: LaniusBuffer<u32>,
     pub b_pops_by_layer: LaniusBuffer<u32>,
     pub b_slot_for_index: LaniusBuffer<u32>,
+    pub b_pair_radix_block_histogram: LaniusBuffer<u32>,
+    pub b_pair_radix_block_bucket_prefix: LaniusBuffer<u32>,
+    pub b_pair_radix_bucket_total: LaniusBuffer<u32>,
+    pub b_pair_radix_bucket_base: LaniusBuffer<u32>,
     pub match_for_index: LaniusBuffer<u32>,
 
     // counts used at dispatch

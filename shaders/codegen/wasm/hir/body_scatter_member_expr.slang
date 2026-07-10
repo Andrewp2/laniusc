@@ -66,10 +66,12 @@ static const uint BODY_FRAGMENT_ASSIGN_EXPR_I32 = 10u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 = 11u;
 static const uint BODY_FRAGMENT_PRINT_EXPR_I64 = 12u;
 static const uint BODY_FRAGMENT_RETURN_EXPR_I32 = 13u;
+static const uint BODY_FRAGMENT_IF_OPEN_I32 = 16u;
 static const uint BODY_FRAGMENT_AGG_FIELD_STORE_I32 = 40u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -113,6 +115,8 @@ static const uint WASM_LOCAL_GET = 0x20u;
 static const uint WASM_LOCAL_SET = 0x21u;
 static const uint WASM_RETURN = 0x0fu;
 static const uint WASM_CALL = 0x10u;
+static const uint WASM_IF = 0x04u;
+static const uint WASM_BLOCK_TYPE_EMPTY = 0x40u;
 static const uint WASM_I32_LOAD = 0x28u;
 static const uint WASM_F32_LOAD = 0x2au;
 static const uint WASM_I32_STORE = 0x36u;
@@ -369,6 +373,35 @@ uint local_decl_type(uint decl_token)
     return ty == TY_UNKNOWN ? TY_INT : ty;
 }
 
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
 bool function_param_local_index(uint decl_token, uint fn_token, out uint local_index)
 {
     local_index = INVALID;
@@ -378,7 +411,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -387,14 +422,14 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     uint local_count = 0u;
     uint local_max = wasm_func_local_max_by_token[fn_token];
     if (local_max != INVALID)
         local_count = local_max + 1u;
     local_index = param_count + decl_token;
     if (local_decl_type(decl_token) == TY_FLOAT)
-        local_index += local_count;
+        local_index += local_count * 2u;
     return true;
 }
 
@@ -492,14 +527,15 @@ bool aggregate_address_expr_len(uint node, out uint len)
         uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
         if (ordinal != INVALID)
         {
-            local_index = ordinal;
+            local_index = function_param_abi_ordinal(owner_fn, ordinal);
             is_param = true;
         }
     }
     if (is_param)
     {
         uint decl_ty = visible_type_for_token(decl_token);
-        uint param_ty = call_param_type_value(owner_fn, local_index);
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        uint param_ty = call_param_type_value(owner_fn, ordinal);
         if (decl_ty != TY_UNKNOWN &&
             decl_ty < TY_ARRAY_BASE &&
             param_ty < TY_ARRAY_BASE &&
@@ -545,6 +581,13 @@ uint aggregate_address_expr_byte(uint node, uint byte_i)
     if (function_param_local_index(decl_token, owner_fn, local_index))
         return local_get_byte(local_index, byte_i);
 
+    if (valid_token(owner_fn))
+    {
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        if (ordinal != INVALID)
+            return local_get_byte(ordinal, byte_i);
+    }
+
     if (wasm_agg_local_width_by_token[decl_token] != 0u)
     {
         uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
@@ -563,21 +606,30 @@ uint aggregate_address_expr_byte(uint node, uint byte_i)
 
 uint aggregate_member_field_index(uint node)
 {
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+    if (!valid_node(node))
         return INVALID;
     uint member_name = hir_member_name_token[node];
-    if (!valid_token(member_name))
+    if (valid_token(member_name) && member_result_field_index[member_name] != INVALID)
+        return member_result_field_index[member_name];
+    node = resolve_expr_node(node);
+    if (!valid_node(node))
         return INVALID;
-    return member_result_field_index[member_name];
+    member_name = hir_member_name_token[node];
+    return valid_token(member_name) ? member_result_field_index[member_name] : INVALID;
 }
 
 uint aggregate_member_field_type(uint node)
 {
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+    if (!valid_node(node))
         return TY_UNKNOWN;
     uint member_name = hir_member_name_token[node];
+    if (!valid_token(member_name) || member_result_field_index[member_name] == INVALID)
+    {
+        node = resolve_expr_node(node);
+        if (!valid_node(node))
+            return TY_UNKNOWN;
+        member_name = hir_member_name_token[node];
+    }
     if (!valid_token(member_name))
         return TY_UNKNOWN;
     uint member_type = visible_type_for_token(member_name);
@@ -591,10 +643,15 @@ uint aggregate_member_field_type(uint node)
 
 uint aggregate_member_len(uint node)
 {
-    node = resolve_expr_node(node);
     uint field_index = aggregate_member_field_index(node);
     if (field_index == INVALID)
         return 0u;
+    uint original_member_name = hir_member_name_token[node];
+    if (!valid_token(original_member_name) ||
+        member_result_field_index[original_member_name] != field_index)
+    {
+        node = resolve_expr_node(node);
+    }
     uint address_len = 0u;
     if (!aggregate_address_expr_len(hir_member_receiver_node[node], address_len))
         return 0u;
@@ -603,10 +660,15 @@ uint aggregate_member_len(uint node)
 
 uint aggregate_member_byte(uint node, uint byte_i)
 {
-    node = resolve_expr_node(node);
     uint field_index = aggregate_member_field_index(node);
     if (field_index == INVALID)
         return 0u;
+    uint original_member_name = hir_member_name_token[node];
+    if (!valid_token(original_member_name) ||
+        member_result_field_index[original_member_name] != field_index)
+    {
+        node = resolve_expr_node(node);
+    }
 
     uint address_len = 0u;
     uint receiver = hir_member_receiver_node[node];
@@ -633,6 +695,8 @@ uint expr_semantic_type(uint node)
 
 bool expr_atom_is_f32(uint node)
 {
+    if (aggregate_member_field_index(node) != INVALID)
+        return aggregate_member_field_type(node) == TY_FLOAT;
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
@@ -641,21 +705,19 @@ bool expr_atom_is_f32(uint node)
         return true;
     if (form == HIR_EXPR_NAME)
         return visible_type_for_token(expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN)) == TY_FLOAT;
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
-        return aggregate_member_field_type(node) == TY_FLOAT;
     return false;
 }
 
 bool expr_result_is_f32(uint node)
 {
+    if (expr_atom_is_f32(node))
+        return true;
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
     uint ty = expr_semantic_type(node);
     if (ty != TY_UNKNOWN)
         return ty == TY_FLOAT;
-    if (expr_atom_is_f32(node))
-        return true;
     uint form = expr_form(node);
     if (form == HIR_EXPR_NEG)
     {
@@ -732,12 +794,12 @@ uint expr_binary_op_byte_for_node(uint node)
 
 uint expr_atom_len(uint node)
 {
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return 0u;
     uint member_len = aggregate_member_len(node);
     if (member_len != 0u)
         return member_len;
+    node = resolve_expr_node(node);
+    if (!valid_node(node))
+        return 0u;
     uint form = expr_form(node);
     uint local_index = INVALID;
     if (form == HIR_EXPR_NAME && local_decl_token_for_name_expr(node, local_index))
@@ -753,10 +815,10 @@ uint expr_atom_len(uint node)
 
 uint expr_atom_byte(uint node, uint byte_i)
 {
-    node = resolve_expr_node(node);
     uint member_len = aggregate_member_len(node);
     if (member_len != 0u)
         return aggregate_member_byte(node, byte_i);
+    node = resolve_expr_node(node);
     uint form = expr_form(node);
     uint local_index = INVALID;
     if (form == HIR_EXPR_NAME && local_decl_token_for_name_expr(node, local_index))
@@ -790,10 +852,9 @@ uint expr_simple_len(uint root_node)
         if (sp == 0u)
             break;
 
-        uint node = resolve_expr_node(nodes[sp - 1u]);
+        uint node = nodes[sp - 1u];
         if (!valid_node(node))
             return 0u;
-        nodes[sp - 1u] = node;
         uint state = states[sp - 1u];
         uint atom_len = expr_atom_len(node);
         if (state == 0u && atom_len != 0u)
@@ -806,6 +867,11 @@ uint expr_simple_len(uint root_node)
             step += 1u;
             continue;
         }
+
+        node = resolve_expr_node(node);
+        if (!valid_node(node))
+            return 0u;
+        nodes[sp - 1u] = node;
 
         uint form = expr_form(node);
         if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
@@ -871,13 +937,16 @@ uint expr_simple_byte(uint node, uint byte_i)
     uint step = 0u;
     while (step < MAX_EXPR_EMIT_STEPS)
     {
-        node = resolve_expr_node(node);
         if (!valid_node(node))
             return 0u;
 
         uint atom_len = expr_atom_len(node);
         if (atom_len != 0u)
             return expr_atom_byte(node, byte_i);
+
+        node = resolve_expr_node(node);
+        if (!valid_node(node))
+            return 0u;
 
         uint form = expr_form(node);
         if (form == HIR_EXPR_NOT)
@@ -991,6 +1060,16 @@ uint return_expr_i32_fragment_byte(uint expr_node, uint byte_i)
     return WASM_RETURN;
 }
 
+uint if_open_i32_fragment_byte(uint condition_node, uint byte_i)
+{
+    uint condition_len = expr_simple_len(condition_node);
+    if (byte_i < condition_len)
+        return expr_simple_byte(condition_node, byte_i);
+    if (byte_i == condition_len)
+        return WASM_IF;
+    return WASM_BLOCK_TYPE_EMPTY;
+}
+
 uint aggregate_field_store_fragment_byte(uint address, uint expr_node, uint byte_i)
 {
     uint address_len = 1u + i32_sleb_len(address);
@@ -1008,6 +1087,8 @@ uint aggregate_field_store_fragment_byte(uint address, uint expr_node, uint byte
 
 bool expr_contains_member(uint node)
 {
+    if (aggregate_member_len(node) != 0u)
+        return true;
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
@@ -1023,15 +1104,21 @@ bool expr_contains_member(uint node)
         if (sp == 0u)
             return false;
 
-        node = resolve_expr_node(nodes[sp - 1u]);
+        node = nodes[sp - 1u];
         sp -= 1u;
         if (!valid_node(node))
         {
             step += 1u;
             continue;
         }
-        if (hir_kind[node] == HIR_MEMBER_EXPR)
-            return aggregate_member_len(node) != 0u;
+        if (aggregate_member_len(node) != 0u)
+            return true;
+        node = resolve_expr_node(node);
+        if (!valid_node(node))
+        {
+            step += 1u;
+            continue;
+        }
 
         uint form = expr_form(node);
         if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
@@ -1062,6 +1149,7 @@ bool scatter_handles_fragment(uint4 meta)
 {
     return (meta.x == BODY_FRAGMENT_LET_EXPR_I32 && expr_contains_member(meta.z)) ||
            meta.x == BODY_FRAGMENT_RETURN_EXPR_I32 ||
+           (meta.x == BODY_FRAGMENT_IF_OPEN_I32 && expr_contains_member(meta.y)) ||
            meta.x == BODY_FRAGMENT_AGG_FIELD_STORE_I32;
 }
 
@@ -1072,6 +1160,8 @@ uint fragment_byte(uint4 meta, uint byte_i)
         return let_expr_i32_fragment_byte(meta.y, meta.z, byte_i);
     if (kind == BODY_FRAGMENT_RETURN_EXPR_I32)
         return return_expr_i32_fragment_byte(meta.y, byte_i);
+    if (kind == BODY_FRAGMENT_IF_OPEN_I32)
+        return if_open_i32_fragment_byte(meta.y, byte_i);
     if (kind == BODY_FRAGMENT_AGG_FIELD_STORE_I32)
         return aggregate_field_store_fragment_byte(meta.y, meta.z, byte_i);
     return 0u;

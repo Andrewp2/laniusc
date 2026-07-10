@@ -61,8 +61,34 @@ pub struct GpuCompiler<'gpu> {
     pub(super) parse_tables: PrecomputedParseTables,
     pub(super) type_checker: gpu_type_checker::GpuTypeChecker,
     pub(super) resident_pipeline_lock: Mutex<()>,
+    source_pack_tree_capacity_cache: std::sync::Mutex<Option<SourcePackTreeCapacityCache>>,
     pub(super) wasm_generator: Result<Box<wasm::GpuWasmCodeGenerator>, String>,
     pub(super) x86_generator: Result<Box<x86::GpuX86CodeGenerator>, String>,
+}
+
+struct SourcePackTreeCapacityCache {
+    sources: Vec<String>,
+    tree_capacity: u32,
+    parser_feature_flags: u32,
+    x86_plan: Option<SourcePackX86Plan>,
+}
+
+#[derive(Clone, Copy)]
+struct SourcePackX86Plan {
+    feature_summary: x86::X86FeatureSummary,
+    active_tree_capacity: u32,
+    semantic_hir_count: u32,
+}
+
+impl SourcePackTreeCapacityCache {
+    fn matches<S: AsRef<str>>(&self, sources: &[S]) -> bool {
+        self.sources.len() == sources.len()
+            && self
+                .sources
+                .iter()
+                .zip(sources)
+                .all(|(cached, source)| cached == source.as_ref())
+    }
 }
 
 impl GpuCompiler<'static> {
@@ -168,6 +194,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_tables,
             type_checker,
             resident_pipeline_lock: Mutex::new((), false),
+            source_pack_tree_capacity_cache: std::sync::Mutex::new(None),
             wasm_generator,
             x86_generator,
         })
@@ -177,5 +204,81 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// drivers.
     pub fn gpu(&self) -> &'gpu GpuDevice {
         self.gpu
+    }
+
+    fn cached_source_pack_parser_capacity<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+    ) -> Option<ResidentParserCapacity> {
+        self.source_pack_tree_capacity_cache
+            .lock()
+            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned")
+            .as_ref()
+            .filter(|cached| cached.matches(sources))
+            .map(|cached| ResidentParserCapacity {
+                tree_capacity: cached.tree_capacity,
+                parser_feature_flags: cached.parser_feature_flags,
+            })
+    }
+
+    fn remember_source_pack_parser_capacity<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        capacity: ResidentParserCapacity,
+    ) {
+        *self
+            .source_pack_tree_capacity_cache
+            .lock()
+            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned") =
+            Some(SourcePackTreeCapacityCache {
+                sources: sources
+                    .iter()
+                    .map(|source| source.as_ref().to_owned())
+                    .collect(),
+                tree_capacity: capacity.tree_capacity,
+                parser_feature_flags: capacity.parser_feature_flags,
+                x86_plan: None,
+            });
+    }
+
+    fn cached_source_pack_x86_plan<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+    ) -> Option<SourcePackX86Plan> {
+        self.source_pack_tree_capacity_cache
+            .lock()
+            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned")
+            .as_ref()
+            .filter(|cached| cached.matches(sources))
+            .and_then(|cached| cached.x86_plan)
+    }
+
+    fn remember_source_pack_x86_plan<S: AsRef<str>>(&self, sources: &[S], plan: SourcePackX86Plan) {
+        let mut cache = self
+            .source_pack_tree_capacity_cache
+            .lock()
+            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned");
+        if let Some(cached) = cache.as_mut().filter(|cached| cached.matches(sources)) {
+            cached.x86_plan = Some(plan);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SourcePackTreeCapacityCache;
+
+    #[test]
+    fn source_pack_tree_capacity_cache_requires_exact_source_contents() {
+        let cache = SourcePackTreeCapacityCache {
+            sources: vec!["fn a() {}".into(), "fn b() {}".into()],
+            tree_capacity: 17,
+            parser_feature_flags: 0x12,
+            x86_plan: None,
+        };
+
+        assert!(cache.matches(&["fn a() {}", "fn b() {}"]));
+        assert!(!cache.matches(&["fn a() {}", "fn c() {}"]));
+        assert!(!cache.matches(&["fn a() {}"]));
     }
 }

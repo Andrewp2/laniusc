@@ -3,6 +3,7 @@ use log::warn;
 use super::{
     BracketsBlockPrefixScanStep,
     BracketsHistogramScanStep,
+    BracketsPairRadixStep,
     HirSemanticPrefixScanStep,
     PackOffsetScanStep,
     PackTotalReduceStep,
@@ -42,6 +43,31 @@ pub(super) fn make_pack_offset_scan_steps(
                 read_from_a: plan.read_from_a,
                 write_to_a: plan.write_to_a,
             }
+        })
+        .collect()
+}
+
+/// Creates the four stable LSD radix steps for the packed `(layer, kind)` key.
+pub(super) fn make_brackets_pair_radix_steps(
+    device: &wgpu::Device,
+    n_sc: u32,
+    n_layers: u32,
+    n_blocks: u32,
+) -> Vec<BracketsPairRadixStep> {
+    (0..4)
+        .map(|key_step| BracketsPairRadixStep {
+            params: uniform_from_val(
+                device,
+                "brackets.pair_radix.params",
+                &super::super::passes::brackets::pair_radix::Params {
+                    n_sc,
+                    n_layers,
+                    n_blocks,
+                    key_step,
+                },
+            ),
+            read_from_pushes: key_step % 2 == 0,
+            key_step,
         })
         .collect()
 }

@@ -434,11 +434,19 @@ pub struct RecordedHirSemanticCount {
     pub(super) block_count_words: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Exact parser allocation inputs measured by GPU token classification and
+/// partial-parse emission before full tree/HIR allocation.
+pub struct ResidentParserCapacity {
+    pub tree_capacity: u32,
+    pub parser_feature_flags: u32,
+}
+
 /// Cached resident parser buffers keyed by capacity, tables, and debug mode.
 pub(super) struct ResidentParserBufferCache {
     pub(super) token_capacity: u32,
-    pub(super) tree_capacity_override: Option<u32>,
     pub(super) table_fingerprint: u64,
     pub(super) retain_debug_hir_buffers: bool,
+    pub(super) parser_feature_flags: u32,
     pub(super) buffers: ParserBuffers,
 }

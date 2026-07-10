@@ -118,77 +118,97 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         "type_check.type_instances.generic_param_key_radix_dispatch_args",
         1,
     )?;
-    for i in 0..type_instances.sort_generic_param_key_scatter.len() {
+    if let Some(sort_generic_params_small) = &type_instances.sort_generic_params_small {
         record_compute_indirect(
             encoder,
-            &passes.type_instances_sort_generic_param_keys,
-            &type_instances.sort_generic_param_key_histogram[i],
-            "type_check.type_instances.sort_generic_param_keys_histogram",
+            &passes.type_instances_sort_generic_params_small,
+            sort_generic_params_small,
+            "type_check.type_instances.sort_generic_params_small",
             &type_instances.generic_param_key_radix_dispatch_args,
         )?;
-        record_compute(
+        stamp_typecheck_timer(
+            &mut timer,
             encoder,
-            &passes.names_radix_bucket_prefix,
-            &type_instances.sort_generic_param_key_bucket_prefix[i],
-            "type_check.type_instances.sort_generic_param_keys_bucket_prefix",
-            NAME_RADIX_BUCKETS.saturating_mul(256),
-        )?;
-        record_compute(
+            "typecheck.type_instances.generic_params.sort.done",
+        );
+        stamp_typecheck_timer(
+            &mut timer,
             encoder,
-            &passes.names_radix_bucket_bases,
-            &type_instances.sort_generic_param_key_bucket_bases[i],
-            "type_check.type_instances.sort_generic_param_keys_bucket_bases",
-            256,
-        )?;
-        record_compute_indirect(
+            "typecheck.type_instances.generic_param_slots.sort.done",
+        );
+    } else {
+        for i in 0..type_instances.sort_generic_param_key_scatter.len() {
+            record_compute_indirect(
+                encoder,
+                &passes.type_instances_sort_generic_param_keys,
+                &type_instances.sort_generic_param_key_histogram[i],
+                "type_check.type_instances.sort_generic_param_keys_histogram",
+                &type_instances.generic_param_key_radix_dispatch_args,
+            )?;
+            record_compute(
+                encoder,
+                &passes.names_radix_bucket_prefix,
+                &type_instances.sort_generic_param_key_bucket_prefix[i],
+                "type_check.type_instances.sort_generic_param_keys_bucket_prefix",
+                NAME_RADIX_BUCKETS.saturating_mul(256),
+            )?;
+            record_compute(
+                encoder,
+                &passes.names_radix_bucket_bases,
+                &type_instances.sort_generic_param_key_bucket_bases[i],
+                "type_check.type_instances.sort_generic_param_keys_bucket_bases",
+                256,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &passes.type_instances_sort_generic_param_keys_scatter,
+                &type_instances.sort_generic_param_key_scatter[i],
+                "type_check.type_instances.sort_generic_param_keys_scatter",
+                &type_instances.generic_param_key_radix_dispatch_args,
+            )?;
+        }
+        stamp_typecheck_timer(
+            &mut timer,
             encoder,
-            &passes.type_instances_sort_generic_param_keys_scatter,
-            &type_instances.sort_generic_param_key_scatter[i],
-            "type_check.type_instances.sort_generic_param_keys_scatter",
-            &type_instances.generic_param_key_radix_dispatch_args,
-        )?;
-    }
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.sort.done",
-    );
+            "typecheck.type_instances.generic_params.sort.done",
+        );
 
-    for i in 0..type_instances.sort_generic_param_slot_scatter.len() {
-        record_compute_indirect(
+        for i in 0..type_instances.sort_generic_param_slot_scatter.len() {
+            record_compute_indirect(
+                encoder,
+                &passes.type_instances_sort_generic_param_slots,
+                &type_instances.sort_generic_param_slot_histogram[i],
+                "type_check.type_instances.sort_generic_param_slots_histogram",
+                &type_instances.generic_param_key_radix_dispatch_args,
+            )?;
+            record_compute(
+                encoder,
+                &passes.names_radix_bucket_prefix,
+                &type_instances.sort_generic_param_slot_bucket_prefix[i],
+                "type_check.type_instances.sort_generic_param_slots_bucket_prefix",
+                NAME_RADIX_BUCKETS.saturating_mul(256),
+            )?;
+            record_compute(
+                encoder,
+                &passes.names_radix_bucket_bases,
+                &type_instances.sort_generic_param_slot_bucket_bases[i],
+                "type_check.type_instances.sort_generic_param_slots_bucket_bases",
+                256,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &passes.type_instances_sort_generic_param_slots_scatter,
+                &type_instances.sort_generic_param_slot_scatter[i],
+                "type_check.type_instances.sort_generic_param_slots_scatter",
+                &type_instances.generic_param_key_radix_dispatch_args,
+            )?;
+        }
+        stamp_typecheck_timer(
+            &mut timer,
             encoder,
-            &passes.type_instances_sort_generic_param_slots,
-            &type_instances.sort_generic_param_slot_histogram[i],
-            "type_check.type_instances.sort_generic_param_slots_histogram",
-            &type_instances.generic_param_key_radix_dispatch_args,
-        )?;
-        record_compute(
-            encoder,
-            &passes.names_radix_bucket_prefix,
-            &type_instances.sort_generic_param_slot_bucket_prefix[i],
-            "type_check.type_instances.sort_generic_param_slots_bucket_prefix",
-            NAME_RADIX_BUCKETS.saturating_mul(256),
-        )?;
-        record_compute(
-            encoder,
-            &passes.names_radix_bucket_bases,
-            &type_instances.sort_generic_param_slot_bucket_bases[i],
-            "type_check.type_instances.sort_generic_param_slots_bucket_bases",
-            256,
-        )?;
-        record_compute_indirect(
-            encoder,
-            &passes.type_instances_sort_generic_param_slots_scatter,
-            &type_instances.sort_generic_param_slot_scatter[i],
-            "type_check.type_instances.sort_generic_param_slots_scatter",
-            &type_instances.generic_param_key_radix_dispatch_args,
-        )?;
+            "typecheck.type_instances.generic_param_slots.sort.done",
+        );
     }
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_param_slots.sort.done",
-    );
 
     record_compute_indirect(
         encoder,

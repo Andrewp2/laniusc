@@ -1,8 +1,10 @@
 {
   "expected_stdout": "44483\n",
   "height": 24,
+  "iters": 3,
   "name": "grid_checksum",
   "schema": "lanius.benchmark-generator.v1",
   "seed": 19,
+  "warmups": 1,
   "width": 32
 }

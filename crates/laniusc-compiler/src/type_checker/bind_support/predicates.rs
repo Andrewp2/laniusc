@@ -919,11 +919,13 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         _method_contract_key_radix_steps: method_contract_keys.steps,
         _method_param_key_radix_steps: method_param_keys.steps,
         seed_method_contract_key_order: method_contract_keys.seed_key_order,
+        sort_method_contract_keys_small: method_contract_keys.sort_keys_small,
         sort_method_contract_key_histogram: method_contract_keys.sort_key_histogram,
         sort_method_contract_key_bucket_prefix: method_contract_keys.sort_key_bucket_prefix,
         sort_method_contract_key_bucket_bases: method_contract_keys.sort_key_bucket_bases,
         sort_method_contract_key_scatter: method_contract_keys.sort_key_scatter,
         seed_method_param_key_order: method_param_keys.seed_key_order,
+        sort_method_param_keys_small: method_param_keys.sort_keys_small,
         sort_method_param_key_histogram: method_param_keys.sort_key_histogram,
         sort_method_param_key_bucket_prefix: method_param_keys.sort_key_bucket_prefix,
         sort_method_param_key_bucket_bases: method_param_keys.sort_key_bucket_bases,
@@ -934,12 +936,14 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         apply_method_validation_errors,
         _owner_key_radix_steps: owner_keys.steps,
         seed_owner_key_order: owner_keys.seed_key_order,
+        sort_owner_keys_small: owner_keys.sort_keys_small,
         sort_owner_key_histogram: owner_keys.sort_key_histogram,
         sort_owner_key_bucket_prefix: owner_keys.sort_key_bucket_prefix,
         sort_owner_key_bucket_bases: owner_keys.sort_key_bucket_bases,
         sort_owner_key_scatter: owner_keys.sort_key_scatter,
         _impl_key_radix_steps: impl_keys.steps,
         seed_impl_key_order: impl_keys.seed_key_order,
+        sort_impl_keys_small: impl_keys.sort_keys_small,
         sort_impl_key_histogram: impl_keys.sort_key_histogram,
         sort_impl_key_bucket_prefix: impl_keys.sort_key_bucket_prefix,
         sort_impl_key_bucket_bases: impl_keys.sort_key_bucket_bases,
@@ -963,6 +967,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
 struct PredicateKeyBindGroups {
     steps: Vec<PredicateKeyStep>,
     seed_key_order: wgpu::BindGroup,
+    sort_keys_small: Option<wgpu::BindGroup>,
     sort_key_histogram: Vec<wgpu::BindGroup>,
     sort_key_bucket_prefix: Vec<wgpu::BindGroup>,
     sort_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -1012,6 +1017,29 @@ fn create_predicate_key_bind_groups(
             ("predicate_key_order", key_order.as_entire_binding()),
         ],
     )?;
+
+    let sort_keys_small = if predicate_capacity <= PREDICATE_KEY_SMALL_SORT_CAPACITY {
+        passes
+            .predicates_sort_keys_small
+            .as_ref()
+            .map(|pass| {
+                bind_group::create_bind_group_from_bindings(
+                    device,
+                    Some(&format!("type_check.predicates.{label}.sort_keys_small")),
+                    pass,
+                    0,
+                    &predicate_key_small_sort_bindings(
+                        &seed_params,
+                        hir_token_pos,
+                        resident_resources,
+                        key_order,
+                    ),
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     let mut steps = Vec::with_capacity(radix_steps as usize + 1);
     steps.push(PredicateKeyStep {
@@ -1124,11 +1152,70 @@ fn create_predicate_key_bind_groups(
     Ok(PredicateKeyBindGroups {
         steps,
         seed_key_order,
+        sort_keys_small,
         sort_key_histogram,
         sort_key_bucket_prefix,
         sort_key_bucket_bases,
         sort_key_scatter,
     })
+}
+
+fn predicate_key_small_sort_bindings<'a>(
+    params: &'a LaniusBuffer<PredicateKeyParams>,
+    hir_token_pos: &'a wgpu::Buffer,
+    resources: &'a HashMap<String, wgpu::BindingResource<'a>>,
+    key_order: &'a wgpu::Buffer,
+) -> Vec<(&'static str, wgpu::BindingResource<'a>)> {
+    vec![
+        ("gParams", params.as_entire_binding()),
+        ("predicate_count_in", resources["hir_active_count"].clone()),
+        ("hir_token_pos", hir_token_pos.as_entire_binding()),
+        ("visible_type", resources["visible_type"].clone()),
+        ("type_expr_ref_tag", resources["type_expr_ref_tag"].clone()),
+        (
+            "type_expr_ref_payload",
+            resources["type_expr_ref_payload"].clone(),
+        ),
+        (
+            "type_generic_param_slot_by_token",
+            resources["type_generic_param_slot_by_token"].clone(),
+        ),
+        (
+            "predicate_owner_node",
+            resources["predicate_owner_node"].clone(),
+        ),
+        (
+            "predicate_subject_token",
+            resources["predicate_subject_token"].clone(),
+        ),
+        (
+            "predicate_bound_decl_id",
+            resources["predicate_bound_decl_id"].clone(),
+        ),
+        (
+            "predicate_bound_arg_count",
+            resources["predicate_bound_arg_count"].clone(),
+        ),
+        (
+            "predicate_bound_first_arg_token",
+            resources["predicate_bound_first_arg_token"].clone(),
+        ),
+        (
+            "predicate_bound_second_arg_token",
+            resources["predicate_bound_second_arg_token"].clone(),
+        ),
+        ("predicate_status", resources["predicate_status"].clone()),
+        (
+            "predicate_method_contract_owner_node",
+            resources["predicate_method_contract_owner_node"].clone(),
+        ),
+        (
+            "predicate_method_contract_name_id",
+            resources["predicate_method_contract_name_id"].clone(),
+        ),
+        ("hir_param_record", resources["hir_param_record"].clone()),
+        ("predicate_key_order", key_order.as_entire_binding()),
+    ]
 }
 
 fn predicate_key_sort_bindings<'a>(

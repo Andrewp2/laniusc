@@ -11,6 +11,12 @@ void publish_let_host_call(uint node, uint token, uint owner_fn, uint len, uint4
     publish_fragment(token, len, meta, aux);
 }
 
+void publish_let_basic_host_call(uint node, uint token, uint owner_fn, uint len, uint4 meta, uint4 aux)
+{
+    publish_let_host_call(node, token, owner_fn, len, meta, aux);
+    publish_body_features(BODY_FEATURE_HOST | BODY_FEATURE_HOST_BASIC);
+}
+
 void validate_main_let_host(uint node, uint token)
 {
     uint owner_fn = node_enclosing_fn_token(node);
@@ -37,7 +43,7 @@ void validate_main_let_host(uint node, uint token)
     uint len = 0u;
     if (supported_let_i32_array_data_ptr_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -47,7 +53,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_stdout_write_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -57,7 +63,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_process_argc_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -67,7 +73,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_process_arg_len_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -77,7 +83,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_process_arg_read_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -87,7 +93,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_secure_u32_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,
@@ -97,7 +103,7 @@ void validate_main_let_host(uint node, uint token)
     }
     else if (supported_let_host_unix_seconds_fragment(node, decl_token, expr_node, len))
     {
-        publish_let_host_call(
+        publish_let_basic_host_call(
             node,
             token,
             owner_fn,

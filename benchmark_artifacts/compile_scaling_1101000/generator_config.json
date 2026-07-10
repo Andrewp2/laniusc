@@ -1,0 +1,20 @@
+{
+  "baseline_seed": 20,
+  "cpu_process_iterations": 3,
+  "expected_stdout_by_seed": {
+    "19": "36\n",
+    "20": "47\n",
+    "21": "58\n",
+    "22": "69\n"
+  },
+  "function_count": 6927,
+  "lanius_capacity_warm_seed": 19,
+  "lanius_variable_job_seeds": [
+    20,
+    21,
+    22
+  ],
+  "name": "compile_scaling_1101000",
+  "schema": "lanius.compile-scaling-generator.v1",
+  "target_lanius_bytes": 1101000
+}

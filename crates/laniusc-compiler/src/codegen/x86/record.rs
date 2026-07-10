@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::{
     GpuX86CodeGenerator,
     RecordedX86Codegen,
-    support::{RetainedX86Buffer, zero_u32_words},
+    support::{RetainedX86Buffer, copy_x86_buffer_to_buffer, zero_u32_words},
 };
 
 mod allocation;
@@ -16,6 +16,7 @@ mod dispatch_recording;
 mod emit_bind_groups;
 mod enum_match_bind_groups;
 mod features;
+pub use features::RecordedX86FeatureMeasurement;
 mod indirect;
 mod init;
 mod inputs;
@@ -123,6 +124,12 @@ impl GpuX86CodeGenerator {
             external_scratch,
             mut timer,
         } = inputs;
+        let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+            timer.is_none()
+                && crate::gpu::passes_core::compute_pass_batching_enabled()
+                && !crate::gpu::passes_core::validation_scopes_enabled(),
+            "codegen.x86.batch",
+        );
         let mut host_timer = HostTimer::new();
         let RecordCapacity {
             hir_words,
@@ -988,6 +995,7 @@ impl GpuX86CodeGenerator {
                 expr_metadata: &expr_metadata,
                 call_metadata: &call_metadata,
                 enum_metadata: &enum_metadata,
+                struct_metadata: &struct_metadata,
                 type_metadata: &type_metadata,
                 hir_param_record: hir_param_record_buf,
                 expr_resolved_final: &expr_resolved_final_buf,
@@ -995,6 +1003,7 @@ impl GpuX86CodeGenerator {
                 visible_decl: visible_decl_buf,
                 const_value_record: &const_value_record_buf,
                 struct_type_record: &struct_type_record_buf,
+                struct_field_width_by_node: &struct_field_width_by_node_buf,
                 decl_layout_record: &decl_layout_record_buf,
                 decl_layout_status: &decl_layout_status_buf,
                 param_reg_record: &param_reg_record_buf,
@@ -1102,6 +1111,7 @@ impl GpuX86CodeGenerator {
                 method_decl_param_offset: function_metadata.method_decl_param_offset,
                 method_decl_receiver_mode: function_metadata.method_decl_receiver_mode,
                 struct_type_record: &struct_type_record_buf,
+                struct_field_width_by_node: &struct_field_width_by_node_buf,
                 decl_layout_record: &decl_layout_record_buf,
                 decl_layout_status: &decl_layout_status_buf,
                 const_value_record: &const_value_record_buf,
@@ -1479,8 +1489,22 @@ impl GpuX86CodeGenerator {
                 elf: &elf_bind_group,
             },
         );
-        encoder.copy_buffer_to_buffer(&out_buf, 0, &output_readback, 0, output_readback_bytes);
-        encoder.copy_buffer_to_buffer(&status_buf, 0, &output_readback, output_status_offset, 16);
+        copy_x86_buffer_to_buffer(
+            encoder,
+            &out_buf,
+            0,
+            &output_readback,
+            0,
+            output_readback_bytes,
+        );
+        copy_x86_buffer_to_buffer(
+            encoder,
+            &status_buf,
+            0,
+            &output_readback,
+            output_status_offset,
+            16,
+        );
         let status_trace_readback = record_status_trace_readback(
             device,
             encoder,

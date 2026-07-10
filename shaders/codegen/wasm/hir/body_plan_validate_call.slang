@@ -1,8 +1,172 @@
-// Parallel validation and aggregate planning for statement-position calls.
+// Parallel validation and planning for statement-position direct calls.
+// Argument bytes are sized and validated by the scanned direct-call record
+// pipeline, not by this validator.
 
 import atomics;
-import body_common;
-import body_plan_validate_common;
+import body_arg_byte_common;
+
+StructuredBuffer<uint> status;
+StructuredBuffer<uint> call_intrinsic_tag;
+StructuredBuffer<uint> hir_call_context_stmt_node;
+
+RWStructuredBuffer<uint> body_plan;
+RWStructuredBuffer<uint> body_fragment_len;
+RWStructuredBuffer<uint4> body_fragment_meta;
+RWStructuredBuffer<uint4> body_fragment_aux;
+RWStructuredBuffer<uint> wasm_func_body_len_by_token;
+RWStructuredBuffer<uint> wasm_func_invalid_count_by_token;
+RWStructuredBuffer<uint> wasm_func_detail_by_token;
+
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint TY_BOOL = 2u;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 31u;
+static const uint HIR_STMT = 7u;
+static const uint INTRINSIC_TEXT_WRITE = 1u;
+static const uint BODY_PLAN_MAIN_COUNT = 8u;
+static const uint BODY_PLAN_STMT_INVALID_COUNT = 11u;
+static const uint BODY_PLAN_PRINT_COUNT_AGG = 17u;
+static const uint BODY_PLAN_PRINT_MAX_TOKEN = 19u;
+static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
+static const uint BODY_PLAN_FEATURE_MASK = 35u;
+static const uint BODY_FEATURE_STMT_PRINT_DIRECT = 1u << 22u;
+static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
+static const uint WASM_PRINT_I64_FUNC_INDEX = 0u;
+
+bool type_is_i32_value(uint ty)
+{
+    return ty == TY_BOOL || ty == TY_INT || ty == TY_UINT;
+}
+
+bool statement_position_call(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return false;
+    uint context = hir_call_context_stmt_node[call_node];
+    return valid_node(context) && hir_kind[context] == HIR_STMT;
+}
+
+bool print_call_node(uint call_node)
+{
+    uint callee_token = call_callee_token(call_node);
+    return valid_token(callee_token) &&
+           statement_position_call(call_node) &&
+           call_intrinsic_tag[callee_token] == INTRINSIC_TEXT_WRITE &&
+           hir_call_arg_count[call_node] == 1u;
+}
+
+uint print_call_arg0_node(uint call_node)
+{
+    if (!print_call_node(call_node))
+        return INVALID;
+    return direct_call_arg_node(call_node, 0u);
+}
+
+uint method_member_node_for_call(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee_node = hir_call_callee_node[call_node];
+    if (valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR)
+        return callee_node;
+
+    callee_node = resolve_expr_node(callee_node);
+    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR
+               ? callee_node
+               : INVALID;
+}
+
+uint method_receiver_node_for_call(uint call_node)
+{
+    uint member_node = method_member_node_for_call(call_node);
+    if (!valid_node(member_node))
+        return INVALID;
+    uint receiver_node = hir_member_receiver_node[member_node];
+    return valid_node(receiver_node) ? receiver_node : INVALID;
+}
+
+bool direct_call_has_receiver_arg(uint call_node, uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return false;
+    uint receiver_node = method_receiver_node_for_call(call_node);
+    if (!valid_node(receiver_node))
+        return false;
+    uint explicit_arg_count = hir_call_arg_count[call_node];
+    return call_param_count[fn_token] == explicit_arg_count + 1u;
+}
+
+bool direct_call_header_aux(uint call_node, out uint4 aux)
+{
+    aux = uint4(INVALID, 0u, INVALID, 0u);
+    call_node = resolve_expr_node(call_node);
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return false;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token) || call_intrinsic_tag[callee_token] != 0u)
+        return false;
+
+    uint fn_token = call_fn_token_for_call(call_node, callee_token);
+    if (!supported_function_token(fn_token))
+        return false;
+
+    uint explicit_arg_count = hir_call_arg_count[call_node];
+    bool has_receiver_arg = direct_call_has_receiver_arg(call_node, fn_token);
+    uint arg_count = explicit_arg_count + (has_receiver_arg ? 1u : 0u);
+    if (call_param_count[fn_token] != arg_count)
+        return false;
+
+    uint return_ty = call_return_type_for_call(call_node, callee_token, fn_token);
+    if (!type_is_i32_value(return_ty))
+        return false;
+
+    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    aux = uint4(wasm_func_index, arg_count, fn_token, 0u);
+    return true;
+}
+
+uint print_direct_call_tail_len(uint4 aux)
+{
+    return 1u + u32_leb_len(aux.x) + 3u;
+}
+
+void publish_fragment(uint token_i, uint len, uint4 meta, uint4 aux)
+{
+    uint slot = token_i * 2u;
+    body_fragment_len[slot] = len;
+    body_fragment_meta[slot] = meta;
+    body_fragment_aux[slot] = aux;
+    atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_STMT_PRINT_DIRECT);
+}
+
+void publish_detail(uint detail)
+{
+    atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, detail);
+}
+
+void publish_stmt_invalid(uint detail)
+{
+    atomic_u32_add(body_plan, BODY_PLAN_STMT_INVALID_COUNT, 1u);
+    publish_detail(detail);
+}
+
+void publish_func_invalid(uint fn_token, uint detail)
+{
+    if (!valid_token(fn_token))
+    {
+        publish_stmt_invalid(detail);
+        return;
+    }
+    atomic_u32_add(wasm_func_invalid_count_by_token, fn_token, 1u);
+    atomic_u32_min(wasm_func_detail_by_token, fn_token, detail);
+}
+
+void add_func_body_len(uint fn_token, uint len)
+{
+    if (valid_token(fn_token))
+        atomic_u32_add(wasm_func_body_len_by_token, fn_token, len);
+}
 
 void validate_main_call(uint node, uint token)
 {
@@ -16,66 +180,28 @@ void validate_main_call(uint node, uint token)
         return;
     }
 
-    uint len = 0u;
-    uint decl_token = INVALID;
-    uint expr_node = INVALID;
-    uint value = 0u;
-    if (supported_host_void_call_fragment(
-            node,
-            LANGUAGE_SYMBOL_DEALLOC,
-            WASM_DEALLOC_FUNC_INDEX,
-            3u,
-            expr_node,
-            len))
-    {
-        add_func_body_len(owner_fn, len);
-        publish_fragment(
-            token,
-            len,
-            uint4(BODY_FRAGMENT_HOST_CALL_VOID, expr_node, WASM_DEALLOC_FUNC_INDEX, token),
-            uint4(INVALID, 3u, 0u, 0u));
-        return;
-    }
-
     if (!print_call_node(node))
         return;
 
-    uint kind = BODY_FRAGMENT_PRINT_I64;
-    uint4 aux = uint4(INVALID, 0u, 0u, 0u);
-    if (print_call_direct_call_and_len(node, expr_node, len))
+    uint arg0 = resolve_expr_node(print_call_arg0_node(node));
+    if (!valid_node(arg0) || hir_kind[arg0] != HIR_CALL_EXPR)
+        return;
+
+    uint4 aux = uint4(INVALID, 0u, INVALID, 0u);
+    if (!direct_call_header_aux(arg0, aux))
     {
-        kind = BODY_FRAGMENT_PRINT_DIRECT_CALL_I64;
-        aux = direct_call_aux(expr_node);
-    }
-    else if (print_call_local_and_len(node, decl_token, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_LOCAL_I64;
-        expr_node = decl_token;
-    }
-    else if (print_call_value_and_len(node, value, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_I64;
-        expr_node = value;
-    }
-    else if (print_call_expr_and_len(node, expr_node, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_EXPR_I64;
-    }
-    else
-    {
-        publish_func_invalid(owner_fn, token);
+        publish_func_invalid(owner_fn, hir_token_pos[arg0]);
         return;
     }
-    if (expr_mentions_local_let(call_arg0_node(node)))
-        atomic_u32_add(body_plan, BODY_PLAN_LOCAL_CONST_EXPR_COUNT, 1u);
 
+    uint len = print_direct_call_tail_len(aux);
     atomic_u32_add(body_plan, BODY_PLAN_PRINT_COUNT_AGG, 1u);
     add_func_body_len(owner_fn, len);
     atomic_u32_max(body_plan, BODY_PLAN_PRINT_MAX_TOKEN, token);
     publish_fragment(
         token,
         len,
-        uint4(kind, expr_node, len, token),
+        uint4(BODY_FRAGMENT_PRINT_DIRECT_CALL_I64, arg0, len, token),
         aux);
 }
 

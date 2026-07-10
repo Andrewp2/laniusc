@@ -2253,7 +2253,7 @@ fn x86_virtual_liveness_preserves_row_local_error_status() {
 }
 
 #[test]
-fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
+fn x86_virtual_regalloc_uses_function_intervals_not_global_compact_order() {
     fn words_as_bytes(words: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(words.len() * 4);
         for word in words {
@@ -2326,7 +2326,6 @@ fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
         const X86_FUNC_FIRST_VIRTUAL_ROW_OK: u32 = 1;
         const X86_VIRTUAL_VALUE_DEFS_OK: u32 = 1;
         const X86_VIRTUAL_REGALLOC_OK: u32 = 1;
-        const X86_ERR_REGALLOC_BOUNDARY: u32 = 48;
         const X86_VINST_IMM_I32: u32 = 1;
 
         let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
@@ -2617,18 +2616,15 @@ fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
             3,
         );
 
-        assert_eq!(status_words[0], 0, "regalloc should fail closed");
         assert_eq!(
-            status_words[1], X86_ERR_REGALLOC_BOUNDARY,
-            "corrupt compact value-def rows should publish a source-spannable boundary error"
+            status_words,
+            vec![X86_VIRTUAL_REGALLOC_OK, 0, INVALID, 3],
+            "function-interval allocation should not depend on the obsolete global compact-row order"
         );
         assert_eq!(
-            status_words[2], 1,
-            "detail should identify the HIR node for the first non-monotonic compact row"
-        );
-        assert!(
-            phys_regs.iter().all(|reg| *reg == INVALID),
-            "regalloc must reject the corrupt compact stream before assigning registers: {phys_regs:?}"
+            phys_regs,
+            vec![0, 10, 0],
+            "function-local liveness should deterministically reuse EAX after the first interval ends"
         );
     });
 }
@@ -7143,6 +7139,35 @@ fn main() {{
         "parameter_aggregate_member_copy_after_disp8_range",
         &source,
         9,
+    );
+}
+
+#[test]
+fn x86_executes_first_scalar_member_returns_without_aggregate_copy() {
+    assert_source_exit(
+        "first_scalar_member_returns",
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn first(pair: Pair) -> i32 {
+    return pair.left;
+}
+
+impl Pair {
+    fn first(self) -> i32 {
+        return self.left;
+    }
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, right: 9 };
+    return first(pair) + pair.first();
+}
+"#,
+        14,
     );
 }
 

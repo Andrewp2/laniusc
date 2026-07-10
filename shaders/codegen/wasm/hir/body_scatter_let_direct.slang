@@ -35,6 +35,9 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
+StructuredBuffer<uint> hir_expr_string_start;
+StructuredBuffer<uint> hir_expr_string_len;
+StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint2> wasm_const_value_record;
 StructuredBuffer<uint> body_let_init_expr_by_decl_token;
@@ -45,7 +48,16 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> call_param_type;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_fn_token;
+StructuredBuffer<uint> call_param_row_ordinal;
+StructuredBuffer<uint> call_param_row_type;
+StructuredBuffer<uint> call_param_row_start;
+StructuredBuffer<uint> call_param_row_count;
+StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> wasm_func_param_ordinal_by_decl_token;
+StructuredBuffer<uint> wasm_func_local_max_by_token;
 
 RWStructuredBuffer<uint> body_words;
 
@@ -88,8 +100,15 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_STRING = 28u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
+static const uint TY_ARRAY_BASE = 128u;
+static const uint METHOD_RECEIVER_SELF = 1u;
+static const uint METHOD_RECEIVER_REF_SELF = 2u;
 static const uint WASM_I32_CONST = 0x41u;
 static const uint WASM_F32_CONST = 0x43u;
 static const uint WASM_LOCAL_GET = 0x20u;
@@ -262,6 +281,93 @@ uint local_set_byte(uint local_index, uint byte_i)
     return u32_leb_byte(local_index, byte_i - 1u);
 }
 
+uint visible_type_for_token(uint token)
+{
+    if (!valid_token(token))
+        return TY_UNKNOWN;
+    uint ty = visible_type[token];
+    if (ty != INVALID && ty != TY_UNKNOWN)
+        return ty;
+    uint decl = visible_decl[token];
+    if (!valid_token(decl))
+        return TY_UNKNOWN;
+    ty = visible_type[decl];
+    return ty == INVALID ? TY_UNKNOWN : ty;
+}
+
+bool method_receiver_param(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token) || ordinal != 0u)
+        return false;
+    uint mode = method_decl_receiver_mode[fn_token];
+    return mode == METHOD_RECEIVER_SELF || mode == METHOD_RECEIVER_REF_SELF;
+}
+
+uint call_param_type_value(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return TY_UNKNOWN;
+
+    uint start = call_param_row_start[fn_token];
+    uint count = call_param_row_count[fn_token];
+    uint row_limit = call_param_row_count_out[0u];
+    if (start == INVALID || ordinal >= count || start > row_limit || ordinal > row_limit - start)
+        return method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : TY_UNKNOWN;
+
+    uint row = start + ordinal;
+    if (row >= row_limit ||
+        call_param_row_fn_token[row] != fn_token ||
+        call_param_row_ordinal[row] != ordinal)
+    {
+        return method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : TY_UNKNOWN;
+    }
+
+    uint ty = call_param_row_type[row];
+    return ty == TY_UNKNOWN && method_receiver_param(fn_token, ordinal)
+               ? TY_ARRAY_BASE
+               : ty;
+}
+
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
+uint local_decl_count_for_function_token(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint local_max = wasm_func_local_max_by_token[fn_token];
+    return local_max == INVALID ? 0u : local_max + 1u;
+}
+
 bool function_param_local_index(uint decl_token, uint fn_token, out uint local_index)
 {
     local_index = INVALID;
@@ -271,7 +377,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -280,7 +388,36 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    local_index = call_param_count[fn_token] + decl_token;
+    uint local_count = local_decl_count_for_function_token(fn_token);
+    local_index = function_param_abi_count(fn_token) + decl_token;
+    if (visible_type_for_token(decl_token) == TY_FLOAT)
+        local_index += local_count * 2u;
+    return true;
+}
+
+bool function_string_len_local_index(uint decl_token, uint fn_token, out uint local_index)
+{
+    local_index = INVALID;
+    if (!valid_token(decl_token) || !valid_token(fn_token))
+        return false;
+
+    uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+    if (ordinal != INVALID && ordinal < call_param_count[fn_token])
+    {
+        if (call_param_type_value(fn_token, ordinal) != TY_STRING)
+            return false;
+        uint ptr_index = function_param_abi_ordinal(fn_token, ordinal);
+        if (ptr_index == INVALID)
+            return false;
+        local_index = ptr_index + 1u;
+        return true;
+    }
+
+    if (visible_type_for_token(decl_token) != TY_STRING)
+        return false;
+    local_index = function_param_abi_count(fn_token) +
+                  local_decl_count_for_function_token(fn_token) +
+                  decl_token;
     return true;
 }
 
@@ -321,6 +458,96 @@ bool name_const_record_value(uint node, out uint value)
         return false;
     value = record.y;
     return true;
+}
+
+uint source_data_base()
+{
+    return (gParams.n_tokens + 1u) * 4u;
+}
+
+bool string_literal_ptr_len(uint node, out uint ptr, out uint len)
+{
+    ptr = 0u;
+    len = 0u;
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_STRING)
+        return false;
+
+    uint start = hir_expr_string_start[node];
+    uint raw_len = hir_expr_string_len[node];
+    if (start == INVALID || start > gParams.source_len || raw_len > gParams.source_len - start)
+        return false;
+
+    ptr = source_data_base() + start;
+    len = raw_len;
+    return true;
+}
+
+uint string_value_expr_len(uint node)
+{
+    uint ptr = 0u;
+    uint str_len = 0u;
+    if (string_literal_ptr_len(node, ptr, str_len))
+        return 1u + i32_sleb_len(ptr) + 1u + i32_sleb_len(str_len);
+
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+        return 0u;
+
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!valid_token(decl_token) ||
+        visible_type_for_token(decl_token) != TY_STRING ||
+        !local_index_for_name_expr(node, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return 0u;
+    }
+
+    return local_get_len(ptr_local) + local_get_len(len_local);
+}
+
+uint string_value_expr_byte(uint node, uint byte_i)
+{
+    uint ptr = 0u;
+    uint str_len = 0u;
+    if (string_literal_ptr_len(node, ptr, str_len))
+    {
+        uint ptr_len = 1u + i32_sleb_len(ptr);
+        if (byte_i < ptr_len)
+            return i32_const_byte(ptr, byte_i);
+        return i32_const_byte(str_len, byte_i - ptr_len);
+    }
+
+    node = resolve_expr_node(node);
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!local_index_for_name_expr(node, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return 0u;
+    }
+
+    uint ptr_len = local_get_len(ptr_local);
+    if (byte_i < ptr_len)
+        return local_get_byte(ptr_local, byte_i);
+    return local_get_byte(len_local, byte_i - ptr_len);
+}
+
+uint direct_call_arg_abi_len(uint node, uint param_ty)
+{
+    return param_ty == TY_STRING ? string_value_expr_len(node) : expr_len(node);
+}
+
+uint direct_call_arg_abi_byte(uint node, uint param_ty, uint byte_i)
+{
+    return param_ty == TY_STRING ? string_value_expr_byte(node, byte_i) : expr_byte(node, byte_i);
 }
 
 uint i32_binary_op_byte(uint form)
@@ -538,27 +765,19 @@ uint assign_op_byte(uint op)
 
 uint let_direct_call_i32_fragment_byte(uint local_index, uint call_node, uint4 aux, uint fragment_len, uint byte_i)
 {
-    call_node = resolve_expr_node(call_node);
     uint set_len = local_set_len(local_index);
     uint call_len = fragment_len > set_len ? fragment_len - set_len : 0u;
     if (byte_i >= call_len)
         return local_set_byte(local_index, byte_i - call_len);
 
     uint wasm_func_index = aux.x;
-    uint arg_count = aux.y;
-    uint offset = 0u;
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(call_node, aux.z, arg_count, i);
-        uint arg_len = expr_len(arg_node);
-        if (byte_i < offset + arg_len)
-            return expr_byte(arg_node, byte_i - offset);
-        offset += arg_len;
-    }
-
-    if (byte_i == offset)
+    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
+    if (byte_i < arg_len)
+        return 0u;
+    if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 uint assign_direct_call_i32_fragment_byte(uint local_index, uint call_node, uint4 aux, uint fragment_len, uint byte_i)
@@ -583,20 +802,13 @@ uint assign_compound_direct_call_i32_fragment_byte(uint local_index, uint call_n
     {
         uint call_byte_i = byte_i - call_start;
         uint wasm_func_index = aux.x;
-        uint arg_count = aux.y;
-        uint offset = 0u;
-        for (uint i = 0u; i < arg_count; i += 1u)
-        {
-            uint arg_node = direct_call_abi_arg_node(call_node, aux.z, arg_count, i);
-            uint arg_len = expr_len(arg_node);
-            if (call_byte_i < offset + arg_len)
-                return expr_byte(arg_node, call_byte_i - offset);
-            offset += arg_len;
-        }
-
-        if (call_byte_i == offset)
+        uint tail_len = 1u + u32_leb_len(wasm_func_index);
+        uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
+        if (call_byte_i < arg_len)
+            return 0u;
+        if (call_byte_i == arg_len)
             return WASM_CALL;
-        return u32_leb_byte(wasm_func_index, call_byte_i - offset - 1u);
+        return u32_leb_byte(wasm_func_index, call_byte_i - arg_len - 1u);
     }
 
     uint op_i = call_start + call_len;
@@ -608,31 +820,22 @@ uint assign_compound_direct_call_i32_fragment_byte(uint local_index, uint call_n
 
 uint return_direct_call_i32_fragment_byte(uint call_node, uint4 aux, uint fragment_len, uint byte_i)
 {
-    call_node = resolve_expr_node(call_node);
     uint call_len = fragment_len > 0u ? fragment_len - 1u : 0u;
     if (byte_i >= call_len)
         return WASM_RETURN;
 
     uint wasm_func_index = aux.x;
-    uint arg_count = aux.y;
-    uint offset = 0u;
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(call_node, aux.z, arg_count, i);
-        uint arg_len = expr_len(arg_node);
-        if (byte_i < offset + arg_len)
-            return expr_byte(arg_node, byte_i - offset);
-        offset += arg_len;
-    }
-
-    if (byte_i == offset)
+    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
+    if (byte_i < arg_len)
+        return 0u;
+    if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 uint print_direct_call_i64_fragment_byte(uint call_node, uint4 aux, uint fragment_len, uint byte_i)
 {
-    call_node = resolve_expr_node(call_node);
     uint suffix_len = 3u;
     uint call_len = fragment_len > suffix_len ? fragment_len - suffix_len : 0u;
     if (byte_i >= call_len)
@@ -646,20 +849,13 @@ uint print_direct_call_i64_fragment_byte(uint call_node, uint4 aux, uint fragmen
     }
 
     uint wasm_func_index = aux.x;
-    uint arg_count = aux.y;
-    uint offset = 0u;
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(call_node, aux.z, arg_count, i);
-        uint arg_len = expr_len(arg_node);
-        if (byte_i < offset + arg_len)
-            return expr_byte(arg_node, byte_i - offset);
-        offset += arg_len;
-    }
-
-    if (byte_i == offset)
+    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
+    if (byte_i < arg_len)
+        return 0u;
+    if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 [shader("compute")]

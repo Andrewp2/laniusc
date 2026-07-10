@@ -952,6 +952,12 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
         return TK_GENERIC_PARAM_LT;
     }
     if (prev_raw == TK_IDENT &&
+        prev2_raw == TK_COLON &&
+        matching_semantic_brace_open_before(parser_i - 2u, count) != TK_STRUCT_LIT_LBRACE)
+    {
+        return TK_TYPE_ARG_LT;
+    }
+    if (prev_raw == TK_IDENT &&
         value_expression_context_before(parser_i) &&
         (prev2_raw == TK_COLON || prev2_raw == TK_PATH_COLON))
     {

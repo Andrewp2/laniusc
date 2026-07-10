@@ -31,6 +31,251 @@ pub fn compute_pass_batching_enabled() -> bool {
     }
 }
 
+enum DeferredComputeCommand {
+    Direct {
+        pipeline: Arc<wgpu::ComputePipeline>,
+        bind_groups: Vec<wgpu::BindGroup>,
+        groups: (u32, u32, u32),
+    },
+    Indirect {
+        pipeline: Arc<wgpu::ComputePipeline>,
+        bind_groups: Vec<wgpu::BindGroup>,
+        dispatch_args: wgpu::Buffer,
+        dispatch_offset: u64,
+        dynamic_offsets: Vec<u32>,
+    },
+}
+
+#[derive(Default)]
+struct DeferredComputeState {
+    active: bool,
+    label: Option<&'static str>,
+    commands: Vec<DeferredComputeCommand>,
+}
+
+thread_local! {
+    static DEFERRED_COMPUTE: std::cell::RefCell<DeferredComputeState> =
+        std::cell::RefCell::new(DeferredComputeState::default());
+}
+
+/// Scope for coalescing ordered compute dispatches until the next explicit
+/// encoder clear/copy boundary. GPU handles are cloned into deferred commands,
+/// so their lifetimes remain valid through the eventual compute pass.
+pub(crate) struct DeferredComputeBatchGuard {
+    enabled: bool,
+}
+
+impl DeferredComputeBatchGuard {
+    pub(crate) fn begin(enabled: bool, label: &'static str) -> Self {
+        if enabled {
+            DEFERRED_COMPUTE.with(|state| {
+                let mut state = state.borrow_mut();
+                assert!(!state.active, "deferred compute batching cannot nest");
+                assert!(state.commands.is_empty());
+                state.active = true;
+                state.label = Some(label);
+            });
+        }
+        Self { enabled }
+    }
+}
+
+impl Drop for DeferredComputeBatchGuard {
+    fn drop(&mut self) {
+        if self.enabled {
+            DEFERRED_COMPUTE.with(|state| {
+                let mut state = state.borrow_mut();
+                state.active = false;
+                state.label = None;
+                // Early recording errors must not leak commands into the next
+                // compilation on this worker thread.
+                state.commands.clear();
+            });
+        }
+    }
+}
+
+pub(crate) fn defer_compute_direct(
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    groups: (u32, u32, u32),
+) -> bool {
+    DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state.active {
+            return false;
+        }
+        state.commands.push(DeferredComputeCommand::Direct {
+            pipeline: pass.pipeline.clone(),
+            bind_groups: vec![bind_group.clone()],
+            groups,
+        });
+        true
+    })
+}
+
+pub(crate) fn defer_compute_indirect(
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    dispatch_args: &wgpu::Buffer,
+    dispatch_offset: u64,
+    dynamic_offsets: &[u32],
+) -> bool {
+    DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state.active {
+            return false;
+        }
+        state.commands.push(DeferredComputeCommand::Indirect {
+            pipeline: pass.pipeline.clone(),
+            bind_groups: vec![bind_group.clone()],
+            dispatch_args: dispatch_args.clone(),
+            dispatch_offset,
+            dynamic_offsets: dynamic_offsets.to_vec(),
+        });
+        true
+    })
+}
+
+pub(crate) fn defer_compute_direct_bind_groups(
+    pass: &PassData,
+    bind_groups: &[Arc<wgpu::BindGroup>],
+    groups: (u32, u32, u32),
+) -> bool {
+    DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state.active {
+            return false;
+        }
+        state.commands.push(DeferredComputeCommand::Direct {
+            pipeline: pass.pipeline.clone(),
+            bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
+            groups,
+        });
+        true
+    })
+}
+
+pub(crate) fn defer_compute_indirect_bind_groups(
+    pass: &PassData,
+    bind_groups: &[Arc<wgpu::BindGroup>],
+    dispatch_args: &wgpu::Buffer,
+) -> bool {
+    DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state.active {
+            return false;
+        }
+        state.commands.push(DeferredComputeCommand::Indirect {
+            pipeline: pass.pipeline.clone(),
+            bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
+            dispatch_args: dispatch_args.clone(),
+            dispatch_offset: 0,
+            dynamic_offsets: Vec::new(),
+        });
+        true
+    })
+}
+
+pub(crate) fn deferred_compute_active() -> bool {
+    DEFERRED_COMPUTE.with(|state| state.borrow().active)
+}
+
+/// Records one direct dispatch immediately, or appends it to the active
+/// ordered compute batch.
+pub(crate) fn record_or_defer_compute_direct(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &'static str,
+    groups: (u32, u32, u32),
+) {
+    if defer_compute_direct(pass, bind_group, groups) {
+        return;
+    }
+    flush_deferred_compute(encoder);
+    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: None,
+    });
+    compute.set_pipeline(&pass.pipeline);
+    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+}
+
+/// Records one indirect dispatch immediately, or appends it to the active
+/// ordered compute batch.
+pub(crate) fn record_or_defer_compute_indirect(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &'static str,
+    dispatch_args: &wgpu::Buffer,
+) {
+    if defer_compute_indirect(pass, bind_group, dispatch_args, 0, &[]) {
+        return;
+    }
+    flush_deferred_compute(encoder);
+    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: None,
+    });
+    compute.set_pipeline(&pass.pipeline);
+    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.dispatch_workgroups_indirect(dispatch_args, 0);
+}
+
+/// Flushes all deferred dispatches as one ordered compute pass.
+pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
+    let (label, commands) = DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        (
+            state.label.unwrap_or("compute.batch"),
+            std::mem::take(&mut state.commands),
+        )
+    });
+    if commands.is_empty() {
+        return;
+    }
+    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: None,
+    });
+    for command in &commands {
+        match command {
+            DeferredComputeCommand::Direct {
+                pipeline,
+                bind_groups,
+                groups,
+            } => {
+                compute.set_pipeline(pipeline);
+                for (index, bind_group) in bind_groups.iter().enumerate() {
+                    compute.set_bind_group(index as u32, bind_group, &[]);
+                }
+                compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+            }
+            DeferredComputeCommand::Indirect {
+                pipeline,
+                bind_groups,
+                dispatch_args,
+                dispatch_offset,
+                dynamic_offsets,
+            } => {
+                compute.set_pipeline(pipeline);
+                for (index, bind_group) in bind_groups.iter().enumerate() {
+                    let offsets = if index == 0 {
+                        dynamic_offsets.as_slice()
+                    } else {
+                        &[]
+                    };
+                    compute.set_bind_group(index as u32, bind_group, offsets);
+                }
+                compute.dispatch_workgroups_indirect(dispatch_args, *dispatch_offset);
+            }
+        }
+    }
+}
+
 /// Pushes a validation scope when `enabled` is true.
 pub(crate) fn validation_scope(
     device: &wgpu::Device,
@@ -820,6 +1065,41 @@ impl BindGroupCache {
     pub fn remove(&mut self, shader_id: &str) {
         self.map.remove(shader_id);
     }
+
+    /// Returns reflected bind groups for raw `PassData`, reusing them while the
+    /// owning phase's resident buffer identities remain stable.
+    pub(crate) fn reflected_for_pass_data<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        label: &str,
+        pass: &PassData,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+    ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error> {
+        let cache_key = format!("{}::raw::{label}", pass.shader_id);
+        if let Some(groups) = self.map.get(&cache_key)
+            && groups.len() == pass.bind_group_layouts.len()
+        {
+            return Ok(groups.clone());
+        }
+        let groups = pass
+            .bind_group_layouts
+            .iter()
+            .enumerate()
+            .map(|(set_index, layout)| {
+                bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some(label),
+                    layout,
+                    &pass.reflection,
+                    set_index,
+                    resources,
+                )
+                .map(Arc::new)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.map.insert(cache_key, groups.clone());
+        Ok(groups)
+    }
 }
 
 fn bind_groups_for_pass<P, Buffers, DebugOutput>(
@@ -995,18 +1275,19 @@ pub trait Pass<Buffers, DebugOutput> {
             "dispatch must issue at least one group"
         );
 
-        let mut pass = ctx
-            .encoder
-            .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(Self::NAME),
-                timestamp_writes: None,
-            });
-        pass.set_pipeline(&pd.pipeline);
-        for (i, bg) in bind_groups.iter().enumerate() {
-            pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+        if !defer_compute_direct_bind_groups(pd, &bind_groups, (gx, gy, gz)) {
+            let mut pass = ctx
+                .encoder
+                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some(Self::NAME),
+                    timestamp_writes: None,
+                });
+            pass.set_pipeline(&pd.pipeline);
+            for (i, bg) in bind_groups.iter().enumerate() {
+                pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+            }
+            pass.dispatch_workgroups(gx, gy, gz);
         }
-        pass.dispatch_workgroups(gx, gy, gz);
-        drop(pass);
 
         if let Some(t) = ctx.maybe_timer.as_deref_mut() {
             t.stamp(ctx.encoder, Self::NAME.to_string());
@@ -1040,18 +1321,19 @@ pub trait Pass<Buffers, DebugOutput> {
             ctx.bg_cache.as_deref_mut(),
         )?;
 
-        let mut pass = ctx
-            .encoder
-            .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(Self::NAME),
-                timestamp_writes: None,
-            });
-        pass.set_pipeline(&pd.pipeline);
-        for (i, bg) in bind_groups.iter().enumerate() {
-            pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+        if !defer_compute_indirect_bind_groups(pd, &bind_groups, dispatch_args) {
+            let mut pass = ctx
+                .encoder
+                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some(Self::NAME),
+                    timestamp_writes: None,
+                });
+            pass.set_pipeline(&pd.pipeline);
+            for (i, bg) in bind_groups.iter().enumerate() {
+                pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+            }
+            pass.dispatch_workgroups_indirect(dispatch_args, 0);
         }
-        pass.dispatch_workgroups_indirect(dispatch_args, 0);
-        drop(pass);
 
         if let Some(t) = ctx.maybe_timer.as_deref_mut() {
             t.stamp(ctx.encoder, Self::NAME.to_string());

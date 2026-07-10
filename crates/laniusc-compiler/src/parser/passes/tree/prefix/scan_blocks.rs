@@ -76,13 +76,13 @@ impl TreePrefixScanBlocksPass {
             InputElements::Elements1D(buffers.tree_n_node_blocks),
             [tgsx, tgsy, 1],
         )?;
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("tree_prefix_02_scan_blocks"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        crate::gpu::passes_core::record_or_defer_compute_direct(
+            encoder,
+            &self.data,
+            &bind_group,
+            "tree_prefix_02_scan_blocks",
+            (gx, gy, gz),
+        );
         Ok(())
     }
 }

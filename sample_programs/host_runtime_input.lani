@@ -1,0 +1,65 @@
+module app::main;
+
+import alloc::allocator;
+import std::env;
+import std::io;
+import std::process;
+
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let align: usize = 4;
+    let stdin_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    if (stdin_ptr == 0) {
+        return 1;
+    }
+    let stdin_read: i32 = std::io::read_stdin(stdin_ptr, 1);
+    if (stdin_read != 1) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 2;
+    }
+    let stdin_written: i32 = std::io::write_stdout(stdin_ptr, 1);
+    if (stdin_written != 1) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 3;
+    }
+
+    let arg_count: i32 = std::process::argc();
+    if (arg_count != 2) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 4;
+    }
+    let arg_length: i32 = std::process::arg_len(1);
+    if (arg_length != 15) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 5;
+    }
+    let arg_read: i32 = std::process::arg_read(1, stdin_ptr, 15);
+    if (arg_read != 15) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 6;
+    }
+    let arg_written: i32 = std::io::write_stdout(stdin_ptr, 1);
+    if (arg_written != 1) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 7;
+    }
+    let env_length: i32 = std::env::var_len(stdin_ptr, 15);
+    if (env_length != 7) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 8;
+    }
+    let value_ptr: u32 = stdin_ptr + 32;
+    let env_read: i32 = std::env::var_read(stdin_ptr, 15, value_ptr, 7);
+    if (env_read != 7) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 9;
+    }
+    let env_written: i32 = std::io::write_stdout(value_ptr, 7);
+    if (env_written != 7) {
+        alloc::allocator::dealloc(stdin_ptr, capacity, align);
+        return 10;
+    }
+    alloc::allocator::dealloc(stdin_ptr, capacity, align);
+    print(0);
+    return 0;
+}

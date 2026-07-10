@@ -8725,6 +8725,41 @@ fn main(seed: i32) -> i32 {
 }
 
 #[test]
+fn parser_hir_assignment_direct_call_rhs_resolves_to_call_record() {
+    let parsed = parse_resident_source_pack(&[r#"
+fn add(x: i32) -> i32 {
+    return x;
+}
+
+fn main() -> i32 {
+    let total: i32 = 1;
+    total += add(5);
+    return total;
+}
+"#]);
+    assert_ne!(
+        parsed.ll1_status[0], 0,
+        "resident parser should accept the fixture"
+    );
+
+    let assign_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .position(|&kind| kind == STMT_RECORD_KIND_ASSIGN)
+        .expect("fixture should publish one assignment record");
+    let rhs = parsed.hir_stmt_record_operand1[assign_node] as usize;
+    let call = resolve_forward_expr_record(&parsed, rhs, "assignment direct-call RHS");
+    assert_eq!(
+        parsed.hir_kind[call], HIR_NODE_CALL_EXPR,
+        "assignment RHS should resolve to the parser-owned call node"
+    );
+    assert_eq!(
+        parsed.hir_call_arg_count[call], 1,
+        "assignment call should retain its argument relation"
+    );
+}
+
+#[test]
 fn parser_hir_assignment_records_publish_target_rhs_and_operator_in_source_packs() {
     let source_count = 2;
     let decoy = r#"

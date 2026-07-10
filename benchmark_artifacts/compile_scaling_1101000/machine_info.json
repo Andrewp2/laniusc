@@ -1,0 +1,16 @@
+{
+  "cpu_model": "AMD Ryzen 9 5950X 16-Core Processor",
+  "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "gpu": "NVIDIA GeForce RTX 3090, 580.159.03, 24576 MiB",
+  "gpu_compute_processes_before_measurement": "none",
+  "gpu_measurement_state_after_measurement": "utilization.gpu=48%, utilization.memory=2%, memory.used=1076 MiB, temperature=67 C, pstate=P0",
+  "kernel": "Linux 6.17.0-35-generic x86_64",
+  "lanius_profile": "release",
+  "laniusc": "laniusc 0.1.0",
+  "logical_cpus": "32",
+  "memory_total_bytes": "33585344512",
+  "rustc": "rustc 1.97.0-nightly (b954122bb 2026-05-20)",
+  "schema": "lanius.benchmark-machine.v1",
+  "zig": "0.16.0"
+}

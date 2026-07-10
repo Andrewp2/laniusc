@@ -14,11 +14,6 @@ pub(in crate::type_checker) type FnContextScanStep = ScanStep<FnContextParams>;
 /// Scan step used by compacted name and run-head scans.
 pub(in crate::type_checker) type NameScanStep = ScanStep<NameScanParams>;
 
-/// Retained uniform for one byte pass of name radix sorting.
-pub(in crate::type_checker) struct NameRadixStep {
-    pub(in crate::type_checker) _params: LaniusBuffer<NameRadixParams>,
-}
-
 /// Retained uniform for one byte pass of module-like key radix sorting.
 pub(in crate::type_checker) struct ModuleKeyRadixStep {
     pub(in crate::type_checker) _params: LaniusBuffer<ModuleKeyRadixParams>,
@@ -99,10 +94,6 @@ pub(in crate::type_checker) struct NameInput<'a> {
     pub(in crate::type_checker) symbols: SymbolRows<'a>,
     pub(in crate::type_checker) ids: NameIdRows<'a>,
     pub(in crate::type_checker) radix: RadixRows<'a>,
-    pub(in crate::type_checker) radix_args: &'a LaniusBuffer<u32>,
-    pub(in crate::type_checker) run_head: &'a wgpu::Buffer,
-    pub(in crate::type_checker) adjacent_equal: &'a wgpu::Buffer,
-    pub(in crate::type_checker) run_prefix: &'a wgpu::Buffer,
 }
 
 /// Capacity and tree-shape summary for visible-declaration passes.
@@ -281,6 +272,7 @@ pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) _hir_decl_key_radix_dispatch_params:
         LaniusBuffer<ModuleKeyRadixParams>,
     pub(in crate::type_checker) _hir_decl_key_radix_steps: Vec<ModuleKeyRadixStep>,
+    pub(in crate::type_checker) sort_hir_decl_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_hir_decl_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_hir_decl_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_hir_decl_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -302,26 +294,17 @@ pub(in crate::type_checker) struct VisibleDeclScopeTreeLevel {
 /// Bind groups and retained parameters for source-name compaction and sorting.
 pub(in crate::type_checker) struct NameBindGroups {
     pub(in crate::type_checker) token_scan_n_blocks: u32,
-    pub(in crate::type_checker) radix_n_blocks: u32,
-    pub(in crate::type_checker) radix_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) name_max_len: LaniusBuffer<u32>,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
     pub(in crate::type_checker) scan_local: wgpu::BindGroup,
     pub(in crate::type_checker) scan_blocks: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) scan_apply: wgpu::BindGroup,
     pub(in crate::type_checker) scatter: wgpu::BindGroup,
-    pub(in crate::type_checker) radix_dispatch: wgpu::BindGroup,
-    pub(in crate::type_checker) _radix_steps: Vec<NameRadixStep>,
-    pub(in crate::type_checker) radix_histogram: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) radix_bucket_prefix: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) radix_bucket_bases: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) radix_scatter: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) dedup: wgpu::BindGroup,
-    pub(in crate::type_checker) _run_head_scan_steps: Vec<NameScanStep>,
-    pub(in crate::type_checker) run_head_scan_local: wgpu::BindGroup,
-    pub(in crate::type_checker) run_head_scan_blocks: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) run_head_scan_apply: wgpu::BindGroup,
-    pub(in crate::type_checker) assign_ids: wgpu::BindGroup,
+    pub(in crate::type_checker) hash_work_items: u32,
+    pub(in crate::type_checker) _hash_params: LaniusBuffer<NameRadixParams>,
+    pub(in crate::type_checker) hash_prepare: wgpu::BindGroup,
+    pub(in crate::type_checker) hash_insert: wgpu::BindGroup,
+    pub(in crate::type_checker) hash_assign_ids: wgpu::BindGroup,
 }
 
 /// Bind groups for clearing and materializing builtin language symbols.
@@ -349,6 +332,7 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) decl_generic_params: wgpu::BindGroup,
     pub(in crate::type_checker) generic_param_key_radix_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) generic_param_key_radix_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_generic_params_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_generic_param_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_generic_param_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_generic_param_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -462,6 +446,7 @@ pub(in crate::type_checker) struct MethodBindGroups {
 pub(in crate::type_checker) struct MethodKeyBindGroups {
     pub(in crate::type_checker) _key_radix_steps: Vec<ModuleKeyRadixStep>,
     pub(in crate::type_checker) seed_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_key_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -483,11 +468,13 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) collect_impls: wgpu::BindGroup,
     pub(in crate::type_checker) collect_methods: wgpu::BindGroup,
     pub(in crate::type_checker) seed_method_contract_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_method_contract_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) seed_method_param_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_method_param_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_param_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_param_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_param_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -497,11 +484,13 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) reduce_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) apply_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) seed_owner_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_owner_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) seed_impl_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_impl_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_impl_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_impl_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_impl_key_bucket_bases: Vec<wgpu::BindGroup>,

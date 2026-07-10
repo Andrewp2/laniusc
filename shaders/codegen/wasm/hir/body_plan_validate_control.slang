@@ -24,28 +24,37 @@ void validate_main_control(uint node, uint token)
 
     if (stmt_kind == STMT_RECORD_KIND_IF && hir_kind[node] == HIR_IF_STMT)
     {
+        uint condition_record_node = stmt_record_slot(node, 1u);
+        if (expr_contains_member(condition_record_node))
+            return;
+        uint raw_condition_node = resolve_expr_node(condition_record_node);
+        if (valid_node(raw_condition_node) && expr_contains_member(raw_condition_node))
+            return;
+        if (valid_node(raw_condition_node) && !expr_contains_member(raw_condition_node))
+            return;
+
         uint condition_node = INVALID;
         uint open_len = 0u;
         uint else_token = INVALID;
         uint else_len = 0u;
         uint end_token = INVALID;
         uint end_len = 0u;
-        if (!if_open_fragment_and_len(node, condition_node, open_len) ||
-            !if_end_token_and_len(node, end_token, end_len))
+        if (valid_node(raw_condition_node) && expr_contains_member(raw_condition_node))
         {
-            publish_func_invalid(owner_fn, token);
-            return;
-        }
+            condition_node = raw_condition_node;
+            if (!if_end_token_and_len(node, end_token, end_len))
+            {
+                publish_func_invalid(owner_fn, token);
+                return;
+            }
 
-        if (valid_node(stmt_record_slot(node, 3u)) &&
-            !if_else_token_and_len(node, else_token, else_len))
-        {
-            publish_func_invalid(owner_fn, token);
-            return;
-        }
+            if (valid_node(stmt_record_slot(node, 3u)) &&
+                !if_else_token_and_len(node, else_token, else_len))
+            {
+                publish_func_invalid(owner_fn, token);
+                return;
+            }
 
-        if (expr_contains_member(condition_node))
-        {
             uint condition_len = 0u;
             if (!expr_simple_and_len(condition_node, condition_len))
             {
@@ -80,6 +89,20 @@ void validate_main_control(uint node, uint token)
                 uint4(BODY_FRAGMENT_IF_END, 0u, 0u, end_token),
                 uint4(INVALID, 0u, 0u, 0u));
             atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, end_token);
+            return;
+        }
+
+        if (!if_open_fragment_and_len(node, condition_node, open_len) ||
+            !if_end_token_and_len(node, end_token, end_len))
+        {
+            publish_func_invalid(owner_fn, token);
+            return;
+        }
+
+        if (valid_node(stmt_record_slot(node, 3u)) &&
+            !if_else_token_and_len(node, else_token, else_len))
+        {
+            publish_func_invalid(owner_fn, token);
             return;
         }
 
@@ -180,6 +203,9 @@ void validate_main_control(uint node, uint token)
                 open_len) ||
             !for_close_token_and_len(node, close_token, close_len))
         {
+            uint iterable_node = resolve_expr_node(stmt_record_slot(node, 2u));
+            if (valid_node(iterable_node) && expr_form(iterable_node) != HIR_EXPR_RANGE)
+                return;
             publish_func_invalid(owner_fn, token);
             return;
         }

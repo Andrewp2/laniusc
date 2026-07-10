@@ -10,6 +10,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups(
         device,
         input.label,
         &passes.methods_seed_key_order,
+        &passes.methods_sort_keys_small,
         &passes.methods_sort_keys,
         &passes.names_radix_bucket_prefix,
         &passes.names_radix_bucket_bases,
@@ -55,6 +56,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
     device: &wgpu::Device,
     label: &'static str,
     seed_pass: &PassData,
+    small_sort_pass: &PassData,
     sort_pass: &PassData,
     bucket_prefix_pass: &PassData,
     bucket_bases_pass: &PassData,
@@ -121,6 +123,61 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
             ),
         ],
     )?;
+
+    let sort_key_small = if method_capacity <= METHOD_KEY_SMALL_SORT_CAPACITY {
+        Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some(&format!("{label}.sort_key_small")),
+            small_sort_pass,
+            0,
+            &[
+                ("gParams", seed_params.as_entire_binding()),
+                ("token_count", token_count.as_entire_binding()),
+                (
+                    "method_decl_impl_node",
+                    method_decl_impl_node.as_entire_binding(),
+                ),
+                (
+                    "method_decl_receiver_ref_tag",
+                    method_decl_receiver_ref_tag.as_entire_binding(),
+                ),
+                (
+                    "method_decl_receiver_ref_payload",
+                    method_decl_receiver_ref_payload.as_entire_binding(),
+                ),
+                (
+                    "method_decl_module_id",
+                    method_decl_module_id.as_entire_binding(),
+                ),
+                (
+                    "method_decl_name_id",
+                    method_decl_name_id.as_entire_binding(),
+                ),
+                (
+                    "module_type_path_type",
+                    module_type_path_type.as_entire_binding(),
+                ),
+                (
+                    "type_instance_decl_token",
+                    type_instance_decl_token.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_count",
+                    type_instance_arg_count.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_hash",
+                    type_instance_arg_hash.as_entire_binding(),
+                ),
+                (
+                    "method_key_order",
+                    method_key_to_fn_token.as_entire_binding(),
+                ),
+            ],
+        )?)
+    } else {
+        None
+    };
 
     let mut key_radix_steps = Vec::with_capacity(METHOD_KEY_RADIX_STEPS as usize + 2);
     key_radix_steps.push(ModuleKeyRadixStep {
@@ -440,6 +497,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
     Ok(MethodKeyBindGroups {
         _key_radix_steps: key_radix_steps,
         seed_key_order,
+        sort_key_small,
         sort_key_histogram,
         sort_key_bucket_prefix,
         sort_key_bucket_bases,

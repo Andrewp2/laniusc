@@ -4,7 +4,6 @@ use super::super::{
     X86_REGALLOC_ROWS_PER_CHUNK,
     X86FeatureSummary,
     X86Params,
-    regalloc_recorded_chunk_count,
     regalloc_recorded_step_count,
     support::{pointer_jump_steps_for_items, scan_steps_for_blocks, workgroup_grid_1d},
     x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
@@ -19,6 +18,7 @@ use super::super::{
 
 const X86_SYSV_INTEGER_REGISTER_SLOTS: usize = 6;
 const X86_AGGREGATE_RETURN_POINTER_REGISTER_SLOTS: usize = 1;
+const X86_REGALLOC_DISPATCH_PHASES: usize = 2;
 
 /// Capacity plan for x86 recording buffers derived from HIR size and feature counts.
 pub(super) struct RecordCapacity {
@@ -101,7 +101,11 @@ impl RecordCapacity {
         let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
         let virtual_next_call_steps = scan_steps_for_blocks(inst_capacity);
         let regalloc_recorded_steps = regalloc_recorded_step_count(inst_capacity);
-        let virtual_regalloc_chunk_count = regalloc_recorded_chunk_count(inst_capacity);
+        // Regalloc now has one validation/status phase followed by one
+        // function-parallel allocation phase. A GPU lane owns one function's
+        // contiguous virtual-row interval, so command count is independent of
+        // conservative instruction capacity.
+        let virtual_regalloc_chunk_count = X86_REGALLOC_DISPATCH_PHASES;
         let token_words = (token_capacity as usize).max(1);
         let function_slot_capacity =
             x86_function_slot_capacity(inst_hir_node_count, hir_words, token_words);

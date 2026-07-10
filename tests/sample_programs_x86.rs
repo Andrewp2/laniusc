@@ -60,7 +60,16 @@ fn run_sample_x86(
         .unwrap_or_else(|err| panic!("{context}: chmod native ELF {}: {err}", exe_path.display()));
 
     let mut command = Command::new(&exe_path);
-    command.current_dir(work_dir.path());
+    let stdin_path = work_dir.path().join("stdin.txt");
+    fs::write(&stdin_path, b"S")
+        .unwrap_or_else(|err| panic!("{context}: write native stdin fixture: {err}"));
+    let stdin = fs::File::open(&stdin_path)
+        .unwrap_or_else(|err| panic!("{context}: open native stdin fixture: {err}"));
+    command
+        .current_dir(work_dir.path())
+        .arg("LANIUS_TEST_ENV")
+        .env("LANIUS_TEST_ENV", "present")
+        .stdin(stdin);
     let output = common::short_process_output_with_timeout(
         format!("{context}: run native ELF {}", exe_path.display()),
         &mut command,

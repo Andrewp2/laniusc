@@ -7,8 +7,12 @@
 use std::{
     collections::HashMap,
     fmt,
-    sync::{Arc, Mutex},
-    time::Instant,
+    sync::{
+        Arc,
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -47,6 +51,25 @@ const WASM_BODY_FEATURE_LET_AGG_DIRECT: u32 = 1 << 9;
 const WASM_BODY_FEATURE_RETURN_AGG_DIRECT: u32 = 1 << 10;
 const WASM_BODY_FEATURE_AGG_COPY: u32 = 1 << 11;
 const WASM_BODY_FEATURE_ARRAY_ALLOC: u32 = 1 << 12;
+const WASM_BODY_FEATURE_ASSIGN: u32 = 1 << 13;
+const WASM_BODY_FEATURE_CONTROL: u32 = 1 << 14;
+const WASM_BODY_FEATURE_STMT_CALL: u32 = 1 << 15;
+const WASM_BODY_FEATURE_HOST_BASIC: u32 = 1 << 16;
+const WASM_BODY_FEATURE_HOST_ENV: u32 = 1 << 17;
+const WASM_BODY_FEATURE_HOST_IO: u32 = 1 << 18;
+const WASM_BODY_FEATURE_HOST_VOID: u32 = 1 << 19;
+const WASM_BODY_FEATURE_STMT_PRINT: u32 = 1 << 20;
+const WASM_BODY_FEATURE_STMT_HOST_VOID: u32 = 1 << 21;
+const WASM_BODY_FEATURE_STMT_PRINT_DIRECT: u32 = 1 << 22;
+const WASM_BODY_FEATURE_CONTROL_IF_SIMPLE: u32 = 1 << 23;
+const WASM_BODY_FEATURE_HOST_IO_I32: u32 = 1 << 24;
+const WASM_BODY_FEATURE_HOST_IO_STRING: u32 = 1 << 25;
+const WASM_BODY_FEATURE_HOST_IO_RETURN: u32 = 1 << 26;
+const WASM_BODY_FEATURE_RETURN_SCALAR: u32 = 1 << 27;
+const WASM_BODY_FEATURE_LET_CONST: u32 = 1 << 28;
+const WASM_BODY_FEATURE_RETURN_MEMBER_EXPR: u32 = 1 << 29;
+const WASM_BODY_FEATURE_MEMBER_EXPR_SCATTER: u32 = 1 << 30;
+const WASM_BODY_FEATURE_RETURN_EXPR: u32 = 1u32 << 31;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct WasmBodyFeatures {
@@ -95,7 +118,7 @@ impl WasmFinishHostTimer {
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
         let name = format!("codegen.wasm.finish.{stage}");
         if self.print_enabled {
-            println!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+            eprintln!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
         }
         if self.trace_enabled {
             crate::gpu::trace::record_host_span("host.wasm.finish", &name, self.last, now);
@@ -127,6 +150,7 @@ struct LazyWasmPass {
     bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
     reflection: Arc<SlangReflection>,
     pipeline: Mutex<Option<Arc<wgpu::ComputePipeline>>>,
+    pipeline_cache_dirty: Arc<AtomicBool>,
     device: Arc<wgpu::Device>,
 }
 
@@ -137,6 +161,7 @@ impl LazyWasmPass {
         label: &'static str,
         spv: &'static str,
         reflection: &'static str,
+        pipeline_cache_dirty: Arc<AtomicBool>,
     ) -> Result<Self> {
         let spv_path = crate::shader_artifacts::artifact_path(spv);
         let reflection_path = crate::shader_artifacts::artifact_path(reflection);
@@ -162,6 +187,7 @@ impl LazyWasmPass {
             bind_group_layouts,
             reflection: Arc::new(reflection),
             pipeline: Mutex::new(None),
+            pipeline_cache_dirty,
             device: device.clone(),
         })
     }
@@ -192,7 +218,7 @@ impl LazyWasmPass {
         let end = Instant::now();
         let dt_ms = end.duration_since(start).as_secs_f64() * 1000.0;
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
-            println!(
+            eprintln!(
                 "[gpu_compile_host_timer] codegen.wasm.pipeline.{}: {:.3}ms",
                 self.stage, dt_ms
             );
@@ -208,6 +234,15 @@ impl LazyWasmPass {
         trace_wasm_codegen(&format!("{}.pipeline.done", self.stage));
         let created = Arc::new(created);
         *pipeline = Some(created.clone());
+        self.pipeline_cache_dirty.store(true, Ordering::Release);
+        // A single complex driver pipeline can take longer than the compile
+        // timeout. Checkpoint expensive creations immediately so a later
+        // pipeline timeout does not discard all cold-start progress. Keep
+        // cheap pipelines batched behind the normal phase boundary.
+        if end.duration_since(start) >= Duration::from_secs(1) {
+            device::persist_pipeline_cache_for_device(&self.device);
+            self.pipeline_cache_dirty.store(false, Ordering::Release);
+        }
         Ok(created)
     }
 }
@@ -481,6 +516,18 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
         writes: &["wasm_body_words"],
     },
     WasmRecordBoundary {
+        stage: "hir_body_scatter_agg_range_control",
+        reads: &[
+            "wasm_params",
+            "wasm_body_fragment_len",
+            "wasm_body_fragment_meta",
+            "wasm_body_scan_local_prefix",
+            "wasm_body_scan_block_prefix",
+            "wasm_status",
+        ],
+        writes: &["wasm_body_words"],
+    },
+    WasmRecordBoundary {
         stage: "hir_body_scatter_let_direct",
         reads: &[
             "wasm_params",
@@ -495,6 +542,19 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
     WasmRecordBoundary {
         stage: "hir_body_scatter_direct_nested_call",
+        reads: &[
+            "wasm_params",
+            "wasm_body_fragment_len",
+            "wasm_body_fragment_meta",
+            "wasm_body_fragment_aux",
+            "wasm_body_scan_local_prefix",
+            "wasm_body_scan_block_prefix",
+            "wasm_status",
+        ],
+        writes: &["wasm_body_words"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_body_scatter_host_io",
         reads: &[
             "wasm_params",
             "wasm_body_fragment_len",
@@ -534,6 +594,18 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
     WasmRecordBoundary {
         stage: "hir_body_scatter_agg_copy",
+        reads: &[
+            "wasm_params",
+            "wasm_body_fragment_len",
+            "wasm_body_fragment_meta",
+            "wasm_body_scan_local_prefix",
+            "wasm_body_scan_block_prefix",
+            "wasm_status",
+        ],
+        writes: &["wasm_body_words"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_body_scatter_array_lean",
         reads: &[
             "wasm_params",
             "wasm_body_fragment_len",
@@ -820,6 +892,7 @@ struct ResidentWasmBuffers {
     output_capacity: usize,
     token_capacity: u32,
     hir_node_capacity: u32,
+    active_hir_dispatch_args_buf: wgpu::Buffer,
     params_buf: LaniusBuffer<WasmParams>,
     body_scan_param_bufs: Vec<LaniusBuffer<WasmScanParams>>,
     body_scan_blocks: u32,
@@ -890,6 +963,8 @@ struct ResidentWasmBuffers {
     status_readback: wgpu::Buffer,
     body_plan_readback: wgpu::Buffer,
     body_fragment_len_readback: wgpu::Buffer,
+    body_fragment_meta_readback: wgpu::Buffer,
+    body_fragment_aux_readback: wgpu::Buffer,
     wasm_func_invalid_count_readback: wgpu::Buffer,
     wasm_func_detail_readback: wgpu::Buffer,
     agg_layout_clear_bind_group: wgpu::BindGroup,
@@ -913,10 +988,18 @@ struct ResidentWasmBuffers {
     hir_body_plan_validate_return_nested_call_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_assign_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_control_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_agg_range_control_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_if_simple_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_print_simple_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_call_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_host_void_call_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_let_host_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_let_host_env_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_let_host_io_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_let_host_string_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_return_host_io_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_return_host_string_bind_group: wgpu::BindGroup,
+    hir_body_plan_validate_let_direct_call_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_let_call_bind_group: wgpu::BindGroup,
     hir_body_plan_validate_let_call_status_bind_group: wgpu::BindGroup,
     hir_body_plan_agg_direct_call_bind_group: wgpu::BindGroup,
@@ -932,20 +1015,33 @@ struct ResidentWasmBuffers {
     hir_body_agg_call_arg_count_scan_local_bind_group: wgpu::BindGroup,
     hir_body_agg_call_arg_count_scan_block_bind_groups: Vec<wgpu::BindGroup>,
     hir_body_agg_call_arg_records_bind_group: wgpu::BindGroup,
+    hir_body_direct_call_arg_records_bind_group: wgpu::BindGroup,
     hir_body_agg_call_arg_byte_scan_local_bind_group: wgpu::BindGroup,
     hir_body_agg_call_arg_byte_scan_block_bind_groups: Vec<wgpu::BindGroup>,
     hir_body_agg_call_finalize_bind_group: wgpu::BindGroup,
+    hir_body_direct_call_finalize_bind_group: wgpu::BindGroup,
     hir_body_status_bind_group: wgpu::BindGroup,
     hir_body_scatter_bind_group: wgpu::BindGroup,
+    hir_body_scatter_frame_bind_group: wgpu::BindGroup,
+    hir_body_scatter_if_simple_bind_group: wgpu::BindGroup,
+    hir_body_scatter_return_scalar_bind_group: wgpu::BindGroup,
+    hir_body_scatter_return_expr_bind_group: wgpu::BindGroup,
+    hir_body_scatter_conversion_expr_bind_group: wgpu::BindGroup,
+    hir_body_scatter_let_const_bind_group: wgpu::BindGroup,
     hir_body_scatter_expr_control_bind_group: wgpu::BindGroup,
+    hir_body_scatter_agg_range_control_bind_group: wgpu::BindGroup,
     hir_body_scatter_let_direct_bind_group: wgpu::BindGroup,
     hir_body_scatter_direct_nested_call_bind_group: wgpu::BindGroup,
+    hir_body_scatter_host_io_bind_group: wgpu::BindGroup,
     hir_body_scatter_host_bind_group: wgpu::BindGroup,
     hir_body_scatter_arrays_bind_group: wgpu::BindGroup,
+    hir_body_scatter_array_lean_bind_group: wgpu::BindGroup,
     hir_body_scatter_agg_copy_bind_group: wgpu::BindGroup,
     hir_body_scatter_agg_call_args_bind_group: wgpu::BindGroup,
+    hir_body_scatter_nested_call_args_bind_group: wgpu::BindGroup,
     hir_body_scatter_agg_direct_call_bind_group: wgpu::BindGroup,
     hir_body_scatter_return_agg_direct_call_bind_group: wgpu::BindGroup,
+    hir_body_scatter_return_member_bind_group: wgpu::BindGroup,
     hir_body_scatter_member_expr_bind_group: wgpu::BindGroup,
     hir_body_scatter_binary_direct_call_bind_group: wgpu::BindGroup,
     hir_agg_body_bind_group: wgpu::BindGroup,
@@ -976,10 +1072,18 @@ pub struct GpuWasmCodeGenerator {
     hir_body_plan_validate_return_nested_call_pass: LazyWasmPass,
     hir_body_plan_validate_assign_pass: LazyWasmPass,
     hir_body_plan_validate_control_pass: LazyWasmPass,
+    hir_body_plan_validate_agg_range_control_pass: LazyWasmPass,
+    hir_body_plan_validate_if_simple_pass: LazyWasmPass,
+    hir_body_plan_validate_print_simple_pass: LazyWasmPass,
     hir_body_plan_validate_call_pass: LazyWasmPass,
+    hir_body_plan_validate_host_void_call_pass: LazyWasmPass,
     hir_body_plan_validate_let_host_pass: LazyWasmPass,
     hir_body_plan_validate_let_host_env_pass: LazyWasmPass,
     hir_body_plan_validate_let_host_io_pass: LazyWasmPass,
+    hir_body_plan_validate_let_host_string_pass: LazyWasmPass,
+    hir_body_plan_validate_return_host_io_pass: LazyWasmPass,
+    hir_body_plan_validate_return_host_string_pass: LazyWasmPass,
+    hir_body_plan_validate_let_direct_call_pass: LazyWasmPass,
     hir_body_plan_validate_let_call_pass: LazyWasmPass,
     hir_body_plan_validate_let_call_status_pass: LazyWasmPass,
     hir_body_plan_agg_direct_call_pass: LazyWasmPass,
@@ -994,17 +1098,30 @@ pub struct GpuWasmCodeGenerator {
     hir_body_agg_call_arg_counts_pass: LazyWasmPass,
     hir_body_agg_call_arg_records_pass: LazyWasmPass,
     hir_body_agg_call_finalize_pass: LazyWasmPass,
+    hir_body_direct_call_arg_records_pass: LazyWasmPass,
+    hir_body_direct_call_finalize_pass: LazyWasmPass,
     hir_body_scatter_agg_call_args_pass: LazyWasmPass,
     hir_body_status_pass: LazyWasmPass,
     hir_body_scatter_pass: LazyWasmPass,
+    hir_body_scatter_frame_pass: LazyWasmPass,
+    hir_body_scatter_if_simple_pass: LazyWasmPass,
+    hir_body_scatter_return_scalar_pass: LazyWasmPass,
+    hir_body_scatter_return_expr_pass: LazyWasmPass,
+    hir_body_scatter_conversion_expr_pass: LazyWasmPass,
+    hir_body_scatter_let_const_pass: LazyWasmPass,
     hir_body_scatter_expr_control_pass: LazyWasmPass,
+    hir_body_scatter_agg_range_control_pass: LazyWasmPass,
     hir_body_scatter_let_direct_pass: LazyWasmPass,
     hir_body_scatter_direct_nested_call_pass: LazyWasmPass,
+    hir_body_scatter_host_io_pass: LazyWasmPass,
     hir_body_scatter_host_pass: LazyWasmPass,
     hir_body_scatter_arrays_pass: LazyWasmPass,
+    hir_body_scatter_array_lean_pass: LazyWasmPass,
     hir_body_scatter_agg_copy_pass: LazyWasmPass,
     hir_body_scatter_agg_direct_call_pass: LazyWasmPass,
+    hir_body_scatter_nested_call_args_pass: LazyWasmPass,
     hir_body_scatter_return_agg_direct_call_pass: LazyWasmPass,
+    hir_body_scatter_return_member_pass: LazyWasmPass,
     hir_body_scatter_member_expr_pass: LazyWasmPass,
     hir_body_scatter_binary_direct_call_pass: LazyWasmPass,
     hir_agg_body_pass: LazyWasmPass,
@@ -1014,17 +1131,27 @@ pub struct GpuWasmCodeGenerator {
     module_status_pass: LazyWasmPass,
     pass: LazyWasmPass,
     pack_pass: LazyWasmPass,
+    pipeline_cache_dirty: Arc<AtomicBool>,
     buffers: Mutex<Option<ResidentWasmBuffers>>,
 }
 
 impl GpuWasmCodeGenerator {
     /// Loads all WASM backend compute passes for a GPU device.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
+        let pipeline_cache_dirty = Arc::new(AtomicBool::new(false));
         macro_rules! wasm_pass {
             ($stage:literal, $label:literal, $spv:literal, $reflection:literal) => {{
                 let device = gpu.device.clone();
+                let pipeline_cache_dirty = pipeline_cache_dirty.clone();
                 std::thread::spawn(move || {
-                    LazyWasmPass::from_artifacts(&device, $stage, $label, $spv, $reflection)
+                    LazyWasmPass::from_artifacts(
+                        &device,
+                        $stage,
+                        $label,
+                        $spv,
+                        $reflection,
+                        pipeline_cache_dirty,
+                    )
                 })
             }};
         }
@@ -1142,11 +1269,35 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/body_plan_validate_control.spv",
             "codegen/wasm/hir/body_plan_validate_control.reflect.json"
         );
+        let hir_body_plan_validate_agg_range_control_pass = wasm_pass!(
+            "hir_body_plan_validate_agg_range_control",
+            "codegen_wasm_hir_body_plan_validate_agg_range_control",
+            "codegen/wasm/hir/body_plan_validate_agg_range_control.spv",
+            "codegen/wasm/hir/body_plan_validate_agg_range_control.reflect.json"
+        );
+        let hir_body_plan_validate_if_simple_pass = wasm_pass!(
+            "hir_body_plan_validate_if_simple",
+            "codegen_wasm_hir_body_plan_validate_if_simple",
+            "codegen/wasm/hir/body_plan_validate_if_simple.spv",
+            "codegen/wasm/hir/body_plan_validate_if_simple.reflect.json"
+        );
+        let hir_body_plan_validate_print_simple_pass = wasm_pass!(
+            "hir_body_plan_validate_print_simple",
+            "codegen_wasm_hir_body_plan_validate_print_simple",
+            "codegen/wasm/hir/body_plan_validate_print_simple.spv",
+            "codegen/wasm/hir/body_plan_validate_print_simple.reflect.json"
+        );
         let hir_body_plan_validate_call_pass = wasm_pass!(
             "hir_body_plan_validate_call",
             "codegen_wasm_hir_body_plan_validate_call",
             "codegen/wasm/hir/body_plan_validate_call.spv",
             "codegen/wasm/hir/body_plan_validate_call.reflect.json"
+        );
+        let hir_body_plan_validate_host_void_call_pass = wasm_pass!(
+            "hir_body_plan_validate_host_void_call",
+            "codegen_wasm_hir_body_plan_validate_host_void_call",
+            "codegen/wasm/hir/body_plan_validate_host_void_call.spv",
+            "codegen/wasm/hir/body_plan_validate_host_void_call.reflect.json"
         );
         let hir_body_plan_validate_let_host_pass = wasm_pass!(
             "hir_body_plan_validate_let_host",
@@ -1165,6 +1316,30 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_body_plan_validate_let_host_io",
             "codegen/wasm/hir/body_plan_validate_let_host_io.spv",
             "codegen/wasm/hir/body_plan_validate_let_host_io.reflect.json"
+        );
+        let hir_body_plan_validate_let_host_string_pass = wasm_pass!(
+            "hir_body_plan_validate_let_host_string",
+            "codegen_wasm_hir_body_plan_validate_let_host_string",
+            "codegen/wasm/hir/body_plan_validate_let_host_string.spv",
+            "codegen/wasm/hir/body_plan_validate_let_host_string.reflect.json"
+        );
+        let hir_body_plan_validate_return_host_io_pass = wasm_pass!(
+            "hir_body_plan_validate_return_host_io",
+            "codegen_wasm_hir_body_plan_validate_return_host_io",
+            "codegen/wasm/hir/body_plan_validate_return_host_io.spv",
+            "codegen/wasm/hir/body_plan_validate_return_host_io.reflect.json"
+        );
+        let hir_body_plan_validate_return_host_string_pass = wasm_pass!(
+            "hir_body_plan_validate_return_host_string",
+            "codegen_wasm_hir_body_plan_validate_return_host_string",
+            "codegen/wasm/hir/body_plan_validate_return_host_string.spv",
+            "codegen/wasm/hir/body_plan_validate_return_host_string.reflect.json"
+        );
+        let hir_body_plan_validate_let_direct_call_pass = wasm_pass!(
+            "hir_body_plan_validate_let_direct_call",
+            "codegen_wasm_hir_body_plan_validate_let_direct_call",
+            "codegen/wasm/hir/body_plan_validate_let_direct_call.spv",
+            "codegen/wasm/hir/body_plan_validate_let_direct_call.reflect.json"
         );
         let hir_body_plan_validate_let_call_pass = wasm_pass!(
             "hir_body_plan_validate_let_call",
@@ -1250,6 +1425,18 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/body_agg_call_finalize.spv",
             "codegen/wasm/hir/body_agg_call_finalize.reflect.json"
         );
+        let hir_body_direct_call_arg_records_pass = wasm_pass!(
+            "hir_body_direct_call_arg_records",
+            "codegen_wasm_hir_body_direct_call_arg_records",
+            "codegen/wasm/hir/body_direct_call_arg_records.spv",
+            "codegen/wasm/hir/body_direct_call_arg_records.reflect.json"
+        );
+        let hir_body_direct_call_finalize_pass = wasm_pass!(
+            "hir_body_direct_call_finalize",
+            "codegen_wasm_hir_body_direct_call_finalize",
+            "codegen/wasm/hir/body_direct_call_finalize.spv",
+            "codegen/wasm/hir/body_direct_call_finalize.reflect.json"
+        );
         let hir_body_status_pass = wasm_pass!(
             "hir_body_status",
             "codegen_wasm_hir_body_status",
@@ -1262,11 +1449,53 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/body_scatter.spv",
             "codegen/wasm/hir/body_scatter.reflect.json"
         );
+        let hir_body_scatter_frame_pass = wasm_pass!(
+            "hir_body_scatter_frame",
+            "codegen_wasm_hir_body_scatter_frame",
+            "codegen/wasm/hir/body_scatter_frame.spv",
+            "codegen/wasm/hir/body_scatter_frame.reflect.json"
+        );
+        let hir_body_scatter_if_simple_pass = wasm_pass!(
+            "hir_body_scatter_if_simple",
+            "codegen_wasm_hir_body_scatter_if_simple",
+            "codegen/wasm/hir/body_scatter_if_simple.spv",
+            "codegen/wasm/hir/body_scatter_if_simple.reflect.json"
+        );
+        let hir_body_scatter_return_scalar_pass = wasm_pass!(
+            "hir_body_scatter_return_scalar",
+            "codegen_wasm_hir_body_scatter_return_scalar",
+            "codegen/wasm/hir/body_scatter_return_scalar.spv",
+            "codegen/wasm/hir/body_scatter_return_scalar.reflect.json"
+        );
+        let hir_body_scatter_return_expr_pass = wasm_pass!(
+            "hir_body_scatter_return_expr",
+            "codegen_wasm_hir_body_scatter_return_expr",
+            "codegen/wasm/hir/body_scatter_return_expr.spv",
+            "codegen/wasm/hir/body_scatter_return_expr.reflect.json"
+        );
+        let hir_body_scatter_conversion_expr_pass = wasm_pass!(
+            "hir_body_scatter_conversion_expr",
+            "codegen_wasm_hir_body_scatter_conversion_expr",
+            "codegen/wasm/hir/body_scatter_conversion_expr.spv",
+            "codegen/wasm/hir/body_scatter_conversion_expr.reflect.json"
+        );
+        let hir_body_scatter_let_const_pass = wasm_pass!(
+            "hir_body_scatter_let_const",
+            "codegen_wasm_hir_body_scatter_let_const",
+            "codegen/wasm/hir/body_scatter_let_const.spv",
+            "codegen/wasm/hir/body_scatter_let_const.reflect.json"
+        );
         let hir_body_scatter_expr_control_pass = wasm_pass!(
             "hir_body_scatter_expr_control",
             "codegen_wasm_hir_body_scatter_expr_control",
             "codegen/wasm/hir/body_scatter_expr_control.spv",
             "codegen/wasm/hir/body_scatter_expr_control.reflect.json"
+        );
+        let hir_body_scatter_agg_range_control_pass = wasm_pass!(
+            "hir_body_scatter_agg_range_control",
+            "codegen_wasm_hir_body_scatter_agg_range_control",
+            "codegen/wasm/hir/body_scatter_agg_range_control.spv",
+            "codegen/wasm/hir/body_scatter_agg_range_control.reflect.json"
         );
         let hir_body_scatter_let_direct_pass = wasm_pass!(
             "hir_body_scatter_let_direct",
@@ -1280,6 +1509,12 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/body_scatter_direct_nested_call.spv",
             "codegen/wasm/hir/body_scatter_direct_nested_call.reflect.json"
         );
+        let hir_body_scatter_host_io_pass = wasm_pass!(
+            "hir_body_scatter_host_io",
+            "codegen_wasm_hir_body_scatter_host_io",
+            "codegen/wasm/hir/body_scatter_host_io.spv",
+            "codegen/wasm/hir/body_scatter_host_io.reflect.json"
+        );
         let hir_body_scatter_host_pass = wasm_pass!(
             "hir_body_scatter_host",
             "codegen_wasm_hir_body_scatter_host",
@@ -1291,6 +1526,12 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_body_scatter_arrays",
             "codegen/wasm/hir/body_scatter_arrays.spv",
             "codegen/wasm/hir/body_scatter_arrays.reflect.json"
+        );
+        let hir_body_scatter_array_lean_pass = wasm_pass!(
+            "hir_body_scatter_array_lean",
+            "codegen_wasm_hir_body_scatter_array_lean",
+            "codegen/wasm/hir/body_scatter_array_lean.spv",
+            "codegen/wasm/hir/body_scatter_array_lean.reflect.json"
         );
         let hir_body_scatter_agg_copy_pass = wasm_pass!(
             "hir_body_scatter_agg_copy",
@@ -1310,11 +1551,23 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/body_scatter_agg_call_args.spv",
             "codegen/wasm/hir/body_scatter_agg_call_args.reflect.json"
         );
+        let hir_body_scatter_nested_call_args_pass = wasm_pass!(
+            "hir_body_scatter_nested_call_args",
+            "codegen_wasm_hir_body_scatter_nested_call_args",
+            "codegen/wasm/hir/body_scatter_nested_call_args.spv",
+            "codegen/wasm/hir/body_scatter_nested_call_args.reflect.json"
+        );
         let hir_body_scatter_return_agg_direct_call_pass = wasm_pass!(
             "hir_body_scatter_return_agg_direct_call",
             "codegen_wasm_hir_body_scatter_return_agg_direct_call",
             "codegen/wasm/hir/body_scatter_return_agg_direct_call.spv",
             "codegen/wasm/hir/body_scatter_return_agg_direct_call.reflect.json"
+        );
+        let hir_body_scatter_return_member_pass = wasm_pass!(
+            "hir_body_scatter_return_member",
+            "codegen_wasm_hir_body_scatter_return_member",
+            "codegen/wasm/hir/body_scatter_return_member.spv",
+            "codegen/wasm/hir/body_scatter_return_member.reflect.json"
         );
         let hir_body_scatter_member_expr_pass = wasm_pass!(
             "hir_body_scatter_member_expr",
@@ -1370,7 +1623,7 @@ impl GpuWasmCodeGenerator {
             "codegen/pack_output.spv",
             "codegen/pack_output.reflect.json"
         );
-        let result = Ok(Self {
+        let generator = Self {
             agg_layout_clear_pass: join_wasm_pass!(agg_layout_clear_pass, "agg_layout_clear"),
             agg_layout_pass: join_wasm_pass!(agg_layout_pass, "agg_layout"),
             hir_body_let_init_clear_pass: join_wasm_pass!(
@@ -1427,9 +1680,25 @@ impl GpuWasmCodeGenerator {
                 hir_body_plan_validate_control_pass,
                 "hir_body_plan_validate_control"
             ),
+            hir_body_plan_validate_agg_range_control_pass: join_wasm_pass!(
+                hir_body_plan_validate_agg_range_control_pass,
+                "hir_body_plan_validate_agg_range_control"
+            ),
+            hir_body_plan_validate_if_simple_pass: join_wasm_pass!(
+                hir_body_plan_validate_if_simple_pass,
+                "hir_body_plan_validate_if_simple"
+            ),
+            hir_body_plan_validate_print_simple_pass: join_wasm_pass!(
+                hir_body_plan_validate_print_simple_pass,
+                "hir_body_plan_validate_print_simple"
+            ),
             hir_body_plan_validate_call_pass: join_wasm_pass!(
                 hir_body_plan_validate_call_pass,
                 "hir_body_plan_validate_call"
+            ),
+            hir_body_plan_validate_host_void_call_pass: join_wasm_pass!(
+                hir_body_plan_validate_host_void_call_pass,
+                "hir_body_plan_validate_host_void_call"
             ),
             hir_body_plan_validate_let_host_pass: join_wasm_pass!(
                 hir_body_plan_validate_let_host_pass,
@@ -1442,6 +1711,22 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_validate_let_host_io_pass: join_wasm_pass!(
                 hir_body_plan_validate_let_host_io_pass,
                 "hir_body_plan_validate_let_host_io"
+            ),
+            hir_body_plan_validate_let_host_string_pass: join_wasm_pass!(
+                hir_body_plan_validate_let_host_string_pass,
+                "hir_body_plan_validate_let_host_string"
+            ),
+            hir_body_plan_validate_return_host_io_pass: join_wasm_pass!(
+                hir_body_plan_validate_return_host_io_pass,
+                "hir_body_plan_validate_return_host_io"
+            ),
+            hir_body_plan_validate_return_host_string_pass: join_wasm_pass!(
+                hir_body_plan_validate_return_host_string_pass,
+                "hir_body_plan_validate_return_host_string"
+            ),
+            hir_body_plan_validate_let_direct_call_pass: join_wasm_pass!(
+                hir_body_plan_validate_let_direct_call_pass,
+                "hir_body_plan_validate_let_direct_call"
             ),
             hir_body_plan_validate_let_call_pass: join_wasm_pass!(
                 hir_body_plan_validate_let_call_pass,
@@ -1493,11 +1778,47 @@ impl GpuWasmCodeGenerator {
                 hir_body_agg_call_finalize_pass,
                 "hir_body_agg_call_finalize"
             ),
+            hir_body_direct_call_arg_records_pass: join_wasm_pass!(
+                hir_body_direct_call_arg_records_pass,
+                "hir_body_direct_call_arg_records"
+            ),
+            hir_body_direct_call_finalize_pass: join_wasm_pass!(
+                hir_body_direct_call_finalize_pass,
+                "hir_body_direct_call_finalize"
+            ),
             hir_body_status_pass: join_wasm_pass!(hir_body_status_pass, "hir_body_status"),
             hir_body_scatter_pass: join_wasm_pass!(hir_body_scatter_pass, "hir_body_scatter"),
+            hir_body_scatter_frame_pass: join_wasm_pass!(
+                hir_body_scatter_frame_pass,
+                "hir_body_scatter_frame"
+            ),
+            hir_body_scatter_if_simple_pass: join_wasm_pass!(
+                hir_body_scatter_if_simple_pass,
+                "hir_body_scatter_if_simple"
+            ),
+            hir_body_scatter_return_scalar_pass: join_wasm_pass!(
+                hir_body_scatter_return_scalar_pass,
+                "hir_body_scatter_return_scalar"
+            ),
+            hir_body_scatter_return_expr_pass: join_wasm_pass!(
+                hir_body_scatter_return_expr_pass,
+                "hir_body_scatter_return_expr"
+            ),
+            hir_body_scatter_conversion_expr_pass: join_wasm_pass!(
+                hir_body_scatter_conversion_expr_pass,
+                "hir_body_scatter_conversion_expr"
+            ),
+            hir_body_scatter_let_const_pass: join_wasm_pass!(
+                hir_body_scatter_let_const_pass,
+                "hir_body_scatter_let_const"
+            ),
             hir_body_scatter_expr_control_pass: join_wasm_pass!(
                 hir_body_scatter_expr_control_pass,
                 "hir_body_scatter_expr_control"
+            ),
+            hir_body_scatter_agg_range_control_pass: join_wasm_pass!(
+                hir_body_scatter_agg_range_control_pass,
+                "hir_body_scatter_agg_range_control"
             ),
             hir_body_scatter_let_direct_pass: join_wasm_pass!(
                 hir_body_scatter_let_direct_pass,
@@ -1507,6 +1828,10 @@ impl GpuWasmCodeGenerator {
                 hir_body_scatter_direct_nested_call_pass,
                 "hir_body_scatter_direct_nested_call"
             ),
+            hir_body_scatter_host_io_pass: join_wasm_pass!(
+                hir_body_scatter_host_io_pass,
+                "hir_body_scatter_host_io"
+            ),
             hir_body_scatter_host_pass: join_wasm_pass!(
                 hir_body_scatter_host_pass,
                 "hir_body_scatter_host"
@@ -1514,6 +1839,10 @@ impl GpuWasmCodeGenerator {
             hir_body_scatter_arrays_pass: join_wasm_pass!(
                 hir_body_scatter_arrays_pass,
                 "hir_body_scatter_arrays"
+            ),
+            hir_body_scatter_array_lean_pass: join_wasm_pass!(
+                hir_body_scatter_array_lean_pass,
+                "hir_body_scatter_array_lean"
             ),
             hir_body_scatter_agg_copy_pass: join_wasm_pass!(
                 hir_body_scatter_agg_copy_pass,
@@ -1527,9 +1856,17 @@ impl GpuWasmCodeGenerator {
                 hir_body_scatter_agg_call_args_pass,
                 "hir_body_scatter_agg_call_args"
             ),
+            hir_body_scatter_nested_call_args_pass: join_wasm_pass!(
+                hir_body_scatter_nested_call_args_pass,
+                "hir_body_scatter_nested_call_args"
+            ),
             hir_body_scatter_return_agg_direct_call_pass: join_wasm_pass!(
                 hir_body_scatter_return_agg_direct_call_pass,
                 "hir_body_scatter_return_agg_direct_call"
+            ),
+            hir_body_scatter_return_member_pass: join_wasm_pass!(
+                hir_body_scatter_return_member_pass,
+                "hir_body_scatter_return_member"
             ),
             hir_body_scatter_member_expr_pass: join_wasm_pass!(
                 hir_body_scatter_member_expr_pass,
@@ -1549,12 +1886,112 @@ impl GpuWasmCodeGenerator {
             module_status_pass: join_wasm_pass!(module_status_pass, "module_status"),
             pass: join_wasm_pass!(pass, "module"),
             pack_pass: join_wasm_pass!(pack_pass, "pack"),
+            pipeline_cache_dirty,
             buffers: Mutex::new(None),
-        });
-        if result.is_ok() {
+        };
+        if crate::gpu::env::env_bool_strict("LANIUS_WASM_PREWARM_PIPELINES", false) {
+            generator.prewarm_pipelines(gpu)?;
+        }
+        {
             gpu.persist_pipeline_cache();
         }
-        result
+        Ok(generator)
+    }
+
+    fn persist_pipeline_cache_if_dirty(&self, device: &wgpu::Device) {
+        if self.pipeline_cache_dirty.swap(false, Ordering::AcqRel) {
+            device::persist_pipeline_cache_for_device(device);
+        }
+    }
+
+    fn prewarm_pipelines(&self, gpu: &device::GpuDevice) -> Result<()> {
+        trace_wasm_codegen("prewarm_pipelines.start");
+        let passes = [
+            &self.agg_layout_clear_pass,
+            &self.agg_layout_pass,
+            &self.hir_body_let_init_clear_pass,
+            &self.hir_body_let_init_pass,
+            &self.hir_functions_clear_pass,
+            &self.hir_functions_mark_pass,
+            &self.hir_functions_reach_pass,
+            &self.hir_functions_count_pass,
+            &self.hir_functions_scatter_pass,
+            &self.hir_body_plan_collect_pass,
+            &self.hir_body_plan_validate_pass,
+            &self.hir_body_plan_validate_return_pass,
+            &self.hir_body_plan_validate_return_call_pass,
+            &self.hir_body_plan_validate_return_agg_call_pass,
+            &self.hir_body_plan_validate_return_nested_call_pass,
+            &self.hir_body_plan_validate_assign_pass,
+            &self.hir_body_plan_validate_control_pass,
+            &self.hir_body_plan_validate_agg_range_control_pass,
+            &self.hir_body_plan_validate_if_simple_pass,
+            &self.hir_body_plan_validate_print_simple_pass,
+            &self.hir_body_plan_validate_call_pass,
+            &self.hir_body_plan_validate_host_void_call_pass,
+            &self.hir_body_plan_validate_let_host_pass,
+            &self.hir_body_plan_validate_let_host_env_pass,
+            &self.hir_body_plan_validate_let_host_io_pass,
+            &self.hir_body_plan_validate_let_host_string_pass,
+            &self.hir_body_plan_validate_return_host_io_pass,
+            &self.hir_body_plan_validate_return_host_string_pass,
+            &self.hir_body_plan_validate_let_direct_call_pass,
+            &self.hir_body_plan_validate_let_call_pass,
+            &self.hir_body_plan_validate_let_call_status_pass,
+            &self.hir_body_plan_agg_direct_call_pass,
+            &self.hir_body_plan_agg_struct_pass,
+            &self.hir_body_plan_arrays_pass,
+            &self.hir_body_plan_functions_pass,
+            &self.hir_body_plan_finalize_pass,
+            &self.hir_body_clear_pass,
+            &self.hir_body_counts_pass,
+            &self.hir_body_scan_local_pass,
+            &self.hir_body_scan_blocks_pass,
+            &self.hir_body_agg_call_arg_counts_pass,
+            &self.hir_body_agg_call_arg_records_pass,
+            &self.hir_body_agg_call_finalize_pass,
+            &self.hir_body_direct_call_arg_records_pass,
+            &self.hir_body_direct_call_finalize_pass,
+            &self.hir_body_status_pass,
+            &self.hir_body_scatter_pass,
+            &self.hir_body_scatter_frame_pass,
+            &self.hir_body_scatter_if_simple_pass,
+            &self.hir_body_scatter_return_scalar_pass,
+            &self.hir_body_scatter_return_expr_pass,
+            &self.hir_body_scatter_conversion_expr_pass,
+            &self.hir_body_scatter_let_const_pass,
+            &self.hir_body_scatter_expr_control_pass,
+            &self.hir_body_scatter_agg_range_control_pass,
+            &self.hir_body_scatter_let_direct_pass,
+            &self.hir_body_scatter_direct_nested_call_pass,
+            &self.hir_body_scatter_host_io_pass,
+            &self.hir_body_scatter_host_pass,
+            &self.hir_body_scatter_arrays_pass,
+            &self.hir_body_scatter_array_lean_pass,
+            &self.hir_body_scatter_agg_copy_pass,
+            &self.hir_body_scatter_agg_direct_call_pass,
+            &self.hir_body_scatter_agg_call_args_pass,
+            &self.hir_body_scatter_nested_call_args_pass,
+            &self.hir_body_scatter_return_agg_direct_call_pass,
+            &self.hir_body_scatter_return_member_pass,
+            &self.hir_body_scatter_member_expr_pass,
+            &self.hir_body_scatter_binary_direct_call_pass,
+            &self.hir_agg_body_pass,
+            &self.hir_assert_module_pass,
+            &self.hir_enum_match_records_pass,
+            &self.wasm_const_values_pass,
+            &self.module_status_pass,
+            &self.pass,
+            &self.pack_pass,
+        ];
+        for pass in passes {
+            pass.pipeline()?;
+            if crate::gpu::env::env_bool_truthy("LANIUS_WASM_PREWARM_PERSIST_INCREMENTAL", true) {
+                self.persist_pipeline_cache_if_dirty(&gpu.device);
+            }
+        }
+        trace_wasm_codegen("prewarm_pipelines.done");
+        Ok(())
     }
 
     /// Records WASM backend passes from resident frontend and type-check buffers.
@@ -1569,6 +2006,7 @@ impl GpuWasmCodeGenerator {
         token_count_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
+        active_hir_dispatch_args_buf: &wgpu::Buffer,
         node_kind_buf: &wgpu::Buffer,
         parent_buf: &wgpu::Buffer,
         first_child_buf: &wgpu::Buffer,
@@ -1745,6 +2183,7 @@ impl GpuWasmCodeGenerator {
             output_capacity,
             token_capacity,
             hir_node_capacity,
+            active_hir_dispatch_args_buf,
             token_buf,
             token_count_buf,
             source_buf,
@@ -1959,7 +2398,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(self.hir_functions_mark_pass.pipeline()?.as_ref());
         compute.set_bind_group(0, Some(&bufs.hir_functions_mark_bind_group), &[]);
-        compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+        compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_functions_mark.done");
 
@@ -2059,7 +2498,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(self.hir_body_plan_collect_pass.pipeline()?.as_ref());
         compute.set_bind_group(0, Some(&bufs.hir_body_plan_collect_bind_group), &[]);
-        compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+        compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_body_plan_collect.done");
 
@@ -2072,6 +2511,22 @@ impl GpuWasmCodeGenerator {
             0,
             (WASM_BODY_PLAN_WORDS * 4) as u64,
         );
+        if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+            encoder.copy_buffer_to_buffer(
+                &bufs._wasm_func_invalid_count_by_token_buf,
+                0,
+                &bufs.wasm_func_invalid_count_readback,
+                0,
+                (bufs.token_capacity.max(1) * 4) as u64,
+            );
+            encoder.copy_buffer_to_buffer(
+                &bufs._wasm_func_detail_by_token_buf,
+                0,
+                &bufs.wasm_func_detail_readback,
+                0,
+                (bufs.token_capacity.max(1) * 4) as u64,
+            );
+        }
         trace_wasm_codegen("record.early_features.copy_status.done");
 
         Ok(RecordedWasmCodegen {
@@ -2108,20 +2563,54 @@ impl GpuWasmCodeGenerator {
         let arg_scan_block_groups = bufs.arg_scan_blocks.div_ceil(256).max(1);
         let (arg_scan_block_groups_x, arg_scan_block_groups_y) =
             workgroup_grid_1d(arg_scan_block_groups);
-        let has_expr_control = features.has(WASM_BODY_FEATURE_EXPR_CONTROL);
+        let has_stmt_print_direct = features.has(WASM_BODY_FEATURE_STMT_PRINT_DIRECT);
         let has_direct_call = features.has(WASM_BODY_FEATURE_DIRECT)
             || features.has(WASM_BODY_FEATURE_BINARY_DIRECT)
             || features.has(WASM_BODY_FEATURE_LET_DIRECT)
-            || features.has(WASM_BODY_FEATURE_RETURN_DIRECT);
+            || features.has(WASM_BODY_FEATURE_RETURN_DIRECT)
+            || has_stmt_print_direct;
+        let has_plain_let_direct = features.has(WASM_BODY_FEATURE_LET_DIRECT);
+        let has_binary_direct = features.has(WASM_BODY_FEATURE_BINARY_DIRECT);
         let has_scalar_return_direct = features.has(WASM_BODY_FEATURE_RETURN_DIRECT);
         let has_return_agg_direct = features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT);
-        let has_host_call = features.has(WASM_BODY_FEATURE_HOST);
-        let has_call_like = has_expr_control || has_direct_call || has_host_call;
+        let has_return_call_planning =
+            has_scalar_return_direct || features.has(WASM_BODY_FEATURE_BINARY_DIRECT);
+        let has_assign = features.has(WASM_BODY_FEATURE_ASSIGN);
+        let has_control = features.has(WASM_BODY_FEATURE_CONTROL);
+        let has_control_if_simple = features.has(WASM_BODY_FEATURE_CONTROL_IF_SIMPLE);
+        let has_stmt_print = features.has(WASM_BODY_FEATURE_STMT_PRINT);
+        let has_stmt_host_void = features.has(WASM_BODY_FEATURE_STMT_HOST_VOID)
+            || (features.has(WASM_BODY_FEATURE_STMT_CALL)
+                && features.has(WASM_BODY_FEATURE_HOST_VOID));
+        let has_host = features.has(WASM_BODY_FEATURE_HOST);
+        let has_host_basic = has_host || features.has(WASM_BODY_FEATURE_HOST_BASIC);
+        let has_host_env = has_host || features.has(WASM_BODY_FEATURE_HOST_ENV);
+        let has_host_io_bare = features.has(WASM_BODY_FEATURE_HOST_IO)
+            && !features.has(WASM_BODY_FEATURE_HOST_IO_I32)
+            && !features.has(WASM_BODY_FEATURE_HOST_IO_STRING)
+            && !features.has(WASM_BODY_FEATURE_HOST_IO_RETURN);
+        let has_host_io_i32 =
+            has_host || features.has(WASM_BODY_FEATURE_HOST_IO_I32) || has_host_io_bare;
+        let has_host_io_string =
+            has_host || features.has(WASM_BODY_FEATURE_HOST_IO_STRING) || has_host_io_bare;
+        let has_host_io_return =
+            has_host || features.has(WASM_BODY_FEATURE_HOST_IO_RETURN) || has_host_io_bare;
+        let has_host_io_return_string_only =
+            has_host_io_return && has_host_io_string && !has_host_io_i32 && !has_host;
+        let has_host_io_return_combined = has_host_io_return && !has_host_io_return_string_only;
         let has_agg_direct_call = features.has(WASM_BODY_FEATURE_LET_AGG_DIRECT)
+            || features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT)
             || features.has(WASM_BODY_FEATURE_AGG_COPY);
+        let has_agg_or_binary_call_arg_records = features.has(WASM_BODY_FEATURE_LET_AGG_DIRECT)
+            || features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT)
+            || features.has(WASM_BODY_FEATURE_BINARY_DIRECT);
+        let has_direct_call_arg_records = has_direct_call || has_agg_or_binary_call_arg_records;
+        let use_direct_call_arg_record_shaders =
+            has_direct_call_arg_records && !has_agg_or_binary_call_arg_records;
         let has_agg_struct = features.has(WASM_BODY_FEATURE_ARRAY_ALLOC)
             || features.has(WASM_BODY_FEATURE_MEMBER_EXPR);
-        let has_array_like = features.has(WASM_BODY_FEATURE_ARRAYS);
+        let has_array_like =
+            features.has(WASM_BODY_FEATURE_ARRAYS) || features.has(WASM_BODY_FEATURE_ARRAY_ALLOC);
 
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_clear.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -2141,7 +2630,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(self.hir_body_plan_validate_pass.pipeline()?.as_ref());
         compute.set_bind_group(0, Some(&bufs.hir_body_plan_validate_bind_group), &[]);
-        compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+        compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
         drop(compute);
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate.done");
 
@@ -2156,7 +2645,32 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_return.done");
 
-        if has_direct_call {
+        if has_scalar_return_direct {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_return_nested_call"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_return_nested_call_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_return_nested_call_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.done",
+            );
+        }
+
+        if has_return_call_planning {
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_return_call.start",
             );
@@ -2174,11 +2688,9 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_return_call_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
-            trace_wasm_codegen(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_call.done",
-            );
+            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_return_call.done");
         }
 
         if has_return_agg_direct {
@@ -2199,54 +2711,27 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_return_agg_call_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_return_agg_call.done",
             );
         }
 
-        if has_scalar_return_direct {
-            trace_wasm_codegen(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.start",
-            );
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_plan_validate_return_nested_call"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(
-                self.hir_body_plan_validate_return_nested_call_pass
-                    .pipeline()?
-                    .as_ref(),
-            );
-            compute.set_bind_group(
-                0,
-                Some(&bufs.hir_body_plan_validate_return_nested_call_bind_group),
-                &[],
-            );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
-            drop(compute);
-            trace_wasm_codegen(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.done",
-            );
-        }
-
-        if has_expr_control {
+        if has_assign {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_assign.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_assign"),
                 timestamp_writes: None,
             });
             compute.set_pipeline(self.hir_body_plan_validate_assign_pass.pipeline()?.as_ref());
-            compute.set_bind_group(
-                0,
-                Some(&bufs.hir_body_plan_validate_assign_bind_group),
-                &[],
-            );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.set_bind_group(0, Some(&bufs.hir_body_plan_validate_assign_bind_group), &[]);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_assign.done");
+        }
 
+        if has_control {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_control.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_control"),
@@ -2262,12 +2747,81 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_control_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_control.done");
+
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_agg_range_control.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_agg_range_control"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_agg_range_control_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_agg_range_control_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_agg_range_control.done",
+            );
         }
 
-        if has_call_like {
+        if has_stmt_print {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_print_simple.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_print_simple"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_print_simple_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_print_simple_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_print_simple.done",
+            );
+        }
+
+        if has_control_if_simple {
+            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_if_simple.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_if_simple"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_if_simple_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_if_simple_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_if_simple.done");
+        }
+
+        if has_stmt_print_direct {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_call.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_call"),
@@ -2275,12 +2829,37 @@ impl GpuWasmCodeGenerator {
             });
             compute.set_pipeline(self.hir_body_plan_validate_call_pass.pipeline()?.as_ref());
             compute.set_bind_group(0, Some(&bufs.hir_body_plan_validate_call_bind_group), &[]);
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_call.done");
         }
 
-        if has_host_call {
+        if has_stmt_host_void {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_host_void_call.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_host_void_call"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_host_void_call_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_host_void_call_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_host_void_call.done",
+            );
+        }
+
+        if has_host_basic {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_host.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_let_host"),
@@ -2296,10 +2875,12 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_let_host_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_host.done");
+        }
 
+        if has_host_env {
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_let_host_env.start",
             );
@@ -2317,10 +2898,14 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_let_host_env_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_host_env.done");
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_host_env.done",
+            );
+        }
 
+        if has_host_io_i32 {
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_let_host_io.start",
             );
@@ -2338,12 +2923,112 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_let_host_io_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_host_io.done");
         }
 
-        if has_direct_call {
+        if has_host_io_string {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_host_string.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_let_host_string"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_let_host_string_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_let_host_string_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_host_string.done",
+            );
+        }
+
+        if has_host_io_return_string_only {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_host_string.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_return_host_string"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_return_host_string_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_return_host_string_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_host_string.done",
+            );
+        }
+
+        if has_host_io_return_combined {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_host_io.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_return_host_io"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_return_host_io_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_return_host_io_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_host_io.done",
+            );
+        }
+
+        if has_plain_let_direct {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_direct_call.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_let_direct_call"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_let_direct_call_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_let_direct_call_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_direct_call.done",
+            );
+        }
+
+        if has_binary_direct {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_call.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_let_call"),
@@ -2359,7 +3044,7 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_let_call_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_call.done");
         }
@@ -2372,7 +3057,7 @@ impl GpuWasmCodeGenerator {
             });
             compute.set_pipeline(self.hir_body_plan_agg_direct_call_pass.pipeline()?.as_ref());
             compute.set_bind_group(0, Some(&bufs.hir_body_plan_agg_direct_call_bind_group), &[]);
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_agg_direct_call.done");
         }
@@ -2385,7 +3070,7 @@ impl GpuWasmCodeGenerator {
             });
             compute.set_pipeline(self.hir_body_plan_agg_struct_pass.pipeline()?.as_ref());
             compute.set_bind_group(0, Some(&bufs.hir_body_plan_agg_struct_bind_group), &[]);
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_agg_struct.done");
         }
@@ -2398,15 +3083,12 @@ impl GpuWasmCodeGenerator {
             });
             compute.set_pipeline(self.hir_body_plan_arrays_pass.pipeline()?.as_ref());
             compute.set_bind_group(0, Some(&bufs.hir_body_plan_arrays_bind_group), &[]);
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_arrays.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_LET_AGG_DIRECT)
-            || features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT)
-            || features.has(WASM_BODY_FEATURE_BINARY_DIRECT)
-        {
+        if has_direct_call_arg_records {
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_agg_call_arg_counts.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_agg_call_arg_counts"),
@@ -2458,16 +3140,45 @@ impl GpuWasmCodeGenerator {
                 ));
             }
 
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_agg_call_arg_records.start");
+            trace_wasm_codegen(if use_direct_call_arg_record_shaders {
+                "record.body_plan.dispatch.hir_body_direct_call_arg_records.start"
+            } else {
+                "record.body_plan.dispatch.hir_body_agg_call_arg_records.start"
+            });
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_agg_call_arg_records"),
+                label: Some(if use_direct_call_arg_record_shaders {
+                    "codegen.wasm.hir_body_direct_call_arg_records"
+                } else {
+                    "codegen.wasm.hir_body_agg_call_arg_records"
+                }),
                 timestamp_writes: None,
             });
-            compute.set_pipeline(self.hir_body_agg_call_arg_records_pass.pipeline()?.as_ref());
-            compute.set_bind_group(0, Some(&bufs.hir_body_agg_call_arg_records_bind_group), &[]);
+            if use_direct_call_arg_record_shaders {
+                compute.set_pipeline(
+                    self.hir_body_direct_call_arg_records_pass
+                        .pipeline()?
+                        .as_ref(),
+                );
+                compute.set_bind_group(
+                    0,
+                    Some(&bufs.hir_body_direct_call_arg_records_bind_group),
+                    &[],
+                );
+            } else {
+                compute.set_pipeline(self.hir_body_agg_call_arg_records_pass.pipeline()?.as_ref());
+                compute.set_bind_group(
+                    0,
+                    Some(&bufs.hir_body_agg_call_arg_records_bind_group),
+                    &[],
+                );
+            }
             compute.dispatch_workgroups(arg_record_groups_x, arg_record_groups_y, 1);
             drop(compute);
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_agg_call_arg_records.done");
+            trace_wasm_codegen(if use_direct_call_arg_record_shaders {
+                "record.body_plan.dispatch.hir_body_direct_call_arg_records.done"
+            } else {
+                "record.body_plan.dispatch.hir_body_agg_call_arg_records.done"
+            });
 
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_agg_call_arg_byte_scan_local.start",
@@ -2509,16 +3220,37 @@ impl GpuWasmCodeGenerator {
                 ));
             }
 
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_agg_call_finalize.start");
+            trace_wasm_codegen(if use_direct_call_arg_record_shaders {
+                "record.body_plan.dispatch.hir_body_direct_call_finalize.start"
+            } else {
+                "record.body_plan.dispatch.hir_body_agg_call_finalize.start"
+            });
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_agg_call_finalize"),
+                label: Some(if use_direct_call_arg_record_shaders {
+                    "codegen.wasm.hir_body_direct_call_finalize"
+                } else {
+                    "codegen.wasm.hir_body_agg_call_finalize"
+                }),
                 timestamp_writes: None,
             });
-            compute.set_pipeline(self.hir_body_agg_call_finalize_pass.pipeline()?.as_ref());
-            compute.set_bind_group(0, Some(&bufs.hir_body_agg_call_finalize_bind_group), &[]);
+            if use_direct_call_arg_record_shaders {
+                compute.set_pipeline(self.hir_body_direct_call_finalize_pass.pipeline()?.as_ref());
+                compute.set_bind_group(
+                    0,
+                    Some(&bufs.hir_body_direct_call_finalize_bind_group),
+                    &[],
+                );
+            } else {
+                compute.set_pipeline(self.hir_body_agg_call_finalize_pass.pipeline()?.as_ref());
+                compute.set_bind_group(0, Some(&bufs.hir_body_agg_call_finalize_bind_group), &[]);
+            }
             compute.dispatch_workgroups(body_item_groups_x, body_item_groups_y, 1);
             drop(compute);
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_agg_call_finalize.done");
+            trace_wasm_codegen(if use_direct_call_arg_record_shaders {
+                "record.body_plan.dispatch.hir_body_direct_call_finalize.done"
+            } else {
+                "record.body_plan.dispatch.hir_body_agg_call_finalize.done"
+            });
         }
 
         let skip_non_essential_validations = crate::gpu::env::env_bool_truthy(
@@ -2543,7 +3275,7 @@ impl GpuWasmCodeGenerator {
                 Some(&bufs.hir_body_plan_validate_let_call_status_bind_group),
                 &[],
             );
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_let_call_status.done",
@@ -2640,6 +3372,20 @@ impl GpuWasmCodeGenerator {
                 (bufs.token_capacity.saturating_mul(2).max(1) * 4) as u64,
             );
             encoder.copy_buffer_to_buffer(
+                &bufs._body_fragment_aux_buf,
+                0,
+                &bufs.body_fragment_aux_readback,
+                0,
+                (bufs.token_capacity.saturating_mul(2).max(1) * 16) as u64,
+            );
+            encoder.copy_buffer_to_buffer(
+                &bufs._body_fragment_meta_buf,
+                0,
+                &bufs.body_fragment_meta_readback,
+                0,
+                (bufs.token_capacity.saturating_mul(2).max(1) * 16) as u64,
+            );
+            encoder.copy_buffer_to_buffer(
                 &bufs._wasm_func_invalid_count_by_token_buf,
                 0,
                 &bufs.wasm_func_invalid_count_readback,
@@ -2685,18 +3431,81 @@ impl GpuWasmCodeGenerator {
         .max(1);
         let (wasm_assert_output_groups_x, wasm_assert_output_groups_y) =
             workgroup_grid_1d(wasm_assert_output_groups);
-        trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter.start");
+        let has_direct_arg_scatter = features.has(WASM_BODY_FEATURE_DIRECT)
+            || features.has(WASM_BODY_FEATURE_LET_DIRECT)
+            || features.has(WASM_BODY_FEATURE_RETURN_DIRECT)
+            || features.has(WASM_BODY_FEATURE_STMT_PRINT_DIRECT);
+        let has_agg_or_binary_arg_scatter = features.has(WASM_BODY_FEATURE_LET_AGG_DIRECT)
+            || features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT)
+            || features.has(WASM_BODY_FEATURE_BINARY_DIRECT);
+        let expr_control_has_full_only_shape = features.has(WASM_BODY_FEATURE_ASSIGN)
+            || features.has(WASM_BODY_FEATURE_CONTROL)
+            || features.has(WASM_BODY_FEATURE_STMT_CALL)
+            || features.has(WASM_BODY_FEATURE_STMT_PRINT);
+        let needs_expr_control_scatter = features.has(WASM_BODY_FEATURE_EXPR_CONTROL);
+        let needs_full_body_scatter = expr_control_has_full_only_shape;
+        let body_scatter_stage = if needs_full_body_scatter {
+            "hir_body_scatter"
+        } else {
+            "hir_body_scatter_frame"
+        };
+        trace_wasm_codegen(&format!(
+            "record.phase2.dispatch.{body_scatter_stage}.start"
+        ));
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_body_scatter"),
+            label: Some(if needs_full_body_scatter {
+                "codegen.wasm.hir_body_scatter"
+            } else {
+                "codegen.wasm.hir_body_scatter_frame"
+            }),
             timestamp_writes: None,
         });
-        compute.set_pipeline(self.hir_body_scatter_pass.pipeline()?.as_ref());
-        compute.set_bind_group(0, Some(&bufs.hir_body_scatter_bind_group), &[]);
+        if needs_full_body_scatter {
+            compute.set_pipeline(self.hir_body_scatter_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_bind_group), &[]);
+        } else {
+            compute.set_pipeline(self.hir_body_scatter_frame_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_frame_bind_group), &[]);
+        }
         compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
         drop(compute);
-        trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter.done");
+        trace_wasm_codegen(&format!("record.phase2.dispatch.{body_scatter_stage}.done"));
 
-        if features.has(WASM_BODY_FEATURE_EXPR_CONTROL) {
+        if features.has(WASM_BODY_FEATURE_RETURN_SCALAR) && !needs_full_body_scatter {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_scalar.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_return_scalar"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_return_scalar_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_return_scalar_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_scalar.done");
+        }
+
+        if features.has(WASM_BODY_FEATURE_LET_CONST) && !needs_full_body_scatter {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_let_const.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_let_const"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(self.hir_body_scatter_let_const_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_let_const_bind_group), &[]);
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_let_const.done");
+        }
+
+        if needs_expr_control_scatter {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_expr_control.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_scatter_expr_control"),
@@ -2707,11 +3516,63 @@ impl GpuWasmCodeGenerator {
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_expr_control.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_range_control.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_agg_range_control"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_agg_range_control_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_agg_range_control_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_range_control.done");
+        }
+
+        // The generic expression-control pass also recognizes IF fragments.
+        // Run the specialized simple-IF pass afterward so its richer fragment
+        // metadata wins instead of being overwritten by the generic emitter.
+        if features.has(WASM_BODY_FEATURE_CONTROL_IF_SIMPLE) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_if_simple.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_if_simple"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(self.hir_body_scatter_if_simple_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_if_simple_bind_group), &[]);
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_if_simple.done");
+        }
+
+        // The generic expression-control pass also recognizes return-expression
+        // fragments, but it does not implement the full aggregate-member atom
+        // surface. Let the dedicated return-expression emitter own those bytes.
+        if features.has(WASM_BODY_FEATURE_RETURN_EXPR) && !needs_full_body_scatter {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_expr.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_return_expr"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(self.hir_body_scatter_return_expr_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_return_expr_bind_group), &[]);
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_expr.done");
         }
 
         if features.has(WASM_BODY_FEATURE_DIRECT)
             || features.has(WASM_BODY_FEATURE_LET_DIRECT)
             || features.has(WASM_BODY_FEATURE_RETURN_DIRECT)
+            || features.has(WASM_BODY_FEATURE_STMT_PRINT_DIRECT)
         {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_let_direct.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -2725,28 +3586,24 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_let_direct.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_RETURN_NESTED_DIRECT) {
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_direct_nested_call.start");
+        if features.has(WASM_BODY_FEATURE_HOST_IO) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_host_io.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_scatter_direct_nested_call"),
+                label: Some("codegen.wasm.hir_body_scatter_host_io"),
                 timestamp_writes: None,
             });
-            compute.set_pipeline(
-                self.hir_body_scatter_direct_nested_call_pass
-                    .pipeline()?
-                    .as_ref(),
-            );
-            compute.set_bind_group(
-                0,
-                Some(&bufs.hir_body_scatter_direct_nested_call_bind_group),
-                &[],
-            );
+            compute.set_pipeline(self.hir_body_scatter_host_io_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_host_io_bind_group), &[]);
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_direct_nested_call.done");
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_host_io.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_HOST) {
+        if features.has(WASM_BODY_FEATURE_HOST_BASIC)
+            || features.has(WASM_BODY_FEATURE_HOST_ENV)
+            || features.has(WASM_BODY_FEATURE_HOST_IO)
+            || features.has(WASM_BODY_FEATURE_HOST_VOID)
+        {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_host.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_scatter_host"),
@@ -2772,7 +3629,20 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_arrays.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_ARRAY_ALLOC) || features.has(WASM_BODY_FEATURE_AGG_COPY) {
+        if features.has(WASM_BODY_FEATURE_ARRAY_ALLOC) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_array_lean.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_array_lean"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(self.hir_body_scatter_array_lean_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_array_lean_bind_group), &[]);
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_array_lean.done");
+        }
+
+        if features.has(WASM_BODY_FEATURE_AGG_COPY) {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_copy.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_scatter_agg_copy"),
@@ -2785,10 +3655,51 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_copy.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_LET_AGG_DIRECT)
-            || features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT)
-            || features.has(WASM_BODY_FEATURE_BINARY_DIRECT)
-        {
+        // Specialized expression bytes must win over generic, host, and array
+        // emitters that recognize the same broad fragment families.
+        if features.has(WASM_BODY_FEATURE_MEMBER_EXPR_SCATTER) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_conversion_expr.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_conversion_expr"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_conversion_expr_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_conversion_expr_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_conversion_expr.done");
+        }
+
+        if features.has(WASM_BODY_FEATURE_RETURN_NESTED_DIRECT) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_direct_nested_call.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_direct_nested_call"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_direct_nested_call_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_direct_nested_call_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_direct_nested_call.done");
+        }
+
+        if has_direct_arg_scatter || has_agg_or_binary_arg_scatter {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_call_args.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_scatter_agg_call_args"),
@@ -2807,6 +3718,27 @@ impl GpuWasmCodeGenerator {
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_call_args.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_nested_call_args.start");
+            let (nested_arg_groups_x, nested_arg_groups_y) =
+                workgroup_grid_1d(bufs.arg_scan_blocks);
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_nested_call_args"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_nested_call_args_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_nested_call_args_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(nested_arg_groups_x, nested_arg_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_nested_call_args.done");
         }
 
         if features.has(WASM_BODY_FEATURE_RETURN_AGG_DIRECT) {
@@ -2855,7 +3787,34 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_direct_call.done");
         }
 
-        if features.has(WASM_BODY_FEATURE_MEMBER_EXPR) {
+        if features.has(WASM_BODY_FEATURE_RETURN_MEMBER_EXPR) {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_member.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_return_member"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_return_member_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_return_member_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_member.done");
+        }
+
+        // Keep the retired monolithic scatter available as a diagnostic
+        // fallback while specialized member-expression passes replace it.
+        // It is opt-in because its driver pipeline can take longer than the
+        // complete compile timeout to initialize.
+        if features.has(WASM_BODY_FEATURE_MEMBER_EXPR_SCATTER)
+            && crate::gpu::env::env_bool_strict("LANIUS_WASM_LEGACY_MEMBER_EXPR_SCATTER", false)
+        {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_member_expr.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_scatter_member_expr"),
@@ -3023,6 +3982,12 @@ impl GpuWasmCodeGenerator {
                 "[laniusc][wasm-codegen] body_plan.features mask=0x{:08x}",
                 early_features.mask
             );
+            eprintln!("[laniusc][wasm-codegen] readback.early_func_invalid");
+            trace_func_invalid_readback(
+                device,
+                &bufs.wasm_func_invalid_count_readback,
+                &bufs.wasm_func_detail_readback,
+            )?;
         }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -3031,6 +3996,8 @@ impl GpuWasmCodeGenerator {
         host_timer.stamp("body_plan.create_encoder");
         self.record_wasm_body_plan_and_status(&mut encoder, bufs, recorded, early_features)?;
         host_timer.stamp("body_plan.record");
+        self.persist_pipeline_cache_if_dirty(device);
+        host_timer.stamp("body_plan.persist_pipeline_cache");
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.wasm.body_plan",
@@ -3048,6 +4015,16 @@ impl GpuWasmCodeGenerator {
                     &bufs.body_fragment_len_readback,
                     recorded.token_capacity,
                 )?;
+                trace_body_fragment_aux_readback(
+                    device,
+                    &bufs.body_fragment_aux_readback,
+                    recorded.token_capacity,
+                )?;
+                trace_body_fragment_meta_readback(
+                    device,
+                    &bufs.body_fragment_meta_readback,
+                    recorded.token_capacity,
+                )?;
                 trace_func_invalid_readback(
                     device,
                     &bufs.wasm_func_invalid_count_readback,
@@ -3062,6 +4039,16 @@ impl GpuWasmCodeGenerator {
                 "[laniusc][wasm-codegen] phase2.features mask=0x{:08x}",
                 features.mask
             );
+            trace_body_fragment_aux_readback(
+                device,
+                &bufs.body_fragment_aux_readback,
+                recorded.token_capacity,
+            )?;
+            trace_body_fragment_meta_readback(
+                device,
+                &bufs.body_fragment_meta_readback,
+                recorded.token_capacity,
+            )?;
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.wasm.phase2.encoder"),
@@ -3069,6 +4056,10 @@ impl GpuWasmCodeGenerator {
         host_timer.stamp("phase2.create_encoder");
         self.record_wasm_scatter_and_pack(&mut encoder, bufs, recorded, features)?;
         host_timer.stamp("phase2.record");
+        // Generator initialization persists too early to capture demand-created
+        // pipelines. Persist here only when phase-2 recording created one.
+        self.persist_pipeline_cache_if_dirty(device);
+        host_timer.stamp("phase2.persist_pipeline_cache");
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.wasm.phase2",
@@ -3101,6 +4092,7 @@ impl GpuWasmCodeGenerator {
         output_capacity: usize,
         token_capacity: u32,
         hir_node_capacity: u32,
+        active_hir_dispatch_args_buf: &wgpu::Buffer,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
@@ -3171,6 +4163,7 @@ impl GpuWasmCodeGenerator {
                 output_capacity,
                 token_capacity,
                 hir_node_capacity,
+                active_hir_dispatch_args_buf,
                 token_buf,
                 token_count_buf,
                 source_buf,
@@ -3240,6 +4233,7 @@ impl GpuWasmCodeGenerator {
         output_capacity: usize,
         token_capacity: u32,
         hir_node_capacity: u32,
+        active_hir_dispatch_args_buf: &wgpu::Buffer,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
@@ -3507,13 +4501,13 @@ impl GpuWasmCodeGenerator {
             device,
             "codegen.wasm.body_fragment_meta",
             body_item_capacity as usize * 4,
-            wgpu::BufferUsages::empty(),
+            wgpu::BufferUsages::COPY_SRC,
         );
         let body_fragment_aux_buf = storage_u32_rw(
             device,
             "codegen.wasm.body_fragment_aux",
             body_item_capacity as usize * 4,
-            wgpu::BufferUsages::empty(),
+            wgpu::BufferUsages::COPY_SRC,
         );
         let body_scan_local_prefix_buf = storage_u32_rw(
             device,
@@ -3737,6 +4731,16 @@ impl GpuWasmCodeGenerator {
             device,
             "rb.codegen.wasm.body_fragment_len",
             body_item_capacity as usize,
+        );
+        let body_fragment_aux_readback = readback_u32s(
+            device,
+            "rb.codegen.wasm.body_fragment_aux",
+            body_item_capacity as usize * 4,
+        );
+        let body_fragment_meta_readback = readback_u32s(
+            device,
+            "rb.codegen.wasm.body_fragment_meta",
+            body_item_capacity as usize * 4,
         );
         let wasm_func_invalid_count_readback = readback_u32s(
             device,
@@ -4748,10 +5752,38 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
+        let hir_body_plan_validate_agg_range_control_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_agg_range_control"),
+            &self.hir_body_plan_validate_agg_range_control_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_if_simple_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_if_simple"),
+            &self.hir_body_plan_validate_if_simple_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_print_simple_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_print_simple"),
+            &self.hir_body_plan_validate_print_simple_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
         let hir_body_plan_validate_call_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_call"),
             &self.hir_body_plan_validate_call_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_host_void_call_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_host_void_call"),
+            &self.hir_body_plan_validate_host_void_call_pass,
             0,
             &hir_body_plan_validate_bindings,
         )?;
@@ -4773,6 +5805,34 @@ impl GpuWasmCodeGenerator {
             device,
             Some("codegen_wasm_hir_body_plan_validate_let_host_io"),
             &self.hir_body_plan_validate_let_host_io_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_let_host_string_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_let_host_string"),
+            &self.hir_body_plan_validate_let_host_string_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_return_host_io_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_return_host_io"),
+            &self.hir_body_plan_validate_return_host_io_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_return_host_string_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_return_host_string"),
+            &self.hir_body_plan_validate_return_host_string_pass,
+            0,
+            &hir_body_plan_validate_bindings,
+        )?;
+        let hir_body_plan_validate_let_direct_call_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_let_direct_call"),
+            &self.hir_body_plan_validate_let_direct_call_pass,
             0,
             &hir_body_plan_validate_bindings,
         )?;
@@ -5254,6 +6314,20 @@ impl GpuWasmCodeGenerator {
                 body_fragment_aux_buf.as_entire_binding(),
             ),
             (
+                "body_fragment_len",
+                body_fragment_len_buf.as_entire_binding(),
+            ),
+            (
+                "body_scan_local_prefix",
+                body_scan_local_prefix_buf.as_entire_binding(),
+            ),
+            (
+                "body_scan_block_prefix",
+                final_body_scan_block_prefix.as_entire_binding(),
+            ),
+            ("status", status_buf.as_entire_binding()),
+            ("body_words", body_buf.as_entire_binding()),
+            (
                 "wasm_agg_call_arg_count_by_fragment",
                 wasm_agg_call_arg_count_by_fragment_buf.as_entire_binding(),
             ),
@@ -5282,6 +6356,13 @@ impl GpuWasmCodeGenerator {
             device,
             Some("codegen_wasm_hir_body_agg_call_arg_records"),
             &self.hir_body_agg_call_arg_records_pass,
+            0,
+            &hir_body_agg_call_arg_records_bindings,
+        )?;
+        let hir_body_direct_call_arg_records_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_direct_call_arg_records"),
+            &self.hir_body_direct_call_arg_records_pass,
             0,
             &hir_body_agg_call_arg_records_bindings,
         )?;
@@ -5394,6 +6475,13 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_agg_call_finalize_bindings,
         )?;
+        let hir_body_direct_call_finalize_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_direct_call_finalize"),
+            &self.hir_body_direct_call_finalize_pass,
+            0,
+            &hir_body_agg_call_finalize_bindings,
+        )?;
         let hir_body_status_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_status"),
@@ -5477,6 +6565,8 @@ impl GpuWasmCodeGenerator {
                         "wasm_const_value_record",
                         wasm_const_value_record_buf.as_entire_binding(),
                     ),
+                    ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
+                    ("language_name_id", language_name_id_buf.as_entire_binding()),
                     (
                         "body_let_init_expr_by_decl_token",
                         body_let_init_expr_by_decl_token_buf.as_entire_binding(),
@@ -5640,9 +6730,106 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_body_scatter",
             &self.hir_body_scatter_pass,
         )?;
+        let hir_body_scatter_frame_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_frame"),
+            &self.hir_body_scatter_frame_pass,
+            0,
+            &[
+                ("gScan", body_scan_param_bufs[0].as_entire_binding()),
+                (
+                    "body_fragment_len",
+                    body_fragment_len_buf.as_entire_binding(),
+                ),
+                (
+                    "body_fragment_meta",
+                    body_fragment_meta_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_local_prefix",
+                    body_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_block_prefix",
+                    final_body_scan_block_prefix.as_entire_binding(),
+                ),
+                ("status", status_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+            ],
+        )?;
+        let hir_body_scatter_if_simple_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_if_simple",
+            &self.hir_body_scatter_if_simple_pass,
+        )?;
+        let hir_body_scatter_return_scalar_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_return_scalar"),
+            &self.hir_body_scatter_return_scalar_pass,
+            0,
+            &[
+                ("gScan", body_scan_param_bufs[0].as_entire_binding()),
+                (
+                    "body_fragment_len",
+                    body_fragment_len_buf.as_entire_binding(),
+                ),
+                (
+                    "body_fragment_meta",
+                    body_fragment_meta_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_local_prefix",
+                    body_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_block_prefix",
+                    final_body_scan_block_prefix.as_entire_binding(),
+                ),
+                ("status", status_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+            ],
+        )?;
+        let hir_body_scatter_return_expr_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_return_expr",
+            &self.hir_body_scatter_return_expr_pass,
+        )?;
+        let hir_body_scatter_conversion_expr_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_conversion_expr",
+            &self.hir_body_scatter_conversion_expr_pass,
+        )?;
+        let hir_body_scatter_let_const_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_let_const"),
+            &self.hir_body_scatter_let_const_pass,
+            0,
+            &[
+                ("gScan", body_scan_param_bufs[0].as_entire_binding()),
+                (
+                    "body_fragment_len",
+                    body_fragment_len_buf.as_entire_binding(),
+                ),
+                (
+                    "body_fragment_meta",
+                    body_fragment_meta_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_local_prefix",
+                    body_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "body_scan_block_prefix",
+                    final_body_scan_block_prefix.as_entire_binding(),
+                ),
+                ("status", status_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+            ],
+        )?;
         let hir_body_scatter_expr_control_bind_group = create_hir_body_scatter_bind_group(
             "codegen_wasm_hir_body_scatter_expr_control",
             &self.hir_body_scatter_expr_control_pass,
+        )?;
+        let hir_body_scatter_agg_range_control_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_agg_range_control",
+            &self.hir_body_scatter_agg_range_control_pass,
         )?;
         let hir_body_scatter_let_direct_bind_group = create_hir_body_scatter_bind_group(
             "codegen_wasm_hir_body_scatter_let_direct",
@@ -5651,6 +6838,10 @@ impl GpuWasmCodeGenerator {
         let hir_body_scatter_direct_nested_call_bind_group = create_hir_body_scatter_bind_group(
             "codegen_wasm_hir_body_scatter_direct_nested_call",
             &self.hir_body_scatter_direct_nested_call_pass,
+        )?;
+        let hir_body_scatter_host_io_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_host_io",
+            &self.hir_body_scatter_host_io_pass,
         )?;
         let hir_body_scatter_host_bind_group = create_hir_body_scatter_bind_group(
             "codegen_wasm_hir_body_scatter_host",
@@ -5805,6 +6996,14 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_body_scatter_agg_copy",
             &self.hir_body_scatter_agg_copy_pass,
         )?;
+        let hir_body_scatter_array_lean_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_array_lean",
+            &self.hir_body_scatter_array_lean_pass,
+        )?;
+        let hir_body_scatter_return_member_bind_group = create_hir_body_scatter_bind_group(
+            "codegen_wasm_hir_body_scatter_return_member",
+            &self.hir_body_scatter_return_member_pass,
+        )?;
         let mut hir_body_scatter_agg_call_args_bindings = Vec::new();
         add_hir_body_common_bindings!(
             hir_body_scatter_agg_call_args_bindings,
@@ -5872,6 +7071,13 @@ impl GpuWasmCodeGenerator {
             device,
             Some("codegen_wasm_hir_body_scatter_agg_call_args"),
             &self.hir_body_scatter_agg_call_args_pass,
+            0,
+            &hir_body_scatter_agg_call_args_bindings,
+        )?;
+        let hir_body_scatter_nested_call_args_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_nested_call_args"),
+            &self.hir_body_scatter_nested_call_args_pass,
             0,
             &hir_body_scatter_agg_call_args_bindings,
         )?;
@@ -5986,6 +7192,35 @@ impl GpuWasmCodeGenerator {
                 ),
                 ("call_return_type", call_return_type_buf.as_entire_binding()),
                 ("call_param_count", call_param_count_buf.as_entire_binding()),
+                ("call_param_type", call_param_type_buf.as_entire_binding()),
+                (
+                    "call_param_row_count_out",
+                    call_metadata.param_row_count_out.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_fn_token",
+                    call_metadata.param_row_fn_token.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_ordinal",
+                    call_metadata.param_row_ordinal.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_type",
+                    call_metadata.param_row_type.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_start",
+                    call_metadata.param_row_start.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_count",
+                    call_metadata.param_row_count.as_entire_binding(),
+                ),
+                (
+                    "method_decl_receiver_mode",
+                    method_decl_receiver_mode_buf.as_entire_binding(),
+                ),
                 ("status", status_buf.as_entire_binding()),
             ],
         )?;
@@ -6059,6 +7294,7 @@ impl GpuWasmCodeGenerator {
             output_capacity,
             token_capacity,
             hir_node_capacity,
+            active_hir_dispatch_args_buf: active_hir_dispatch_args_buf.clone(),
             params_buf,
             body_scan_param_bufs,
             body_scan_blocks,
@@ -6129,6 +7365,8 @@ impl GpuWasmCodeGenerator {
             status_readback,
             body_plan_readback,
             body_fragment_len_readback,
+            body_fragment_meta_readback,
+            body_fragment_aux_readback,
             wasm_func_invalid_count_readback,
             wasm_func_detail_readback,
             agg_layout_clear_bind_group,
@@ -6152,10 +7390,18 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_validate_return_nested_call_bind_group,
             hir_body_plan_validate_assign_bind_group,
             hir_body_plan_validate_control_bind_group,
+            hir_body_plan_validate_agg_range_control_bind_group,
+            hir_body_plan_validate_if_simple_bind_group,
+            hir_body_plan_validate_print_simple_bind_group,
             hir_body_plan_validate_call_bind_group,
+            hir_body_plan_validate_host_void_call_bind_group,
             hir_body_plan_validate_let_host_bind_group,
             hir_body_plan_validate_let_host_env_bind_group,
             hir_body_plan_validate_let_host_io_bind_group,
+            hir_body_plan_validate_let_host_string_bind_group,
+            hir_body_plan_validate_return_host_io_bind_group,
+            hir_body_plan_validate_return_host_string_bind_group,
+            hir_body_plan_validate_let_direct_call_bind_group,
             hir_body_plan_validate_let_call_bind_group,
             hir_body_plan_validate_let_call_status_bind_group,
             hir_body_plan_agg_direct_call_bind_group,
@@ -6171,20 +7417,33 @@ impl GpuWasmCodeGenerator {
             hir_body_agg_call_arg_count_scan_local_bind_group,
             hir_body_agg_call_arg_count_scan_block_bind_groups,
             hir_body_agg_call_arg_records_bind_group,
+            hir_body_direct_call_arg_records_bind_group,
             hir_body_agg_call_arg_byte_scan_local_bind_group,
             hir_body_agg_call_arg_byte_scan_block_bind_groups,
             hir_body_agg_call_finalize_bind_group,
+            hir_body_direct_call_finalize_bind_group,
             hir_body_status_bind_group,
             hir_body_scatter_bind_group,
+            hir_body_scatter_frame_bind_group,
+            hir_body_scatter_if_simple_bind_group,
+            hir_body_scatter_return_scalar_bind_group,
+            hir_body_scatter_return_expr_bind_group,
+            hir_body_scatter_conversion_expr_bind_group,
+            hir_body_scatter_let_const_bind_group,
             hir_body_scatter_expr_control_bind_group,
+            hir_body_scatter_agg_range_control_bind_group,
             hir_body_scatter_let_direct_bind_group,
             hir_body_scatter_direct_nested_call_bind_group,
+            hir_body_scatter_host_io_bind_group,
             hir_body_scatter_host_bind_group,
             hir_body_scatter_arrays_bind_group,
+            hir_body_scatter_array_lean_bind_group,
             hir_body_scatter_agg_copy_bind_group,
             hir_body_scatter_agg_call_args_bind_group,
+            hir_body_scatter_nested_call_args_bind_group,
             hir_body_scatter_agg_direct_call_bind_group,
             hir_body_scatter_return_agg_direct_call_bind_group,
+            hir_body_scatter_return_member_bind_group,
             hir_body_scatter_member_expr_bind_group,
             hir_body_scatter_binary_direct_call_bind_group,
             hir_agg_body_bind_group,

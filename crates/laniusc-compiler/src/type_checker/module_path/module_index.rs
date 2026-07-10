@@ -16,6 +16,7 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) module_key_radix_dispatch_params:
         LaniusBuffer<ModuleKeyRadixParams>,
     pub(in crate::type_checker) module_key_radix_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_module_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -25,6 +26,7 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
     pub(in crate::type_checker) seed_import_edge_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) import_edge_key_radix_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_import_edges_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_import_edge_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_import_edge_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_import_edge_key_bucket_bases: Vec<wgpu::BindGroup>,
@@ -164,6 +166,43 @@ pub(in crate::type_checker) fn create_module_index(
         &buffers.module_table_count_out,
         &buffers.module_key_radix_dispatch_args,
     )?;
+
+    let sort_module_keys_small = if layout.module_capacity_u32 <= MODULE_KEY_SMALL_SORT_CAPACITY {
+        Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_02f_sort_module_keys_small"),
+            &passes.modules_sort_module_keys_small,
+            0,
+            &[
+                (
+                    "gParams",
+                    module_key_radix_dispatch_params.as_entire_binding(),
+                ),
+                (
+                    "module_table_count_out",
+                    buffers.module_table_count_out.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_count",
+                    buffers.module_key_segment_count.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_base",
+                    buffers.module_key_segment_base.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_name_id",
+                    buffers.module_key_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "module_key_order",
+                    buffers.module_key_to_module_id.as_entire_binding(),
+                ),
+            ],
+        )?)
+    } else {
+        None
+    };
 
     let mut retained_key_params = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize + 3);
     let mut sort_module_key_histogram = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize);
@@ -498,6 +537,38 @@ pub(in crate::type_checker) fn create_module_index(
         ],
     )?;
 
+    let sort_import_edges_small =
+        if layout.import_record_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
+            Some(bind_group::create_bind_group_from_bindings(
+                device,
+                Some("type_check_modules_05e2_sort_import_edges_small"),
+                &passes.modules_sort_import_edges_small,
+                0,
+                &[
+                    ("gParams", import_edge_key_radix_params.as_entire_binding()),
+                    (
+                        "import_count_out",
+                        buffers.import_count_out.as_entire_binding(),
+                    ),
+                    (
+                        "import_module_id",
+                        buffers.import_module_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_target_module_id",
+                        buffers.import_target_module_id.as_entire_binding(),
+                    ),
+                    ("import_status", buffers.import_status.as_entire_binding()),
+                    (
+                        "import_edge_key_order",
+                        buffers.import_edge_key_order.as_entire_binding(),
+                    ),
+                ],
+            )?)
+        } else {
+            None
+        };
+
     let mut sort_import_edge_key_histogram =
         Vec::with_capacity(IMPORT_EDGE_KEY_RADIX_STEPS as usize);
     let mut sort_import_edge_key_bucket_prefix =
@@ -666,6 +737,7 @@ pub(in crate::type_checker) fn create_module_index(
         build_module_keys,
         module_key_radix_dispatch_params,
         module_key_radix_dispatch,
+        sort_module_keys_small,
         sort_module_key_histogram,
         sort_module_key_bucket_prefix,
         sort_module_key_bucket_bases,
@@ -675,6 +747,7 @@ pub(in crate::type_checker) fn create_module_index(
         resolve_imports,
         seed_import_edge_key_order,
         import_edge_key_radix_dispatch,
+        sort_import_edges_small,
         sort_import_edge_key_histogram,
         sort_import_edge_key_bucket_prefix,
         sort_import_edge_key_bucket_bases,

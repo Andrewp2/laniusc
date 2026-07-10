@@ -74,6 +74,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -335,6 +336,35 @@ uint visible_type_for_token(uint token)
     return ty == INVALID ? TY_UNKNOWN : ty;
 }
 
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
 bool function_param_local_index(uint decl_token, uint fn_token, out uint local_index)
 {
     local_index = INVALID;
@@ -344,7 +374,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -353,7 +385,7 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     local_index = param_count + decl_token;
     return true;
 }
@@ -451,14 +483,15 @@ bool aggregate_address_expr_len(uint node, out uint len)
         uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
         if (ordinal != INVALID)
         {
-            local_index = ordinal;
+            local_index = function_param_abi_ordinal(owner_fn, ordinal);
             is_param = true;
         }
     }
     if (is_param)
     {
         uint decl_ty = visible_type_for_token(decl_token);
-        uint param_ty = call_param_type_value(owner_fn, local_index);
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        uint param_ty = call_param_type_value(owner_fn, ordinal);
         if (decl_ty != TY_UNKNOWN &&
             decl_ty < TY_ARRAY_BASE &&
             param_ty < TY_ARRAY_BASE &&

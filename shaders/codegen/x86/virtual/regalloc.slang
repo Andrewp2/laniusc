@@ -1,10 +1,10 @@
 // x86_64 register allocation over virtual-instruction liveness intervals.
 //
-// This pass is the remaining x86 allocation scheduling boundary. It allocates a
-// compact value-definition chunk per function because active_end and
-// current_param_rank_mask are loop-carried allocator state. Do not raise the
-// chunk size to hide pressure; replace this with region/keyed allocation
-// records and segmented scan/scatter passes before claiming paper alignment.
+// Allocation is segmented by function: one GPU lane owns one function's
+// contiguous virtual-instruction interval. This preserves the allocator's
+// loop-carried active register state without multiplying every global value-def
+// chunk by every function. Region/keyed state composition can further
+// parallelize unusually large individual functions later.
 
 import bitset;
 import gpu_index;
@@ -680,6 +680,44 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count, ou
     return true;
 }
 
+bool allocate_function_interval(uint func_i, uint fn_slot, uint inst_count, out uint failed_node)
+{
+    failed_node = INVALID;
+    uint start_row = INVALID;
+    uint end_row = INVALID;
+    if (!function_row_bounds(fn_slot, inst_count, start_row, end_row))
+        return true;
+    if (end_row == INVALID)
+        return false;
+
+    uint active_end[X86_TEMP_REG_RANK_COUNT];
+    active_end[0u] = INVALID;
+    active_end[1u] = INVALID;
+    active_end[2u] = INVALID;
+    active_end[3u] = INVALID;
+    active_end[4u] = INVALID;
+    active_end[5u] = INVALID;
+    active_end[6u] = INVALID;
+    active_end[7u] = INVALID;
+    active_end[8u] = INVALID;
+    active_end[9u] = INVALID;
+    active_end[10u] = INVALID;
+    active_end[11u] = INVALID;
+    active_end[12u] = INVALID;
+    uint current_param_rank_mask = load_param_rank_mask(func_i, fn_slot);
+
+    for (uint row = start_row; row < end_row; row += 1u)
+    {
+        if (!allocate_virtual_row(row, fn_slot, active_end, current_param_rank_mask))
+        {
+            uint node = x86_virtual_inst_record[row].x;
+            failed_node = valid_hir_node(node) ? node : INVALID;
+            return false;
+        }
+    }
+    return true;
+}
+
 uint first_allocation_upstream_error()
 {
     if (x86_virtual_liveness_status[1u] != 0u)
@@ -708,30 +746,20 @@ uint first_allocation_upstream_detail()
 
 void initialize_status(uint inst_count)
 {
-    uint required_chunks = 1u;
-    bool chunk_shape_ok = regalloc_chunk_shape_valid();
     bool function_slice_ok = function_slice_recorded();
-    bool inputs_ok = chunk_shape_ok && function_slice_ok && allocation_status_inputs_valid(inst_count);
-    bool recorded_span_ok = regalloc_recorded_span_valid(inst_count, required_chunks);
-    bool ok = inputs_ok && recorded_span_ok;
+    bool inputs_ok = function_slice_ok && allocation_status_inputs_valid(inst_count);
+    bool dispatch_shape_ok = gParams.regalloc_chunk_count == 2u;
+    bool ok = inputs_ok && dispatch_shape_ok;
     if (!ok)
     {
-        bool chunk_shape_failed = !chunk_shape_ok;
-        bool function_slice_failed = chunk_shape_ok && !function_slice_ok;
-        bool span_failed = inputs_ok && !recorded_span_ok;
-        uint span_detail = span_failed ? regalloc_span_diagnostic_node(inst_count) : INVALID;
-        uint upstream_error = span_failed && valid_hir_node(span_detail)
-            ? X86_ERR_REGALLOC_BOUNDARY
-            : ((chunk_shape_failed || function_slice_failed || span_failed)
-                ? X86_ERR_VIRTUAL_REGALLOC
-                : first_allocation_upstream_error());
-        uint upstream_detail = chunk_shape_failed
-            ? gParams.regalloc_rows_per_chunk
-            : (function_slice_failed
+        uint upstream_error = (!function_slice_ok || !dispatch_shape_ok)
+            ? X86_ERR_VIRTUAL_REGALLOC
+            : first_allocation_upstream_error();
+        uint upstream_detail = !dispatch_shape_ok
+            ? gParams.regalloc_chunk_count
+            : (!function_slice_ok
                 ? x86_func_meta[FUNC_META_FUNC_COUNT]
-                : (span_failed
-                ? (valid_hir_node(span_detail) ? span_detail : required_chunks)
-                : first_allocation_upstream_detail()));
+                : first_allocation_upstream_detail());
         write_stage_status4_from_result(
             x86_virtual_regalloc_status,
             false,
@@ -756,9 +784,14 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint func_i = linear_dispatch_id(tid);
     uint inst_count = x86_virtual_liveness_status[3u];
 
-    if (func_i == 0u && gRegalloc.init_status != 0u)
-        initialize_status(inst_count);
-    if (gRegalloc.chunk_start >= x86_virtual_value_def_status[3u])
+    if (gRegalloc.init_status != 0u)
+    {
+        if (func_i == 0u)
+            initialize_status(inst_count);
+        return;
+    }
+    if (x86_virtual_regalloc_status[0u] != X86_VIRTUAL_REGALLOC_OK ||
+        x86_virtual_regalloc_status[1u] != 0u)
         return;
 
     uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
@@ -775,12 +808,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint required_chunks = 1u;
-    if (!regalloc_recorded_span_valid(inst_count, required_chunks))
-        return;
-
     uint failed_node = INVALID;
-    if (!allocate_function_row_offset(func_i, fn_slot, inst_count, failed_node))
+    if (!allocate_function_interval(func_i, fn_slot, inst_count, failed_node))
     {
         uint error = valid_hir_node(failed_node)
             ? X86_ERR_REGALLOC_BOUNDARY

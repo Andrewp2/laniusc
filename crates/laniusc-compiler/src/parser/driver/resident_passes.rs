@@ -346,13 +346,13 @@ impl GpuParser {
                     &bufs.tree_active_dispatch_args,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_path_leaf_step");
-                ctx.encoder.clear_buffer(
+                parser_clear_buffer(
+                    ctx.encoder,
                     &bufs.hir_type_path_leaf_link_b.buffer,
                     0,
                     Some(u64::from(bufs.tree_capacity) * 4),
                 );
-                ctx.encoder
-                    .clear_buffer(&bufs.source_file_token_end, 0, None);
+                parser_clear_buffer(ctx.encoder, &bufs.source_file_token_end, 0, None);
                 self.passes.source_file_token_end.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(bufs.token_input_capacity),
@@ -940,14 +940,23 @@ impl GpuParser {
                     .hir_context_relations_init
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_init");
-                self.passes
-                    .hir_context_relations_step
-                    .record_steps_indirect(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_semantic_dispatch_args,
+                if bufs.tree_capacity
+                    <= passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+                {
+                    self.passes.hir_context_relations_step_small.record_pass(
+                        &mut ctx,
+                        crate::gpu::passes_core::InputElements::Elements1D(1),
                     )?;
+                } else {
+                    self.passes
+                        .hir_context_relations_step
+                        .record_steps_indirect(
+                            ctx.device,
+                            ctx.encoder,
+                            ctx.buffers,
+                            &bufs.hir_semantic_dispatch_args,
+                        )?;
+                }
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_step");
                 self.passes
                     .hir_context_relations_scatter

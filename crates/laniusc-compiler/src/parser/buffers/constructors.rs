@@ -1,4 +1,5 @@
 use super::ParserBuffers;
+use crate::lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES;
 
 impl ParserBuffers {
     /// Allocates one-shot parser buffers from already-classified parser token kinds.
@@ -19,6 +20,7 @@ impl ParserBuffers {
             false,
             true,
             None,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
         )
     }
 
@@ -70,6 +72,31 @@ impl ParserBuffers {
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
     ) -> Self {
+        Self::new_resident_capacity_with_tree_capacity_debug_and_features(
+            device,
+            token_capacity,
+            n_kinds,
+            action_table_bytes,
+            tables,
+            tree_capacity_override,
+            retain_debug_hir_buffers,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+        )
+    }
+
+    /// Allocates resident buffers with optional-family capacities derived from
+    /// conservative GPU lexer feature flags.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_resident_capacity_with_tree_capacity_debug_and_features(
+        device: &wgpu::Device,
+        token_capacity: u32,
+        n_kinds: u32,
+        action_table_bytes: &[u8],
+        tables: &crate::parser::tables::PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        retain_debug_hir_buffers: bool,
+        parser_feature_flags: u32,
+    ) -> Self {
         let n_tokens = token_capacity.saturating_add(2);
         Self::new_with_sizing(
             device,
@@ -81,6 +108,7 @@ impl ParserBuffers {
             true,
             retain_debug_hir_buffers,
             tree_capacity_override,
+            parser_feature_flags,
         )
     }
 }

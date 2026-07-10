@@ -41,6 +41,7 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) method_decl_param_offset: &'a wgpu::Buffer,
     pub(super) method_decl_receiver_mode: &'a wgpu::Buffer,
     pub(super) struct_type_record: &'a wgpu::Buffer,
+    pub(super) struct_field_width_by_node: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) const_value_record: &'a wgpu::Buffer,
@@ -111,6 +112,7 @@ pub(super) fn create_inst_gen_bind_groups(
         method_decl_param_offset,
         method_decl_receiver_mode,
         struct_type_record,
+        struct_field_width_by_node,
         decl_layout_record,
         decl_layout_status,
         const_value_record,
@@ -273,6 +275,14 @@ pub(super) fn create_inst_gen_bind_groups(
             ),
             ("visible_decl", visible_decl.as_entire_binding()),
             ("visible_type", visible_type.as_entire_binding()),
+            (
+                "member_result_field_node",
+                struct_metadata.member_result_field_node.as_entire_binding(),
+            ),
+            (
+                "x86_struct_field_width_by_node",
+                struct_field_width_by_node.as_entire_binding(),
+            ),
             (
                 "path_count_out",
                 enum_metadata.path_count_out.as_entire_binding(),
@@ -861,6 +871,14 @@ pub(super) fn create_inst_gen_bind_groups(
                 expr_resolved_final.as_entire_binding(),
             ),
             ("visible_decl", visible_decl.as_entire_binding()),
+            (
+                "member_result_field_node",
+                struct_metadata.member_result_field_node.as_entire_binding(),
+            ),
+            (
+                "x86_struct_field_width_by_node",
+                struct_field_width_by_node.as_entire_binding(),
+            ),
             (
                 "x86_struct_access_record",
                 struct_access_record.as_entire_binding(),

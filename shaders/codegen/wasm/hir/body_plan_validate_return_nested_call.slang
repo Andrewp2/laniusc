@@ -27,7 +27,8 @@ bool return_nested_direct_call_arg_and_len(
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
         uint arg_len = 0u;
-        if (!direct_call_arg_expr_and_len(arg_node, arg_len) || arg_len == 0u)
+        uint param_ty = call_param_type_value(fn_token, i);
+        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
             return false;
         total += arg_len;
     }
@@ -65,7 +66,8 @@ bool return_direct_call_expr_and_len(
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
         uint arg_len = 0u;
-        bool ok = direct_call_arg_expr_and_len(arg_node, arg_len);
+        uint param_ty = call_param_type_value(fn_token, i);
+        bool ok = direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len);
         if (!ok)
         {
             uint candidate_wasm_func_index = INVALID;
@@ -213,13 +215,12 @@ void validate_main_return_call(uint node, uint token)
         }
         return;
     }
+    if (!nested)
+        return;
 
     uint4 aux = direct_call_aux(return_expr_node);
-    if (nested)
-    {
-        aux.w = nested_arg_ordinal + 1u;
-        atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_RETURN_NESTED_DIRECT);
-    }
+    aux.w = nested_arg_ordinal + 1u;
+    atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_RETURN_NESTED_DIRECT);
     atomic_u32_add(body_plan, BODY_PLAN_RETURN_VALUE_OK_COUNT, 1u);
     add_func_body_len(owner_fn, return_len);
     publish_fragment(

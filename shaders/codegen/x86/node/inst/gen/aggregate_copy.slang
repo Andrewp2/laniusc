@@ -25,6 +25,8 @@ StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_decl_layout_record;
@@ -308,6 +310,12 @@ uint struct_access_payload1(uint row)
     return struct_access_word(row, 1u);
 }
 
+uint struct_access_payload2(uint row)
+{
+    uint info = struct_access_word(row, 2u);
+    return info == INVALID ? INVALID : info >> X86_STRUCT_ACCESS_KIND_BITS;
+}
+
 bool decl_token_for_name(uint name_node, out uint decl_token)
 {
     decl_token = INVALID;
@@ -388,6 +396,7 @@ bool aggregate_source_for_expr(
     width = 0u;
     uint current = expr_node;
     uint offset = 0u;
+    uint selected_width = 0u;
     for (uint i = 0u; i < gParams.n_hir_nodes; i++)
     {
         if (valid_node(current) &&
@@ -396,8 +405,19 @@ bool aggregate_source_for_expr(
         {
             uint member_offset = struct_access_payload1(current);
             uint receiver = struct_access_payload0(current);
-            if (member_offset == INVALID || !valid_node(receiver))
+            uint member_token = struct_access_payload2(current);
+            uint field_node = valid_token(member_token)
+                                  ? member_result_field_node[member_token]
+                                  : INVALID;
+            uint member_width = valid_node(field_node)
+                                    ? x86_struct_field_width_by_node[field_node]
+                                    : 0u;
+            if (member_offset == INVALID ||
+                !valid_node(receiver) ||
+                member_width <= 1u)
                 return false;
+            if (selected_width == 0u)
+                selected_width = member_width;
             offset += member_offset;
             current = receiver;
             continue;
@@ -415,10 +435,12 @@ bool aggregate_source_for_expr(
         {
             if (!aggregate_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
                 return false;
-            if (offset >= width)
+            if (selected_width == 0u)
+                selected_width = width;
+            if (offset > width || selected_width > width - offset)
                 return false;
             payload = aggregate_source_payload_offset(source_kind, payload, offset);
-            width -= offset;
+            width = selected_width;
             return true;
         }
 

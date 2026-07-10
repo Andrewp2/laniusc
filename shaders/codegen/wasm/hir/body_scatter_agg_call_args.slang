@@ -33,6 +33,12 @@ RWStructuredBuffer<uint> body_words;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
+static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
+static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
+static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
+static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
+static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
+static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
 static const uint ARG_WG_SIZE = 256u;
 
 uint body_prefix_for_fragment(uint fragment_i)
@@ -101,6 +107,20 @@ uint arg_bytes_for_fragment(uint fragment_i)
            arg_byte_prefix_for_record(first_record);
 }
 
+uint arg_byte_base_for_fragment(uint4 fragment_meta)
+{
+    if (fragment_meta.x == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 &&
+        (fragment_meta.w >> 8u) != 0u)
+    {
+        uint side_len = 0u;
+        if (direct_call_arg_expr_and_len(fragment_meta.z, side_len))
+            return side_len;
+    }
+    if (fragment_meta.x == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
+        return local_get_len(fragment_meta.y);
+    return 0u;
+}
+
 bool record_for_arg_byte(
     uint first_record,
     uint record_count,
@@ -147,7 +167,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint4 fragment_meta = body_fragment_meta[fragment_i];
     if (fragment_meta.x != BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 &&
         fragment_meta.x != BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 &&
-        fragment_meta.x != BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32)
+        fragment_meta.x != BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 &&
+        fragment_meta.x != BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 &&
+        fragment_meta.x != BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 &&
+        fragment_meta.x != BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 &&
+        fragment_meta.x != BODY_FRAGMENT_LET_DIRECT_CALL_I32 &&
+        fragment_meta.x != BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 &&
+        fragment_meta.x != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
     {
         return;
     }
@@ -155,12 +181,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint fragment_start = body_prefix_for_fragment(fragment_i);
     uint byte_i = body_byte_i - fragment_start;
     uint arg_bytes = arg_bytes_for_fragment(fragment_i);
-    if (byte_i >= arg_bytes)
+    uint arg_base = arg_byte_base_for_fragment(fragment_meta);
+    if (byte_i < arg_base || byte_i >= arg_base + arg_bytes)
         return;
 
     uint first_record = arg_count_prefix_for_fragment(fragment_i);
     uint record_count = wasm_agg_call_arg_count_by_fragment[fragment_i];
-    uint arg_global_byte = arg_byte_prefix_for_record(first_record) + byte_i;
+    uint arg_global_byte = arg_byte_prefix_for_record(first_record) + byte_i - arg_base;
     uint record_i = INVALID;
     if (!record_for_arg_byte(first_record, record_count, arg_global_byte, record_i))
         return;
@@ -168,10 +195,11 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint record_start = arg_byte_prefix_for_record(record_i);
     uint4 arg_meta = wasm_agg_call_arg_meta[record_i];
     uint4 arg_aux = wasm_agg_call_arg_aux[record_i];
+    uint local_byte_i = arg_global_byte - record_start;
     body_words[body_byte_i] =
         direct_call_abi_arg_byte(
             arg_meta.z,
             arg_aux.x,
             arg_meta.w,
-            arg_global_byte - record_start);
+            local_byte_i);
 }

@@ -120,22 +120,28 @@ impl PackOffsetsScanPass {
             0,
             &resources,
         )?;
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("pack_offsets_scan"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
         if let Some(dispatch_args) = dispatch_args {
-            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+            crate::gpu::passes_core::record_or_defer_compute_indirect(
+                encoder,
+                &self.data,
+                &bind_group,
+                "pack_offsets_scan",
+                dispatch_args,
+            );
         } else {
             let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let (gx, gy, gz) = plan_workgroups(
+            let groups = plan_workgroups(
                 DispatchDim::D1,
                 InputElements::Elements1D(buffers.n_tokens.saturating_sub(1)),
                 [tgsx, tgsy, 1],
             )?;
-            pass.dispatch_workgroups(gx, gy, gz);
+            crate::gpu::passes_core::record_or_defer_compute_direct(
+                encoder,
+                &self.data,
+                &bind_group,
+                "pack_offsets_scan",
+                groups,
+            );
         }
         Ok(())
     }

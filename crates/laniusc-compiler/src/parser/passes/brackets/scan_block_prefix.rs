@@ -101,13 +101,13 @@ impl BracketsScanBlockPrefixPass {
             InputElements::Elements1D(buffers.b_n_blocks),
             [tgsx, tgsy, 1],
         )?;
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("brackets_02_scan_block_prefix"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        crate::gpu::passes_core::record_or_defer_compute_direct(
+            encoder,
+            &self.data,
+            &bind_group,
+            "brackets_02_scan_block_prefix",
+            (gx, gy, gz),
+        );
         Ok(())
     }
 }

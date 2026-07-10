@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import select
 import shutil
 import subprocess
 import time
@@ -20,6 +21,16 @@ WORKLOAD = {
 }
 
 
+def grid_checksum(width: int, height: int, seed: int) -> int:
+    total = 0
+    for y in range(height):
+        for x in range(width):
+            distance = x - y if x > y else y - x
+            mixed = (x * 17 + y * 31 + seed * 13) % 97
+            total += distance - mixed if mixed < 0 else distance + mixed
+    return total
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -32,7 +43,25 @@ def main() -> int:
         action="store_true",
         help="compile and run artifacts, recording local timings",
     )
+    parser.add_argument("--width", type=int, default=WORKLOAD["width"])
+    parser.add_argument("--height", type=int, default=WORKLOAD["height"])
+    parser.add_argument("--seed", type=int, default=WORKLOAD["seed"])
+    parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--iters", type=int, default=3)
     args = parser.parse_args()
+
+    if args.width <= 0 or args.height <= 0:
+        parser.error("--width and --height must be positive")
+    if args.warmups < 0 or args.iters <= 0:
+        parser.error("--warmups must be nonnegative and --iters must be positive")
+    WORKLOAD.update(
+        width=args.width,
+        height=args.height,
+        seed=args.seed,
+        expected_stdout=f"{grid_checksum(args.width, args.height, args.seed)}\n",
+        warmups=args.warmups,
+        iters=args.iters,
+    )
 
     repo = Path(__file__).resolve().parents[1]
     out = (repo / args.out).resolve()
@@ -55,7 +84,16 @@ def main() -> int:
     results = []
     if args.measure:
         for language in LANGUAGES:
-            results.append(measure_language(language, commands[language], out_dir, repo))
+            results.append(
+                measure_language(
+                    language,
+                    commands[language],
+                    out_dir,
+                    repo,
+                    args.warmups,
+                    args.iters,
+                )
+            )
     else:
         for language in LANGUAGES:
             results.append(
@@ -63,7 +101,17 @@ def main() -> int:
                     "language": language,
                     "status": "not_measured",
                     "compile_ms": "",
+                    "compile_avg_ms": "",
                     "run_ms": "",
+                    "run_avg_ms": "",
+                    "compile_mode": "",
+                    "daemon_load_ms": "",
+                    "daemon_compile_ms": "",
+                    "daemon_write_ms": "",
+                    "startup_ms": "",
+                    "startup_resident_set_bytes": "",
+                    "final_resident_set_bytes": "",
+                    "peak_resident_set_bytes": "",
                     "stdout_sha256": "",
                     "source_sha256": sha256_file(src_dir / source_file_name(language)),
                 }
@@ -215,7 +263,7 @@ fn main() -> i32 {{
     return {"rust": rust, "c": c, "cpp": cpp, "zig": zig, "lanius": lanius}
 
 
-def build_commands(repo: Path, out: Path) -> dict[str, dict[str, list[str]]]:
+def build_commands(repo: Path, out: Path) -> dict[str, dict[str, object]]:
     try:
         artifact_dir = out.relative_to(repo)
     except ValueError:
@@ -240,8 +288,8 @@ def build_commands(repo: Path, out: Path) -> dict[str, dict[str, list[str]]]:
             "run": [str(bin_dir / "grid_checksum_zig")],
         },
         "lanius": {
-                "compile": [
-                str(Path("target/debug/laniusc")),
+            "compile": [
+                str(Path("target/release/laniusc")),
                 "--stdlib-root",
                 str(Path("stdlib")),
                 "--emit",
@@ -250,31 +298,178 @@ def build_commands(repo: Path, out: Path) -> dict[str, dict[str, list[str]]]:
                 str(bin_dir / "grid_checksum_lanius"),
                 str(src / "grid_checksum.lani"),
             ],
+            "daemon_start": [
+                str(Path("target/release/laniusc")),
+                "daemon",
+                "--stdio",
+                "--backend",
+                "x86_64",
+                "--stdlib-root",
+                str(Path("stdlib")),
+            ],
+            "compile_request": {
+                "id": "benchmark",
+                "command": "compile",
+                "emit": "x86_64",
+                "input": str(src / "grid_checksum.lani"),
+                "output": str(bin_dir / "grid_checksum_lanius"),
+            },
             "run": [str(bin_dir / "grid_checksum_lanius")],
         },
     }
 
 
-def measure_language(language: str, command: dict[str, list[str]], out_dir: Path, repo: Path) -> dict[str, str]:
-    compile_ms = timed(command["compile"], repo)
-    started = time.perf_counter()
-    run = subprocess.run(command["run"], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    run_ms = (time.perf_counter() - started) * 1000.0
-    if run.returncode != 0:
-        raise RuntimeError(f"{language} run failed: {run.stderr}")
+def measure_language(
+    language: str,
+    command: dict[str, object],
+    out_dir: Path,
+    repo: Path,
+    warmups: int,
+    iters: int,
+) -> dict[str, str]:
+    if language == "lanius":
+        compile_samples, startup = measure_lanius_daemon(command, repo, warmups, iters)
+        compile_mode = "daemon_job"
+    else:
+        for _ in range(warmups):
+            timed(command["compile"], repo)
+        compile_samples = [timed(command["compile"], repo) for _ in range(iters)]
+        startup = {
+            "startup_ms": "",
+            "resident_set_bytes": "",
+            "final_resident_set_bytes": "",
+            "peak_resident_set_bytes": "",
+            "load_ms": "",
+            "compile_ms": "",
+            "write_ms": "",
+        }
+        compile_mode = "process"
+
     expected = WORKLOAD["expected_stdout"]
-    if run.stdout != expected:
-        raise RuntimeError(f"{language} stdout mismatch: {run.stdout!r} != {expected!r}")
+    run_samples = []
+    run_stdout = ""
+    for _ in range(iters):
+        started = time.perf_counter()
+        run = subprocess.run(
+            command["run"],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        run_samples.append((time.perf_counter() - started) * 1000.0)
+        if run.returncode != 0:
+            raise RuntimeError(f"{language} run failed: {run.stderr}")
+        if run.stdout != expected:
+            raise RuntimeError(f"{language} stdout mismatch: {run.stdout!r} != {expected!r}")
+        run_stdout = run.stdout
     output_path = out_dir / f"{language}.stdout"
-    output_path.write_text(run.stdout)
+    output_path.write_text(run_stdout)
     return {
         "language": language,
         "status": "ok",
-        "compile_ms": f"{compile_ms:.3f}",
-        "run_ms": f"{run_ms:.3f}",
-        "stdout_sha256": sha256_bytes(run.stdout.encode()),
+        "compile_ms": f"{min(compile_samples):.3f}",
+        "compile_avg_ms": f"{sum(compile_samples) / len(compile_samples):.3f}",
+        "run_ms": f"{min(run_samples):.3f}",
+        "run_avg_ms": f"{sum(run_samples) / len(run_samples):.3f}",
+        "compile_mode": compile_mode,
+        "daemon_load_ms": format_optional_number(startup.get("load_ms")),
+        "daemon_compile_ms": format_optional_number(startup.get("compile_ms")),
+        "daemon_write_ms": format_optional_number(startup.get("write_ms")),
+        "startup_ms": format_optional_number(startup.get("startup_ms")),
+        "startup_resident_set_bytes": format_optional_integer(startup.get("resident_set_bytes")),
+        "final_resident_set_bytes": format_optional_integer(
+            startup.get("final_resident_set_bytes")
+        ),
+        "peak_resident_set_bytes": format_optional_integer(
+            startup.get("peak_resident_set_bytes")
+        ),
+        "stdout_sha256": sha256_bytes(run_stdout.encode()),
         "source_sha256": sha256_file((out_dir.parent / "src" / source_file_name(language))),
     }
+
+
+def measure_lanius_daemon(
+    command: dict[str, object],
+    repo: Path,
+    warmups: int,
+    iters: int,
+) -> tuple[list[float], dict[str, object]]:
+    process = subprocess.Popen(
+        command["daemon_start"],
+        cwd=repo,
+        text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
+    )
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        raise RuntimeError("lanius daemon did not expose stdio pipes")
+    try:
+        ready = read_daemon_response(process, 60.0)
+        if ready.get("event") != "ready":
+            raise RuntimeError(f"lanius daemon did not become ready: {ready}")
+        samples = []
+        load_samples = []
+        compiler_samples = []
+        write_samples = []
+        resident_samples = [int(ready["resident_set_bytes"])]
+        for iteration in range(warmups + iters):
+            request = dict(command["compile_request"])
+            request["id"] = f"benchmark-{iteration}"
+            process.stdin.write(json.dumps(request, sort_keys=True) + "\n")
+            process.stdin.flush()
+            response = read_daemon_response(process, 60.0)
+            if not response.get("ok"):
+                raise RuntimeError(f"lanius daemon compile failed: {response}")
+            resident_samples.append(int(response["resident_set_bytes"]))
+            if iteration >= warmups:
+                samples.append(float(response["elapsed_ms"]))
+                load_samples.append(float(response["load_ms"]))
+                compiler_samples.append(float(response["compile_ms"]))
+                write_samples.append(float(response["write_ms"]))
+        process.stdin.write(json.dumps({"id": "shutdown", "command": "shutdown"}) + "\n")
+        process.stdin.flush()
+        shutdown = read_daemon_response(process, 10.0)
+        if shutdown.get("event") != "shutdown":
+            raise RuntimeError(f"lanius daemon did not acknowledge shutdown: {shutdown}")
+        process.wait(timeout=10.0)
+        daemon_metrics = dict(ready)
+        daemon_metrics["final_resident_set_bytes"] = resident_samples[-1]
+        daemon_metrics["peak_resident_set_bytes"] = max(resident_samples)
+        daemon_metrics["load_ms"] = min(load_samples)
+        daemon_metrics["compile_ms"] = min(compiler_samples)
+        daemon_metrics["write_ms"] = min(write_samples)
+        return samples, daemon_metrics
+    except Exception:
+        process.kill()
+        process.wait(timeout=10.0)
+        stderr = process.stderr.read()
+        if stderr:
+            raise RuntimeError(f"lanius daemon failed\nstderr:\n{stderr}")
+        raise
+
+
+def read_daemon_response(process: subprocess.Popen[str], timeout: float) -> dict[str, object]:
+    if process.stdout is None:
+        raise RuntimeError("lanius daemon stdout is unavailable")
+    readable, _, _ = select.select([process.stdout], [], [], timeout)
+    if not readable:
+        raise RuntimeError(f"lanius daemon response timed out after {timeout:.0f}s")
+    line = process.stdout.readline()
+    if not line:
+        code = process.poll()
+        raise RuntimeError(f"lanius daemon exited before responding (status={code})")
+    return json.loads(line)
+
+
+def format_optional_number(value: object) -> str:
+    return "" if value is None or value == "" else f"{float(value):.3f}"
+
+
+def format_optional_integer(value: object) -> str:
+    return "" if value is None or value == "" else str(int(value))
 
 
 def timed(command: list[str], cwd: Path) -> float:
@@ -293,13 +488,57 @@ def machine_info() -> dict[str, str]:
         "release": platform.release(),
         "machine": platform.machine(),
         "processor": platform.processor(),
+        "cpu_model": proc_field("/proc/cpuinfo", "model name"),
+        "logical_cpus": str(os.cpu_count() or "missing"),
+        "memory_total_bytes": proc_kib_field_bytes("/proc/meminfo", "MemTotal"),
+        "gpu": version_of(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,driver_version,memory.total",
+                "--format=csv,noheader,nounits",
+            ]
+        ),
+        "gpu_measurement_state": output_of(
+            [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,utilization.memory,memory.used,temperature.gpu,pstate",
+                "--format=csv,noheader,nounits",
+            ]
+        ),
+        "gpu_compute_processes": output_of(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,process_name,used_gpu_memory",
+                "--format=csv,noheader,nounits",
+            ]
+        ),
+        "lanius_profile": "release",
         "python": platform.python_version(),
         "rustc": version_of(["rustc", "--version"]),
         "gcc": version_of(["gcc", "--version"]),
         "g++": version_of(["g++", "--version"]),
         "zig": version_of(["zig", "version"]),
-        "laniusc": version_of([str(Path("target/debug/laniusc").resolve()), "--version"]),
+        "laniusc": version_of([str(Path("target/release/laniusc").resolve()), "--version"]),
     }
+
+
+def proc_field(path: str, key: str) -> str:
+    try:
+        for line in Path(path).read_text().splitlines():
+            name, separator, value = line.partition(":")
+            if separator and name.strip() == key:
+                return value.strip() or "missing"
+    except OSError:
+        pass
+    return "missing"
+
+
+def proc_kib_field_bytes(path: str, key: str) -> str:
+    value = proc_field(path, key)
+    parts = value.split()
+    if not parts or not parts[0].isdigit():
+        return "missing"
+    return str(int(parts[0]) * 1024)
 
 
 def version_of(command: list[str]) -> str:
@@ -307,6 +546,14 @@ def version_of(command: list[str]) -> str:
         return "missing"
     run = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return run.stdout.splitlines()[0] if run.stdout else f"exit={run.returncode}"
+
+
+def output_of(command: list[str]) -> str:
+    if shutil.which(command[0]) is None and not Path(command[0]).exists():
+        return "missing"
+    run = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    output = run.stdout.strip()
+    return output if output else f"exit={run.returncode}; no output"
 
 
 def manifest(out: Path, results: list[dict[str, str]]) -> dict[str, object]:
@@ -328,7 +575,24 @@ def write_json(path: Path, value: object) -> None:
 
 
 def write_results(path: Path, rows: list[dict[str, str]]) -> None:
-    fields = ["language", "status", "compile_ms", "run_ms", "stdout_sha256", "source_sha256"]
+    fields = [
+        "language",
+        "status",
+        "compile_ms",
+        "compile_avg_ms",
+        "run_ms",
+        "run_avg_ms",
+        "compile_mode",
+        "daemon_load_ms",
+        "daemon_compile_ms",
+        "daemon_write_ms",
+        "startup_ms",
+        "startup_resident_set_bytes",
+        "final_resident_set_bytes",
+        "peak_resident_set_bytes",
+        "stdout_sha256",
+        "source_sha256",
+    ]
     lines = ["\t".join(fields)]
     for row in rows:
         lines.append("\t".join(str(row[field]) for field in fields))

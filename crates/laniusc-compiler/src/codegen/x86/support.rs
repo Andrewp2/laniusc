@@ -333,9 +333,22 @@ pub(super) fn zero_u32_words(
     buffer: &wgpu::Buffer,
     words: usize,
 ) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
     let words = words.max(1);
     let bytes = words * 4;
     encoder.clear_buffer(buffer, 0, Some(bytes as u64));
+}
+
+pub(super) fn copy_x86_buffer_to_buffer(
+    encoder: &mut wgpu::CommandEncoder,
+    source: &wgpu::Buffer,
+    source_offset: u64,
+    destination: &wgpu::Buffer,
+    destination_offset: u64,
+    size: u64,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
 }
 
 /// Creates a uniform buffer from already-encoded struct bytes.
@@ -635,6 +648,10 @@ pub(super) fn dispatch_compute_pass(
     groups: (u32, u32),
 ) {
     trace_x86_codegen_event(trace_stage, "record.start");
+    if crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (groups.0, groups.1, 1)) {
+        trace_x86_codegen_event(trace_stage, "record.done");
+        return;
+    }
     {
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
@@ -701,6 +718,16 @@ pub(super) fn dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
     dynamic_offsets: &[u32],
 ) {
     trace_x86_codegen_event(trace_stage, "record.start");
+    if crate::gpu::passes_core::defer_compute_indirect(
+        pass,
+        bind_group,
+        indirect_buffer,
+        indirect_offset,
+        dynamic_offsets,
+    ) {
+        trace_x86_codegen_event(trace_stage, "record.done");
+        return;
+    }
     {
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
@@ -729,21 +756,19 @@ pub(super) fn dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offset
         uniform_dynamic_offsets.len(),
         "x86 indirect dispatch offsets and dynamic uniform offsets must match"
     );
-    trace_x86_codegen_event(trace_stage, "record.start");
+    for (&indirect_offset, &dynamic_offset) in indirect_offsets.iter().zip(uniform_dynamic_offsets)
     {
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&pass.pipeline);
-        for (&indirect_offset, &dynamic_offset) in
-            indirect_offsets.iter().zip(uniform_dynamic_offsets)
-        {
-            compute.set_bind_group(0, bind_group, &[dynamic_offset]);
-            compute.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
-        }
+        dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
+            encoder,
+            trace_stage,
+            label,
+            pass,
+            bind_group,
+            indirect_buffer,
+            indirect_offset,
+            &[dynamic_offset],
+        );
     }
-    trace_x86_codegen_event(trace_stage, "record.done");
 }
 
 /// Records a sequence of indirect dispatches with per-step bind groups and uniforms.
@@ -767,23 +792,22 @@ pub(super) fn dispatch_indirect_dynamic_sequence(
         uniform_dynamic_offsets.len(),
         "x86 indirect dispatch offsets and dynamic uniform offsets must match"
     );
-    trace_x86_codegen_event(trace_stage, "record.start");
+    for ((bind_group, &indirect_offset), &dynamic_offset) in bind_groups
+        .iter()
+        .zip(indirect_offsets)
+        .zip(uniform_dynamic_offsets)
     {
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&pass.pipeline);
-        for ((bind_group, &indirect_offset), &dynamic_offset) in bind_groups
-            .iter()
-            .zip(indirect_offsets)
-            .zip(uniform_dynamic_offsets)
-        {
-            compute.set_bind_group(0, *bind_group, &[dynamic_offset]);
-            compute.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
-        }
+        dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
+            encoder,
+            trace_stage,
+            label,
+            pass,
+            bind_group,
+            indirect_buffer,
+            indirect_offset,
+            &[dynamic_offset],
+        );
     }
-    trace_x86_codegen_event(trace_stage, "record.done");
 }
 
 /// Records ping-pong scan steps with alternating bind groups and dynamic uniforms.
@@ -833,17 +857,16 @@ pub(super) fn dispatch_compute_pass_indirect_bind_group_steps(
     if bind_groups.is_empty() {
         return;
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
-    compute.set_pipeline(&pass.pipeline);
     for (step_i, bind_group) in bind_groups.iter().enumerate() {
         let trace_stage = format!("{trace_stage_prefix}.{step_i}");
-        trace_x86_codegen_event(&trace_stage, "record.start");
-        compute.set_bind_group(0, bind_group, &[]);
-        compute.dispatch_workgroups_indirect(indirect_buffer, 0);
-        trace_x86_codegen_event(&trace_stage, "record.done");
+        dispatch_compute_pass_indirect(
+            encoder,
+            &trace_stage,
+            label,
+            pass,
+            bind_group,
+            indirect_buffer,
+        );
     }
 }
 
@@ -856,21 +879,8 @@ pub(super) fn dispatch_x86_stages(
     if stages.is_empty() {
         return;
     }
-    let label = if stages.len() == 1 {
-        format!("codegen.x86.{}", stages[0].0)
-    } else {
-        format!("codegen.x86.group.{}+{}", stages[0].0, stages.len())
-    };
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(&label),
-        timestamp_writes: None,
-    });
     for (stage, pass, bind_group) in stages {
-        trace_x86_codegen_event(stage, "record.start");
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, *bind_group, &[]);
-        compute.dispatch_workgroups(groups.0, groups.1, 1);
-        trace_x86_codegen_event(stage, "record.done");
+        dispatch_x86_stage(encoder, stage, pass, bind_group, groups);
     }
 }
 
@@ -895,21 +905,8 @@ pub(super) fn dispatch_x86_stages_indirect(
     if stages.is_empty() {
         return;
     }
-    let label = if stages.len() == 1 {
-        format!("codegen.x86.{}", stages[0].0)
-    } else {
-        format!("codegen.x86.group.{}+{}", stages[0].0, stages.len())
-    };
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(&label),
-        timestamp_writes: None,
-    });
     for (stage, pass, bind_group) in stages {
-        trace_x86_codegen_event(stage, "record.start");
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, *bind_group, &[]);
-        compute.dispatch_workgroups_indirect(indirect_buffer, 0);
-        trace_x86_codegen_event(stage, "record.done");
+        dispatch_x86_stage_indirect(encoder, stage, pass, bind_group, indirect_buffer);
     }
 }
 

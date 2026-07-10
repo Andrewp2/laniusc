@@ -31,6 +31,7 @@ pub use results::{
     RecordedHirSemanticCount,
     RecordedResidentLl1HirCheck,
     ResidentParseResult,
+    ResidentParserCapacity,
 };
 pub use support::get_global_parser;
 use support::*;
@@ -56,7 +57,7 @@ use crate::{
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
-    lexer::GpuToken,
+    lexer::{GpuToken, features::LEXICALLY_PROVEN_PARSER_FEATURES},
     parser::{
         buffers::{ActionHeader, ParserBuffers, resident_partial_parse_tree_capacity_for_tables},
         debug::DebugOutput,
@@ -382,15 +383,70 @@ impl GpuParser {
             &mut Option<&mut GpuTimer>,
         ) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
+        self.record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            source_len,
+            source_buf,
+            tables,
+            tree_capacity_override,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+            timer_ref,
+            consume,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Records LL, tree, and HIR work with exact tree capacity and conservative
+    /// GPU-derived optional-family feature flags.
+    pub fn record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features<R, E>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
+        source_len: u32,
+        source_buf: &wgpu::Buffer,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
+        timer_ref: &mut Option<&mut GpuTimer>,
+        consume: impl FnOnce(
+            &ParserBuffers,
+            &mut wgpu::CommandEncoder,
+            &mut Option<&mut GpuTimer>,
+        ) -> std::result::Result<R, E>,
+    ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
         let mut resident_guard = self
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
             &mut resident_guard,
             token_capacity,
             tables,
             tree_capacity_override,
+            parser_feature_flags,
+        );
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] parser.optional_capacities: flags=0x{parser_feature_flags:08x} tree={} arrays={} enum_match={} structs={}",
+                bufs.tree_capacity,
+                bufs.hir_array_capacity,
+                bufs.hir_enum_match_capacity,
+                bufs.hir_struct_capacity,
+            );
+        }
+
+        let parser_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+            timer_ref.is_none()
+                && crate::gpu::passes_core::compute_pass_batching_enabled()
+                && !crate::gpu::passes_core::validation_scopes_enabled(),
+            "parser.resident.batch",
         );
 
         self.record_tokens_to_kinds_timed(
@@ -404,7 +460,8 @@ impl GpuParser {
         if let Some(token_file_id_buf) = token_file_id_buf {
             let copy_bytes = (token_capacity as u64).saturating_mul(4);
             if copy_bytes > 0 {
-                encoder.copy_buffer_to_buffer(
+                parser_copy_buffer_to_buffer(
+                    encoder,
                     token_file_id_buf,
                     0,
                     &bufs.default_token_file_id,
@@ -413,7 +470,7 @@ impl GpuParser {
                 );
             }
         } else {
-            encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
+            parser_clear_buffer(encoder, &bufs.default_token_file_id, 0, None);
         }
         self.record_ll1_resident_passes(
             encoder,
@@ -433,7 +490,8 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
+        parser_copy_buffer_to_buffer(encoder, &bufs.ll1_status, 0, &status_readback, 0, 24);
+        drop(parser_batch);
 
         let consumed = consume(bufs, encoder, timer_ref);
         Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
@@ -448,6 +506,27 @@ impl GpuParser {
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<u32> {
+        Ok(self
+            .measure_resident_partial_parse_capacity(
+                token_capacity,
+                token_buf,
+                token_count_buf,
+                token_file_id_buf,
+                tables,
+            )?
+            .tree_capacity)
+    }
+
+    /// Measures exact tree capacity and semantic parser-family feature flags
+    /// in one GPU submission/readback boundary.
+    pub fn measure_resident_partial_parse_capacity(
+        &self,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
+        tables: &PrecomputedParseTables,
+    ) -> Result<ResidentParserCapacity> {
         let mut resident_guard = self
             .resident_buffers
             .lock()
@@ -489,11 +568,12 @@ impl GpuParser {
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.partial_parse_tree_capacity.status"),
-            size: 24,
+            size: 28,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         encoder.copy_buffer_to_buffer(&bufs.partial_parse_status, 0, &status_readback, 0, 24);
+        encoder.copy_buffer_to_buffer(&bufs.token_feature_flags, 0, &status_readback, 24, 4);
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
             "parser.partial-parse-tree-capacity",
@@ -507,7 +587,7 @@ impl GpuParser {
             "parser.partial_parse_tree_capacity.status",
         )?;
         let mapped = slice.get_mapped_range();
-        let words = read_u32_words(&mapped, 6)?;
+        let words = read_u32_words(&mapped, 7)?;
         drop(mapped);
         status_readback.unmap();
 
@@ -516,7 +596,10 @@ impl GpuParser {
         } else {
             words[5]
         };
-        Ok(emit_capacity.max(1))
+        Ok(ResidentParserCapacity {
+            tree_capacity: emit_capacity.max(1),
+            parser_feature_flags: words[6],
+        })
     }
 
     /// Computes a conservative resident tree capacity from token capacity and tables.
@@ -551,15 +634,34 @@ impl GpuParser {
         tree_capacity: u32,
         consume: impl FnOnce(&ParserBuffers) -> R,
     ) -> R {
+        self.with_current_resident_buffers_with_tree_capacity_and_features(
+            token_capacity,
+            tables,
+            tree_capacity,
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+            consume,
+        )
+    }
+
+    /// Borrows current resident buffers with feature-aware optional-family capacities.
+    pub fn with_current_resident_buffers_with_tree_capacity_and_features<R>(
+        &self,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity: u32,
+        parser_feature_flags: u32,
+        consume: impl FnOnce(&ParserBuffers) -> R,
+    ) -> R {
         let mut resident_guard = self
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
             &mut resident_guard,
             token_capacity,
             tables,
             Some(tree_capacity),
+            parser_feature_flags,
         );
         consume(bufs)
     }
@@ -781,7 +883,7 @@ impl GpuParser {
                     let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                     let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                     if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
-                        println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                        eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
                     }
                     prev = t;
                 }
@@ -916,7 +1018,7 @@ impl GpuParser {
                 let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                 let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                 if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
-                    println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                    eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
                 }
                 prev = t;
             }
@@ -1080,7 +1182,10 @@ fn plan_parser_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u3
 }
 
 fn parser_compute_pass_batching_enabled(timer_ref: &mut Option<&mut GpuTimer>) -> bool {
-    timer_ref.is_none() && compute_pass_batching_enabled() && !validation_scopes_enabled()
+    timer_ref.is_none()
+        && compute_pass_batching_enabled()
+        && !validation_scopes_enabled()
+        && !crate::gpu::passes_core::deferred_compute_active()
 }
 
 fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {
@@ -1090,7 +1195,7 @@ fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuf
         &buffers.hir_type_arg_link_b,
         &buffers.hir_type_arg_rank_b,
     ] {
-        encoder.clear_buffer(&buffer.buffer, 0, Some(bytes));
+        parser_clear_buffer(encoder, &buffer.buffer, 0, Some(bytes));
     }
 }
 
@@ -1102,6 +1207,9 @@ fn record_parser_compute(
     n_elements: u32,
 ) -> Result<()> {
     let (gx, gy, gz) = plan_parser_compute(pass, n_elements)?;
+    if crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (gx, gy, gz)) {
+        return Ok(());
+    }
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
         label: Some(label),
         timestamp_writes: None,
@@ -1110,4 +1218,26 @@ fn record_parser_compute(
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups(gx, gy, gz);
     Ok(())
+}
+
+fn parser_clear_buffer(
+    encoder: &mut wgpu::CommandEncoder,
+    buffer: &wgpu::Buffer,
+    offset: u64,
+    size: Option<u64>,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    encoder.clear_buffer(buffer, offset, size);
+}
+
+fn parser_copy_buffer_to_buffer(
+    encoder: &mut wgpu::CommandEncoder,
+    source: &wgpu::Buffer,
+    source_offset: u64,
+    destination: &wgpu::Buffer,
+    destination_offset: u64,
+    size: u64,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
 }

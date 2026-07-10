@@ -35,6 +35,10 @@ static const uint HIR_EXPR_INDEX = 26u;
 static const uint BODY_FEATURE_EXPR_CONTROL = 1u << 0u;
 static const uint BODY_FEATURE_DIRECT = 1u << 1u;
 static const uint BODY_FEATURE_HOST = 1u << 2u;
+static const uint BODY_FEATURE_HOST_BASIC = 1u << 16u;
+static const uint BODY_FEATURE_HOST_ENV = 1u << 17u;
+static const uint BODY_FEATURE_HOST_IO = 1u << 18u;
+static const uint BODY_FEATURE_HOST_VOID = 1u << 19u;
 static const uint BODY_FEATURE_ARRAYS = 1u << 3u;
 static const uint BODY_FEATURE_MEMBER_EXPR = 1u << 4u;
 static const uint BODY_FEATURE_BINARY_DIRECT = 1u << 5u;
@@ -45,25 +49,48 @@ static const uint BODY_FEATURE_LET_AGG_DIRECT = 1u << 9u;
 static const uint BODY_FEATURE_RETURN_AGG_DIRECT = 1u << 10u;
 static const uint BODY_FEATURE_AGG_COPY = 1u << 11u;
 static const uint BODY_FEATURE_ARRAY_ALLOC = 1u << 12u;
+static const uint BODY_FEATURE_RETURN_SCALAR = 1u << 27u;
+static const uint BODY_FEATURE_LET_CONST = 1u << 28u;
+static const uint BODY_FEATURE_RETURN_MEMBER_EXPR = 1u << 29u;
+static const uint BODY_FEATURE_MEMBER_EXPR_SCATTER = 1u << 30u;
+static const uint BODY_FEATURE_RETURN_EXPR = 1u << 31u;
 static const uint BODY_FRAGMENT_LET_ARRAY_I32 = 30u;
 static const uint BODY_FRAGMENT_ARRAY_STORE_I32 = 31u;
 static const uint BODY_FRAGMENT_AGG_FIELD_STORE_I32 = 40u;
 static const uint BODY_FRAGMENT_AGG_DIRECT_COPY_I32 = 43u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
+static const uint BODY_FRAGMENT_FOR_OPEN_AGG_RANGE_I32 = 49u;
+static const uint BODY_FRAGMENT_LET_AGG_MEMBER_COPY_I32 = 52u;
+static const uint BODY_FRAGMENT_ASSIGN_MEMBER_EXPR_I32 = 53u;
+static const uint BODY_FRAGMENT_ASSIGN_MEMBER_COMPOUND_EXPR_I32 = 54u;
+static const uint BODY_FRAGMENT_FOR_OPEN_ARRAY_I32 = 55u;
+static const uint BODY_FRAGMENT_ARRAY_STORE_ATOM_I32 = 56u;
+static const uint BODY_FRAGMENT_ASSIGN_INDEX_I32 = 57u;
+static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32 = 58u;
 
 uint body_fragment_feature_mask(uint kind)
 {
+    if (kind == BODY_FRAGMENT_LET_CONST_I32 ||
+        kind == BODY_FRAGMENT_ASSIGN_CONST_I32 ||
+        kind == BODY_FRAGMENT_ASSIGN_COMPOUND_CONST_I32)
+        return BODY_FEATURE_LET_CONST;
+    if (kind == BODY_FRAGMENT_RETURN_I32 ||
+        kind == BODY_FRAGMENT_RETURN_LOCAL_I32)
+        return BODY_FEATURE_RETURN_SCALAR;
+    if (kind == BODY_FRAGMENT_RETURN_EXPR_I32)
+        return BODY_FEATURE_RETURN_SCALAR | BODY_FEATURE_RETURN_EXPR;
     if (kind == BODY_FRAGMENT_LET_EXPR_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_EXPR_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 ||
         kind == BODY_FRAGMENT_PRINT_EXPR_I64 ||
-        kind == BODY_FRAGMENT_RETURN_EXPR_I32 ||
         kind == BODY_FRAGMENT_WHILE_OPEN_I32 ||
         kind == BODY_FRAGMENT_IF_OPEN_I32 ||
         kind == BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32 ||
         kind == BODY_FRAGMENT_IF_OPEN_LOCAL_I32 ||
         kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32 ||
+        kind == BODY_FRAGMENT_FOR_OPEN_AGG_RANGE_I32 ||
+        kind == BODY_FRAGMENT_FOR_OPEN_ARRAY_I32 ||
         kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32)
         return BODY_FEATURE_EXPR_CONTROL;
     if (kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32)
@@ -83,17 +110,29 @@ uint body_fragment_feature_mask(uint kind)
         kind == BODY_FRAGMENT_LET_PROCESS_ARG_READ_I32 ||
         kind == BODY_FRAGMENT_LET_HOST_CALL_I32 ||
         kind == BODY_FRAGMENT_HOST_CALL_VOID ||
-        kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32)
+        kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32 ||
+        kind == BODY_FRAGMENT_RETURN_HOST_CALL_I32 ||
+        kind == BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32)
         return BODY_FEATURE_HOST;
-    if (kind == BODY_FRAGMENT_LET_I32_ARRAY_DATA_PTR ||
-        kind == BODY_FRAGMENT_ARRAY_STORE_I32)
+    if (kind == BODY_FRAGMENT_ARRAY_STORE_I32)
         return BODY_FEATURE_ARRAYS | BODY_FEATURE_MEMBER_EXPR;
+    if (kind == BODY_FRAGMENT_LET_I32_ARRAY_DATA_PTR)
+        return 0u;
     if (kind == BODY_FRAGMENT_LET_ARRAY_I32)
         return BODY_FEATURE_ARRAY_ALLOC;
     if (kind == BODY_FRAGMENT_AGG_FIELD_STORE_I32)
         return BODY_FEATURE_MEMBER_EXPR;
-    if (kind == BODY_FRAGMENT_AGG_DIRECT_COPY_I32)
+    if (kind == BODY_FRAGMENT_AGG_DIRECT_COPY_I32 ||
+        kind == BODY_FRAGMENT_LET_AGG_MEMBER_COPY_I32)
         return BODY_FEATURE_AGG_COPY;
+    if (kind == BODY_FRAGMENT_ASSIGN_MEMBER_EXPR_I32 ||
+        kind == BODY_FRAGMENT_ASSIGN_MEMBER_COMPOUND_EXPR_I32)
+        return BODY_FEATURE_AGG_COPY;
+    if (kind == BODY_FRAGMENT_ARRAY_STORE_ATOM_I32)
+        return BODY_FEATURE_ARRAY_ALLOC;
+    if (kind == BODY_FRAGMENT_ASSIGN_INDEX_I32 ||
+        kind == BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32)
+        return BODY_FEATURE_ARRAY_ALLOC;
     if (kind == BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32)
         return BODY_FEATURE_LET_AGG_DIRECT;
     if (kind == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32)
@@ -101,11 +140,15 @@ uint body_fragment_feature_mask(uint kind)
     return 0u;
 }
 
-void publish_fragment_features(uint kind)
+void publish_body_features(uint mask)
 {
-    uint mask = body_fragment_feature_mask(kind);
     if (mask != 0u)
         atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, mask);
+}
+
+void publish_fragment_features(uint kind)
+{
+    publish_body_features(body_fragment_feature_mask(kind));
 }
 
 void publish_fragment(uint token_i, uint len, uint4 meta, uint4 aux)

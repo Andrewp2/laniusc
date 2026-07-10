@@ -9,8 +9,8 @@ mod storage;
 pub use model::{ActionHeader, ParserBuffers, TokenBraceMatchParams, TokenDelimiterParams};
 pub use scan_steps::*;
 use scans::*;
-use sizing::resident_partial_parse_tree_capacity;
 pub(crate) use sizing::resident_partial_parse_tree_capacity_for_tables;
+use sizing::{ParserFamilyCapacities, resident_partial_parse_tree_capacity};
 use storage::{alias_storage_buffer, dispatch_args_buffer};
 
 use crate::gpu::buffers::{
@@ -32,6 +32,7 @@ impl ParserBuffers {
         resident_partial_parse_capacity: bool,
         retain_debug_hir_buffers: bool,
         tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
     ) -> Self {
         let n_pairs = n_tokens.saturating_sub(1) as usize;
         let token_input_capacity = n_tokens.saturating_sub(2).max(1);
@@ -553,6 +554,8 @@ impl ParserBuffers {
             },
         );
         let b05_scan_steps = make_brackets_histogram_scan_steps(device, n_layers);
+        let b_pair_radix_steps =
+            make_brackets_pair_radix_steps(device, total_sc, n_layers, n_blocks);
         let b06_params = uniform_from_val(
             device,
             "brackets.b06.params",
@@ -626,6 +629,21 @@ impl ParserBuffers {
             "brackets.slot_for_index",
             bracket_capacity as usize,
         );
+        let pair_radix_slots = n_blocks.saturating_mul(256).max(1) as usize;
+        let b_pair_radix_block_histogram = storage_rw_for_array::<u32>(
+            device,
+            "brackets.pair_radix.block_histogram",
+            pair_radix_slots,
+        );
+        let b_pair_radix_block_bucket_prefix = storage_rw_for_array::<u32>(
+            device,
+            "brackets.pair_radix.block_bucket_prefix",
+            pair_radix_slots,
+        );
+        let b_pair_radix_bucket_total =
+            storage_rw_for_array::<u32>(device, "brackets.pair_radix.bucket_total", 256);
+        let b_pair_radix_bucket_base =
+            storage_rw_for_array::<u32>(device, "brackets.pair_radix.bucket_base", 256);
         let match_for_index = storage_rw_for_array::<u32>(
             device,
             "brackets.match_for_index",
@@ -633,6 +651,7 @@ impl ParserBuffers {
         );
 
         // ---------- Tree parent recovery ----------
+        let family_capacities = ParserFamilyCapacities::new(tree_capacity, parser_feature_flags);
         let tree_n_node_blocks = tree_capacity.div_ceil(WG).max(1);
         let tree_n_prefix_blocks = tree_capacity.saturating_add(1).div_ceil(WG).max(1);
         let tree_prefix_params_base = super::passes::tree::prefix::local::Params {
@@ -829,7 +848,7 @@ impl ParserBuffers {
             device,
             "parser.hir_array_fields.params",
             &super::passes::hir::array::fields::Params {
-                n: tree_capacity,
+                n: family_capacities.arrays,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
         );
@@ -837,7 +856,7 @@ impl ParserBuffers {
             device,
             "parser.hir_enum_match_fields.params",
             &super::passes::hir::enums::match_fields::Params {
-                n: tree_capacity,
+                n: family_capacities.enum_match,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
         );
@@ -845,7 +864,7 @@ impl ParserBuffers {
             device,
             "parser.hir_struct_fields.params",
             &super::passes::hir::structs::fields::Params {
-                n: tree_capacity,
+                n: family_capacities.structs,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
         );
@@ -1231,27 +1250,27 @@ impl ParserBuffers {
         let hir_variant_parent_enum = storage_rw_for_array::<u32>(
             device,
             "parser.hir_variant_parent_enum",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_variant_ordinal = storage_rw_for_array::<u32>(
             device,
             "parser.hir_variant_ordinal",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_variant_payload_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_variant_payload_start",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_variant_payload_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_variant_payload_count",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_variant_payload_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_variant_payload_node",
-            tree_capacity.saturating_mul(4) as usize,
+            family_capacities.enum_match.saturating_mul(4) as usize,
         );
         let hir_variant_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
@@ -1336,57 +1355,57 @@ impl ParserBuffers {
         let hir_match_scrutinee_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_scrutinee_node",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_start",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_count",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_next = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_next",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_pattern_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_pattern_node",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_payload_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_payload_start",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_payload_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_payload_count",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_result_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_result_node",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_payload_owner_arm = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_payload_owner_arm",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_payload_match_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_payload_match_node",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_payload_ordinal = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_payload_ordinal",
-            tree_capacity as usize,
+            family_capacities.enum_match as usize,
         );
         let hir_match_arm_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
@@ -1476,32 +1495,32 @@ impl ParserBuffers {
         let hir_array_lit_first_element = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_lit_first_element",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_lit_element_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_lit_element_count",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_lit_context_stmt_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_lit_context_stmt_node",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_element_parent_lit = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_element_parent_lit",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_element_ordinal = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_element_ordinal",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_element_next = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_element_next",
-            tree_capacity as usize,
+            family_capacities.arrays as usize,
         );
         let hir_array_element_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
@@ -1625,57 +1644,57 @@ impl ParserBuffers {
         let hir_struct_field_parent_struct = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_field_parent_struct",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_field_ordinal = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_field_ordinal",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_field_type_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_field_type_node",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_decl_field_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_decl_field_start",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_decl_field_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_decl_field_count",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_head_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_head_node",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_context_stmt_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_context_stmt_node",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_field_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_field_start",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_field_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_field_count",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_field_parent_lit = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_field_parent_lit",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         let hir_struct_lit_field_value_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_field_value_node",
-            tree_capacity as usize,
+            family_capacities.structs as usize,
         );
         // `prev_sibling` is consumed for the last time by
         // `hir_struct_field_links`. The following rank/scatter passes do not
@@ -1777,6 +1796,10 @@ impl ParserBuffers {
             total_emit,
             tree_count_uses_status,
             tree_capacity,
+            parser_feature_flags,
+            hir_array_capacity: family_capacities.arrays,
+            hir_enum_match_capacity: family_capacities.enum_match,
+            hir_struct_capacity: family_capacities.structs,
 
             ll1_predict,
             ll1_prod_rhs_off,
@@ -1876,6 +1899,7 @@ impl ParserBuffers {
             b06_params,
             b07_params,
             b05_scan_steps,
+            b_pair_radix_steps,
 
             b_exscan_inblock,
             b_block_sum,
@@ -1902,6 +1926,10 @@ impl ParserBuffers {
             b_pushes_by_layer,
             b_pops_by_layer,
             b_slot_for_index,
+            b_pair_radix_block_histogram,
+            b_pair_radix_block_bucket_prefix,
+            b_pair_radix_bucket_total,
+            b_pair_radix_bucket_base,
             match_for_index,
 
             b_n_blocks: n_blocks,

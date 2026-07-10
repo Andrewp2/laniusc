@@ -275,6 +275,8 @@ impl GpuLexer {
         self.queue.write_buffer(&bufs.params, 0, uniform.as_ref());
         self.queue
             .write_buffer(&bufs.token_count, 0, &0u32.to_le_bytes());
+        self.queue
+            .write_buffer(&bufs.parser_feature_flags, 0, &0u32.to_le_bytes());
     }
 
     /// Writes single-file source metadata into resident buffers.

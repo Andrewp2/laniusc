@@ -71,24 +71,19 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint item_i = tid.x;
-    if (item_i >= gParams.regalloc_chunk_count)
+    if (item_i >= 2u || gParams.regalloc_chunk_count != 2u)
         return;
 
     uint count = virtual_inst_count();
     uint value_defs = value_def_count(count);
     uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
-    uint rows_per_chunk = max(gParams.regalloc_rows_per_chunk, 1u);
-    uint needed_chunks = max(1u, (value_defs + rows_per_chunk - 1u) / rows_per_chunk);
     if (item_i == 0u)
     {
-        x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS] = needed_chunks;
-        x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS] = gParams.regalloc_chunk_count;
+        x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS] = 2u;
+        x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS] = 2u;
     }
 
-    uint chunk_start = item_i * rows_per_chunk;
-    uint active_functions = item_i == 0u
-        ? max(func_count, 1u)
-        : (chunk_start < value_defs ? func_count : 0u);
+    uint active_functions = item_i == 0u ? 1u : (value_defs == 0u ? 0u : func_count);
     write_indexed_dispatch_args_allow_zero(
         active_virtual_regalloc_dispatch_args,
         item_i,

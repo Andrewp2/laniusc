@@ -47,21 +47,30 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     trace_wasm_compile("source_pack.lex.recorded");
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
-                        .parser
-                        .read_resident_partial_parse_tree_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
+                    let parser_capacity =
+                        if let Some(cached) = self.cached_source_pack_parser_capacity(sources) {
+                            cached
+                        } else {
+                            let measured = self
+                                .parser
+                                .measure_resident_partial_parse_capacity(
+                                    token_capacity,
+                                    &bufs.tokens_out,
+                                    &bufs.token_count,
+                                    Some(&bufs.token_file_id),
+                                    &self.parse_tables,
+                                )
+                                .map_err(|err| {
+                                    parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                                })?;
+                            self.remember_source_pack_parser_capacity(sources, measured);
+                            measured
+                        };
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
                     let (parser_check, type_check) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -71,6 +80,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_feature_flags,
                             &mut timer,
                             |parse_bufs, encoder, timer| {
                                 trace_wasm_compile("source_pack.parser.recorded");
@@ -267,6 +277,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &bufs.token_count,
                                                 &bufs.in_bytes,
                                                 parse_bufs.tree_capacity,
+                                                &parse_bufs.tree_active_dispatch_args,
                                                 &parse_bufs.node_kind,
                                                 &parse_bufs.parent,
                                                 &parse_bufs.first_child,
@@ -578,9 +589,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     trace_wasm_compile("lex.recorded");
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
+                    let parser_capacity = self
                         .parser
-                        .read_resident_partial_parse_tree_capacity(
+                        .measure_resident_partial_parse_capacity(
                             token_capacity,
                             &bufs.tokens_out,
                             &bufs.token_count,
@@ -590,9 +601,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
+                    let parser_tree_capacity = parser_capacity.tree_capacity;
+                    let parser_feature_flags = parser_capacity.parser_feature_flags;
                     let (parser_check, type_check) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             encoder,
                             token_capacity,
                             &bufs.tokens_out,
@@ -602,6 +615,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.in_bytes,
                             &self.parse_tables,
                             Some(parser_tree_capacity),
+                            parser_feature_flags,
                             &mut timer,
                             |parse_bufs, encoder, timer| {
                                 trace_wasm_compile("parser.recorded");
@@ -800,6 +814,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &bufs.token_count,
                                                 &bufs.in_bytes,
                                                 parse_bufs.tree_capacity,
+                                                &parse_bufs.tree_active_dispatch_args,
                                                 &parse_bufs.node_kind,
                                                 &parse_bufs.parent,
                                                 &parse_bufs.first_child,

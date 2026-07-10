@@ -5,6 +5,7 @@ use encase::ShaderType;
 
 use super::{
     GpuParser,
+    parser_clear_buffer,
     record_parser_compute,
     support::{buffer_fingerprint, stamp_timer, write_uniform},
 };
@@ -28,11 +29,28 @@ pub(super) struct TokensToKindsParams {
 pub(in crate::parser::driver) struct ResidentTokenKindBindGroups {
     pub(super) input_fingerprint: u64,
     pub(super) tokens_to_kinds_params: LaniusBuffer<TokensToKindsParams>,
-    pub(super) tokens_to_kinds: wgpu::BindGroup,
-    pub(super) tokens_to_identifier_kinds: wgpu::BindGroup,
+    pub(super) tokens_to_kinds: std::sync::Arc<wgpu::BindGroup>,
+    pub(super) tokens_to_identifier_kinds: std::sync::Arc<wgpu::BindGroup>,
 }
 
 impl GpuParser {
+    fn cached_token_bind_group<'a>(
+        &self,
+        label: &str,
+        pass: &crate::gpu::passes_core::PassData,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+    ) -> Result<std::sync::Arc<wgpu::BindGroup>> {
+        let groups = self
+            .bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .reflected_for_pass_data(&self.device, label, pass, resources)?;
+        groups
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("parser token pass {label} has no bind group layout"))
+    }
+
     /// Records token frontend passes without GPU timing labels.
     pub(in crate::parser::driver) fn record_tokens_to_kinds(
         &self,
@@ -88,35 +106,31 @@ impl GpuParser {
             timer_ref,
         )?;
         self.record_where_clause_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
-        encoder.clear_buffer(&bufs.token_feature_flags.buffer, 0, Some(4));
+        parser_clear_buffer(encoder, &bufs.token_feature_flags.buffer, 0, Some(4));
         write_uniform(
             &self.queue,
             &bind_groups.tokens_to_kinds_params,
             &TokensToKindsParams { token_capacity },
         );
 
-        {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("parser.tokens_to_kinds.pass"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(&pass.pipeline);
-            compute.set_bind_group(0, Some(&bind_groups.tokens_to_kinds), &[]);
-            compute.dispatch_workgroups((token_capacity + 2).div_ceil(256).max(1), 1, 1);
-        }
+        record_parser_compute(
+            encoder,
+            pass,
+            &bind_groups.tokens_to_kinds,
+            "parser.tokens_to_kinds.pass",
+            token_capacity + 2,
+        )?;
         stamp_timer(timer_ref, encoder, "parser.tokens_to_kinds.symbols.done");
 
         self.record_type_path_context_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
 
-        {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("parser.tokens_to_identifier_kinds.pass"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(&identifier_pass.pipeline);
-            compute.set_bind_group(0, Some(&bind_groups.tokens_to_identifier_kinds), &[]);
-            compute.dispatch_workgroups((token_capacity + 2).div_ceil(256).max(1), 1, 1);
-        }
+        record_parser_compute(
+            encoder,
+            identifier_pass,
+            &bind_groups.tokens_to_identifier_kinds,
+            "parser.tokens_to_identifier_kinds.pass",
+            token_capacity + 2,
+        )?;
         stamp_timer(
             timer_ref,
             encoder,
@@ -156,12 +170,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_type_path_context_01_local"),
-            &self.tokens_type_path_context_01_local.bind_group_layouts[0],
-            &self.tokens_type_path_context_01_local.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_type_path_context_01_local",
+            &self.tokens_type_path_context_01_local,
             &local_resources,
         )?;
         record_parser_compute(
@@ -215,12 +226,9 @@ impl GpuParser {
                 bufs.token_type_path_context_kind.as_entire_binding(),
             ),
         ]);
-        let apply_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_type_path_context_02_apply"),
-            &self.tokens_type_path_context_02_apply.bind_group_layouts[0],
-            &self.tokens_type_path_context_02_apply.reflection,
-            0,
+        let apply_bind_group = self.cached_token_bind_group(
+            "parser_tokens_type_path_context_02_apply",
+            &self.tokens_type_path_context_02_apply,
             &apply_resources,
         )?;
         record_parser_compute(
@@ -246,7 +254,7 @@ impl GpuParser {
         bufs: &ParserBuffers,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
-        encoder.clear_buffer(&bufs.token_impl_header_kind.buffer, 0, None);
+        parser_clear_buffer(encoder, &bufs.token_impl_header_kind.buffer, 0, None);
 
         let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -263,12 +271,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_impl_header_01_local"),
-            &self.tokens_impl_header_01_local.bind_group_layouts[0],
-            &self.tokens_impl_header_01_local.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_impl_header_01_local",
+            &self.tokens_impl_header_01_local,
             &local_resources,
         )?;
         record_parser_compute(
@@ -306,12 +311,9 @@ impl GpuParser {
                 bufs.token_impl_context_event.as_entire_binding(),
             ),
         ]);
-        let apply_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_impl_header_02_apply"),
-            &self.tokens_impl_header_02_apply.bind_group_layouts[0],
-            &self.tokens_impl_header_02_apply.reflection,
-            0,
+        let apply_bind_group = self.cached_token_bind_group(
+            "parser_tokens_impl_header_02_apply",
+            &self.tokens_impl_header_02_apply,
             &apply_resources,
         )?;
         record_parser_compute(
@@ -348,12 +350,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_where_clause_01_local"),
-            &self.tokens_where_clause_01_local.bind_group_layouts[0],
-            &self.tokens_where_clause_01_local.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_where_clause_01_local",
+            &self.tokens_where_clause_01_local,
             &local_resources,
         )?;
         record_parser_compute(
@@ -387,12 +386,9 @@ impl GpuParser {
                 bufs.token_where_context_event.as_entire_binding(),
             ),
         ]);
-        let apply_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_where_clause_02_apply"),
-            &self.tokens_where_clause_02_apply.bind_group_layouts[0],
-            &self.tokens_where_clause_02_apply.reflection,
-            0,
+        let apply_bind_group = self.cached_token_bind_group(
+            "parser_tokens_where_clause_02_apply",
+            &self.tokens_where_clause_02_apply,
             &apply_resources,
         )?;
         record_parser_compute(
@@ -477,12 +473,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_match_pattern_01_local"),
-            &self.tokens_match_pattern_01_local.bind_group_layouts[0],
-            &self.tokens_match_pattern_01_local.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_match_pattern_01_local",
+            &self.tokens_match_pattern_01_local,
             &local_resources,
         )?;
         record_parser_compute(
@@ -564,12 +557,9 @@ impl GpuParser {
                 bufs.token_match_pattern_context_event.as_entire_binding(),
             ),
         ]);
-        let apply_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_match_pattern_02_apply"),
-            &self.tokens_match_pattern_02_apply.bind_group_layouts[0],
-            &self.tokens_match_pattern_02_apply.reflection,
-            0,
+        let apply_bind_group = self.cached_token_bind_group(
+            "parser_tokens_match_pattern_02_apply",
+            &self.tokens_match_pattern_02_apply,
             &apply_resources,
         )?;
         record_parser_compute(
@@ -642,12 +632,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_delimiters_01_local"),
-            &self.token_delimiters_01.bind_group_layouts[0],
-            &self.token_delimiters_01.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_delimiters_01_local",
+            &self.token_delimiters_01,
             &local_resources,
         )?;
         record_parser_compute(
@@ -753,12 +740,9 @@ impl GpuParser {
                 bufs.token_statement_context_kind.as_entire_binding(),
             ),
         ]);
-        let context_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_brace_context"),
-            &self.tokens_brace_context.bind_group_layouts[0],
-            &self.tokens_brace_context.reflection,
-            0,
+        let context_bind_group = self.cached_token_bind_group(
+            "parser_tokens_brace_context",
+            &self.tokens_brace_context,
             &context_resources,
         )?;
         record_parser_compute(
@@ -830,12 +814,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let local_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_statement_phase_01_local"),
-            &self.tokens_statement_phase_01_local.bind_group_layouts[0],
-            &self.tokens_statement_phase_01_local.reflection,
-            0,
+        let local_bind_group = self.cached_token_bind_group(
+            "parser_tokens_statement_phase_01_local",
+            &self.tokens_statement_phase_01_local,
             &local_resources,
         )?;
         record_parser_compute(
@@ -897,12 +878,9 @@ impl GpuParser {
                 bufs.token_statement_context_kind.as_entire_binding(),
             ),
         ]);
-        let apply_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_statement_phase_02_apply"),
-            &self.tokens_statement_phase_02_apply.bind_group_layouts[0],
-            &self.tokens_statement_phase_02_apply.reflection,
-            0,
+        let apply_bind_group = self.cached_token_bind_group(
+            "parser_tokens_statement_phase_02_apply",
+            &self.tokens_statement_phase_02_apply,
             &apply_resources,
         )?;
         record_parser_compute(
@@ -964,12 +942,9 @@ impl GpuParser {
                 bufs.token_bracket_match_block_min.as_entire_binding(),
             ),
         ]);
-        let depth_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_bracket_match_01_depth_blocks"),
-            &self.tokens_bracket_match_01_depth_blocks.bind_group_layouts[0],
-            &self.tokens_bracket_match_01_depth_blocks.reflection,
-            0,
+        let depth_bind_group = self.cached_token_bind_group(
+            "parser_tokens_bracket_match_01_depth_blocks",
+            &self.tokens_bracket_match_01_depth_blocks,
             &depth_resources,
         )?;
         record_parser_compute(
@@ -1081,12 +1056,9 @@ impl GpuParser {
                 bufs.token_brace_semantic_kind.as_entire_binding(),
             ),
         ]);
-        let pair_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_bracket_match_03_pair_pse"),
-            &self.tokens_bracket_match_03_pair_pse.bind_group_layouts[0],
-            &self.tokens_bracket_match_03_pair_pse.reflection,
-            0,
+        let pair_bind_group = self.cached_token_bind_group(
+            "parser_tokens_bracket_match_03_pair_pse",
+            &self.tokens_bracket_match_03_pair_pse,
             &pair_resources,
         )?;
         record_parser_compute(
@@ -1136,12 +1108,9 @@ impl GpuParser {
                 bufs.token_brace_match_block_min.as_entire_binding(),
             ),
         ]);
-        let depth_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_brace_match_01_depth_blocks"),
-            &self.tokens_brace_match_01_depth_blocks.bind_group_layouts[0],
-            &self.tokens_brace_match_01_depth_blocks.reflection,
-            0,
+        let depth_bind_group = self.cached_token_bind_group(
+            "parser_tokens_brace_match_01_depth_blocks",
+            &self.tokens_brace_match_01_depth_blocks,
             &depth_resources,
         )?;
         record_parser_compute(
@@ -1181,12 +1150,9 @@ impl GpuParser {
                 bufs.token_brace_semantic_kind.as_entire_binding(),
             ),
         ]);
-        let pair_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_brace_match_03_pair_pse"),
-            &self.tokens_brace_match_03_pair_pse.bind_group_layouts[0],
-            &self.tokens_brace_match_03_pair_pse.reflection,
-            0,
+        let pair_bind_group = self.cached_token_bind_group(
+            "parser_tokens_brace_match_03_pair_pse",
+            &self.tokens_brace_match_03_pair_pse,
             &pair_resources,
         )?;
         record_parser_compute(
@@ -1234,12 +1200,9 @@ impl GpuParser {
                 bufs.token_angle_match_block_min.as_entire_binding(),
             ),
         ]);
-        let depth_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_angle_match_01_depth_blocks"),
-            &self.tokens_angle_match_01_depth_blocks.bind_group_layouts[0],
-            &self.tokens_angle_match_01_depth_blocks.reflection,
-            0,
+        let depth_bind_group = self.cached_token_bind_group(
+            "parser_tokens_angle_match_01_depth_blocks",
+            &self.tokens_angle_match_01_depth_blocks,
             &depth_resources,
         )?;
         record_parser_compute(
@@ -1289,12 +1252,9 @@ impl GpuParser {
                 bufs.token_paren_match_block_min.as_entire_binding(),
             ),
         ]);
-        let depth_bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_paren_match_01_depth_blocks"),
-            &self.tokens_paren_match_01_depth_blocks.bind_group_layouts[0],
-            &self.tokens_paren_match_01_depth_blocks.reflection,
-            0,
+        let depth_bind_group = self.cached_token_bind_group(
+            "parser_tokens_paren_match_01_depth_blocks",
+            &self.tokens_paren_match_01_depth_blocks,
             &depth_resources,
         )?;
         record_parser_compute(
@@ -1693,12 +1653,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_delimiters_03_owner_local"),
-            &self.token_delimiters_03_owner_local.bind_group_layouts[0],
-            &self.token_delimiters_03_owner_local.reflection,
-            0,
+        let bind_group = self.cached_token_bind_group(
+            "parser_tokens_delimiters_03_owner_local",
+            &self.token_delimiters_03_owner_local,
             &resources,
         )?;
         record_parser_compute(
@@ -1782,12 +1739,9 @@ impl GpuParser {
                 bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_delimiters_04_owner_apply"),
-            &self.token_delimiters_04_owner_apply.bind_group_layouts[0],
-            &self.token_delimiters_04_owner_apply.reflection,
-            0,
+        let bind_group = self.cached_token_bind_group(
+            "parser_tokens_delimiters_04_owner_apply",
+            &self.token_delimiters_04_owner_apply,
             &resources,
         )?;
         record_parser_compute(
@@ -1996,12 +1950,9 @@ impl GpuParser {
                     bufs.token_count.as_entire_binding(),
                 ),
             ]);
-        let tokens_to_kinds = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_to_kinds"),
-            &self.tokens_to_kinds.bind_group_layouts[0],
-            &self.tokens_to_kinds.reflection,
-            0,
+        let tokens_to_kinds = self.cached_token_bind_group(
+            "parser_tokens_to_kinds",
+            &self.tokens_to_kinds,
             &tokens_to_kinds_resources,
         )?;
         let tokens_to_identifier_kinds_resources: HashMap<String, wgpu::BindingResource<'_>> =
@@ -2025,12 +1976,9 @@ impl GpuParser {
                     bufs.semantic_token_kinds.as_entire_binding(),
                 ),
             ]);
-        let tokens_to_identifier_kinds = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tokens_to_identifier_kinds"),
-            &self.tokens_to_identifier_kinds.bind_group_layouts[0],
-            &self.tokens_to_identifier_kinds.reflection,
-            0,
+        let tokens_to_identifier_kinds = self.cached_token_bind_group(
+            "parser_tokens_to_identifier_kinds",
+            &self.tokens_to_identifier_kinds,
             &tokens_to_identifier_kinds_resources,
         )?;
 

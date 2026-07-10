@@ -63,6 +63,8 @@ pub struct ResidentLexerParserInputs {
     pub token_count: LaniusBuffer<u32>,
     /// Resident source-file id for each token.
     pub token_file_id: LaniusBuffer<u32>,
+    /// Conservative parser-family flags collected at the lexer count boundary.
+    pub parser_feature_flags: u32,
 }
 
 impl ResidentLexerParserInputs {
@@ -73,6 +75,7 @@ impl ResidentLexerParserInputs {
             tokens_out: bufs.tokens_out.clone(),
             token_count: bufs.token_count.clone(),
             token_file_id: bufs.token_file_id.clone(),
+            parser_feature_flags: bufs.parser_feature_flags_value,
         }
     }
 }
@@ -344,7 +347,7 @@ impl GpuLexer {
                     if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
                         continue;
                     }
-                    println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                    eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
                     prev = t;
                 }
             }
@@ -411,7 +414,7 @@ impl GpuLexer {
                 if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
                     continue;
                 }
-                println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
                 prev = t;
             }
         }
@@ -422,6 +425,47 @@ impl GpuLexer {
         };
 
         Ok(tokens)
+    }
+
+    /// Lexes one source and reads the one-word conservative parser-family summary.
+    #[doc(hidden)]
+    pub async fn debug_parser_feature_flags(&self, input: &str) -> Result<u32> {
+        self.lex(input).await?;
+        let guard = self
+            .buffers
+            .lock()
+            .expect("GpuLexer.buffers mutex poisoned");
+        let bufs = guard
+            .as_ref()
+            .expect("GpuLexer buffers must exist after lexing");
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.lexer.parser_feature_flags.debug"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lexer.parser_feature_flags.debug.encoder"),
+            });
+        encoder.copy_buffer_to_buffer(&bufs.parser_feature_flags, 0, &readback, 0, 4);
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "lexer.parser-feature-flags.debug",
+            encoder.finish(),
+        );
+        let slice = readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
+            &self.device,
+            &slice,
+            "lexer.parser_feature_flags.debug",
+        )?;
+        let mapped = slice.get_mapped_range();
+        let value = u32_from_first_4(&mapped);
+        drop(mapped);
+        readback.unmap();
+        Ok(value)
     }
 
     /// Lexes one source string and exposes resident buffers to a continuation.
@@ -792,11 +836,18 @@ impl GpuLexer {
 
         let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.lex.source_pack.resident.token_count"),
-            size: 4,
+            size: 8,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+        lex_encoder.copy_buffer_to_buffer(
+            &bufs.parser_feature_flags,
+            0,
+            &token_count_readback,
+            4,
+            4,
+        );
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -819,6 +870,7 @@ impl GpuLexer {
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
+        bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
         drop(count_bytes);
         token_count_readback.unmap();
         if token_count > bufs.n {
@@ -863,24 +915,20 @@ impl GpuLexer {
             timer.resolve(&mut code_encoder);
         }
 
+        let command_buffer = code_encoder.finish();
+        host_timer.stamp("compile.source-pack.encoder_finish");
         let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
             "compile.source-pack.after-token-count",
-            code_encoder.finish(),
+            command_buffer,
             use_scopes,
             "source-pack compile after token count",
         );
         host_timer.stamp("compile.source-pack.submit");
 
-        *guard = None;
         drop(guard);
-        if let Ok(mut cache) = self.bg_cache.lock() {
-            cache.clear();
-        } else {
-            warn!("failed to clear source-pack lexer bind-group cache (poisoned mutex)");
-        }
-        host_timer.stamp("lex.source-pack.resident.released");
+        host_timer.stamp("lex.source-pack.resident.retained");
 
         let result = consume_after_submit(&self.device, &self.queue, recorded_more);
         host_timer.stamp("compile.source-pack.finish");
@@ -1102,11 +1150,18 @@ impl GpuLexer {
 
         let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.lex.resident.token_count"),
-            size: 4,
+            size: 8,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+        lex_encoder.copy_buffer_to_buffer(
+            &bufs.parser_feature_flags,
+            0,
+            &token_count_readback,
+            4,
+            4,
+        );
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1126,6 +1181,7 @@ impl GpuLexer {
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
+        bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
         drop(count_bytes);
         token_count_readback.unmap();
         if token_count > bufs.n {
@@ -1279,11 +1335,18 @@ impl GpuLexer {
 
         let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.lex.resident.token_count"),
-            size: 4,
+            size: 8,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+        lex_encoder.copy_buffer_to_buffer(
+            &bufs.parser_feature_flags,
+            0,
+            &token_count_readback,
+            4,
+            4,
+        );
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1303,6 +1366,7 @@ impl GpuLexer {
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
+        bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
         drop(count_bytes);
         token_count_readback.unmap();
         if token_count > bufs.n {
@@ -1462,11 +1526,18 @@ impl GpuLexer {
 
         let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.lex.resident.token_count"),
-            size: 4,
+            size: 8,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+        lex_encoder.copy_buffer_to_buffer(
+            &bufs.parser_feature_flags,
+            0,
+            &token_count_readback,
+            4,
+            4,
+        );
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1486,6 +1557,7 @@ impl GpuLexer {
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
+        bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
         drop(count_bytes);
         token_count_readback.unmap();
         if token_count > bufs.n {

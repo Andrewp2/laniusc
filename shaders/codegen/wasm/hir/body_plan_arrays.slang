@@ -84,6 +84,7 @@ static const uint BODY_PLAN_MAIN_COUNT = 8u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -145,6 +146,9 @@ static const uint BODY_FRAGMENT_RETURN_EXPR_I32 = 13u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_LET_ARRAY_I32 = 30u;
 static const uint BODY_FRAGMENT_ARRAY_STORE_I32 = 31u;
+static const uint BODY_FRAGMENT_ARRAY_STORE_ATOM_I32 = 56u;
+static const uint BODY_FRAGMENT_ASSIGN_INDEX_I32 = 57u;
+static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32 = 58u;
 static const uint BODY_FRAGMENT_AGG_FIELD_STORE_I32 = 40u;
 static const uint BODY_FRAGMENT_AGG_DIRECT_COPY_I32 = 43u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
@@ -173,6 +177,11 @@ uint body_fragment_feature_mask(uint kind)
         return BODY_FEATURE_BINARY_DIRECT;
     if (kind == BODY_FRAGMENT_ARRAY_STORE_I32)
         return BODY_FEATURE_ARRAYS | BODY_FEATURE_MEMBER_EXPR;
+    if (kind == BODY_FRAGMENT_ARRAY_STORE_ATOM_I32)
+        return BODY_FEATURE_ARRAY_ALLOC;
+    if (kind == BODY_FRAGMENT_ASSIGN_INDEX_I32 ||
+        kind == BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32)
+        return BODY_FEATURE_ARRAY_ALLOC;
     if (kind == BODY_FRAGMENT_LET_ARRAY_I32)
         return BODY_FEATURE_ARRAY_ALLOC;
     if (kind == BODY_FRAGMENT_AGG_FIELD_STORE_I32)
@@ -538,12 +547,41 @@ uint local_set_len(uint local_index)
     return 1u + u32_leb_len(local_index);
 }
 
+uint wasm_value_abi_width(uint ty)
+{
+    return ty == TY_STRING ? 2u : 1u;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += wasm_value_abi_width(call_param_type_value(fn_token, ordinal));
+    return total;
+}
+
+uint function_param_abi_ordinal(uint fn_token, uint ordinal)
+{
+    if (!valid_token(fn_token))
+        return INVALID;
+    uint count = call_param_count[fn_token];
+    if (ordinal >= count)
+        return INVALID;
+    uint local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += wasm_value_abi_width(call_param_type_value(fn_token, i));
+    return local_index;
+}
+
 bool function_non_param_local_index(uint decl_token, uint fn_token, out uint local_index)
 {
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     local_index = param_count + decl_token;
     return true;
 }
@@ -571,7 +609,9 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = function_param_abi_ordinal(fn_token, ordinal);
+    if (local_index == INVALID)
+        return false;
     return true;
 }
 
@@ -595,14 +635,15 @@ bool aggregate_address_expr_len(uint node, out uint len)
         uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
         if (ordinal != INVALID)
         {
-            local_index = ordinal;
+            local_index = function_param_abi_ordinal(owner_fn, ordinal);
             is_param = true;
         }
     }
     if (is_param)
     {
         uint decl_ty = visible_type_for_token(decl_token);
-        uint param_ty = call_param_type_value(owner_fn, local_index);
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        uint param_ty = call_param_type_value(owner_fn, ordinal);
         if (decl_ty != TY_UNKNOWN &&
             decl_ty < TY_ARRAY_BASE &&
             param_ty < TY_ARRAY_BASE &&
@@ -784,6 +825,37 @@ bool expr_atom_len(uint node, out uint len)
     return false;
 }
 
+bool lean_array_atom_len(uint node, out uint len)
+{
+    len = 0u;
+    node = resolve_expr_node(node);
+    if (!valid_node(node))
+        return false;
+    uint form = expr_form(node);
+    uint local_index = INVALID;
+    if (form == HIR_EXPR_NAME && local_decl_token_for_name_expr(node, local_index))
+    {
+        len = local_get_len(local_index);
+        return true;
+    }
+    if (form == HIR_EXPR_INT)
+    {
+        len = 1u + i32_sleb_len(hir_expr_int_value[node]);
+        return true;
+    }
+    if (form == HIR_EXPR_FLOAT)
+    {
+        len = 5u;
+        return true;
+    }
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+    {
+        len = 2u;
+        return true;
+    }
+    return false;
+}
+
 bool expr_binary_op_supported(uint form)
 {
     return form == HIR_EXPR_EQ ||
@@ -933,7 +1005,7 @@ bool index_expr_len(uint node, out uint len)
     }
 
     uint index_len = 0u;
-    if (!expr_atom_len(expr_record_slot(node, EXPR_RECORD_RIGHT), index_len))
+    if (!lean_array_atom_len(expr_record_slot(node, EXPR_RECORD_RIGHT), index_len))
         return false;
 
     len = local_get_len(local_index) + index_len + 7u;
@@ -1175,11 +1247,15 @@ void account_array_element(uint node, uint owner_fn, uint token)
     uint address = array_lit_base_address(lit_node) +
                    hir_array_element_ordinal[node] * 4u;
     uint len = 1u + i32_sleb_len(address) + expr_len + 3u;
+    uint atom_len = 0u;
+    uint kind = lean_array_atom_len(node, atom_len) && atom_len == expr_len
+                    ? BODY_FRAGMENT_ARRAY_STORE_ATOM_I32
+                    : BODY_FRAGMENT_ARRAY_STORE_I32;
     add_func_body_len(owner_fn, len);
     publish_fragment(
         token,
         len,
-        uint4(BODY_FRAGMENT_ARRAY_STORE_I32, address, node, token));
+        uint4(kind, address, node, token));
 }
 
 void account_struct_field_store(uint node, uint owner_fn, uint token)
@@ -1260,8 +1336,8 @@ void account_assign_index(uint node, uint owner_fn, uint token)
         len,
         uint4(
             op == ASSIGN_OP_SET
-                ? BODY_FRAGMENT_ASSIGN_EXPR_I32
-                : BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32,
+                ? BODY_FRAGMENT_ASSIGN_INDEX_I32
+                : BODY_FRAGMENT_ASSIGN_COMPOUND_INDEX_I32,
             target_len,
             rhs_node,
             op));

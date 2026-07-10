@@ -4,3 +4,5 @@ pub mod init;
 pub mod scatter;
 /// Propagates nearest-context relation rows through semantic HIR ancestry.
 pub mod step;
+/// Propagates small nearest-context tables in one cooperative workgroup.
+pub mod step_small;

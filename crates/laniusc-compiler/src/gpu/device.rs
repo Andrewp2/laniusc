@@ -193,7 +193,7 @@ impl PipelineCachePersistTimer {
         let name = format!("pipeline_cache.{prefix}.{stage}");
         if self.print_enabled {
             let dt_ms = end.duration_since(start).as_secs_f64() * 1000.0;
-            println!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms");
+            eprintln!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms");
         }
         if self.trace_enabled {
             crate::gpu::trace::record_host_span("host.pipeline_cache", &name, start, end);
@@ -206,7 +206,7 @@ impl PipelineCachePersistTimer {
 
     fn bytes_prefixed(&self, lane_suffix: &str, name: &str, at: Instant, bytes: usize) {
         if self.print_enabled {
-            println!("[gpu_compile_host_timer] {name}: {bytes} bytes");
+            eprintln!("[gpu_compile_host_timer] {name}: {bytes} bytes");
         }
         if self.trace_enabled {
             crate::gpu::trace::record_counter(
@@ -253,6 +253,13 @@ fn create_context() -> GpuDevice {
     // selected device genuinely cannot support the compiler's record tables.
     limits.max_storage_buffers_per_shader_stage =
         adapter_limits.max_storage_buffers_per_shader_stage;
+    // Native desktop adapters generally expose at least 32 KiB of workgroup
+    // storage. Request it when available so bounded cooperative compiler sorts
+    // can replace long radix command schedules, while retaining the WebGPU
+    // baseline on adapters that only expose the default 16 KiB.
+    limits.max_compute_workgroup_storage_size = adapter_limits
+        .max_compute_workgroup_storage_size
+        .min(32 * 1024);
     limits.max_storage_buffer_binding_size = 2_147_483_644;
     limits.max_buffer_size = 2_147_483_644;
 
@@ -476,24 +483,19 @@ fn create_pipeline_cache(
 }
 
 fn pipeline_cache_filename(adapter_key: &str) -> (String, u64) {
-    let laniusc_version = env!("CARGO_PKG_VERSION");
-    let build_profile = option_env!("LANIUS_BUILD_PROFILE").unwrap_or("unknown");
     let wgpu_version = option_env!("LANIUS_WGPU_VERSION").unwrap_or("unknown");
-    let slang_version = option_env!("LANIUS_SLANGC_VERSION").unwrap_or("unknown");
-    let shader_digest = crate::shader_artifacts::digest();
-    let identity = format!(
-        "adapter={adapter_key};laniusc={laniusc_version};profile={build_profile};wgpu={wgpu_version};slang={slang_version};shader={shader_digest}"
-    );
+    // A wgpu pipeline cache is a keyed collection, not a single precompiled
+    // shader bundle. Unchanged pipelines remain reusable when one shader or
+    // the compiler build changes, while new pipeline descriptors miss and are
+    // compiled normally. Key the file only by the opaque-cache compatibility
+    // boundary instead of invalidating every pipeline on every shader edit.
+    let identity = format!("adapter={adapter_key};wgpu={wgpu_version};format=1");
     let identity_hash = stable_hash_u64(identity.as_bytes());
     let identity_digest = format!("{identity_hash:016x}");
     let filename = format!(
-        "{}_laniusc-{}_{}_wgpu-{}_slang-{}_shader-{}_key-{}",
+        "{}_laniusc-pipelines-v1_wgpu-{}_key-{}",
         adapter_key,
-        sanitize_cache_key_component(laniusc_version),
-        sanitize_cache_key_component(build_profile),
         sanitize_cache_key_component(wgpu_version),
-        sanitize_cache_key_component(slang_version),
-        sanitize_cache_key_component(&shader_digest),
         identity_digest,
     );
     (filename, identity_hash)

@@ -1,4 +1,45 @@
-use crate::parser::tables::PrecomputedParseTables;
+use crate::{
+    lexer::features::{
+        PARSER_FEATURE_ARRAYS,
+        PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_MATCHES,
+        PARSER_FEATURE_STRUCTS,
+    },
+    parser::tables::PrecomputedParseTables,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ParserFamilyCapacities {
+    pub arrays: u32,
+    pub enum_match: u32,
+    pub structs: u32,
+}
+
+impl ParserFamilyCapacities {
+    pub(super) fn new(tree_capacity: u32, parser_feature_flags: u32) -> Self {
+        let tree_capacity = tree_capacity.max(1);
+        Self {
+            arrays: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_ARRAYS),
+            // Enum and match records share one clear pass and uniform. Keep the
+            // pair at one common capacity so that pass can never bind unequal
+            // output lengths.
+            enum_match: feature_capacity(
+                tree_capacity,
+                parser_feature_flags,
+                PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES,
+            ),
+            structs: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_STRUCTS),
+        }
+    }
+}
+
+fn feature_capacity(tree_capacity: u32, parser_feature_flags: u32, mask: u32) -> u32 {
+    if parser_feature_flags & mask == 0 {
+        1
+    } else {
+        tree_capacity
+    }
+}
 
 /// Derives resident tree capacity from token count and partial-parse emit width.
 pub(crate) fn resident_partial_parse_tree_capacity_for_tables(
@@ -35,6 +76,54 @@ mod tests {
         assert_eq!(
             resident_partial_parse_tree_capacity_for_tables(10_000, &tables),
             69_993
+        );
+    }
+
+    #[test]
+    fn absent_optional_parser_families_use_one_safe_binding_row() {
+        assert_eq!(
+            ParserFamilyCapacities::new(1_000_000, 0),
+            ParserFamilyCapacities {
+                arrays: 1,
+                enum_match: 1,
+                structs: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn present_optional_parser_families_retain_full_tree_address_space() {
+        assert_eq!(
+            ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_ARRAYS),
+            ParserFamilyCapacities {
+                arrays: 1_000_000,
+                enum_match: 1,
+                structs: 1,
+            }
+        );
+        assert_eq!(
+            ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_ENUMS),
+            ParserFamilyCapacities {
+                arrays: 1,
+                enum_match: 1_000_000,
+                structs: 1,
+            }
+        );
+        assert_eq!(
+            ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_MATCHES),
+            ParserFamilyCapacities {
+                arrays: 1,
+                enum_match: 1_000_000,
+                structs: 1,
+            }
+        );
+        assert_eq!(
+            ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_STRUCTS),
+            ParserFamilyCapacities {
+                arrays: 1,
+                enum_match: 1,
+                structs: 1_000_000,
+            }
         );
     }
 }

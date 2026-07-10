@@ -120,6 +120,8 @@ static const uint BODY_FRAGMENT_LET_PROCESS_ARG_READ_I32 = 36u;
 static const uint BODY_FRAGMENT_LET_HOST_CALL_I32 = 37u;
 static const uint BODY_FRAGMENT_HOST_CALL_VOID = 38u;
 static const uint BODY_FRAGMENT_LET_HOST_STR_CALL_I32 = 39u;
+static const uint BODY_FRAGMENT_RETURN_HOST_CALL_I32 = 47u;
+static const uint BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32 = 48u;
 static const uint WASM_PROCESS_ARGC_FUNC_INDEX = 2u;
 static const uint WASM_PROCESS_ARG_LEN_FUNC_INDEX = 3u;
 static const uint WASM_PROCESS_ARG_READ_FUNC_INDEX = 4u;
@@ -129,6 +131,7 @@ static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -294,8 +297,21 @@ bool function_param_local_index(uint decl_token, uint fn_token, out uint local_i
     uint param_count = call_param_count[fn_token];
     if (ordinal == INVALID || ordinal >= param_count)
         return false;
-    local_index = ordinal;
+    local_index = 0u;
+    for (uint i = 0u; i < ordinal; i += 1u)
+        local_index += call_param_type_value(fn_token, i) == TY_STRING ? 2u : 1u;
     return true;
+}
+
+uint function_param_abi_count(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint count = call_param_count[fn_token];
+    uint total = 0u;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        total += call_param_type_value(fn_token, ordinal) == TY_STRING ? 2u : 1u;
+    return total;
 }
 
 bool function_non_param_local_index(uint decl_token, uint fn_token, out uint local_index)
@@ -303,14 +319,47 @@ bool function_non_param_local_index(uint decl_token, uint fn_token, out uint loc
     local_index = INVALID;
     if (!valid_token(decl_token) || !valid_token(fn_token))
         return false;
-    uint param_count = call_param_count[fn_token];
+    uint param_count = function_param_abi_count(fn_token);
     uint local_count = 0u;
     uint local_max = wasm_func_local_max_by_token[fn_token];
     if (local_max != INVALID)
         local_count = local_max + 1u;
     local_index = param_count + decl_token;
     if (local_decl_type(decl_token) == TY_FLOAT)
-        local_index += local_count;
+        local_index += local_count * 2u;
+    return true;
+}
+
+bool function_decl_local_index(uint decl_token, uint fn_token, out uint local_index)
+{
+    if (function_param_local_index(decl_token, fn_token, local_index))
+        return true;
+    return function_non_param_local_index(decl_token, fn_token, local_index);
+}
+
+bool function_string_len_local_index(uint decl_token, uint fn_token, out uint local_index)
+{
+    local_index = INVALID;
+    if (!valid_token(decl_token) || !valid_token(fn_token))
+        return false;
+
+    uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+    if (ordinal != INVALID && ordinal < call_param_count[fn_token])
+    {
+        if (call_param_type_value(fn_token, ordinal) != TY_STRING)
+            return false;
+        uint ptr_index = 0u;
+        for (uint i = 0u; i < ordinal; i += 1u)
+            ptr_index += call_param_type_value(fn_token, i) == TY_STRING ? 2u : 1u;
+        local_index = ptr_index + 1u;
+        return true;
+    }
+
+    if (local_decl_type(decl_token) != TY_STRING)
+        return false;
+    uint local_max = wasm_func_local_max_by_token[fn_token];
+    uint local_count = local_max == INVALID ? 0u : local_max + 1u;
+    local_index = function_param_abi_count(fn_token) + local_count + decl_token;
     return true;
 }
 
@@ -473,13 +522,15 @@ uint local_decl_fragment_byte(uint local_count, uint byte_i)
         return 0u;
     if (byte_i == 0u)
         return 2u;
-    uint count_len = u32_leb_len(local_count);
-    if (byte_i <= count_len)
-        return u32_leb_byte(local_count, byte_i - 1u);
-    if (byte_i == count_len + 1u)
+    uint i32_count = local_count * 2u;
+    uint i32_count_len = u32_leb_len(i32_count);
+    if (byte_i <= i32_count_len)
+        return u32_leb_byte(i32_count, byte_i - 1u);
+    if (byte_i == i32_count_len + 1u)
         return WASM_VALTYPE_I32;
-    uint second_count_start = count_len + 2u;
-    if (byte_i < second_count_start + count_len)
+    uint second_count_start = i32_count_len + 2u;
+    uint f32_count_len = u32_leb_len(local_count);
+    if (byte_i < second_count_start + f32_count_len)
         return u32_leb_byte(local_count, byte_i - second_count_start);
     return WASM_VALTYPE_F32;
 }
@@ -511,6 +562,11 @@ uint local_get_byte(uint local_index, uint byte_i)
     if (byte_i == 0u)
         return WASM_LOCAL_GET;
     return u32_leb_byte(local_index, byte_i - 1u);
+}
+
+uint local_get_len(uint local_index)
+{
+    return 1u + u32_leb_len(local_index);
 }
 
 uint local_set_byte(uint local_index, uint byte_i)
@@ -594,14 +650,17 @@ bool aggregate_address_expr_len(uint node, out uint len)
         uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
         if (ordinal != INVALID)
         {
-            local_index = ordinal;
+            local_index = 0u;
+            for (uint i = 0u; i < ordinal; i += 1u)
+                local_index += call_param_type_value(owner_fn, i) == TY_STRING ? 2u : 1u;
             is_param = true;
         }
     }
     if (is_param)
     {
         uint decl_ty = visible_type_for_token(decl_token);
-        uint param_ty = call_param_type_value(owner_fn, local_index);
+        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
+        uint param_ty = call_param_type_value(owner_fn, ordinal);
         if (decl_ty != TY_UNKNOWN &&
             decl_ty < TY_ARRAY_BASE &&
             param_ty < TY_ARRAY_BASE &&
@@ -921,7 +980,7 @@ bool type_is_i32_value(uint ty)
 
 bool type_is_i32_abi_value(uint ty)
 {
-    return type_is_i32_value(ty) || ty >= TY_ARRAY_BASE;
+    return type_is_i32_value(ty) || ty == TY_STRING || ty >= TY_ARRAY_BASE;
 }
 
 bool type_is_i32_abi_param(uint fn_token, uint ordinal, uint ty)
@@ -1198,6 +1257,8 @@ uint direct_call_arg_scalar_len(uint node)
 
 uint direct_call_arg_abi_len(uint node, uint param_ty)
 {
+    if (param_ty == TY_STRING)
+        return string_value_expr_len(node);
     if (param_ty >= TY_ARRAY_BASE)
     {
         uint len = 0u;
@@ -1208,6 +1269,8 @@ uint direct_call_arg_abi_len(uint node, uint param_ty)
 
 uint direct_call_arg_scalar_abi_len(uint node, uint param_ty)
 {
+    if (param_ty == TY_STRING)
+        return string_value_expr_len(node);
     if (param_ty >= TY_ARRAY_BASE)
     {
         uint len = 0u;
@@ -1465,6 +1528,8 @@ uint direct_call_arg_scalar_byte(uint node, uint byte_i)
 
 uint direct_call_arg_abi_byte(uint node, uint param_ty, uint byte_i)
 {
+    if (param_ty == TY_STRING)
+        return string_value_expr_byte(node, byte_i);
     if (param_ty >= TY_ARRAY_BASE)
         return aggregate_address_expr_byte(node, byte_i);
     return direct_call_arg_byte(node, byte_i);
@@ -1472,6 +1537,8 @@ uint direct_call_arg_abi_byte(uint node, uint param_ty, uint byte_i)
 
 uint direct_call_arg_scalar_abi_byte(uint node, uint param_ty, uint byte_i)
 {
+    if (param_ty == TY_STRING)
+        return string_value_expr_byte(node, byte_i);
     if (param_ty >= TY_ARRAY_BASE)
         return aggregate_address_expr_byte(node, byte_i);
     return direct_call_arg_scalar_byte(node, byte_i);
@@ -1500,21 +1567,75 @@ bool string_literal_ptr_len(uint node, out uint ptr, out uint len)
     return true;
 }
 
-uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_i)
+uint string_value_expr_len(uint node)
 {
     uint ptr = 0u;
-    uint len = 0u;
-    if (!string_literal_ptr_len(string_node, ptr, len))
+    uint raw_len = 0u;
+    if (string_literal_ptr_len(node, ptr, raw_len))
+        return 1u + i32_sleb_len(ptr) + 1u + i32_sleb_len(raw_len);
+
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
         return 0u;
 
-    uint ptr_len = 1u + i32_sleb_len(ptr);
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!valid_token(decl_token) ||
+        visible_type_for_token(decl_token) != TY_STRING ||
+        !function_decl_local_index(decl_token, owner_fn, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return 0u;
+    }
+
+    return local_get_len(ptr_local) + local_get_len(len_local);
+}
+
+uint string_value_expr_byte(uint node, uint byte_i)
+{
+    uint ptr = 0u;
+    uint raw_len = 0u;
+    if (string_literal_ptr_len(node, ptr, raw_len))
+    {
+        uint ptr_len = 1u + i32_sleb_len(ptr);
+        if (byte_i < ptr_len)
+            return i32_const_byte(ptr, byte_i);
+        return i32_const_byte(raw_len, byte_i - ptr_len);
+    }
+
+    node = resolve_expr_node(node);
+    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
+        return 0u;
+
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    uint owner_fn = node_enclosing_fn_token(node);
+    uint ptr_local = INVALID;
+    uint len_local = INVALID;
+    if (!function_decl_local_index(decl_token, owner_fn, ptr_local) ||
+        !function_string_len_local_index(decl_token, owner_fn, len_local))
+    {
+        return 0u;
+    }
+
+    uint ptr_len = local_get_len(ptr_local);
     if (byte_i < ptr_len)
-        return i32_const_byte(ptr, byte_i);
-    uint str_len_start = ptr_len;
-    uint str_len_len = 1u + i32_sleb_len(len);
-    if (byte_i < str_len_start + str_len_len)
-        return i32_const_byte(len, byte_i - str_len_start);
-    uint call_start = str_len_start + str_len_len;
+        return local_get_byte(ptr_local, byte_i);
+    return local_get_byte(len_local, byte_i - ptr_len);
+}
+
+uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_i)
+{
+    uint string_len = string_value_expr_len(string_node);
+    if (string_len == 0u)
+        return 0u;
+
+    if (byte_i < string_len)
+        return string_value_expr_byte(string_node, byte_i);
+    uint call_start = string_len;
     if (byte_i == call_start)
         return WASM_CALL;
     return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
@@ -1529,20 +1650,14 @@ uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
         return direct_call_arg_scalar_byte(handle_node, byte_i);
 
     uint string_node = direct_call_arg_node(call_node, 1u);
-    uint ptr = 0u;
-    uint len = 0u;
-    if (!string_literal_ptr_len(string_node, ptr, len))
+    uint string_len = string_value_expr_len(string_node);
+    if (string_len == 0u)
         return 0u;
 
-    uint ptr_start = handle_len;
-    uint ptr_len = 1u + i32_sleb_len(ptr);
-    if (byte_i < ptr_start + ptr_len)
-        return i32_const_byte(ptr, byte_i - ptr_start);
-    uint str_len_start = ptr_start + ptr_len;
-    uint str_len_len = 1u + i32_sleb_len(len);
-    if (byte_i < str_len_start + str_len_len)
-        return i32_const_byte(len, byte_i - str_len_start);
-    uint call_start = str_len_start + str_len_len;
+    uint string_start = handle_len;
+    if (byte_i < string_start + string_len)
+        return string_value_expr_byte(string_node, byte_i - string_start);
+    uint call_start = string_start + string_len;
     if (byte_i == call_start)
         return WASM_CALL;
     return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
@@ -1980,6 +2095,47 @@ uint let_host_string_call_i32_fragment_byte(
     return local_set_byte(local_index, byte_i - call_len);
 }
 
+uint return_host_call_i32_fragment_byte(
+    uint call_node,
+    uint wasm_func_index,
+    uint arg_count,
+    uint fragment_len,
+    uint byte_i)
+{
+    uint call_len = fragment_len > 0u ? fragment_len - 1u : 0u;
+    if (byte_i < call_len)
+    {
+        return direct_call_expr_scalar_byte_from_record(
+            call_node,
+            wasm_func_index,
+            arg_count,
+            INVALID,
+            byte_i);
+    }
+    return WASM_RETURN;
+}
+
+uint return_host_string_call_i32_fragment_byte(
+    uint call_node,
+    uint wasm_func_index,
+    uint mode,
+    uint fragment_len,
+    uint byte_i)
+{
+    uint call_len = fragment_len > 0u ? fragment_len - 1u : 0u;
+    if (byte_i < call_len)
+    {
+        if (mode == HOST_STR_CALL_OPEN_READ_PATH || mode == HOST_STR_CALL_OPEN_WRITE_PATH)
+        {
+            call_node = resolve_expr_node(call_node);
+            return string_ptr_len_call_byte(direct_call_arg_node(call_node, 0u), wasm_func_index, byte_i);
+        }
+        if (mode == HOST_STR_CALL_WRITE_TEXT)
+            return handle_string_call_byte(call_node, wasm_func_index, byte_i);
+    }
+    return WASM_RETURN;
+}
+
 uint host_call_void_fragment_byte(
     uint call_node,
     uint wasm_func_index,
@@ -2261,48 +2417,21 @@ uint for_close_range_i32_fragment_byte(uint binding_token, uint byte_i)
 
 bool scatter_handles_kind(uint kind)
 {
-    return kind == BODY_FRAGMENT_LET_EXPR_I32 ||
-           kind == BODY_FRAGMENT_ASSIGN_EXPR_I32 ||
-           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 ||
-           kind == BODY_FRAGMENT_PRINT_EXPR_I64 ||
-           kind == BODY_FRAGMENT_RETURN_EXPR_I32 ||
-           kind == BODY_FRAGMENT_WHILE_OPEN_I32 ||
-           kind == BODY_FRAGMENT_IF_OPEN_I32 ||
-           kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32 ||
-           kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32 ||
-           kind == BODY_FRAGMENT_LET_HOST_STDOUT_WRITE_I32 ||
+    return kind == BODY_FRAGMENT_LET_HOST_STDOUT_WRITE_I32 ||
            kind == BODY_FRAGMENT_LET_I32_ARRAY_DATA_PTR ||
            kind == BODY_FRAGMENT_LET_HOST_NO_ARG_I32 ||
            kind == BODY_FRAGMENT_LET_PROCESS_ARG_LEN_I32 ||
            kind == BODY_FRAGMENT_LET_PROCESS_ARG_READ_I32 ||
            kind == BODY_FRAGMENT_LET_HOST_CALL_I32 ||
            kind == BODY_FRAGMENT_HOST_CALL_VOID ||
-           kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32;
+           kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32 ||
+           kind == BODY_FRAGMENT_RETURN_HOST_CALL_I32 ||
+           kind == BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32;
 }
 
 uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)
 {
     uint kind = meta.x;
-    uint value = meta.y;
-
-    if (kind == BODY_FRAGMENT_LET_EXPR_I32)
-        return let_expr_i32_fragment_byte(meta.y, meta.z, byte_i);
-    if (kind == BODY_FRAGMENT_ASSIGN_EXPR_I32)
-        return assign_expr_i32_fragment_byte(meta.y, meta.z, byte_i);
-    if (kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32)
-        return assign_compound_expr_i32_fragment_byte(meta.y, meta.z, meta.w, byte_i);
-    if (kind == BODY_FRAGMENT_PRINT_EXPR_I64)
-        return print_expr_i64_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_RETURN_EXPR_I32)
-        return return_expr_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_WHILE_OPEN_I32)
-        return while_open_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_IF_OPEN_I32)
-        return if_open_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32)
-        return for_open_range_i32_fragment_byte(meta.y, meta.z, meta.w, byte_i);
-    if (kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32)
-        return for_close_range_i32_fragment_byte(value, byte_i);
 
     if (kind == BODY_FRAGMENT_LET_HOST_STDOUT_WRITE_I32)
         return let_host_process_call_i32_fragment_byte(
@@ -2354,6 +2483,20 @@ uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)
             meta.z,
             meta.w,
             aux.y,
+            fragment_len,
+            byte_i);
+    if (kind == BODY_FRAGMENT_RETURN_HOST_CALL_I32)
+        return return_host_call_i32_fragment_byte(
+            meta.y,
+            meta.z,
+            aux.y,
+            fragment_len,
+            byte_i);
+    if (kind == BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32)
+        return return_host_string_call_i32_fragment_byte(
+            meta.y,
+            meta.z,
+            aux.z,
             fragment_len,
             byte_i);
 

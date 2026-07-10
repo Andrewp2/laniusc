@@ -21,6 +21,8 @@ pub struct GpuBuffers {
     pub nb_dfa: u32,
     /// Number of 256-byte pair-scan blocks for the current input.
     pub nb_sum: u32,
+    /// Host-visible copy of `parser_feature_flags` from the last count boundary.
+    pub parser_feature_flags_value: u32,
 
     /// Uniform parameters shared by lexer shaders.
     pub params: LaniusBuffer<super::LexParams>,
@@ -57,6 +59,8 @@ pub struct GpuBuffers {
     pub all_index_compact: LaniusBuffer<u32>,
     /// Number of kept tokens produced by the current input.
     pub token_count: LaniusBuffer<u32>,
+    /// Conservative parser-family flags collected by the GPU token builder.
+    pub parser_feature_flags: LaniusBuffer<u32>,
 
     /// Final resident token records consumed by parser and readback paths.
     pub tokens_out: LaniusBuffer<super::GpuToken>,
@@ -155,6 +159,8 @@ impl GpuBuffers {
             storage_rw_for_array::<u32>(device, "all_index_compact", n as usize);
 
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
+        let parser_feature_flags =
+            storage_rw_for_array::<u32>(device, "lexer.parser_feature_flags", 1);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
         let source_file_count = storage_rw_for_array::<u32>(device, "source_file_count", 1);
@@ -184,6 +190,7 @@ impl GpuBuffers {
             n,
             nb_dfa,
             nb_sum,
+            parser_feature_flags_value: 0,
             params,
 
             in_bytes,
@@ -204,6 +211,7 @@ impl GpuBuffers {
             types_compact,
             all_index_compact,
             token_count,
+            parser_feature_flags,
 
             tokens_out,
             source_file_count,

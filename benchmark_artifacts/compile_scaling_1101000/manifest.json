@@ -1,0 +1,33 @@
+{
+  "best_compile_ms": {
+    "c": 9340.0,
+    "cpp": 9940.0,
+    "lanius": 380.485,
+    "rust": 1110.0,
+    "zig": 8230.0
+  },
+  "files": [
+    {"path": "commands.json", "sha256": "9f706779d28f4566d9cfdf6e7c340aa0e9fc0d47614efa0a5e2273a4c9dc0eb0"},
+    {"path": "generator_config.json", "sha256": "d2c413c5c2e27c63a87cc61cf182a305d25010723d2c2f414d5cb3cf4f610be9"},
+    {"path": "machine_info.json", "sha256": "f7dbcaa1775dd1e620a42ca24641e5f258acb8f36a841472b0e8e6644d3bd06e"},
+    {"path": "outputs/c.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
+    {"path": "outputs/cpp.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
+    {"path": "outputs/lanius19.stdout", "sha256": "a4b2c5db15348c29451e18b8307e5ef81625ea638e807935f39ceaa8d9ac7758"},
+    {"path": "outputs/lanius20.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
+    {"path": "outputs/lanius21.stdout", "sha256": "1a62e878f334291869f88f4b71f8c157ee774b6bdb11d2ca86cccf2b48cef87b"},
+    {"path": "outputs/lanius22.stdout", "sha256": "b35e87b5838011a3637be660e4238af9a55e4edc74404c990f7a558e7f416658"},
+    {"path": "outputs/rust.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
+    {"path": "outputs/zig.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
+    {"path": "results.tsv", "sha256": "30f7842d977887b864b01cbc72aac6fc0bcec0c8926a079d75663a73dc81a86f"},
+    {"path": "source_manifest.json", "sha256": "f8bd8a10331914561fb7c170a2e86a3344544fd9e3497a0304d85d0cc554d9c4"}
+  ],
+  "languages": ["rust", "c", "cpp", "zig", "lanius"],
+  "schema": "lanius.benchmark-artifacts.v1",
+  "speedup_vs_lanius_best": {
+    "c": 24.548,
+    "cpp": 26.125,
+    "rust": 2.917,
+    "zig": 21.630
+  },
+  "workload": "compile_scaling_1101000"
+}

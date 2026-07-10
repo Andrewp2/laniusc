@@ -11,10 +11,7 @@ struct Params
 ConstantBuffer<Params> gHirContextRelations;
 
 StructuredBuffer<uint> tree_count_status;
-StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_contextual_stmt_value_a;
@@ -36,8 +33,6 @@ RWStructuredBuffer<uint> hir_call_context_stmt_node;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint HIR_BLOCK = 6u;
-static const uint HIR_FN = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -61,39 +56,6 @@ bool valid_original_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-bool has_span(uint node)
-{
-    return valid_original_node(node) &&
-           hir_token_pos[node] != INVALID &&
-           hir_token_end[node] != INVALID &&
-           hir_token_pos[node] < hir_token_end[node];
-}
-
-bool contains_span(uint owner, uint node)
-{
-    return has_span(owner) &&
-           has_span(node) &&
-           hir_token_pos[owner] <= hir_token_pos[node] &&
-           hir_token_end[node] <= hir_token_end[owner];
-}
-
-uint fallback_nearest_containing(uint row, uint node, uint wanted_kind)
-{
-    if (!has_span(node))
-        return INVALID;
-
-    for (uint offset = 1u; offset <= row; offset += 1u)
-    {
-        uint candidate_row = row - offset;
-        uint candidate = hir_semantic_dense_node[candidate_row];
-        if (valid_original_node(candidate) &&
-            hir_kind[candidate] == wanted_kind &&
-            contains_span(candidate, node))
-            return candidate;
-    }
-    return INVALID;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -109,8 +71,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint nearest_stmt = hir_nearest_stmt_value_a[row];
     hir_nearest_stmt_node[node] = valid_original_node(nearest_stmt) ? nearest_stmt : INVALID;
     uint nearest_block = hir_nearest_block_value_a[row];
-    if (!valid_original_node(nearest_block))
-        nearest_block = fallback_nearest_containing(row, node, HIR_BLOCK);
     hir_nearest_block_node[node] =
         valid_original_node(nearest_block) ? nearest_block : INVALID;
     uint nearest_control = hir_nearest_enclosing_control_value_a[row];
@@ -120,8 +80,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_nearest_loop_node[node] =
         valid_original_node(nearest_loop) ? nearest_loop : INVALID;
     uint nearest_fn = hir_nearest_fn_value_a[row];
-    if (!valid_original_node(nearest_fn))
-        nearest_fn = fallback_nearest_containing(row, node, HIR_FN);
     hir_nearest_fn_node[node] = valid_original_node(nearest_fn) ? nearest_fn : INVALID;
 
     uint context = hir_contextual_stmt_value_a[row];

@@ -2,6 +2,7 @@ use super::{
     args::{self, Command},
     common::CliError,
     compile,
+    daemon,
     diagnostics,
     doctor,
     fmt,
@@ -23,6 +24,7 @@ pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
         }
         Command::Fmt(args) => fmt::run(args),
         Command::Doctor(args) => doctor::run(args),
+        Command::Daemon(args) => daemon::run(args),
         Command::Package(args) => package::run(args),
         Command::Lsp(args) => lsp::run(args),
         Command::Diagnostics(args) => diagnostics::run(args),

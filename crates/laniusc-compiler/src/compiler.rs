@@ -76,7 +76,7 @@ use crate::{
     },
     parser::{
         buffers::ParserBuffers,
-        driver::{GpuParser, Ll1AcceptResult},
+        driver::{GpuParser, Ll1AcceptResult, ResidentParserCapacity},
         tables::PrecomputedParseTables,
     },
     type_checker as gpu_type_checker,
@@ -220,6 +220,8 @@ pub struct GpuParseBenchmarkResult {
     pub token_count: u32,
     /// Parser tree capacity selected before HIR recording.
     pub parser_tree_capacity: u32,
+    /// Semantic parser-family features measured by GPU token classification.
+    pub parser_feature_flags: u32,
     /// Number of semantic HIR nodes emitted by parser HIR passes.
     pub semantic_hir_count: u32,
 }
@@ -231,6 +233,8 @@ pub struct GpuLiveCapacityEstimateResult {
     pub token_count: u32,
     /// Parser tree capacity required by LL/tree recovery.
     pub parser_tree_capacity: u32,
+    /// Semantic parser-family features measured by GPU token classification.
+    pub parser_feature_flags: u32,
     /// Parser emit stream length used while sizing HIR construction.
     pub parser_emit_len: u32,
     /// Number of semantic HIR nodes expected after compaction.

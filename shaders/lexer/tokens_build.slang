@@ -1,5 +1,6 @@
 import gpu_index;
 import utils;
+import atomics;
 
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> token_count;
@@ -19,10 +20,13 @@ struct TokenOut
 };
 RWStructuredBuffer<TokenOut> tokens_out;
 RWStructuredBuffer<uint> token_file_id;
+RWStructuredBuffer<uint> parser_feature_flags;
 
 static const uint TK_IDENT = 1;
 static const uint TK_INT = 2;
 static const uint TK_ASSIGN = 8;
+static const uint TK_LBRACKET = 20;
+static const uint TK_RBRACKET = 21;
 static const uint TK_DOT = 35;
 static const uint TK_FLOAT = 33;
 static const uint TK_PUB = 66;
@@ -54,6 +58,21 @@ static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
+static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
+static const uint PARSER_FEATURE_MATCHES = 0x00000008u;
+
+uint parser_features_for_lexical_token(uint kind)
+{
+    uint flags = 0u;
+    if (kind == TK_LBRACKET || kind == TK_RBRACKET)
+        flags |= PARSER_FEATURE_ARRAYS;
+    if (kind == TK_ENUM)
+        flags |= PARSER_FEATURE_ENUMS;
+    if (kind == TK_MATCH)
+        flags |= PARSER_FEATURE_MATCHES;
+    return flags;
+}
 
 uint2 file_start_and_id_for_token_end(uint end_excl)
 {
@@ -315,4 +334,7 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     t.len = end_excl - start;
     tokens_out[k] = t;
     token_file_id[k] = file_info.y;
+    uint parser_features = parser_features_for_lexical_token(kind);
+    if (parser_features != 0u)
+        atomic_u32_or(parser_feature_flags, 0u, parser_features);
 }

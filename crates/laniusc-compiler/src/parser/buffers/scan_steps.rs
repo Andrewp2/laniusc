@@ -36,6 +36,13 @@ pub struct BracketsHistogramScanStep {
     pub write_to_offsets: bool,
 }
 
+/// One stable radix byte used to order bracket events by layer and kind.
+pub struct BracketsPairRadixStep {
+    pub params: LaniusBuffer<super::super::passes::brackets::pair_radix::Params>,
+    pub read_from_pushes: bool,
+    pub key_step: u32,
+}
+
 /// One ping-pong scan step over bracket block prefixes.
 pub struct BracketsBlockPrefixScanStep {
     pub params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,

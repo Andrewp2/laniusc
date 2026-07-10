@@ -7,6 +7,93 @@ import body_plan_validate_common;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
 
+uint aggregate_value_source_type(uint node)
+{
+    node = resolve_expr_node(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    {
+        uint member_name = hir_member_name_token[node];
+        return valid_token(member_name)
+                   ? visible_type_for_token(member_name)
+                   : TY_UNKNOWN;
+    }
+    if (expr_form(node) != HIR_EXPR_NAME)
+        return TY_UNKNOWN;
+    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
+    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
+    return valid_token(decl_token)
+               ? visible_type_for_token(decl_token)
+               : TY_UNKNOWN;
+}
+
+void account_let_aggregate_value_copy(uint node, uint owner_fn, uint token)
+{
+    if (hir_kind[node] != HIR_LET_STMT ||
+        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
+    {
+        return;
+    }
+
+    uint decl_token = stmt_record_slot(node, 1u);
+    uint init_expr = resolve_expr_node(stmt_record_slot(node, 2u));
+    uint target_ty = valid_token(decl_token)
+                         ? visible_type_for_token(decl_token)
+                         : TY_UNKNOWN;
+    if (!valid_token(decl_token) ||
+        target_ty < TY_ARRAY_BASE ||
+        !valid_node(init_expr) ||
+        target_ty != aggregate_value_source_type(init_expr))
+    {
+        return;
+    }
+
+    uint width = wasm_agg_local_width_by_token[decl_token];
+    uint source_len = 0u;
+    uint source_address = 0u;
+    uint local_index = INVALID;
+    bool source_is_member = hir_kind[init_expr] == HIR_MEMBER_EXPR;
+    bool source_ok = source_is_member
+                         ? aggregate_member_address_and_len(
+                               init_expr,
+                               source_address,
+                               source_len)
+                         : aggregate_address_expr_and_len(init_expr, source_len);
+    if (width == 0u ||
+        !source_ok ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
+    {
+        publish_func_invalid(owner_fn, token);
+        return;
+    }
+
+    uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
+    uint base_len = 1u + i32_sleb_len(base_address);
+    uint width_len = 1u + i32_sleb_len(width * 4u);
+    uint len = base_len + source_len + width_len + 4u +
+               base_len + local_set_len(local_index);
+    add_func_local_token(owner_fn, decl_token);
+    add_func_body_len(owner_fn, len);
+    publish_fragment_slot(
+        token * 2u + 1u,
+        len,
+        uint4(BODY_FRAGMENT_LET_AGG_MEMBER_COPY_I32, local_index, decl_token, init_expr),
+        uint4(0u, 0u, 0u, 0u));
+}
+
+bool field_store_literal_value(uint node)
+{
+    node = resolve_expr_node(node);
+    if (!valid_node(node))
+        return false;
+    uint form = expr_form(node);
+    return form == HIR_EXPR_INT ||
+           form == HIR_EXPR_TRUE ||
+           form == HIR_EXPR_FALSE ||
+           form == HIR_EXPR_FLOAT;
+}
+
 bool aggregate_lit_let_decl(uint lit_node, out uint let_node, out uint decl_token)
 {
     let_node = INVALID;
@@ -149,6 +236,17 @@ void account_struct_field_store(uint node, uint owner_fn, uint token)
     uint storage_token = has_let_target ? decl_token : return_token;
     uint address = aggregate_data_base() + (agg_local_base_slots(storage_token) + field_index) * 4u;
     uint len = 1u + i32_sleb_len(address) + expr_len + 3u;
+    uint atom_len = 0u;
+    if (expr_non_call_atom_and_len(value_node, atom_len))
+    {
+        publish_body_features(BODY_FEATURE_AGG_COPY);
+    }
+    else if (!field_store_literal_value(value_node))
+    {
+        publish_body_features(BODY_FEATURE_ARRAYS);
+        if (expr_contains_member(value_node))
+            publish_body_features(BODY_FEATURE_MEMBER_EXPR_SCATTER);
+    }
     add_func_body_len(owner_fn, len);
     publish_fragment(
         token,
@@ -175,6 +273,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint token = hir_token_pos[node];
+    account_let_aggregate_value_copy(node, owner_fn, token);
     account_let_struct_literal(node, owner_fn, token);
     account_return_struct_literal(node, owner_fn, token);
     account_struct_field_store(node, owner_fn, token);

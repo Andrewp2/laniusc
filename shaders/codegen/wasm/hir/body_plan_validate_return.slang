@@ -28,6 +28,12 @@ bool return_call_candidate(uint stmt_node)
            (valid_node(right) && hir_kind[right] == HIR_CALL_EXPR);
 }
 
+bool direct_member_expr(uint node)
+{
+    node = resolve_expr_node(node);
+    return valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR;
+}
+
 void validate_main_return(uint node, uint token)
 {
     uint owner_fn = node_enclosing_fn_token(node);
@@ -88,6 +94,8 @@ void validate_main_return(uint node, uint token)
     {
         atomic_u32_add(body_plan, BODY_PLAN_RETURN_VALUE_OK_COUNT, 1u);
         add_func_body_len(owner_fn, return_len);
+        if (direct_member_expr(return_expr_node))
+            publish_body_features(BODY_FEATURE_RETURN_MEMBER_EXPR);
         publish_fragment(
             token,
             return_len,

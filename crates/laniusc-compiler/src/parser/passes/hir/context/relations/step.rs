@@ -33,6 +33,7 @@ impl HirContextRelationsStepPass {
         }
 
         if steps % 2 == 1 {
+            crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
             for (src, dst) in [
                 (
@@ -234,13 +235,13 @@ impl HirContextRelationsStepPass {
             &resources,
         )?;
 
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("hir_context_relations_step"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
+            encoder,
+            &self.data,
+            &bind_group,
+            "hir_context_relations_step",
+            dispatch_args,
+        );
         Ok(())
     }
 }

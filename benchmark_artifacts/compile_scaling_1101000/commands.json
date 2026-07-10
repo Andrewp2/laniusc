@@ -1,0 +1,140 @@
+{
+  "compile": {
+    "c": [
+      "gcc",
+      "-O2",
+      "target/lanius-compile-scaling/fixed20/1101000/scaling.c",
+      "-o",
+      "target/scale-c"
+    ],
+    "cpp": [
+      "g++",
+      "-O2",
+      "target/lanius-compile-scaling/fixed20/1101000/scaling.cpp",
+      "-o",
+      "target/scale-cpp"
+    ],
+    "rust": [
+      "rustc",
+      "-O",
+      "target/lanius-compile-scaling/fixed20/1101000/scaling.rs",
+      "-o",
+      "target/scale-rust"
+    ],
+    "zig": [
+      "zig",
+      "build-exe",
+      "-lc",
+      "-O",
+      "ReleaseFast",
+      "target/lanius-compile-scaling/fixed20/1101000/scaling.zig",
+      "-femit-bin=target/scale-zig"
+    ]
+  },
+  "generator": {
+    "19": [
+      "python3",
+      "tools/generate_compile_scaling_sources.py",
+      "--out",
+      "target/lanius-compile-scaling/fixed19",
+      "--sizes",
+      "1101000",
+      "--seed",
+      "19",
+      "--functions",
+      "6927"
+    ],
+    "20": [
+      "python3",
+      "tools/generate_compile_scaling_sources.py",
+      "--out",
+      "target/lanius-compile-scaling/fixed20",
+      "--sizes",
+      "1101000",
+      "--seed",
+      "20",
+      "--functions",
+      "6927"
+    ],
+    "21": [
+      "python3",
+      "tools/generate_compile_scaling_sources.py",
+      "--out",
+      "target/lanius-compile-scaling/fixed21",
+      "--sizes",
+      "1101000",
+      "--seed",
+      "21",
+      "--functions",
+      "6927"
+    ],
+    "22": [
+      "python3",
+      "tools/generate_compile_scaling_sources.py",
+      "--out",
+      "target/lanius-compile-scaling/fixed22",
+      "--sizes",
+      "1101000",
+      "--seed",
+      "22",
+      "--functions",
+      "6927"
+    ]
+  },
+  "lanius": {
+    "daemon_start": [
+      "target/release/laniusc",
+      "daemon",
+      "--stdio",
+      "--backend",
+      "x86_64",
+      "--stdlib-root",
+      "stdlib"
+    ],
+    "requests": [
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "warm19",
+        "input": "target/lanius-compile-scaling/fixed19/1101000/scaling.lani",
+        "output": "target/scale-fixed19-x86"
+      },
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "variable20",
+        "input": "target/lanius-compile-scaling/fixed20/1101000/scaling.lani",
+        "output": "target/scale-fixed20-x86"
+      },
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "variable21",
+        "input": "target/lanius-compile-scaling/fixed21/1101000/scaling.lani",
+        "output": "target/scale-fixed21-x86"
+      },
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "variable22",
+        "input": "target/lanius-compile-scaling/fixed22/1101000/scaling.lani",
+        "output": "target/scale-fixed22-x86"
+      },
+      {
+        "command": "shutdown",
+        "id": "shutdown"
+      }
+    ]
+  },
+  "run": {
+    "c": ["target/scale-c"],
+    "cpp": ["target/scale-cpp"],
+    "lanius19": ["target/scale-fixed19-x86"],
+    "lanius20": ["target/scale-fixed20-x86"],
+    "lanius21": ["target/scale-fixed21-x86"],
+    "lanius22": ["target/scale-fixed22-x86"],
+    "rust": ["target/scale-rust"],
+    "zig": ["target/scale-zig"]
+  },
+  "schema": "lanius.compile-scaling-commands.v1"
+}

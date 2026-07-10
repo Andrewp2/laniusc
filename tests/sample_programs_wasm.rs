@@ -33,6 +33,18 @@ fn wasm_sample_programs_compile_run_and_match_stdout() {
             &bytes,
             &initial_files,
         );
+        if std::env::var_os("LANIUS_WASM_TRACE").is_some() {
+            let files = result
+                .files
+                .iter()
+                .map(|(path, bytes)| format!("{path}:{}", bytes.len()))
+                .collect::<Vec<_>>()
+                .join(",");
+            eprintln!(
+                "[laniusc][wasm-sample] name={name} exit={} stdout={:?} files=[{files}]",
+                result.exit_code, result.stdout
+            );
+        }
         sample.assert_exit_code_eq("wasm", result.exit_code);
         sample.assert_stdout_eq("wasm", &result.stdout);
         sample.assert_output_files_eq_virtual(

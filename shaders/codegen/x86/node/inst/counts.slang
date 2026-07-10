@@ -39,6 +39,8 @@ StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
@@ -348,6 +350,12 @@ uint struct_access_payload0(uint row)
 uint struct_access_payload1(uint row)
 {
     return struct_access_word(row, 1u);
+}
+
+uint struct_access_payload2(uint row)
+{
+    uint info = struct_access_word(row, 2u);
+    return info == INVALID ? INVALID : info >> X86_STRUCT_ACCESS_KIND_BITS;
 }
 
 uint param_reg_word(uint decl_token, uint slot)
@@ -867,10 +875,27 @@ bool for_iterable_has_numeric_range_layout(uint node)
            valid_node(expr_right(iterable_node));
 }
 
+bool for_iterable_has_local_range_aggregate_layout(uint node)
+{
+    if (!node_is_stmt_kind(node, STMT_RECORD_KIND_FOR) || for_element_width(node) != 1u)
+        return false;
+
+    uint iterable_node = x86_for_iterable_node[node];
+    uint decl_token = INVALID;
+    if (!decl_token_for_name_expr(iterable_node, decl_token))
+        return false;
+
+    return decl_layout_base(decl_token) != INVALID &&
+           decl_layout_kind(decl_token) != 0u &&
+           decl_layout_kind(decl_token) != X86_DECL_AGG_ARRAY &&
+           decl_layout_width(decl_token) == 2u;
+}
+
 bool for_iterable_has_supported_layout(uint node)
 {
     return for_iterable_has_array_layout(node) ||
-           for_iterable_has_numeric_range_layout(node);
+           for_iterable_has_numeric_range_layout(node) ||
+           for_iterable_has_local_range_aggregate_layout(node);
 }
 
 bool name_expr_is_aggregate_local(uint node)
@@ -927,11 +952,24 @@ bool name_expr_storage_aggregate_width(uint node, out uint width)
     return decl_storage_aggregate_width(decl_token, width);
 }
 
+bool member_aggregate_width(uint member_token, out uint width)
+{
+    width = 0u;
+    if (!valid_token(member_token))
+        return false;
+    uint field_node = member_result_field_node[member_token];
+    if (!valid_node(field_node))
+        return false;
+    width = x86_struct_field_width_by_node[field_node];
+    return width > 1u;
+}
+
 bool aggregate_storage_source_width(uint node, out uint width)
 {
     width = 0u;
     uint current = node;
     uint offset = 0u;
+    uint selected_width = 0u;
     uint limit = active_hir_node_count();
     for (uint i = 0u; i < limit; i++)
     {
@@ -941,8 +979,15 @@ bool aggregate_storage_source_width(uint node, out uint width)
         {
             uint member_offset = struct_access_payload1(current);
             uint receiver = struct_access_payload0(current);
-            if (member_offset == INVALID || !valid_node(receiver))
+            uint member_token = struct_access_payload2(current);
+            uint member_width = 0u;
+            if (member_offset == INVALID ||
+                !valid_node(receiver) ||
+                !valid_token(member_token) ||
+                !member_aggregate_width(member_token, member_width))
                 return false;
+            if (selected_width == 0u)
+                selected_width = member_width;
             offset += member_offset;
             current = receiver;
             continue;
@@ -960,9 +1005,17 @@ bool aggregate_storage_source_width(uint node, out uint width)
             uint decl_token = INVALID;
             if (!decl_token_for_name_expr(current, decl_token))
                 return false;
-            if (!decl_storage_aggregate_width(decl_token, width) || offset >= width)
+            uint source_width = 0u;
+            if (!decl_storage_aggregate_width(decl_token, source_width))
                 return false;
-            width -= offset;
+            if (selected_width == 0u)
+            {
+                width = source_width;
+                return true;
+            }
+            if (offset > source_width || selected_width > source_width - offset)
+                return false;
+            width = selected_width;
             return true;
         }
 

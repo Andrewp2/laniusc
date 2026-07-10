@@ -5,6 +5,7 @@ use super::{
         GpuX86CodeGenerator,
         support::{
             UniformBindingArray,
+            copy_x86_buffer_to_buffer,
             dispatch_compute_pass_indirect,
             dispatch_compute_pass_indirect_bind_group_steps,
             dispatch_compute_pass_indirect_ping_pong_scan_steps,
@@ -253,7 +254,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         active_hir_dispatch_args_buf,
     );
     if node_func_owner_needs_copyback {
-        encoder.copy_buffer_to_buffer(
+        copy_x86_buffer_to_buffer(
+            encoder,
             node_func_owner_b_buf,
             0,
             node_func_buf,
@@ -309,7 +311,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         expr_resolve_step_bind_groups,
         active_hir_dispatch_args_buf,
     );
-    encoder.copy_buffer_to_buffer(
+    copy_x86_buffer_to_buffer(
+        encoder,
         expr_resolved_step_final_buf,
         0,
         expr_resolved_final_buf,
@@ -374,7 +377,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         match_result_owner_step_bind_groups,
         active_hir_dispatch_args_buf,
     );
-    encoder.copy_buffer_to_buffer(
+    copy_x86_buffer_to_buffer(
+        encoder,
         match_result_owner_step_final_buf,
         0,
         match_result_value_owner_buf,
@@ -398,7 +402,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         active_hir_dispatch_args_buf,
     );
     if enclosing_let_needs_copyback {
-        encoder.copy_buffer_to_buffer(
+        copy_x86_buffer_to_buffer(
+            encoder,
             enclosing_let_node_b_buf,
             0,
             enclosing_let_node_a_buf,
@@ -432,7 +437,8 @@ pub(super) fn record_metadata_and_call_dispatches(
         active_hir_dispatch_args_buf,
     );
     if match_pattern_owner_needs_copyback {
-        encoder.copy_buffer_to_buffer(
+        copy_x86_buffer_to_buffer(
+            encoder,
             match_pattern_owner_step_final_buf,
             0,
             match_pattern_node_owner_buf,
@@ -683,16 +689,25 @@ pub(super) fn record_metadata_and_call_dispatches(
         ],
         active_hir_dispatch_args_buf,
     );
-    encoder.copy_buffer_to_buffer(func_meta_buf, 0, func_meta_uniform_buf, 0, 32);
-    encoder.copy_buffer_to_buffer(
+    copy_x86_buffer_to_buffer(encoder, func_meta_buf, 0, func_meta_uniform_buf, 0, 32);
+    copy_x86_buffer_to_buffer(
+        encoder,
         const_value_status_buf,
         0,
         const_value_status_uniform_buf,
         0,
         16,
     );
-    encoder.copy_buffer_to_buffer(param_reg_status_buf, 0, param_reg_status_uniform_buf, 0, 16);
-    encoder.copy_buffer_to_buffer(
+    copy_x86_buffer_to_buffer(
+        encoder,
+        param_reg_status_buf,
+        0,
+        param_reg_status_uniform_buf,
+        0,
+        16,
+    );
+    copy_x86_buffer_to_buffer(
+        encoder,
         local_literal_status_buf,
         0,
         local_literal_status_uniform_buf,
@@ -734,7 +749,14 @@ pub(super) fn record_metadata_and_call_dispatches(
         call_callee_owner_step_bind_groups,
         active_hir_dispatch_args_buf,
     );
-    encoder.copy_buffer_to_buffer(call_abi_status_buf, 0, call_abi_status_uniform_buf, 0, 16);
+    copy_x86_buffer_to_buffer(
+        encoder,
+        call_abi_status_buf,
+        0,
+        call_abi_status_uniform_buf,
+        0,
+        16,
+    );
     stamp_timer(timer, encoder, "x86.calls.done");
 
     Ok(())

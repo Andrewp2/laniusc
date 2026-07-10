@@ -1,5 +1,4 @@
 use super::super::{
-    X86_REGALLOC_ROWS_PER_CHUNK,
     X86RegallocParams,
     X86ScanParams,
     support::{
@@ -51,23 +50,25 @@ pub(super) fn scan_params_for_steps(
 pub(super) fn regalloc_params(
     device: &wgpu::Device,
     label: &str,
-    chunk_count: usize,
+    _chunk_count: usize,
 ) -> UniformBindingArray {
-    let param_bytes = (0..chunk_count)
-        .map(|chunk_i| {
-            let params = X86RegallocParams {
-                // Regalloc consumes the compact x86_virtual_value_def_row
-                // stream, not raw virtual instruction row offsets.
-                chunk_start: chunk_i
-                    .saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK)
-                    .min(u32::MAX as usize) as u32,
-                chunk_len: X86_REGALLOC_ROWS_PER_CHUNK as u32,
-                init_status: u32::from(chunk_i == 0),
-                reserved: 0,
-            };
-            x86_regalloc_params_bytes(&params)
-        })
-        .collect::<Vec<_>>();
+    let param_bytes = [
+        X86RegallocParams {
+            chunk_start: 0,
+            chunk_len: 0,
+            init_status: 1,
+            reserved: 0,
+        },
+        X86RegallocParams {
+            chunk_start: 0,
+            chunk_len: 0,
+            init_status: 0,
+            reserved: 0,
+        },
+    ]
+    .iter()
+    .map(x86_regalloc_params_bytes)
+    .collect::<Vec<_>>();
     uniform_u32_struct_array(device, label, &param_bytes)
 }
 

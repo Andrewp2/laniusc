@@ -79,13 +79,13 @@ impl TreePrefixMaxBuildPass {
             InputElements::Elements1D(step.work_items),
             [tgsx, tgsy, 1],
         )?;
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("tree_prefix_04_build_max_tree"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&self.data.pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        crate::gpu::passes_core::record_or_defer_compute_direct(
+            encoder,
+            &self.data,
+            &bind_group,
+            "tree_prefix_04_build_max_tree",
+            (gx, gy, gz),
+        );
         Ok(())
     }
 }

@@ -321,6 +321,18 @@ fn main() {
 }
 
 #[test]
+fn type_checker_exact_name_hash_table_handles_many_long_shared_prefixes() {
+    let mut source = String::from("fn main() -> i32 {\n");
+    for index in 0..256 {
+        source.push_str(&format!(
+            "    let exact_name_hash_shared_prefix_identifier_{index:03}: i32 = {index};\n"
+        ));
+    }
+    source.push_str("    return exact_name_hash_shared_prefix_identifier_255;\n}\n");
+    assert_gpu_type_check_ok(&source);
+}
+
+#[test]
 fn type_checker_accepts_generated_call_argument_shapes_on_gpu() {
     assert_gpu_type_check_ok(
         r#"

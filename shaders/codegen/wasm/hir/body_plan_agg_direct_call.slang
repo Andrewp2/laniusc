@@ -6,6 +6,7 @@ import body_plan_validate_common;
 
 bool aggregate_direct_call_info(
     uint node,
+    bool expected_aggregate_return,
     out uint tail_len,
     out uint fn_token,
     out uint wasm_func_index,
@@ -36,7 +37,8 @@ bool aggregate_direct_call_info(
         return false;
 
     uint return_ty = call_return_type_for_call(node, callee_token, fn_token);
-    if (return_ty < TY_ARRAY_BASE)
+    bool unknown_return = return_ty == TY_UNKNOWN || return_ty == INVALID;
+    if (return_ty < TY_ARRAY_BASE && !(expected_aggregate_return && unknown_return))
         return false;
 
     bool has_receiver_arg = direct_call_has_receiver_arg(node, fn_token);
@@ -50,21 +52,44 @@ bool aggregate_direct_call_info(
     return true;
 }
 
-void account_let_aggregate_direct_call(uint node, uint owner_fn, uint token)
+bool aggregate_let_call_context(
+    uint call_node,
+    out uint let_node,
+    out uint decl_token,
+    out uint token)
 {
-    if (hir_kind[node] != HIR_LET_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
+    let_node = INVALID;
+    decl_token = INVALID;
+    token = INVALID;
+
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return false;
+
+    let_node = hir_call_context_stmt_node[call_node];
+    if (!valid_node(let_node) || stmt_record_slot(let_node, 0u) != STMT_RECORD_KIND_LET)
+        return false;
+
+    decl_token = stmt_record_slot(let_node, 1u);
+    uint init_expr = valid_token(decl_token) ? body_let_init_expr_by_decl_token[decl_token] : INVALID;
+    if (!valid_node(init_expr))
+        init_expr = stmt_record_slot(let_node, 2u);
+    if (resolve_expr_node(init_expr) != resolve_expr_node(call_node))
+        return false;
+
+    token = hir_token_pos[let_node];
+    if (!valid_token(token))
+        token = hir_token_pos[call_node];
+    return valid_token(token);
+}
+
+void account_let_aggregate_direct_call(uint call_node, uint decl_token, uint owner_fn, uint token)
+{
+    if (!valid_token(decl_token) ||
+        (visible_type_for_token(decl_token) < TY_ARRAY_BASE &&
+         wasm_agg_local_width_by_token[decl_token] == 0u))
     {
         return;
     }
-
-    uint decl_token = stmt_record_slot(node, 1u);
-    if (!valid_token(decl_token) || visible_type_for_token(decl_token) < TY_ARRAY_BASE)
-        return;
-
-    uint call_node = resolve_expr_node(stmt_record_slot(node, 2u));
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
-        return;
 
     uint call_tail_len = 0u;
     uint fn_token = INVALID;
@@ -73,6 +98,7 @@ void account_let_aggregate_direct_call(uint node, uint owner_fn, uint token)
     uint detail = token;
     if (!aggregate_direct_call_info(
             call_node,
+            wasm_agg_local_width_by_token[decl_token] != 0u,
             call_tail_len,
             fn_token,
             wasm_func_index,
@@ -124,11 +150,17 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint node = linear_dispatch_id(tid);
-    if (!valid_node(node) || hir_kind[node] != HIR_LET_STMT)
+    if (!valid_node(node) || hir_kind[node] != HIR_CALL_EXPR)
         return;
 
-    uint owner_fn = node_enclosing_fn_token(node);
+    uint let_node = INVALID;
+    uint decl_token = INVALID;
+    uint token = INVALID;
+    if (!aggregate_let_call_context(node, let_node, decl_token, token))
+        return;
+
+    uint owner_fn = node_enclosing_fn_token(let_node);
     if (!supported_function_token(owner_fn))
         return;
-    account_let_aggregate_direct_call(node, owner_fn, hir_token_pos[node]);
+    account_let_aggregate_direct_call(node, decl_token, owner_fn, token);
 }

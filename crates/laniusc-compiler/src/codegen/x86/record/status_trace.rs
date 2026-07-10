@@ -1,4 +1,4 @@
-use super::super::support::readback_u32s;
+use super::super::support::{copy_x86_buffer_to_buffer, readback_u32s};
 
 /// Status buffers that can be copied into the x86 status trace readback.
 pub(super) struct StatusTraceSources<'a> {
@@ -107,7 +107,7 @@ pub(super) fn copy_status_trace(
 
     let mut offset = 0u64;
     for (buffer, words) in entries {
-        encoder.copy_buffer_to_buffer(buffer, 0, readback, offset * 4, words * 4);
+        copy_x86_buffer_to_buffer(encoder, buffer, 0, readback, offset * 4, words * 4);
         offset += words;
     }
 }

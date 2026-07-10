@@ -12,23 +12,23 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output, Stdio},
     sync::{
-        atomic::{AtomicU64, Ordering},
-        mpsc,
         Mutex,
         MutexGuard,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use laniusc_compiler::compiler::{
+    CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
-    CompileError,
 };
 use log::warn;
 
@@ -601,7 +601,7 @@ const fs = require('fs');
 (async () => {
   let stdout = '';
   let instance = null;
-  const laniusArgs = ['program', 'alpha'];
+  const laniusArgs = ['program', 'LANIUS_TEST_ENV'];
   const cwd = '/lanius/test/cwd';
   const laniusEnv = { LANIUS_TEST_ENV: 'present' };
   const envKeys = Object.keys(laniusEnv);
@@ -932,7 +932,7 @@ pub fn run_wasm_main_return_with_node(
 const fs = require('fs');
 (async () => {
   let instance = null;
-  const laniusArgs = ['program', 'alpha'];
+  const laniusArgs = ['program', 'LANIUS_TEST_ENV'];
   const cwd = '/lanius/test/cwd';
   const laniusEnv = { LANIUS_TEST_ENV: 'present' };
   const envKeys = Object.keys(laniusEnv);

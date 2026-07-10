@@ -536,12 +536,6 @@ impl GpuTypeChecker {
             NAME_RADIX_BUCKETS as usize,
             wgpu::BufferUsages::empty(),
         );
-        let radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.radix_dispatch_args",
-            (1 + 3 * NAME_RADIX_MAX_BYTES as usize) * 3,
-            wgpu::BufferUsages::INDIRECT,
-        );
         let run_head_mask = typed_storage_u32_rw(
             device,
             "type_check.resident.run_head_mask",
@@ -2034,7 +2028,7 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.predicate_obligation_pair_dispatch_args",
             3,
-            wgpu::BufferUsages::INDIRECT,
+            wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
         );
         // Function return refs are populated after the name-radix pipeline has
         // assigned stable name ids. Reuse dead name-dedup scratch for these
@@ -2152,6 +2146,34 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
+        let semantic_feature_flags = typed_storage_u32_rw(
+            device,
+            "type_check.resident.semantic_feature_flags",
+            1,
+            wgpu::BufferUsages::COPY_DST,
+        );
+        let semantic_indirect_args =
+            |label| typed_storage_u32_rw(device, label, 3, wgpu::BufferUsages::INDIRECT);
+        let method_token_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_token_dispatch_args");
+        let method_hir_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_hir_dispatch_args");
+        let method_token_hir_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_token_hir_dispatch_args");
+        let method_radix_prefix_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_radix_prefix_dispatch_args");
+        let method_radix_bases_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_radix_bases_dispatch_args");
+        let predicate_token_dispatch_args =
+            semantic_indirect_args("type_check.resident.predicate_token_dispatch_args");
+        let predicate_hir_dispatch_args =
+            semantic_indirect_args("type_check.resident.predicate_hir_dispatch_args");
+        let predicate_radix_prefix_dispatch_args =
+            semantic_indirect_args("type_check.resident.predicate_radix_prefix_dispatch_args");
+        let predicate_radix_bases_dispatch_args =
+            semantic_indirect_args("type_check.resident.predicate_radix_bases_dispatch_args");
+        let predicate_single_dispatch_args =
+            semantic_indirect_args("type_check.resident.predicate_single_dispatch_args");
         let empty_hir = EmptyHirBindings::new(device, uses_hir_items, hir_node_capacity);
         let mut resources = ResourceMap::new();
         resources.buffer("gParams", &self.params_buf);
@@ -2171,6 +2193,38 @@ impl GpuTypeChecker {
             &token_hir_active_dispatch_args,
         );
         resources.buffer("hir_active_count", &hir_active_count);
+        resources.buffer("semantic_feature_flags", &semantic_feature_flags);
+        resources.buffer("method_token_dispatch_args", &method_token_dispatch_args);
+        resources.buffer("method_hir_dispatch_args", &method_hir_dispatch_args);
+        resources.buffer(
+            "method_token_hir_dispatch_args",
+            &method_token_hir_dispatch_args,
+        );
+        resources.buffer(
+            "method_radix_prefix_dispatch_args",
+            &method_radix_prefix_dispatch_args,
+        );
+        resources.buffer(
+            "method_radix_bases_dispatch_args",
+            &method_radix_bases_dispatch_args,
+        );
+        resources.buffer(
+            "predicate_token_dispatch_args",
+            &predicate_token_dispatch_args,
+        );
+        resources.buffer("predicate_hir_dispatch_args", &predicate_hir_dispatch_args);
+        resources.buffer(
+            "predicate_radix_prefix_dispatch_args",
+            &predicate_radix_prefix_dispatch_args,
+        );
+        resources.buffer(
+            "predicate_radix_bases_dispatch_args",
+            &predicate_radix_bases_dispatch_args,
+        );
+        resources.buffer(
+            "predicate_single_dispatch_args",
+            &predicate_single_dispatch_args,
+        );
         if let Some(hir_items) = hir_items {
             register_hir_item_resources(&mut resources, hir_items);
         } else {
@@ -2701,6 +2755,18 @@ impl GpuTypeChecker {
             &passes.hir_active_dispatch_args,
             &resources,
         )?;
+        let semantic_features_collect = reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_semantic_features_collect",
+            &passes.semantic_features_collect,
+            &resources,
+        )?;
+        let semantic_features_dispatch_args = reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_semantic_features_dispatch_args",
+            &passes.semantic_features_dispatch_args,
+            &resources,
+        )?;
         let language_name_bind_groups =
             create_language_name_bind_groups(device, passes, &resources)?;
         let name_bind_groups = create_name_bind_groups_with_passes(
@@ -2751,10 +2817,6 @@ impl GpuTypeChecker {
                     bucket_total: &radix_bucket_total,
                     bucket_base: &radix_bucket_base,
                 },
-                radix_args: &radix_dispatch_args,
-                run_head: &run_head_mask,
-                adjacent_equal: &adjacent_equal_mask,
-                run_prefix: &run_head_prefix,
             },
         )?;
         let module_path = if let Some(hir_items) = hir_items {
@@ -3572,6 +3634,19 @@ impl GpuTypeChecker {
             token_hir_active_dispatch_args,
             hir_active_count,
             hir_active_dispatch,
+            semantic_feature_flags,
+            method_token_dispatch_args,
+            method_hir_dispatch_args,
+            method_token_hir_dispatch_args,
+            method_radix_prefix_dispatch_args,
+            method_radix_bases_dispatch_args,
+            predicate_token_dispatch_args,
+            predicate_hir_dispatch_args,
+            predicate_radix_prefix_dispatch_args,
+            predicate_radix_bases_dispatch_args,
+            predicate_single_dispatch_args,
+            semantic_features_collect,
+            semantic_features_dispatch_args,
             loop_delta,
             loop_depth_inblock,
             loop_block_sum,
