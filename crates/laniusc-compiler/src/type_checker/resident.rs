@@ -175,6 +175,7 @@ impl GpuTypeChecker {
             hir_status_buf,
             Some(hir_items),
             None,
+            None,
             timer,
         )
     }
@@ -195,6 +196,7 @@ impl GpuTypeChecker {
         token_file_id_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
+        parser_hir_node_capacity: u32,
         hir_kind_buf: &wgpu::Buffer,
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
@@ -216,13 +218,14 @@ impl GpuTypeChecker {
             token_file_id_buf,
             source_buf,
             hir_node_capacity,
-            hir_node_capacity,
+            parser_hir_node_capacity,
             hir_kind_buf,
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_token_file_id_buf,
             hir_status_buf,
             Some(hir_items),
+            None,
             Some(external_scratch),
             timer,
         )
@@ -272,6 +275,7 @@ impl GpuTypeChecker {
             hir_status_buf,
             None,
             None,
+            None,
             timer,
         )
     }
@@ -298,12 +302,14 @@ impl GpuTypeChecker {
         hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
         external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
+        module_path_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
+        // Type-check phases contain dependent scans, sorts, and resolution
+        // passes. Coalescing them into one compute pass provides no storage
+        // barriers between dispatches and makes results timing-dependent.
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-            timer.is_none()
-                && crate::gpu::passes_core::compute_pass_batching_enabled()
-                && !crate::gpu::passes_core::validation_scopes_enabled(),
+            false,
             "type_check.resident.batch",
         );
         let params = TypeCheckParams {
@@ -311,6 +317,9 @@ impl GpuTypeChecker {
             source_len,
             n_hir_nodes: hir_node_capacity,
             n_source_files: source_file_capacity,
+            parser_feature_flags: hir_items
+                .map(|items| items.parser_feature_flags)
+                .unwrap_or(u32::MAX),
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
         queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
@@ -405,12 +414,64 @@ impl GpuTypeChecker {
             fingerprint_buffers.push(scratch.path_owner_module_id);
             fingerprint_buffers.push(scratch.path_kind);
         }
+        if let Some(scratch) = module_path_scratch {
+            fingerprint_buffers.push(scratch.module_record_prefix);
+            fingerprint_buffers.push(scratch.record_scan_local_prefix);
+            fingerprint_buffers.push(scratch.module_path_key_radix_block_histogram);
+            fingerprint_buffers.push(scratch.module_path_key_radix_block_bucket_prefix);
+            fingerprint_buffers.push(scratch.path_id_by_owner_hir);
+            fingerprint_buffers.push(scratch.decl_module_file_id);
+            fingerprint_buffers.push(scratch.decl_module_id);
+            fingerprint_buffers.push(scratch.decl_name_id);
+            fingerprint_buffers.push(scratch.decl_namespace);
+            fingerprint_buffers.push(scratch.decl_visibility);
+            fingerprint_buffers.push(scratch.decl_token_start);
+            fingerprint_buffers.push(scratch.decl_token_end);
+            fingerprint_buffers.push(scratch.decl_key_to_decl_id);
+            fingerprint_buffers.push(scratch.decl_key_order_tmp);
+            fingerprint_buffers.push(scratch.decl_status);
+            fingerprint_buffers.push(scratch.decl_type_key_to_decl_id);
+            fingerprint_buffers.push(scratch.decl_value_key_to_decl_id);
+            fingerprint_buffers.push(scratch.import_visible_type_count);
+            fingerprint_buffers.push(scratch.import_visible_value_count);
+            fingerprint_buffers.push(scratch.import_visible_type_prefix);
+            fingerprint_buffers.push(scratch.import_visible_value_prefix);
+            fingerprint_buffers.push(scratch.resolved_type_decl);
+            fingerprint_buffers.push(scratch.resolved_value_decl);
+            fingerprint_buffers.push(scratch.resolved_type_status);
+            fingerprint_buffers.push(scratch.resolved_value_status);
+            fingerprint_buffers.push(scratch.path_start);
+            fingerprint_buffers.push(scratch.path_len);
+            fingerprint_buffers.push(scratch.path_segment_count);
+            fingerprint_buffers.push(scratch.path_segment_base);
+            fingerprint_buffers.push(scratch.path_segment_name_id);
+            fingerprint_buffers.push(scratch.path_segment_token);
+            fingerprint_buffers.push(scratch.path_owner_hir);
+            fingerprint_buffers.push(scratch.path_owner_token);
+            fingerprint_buffers.push(scratch.path_owner_module_id);
+            fingerprint_buffers.push(scratch.path_kind);
+        }
         let input_fingerprint = buffer_fingerprint(&fingerprint_buffers);
+        let module_record_capacity = hir_items
+            .map(|items| items.module_record_capacity)
+            .unwrap_or(token_capacity)
+            .max(1);
+        let call_param_row_capacity = hir_items
+            .map(|items| items.call_param_row_capacity)
+            .unwrap_or(hir_node_capacity)
+            .max(1);
+        let call_arg_row_capacity = hir_items
+            .map(|items| items.call_arg_row_capacity)
+            .unwrap_or(hir_node_capacity)
+            .max(1);
         let cache_key = ResidentTypeCheckCacheKey {
             source_file_capacity,
             token_capacity,
             hir_node_capacity,
             parser_hir_node_capacity,
+            module_record_capacity,
+            call_param_row_capacity,
+            call_arg_row_capacity,
             input_fingerprint,
             uses_hir_items,
         };
@@ -447,6 +508,7 @@ impl GpuTypeChecker {
                     input_fingerprint,
                     uses_hir_items,
                     external_scratch,
+                    module_path_scratch,
                 )?);
             }
             host_timer.stamp(if rebuilt {
@@ -813,20 +875,20 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.type_instance_fields.done");
             }
             host_timer.stamp("methods_member_struct_fields");
-            if false && let Some(module_path) = &bind_groups.module_path {
+            if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
                     encoder,
                     &self.passes.modules_bind_match_patterns,
                     &module_path.bind_groups.bind_match_patterns,
                     "type_check.modules.bind_match_patterns",
-                    &bind_groups.hir_active_dispatch_args,
+                    &bind_groups.match_hir_dispatch_args,
                 )?;
                 record_compute_indirect(
                     encoder,
                     &self.passes.modules_type_match_payloads,
                     &module_path.bind_groups.type_match_payloads,
                     "type_check.modules.type_match_payloads",
-                    &bind_groups.hir_active_dispatch_args,
+                    &bind_groups.match_hir_dispatch_args,
                 )?;
             }
             record_compute_indirect(

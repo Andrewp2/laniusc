@@ -706,8 +706,39 @@ bool allocate_function_interval(uint func_i, uint fn_slot, uint inst_count, out 
     active_end[12u] = INVALID;
     uint current_param_rank_mask = load_param_rank_mask(func_i, fn_slot);
 
-    for (uint row = start_row; row < end_row; row += 1u)
+    uint value_def_count = min(x86_virtual_value_def_status[3u], inst_count);
+    uint lo = 0u;
+    uint hi = value_def_count;
+    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
     {
+        uint mid = lo + ((hi - lo) >> 1u);
+        if (x86_virtual_value_def_row[mid] < start_row)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    uint first_value_def = lo;
+    lo = first_value_def;
+    hi = value_def_count;
+    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
+    {
+        uint mid = lo + ((hi - lo) >> 1u);
+        if (x86_virtual_value_def_row[mid] < end_row)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    uint end_value_def = lo;
+
+    for (uint value_def_i = first_value_def; value_def_i < end_value_def; value_def_i += 1u)
+    {
+        uint row = x86_virtual_value_def_row[value_def_i];
+        uint compact_failed_node = INVALID;
+        if (!valid_compact_value_def_row(value_def_i, row, inst_count, compact_failed_node))
+        {
+            failed_node = compact_failed_node;
+            return false;
+        }
         if (!allocate_virtual_row(row, fn_slot, active_end, current_param_rank_mask))
         {
             uint node = x86_virtual_inst_record[row].x;

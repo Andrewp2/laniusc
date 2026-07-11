@@ -353,12 +353,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
-        // Typecheck metadata remains live across late module/generic/match
-        // passes and is retained for x86 lowering. Keep it in typechecker-owned
-        // rows so backend codegen can consume semantic records after the parser
-        // resident cache has been released.
+        let module_path_scratch =
+            Self::typecheck_external_scratch_from_frontend_buffers(lexer_bufs, parse_bufs);
         self.type_checker
-            .record_resident_token_buffer_with_hir_items_on_gpu(
+            .record_resident_token_buffer_with_hir_items_and_scratch_on_gpu(
                 device,
                 queue,
                 encoder,
@@ -377,11 +375,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                 &parse_bufs.hir_token_file_id,
                 &parse_bufs.ll1_status,
                 parse_bufs.hir_item_buffers(),
+                module_path_scratch,
                 timer,
             )
             .map_err(map_execution_error)
     }
-    #[allow(dead_code)]
+
     fn typecheck_external_scratch_from_frontend_buffers<'a>(
         lexer_bufs: &'a LexerBuffers,
         parse_bufs: &'a OwnedTypecheckParserBuffers,
@@ -402,7 +401,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             // generic/const-param slot maps are cleared and populated.
             type_generic_param_slot_by_token: &parse_bufs.hir_list_rank_node,
             type_const_param_slot_by_token: &parse_bufs.hir_list_rank_local_prefix,
-            record_family_flag: None,
+            record_family_flag: Some(&parse_bufs.hir_list_rank_flag),
             module_record_prefix: &parse_bufs.hir_type_alias_owner_value_b,
             record_scan_local_prefix: &parse_bufs.hir_type_alias_owner_link_a,
             module_path_key_radix_block_histogram: &parse_bufs.hir_list_rank_local_prefix,
@@ -490,7 +489,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             path_owner_hir: &parse_bufs.pack_sc_prefix_b,
             path_owner_token: &parse_bufs.pack_emit_prefix_a,
             path_owner_module_id: &parse_bufs.pack_emit_prefix_b,
-            path_kind: &parse_bufs.hir_list_rank_flag,
+            path_kind: &parse_bufs.hir_match_arm_owner_a,
         }
     }
 }

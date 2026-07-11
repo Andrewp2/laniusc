@@ -10,6 +10,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> partial_parse_status;
+StructuredBuffer<int> depths_out;
 StructuredBuffer<uint> radix_block_histogram;
 RWStructuredBuffer<uint> radix_block_bucket_prefix;
 RWStructuredBuffer<uint> radix_bucket_total;
@@ -23,7 +24,9 @@ groupshared uint lane_totals[256];
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint n = min(gParams.n_sc, partial_parse_status[4u]);
-    if (n <= SMALL_PAIR_CAPACITY || gid.x >= RADIX_BUCKETS)
+    uint maxKey = (uint)max(depths_out[2], 0) * 2u + 1u;
+    bool keyStepActive = gParams.key_step == 0u || (maxKey >> (gParams.key_step * 8u)) != 0u;
+    if (n <= SMALL_PAIR_CAPACITY || !keyStepActive || gid.x >= RADIX_BUCKETS)
         return;
     uint active_blocks = min((n + 255u) / 256u, gParams.n_blocks);
     uint blocks_per_lane = (active_blocks + 255u) / 256u;

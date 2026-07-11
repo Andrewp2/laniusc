@@ -596,7 +596,7 @@ impl ParserBuffers {
         let b_block_prefix_min_b =
             storage_rw_for_array::<i32>(device, "brackets.block_prefix_min_b", n_blocks as usize);
 
-        let depths_out = storage_rw_for_array::<i32>(device, "brackets.depths_out", 2);
+        let depths_out = storage_rw_for_array::<i32>(device, "brackets.depths_out", 3);
         let valid_out = storage_rw_for_array::<u32>(device, "brackets.valid_out", 1);
 
         let b_depth_exscan =

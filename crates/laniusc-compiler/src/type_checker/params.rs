@@ -12,6 +12,7 @@ pub(in crate::type_checker) struct TypeCheckParams {
     pub(in crate::type_checker) source_len: u32,
     pub(in crate::type_checker) n_hir_nodes: u32,
     pub(in crate::type_checker) n_source_files: u32,
+    pub(in crate::type_checker) parser_feature_flags: u32,
 }
 
 /// Uniform for the loop-depth prefix-scan passes.
@@ -177,6 +178,74 @@ pub(in crate::type_checker) const CALL_PARAM_CACHE_STRIDE: usize = 4;
 pub const TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 /// Upper bound multiplier for generic claim scratch relative to call rows.
 pub(in crate::type_checker) const GENERIC_CLAIM_CAPACITY_MULTIPLIER: u32 = 32;
+
+/// Conservative generic-claim capacity for one source token stream.
+///
+/// Claims are emitted only from compacted call-argument rows. Every argument
+/// row originates in source syntax and therefore consumes at least one token,
+/// even when parser expansion produces more HIR rows than source tokens. Keep
+/// this bound tied to tokens so expanded HIR cannot inflate each claim buffer
+/// past the device's maximum single-buffer size.
+pub(in crate::type_checker) fn generic_claim_capacity(token_capacity: u32) -> u32 {
+    token_capacity
+        .saturating_mul(GENERIC_CLAIM_CAPACITY_MULTIPLIER)
+        .max(1)
+}
+
+pub(in crate::type_checker) fn generic_claim_capacity_for_features(
+    token_capacity: u32,
+    parser_feature_flags: u32,
+) -> u32 {
+    if parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ARGS == 0 {
+        1
+    } else {
+        generic_claim_capacity(token_capacity)
+    }
+}
+
+pub(in crate::type_checker) fn aggregate_compare_capacity_for_features(
+    hir_node_capacity: u32,
+    parser_feature_flags: u32,
+) -> u32 {
+    use crate::lexer::features::{
+        PARSER_FEATURE_ARRAYS,
+        PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_STRUCTS,
+        PARSER_FEATURE_TYPE_ARGS,
+    };
+    const AGGREGATE_FEATURES: u32 = PARSER_FEATURE_TYPE_ARGS
+        | PARSER_FEATURE_ARRAYS
+        | PARSER_FEATURE_ENUMS
+        | PARSER_FEATURE_STRUCTS;
+    if parser_feature_flags & AGGREGATE_FEATURES == 0 {
+        1
+    } else {
+        hir_node_capacity.max(1)
+    }
+}
+
+pub(in crate::type_checker) fn predicate_capacity_for_features(
+    hir_node_capacity: u32,
+    parser_feature_flags: u32,
+) -> u32 {
+    use crate::lexer::features::{PARSER_FEATURE_PREDICATES, PARSER_FEATURE_TYPE_ARGS};
+    if parser_feature_flags & (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES) == 0 {
+        1
+    } else {
+        hir_node_capacity.max(1)
+    }
+}
+
+pub(in crate::type_checker) fn member_capacity_for_features(
+    token_capacity: u32,
+    parser_feature_flags: u32,
+) -> u32 {
+    if parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MEMBERS == 0 {
+        1
+    } else {
+        token_capacity.max(1)
+    }
+}
 
 /// Bucket count for byte-wise radix sorting plus an end-of-name bucket.
 pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;

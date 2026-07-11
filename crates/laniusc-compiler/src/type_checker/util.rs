@@ -26,6 +26,7 @@ pub(super) fn zeroed_type_check_params_buffer(
         source_len: 0,
         n_hir_nodes: 0,
         n_source_files: 0,
+        parser_feature_flags: 0,
     })
     .len();
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
@@ -111,9 +112,12 @@ pub(super) fn typed_storage_u32_fill_rw(
     extra_usage: wgpu::BufferUsages,
 ) -> LaniusBuffer<u32> {
     let allocated_count = count.max(1);
-    let mut bytes = Vec::with_capacity(allocated_count * 4);
-    for _ in 0..allocated_count {
-        bytes.extend_from_slice(&value.to_le_bytes());
+    let pattern = value.to_le_bytes();
+    let mut bytes = vec![pattern[0]; allocated_count * 4];
+    if !pattern.iter().all(|&byte| byte == pattern[0]) {
+        for word in bytes.chunks_exact_mut(4) {
+            word.copy_from_slice(&pattern);
+        }
     }
     let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),

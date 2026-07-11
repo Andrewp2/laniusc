@@ -1,6 +1,7 @@
 // shaders/parser/brackets_01_scan_inblock.slang
 // Per-workgroup exclusive scan of +1/-1 deltas. Writes in-block exscan and block summaries.
 
+import gpu_index;
 import prefix_scan;
 
 struct Params
@@ -20,6 +21,8 @@ RWStructuredBuffer<int> block_maxdepth; // len = n_blocks (max depth within bloc
 groupshared int s_val[256];
 groupshared int s_minp[256];
 groupshared int s_depth[256];
+
+static const uint MAX_GROUPS_X = 65535u;
 
 public struct BracketScanI32Min : IPrefixScanOp<int>
 {
@@ -55,7 +58,8 @@ void main(uint3 tid: SV_DispatchThreadID,
 {
     const uint n = min(gParams.n_sc, partial_parse_status[4u]);
     const uint GSIZE = gParams.wg_size; // 256
-    const uint base = gid.x * GSIZE;
+    const uint block = linear_group_id_2d(gid, MAX_GROUPS_X);
+    const uint base = block * GSIZE;
     const uint i = base + ltid.x;
 
     // Load +1/-1 and build inclusive scan in shared memory
@@ -91,8 +95,8 @@ void main(uint3 tid: SV_DispatchThreadID,
     if (ltid.x + 1u == GSIZE)
     {
         int sum = s_val[GSIZE - 1];
-        block_sum[gid.x] = sum;
-        block_minpref[gid.x] = minp;
-        block_maxdepth[gid.x] = max_depth;
+        block_sum[block] = sum;
+        block_minpref[block] = minp;
+        block_maxdepth[block] = max_depth;
     }
 }

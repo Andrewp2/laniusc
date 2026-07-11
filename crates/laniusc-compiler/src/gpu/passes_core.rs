@@ -177,10 +177,6 @@ pub(crate) fn defer_compute_indirect_bind_groups(
     })
 }
 
-pub(crate) fn deferred_compute_active() -> bool {
-    DEFERRED_COMPUTE.with(|state| state.borrow().active)
-}
-
 /// Records one direct dispatch immediately, or appends it to the active
 /// ordered compute batch.
 pub(crate) fn record_or_defer_compute_direct(

@@ -87,6 +87,7 @@ static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
+static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -222,7 +223,17 @@ uint resolve_expr(uint node)
     if (!valid_node(node))
         return INVALID;
     uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : node;
+    uint current = valid_node(root) ? root : node;
+    for (uint step = 0u; step < 32u && valid_node(current); step += 1u)
+    {
+        if (expr_form(current) != HIR_EXPR_FORWARD)
+            return current;
+        uint next = expr_record_slot(current, HIR_EXPR_RECORD_LEFT);
+        if (!valid_node(next) || next == current)
+            return current;
+        current = next;
+    }
+    return current;
 }
 
 uint visible_type_for_token(uint token)

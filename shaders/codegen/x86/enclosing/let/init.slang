@@ -21,6 +21,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_call_context_stmt_node;
 StructuredBuffer<uint> x86_tree_parent;
 
 RWStructuredBuffer<uint> x86_enclosing_let_node;
@@ -30,6 +31,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 
@@ -78,6 +80,15 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint parent = x86_tree_parent[node];
+    uint call_context = hir_kind[node] == HIR_CALL_EXPR
+                            ? hir_call_context_stmt_node[node]
+                            : INVALID;
+    if (is_let_node(call_context))
+    {
+        x86_enclosing_let_node[node] = call_context;
+        x86_enclosing_let_link[node] = INVALID;
+        return;
+    }
     if (is_let_node(parent))
     {
         x86_enclosing_let_node[node] = parent;

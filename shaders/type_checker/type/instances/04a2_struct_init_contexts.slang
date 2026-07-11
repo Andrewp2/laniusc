@@ -10,13 +10,15 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> subtree_end;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
@@ -40,6 +42,7 @@ RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
 
 static const uint INVALID = 0xffffffffu;
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -247,18 +250,21 @@ uint enclosing_array_element_node(uint literal_node)
     if (!valid_node(literal_node))
         return INVALID;
 
-    uint found = INVALID;
-    for (uint node = 0u; node < literal_node; node += 1u)
+    // Array-element roots are parser-owned HIR nodes. Follow the literal's
+    // actual ancestor chain instead of scanning every preceding HIR row. The
+    // step bound makes malformed parent data fail closed without turning one
+    // GPU lane into an unbounded walker over the compilation unit.
+    uint node = parent[literal_node];
+    uint remaining = active_node_count();
+    while (valid_node(node) && remaining != 0u)
     {
         uint array_node = hir_array_element_parent_lit[node];
-        if (!valid_node(array_node))
-            continue;
-
-        uint end = subtree_end[node];
-        if (end != INVALID && end > literal_node && end <= active_node_count())
-            found = node;
+        if (valid_node(array_node))
+            return node;
+        node = parent[node];
+        remaining -= 1u;
     }
-    return found;
+    return INVALID;
 }
 
 bool publish_array_element_context(uint literal_node, uint stmt_node)
@@ -293,6 +299,8 @@ bool publish_array_element_context(uint literal_node, uint stmt_node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    if ((gParams.parser_feature_flags & PARSER_FEATURE_STRUCTS) == 0u)
+        return;
     uint i = linear_thread_id(dtid);
     if (!valid_node(i))
         return;

@@ -84,7 +84,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner = hir_array_element_owner_a[node];
-    if (!valid_node(owner))
+    if (!valid_node(owner) || hir_kind[owner] != HIR_ARRAY_EXPR)
         return;
 
     uint ordinal = hir_array_element_rank_a[node];

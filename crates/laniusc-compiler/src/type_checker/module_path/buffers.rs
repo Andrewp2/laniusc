@@ -156,6 +156,7 @@ impl Buffers {
         let hir_node_capacity = inputs.hir_node_capacity;
         let token_capacity = inputs.token_capacity;
         let external = inputs.external_scratch;
+        let retained_path_external = inputs.external_scratch;
         let scan_params = NameScanParams {
             n_items: hir_node_capacity,
             n_blocks,
@@ -350,6 +351,7 @@ impl Buffers {
             module_capacity,
             wgpu::BufferUsages::empty(),
         );
+        let external: Option<GpuTypeCheckExternalScratchBuffers<'_>> = None;
         let import_module_file_id = typed_storage_u32_rw(
             device,
             "type_check.resident.import_module_file_id",
@@ -574,7 +576,7 @@ impl Buffers {
             device,
             "type_check.resident.decl_type_key_to_decl_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_type_key_to_decl_id),
+            None,
         );
         // Module-path value-key lookup is consumed inside typecheck and is not
         // retained by the x86 handoff. Reuse dead parser list-workspace rows.
@@ -582,31 +584,31 @@ impl Buffers {
             device,
             "type_check.resident.decl_value_key_to_decl_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_value_key_to_decl_id),
+            None,
         );
         let import_visible_type_count = typed_alias_or_storage_u32(
             device,
             "type_check.resident.import_visible_type_count",
             record_capacity,
-            external.map(|scratch| scratch.import_visible_type_count),
+            None,
         );
         let import_visible_value_count = typed_alias_or_storage_u32(
             device,
             "type_check.resident.import_visible_value_count",
             record_capacity,
-            external.map(|scratch| scratch.import_visible_value_count),
+            None,
         );
         let import_visible_type_prefix = typed_alias_or_storage_u32(
             device,
             "type_check.resident.import_visible_type_prefix",
             record_capacity,
-            external.map(|scratch| scratch.import_visible_type_prefix),
+            None,
         );
         let import_visible_value_prefix = typed_alias_or_storage_u32(
             device,
             "type_check.resident.import_visible_value_prefix",
             record_capacity,
-            external.map(|scratch| scratch.import_visible_value_prefix),
+            None,
         );
         let import_visible_type_count_out = typed_storage_u32_rw(
             device,
@@ -766,25 +768,25 @@ impl Buffers {
             device,
             "type_check.resident.resolved_type_decl",
             record_capacity,
-            external.map(|scratch| scratch.resolved_type_decl),
+            retained_path_external.map(|scratch| scratch.resolved_type_decl),
         );
         let resolved_value_decl = typed_alias_or_storage_u32(
             device,
             "type_check.resident.resolved_value_decl",
             record_capacity,
-            external.map(|scratch| scratch.resolved_value_decl),
+            retained_path_external.map(|scratch| scratch.resolved_value_decl),
         );
         let resolved_type_status = typed_alias_or_storage_u32(
             device,
             "type_check.resident.resolved_type_status",
             record_capacity,
-            external.map(|scratch| scratch.resolved_type_status),
+            retained_path_external.map(|scratch| scratch.resolved_type_status),
         );
         let resolved_value_status = typed_alias_or_storage_u32(
             device,
             "type_check.resident.resolved_value_status",
             record_capacity,
-            external.map(|scratch| scratch.resolved_value_status),
+            retained_path_external.map(|scratch| scratch.resolved_value_status),
         );
         // Path prefixes are only needed until path records have been scattered.
         // Later module/import scatters read the retained path_id_by_owner_hir table,
@@ -798,38 +800,38 @@ impl Buffers {
             device,
             "type_check.resident.path_start",
             record_capacity,
-            external.map(|scratch| scratch.path_start),
+            retained_path_external.map(|scratch| scratch.path_start),
         );
         let path_len = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_len",
             record_capacity,
-            external.map(|scratch| scratch.path_len),
+            retained_path_external.map(|scratch| scratch.path_len),
         );
         let path_segment_count = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_segment_count",
             record_capacity,
-            external.map(|scratch| scratch.path_segment_count),
+            retained_path_external.map(|scratch| scratch.path_segment_count),
         );
         let path_segment_base = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_segment_base",
             record_capacity,
-            external.map(|scratch| scratch.path_segment_base),
+            retained_path_external.map(|scratch| scratch.path_segment_base),
         );
         let path_segment_capacity = token_capacity.max(1) as usize;
         let path_segment_name_id = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_segment_name_id",
             path_segment_capacity,
-            external.map(|scratch| scratch.path_segment_name_id),
+            retained_path_external.map(|scratch| scratch.path_segment_name_id),
         );
         let path_segment_token = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_segment_token",
             path_segment_capacity,
-            external.map(|scratch| scratch.path_segment_token),
+            retained_path_external.map(|scratch| scratch.path_segment_token),
         );
         let path_segment_count_out = typed_storage_u32_rw(
             device,
@@ -841,13 +843,13 @@ impl Buffers {
             device,
             "type_check.resident.path_owner_hir",
             record_capacity,
-            external.map(|scratch| scratch.path_owner_hir),
+            retained_path_external.map(|scratch| scratch.path_owner_hir),
         );
         let path_owner_token = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_owner_token",
             record_capacity,
-            external.map(|scratch| scratch.path_owner_token),
+            retained_path_external.map(|scratch| scratch.path_owner_token),
         );
         // Path ids are retained for later typecheck and x86 lowering, but the
         // parser list workspace is no longer read after HIR construction, so it
@@ -856,7 +858,7 @@ impl Buffers {
             device,
             "type_check.resident.path_id_by_owner_hir",
             hir_node_capacity.max(1) as usize,
-            external.map(|scratch| scratch.path_id_by_owner_hir),
+            retained_path_external.map(|scratch| scratch.path_id_by_owner_hir),
         );
         let path_id_by_owner_token = typed_storage_u32_fill_rw(
             device,
@@ -869,13 +871,13 @@ impl Buffers {
             device,
             "type_check.resident.path_owner_module_id",
             record_capacity,
-            external.map(|scratch| scratch.path_owner_module_id),
+            retained_path_external.map(|scratch| scratch.path_owner_module_id),
         );
         let path_kind = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_kind",
             record_capacity,
-            external.map(|scratch| scratch.path_kind),
+            retained_path_external.map(|scratch| scratch.path_kind),
         );
         let path_count_out = typed_storage_u32_rw(
             device,

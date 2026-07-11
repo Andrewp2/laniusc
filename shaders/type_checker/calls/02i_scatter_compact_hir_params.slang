@@ -101,6 +101,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (ordinal == 0u)
     {
+        call_param_row_start[fn_token] = start;
         call_param_row_count[fn_token] = count;
     }
 }

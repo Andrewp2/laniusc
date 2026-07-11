@@ -106,7 +106,7 @@ bool param_row_matches(uint row, uint fn_i, uint ordinal)
            call_param_row_ordinal[row] == ordinal;
 }
 
-uint first_param_row_for_call(uint call_node, uint arg_count)
+uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal)
 {
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) || call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
@@ -117,22 +117,23 @@ uint first_param_row_for_call(uint call_node, uint arg_count)
         return INVALID;
 
     uint param_count = call_param_count[fn_i];
-    uint param_offset = method_call_name_id[callee_i] != INVALID ? method_param_offset(fn_i) : 0u;
+    uint param_offset = method_param_offset(fn_i);
     uint expected_arg_count = param_count >= param_offset ? param_count - param_offset : 0u;
     if (arg_count == 0u || arg_count != expected_arg_count || param_offset >= param_count)
         return INVALID;
 
     uint start = call_param_row_start[fn_i];
     uint count = call_param_row_count[fn_i];
-    uint row = start + param_offset;
+    uint param_ordinal = param_offset + arg_ordinal;
+    uint row = start + param_ordinal;
     if (start == INVALID ||
         count == 0u ||
-        param_offset >= count ||
+        param_ordinal >= count ||
         row < start ||
         row >= active_param_row_count())
         return INVALID;
 
-    return param_row_matches(row, fn_i, param_offset) ? row : INVALID;
+    return param_row_matches(row, fn_i, param_ordinal) ? row : INVALID;
 }
 
 uint next_arg_row(uint row)
@@ -192,12 +193,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_arg_param_row[row] = INVALID;
         call_arg_match_jump_a[row] = next_arg_row(row);
 
-        if (call_arg_row_ordinal[row] == 0u)
-        {
-            uint call_node = call_arg_row_call_node[row];
-            uint arg_count = valid_node(call_node) ? call_arg_row_count[call_node] : 0u;
-            call_arg_param_row[row] = first_param_row_for_call(call_node, arg_count);
-        }
+        uint call_node = call_arg_row_call_node[row];
+        uint arg_count = valid_node(call_node) ? call_arg_row_count[call_node] : 0u;
+        call_arg_param_row[row] = param_row_for_call_ordinal(
+            call_node,
+            arg_count,
+            call_arg_row_ordinal[row]);
     }
 
     if (row < param_rows)

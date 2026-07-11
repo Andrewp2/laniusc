@@ -52,9 +52,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     call_arg_row_scan_input[node] =
         hir_kind[node] == HIR_CALL_EXPR ? hir_call_arg_count[node] : 0u;
-    call_arg_row_node[node] = INVALID;
-    call_arg_row_call_node[node] = INVALID;
-    call_arg_row_ordinal[node] = INVALID;
     call_arg_row_start[node] = INVALID;
     call_arg_row_count[node] = 0u;
 }

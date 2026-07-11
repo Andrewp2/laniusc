@@ -95,6 +95,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         resolved_value_status: codegen.resolved_value_status,
                         decl_name_token: codegen.decl_name_token,
                         callee_node: &parse_bufs.hir_call_callee_node,
+                        context_stmt_node: &parse_bufs.hir_call_context_stmt_node,
                         arg_start: &parse_bufs.hir_call_arg_start,
                         arg_end: &parse_bufs.hir_call_arg_end,
                         arg_count: &parse_bufs.hir_call_arg_count,
@@ -204,7 +205,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         // and backend.
         let token_words = token_capacity.max(1) as usize;
         x86::GpuX86ExternalScratchBuffers {
-            expr_resolved_final: None,
+            expr_resolved_final: Some(&parse_bufs.hir_type_len_value),
             node_func: Some(&parse_bufs.hir_type_value_node),
             func_owner_scan_local_prefix: None,
             func_slot_by_node: Some(&parse_bufs.hir_type_len_token),
@@ -340,7 +341,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             "[gpu_compile_host_timer] compiler.x86.source_pack.parser_capacity: exact={parser_tree_capacity} conservative={conservative_tree_capacity} tokens={token_capacity}"
                         );
                     }
-                    let (parser_check, semantic_count) = self
+                    let (parser_check, parser_metadata) = self
                         .parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             encoder,
@@ -359,20 +360,38 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     timer.stamp(encoder, "parser.ll1_hir.done");
                                 }
                                 host_timer.stamp("parser_recorded");
-                                self.parser
+                                let semantic_count = self.parser
                                     .record_hir_semantic_count_readback(encoder, parse_bufs, timer)
                                     .map_err(|err| {
                                         parser_execution_failed_for_source_pack(
                                             &diagnostic_files,
                                             err,
                                         )
-                                    })
+                                    })?;
+                                let module_record_capacity = self
+                                    .type_checker
+                                    .record_module_record_capacity_preflight(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        bufs.n,
+                                        bufs.source_file_start.count as u32,
+                                        token_capacity,
+                                        parse_bufs,
+                                    )
+                                    .map_err(|err| {
+                                        type_check_execution_failed_for_source_pack(
+                                            &diagnostic_files,
+                                            gpu_type_checker::GpuTypeCheckError::Gpu(err),
+                                        )
+                                    })?;
+                                Ok((semantic_count, module_record_capacity))
                             },
                         )
                         .map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
-                    let semantic_count = semantic_count?;
+                    let (semantic_count, module_record_capacity) = parser_metadata?;
                     // Submit the parser boundary before allocating typecheck
                     // resident state. At large input sizes, exact emit and
                     // semantic counts save far more allocation time and memory
@@ -390,6 +409,27 @@ impl<'gpu> GpuCompiler<'gpu> {
                         parser_encoder.finish(),
                     );
                     host_timer.stamp("parser_submitted");
+                    let preflight_capacities = self
+                        .type_checker
+                        .finish_module_record_capacity_preflight(device, &module_record_capacity)
+                        .map_err(|err| {
+                            type_check_execution_failed_for_source_pack(
+                                &diagnostic_files,
+                                gpu_type_checker::GpuTypeCheckError::Gpu(err),
+                            )
+                        })?;
+                    if crate::gpu::env::env_bool_truthy(
+                        "LANIUS_GPU_COMPILE_HOST_TIMING",
+                        false,
+                    ) {
+                        eprintln!(
+                            "[gpu_compile_host_timer] compiler.x86.source_pack.preflight_capacities: modules={} params={} args={} tree={parser_tree_capacity} tokens={token_capacity}",
+                            preflight_capacities.module_records,
+                            preflight_capacities.call_param_rows,
+                            preflight_capacities.call_arg_rows,
+                        );
+                    }
+                    host_timer.stamp("module_record_capacity_finished");
                     let early_parser_metadata = if exact_typecheck_capacity_boundary_required(
                         parser_tree_capacity,
                     ) {
@@ -433,7 +473,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })
                         .unwrap_or(parser_tree_capacity);
-                    let typecheck_parse = self
+                    let mut typecheck_parse = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
@@ -442,6 +482,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
+                    typecheck_parse.module_record_capacity = preflight_capacities.module_records;
+                    typecheck_parse.call_param_row_capacity = preflight_capacities.call_param_rows;
+                    typecheck_parse.call_arg_row_capacity = preflight_capacities.call_arg_rows;
                     let x86_parse = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
@@ -670,12 +713,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         "x86 type metadata buffers are unavailable",
                                     )
                                 })?;
-                            trace_x86_name_bindings(
-                                device,
-                                queue,
-                                token_count.max(1),
-                                codegen_buffers.as_ref(),
-                            );
                             host_timer.stamp("typecheck_x86_codegen_buffers_retained");
                             let feature_summary = self
                                 .x86_generator()
@@ -722,6 +759,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 feature_summary,
                                 x86_timer.as_mut(),
                                 |err| {
+                                    if crate::gpu::env::env_bool_truthy(
+                                        "LANIUS_GPU_COMPILE_HOST_TIMING",
+                                        false,
+                                    ) {
+                                        eprintln!(
+                                            "[gpu_compile_host_timer] compiler.x86.source_pack.backend_record_error: {err:#}"
+                                        );
+                                    }
                                     x86_backend_execution_failed_for_source_pack(
                                         &diagnostic_files,
                                         err,
@@ -787,23 +832,32 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<Vec<u8>, CompileError> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
-            .with_recorded_resident_tokens_after_count_releasing_lexer(
+            .with_recorded_resident_tokens_after_count(
                 src,
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.record");
                     let token_capacity = token_count.max(1);
-                    let parser_capacity = self
-                        .parser
-                        .measure_resident_partial_parse_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
+                    let single_source = [src];
+                    let parser_capacity =
+                        if let Some(cached) = self.cached_source_pack_parser_capacity(&single_source)
+                        {
+                            cached
+                        } else {
+                            let measured = self
+                                .parser
+                                .measure_resident_partial_parse_capacity(
+                                    token_capacity,
+                                    &bufs.tokens_out,
+                                    &bufs.token_count,
+                                    Some(&bufs.token_file_id),
+                                    &self.parse_tables,
+                                )
+                                .map_err(|err| {
+                                    parser_execution_failed_for_source(&diagnostic_path, src, err)
+                                })?;
+                            self.remember_source_pack_parser_capacity(&single_source, measured);
+                            measured
+                        };
                     let parser_tree_capacity = parser_capacity.tree_capacity;
                     let parser_feature_flags = parser_capacity.parser_feature_flags;
                     host_timer.stamp("partial_parse_tree_capacity");
@@ -811,8 +865,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.x86.parser-boundary.encoder"),
                         });
-                    let mut parser_timer: Option<&mut GpuTimer> = None;
-                    let (parser_check, semantic_count) = self
+                    let mut parser_timer = parser_gpu_timer(device, queue);
+                    let mut parser_timer_ref = parser_timer.as_mut();
+                    let (parser_check, parser_metadata) = self
                         .parser
                         .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
                             &mut parser_encoder,
@@ -825,9 +880,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &self.parse_tables,
                             Some(parser_tree_capacity),
                             parser_feature_flags,
-                            &mut parser_timer,
+                            &mut parser_timer_ref,
                             |parse_bufs, encoder, timer| {
-                                self.parser
+                                let semantic_count = self.parser
                                     .record_hir_semantic_count_readback(encoder, parse_bufs, timer)
                                     .map_err(|err| {
                                         parser_execution_failed_for_source(
@@ -835,19 +890,43 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             src,
                                             err,
                                         )
-                                    })
+                                    })?;
+                                let module_record_capacity = self
+                                    .type_checker
+                                    .record_module_record_capacity_preflight(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        bufs.n,
+                                        bufs.source_file_start.count as u32,
+                                        token_capacity,
+                                        parse_bufs,
+                                    )
+                                    .map_err(|err| {
+                                        type_check_execution_failed_for_source(
+                                            &diagnostic_path,
+                                            src,
+                                            gpu_type_checker::GpuTypeCheckError::Gpu(err),
+                                        )
+                                    })?;
+                                Ok((semantic_count, module_record_capacity))
                             },
                         )
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
+                    if let Some(timer) = parser_timer.as_ref() {
+                        timer.resolve(&mut parser_encoder);
+                    }
                     host_timer.stamp("parser_recorded");
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
                         "compiler.x86.parser-boundary",
                         parser_encoder.finish(),
                     );
+                    print_x86_gpu_timer(device, parser_timer.as_ref());
                     host_timer.stamp("parser_submitted");
+                    let (semantic_count, module_record_capacity) = parser_metadata?;
                     let ll1 = parser_check.read_status_result(device).map_err(|err| {
                         parser_execution_failed_for_source(&diagnostic_path, src, err)
                     })?;
@@ -871,14 +950,35 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     let semantic_hir_count = self
                         .parser
-                        .finish_recorded_hir_semantic_count(&semantic_count?)
+                        .finish_recorded_hir_semantic_count(&semantic_count)
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
+                    let preflight_capacities = self
+                        .type_checker
+                        .finish_module_record_capacity_preflight(device, &module_record_capacity)
+                        .map_err(|err| {
+                            type_check_execution_failed_for_source(
+                                &diagnostic_path,
+                                src,
+                                gpu_type_checker::GpuTypeCheckError::Gpu(err),
+                            )
+                        })?;
+                    if crate::gpu::env::env_bool_truthy(
+                        "LANIUS_GPU_COMPILE_HOST_TIMING",
+                        false,
+                    ) {
+                        eprintln!(
+                            "[gpu_compile_host_timer] compiler.x86.preflight_capacities: modules={} params={} args={} tree={parser_tree_capacity} tokens={token_capacity}",
+                            preflight_capacities.module_records,
+                            preflight_capacities.call_param_rows,
+                            preflight_capacities.call_arg_rows,
+                        );
+                    }
                     let active_tree_capacity =
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     host_timer.stamp("parser_finished");
-                    let typecheck_parse = self
+                    let mut typecheck_parse = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
@@ -887,6 +987,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_feature_flags,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
+                    typecheck_parse.module_record_capacity = preflight_capacities.module_records;
+                    typecheck_parse.call_param_row_capacity = preflight_capacities.call_param_rows;
+                    typecheck_parse.call_arg_row_capacity = preflight_capacities.call_arg_rows;
                     let x86_parse = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
@@ -956,6 +1059,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 },
                 |device,
                  queue,
+                 _lexer_bufs,
                  (
                     type_check,
                     token_count,
@@ -994,12 +1098,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 "x86 type metadata buffers are unavailable",
                             )
                         })?;
-                    trace_x86_name_bindings(
-                        device,
-                        queue,
-                        token_count.max(1),
-                        codegen_buffers.as_ref(),
-                    );
                     host_timer.stamp("typecheck_x86_codegen_buffers_retained");
                     let feature_summary = self
                         .x86_generator()
@@ -1039,7 +1137,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                         codegen_buffers.as_ref(),
                         feature_summary,
                         x86_timer.as_mut(),
-                        |err| x86_backend_execution_failed_for_source(&diagnostic_path, src, err),
+                        |err| {
+                            if crate::gpu::env::env_bool_truthy(
+                                "LANIUS_GPU_COMPILE_HOST_TIMING",
+                                false,
+                            ) {
+                                eprintln!(
+                                    "[gpu_compile_host_timer] compiler.x86.record.error: {err}"
+                                );
+                            }
+                            x86_backend_execution_failed_for_source(&diagnostic_path, src, err)
+                        },
                     )?;
                     if let Some(timer) = x86_timer.as_ref() {
                         timer.resolve(&mut x86_encoder);
@@ -1080,11 +1188,23 @@ fn typecheck_submission_overlap_enabled() -> bool {
 }
 
 fn x86_gpu_timer(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<GpuTimer> {
+    gpu_compile_timer(device, queue, 64)
+}
+
+fn parser_gpu_timer(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<GpuTimer> {
+    gpu_compile_timer(device, queue, 2048)
+}
+
+fn gpu_compile_timer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    query_capacity: u32,
+) -> Option<GpuTimer> {
     let enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
         || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
         || crate::gpu::trace::enabled();
     (enabled && device.features().contains(wgpu::Features::TIMESTAMP_QUERY))
-        .then(|| GpuTimer::new(device, queue, 64))
+        .then(|| GpuTimer::new(device, queue, query_capacity))
 }
 
 fn print_x86_gpu_timer(device: &wgpu::Device, timer: Option<&GpuTimer>) {
@@ -1486,80 +1606,6 @@ fn read_u32_from_buffer_for_diagnostic(
     drop(mapped);
     readback.unmap();
     Ok(word)
-}
-
-fn trace_x86_name_bindings(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    token_count: u32,
-    buffers: crate::type_checker::GpuX86CodegenBuffers<'_>,
-) {
-    if !std::env::var("LANIUS_X86_STATUS_TRACE").is_ok_and(|value| {
-        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES")
-    }) {
-        return;
-    }
-
-    let count = u64::from(token_count);
-    let section_bytes = count.saturating_mul(4);
-    let total_bytes = section_bytes.saturating_mul(3);
-    let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb.compiler.x86.name_bindings"),
-        size: total_bytes,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("compiler.x86.name-bindings-readback.encoder"),
-    });
-    encoder.copy_buffer_to_buffer(buffers.name_id_by_token, 0, &readback, 0, section_bytes);
-    encoder.copy_buffer_to_buffer(
-        buffers.enclosing_fn,
-        0,
-        &readback,
-        section_bytes,
-        section_bytes,
-    );
-    encoder.copy_buffer_to_buffer(
-        buffers.visible_decl,
-        0,
-        &readback,
-        section_bytes * 2,
-        section_bytes,
-    );
-    crate::gpu::passes_core::submit_with_progress(
-        queue,
-        "compiler.x86.name-bindings-readback",
-        encoder.finish(),
-    );
-    let slice = readback.slice(..);
-    if crate::gpu::passes_core::map_readback_blocking(
-        device,
-        &slice,
-        "compiler.x86.name-bindings",
-    )
-    .is_err()
-    {
-        return;
-    }
-    let mapped = slice.get_mapped_range();
-    let words = mapped
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("u32 trace word")))
-        .collect::<Vec<_>>();
-    let n = token_count as usize;
-    for token in 0..n {
-        let name = words[token];
-        let owner = words[n + token];
-        let visible = words[n * 2 + token];
-        if name != u32::MAX || visible != u32::MAX {
-            eprintln!(
-                "[laniusc][x86-name] token={token} name={name} owner={owner} visible={visible}"
-            );
-        }
-    }
-    drop(mapped);
-    readback.unmap();
 }
 
 fn read_single_owned_token_for_diagnostic(

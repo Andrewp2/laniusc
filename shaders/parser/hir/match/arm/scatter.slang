@@ -52,6 +52,12 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+bool is_pattern_production(uint prod)
+{
+    return prod == PROD_PATTERN_IDENT || prod == PROD_PATTERN_INT ||
+           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE;
+}
+
 void publish_arm(uint node)
 {
     uint owner = hir_match_arm_owner_a[node];
@@ -94,8 +100,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gHirMatch.n || !valid_node(node))
         return;
 
-    if (node_kind[node] == PROD_MATCH_ARM)
+    uint prod = node_kind[node];
+    if (prod == PROD_MATCH_ARM)
         publish_arm(node);
-
-    publish_payload(node);
+    else if (is_pattern_production(prod))
+        publish_payload(node);
 }

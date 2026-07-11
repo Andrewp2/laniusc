@@ -381,6 +381,25 @@ uint best_hir_decl_row_from_table(uint use_token, uint owner_encoded, uint use_n
     return decl_i == INVALID ? INVALID : row;
 }
 
+bool has_prior_hir_decl_in_owner(uint use_token, uint owner_encoded, uint use_name)
+{
+    uint count = active_decl_count();
+    if (count == 0u)
+        return false;
+
+    HirVisibleDeclLookupKey range_start =
+        hir_visible_decl_lookup_key(owner_encoded, use_name, 0u);
+    HirVisibleDeclLookupKey use_key =
+        hir_visible_decl_lookup_key(owner_encoded, use_name, use_token);
+    uint lo = lower_bound_query<HirVisibleDeclLookupKey, HirVisibleDeclRowCompare>(
+        count,
+        range_start);
+    uint hi = lower_bound_query<HirVisibleDeclLookupKey, HirVisibleDeclRowCompare>(
+        count,
+        use_key);
+    return hi > lo;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -420,5 +439,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
         visible_decl[use_token] = decl_token;
+        return;
     }
+
+    // A same-owner declaration that precedes this use but has no live scope
+    // must not fall through to unrelated spelling-derived type information.
+    if (has_prior_hir_decl_in_owner(use_token, owner_encoded, use_name))
+        record_error(use_token, ERR_UNRESOLVED_IDENT, 0u);
 }

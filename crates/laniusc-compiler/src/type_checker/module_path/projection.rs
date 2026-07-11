@@ -852,7 +852,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("gParams", params.as_entire_binding()),
             ("token_words", token_buf.as_entire_binding()),
             ("language_name_id", language_name_id.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("node_kind", hir_items.node_kind.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             ("hir_token_end", hir_token_end_buf.as_entire_binding()),
@@ -918,7 +918,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("gParams", params.as_entire_binding()),
             ("token_words", token_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("node_kind", hir_items.node_kind.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             ("hir_token_end", hir_token_end_buf.as_entire_binding()),
             (

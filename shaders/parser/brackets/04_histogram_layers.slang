@@ -1,6 +1,7 @@
 // shaders/parser/brackets_04_histogram_layers.slang
 // Build histograms of pushes and pops per layer.
 
+import gpu_index;
 import scatter;
 
 struct Params
@@ -17,11 +18,14 @@ RWStructuredBuffer<uint> hist_push; // len = n_layers
 RWStructuredBuffer<uint> hist_pop;  // len = n_layers
 RWStructuredBuffer<uint> match_for_index;
 
+static const uint MAX_GROUPS_X = 65535u;
+static const uint WG_SIZE = 256u;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint i = tid.x;
+    uint i = linear_thread_id_2d(tid, MAX_GROUPS_X, WG_SIZE);
     uint n = min(gParams.n_sc, partial_parse_status[4u]);
     if (i >= n)
         return;

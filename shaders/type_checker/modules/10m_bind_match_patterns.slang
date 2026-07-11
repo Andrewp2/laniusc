@@ -10,6 +10,7 @@
 
 import range_query;
 import status;
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -20,7 +21,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> subtree_end;
@@ -75,7 +76,7 @@ uint active_token_count()
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes;
 }
 
 uint active_path_count()
@@ -204,7 +205,7 @@ void bind_decl(uint use_i, uint decl_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint arm_node = linear_thread_id(dtid);
-    if (!valid_node(arm_node))
+    if (!valid_node(arm_node) || node_kind[arm_node] != PROD_MATCH_ARM)
         return;
 
     uint pattern_node = hir_match_arm_pattern_node[arm_node];

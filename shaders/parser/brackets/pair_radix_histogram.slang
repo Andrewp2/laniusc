@@ -11,6 +11,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> partial_parse_status;
+StructuredBuffer<int> depths_out;
 StructuredBuffer<uint> sc_stream;
 StructuredBuffer<uint> layer;
 StructuredBuffer<uint> order_in;
@@ -32,6 +33,12 @@ uint pair_key(uint row)
     return layer[row] * 2u + kind;
 }
 
+bool pair_key_step_active()
+{
+    uint maxKey = (uint)max(depths_out[2], 0) * 2u + 1u;
+    return gParams.key_step == 0u || (maxKey >> (gParams.key_step * 8u)) != 0u;
+}
+
 public struct PairRadixSource : IRadixU8KeySource
 {
     public static uint active_count() { return pair_active_count(); }
@@ -47,7 +54,7 @@ public struct PairRadixSource : IRadixU8KeySource
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint n = pair_active_count();
-    if (n <= SMALL_PAIR_CAPACITY)
+    if (n <= SMALL_PAIR_CAPACITY || !pair_key_step_active())
         return;
     radix_u8_histogram_block<PairRadixSource>(
         linear_group_id_2d(gid, MAX_GROUPS_X),

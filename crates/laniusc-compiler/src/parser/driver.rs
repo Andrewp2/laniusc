@@ -57,7 +57,7 @@ use crate::{
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
-    lexer::{GpuToken, features::LEXICALLY_PROVEN_PARSER_FEATURES},
+    lexer::{GpuToken, features::CONSERVATIVE_PARSER_FEATURES},
     parser::{
         buffers::{ActionHeader, ParserBuffers, resident_partial_parse_tree_capacity_for_tables},
         debug::DebugOutput,
@@ -393,7 +393,7 @@ impl GpuParser {
             source_buf,
             tables,
             tree_capacity_override,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
             timer_ref,
             consume,
         )
@@ -442,10 +442,11 @@ impl GpuParser {
             );
         }
 
+        // Dependent parser dispatches (prefix scans and pointer jumps) require
+        // storage visibility between iterations. A single compute pass does
+        // not provide those barriers, so parser-wide coalescing is invalid.
         let parser_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-            timer_ref.is_none()
-                && crate::gpu::passes_core::compute_pass_batching_enabled()
-                && !crate::gpu::passes_core::validation_scopes_enabled(),
+            false,
             "parser.resident.batch",
         );
 
@@ -527,12 +528,12 @@ impl GpuParser {
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<ResidentParserCapacity> {
-        let mut resident_guard = self
-            .resident_buffers
-            .lock()
-            .expect("parser.resident_buffers poisoned");
+        // Capacity measurement needs only the partial-parse buffers with a
+        // one-row tree. Keep that temporary allocation out of the full parser
+        // cache so daemon jobs do not evict and recreate the resident HIR.
+        let mut capacity_buffers = None;
         let bufs = self.resident_buffers_for_with_tree_capacity(
-            &mut resident_guard,
+            &mut capacity_buffers,
             token_capacity,
             tables,
             Some(1),
@@ -638,7 +639,7 @@ impl GpuParser {
             token_capacity,
             tables,
             tree_capacity,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
             consume,
         )
     }
@@ -1181,11 +1182,12 @@ fn plan_parser_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u3
     )
 }
 
-fn parser_compute_pass_batching_enabled(timer_ref: &mut Option<&mut GpuTimer>) -> bool {
-    timer_ref.is_none()
-        && compute_pass_batching_enabled()
-        && !validation_scopes_enabled()
-        && !crate::gpu::passes_core::deferred_compute_active()
+fn parser_compute_pass_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
+    _timer_ref.is_none() && compute_pass_batching_enabled() && !validation_scopes_enabled()
+}
+
+fn parser_dependency_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
+    false
 }
 
 fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {

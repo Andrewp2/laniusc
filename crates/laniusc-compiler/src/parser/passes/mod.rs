@@ -3,7 +3,10 @@
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{InputElements, Pass, PassContext},
+    gpu::{
+        passes_core::{InputElements, Pass, PassContext},
+        timer::GpuTimer,
+    },
     parser::{buffers::ParserBuffers, debug::DebugOutput},
 };
 
@@ -392,7 +395,7 @@ pub fn record_all_passes(
         24,
     );
 
-    record_stack_effect_validation(&mut ctx, p)?;
+    record_stack_effect_validation(&mut ctx, p, &mut None)?;
 
     // Tree parent recovery: one independent thread per emitted production.
     let n_tree = ctx.buffers.tree_capacity;
@@ -700,6 +703,7 @@ pub fn record_all_passes(
 pub fn record_stack_effect_validation(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
+    timer_ref: &mut Option<&mut GpuTimer>,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
@@ -708,12 +712,22 @@ pub fn record_stack_effect_validation(
 
     parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_push, 0, None);
     parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_pop, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.depths_out, 0, None);
 
     p.b01.record_pass(ctx, E1D(n_sc))?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");
     p.b02.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
     p.b03.record_pass(ctx, E1D(n_sc))?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
     p.b04.record_pass(ctx, E1D(n_sc))?;
+    stamp_stack_effect_timer(
+        timer_ref,
+        ctx.encoder,
+        "parser.stack_effect.layer_histogram",
+    );
     p.b05.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.layer_scan");
 
     let bytes = (n_layers * 4) as u64;
     parser_copy_buffer_to_buffer(
@@ -734,6 +748,7 @@ pub fn record_stack_effect_validation(
     );
 
     p.b06.record_pass(ctx, E1D(n_sc))?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.scatter");
     let mut temporary_pair_radix_cache = crate::gpu::passes_core::BindGroupCache::new();
     let pair_radix_cache = ctx
         .bg_cache
@@ -741,10 +756,23 @@ pub fn record_stack_effect_validation(
         .unwrap_or(&mut temporary_pair_radix_cache);
     p.pair_radix
         .record_sort(ctx.device, ctx.encoder, ctx.buffers, pair_radix_cache)?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_radix");
     p.pse04.record_pass(ctx, E1D(n_sc))?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_by_layer");
     p.status_from_brackets.record_pass(ctx, E1D(1))?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.status");
 
     Ok(())
+}
+
+fn stamp_stack_effect_timer(
+    timer_ref: &mut Option<&mut GpuTimer>,
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+) {
+    if let Some(timer) = timer_ref.as_deref_mut() {
+        timer.stamp(encoder, label);
+    }
 }
 
 fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {

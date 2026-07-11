@@ -78,6 +78,7 @@ impl BracketsScanHistogramsPass {
             ("prefix_push_out".into(), push_out.as_entire_binding()),
             ("prefix_pop_out".into(), pop_out.as_entire_binding()),
             ("out_valid".into(), buffers.valid_out.as_entire_binding()),
+            ("depths_out".into(), buffers.depths_out.as_entire_binding()),
         ]);
         let bind_group = bind_group::create_bind_group_from_reflection(
             device,
@@ -128,6 +129,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScanHist
             ("prefix_push_out".into(), b.b_off_push.as_entire_binding()),
             ("prefix_pop_out".into(), b.b_off_pop.as_entire_binding()),
             ("out_valid".into(), b.valid_out.as_entire_binding()),
+            ("depths_out".into(), b.depths_out.as_entire_binding()),
         ])
     }
 }

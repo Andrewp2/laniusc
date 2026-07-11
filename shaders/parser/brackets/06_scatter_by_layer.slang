@@ -1,6 +1,7 @@
 // shaders/parser/brackets_06_scatter_by_layer.slang
 // Scatter indices into per-layer arrays using atomic cursors seeded from offsets.
 
+import gpu_index;
 import scatter;
 
 struct Params
@@ -21,11 +22,14 @@ RWStructuredBuffer<uint> pushes_by_layer; // len = n_sc (capacity)
 RWStructuredBuffer<uint> pops_by_layer;   // len = n_sc (capacity)
 RWStructuredBuffer<uint> slot_for_index;  // len = n_sc, absolute slot in layer array
 
+static const uint MAX_GROUPS_X = 65535u;
+static const uint WG_SIZE = 256u;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint i = tid.x;
+    uint i = linear_thread_id_2d(tid, MAX_GROUPS_X, WG_SIZE);
     uint n = min(gParams.n_sc, partial_parse_status[4u]);
     if (i >= n)
         return;

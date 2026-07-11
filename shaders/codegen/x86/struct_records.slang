@@ -299,6 +299,23 @@ void publish_literal_access_record(uint node)
         uint head_token = expr_value_token(head_node);
         if (valid_token(head_token))
             x86_struct_type_record[head_token] = width;
+
+        // A struct literal's parser-owned head is the path immediately before
+        // the literal (`Vec3` in `Vec3 { ... }`). Expression resolution may
+        // canonicalize to the path wrapper's parent, so publish the same
+        // literal record there instead of making every consumer rediscover a
+        // sibling relationship.
+        uint head_expr = x86_tree_parent[head_node];
+        if (valid_node(head_expr) && head_expr != node &&
+            hir_kind[head_expr] != HIR_MEMBER_EXPR)
+        {
+            write_struct_access_record(
+                head_expr,
+                X86_STRUCT_ACCESS_LITERAL,
+                width,
+                first_field,
+                0u);
+        }
     }
 
     uint context_stmt = hir_struct_lit_context_stmt_node[node];
@@ -358,7 +375,7 @@ bool array_element_record_for_candidate(uint candidate, out uint array_node, out
 
     uint owner = hir_array_element_parent_lit[candidate];
     uint ordinal = hir_array_element_ordinal[candidate];
-    if (!valid_node(owner) || ordinal == INVALID)
+    if (!valid_node(owner) || hir_kind[owner] != HIR_ARRAY_EXPR || ordinal == INVALID)
         return false;
 
     array_node = owner;

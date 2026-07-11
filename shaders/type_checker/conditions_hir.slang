@@ -14,6 +14,8 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gParams;
@@ -111,6 +113,14 @@ StructuredBuffer<uint> generic_decl_owner_by_node;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
+static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
+static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
+static const uint AGGREGATE_FEATURES = PARSER_FEATURE_TYPE_ARGS |
+                                       PARSER_FEATURE_ARRAYS |
+                                       PARSER_FEATURE_ENUMS |
+                                       PARSER_FEATURE_STRUCTS;
 static const uint INTRINSIC_NONE = 0u;
 static const uint TK_BOUND_TYPE_IDENT = 174u;
 static const uint TK_LT = 12u;
@@ -691,6 +701,8 @@ bool aggregate_type_code_for_ref_check(uint ty)
 
 void clear_aggregate_compare_request(uint node)
 {
+    if ((gParams.parser_feature_flags & AGGREGATE_FEATURES) == 0u)
+        return;
     aggregate_compare_scan_input[node] = 0u;
     aggregate_compare_expected_instance[node] = INVALID;
     aggregate_compare_actual_instance[node] = INVALID;
@@ -722,6 +734,8 @@ void enqueue_aggregate_compare(
     uint error_token,
     uint detail)
 {
+    if ((gParams.parser_feature_flags & AGGREGATE_FEATURES) == 0u)
+        return;
     if (!valid_node(node))
         return;
     aggregate_compare_scan_input[node] = type_instance_arg_count[expected_instance];

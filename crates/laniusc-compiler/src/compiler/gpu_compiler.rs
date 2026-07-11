@@ -147,6 +147,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         host_timer.stamp("parse_tables");
         let type_checker =
             gpu_type_checker::GpuTypeChecker::new_with_device(gpu).map_err(|err| {
+                if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+                    eprintln!("[gpu_compile_host_timer] compiler.init.type_checker.error: {err:#}");
+                }
                 compiler_execution_failed_error(
                     "the compiler stopped while initializing GPU type-check pipelines",
                     "initialize type checker",

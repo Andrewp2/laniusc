@@ -5635,5 +5635,33 @@ fn main() {
     );
 }
 
+#[test]
+fn type_checker_matches_outer_nested_call_argument_to_outer_parameter() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Vec3 {
+    x: f32,
+}
+
+fn inner(file: i32, value: Vec3) -> i32 {
+    return file;
+}
+
+fn outer(status: i32) -> bool {
+    return status < 0;
+}
+
+fn main() -> i32 {
+    let file: i32 = 1;
+    let value: Vec3 = Vec3 { x: 2.0 };
+    if (outer(inner(file, value))) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+}
+
 #[path = "type_checker_semantics/trait_methods_control.rs"]
 mod trait_methods_control;

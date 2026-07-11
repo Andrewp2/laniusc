@@ -2,6 +2,13 @@
 
 use super::*;
 
+fn benchmark_parser_execution_error(src: &str, err: impl std::fmt::Display) -> CompileError {
+    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        eprintln!("[gpu_compile_host_timer] benchmark.parser.error: {err}");
+    }
+    parser_execution_failed_for_source(Path::new("<benchmark>"), src, err)
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
     /// Record and run the lexer pipeline for a source string without recording
     /// parser, type-check, or backend work.
@@ -56,9 +63,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             Some(&bufs.token_file_id),
                             &self.parse_tables,
                         )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
-                        })?;
+                        .map_err(|err| benchmark_parser_execution_error(&src, err))?;
                     let parser_tree_capacity = parser_capacity.tree_capacity;
                     let (parser_check, parse_result) = self
                         .parser
@@ -77,18 +82,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                             |parse_bufs, encoder, timer| {
                                 self.parser
                                     .record_hir_semantic_count_readback(encoder, parse_bufs, timer)
-                                    .map_err(|err| {
-                                        parser_execution_failed_for_source(
-                                            Path::new("<benchmark>"),
-                                            &src,
-                                            err,
-                                        )
-                                    })
+                                    .map_err(|err| benchmark_parser_execution_error(&src, err))
                             },
                         )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
-                        })?;
+                        .map_err(|err| benchmark_parser_execution_error(&src, err))?;
                     let semantic_count = parse_result?;
                     Ok((
                         parser_check,
@@ -98,7 +95,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         parser_capacity.parser_feature_flags,
                     ))
                 },
-                |_,
+                |device,
                  _,
                  _bufs: &ResidentLexerParserInputs,
                  (
@@ -108,18 +105,33 @@ impl<'gpu> GpuCompiler<'gpu> {
                     parser_tree_capacity,
                     parser_feature_flags,
                 )| {
-                    let ll1 = self
-                        .parser
-                        .finish_recorded_resident_ll1_hir_check_result(&parser_check)
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
-                        })?;
+                    let ll1 = parser_check
+                        .read_status_result(device)
+                        .map_err(|err| benchmark_parser_execution_error(&src, err))?;
+                    if !ll1.accepted {
+                        if crate::gpu::env::env_bool_truthy(
+                            "LANIUS_GPU_COMPILE_HOST_TIMING",
+                            false,
+                        ) {
+                            eprintln!(
+                                "[gpu_compile_host_timer] benchmark.parser.status: accepted={} error_pos={} error_code={} detail={} steps={} emit_len={}",
+                                ll1.accepted,
+                                ll1.error_pos,
+                                ll1.error_code,
+                                ll1.detail,
+                                ll1.steps,
+                                ll1.emit_len,
+                            );
+                        }
+                        return Err(benchmark_parser_execution_error(
+                            &src,
+                            ll1.rejection_message(),
+                        ));
+                    }
                     let semantic_hir_count = self
                         .parser
                         .finish_recorded_hir_semantic_count(&semantic_count)
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(Path::new("<benchmark>"), &src, err)
-                        })?;
+                        .map_err(|err| benchmark_parser_execution_error(&src, err))?;
                     Ok(GpuParseBenchmarkResult {
                         ll1,
                         token_count,

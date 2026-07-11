@@ -27,21 +27,28 @@ impl Layout {
         source_file_capacity: u32,
         token_capacity: u32,
         hir_node_capacity: u32,
+        module_record_capacity: u32,
+        parser_feature_flags: u32,
     ) -> Self {
         let n_blocks = hir_node_capacity.div_ceil(256).max(1);
-        let record_capacity = token_capacity.max(1) as usize;
-        let record_capacity_u32 = token_capacity.max(1);
+        let record_capacity_u32 = module_record_capacity.max(1);
+        let record_capacity = record_capacity_u32 as usize;
         let record_n_blocks = record_capacity_u32.div_ceil(256).max(1);
         let source_file_capacity = source_file_capacity.max(1);
         let module_capacity = source_file_capacity as usize;
         let module_capacity_u32 = source_file_capacity;
         let module_n_blocks = module_capacity_u32.div_ceil(256).max(1);
-        let import_record_capacity = record_capacity;
+        let import_record_capacity =
+            if parser_feature_flags & crate::lexer::features::PARSER_FEATURE_IMPORTS == 0 {
+                1
+            } else {
+                record_capacity
+            };
         let import_record_capacity_u32 = import_record_capacity as u32;
         let import_visible_capacity = if source_file_capacity <= 1 {
             1usize
         } else {
-            record_capacity
+            token_capacity.max(1) as usize
         };
         let import_visible_capacity_u32 = import_visible_capacity as u32;
         let import_visible_n_blocks = import_visible_capacity_u32.div_ceil(256).max(1);

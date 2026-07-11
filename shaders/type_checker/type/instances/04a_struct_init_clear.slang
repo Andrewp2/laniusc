@@ -5,6 +5,8 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gParams;
@@ -18,6 +20,7 @@ RWStructuredBuffer<uint> struct_lit_context_instance;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -30,6 +33,8 @@ uint linear_thread_id(uint3 dtid)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    if ((gParams.parser_feature_flags & PARSER_FEATURE_STRUCTS) == 0u)
+        return;
     uint i = linear_thread_id(dtid);
 
     if (i < gParams.n_tokens)

@@ -20,6 +20,7 @@ mod bind_support;
 mod module_path;
 mod params;
 mod pass_loaders;
+mod preflight;
 mod record;
 mod resident;
 mod util;
@@ -145,6 +146,14 @@ pub enum GpuTypeCheckError {
 /// retained wrapper before this struct is constructed.
 #[derive(Clone, Copy)]
 pub struct GpuTypeCheckHirItemBuffers<'a> {
+    /// Host-visible semantic feature summary measured by the GPU parser.
+    pub parser_feature_flags: u32,
+    /// Exact GPU-counted upper bound for compact module/path record families.
+    pub module_record_capacity: u32,
+    /// Exact GPU-counted number of compact function-parameter rows.
+    pub call_param_row_capacity: u32,
+    /// Exact GPU-counted number of compact call-argument rows.
+    pub call_arg_row_capacity: u32,
     pub node_kind: &'a wgpu::Buffer,
     pub parent: &'a wgpu::Buffer,
     pub first_child: &'a wgpu::Buffer,
@@ -408,6 +417,9 @@ struct ResidentTypeCheckCacheKey {
     token_capacity: u32,
     hir_node_capacity: u32,
     parser_hir_node_capacity: u32,
+    module_record_capacity: u32,
+    call_param_row_capacity: u32,
+    call_arg_row_capacity: u32,
     input_fingerprint: u64,
     uses_hir_items: bool,
 }
@@ -433,6 +445,7 @@ struct TypeCheckPasses {
     language_type_codes_clear: PassData,
     language_decls_materialize: PassData,
     modules_mark_records: PassData,
+    modules_count_record_candidates: PassData,
     modules_extract_record_flag: PassData,
     modules_scatter_paths: PassData,
     modules_count_path_segments: PassData,
@@ -716,6 +729,7 @@ struct ResidentTypeCheckState {
     predicate_radix_prefix_dispatch_args: LaniusBuffer<u32>,
     predicate_radix_bases_dispatch_args: LaniusBuffer<u32>,
     predicate_single_dispatch_args: LaniusBuffer<u32>,
+    match_hir_dispatch_args: LaniusBuffer<u32>,
     semantic_features_collect: wgpu::BindGroup,
     semantic_features_dispatch_args: wgpu::BindGroup,
     loop_delta: LaniusBuffer<i32>,
@@ -992,6 +1006,9 @@ impl ResidentTypeCheckState {
             && self.cache_key.token_capacity >= key.token_capacity
             && self.cache_key.hir_node_capacity >= key.hir_node_capacity
             && self.cache_key.parser_hir_node_capacity >= key.parser_hir_node_capacity
+            && self.cache_key.module_record_capacity >= key.module_record_capacity
+            && self.cache_key.call_param_row_capacity >= key.call_param_row_capacity
+            && self.cache_key.call_arg_row_capacity >= key.call_arg_row_capacity
             && self.cache_key.input_fingerprint == key.input_fingerprint
             && self.cache_key.uses_hir_items == key.uses_hir_items
     }

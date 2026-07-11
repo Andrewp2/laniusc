@@ -45,6 +45,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= active_token_count())
         return;
 
-    visible_decl[i] = 0xdead0000u | i;
+    visible_decl[i] = INVALID;
     visible_type[i] = TY_UNKNOWN;
 }

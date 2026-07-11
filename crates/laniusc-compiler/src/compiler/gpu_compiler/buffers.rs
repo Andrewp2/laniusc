@@ -40,6 +40,7 @@ pub(super) struct OwnedX86ParserBuffers {
     pub(super) hir_member_receiver_node: LaniusBuffer<u32>,
     pub(super) hir_member_name_token: LaniusBuffer<u32>,
     pub(super) hir_call_callee_node: LaniusBuffer<u32>,
+    pub(super) hir_call_context_stmt_node: LaniusBuffer<u32>,
     pub(super) hir_call_arg_start: LaniusBuffer<u32>,
     pub(super) hir_call_arg_end: LaniusBuffer<u32>,
     pub(super) hir_call_arg_count: LaniusBuffer<u32>,
@@ -135,6 +136,7 @@ impl OwnedX86ParserBuffers {
             hir_member_receiver_node: bufs.hir_member_receiver_node.clone(),
             hir_member_name_token: bufs.hir_member_name_token.clone(),
             hir_call_callee_node: bufs.hir_call_callee_node.clone(),
+            hir_call_context_stmt_node: bufs.hir_call_context_stmt_node.clone(),
             hir_call_arg_start: bufs.hir_call_arg_start.clone(),
             hir_call_arg_end: bufs.hir_call_arg_end.clone(),
             hir_call_arg_count: bufs.hir_call_arg_count.clone(),
@@ -178,6 +180,10 @@ impl OwnedX86ParserBuffers {
 #[allow(dead_code)]
 /// Owned parser buffers retained for type-check recording and diagnostics.
 pub(super) struct OwnedTypecheckParserBuffers {
+    pub(super) parser_feature_flags: u32,
+    pub(super) module_record_capacity: u32,
+    pub(super) call_param_row_capacity: u32,
+    pub(super) call_arg_row_capacity: u32,
     pub(super) ll1_status: LaniusBuffer<u32>,
     pub(super) node_kind: LaniusBuffer<u32>,
     pub(super) parent: LaniusBuffer<u32>,
@@ -293,6 +299,7 @@ pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) hir_match_payload_ordinal: LaniusBuffer<u32>,
     pub(super) hir_match_rank_node: LaniusBuffer<u32>,
     pub(super) hir_match_rank_local_prefix: LaniusBuffer<u32>,
+    pub(super) hir_match_arm_owner_a: LaniusBuffer<u32>,
     pub(super) hir_struct_field_parent_struct: LaniusBuffer<u32>,
     pub(super) hir_struct_field_ordinal: LaniusBuffer<u32>,
     pub(super) hir_struct_field_type_node: LaniusBuffer<u32>,
@@ -330,6 +337,10 @@ impl OwnedTypecheckParserBuffers {
     /// Clones parser buffers needed by type-check recording.
     pub(super) fn from_parser_buffers(bufs: &ParserBuffers) -> Self {
         Self {
+            parser_feature_flags: bufs.parser_feature_flags,
+            module_record_capacity: bufs.tree_capacity,
+            call_param_row_capacity: bufs.tree_capacity,
+            call_arg_row_capacity: bufs.tree_capacity,
             ll1_status: bufs.ll1_status.clone(),
             node_kind: bufs.node_kind.clone(),
             parent: bufs.parent.clone(),
@@ -445,6 +456,7 @@ impl OwnedTypecheckParserBuffers {
             hir_match_payload_ordinal: bufs.hir_match_payload_ordinal.clone(),
             hir_match_rank_node: bufs.hir_match_rank_node.clone(),
             hir_match_rank_local_prefix: bufs.hir_match_rank_local_prefix.clone(),
+            hir_match_arm_owner_a: bufs.hir_match_arm_owner_a.clone(),
             hir_struct_field_parent_struct: bufs.hir_struct_field_parent_struct.clone(),
             hir_struct_field_ordinal: bufs.hir_struct_field_ordinal.clone(),
             hir_struct_field_type_node: bufs.hir_struct_field_type_node.clone(),
@@ -482,6 +494,10 @@ impl OwnedTypecheckParserBuffers {
     /// Builds the borrowed HIR-item buffer view expected by type-check kernels.
     pub(super) fn hir_item_buffers(&self) -> gpu_type_checker::GpuTypeCheckHirItemBuffers<'_> {
         gpu_type_checker::GpuTypeCheckHirItemBuffers {
+            parser_feature_flags: self.parser_feature_flags,
+            module_record_capacity: self.module_record_capacity,
+            call_param_row_capacity: self.call_param_row_capacity,
+            call_arg_row_capacity: self.call_arg_row_capacity,
             node_kind: &self.node_kind,
             parent: &self.parent,
             first_child: &self.first_child,

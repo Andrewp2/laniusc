@@ -142,7 +142,7 @@ void publish_element_record(uint node)
 {
     uint array_node = hir_array_element_parent_lit[node];
     uint ordinal = hir_array_element_ordinal[node];
-    if (!valid_node(array_node) || ordinal == INVALID)
+    if (!valid_node(array_node) || hir_kind[array_node] != HIR_ARRAY_EXPR || ordinal == INVALID)
         return;
     uint next_element = hir_array_element_next[node];
     write_struct_access_record(
@@ -181,7 +181,7 @@ void publish_element_store_record(uint node)
 {
     uint array_node = hir_array_element_parent_lit[node];
     uint ordinal = hir_array_element_ordinal[node];
-    if (!valid_node(array_node) || ordinal == INVALID)
+    if (!valid_node(array_node) || hir_kind[array_node] != HIR_ARRAY_EXPR || ordinal == INVALID)
         return;
 
     uint let_node = valid_node(array_node) ? x86_enclosing_let_node[array_node] : INVALID;
@@ -207,7 +207,8 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (hir_kind[node] == HIR_ARRAY_EXPR)
         publish_literal_record(node);
-    if (valid_node(hir_array_element_parent_lit[node]))
+    uint array_node = hir_array_element_parent_lit[node];
+    if (valid_node(array_node) && hir_kind[array_node] == HIR_ARRAY_EXPR)
     {
         publish_element_record(node);
         publish_element_store_record(node);

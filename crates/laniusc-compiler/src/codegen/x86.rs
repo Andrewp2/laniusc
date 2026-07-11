@@ -310,6 +310,7 @@ pub struct GpuX86CallMetadataBuffers<'a> {
     pub resolved_value_status: &'a wgpu::Buffer,
     pub decl_name_token: &'a wgpu::Buffer,
     pub callee_node: &'a wgpu::Buffer,
+    pub context_stmt_node: &'a wgpu::Buffer,
     pub arg_start: &'a wgpu::Buffer,
     pub arg_end: &'a wgpu::Buffer,
     pub arg_count: &'a wgpu::Buffer,

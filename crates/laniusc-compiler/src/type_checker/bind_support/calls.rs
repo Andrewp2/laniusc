@@ -168,6 +168,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     resources: &HashMap<String, wgpu::BindingResource<'_>>,
     token_capacity: u32,
     call_arg_row_capacity: u32,
+    claim_capacity: u32,
     call_generic_claim_radix_dispatch_args: &LaniusBuffer<u32>,
     call_const_claim_radix_dispatch_args: &LaniusBuffer<u32>,
     call_required_generic_dispatch_args: &LaniusBuffer<u32>,
@@ -176,11 +177,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     generic_claim_scan: CompactCallRowScanInput<'_>,
     required_generic_scan: CompactCallRowScanInput<'_>,
 ) -> Result<CallBindGroups> {
-    let claim_capacity = token_capacity
-        .max(call_arg_row_capacity)
-        .saturating_mul(GENERIC_CLAIM_CAPACITY_MULTIPLIER)
-        .max(call_arg_row_capacity)
-        .max(1);
     let claim_n_blocks = claim_capacity.div_ceil(256).max(1);
     let claim_radix_bytes = generic_claim_radix_bytes(token_capacity, claim_capacity);
     let claim_radix_steps = generic_claim_radix_steps(token_capacity, claim_capacity);

@@ -49,6 +49,7 @@ impl HirSemanticDepthStepPass {
             }
         }
 
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
         encoder.copy_buffer_to_buffer(
             &buffers.hir_semantic_depth_value_a.buffer,
             0,

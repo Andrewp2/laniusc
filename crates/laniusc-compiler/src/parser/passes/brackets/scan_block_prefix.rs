@@ -76,6 +76,10 @@ impl BracketsScanBlockPrefixPass {
                 "block_minpref".into(),
                 buffers.b_block_minpref.as_entire_binding(),
             ),
+            (
+                "block_maxdepth".into(),
+                buffers.b_block_maxdepth.as_entire_binding(),
+            ),
             ("prefix_sum_in".into(), sum_in.as_entire_binding()),
             ("prefix_min_in".into(), min_in.as_entire_binding()),
             ("prefix_sum_out".into(), sum_out.as_entire_binding()),
@@ -133,6 +137,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScanBloc
             (
                 "block_minpref".into(),
                 b.b_block_minpref.as_entire_binding(),
+            ),
+            (
+                "block_maxdepth".into(),
+                b.b_block_maxdepth.as_entire_binding(),
             ),
             (
                 "prefix_sum_in".into(),

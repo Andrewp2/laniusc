@@ -26,6 +26,8 @@ pub(in crate::type_checker) fn create_with_passes(
         inputs.source_file_capacity,
         inputs.token_capacity,
         inputs.hir_node_capacity,
+        inputs.hir_items.module_record_capacity,
+        inputs.hir_items.parser_feature_flags,
     );
     let Layout {
         n_blocks,

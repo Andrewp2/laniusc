@@ -1,6 +1,6 @@
 use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
 use crate::{
-    lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES,
+    lexer::features::CONSERVATIVE_PARSER_FEATURES,
     parser::{buffers::ParserBuffers, tables::PrecomputedParseTables},
 };
 
@@ -18,7 +18,7 @@ impl GpuParser {
             tables,
             None,
             false,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
         )
     }
 
@@ -35,7 +35,7 @@ impl GpuParser {
             tables,
             None,
             true,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
         )
     }
 
@@ -53,7 +53,7 @@ impl GpuParser {
             tables,
             tree_capacity_override,
             false,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
         )
     }
 
@@ -103,6 +103,22 @@ impl GpuParser {
                 || cached.parser_feature_flags != parser_feature_flags
                 || cached.buffers.tree_capacity < wanted_tree_capacity
         });
+
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            if let Some(cached) = slot.as_ref() {
+                eprintln!(
+                    "[gpu_compile_host_timer] parser.resident_cache: allocate={needs_allocate} wanted_tokens={wanted_capacity} cached_tokens={} wanted_tree={wanted_tree_capacity} cached_tree={} wanted_features=0x{parser_feature_flags:08x} cached_features=0x{:08x} wanted_debug={retain_debug_hir_buffers} cached_debug={}",
+                    cached.token_capacity,
+                    cached.buffers.tree_capacity,
+                    cached.parser_feature_flags,
+                    cached.retain_debug_hir_buffers,
+                );
+            } else {
+                eprintln!(
+                    "[gpu_compile_host_timer] parser.resident_cache: allocate=true reason=empty wanted_tokens={wanted_capacity} wanted_tree={wanted_tree_capacity} wanted_features=0x{parser_feature_flags:08x} wanted_debug={retain_debug_hir_buffers}"
+                );
+            }
+        }
 
         if needs_allocate {
             *slot = None;

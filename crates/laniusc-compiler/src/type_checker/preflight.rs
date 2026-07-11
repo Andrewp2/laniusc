@@ -1,0 +1,141 @@
+use super::*;
+
+/// GPU-measured compact capacities needed before resident typecheck allocation.
+#[derive(Clone, Copy, Debug)]
+pub struct TypeCheckPreflightCapacities {
+    pub module_records: u32,
+    pub call_param_rows: u32,
+    pub call_arg_rows: u32,
+}
+
+/// Host-readable result of the GPU compact-record preflight.
+pub struct RecordedModuleRecordCapacity {
+    candidate_counts: LaniusBuffer<u32>,
+    readback: wgpu::Buffer,
+}
+
+impl GpuTypeChecker {
+    /// Counts compact module, function-parameter, and call-argument rows on the GPU.
+    ///
+    /// The output is a dedicated word because typechecking still consumes the
+    /// parser semantic-count buffer after this boundary.
+    pub fn record_module_record_capacity_preflight(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        source_len: u32,
+        source_file_capacity: u32,
+        token_capacity: u32,
+        parse_bufs: &crate::parser::buffers::ParserBuffers,
+    ) -> Result<RecordedModuleRecordCapacity> {
+        let params = TypeCheckParams {
+            n_tokens: token_capacity,
+            source_len,
+            n_hir_nodes: parse_bufs.tree_capacity,
+            n_source_files: source_file_capacity,
+            parser_feature_flags: parse_bufs.parser_feature_flags,
+        };
+        queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
+
+        let candidate_counts = typed_storage_u32_rw(
+            device,
+            "type_check.preflight_capacities",
+            3,
+            wgpu::BufferUsages::COPY_DST,
+        );
+        record_typecheck_clear_buffer(encoder, &candidate_counts, 0, Some(12));
+        let bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_00a_count_record_candidates"),
+            &self.passes.modules_count_record_candidates,
+            0,
+            &[
+                ("gParams", self.params_buf.as_entire_binding()),
+                ("hir_status", parse_bufs.ll1_status.as_entire_binding()),
+                ("node_kind", parse_bufs.node_kind.as_entire_binding()),
+                ("hir_kind", parse_bufs.hir_kind.as_entire_binding()),
+                (
+                    "hir_token_pos",
+                    parse_bufs.hir_token_pos.as_entire_binding(),
+                ),
+                (
+                    "hir_token_end",
+                    parse_bufs.hir_token_end.as_entire_binding(),
+                ),
+                (
+                    "hir_item_kind",
+                    parse_bufs.hir_item_kind.as_entire_binding(),
+                ),
+                (
+                    "hir_item_name_token",
+                    parse_bufs.hir_item_name_token.as_entire_binding(),
+                ),
+                (
+                    "hir_item_namespace",
+                    parse_bufs.hir_item_namespace.as_entire_binding(),
+                ),
+                (
+                    "hir_item_path_start",
+                    parse_bufs.hir_item_path_start.as_entire_binding(),
+                ),
+                (
+                    "hir_item_path_end",
+                    parse_bufs.hir_item_path_end.as_entire_binding(),
+                ),
+                (
+                    "hir_item_import_target_kind",
+                    parse_bufs.hir_item_import_target_kind.as_entire_binding(),
+                ),
+                (
+                    "hir_param_record",
+                    parse_bufs.hir_param_record.as_entire_binding(),
+                ),
+                (
+                    "hir_call_arg_parent_call",
+                    parse_bufs.hir_call_arg_parent_call.as_entire_binding(),
+                ),
+                ("candidate_counts", candidate_counts.as_entire_binding()),
+            ],
+        )?;
+        record_compute(
+            encoder,
+            &self.passes.modules_count_record_candidates,
+            &bind_group,
+            "type_check.modules.count_record_candidates",
+            parse_bufs.tree_capacity,
+        )?;
+
+        let readback = readback_u32s(device, "rb.type_check.preflight_capacities", 3);
+        record_typecheck_copy_buffer_to_buffer(encoder, &candidate_counts, 0, &readback, 0, 12);
+        Ok(RecordedModuleRecordCapacity {
+            candidate_counts,
+            readback,
+        })
+    }
+
+    /// Finishes the three-word compact-capacity readback.
+    pub fn finish_module_record_capacity_preflight(
+        &self,
+        device: &wgpu::Device,
+        recorded: &RecordedModuleRecordCapacity,
+    ) -> Result<TypeCheckPreflightCapacities> {
+        let _keep_gpu_output_alive = &recorded.candidate_counts;
+        let slice = recorded.readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
+            device,
+            &slice,
+            "type_check.preflight_capacities",
+        )?;
+        let mapped = slice.get_mapped_range();
+        let [module_records, call_param_rows, call_arg_rows] =
+            crate::gpu::readback::read_u32_words::<3>(&mapped, "type_check.preflight_capacities")?;
+        drop(mapped);
+        recorded.readback.unmap();
+        Ok(TypeCheckPreflightCapacities {
+            module_records: module_records.max(1),
+            call_param_rows: call_param_rows.max(1),
+            call_arg_rows: call_arg_rows.max(1),
+        })
+    }
+}

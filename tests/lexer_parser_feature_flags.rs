@@ -1,13 +1,16 @@
 mod common;
 
-use laniusc_compiler::lexer::{
-    GpuLexer,
-    features::{
-        LEXICALLY_PROVEN_PARSER_FEATURES,
-        PARSER_FEATURE_ARRAYS,
-        PARSER_FEATURE_ENUMS,
-        PARSER_FEATURE_MATCHES,
+use laniusc_compiler::{
+    lexer::{
+        GpuLexer,
+        features::{
+            LEXICALLY_PROVEN_PARSER_FEATURES,
+            PARSER_FEATURE_ARRAYS,
+            PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_MATCHES,
+        },
     },
+    parser::{driver::GpuParser, tables::PrecomputedParseTables},
 };
 
 #[test]
@@ -37,6 +40,48 @@ fn gpu_lexer_publishes_conservative_parser_family_flags() {
                 .debug_parser_feature_flags(source)
                 .await
                 .expect("read GPU lexer parser feature flags");
+            assert_eq!(actual, expected, "source:\n{source}");
+        }
+    });
+}
+
+#[test]
+fn gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics() {
+    common::block_on_gpu_with_timeout("parser type-arg feature flags", async move {
+        let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tables/parse_tables.bin"
+        )))
+        .expect("load precomputed parse tables");
+        let lexer = GpuLexer::new().await.expect("create GPU lexer");
+        let parser = GpuParser::new().await.expect("create GPU parser");
+
+        for (source, expected) in [
+            (
+                "fn main(x: i32) -> i32 { if (x < 7) { return x; } return 7; }",
+                0,
+            ),
+            (
+                "fn id<T>(value: T) -> T { return value; } fn main() -> i32 { return id<i32>(7); }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ARGS,
+            ),
+            (
+                "module app::main; import core::math; fn main() -> i32 { return 0; }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_IMPORTS,
+            ),
+        ] {
+            let actual = lexer
+                .with_resident_tokens(source, |_, _, buffers| {
+                    parser.debug_token_feature_flags_for_resident_tokens(
+                        buffers.n,
+                        &buffers.tokens_out,
+                        &buffers.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex should succeed")
+                .expect("parser feature readback should succeed");
             assert_eq!(actual, expected, "source:\n{source}");
         }
     });

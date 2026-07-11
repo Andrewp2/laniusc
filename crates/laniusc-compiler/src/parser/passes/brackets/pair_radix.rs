@@ -130,6 +130,7 @@ impl BracketsPairRadixPass {
                     "partial_parse_status".into(),
                     b.partial_parse_status.as_entire_binding(),
                 ),
+                ("depths_out".into(), b.depths_out.as_entire_binding()),
                 ("sc_stream".into(), b.out_sc.as_entire_binding()),
                 ("layer".into(), b.b_layer.as_entire_binding()),
                 ("order_in".into(), order_in.as_entire_binding()),
@@ -168,6 +169,7 @@ impl BracketsPairRadixPass {
                     "partial_parse_status".into(),
                     b.partial_parse_status.as_entire_binding(),
                 ),
+                ("depths_out".into(), b.depths_out.as_entire_binding()),
                 (
                     "radix_block_histogram".into(),
                     b.b_pair_radix_block_histogram.as_entire_binding(),
@@ -211,6 +213,7 @@ impl BracketsPairRadixPass {
                     "partial_parse_status".into(),
                     b.partial_parse_status.as_entire_binding(),
                 ),
+                ("depths_out".into(), b.depths_out.as_entire_binding()),
                 (
                     "radix_bucket_total".into(),
                     b.b_pair_radix_bucket_total.as_entire_binding(),
@@ -254,6 +257,7 @@ impl BracketsPairRadixPass {
                     "partial_parse_status".into(),
                     b.partial_parse_status.as_entire_binding(),
                 ),
+                ("depths_out".into(), b.depths_out.as_entire_binding()),
                 ("sc_stream".into(), b.out_sc.as_entire_binding()),
                 ("layer".into(), b.b_layer.as_entire_binding()),
                 ("order_in".into(), order_in.as_entire_binding()),

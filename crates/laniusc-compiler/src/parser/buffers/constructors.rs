@@ -1,5 +1,5 @@
 use super::ParserBuffers;
-use crate::lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES;
+use crate::lexer::features::CONSERVATIVE_PARSER_FEATURES;
 
 impl ParserBuffers {
     /// Allocates one-shot parser buffers from already-classified parser token kinds.
@@ -20,7 +20,7 @@ impl ParserBuffers {
             false,
             true,
             None,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
         )
     }
 
@@ -80,7 +80,7 @@ impl ParserBuffers {
             tables,
             tree_capacity_override,
             retain_debug_hir_buffers,
-            LEXICALLY_PROVEN_PARSER_FEATURES,
+            CONSERVATIVE_PARSER_FEATURES,
         )
     }
 

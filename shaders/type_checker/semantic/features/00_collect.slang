@@ -19,6 +19,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_method_owner_node;
 StructuredBuffer<uint> hir_member_name_token;
@@ -30,7 +31,9 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
 static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
+static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint HIR_MATCH_EXPR = 34u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -65,6 +68,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         flags |= SEMANTIC_FEATURE_METHODS;
     if (predicate_syntax(node))
         flags |= SEMANTIC_FEATURE_PREDICATES;
+    if (hir_kind[node] == HIR_MATCH_EXPR)
+        flags |= SEMANTIC_FEATURE_MATCH;
     if (flags != 0u)
         atomic_u32_or(semantic_feature_flags, 0u, flags);
 }

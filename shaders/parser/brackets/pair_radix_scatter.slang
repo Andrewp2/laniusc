@@ -12,6 +12,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> partial_parse_status;
+StructuredBuffer<int> depths_out;
 StructuredBuffer<uint> sc_stream;
 StructuredBuffer<uint> layer;
 StructuredBuffer<uint> order_in;
@@ -65,6 +66,20 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint n = pair_active_count();
     if (n <= SMALL_PAIR_CAPACITY)
         return;
+    uint maxKey = (uint)max(depths_out[2], 0) * 2u + 1u;
+    bool keyStepActive = gParams.key_step == 0u || (maxKey >> (gParams.key_step * 8u)) != 0u;
+    if (!keyStepActive)
+    {
+        uint orderI = linear_group_id_2d(gid, MAX_GROUPS_X) * 256u + ltid.x;
+        if (orderI < n)
+        {
+            uint value = order_in[orderI];
+            order_out[orderI] = value;
+            if (gParams.key_step == 3u)
+                slot_for_index[value] = orderI;
+        }
+        return;
+    }
     stable_radix_scatter_block<uint, PairScatterSource, PairOrderSink, 256>(
         linear_group_id_2d(gid, MAX_GROUPS_X),
         ltid.x,

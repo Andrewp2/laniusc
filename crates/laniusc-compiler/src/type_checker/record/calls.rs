@@ -134,7 +134,7 @@ pub(in crate::type_checker) fn record_call_erase_generic_params_with_passes(
     )
 }
 
-/// Records logarithmic argument-to-parameter row matching passes.
+/// Records direct parallel argument-to-parameter row matching.
 pub(in crate::type_checker) fn record_call_arg_param_matching_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -147,37 +147,7 @@ pub(in crate::type_checker) fn record_call_arg_param_matching_with_passes(
         &groups.match_arg_params_init,
         "type_check.calls.match_arg_params_init",
         n_work,
-    )?;
-
-    for step in 0..groups.match_arg_param_steps {
-        let (copy_group, step_group) = if step % 2 == 0 {
-            (
-                &groups.match_arg_params_copy_main_to_tmp,
-                &groups.match_arg_params_step_main_to_tmp,
-            )
-        } else {
-            (
-                &groups.match_arg_params_copy_tmp_to_main,
-                &groups.match_arg_params_step_tmp_to_main,
-            )
-        };
-        record_compute(
-            encoder,
-            &passes.calls_match_arg_params_copy,
-            copy_group,
-            "type_check.calls.match_arg_params_copy",
-            n_work,
-        )?;
-        record_compute(
-            encoder,
-            &passes.calls_match_arg_params_step,
-            step_group,
-            "type_check.calls.match_arg_params_step",
-            n_work,
-        )?;
-    }
-
-    Ok(())
+    )
 }
 
 /// Matches argument rows to parameter rows, then collects row-argument metadata.

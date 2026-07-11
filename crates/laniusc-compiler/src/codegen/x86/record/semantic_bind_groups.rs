@@ -245,6 +245,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
+            (
+                "hir_call_context_stmt_node",
+                call_metadata.context_stmt_node.as_entire_binding(),
+            ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
             (
                 "x86_enclosing_let_node",

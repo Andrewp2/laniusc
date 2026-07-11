@@ -18,12 +18,13 @@ StructuredBuffer<uint> prefix_pop_in;
 RWStructuredBuffer<uint> prefix_push_out;
 RWStructuredBuffer<uint> prefix_pop_out;
 RWStructuredBuffer<uint> out_valid; // AND with (hist_push==hist_pop) over all layers
+StructuredBuffer<int> depths_out; // [2]=conservative maximum active layer
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint L = gParams.n_layers;
+    uint L = min(gParams.n_layers, (uint)max(depths_out[2], 0) + 1u);
     if (tid.x >= L)
         return;
 

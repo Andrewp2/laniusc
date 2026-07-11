@@ -109,6 +109,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         &parse_bufs.hir_token_file_id,
                                         hir_status,
                                         gpu_type_checker::GpuTypeCheckHirItemBuffers {
+                                            parser_feature_flags: parse_bufs.parser_feature_flags,
+                                            module_record_capacity: parse_bufs.tree_capacity,
+                                            call_param_row_capacity: parse_bufs.tree_capacity,
+                                            call_arg_row_capacity: parse_bufs.tree_capacity,
                                             node_kind: &parse_bufs.node_kind,
                                             parent: &parse_bufs.parent,
                                             first_child: &parse_bufs.first_child,
@@ -644,6 +648,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         &parse_bufs.hir_token_file_id,
                                         hir_status,
                                         gpu_type_checker::GpuTypeCheckHirItemBuffers {
+                                            parser_feature_flags: parse_bufs.parser_feature_flags,
+                                            module_record_capacity: parse_bufs.tree_capacity,
+                                            call_param_row_capacity: parse_bufs.tree_capacity,
+                                            call_arg_row_capacity: parse_bufs.tree_capacity,
                                             node_kind: &parse_bufs.node_kind,
                                             parent: &parse_bufs.parent,
                                             first_child: &parse_bufs.first_child,

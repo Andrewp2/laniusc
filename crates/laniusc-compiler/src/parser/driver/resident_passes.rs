@@ -49,7 +49,7 @@ impl GpuParser {
             .pack_varlen
             .record_pass_indirect(&mut ctx, &bufs.active_pair_group_dispatch_args)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.pack_varlen");
-        passes::record_stack_effect_validation(&mut ctx, &self.passes)?;
+        passes::record_stack_effect_validation(&mut ctx, &self.passes, timer_ref)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.stack_effect_status");
         if include_tree {
             self.record_tree_active_dispatch_args(ctx.encoder, bufs)?;
@@ -78,7 +78,7 @@ impl GpuParser {
                 .tree_prefix_04
                 .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_04");
-            if parser_compute_pass_batching_enabled(timer_ref) {
+            if parser_dependency_batching_enabled(timer_ref) {
                 let bg_cache = ctx
                     .bg_cache
                     .as_deref_mut()
@@ -186,18 +186,15 @@ impl GpuParser {
             )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_step");
             if parser_compute_pass_batching_enabled(timer_ref) {
+                self.passes
+                    .hir_semantic_parent_scatter
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
                 let bg_cache = ctx
                     .bg_cache
                     .as_deref_mut()
                     .expect("parser batching requires bind-group cache");
                 let mut batch = ComputePassBatch::begin(ctx.encoder, "parser.semantic-nav.batch");
-                batch.record_pass_indirect_cached(
-                    ctx.device,
-                    ctx.buffers,
-                    bg_cache,
-                    &self.passes.hir_semantic_parent_scatter,
-                    &bufs.hir_semantic_dispatch_args,
-                )?;
                 batch.record_pass_indirect_cached(
                     ctx.device,
                     ctx.buffers,
@@ -233,7 +230,7 @@ impl GpuParser {
                 &bufs.hir_semantic_dispatch_args,
             )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_depth_step");
-            if parser_compute_pass_batching_enabled(timer_ref) {
+            if parser_dependency_batching_enabled(timer_ref) {
                 let bg_cache = ctx
                     .bg_cache
                     .as_deref_mut()
@@ -286,7 +283,7 @@ impl GpuParser {
                 "parser.hir_semantic_child_index_rank_step",
             );
             if include_hir_spans {
-                if parser_compute_pass_batching_enabled(timer_ref) {
+                if parser_dependency_batching_enabled(timer_ref) {
                     let bg_cache = ctx
                         .bg_cache
                         .as_deref_mut()

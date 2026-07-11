@@ -370,6 +370,7 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
 }
 
 /// Bind groups for function call collection, argument matching, and generics.
+#[allow(dead_code)] // Legacy friend-vector resources retained until their pass definitions are removed.
 pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) return_refs: wgpu::BindGroup,

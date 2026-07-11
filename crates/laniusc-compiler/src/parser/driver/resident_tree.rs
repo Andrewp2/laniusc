@@ -51,6 +51,12 @@ impl U32Readback {
         self.buffer.unmap();
         Ok(words)
     }
+
+    fn read_words_padded(&self, count: usize, fill: u32) -> Result<Vec<u32>> {
+        let mut words = self.read_words(count)?;
+        words.resize(count, fill);
+        Ok(words)
+    }
 }
 
 struct ResidentTreeReadbacks {
@@ -1267,24 +1273,52 @@ impl ResidentTreeReadbacks {
             hir_item_path_node: self.hir_item_path_node.read_words(tree_len)?,
             hir_item_file_id: self.hir_item_file_id.read_words(tree_len)?,
             hir_item_import_target_kind: self.hir_item_import_target_kind.read_words(tree_len)?,
-            hir_variant_parent_enum: self.hir_variant_parent_enum.read_words(tree_len)?,
-            hir_variant_ordinal: self.hir_variant_ordinal.read_words(tree_len)?,
-            hir_variant_payload_start: self.hir_variant_payload_start.read_words(tree_len)?,
-            hir_variant_payload_count: self.hir_variant_payload_count.read_words(tree_len)?,
+            hir_variant_parent_enum: self
+                .hir_variant_parent_enum
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_variant_ordinal: self
+                .hir_variant_ordinal
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_variant_payload_start: self
+                .hir_variant_payload_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_variant_payload_count: self
+                .hir_variant_payload_count
+                .read_words_padded(tree_len, 0)?,
             hir_variant_payload_node: self
                 .hir_variant_payload_node
-                .read_words(tree_len.saturating_mul(4))?,
-            hir_match_scrutinee_node: self.hir_match_scrutinee_node.read_words(tree_len)?,
-            hir_match_arm_start: self.hir_match_arm_start.read_words(tree_len)?,
-            hir_match_arm_count: self.hir_match_arm_count.read_words(tree_len)?,
-            hir_match_arm_next: self.hir_match_arm_next.read_words(tree_len)?,
-            hir_match_arm_pattern_node: self.hir_match_arm_pattern_node.read_words(tree_len)?,
-            hir_match_arm_payload_start: self.hir_match_arm_payload_start.read_words(tree_len)?,
-            hir_match_arm_payload_count: self.hir_match_arm_payload_count.read_words(tree_len)?,
-            hir_match_arm_result_node: self.hir_match_arm_result_node.read_words(tree_len)?,
-            hir_match_payload_owner_arm: self.hir_match_payload_owner_arm.read_words(tree_len)?,
-            hir_match_payload_match_node: self.hir_match_payload_match_node.read_words(tree_len)?,
-            hir_match_payload_ordinal: self.hir_match_payload_ordinal.read_words(tree_len)?,
+                .read_words_padded(tree_len.saturating_mul(4), u32::MAX)?,
+            hir_match_scrutinee_node: self
+                .hir_match_scrutinee_node
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_arm_start: self
+                .hir_match_arm_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_arm_count: self.hir_match_arm_count.read_words_padded(tree_len, 0)?,
+            hir_match_arm_next: self
+                .hir_match_arm_next
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_arm_pattern_node: self
+                .hir_match_arm_pattern_node
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_arm_payload_start: self
+                .hir_match_arm_payload_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_arm_payload_count: self
+                .hir_match_arm_payload_count
+                .read_words_padded(tree_len, 0)?,
+            hir_match_arm_result_node: self
+                .hir_match_arm_result_node
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_payload_owner_arm: self
+                .hir_match_payload_owner_arm
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_payload_match_node: self
+                .hir_match_payload_match_node
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_match_payload_ordinal: self
+                .hir_match_payload_ordinal
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_call_callee_node: self.hir_call_callee_node.read_words(tree_len)?,
             hir_call_context_stmt_node: self.hir_call_context_stmt_node.read_words(tree_len)?,
             hir_call_arg_start: self.hir_call_arg_start.read_words(tree_len)?,
@@ -1292,14 +1326,24 @@ impl ResidentTreeReadbacks {
             hir_call_arg_count: self.hir_call_arg_count.read_words(tree_len)?,
             hir_call_arg_parent_call,
             hir_call_arg_ordinal,
-            hir_array_lit_first_element: self.hir_array_lit_first_element.read_words(tree_len)?,
-            hir_array_lit_element_count: self.hir_array_lit_element_count.read_words(tree_len)?,
+            hir_array_lit_first_element: self
+                .hir_array_lit_first_element
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_array_lit_element_count: self
+                .hir_array_lit_element_count
+                .read_words_padded(tree_len, 0)?,
             hir_array_lit_context_stmt_node: self
                 .hir_array_lit_context_stmt_node
-                .read_words(tree_len)?,
-            hir_array_element_parent_lit: self.hir_array_element_parent_lit.read_words(tree_len)?,
-            hir_array_element_ordinal: self.hir_array_element_ordinal.read_words(tree_len)?,
-            hir_array_element_next: self.hir_array_element_next.read_words(tree_len)?,
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_array_element_parent_lit: self
+                .hir_array_element_parent_lit
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_array_element_ordinal: self
+                .hir_array_element_ordinal
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_array_element_next: self
+                .hir_array_element_next
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_expr_result_root_node: self.hir_expr_result_root_node.read_words(tree_len)?,
             hir_member_receiver_node: self.hir_member_receiver_node.read_words(tree_len)?,
             hir_member_receiver_token: self.hir_member_receiver_token.read_words(tree_len)?,
@@ -1313,24 +1357,40 @@ impl ResidentTreeReadbacks {
             hir_nearest_fn_node: self.hir_nearest_fn_node.read_words(tree_len)?,
             hir_struct_field_parent_struct: self
                 .hir_struct_field_parent_struct
-                .read_words(tree_len)?,
-            hir_struct_field_ordinal: self.hir_struct_field_ordinal.read_words(tree_len)?,
-            hir_struct_field_type_node: self.hir_struct_field_type_node.read_words(tree_len)?,
-            hir_struct_decl_field_start: self.hir_struct_decl_field_start.read_words(tree_len)?,
-            hir_struct_decl_field_count: self.hir_struct_decl_field_count.read_words(tree_len)?,
-            hir_struct_lit_head_node: self.hir_struct_lit_head_node.read_words(tree_len)?,
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_field_ordinal: self
+                .hir_struct_field_ordinal
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_field_type_node: self
+                .hir_struct_field_type_node
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_decl_field_start: self
+                .hir_struct_decl_field_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_decl_field_count: self
+                .hir_struct_decl_field_count
+                .read_words_padded(tree_len, 0)?,
+            hir_struct_lit_head_node: self
+                .hir_struct_lit_head_node
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_struct_lit_context_stmt_node: self
                 .hir_struct_lit_context_stmt_node
-                .read_words(tree_len)?,
-            hir_struct_lit_field_start: self.hir_struct_lit_field_start.read_words(tree_len)?,
-            hir_struct_lit_field_count: self.hir_struct_lit_field_count.read_words(tree_len)?,
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_lit_field_start: self
+                .hir_struct_lit_field_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_lit_field_count: self
+                .hir_struct_lit_field_count
+                .read_words_padded(tree_len, 0)?,
             hir_struct_lit_field_parent_lit: self
                 .hir_struct_lit_field_parent_lit
-                .read_words(tree_len)?,
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_struct_lit_field_value_node: self
                 .hir_struct_lit_field_value_node
-                .read_words(tree_len)?,
-            hir_struct_lit_field_next: self.hir_struct_lit_field_next.read_words(tree_len)?,
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_struct_lit_field_next: self
+                .hir_struct_lit_field_next
+                .read_words_padded(tree_len, u32::MAX)?,
         };
         validate_hir_source_address_records(
             &result.hir_kind,

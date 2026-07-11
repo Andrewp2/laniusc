@@ -1,6 +1,8 @@
 // shaders/parser/brackets_03_apply_prefix.slang
 // Apply block_prefix to exscan_inblock → global depth; also compute layer[i].
 
+import gpu_index;
+
 struct Params
 {
     uint n_sc;
@@ -19,14 +21,17 @@ StructuredBuffer<int> out_depths_ro; // [0]=final, [1]=min (written by pass 02)
 RWStructuredBuffer<int> depth_exscan; // len = n_sc (global exclusive)
 RWStructuredBuffer<uint> layer;       // len = n_sc (depth layer: push→d+1, pop→d)
 
+static const uint MAX_GROUPS_X = 65535u;
+static const uint WG_SIZE = 256u;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     const uint n = min(gParams.n_sc, partial_parse_status[4u]);
     const uint GSIZE = gParams.wg_size;
-    const uint block = tid.x / GSIZE;
-    const uint i = tid.x;
+    const uint i = linear_thread_id_2d(tid, MAX_GROUPS_X, WG_SIZE);
+    const uint block = i / GSIZE;
     if (i >= n)
         return;
 

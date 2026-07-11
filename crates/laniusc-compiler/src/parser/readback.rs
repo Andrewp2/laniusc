@@ -3149,7 +3149,8 @@ impl ParserHirItemReadbacks {
             hir_stmt_record_operand2
                 .push(*hir_stmt_record_words.get(base + 3).unwrap_or(&u32::MAX));
         }
-        let hir_variant_payload_count = read_u32_vec(&self.hir_variant_payload_count, tree_len);
+        let hir_variant_payload_count =
+            read_u32_vec_padded(&self.hir_variant_payload_count, tree_len, 0);
 
         let decoded = DecodedParserHirItemReadbacks {
             ll1_status,
@@ -3185,13 +3186,22 @@ impl ParserHirItemReadbacks {
             hir_item_path_node: read_u32_vec(&self.hir_item_path_node, tree_len),
             hir_item_file_id: read_u32_vec(&self.hir_item_file_id, tree_len),
             hir_item_import_target_kind: read_u32_vec(&self.hir_item_import_target_kind, tree_len),
-            hir_variant_parent_enum: read_u32_vec(&self.hir_variant_parent_enum, tree_len),
-            hir_variant_ordinal: read_u32_vec(&self.hir_variant_ordinal, tree_len),
-            hir_variant_payload_start: read_u32_vec(&self.hir_variant_payload_start, tree_len),
+            hir_variant_parent_enum: read_u32_vec_padded(
+                &self.hir_variant_parent_enum,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_variant_ordinal: read_u32_vec_padded(&self.hir_variant_ordinal, tree_len, u32::MAX),
+            hir_variant_payload_start: read_u32_vec_padded(
+                &self.hir_variant_payload_start,
+                tree_len,
+                u32::MAX,
+            ),
             hir_variant_payload_count,
-            hir_variant_payload_node: read_u32_vec(
+            hir_variant_payload_node: read_u32_vec_padded(
                 &self.hir_variant_payload_node,
                 tree_len.saturating_mul(HIR_VARIANT_PAYLOAD_SLOT_STRIDE as usize),
+                u32::MAX,
             ),
             hir_param_owner_fn_node,
             hir_param_ordinal,
@@ -3216,20 +3226,49 @@ impl ParserHirItemReadbacks {
             hir_expr_record_left,
             hir_expr_record_right,
             hir_expr_record_value_token,
-            hir_match_scrutinee_node: read_u32_vec(&self.hir_match_scrutinee_node, tree_len),
-            hir_match_arm_start: read_u32_vec(&self.hir_match_arm_start, tree_len),
-            hir_match_arm_count: read_u32_vec(&self.hir_match_arm_count, tree_len),
-            hir_match_arm_next: read_u32_vec(&self.hir_match_arm_next, tree_len),
-            hir_match_arm_pattern_node: read_u32_vec(&self.hir_match_arm_pattern_node, tree_len),
-            hir_match_arm_payload_start: read_u32_vec(&self.hir_match_arm_payload_start, tree_len),
-            hir_match_arm_payload_count: read_u32_vec(&self.hir_match_arm_payload_count, tree_len),
-            hir_match_arm_result_node: read_u32_vec(&self.hir_match_arm_result_node, tree_len),
-            hir_match_payload_owner_arm: read_u32_vec(&self.hir_match_payload_owner_arm, tree_len),
-            hir_match_payload_match_node: read_u32_vec(
+            hir_match_scrutinee_node: read_u32_vec_padded(
+                &self.hir_match_scrutinee_node,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_match_arm_start: read_u32_vec_padded(&self.hir_match_arm_start, tree_len, u32::MAX),
+            hir_match_arm_count: read_u32_vec_padded(&self.hir_match_arm_count, tree_len, 0),
+            hir_match_arm_next: read_u32_vec_padded(&self.hir_match_arm_next, tree_len, u32::MAX),
+            hir_match_arm_pattern_node: read_u32_vec_padded(
+                &self.hir_match_arm_pattern_node,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_match_arm_payload_start: read_u32_vec_padded(
+                &self.hir_match_arm_payload_start,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_match_arm_payload_count: read_u32_vec_padded(
+                &self.hir_match_arm_payload_count,
+                tree_len,
+                0,
+            ),
+            hir_match_arm_result_node: read_u32_vec_padded(
+                &self.hir_match_arm_result_node,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_match_payload_owner_arm: read_u32_vec_padded(
+                &self.hir_match_payload_owner_arm,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_match_payload_match_node: read_u32_vec_padded(
                 &self.hir_match_payload_match_node,
                 tree_len,
+                u32::MAX,
             ),
-            hir_match_payload_ordinal: read_u32_vec(&self.hir_match_payload_ordinal, tree_len),
+            hir_match_payload_ordinal: read_u32_vec_padded(
+                &self.hir_match_payload_ordinal,
+                tree_len,
+                u32::MAX,
+            ),
             hir_call_callee_node: read_u32_vec(&self.hir_call_callee_node, tree_len),
             hir_call_context_stmt_node: read_u32_vec(&self.hir_call_context_stmt_node, tree_len),
             hir_call_arg_start: read_u32_vec(&self.hir_call_arg_start, tree_len),
@@ -3237,18 +3276,36 @@ impl ParserHirItemReadbacks {
             hir_call_arg_count: read_u32_vec(&self.hir_call_arg_count, tree_len),
             hir_call_arg_parent_call,
             hir_call_arg_ordinal,
-            hir_array_lit_first_element: read_u32_vec(&self.hir_array_lit_first_element, tree_len),
-            hir_array_lit_element_count: read_u32_vec(&self.hir_array_lit_element_count, tree_len),
-            hir_array_lit_context_stmt_node: read_u32_vec(
+            hir_array_lit_first_element: read_u32_vec_padded(
+                &self.hir_array_lit_first_element,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_array_lit_element_count: read_u32_vec_padded(
+                &self.hir_array_lit_element_count,
+                tree_len,
+                0,
+            ),
+            hir_array_lit_context_stmt_node: read_u32_vec_padded(
                 &self.hir_array_lit_context_stmt_node,
                 tree_len,
+                u32::MAX,
             ),
-            hir_array_element_parent_lit: read_u32_vec(
+            hir_array_element_parent_lit: read_u32_vec_padded(
                 &self.hir_array_element_parent_lit,
                 tree_len,
+                u32::MAX,
             ),
-            hir_array_element_ordinal: read_u32_vec(&self.hir_array_element_ordinal, tree_len),
-            hir_array_element_next: read_u32_vec(&self.hir_array_element_next, tree_len),
+            hir_array_element_ordinal: read_u32_vec_padded(
+                &self.hir_array_element_ordinal,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_array_element_next: read_u32_vec_padded(
+                &self.hir_array_element_next,
+                tree_len,
+                u32::MAX,
+            ),
             hir_expr_string_start: read_u32_vec(&self.hir_expr_string_start, tree_len),
             hir_expr_string_len: read_u32_vec(&self.hir_expr_string_len, tree_len),
             hir_member_receiver_node: read_u32_vec(&self.hir_member_receiver_node, tree_len),
@@ -3267,30 +3324,66 @@ impl ParserHirItemReadbacks {
             ),
             hir_nearest_loop_node: read_u32_vec(&self.hir_nearest_loop_node, tree_len),
             hir_nearest_fn_node: read_u32_vec(&self.hir_nearest_fn_node, tree_len),
-            hir_struct_field_parent_struct: read_u32_vec(
+            hir_struct_field_parent_struct: read_u32_vec_padded(
                 &self.hir_struct_field_parent_struct,
                 tree_len,
+                u32::MAX,
             ),
-            hir_struct_field_ordinal: read_u32_vec(&self.hir_struct_field_ordinal, tree_len),
-            hir_struct_field_type_node: read_u32_vec(&self.hir_struct_field_type_node, tree_len),
-            hir_struct_decl_field_start: read_u32_vec(&self.hir_struct_decl_field_start, tree_len),
-            hir_struct_decl_field_count: read_u32_vec(&self.hir_struct_decl_field_count, tree_len),
-            hir_struct_lit_head_node: read_u32_vec(&self.hir_struct_lit_head_node, tree_len),
-            hir_struct_lit_context_stmt_node: read_u32_vec(
+            hir_struct_field_ordinal: read_u32_vec_padded(
+                &self.hir_struct_field_ordinal,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_struct_field_type_node: read_u32_vec_padded(
+                &self.hir_struct_field_type_node,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_struct_decl_field_start: read_u32_vec_padded(
+                &self.hir_struct_decl_field_start,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_struct_decl_field_count: read_u32_vec_padded(
+                &self.hir_struct_decl_field_count,
+                tree_len,
+                0,
+            ),
+            hir_struct_lit_head_node: read_u32_vec_padded(
+                &self.hir_struct_lit_head_node,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_struct_lit_context_stmt_node: read_u32_vec_padded(
                 &self.hir_struct_lit_context_stmt_node,
                 tree_len,
+                u32::MAX,
             ),
-            hir_struct_lit_field_start: read_u32_vec(&self.hir_struct_lit_field_start, tree_len),
-            hir_struct_lit_field_count: read_u32_vec(&self.hir_struct_lit_field_count, tree_len),
-            hir_struct_lit_field_parent_lit: read_u32_vec(
+            hir_struct_lit_field_start: read_u32_vec_padded(
+                &self.hir_struct_lit_field_start,
+                tree_len,
+                u32::MAX,
+            ),
+            hir_struct_lit_field_count: read_u32_vec_padded(
+                &self.hir_struct_lit_field_count,
+                tree_len,
+                0,
+            ),
+            hir_struct_lit_field_parent_lit: read_u32_vec_padded(
                 &self.hir_struct_lit_field_parent_lit,
                 tree_len,
+                u32::MAX,
             ),
-            hir_struct_lit_field_value_node: read_u32_vec(
+            hir_struct_lit_field_value_node: read_u32_vec_padded(
                 &self.hir_struct_lit_field_value_node,
                 tree_len,
+                u32::MAX,
             ),
-            hir_struct_lit_field_next: read_u32_vec(&self.hir_struct_lit_field_next, tree_len),
+            hir_struct_lit_field_next: read_u32_vec_padded(
+                &self.hir_struct_lit_field_next,
+                tree_len,
+                u32::MAX,
+            ),
         };
         validate_hir_source_address_records(
             &decoded.hir_kind,
@@ -4077,6 +4170,12 @@ fn read_u32_vec(buffer: &wgpu::Buffer, len: usize) -> Vec<u32> {
     }
     drop(data);
     buffer.unmap();
+    out
+}
+
+fn read_u32_vec_padded(buffer: &wgpu::Buffer, len: usize, fill: u32) -> Vec<u32> {
+    let mut out = read_u32_vec(buffer, len);
+    out.resize(len, fill);
     out
 }
 
@@ -7068,7 +7167,19 @@ pub fn validate_hir_context_relation_records(
         || struct_lit_context_stmt_nodes.len() != row_count
     {
         return Err(anyhow!(
-            "parser HIR context-relation record arrays have inconsistent lengths"
+            "parser HIR context-relation record arrays have inconsistent lengths: kinds={row_count} token_pos={} token_end={} file_ids={} stmt_kinds={} nearest_stmt={} nearest_block={} nearest_control={} nearest_loop={} nearest_fn={} call_context={} array_context={} struct_context={}",
+            token_pos.len(),
+            token_end.len(),
+            node_file_ids.len(),
+            stmt_record_kinds.len(),
+            nearest_stmt_nodes.len(),
+            nearest_block_nodes.len(),
+            nearest_control_nodes.len(),
+            nearest_loop_nodes.len(),
+            nearest_fn_nodes.len(),
+            call_context_stmt_nodes.len(),
+            array_lit_context_stmt_nodes.len(),
+            struct_lit_context_stmt_nodes.len(),
         ));
     }
 

@@ -3,6 +3,7 @@
 // atomic scatter order is not deterministic enough to define parser acceptance.
 
 import atomics;
+import gpu_index;
 
 struct Params
 {
@@ -30,6 +31,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint SMALL_PAIR_CAPACITY = 2048u;
 static const uint RADIX_PAIR_CAPACITY = 0x7fffffffu;
+static const uint MAX_GROUPS_X = 65535u;
 
 groupshared uint small_pair_layer_counts[SMALL_PAIR_CAPACITY];
 groupshared uint small_pair_tile_keys[WG_SIZE];
@@ -125,7 +127,7 @@ void main(
         return;
     }
 
-    uint i_push = tid.x;
+    uint i_push = linear_thread_id_2d(tid, MAX_GROUPS_X, WG_SIZE);
     if (i_push >= n)
         return;
 

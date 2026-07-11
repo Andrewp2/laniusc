@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::{GpuParser, Ll1AcceptResult, ParserFailure, support::read_u32_words};
 use crate::{
-    lexer::features::LEXICALLY_PROVEN_PARSER_FEATURES,
+    lexer::features::CONSERVATIVE_PARSER_FEATURES,
     parser::tables::PrecomputedParseTables,
 };
 
@@ -42,7 +42,7 @@ impl GpuParser {
             .expect("parser.resident_buffers poisoned")
             .as_ref()
             .map(|cached| cached.parser_feature_flags)
-            .unwrap_or(LEXICALLY_PROVEN_PARSER_FEATURES);
+            .unwrap_or(CONSERVATIVE_PARSER_FEATURES);
         self.read_current_resident_semantic_token_kinds_with_features(
             token_capacity,
             tables,

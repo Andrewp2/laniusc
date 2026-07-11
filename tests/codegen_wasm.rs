@@ -2384,12 +2384,53 @@ fn main() {
     print(total);
     return 0;
 }
+
 "#,
     )
     .expect("scalar while construct should compile to WASM");
 
     let stdout = common::run_wasm_main_with_node("WASM scalar while construct", "while_sum", &wasm);
     assert_eq!(stdout, "55\n");
+}
+
+#[test]
+fn wasm_executes_f32_newton_iteration_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn sqrt(value: f32) -> f32 {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+    let guess: f32 = value;
+    if (guess < 1.0) {
+        guess = 1.0;
+    }
+    let iteration: i32 = 0;
+    while (iteration < 8) {
+        guess = 0.5 * (guess + value / guess);
+        iteration = iteration + 1;
+    }
+    return guess;
+}
+
+fn main() {
+    let root: f32 = sqrt(9.0);
+    if (root > 2.99 && root < 3.01) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("f32 Newton iteration should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM f32 Newton iteration",
+        "f32_newton_iteration",
+        &wasm,
+    );
+    assert_eq!(status, 0);
 }
 
 #[test]

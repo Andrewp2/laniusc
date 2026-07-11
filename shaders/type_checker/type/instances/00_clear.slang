@@ -8,9 +8,13 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gParams;
+
+static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
@@ -114,7 +118,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     decl_type_ref_payload[i] = INVALID;
     member_result_context_instance[i] = INVALID;
     member_result_ref_tag[i] = TYPE_REF_INVALID;
-    member_result_ref_payload[i] = INVALID;
-    member_result_field_ordinal[i] = INVALID;
-    member_result_field_node[i] = INVALID;
+    if ((gParams.parser_feature_flags & PARSER_FEATURE_MEMBERS) != 0u)
+    {
+        member_result_ref_payload[i] = INVALID;
+        member_result_field_ordinal[i] = INVALID;
+        member_result_field_node[i] = INVALID;
+    }
 }

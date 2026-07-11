@@ -99,6 +99,10 @@ impl TypeCheckPasses {
                 "type_check_modules_00_mark_records",
                 "type_checker/modules/00_mark_records"
             ),
+            modules_count_record_candidates: pass!(
+                "type_check_modules_00a_count_record_candidates",
+                "type_checker/modules/00a_count_record_candidates"
+            ),
             modules_extract_record_flag: pass!(
                 "type_check_modules_00b_extract_record_flag",
                 "type_checker/modules/00b_extract_record_flag"

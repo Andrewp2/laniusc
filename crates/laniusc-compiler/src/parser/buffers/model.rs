@@ -173,7 +173,7 @@ pub struct ParserBuffers {
     pub b_block_prefix_min_a: LaniusBuffer<i32>,
     pub b_block_prefix_min_b: LaniusBuffer<i32>,
 
-    pub depths_out: LaniusBuffer<i32>, // [final, min]
+    pub depths_out: LaniusBuffer<i32>, // [final, min, conservative max active layer]
     pub valid_out: LaniusBuffer<u32>,
 
     pub b_depth_exscan: LaniusBuffer<i32>,

@@ -15,9 +15,13 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gParams;
+
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_status;
@@ -269,6 +273,8 @@ void publish_struct_init_field_node(uint field_node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    if ((gParams.parser_feature_flags & PARSER_FEATURE_STRUCTS) == 0u)
+        return;
     uint i = linear_thread_id(dtid);
     if (!valid_node(i))
         return;

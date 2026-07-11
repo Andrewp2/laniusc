@@ -10,6 +10,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> partial_parse_status;
+StructuredBuffer<int> depths_out;
 StructuredBuffer<uint> radix_bucket_total;
 RWStructuredBuffer<uint> radix_bucket_base;
 
@@ -22,7 +23,9 @@ groupshared uint scan_values[512];
 void main(uint3 ltid: SV_GroupThreadID)
 {
     uint n = min(gParams.n_sc, partial_parse_status[4u]);
-    if (n <= SMALL_PAIR_CAPACITY)
+    uint maxKey = (uint)max(depths_out[2], 0) * 2u + 1u;
+    bool keyStepActive = gParams.key_step == 0u || (maxKey >> (gParams.key_step * 8u)) != 0u;
+    if (n <= SMALL_PAIR_CAPACITY || !keyStepActive)
         return;
     radix_bucket_base_scan_2<256, 512>(
         ltid.x,

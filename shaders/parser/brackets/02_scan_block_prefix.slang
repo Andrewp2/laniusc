@@ -12,12 +12,13 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<int> block_sum;          // len = n_blocks
 StructuredBuffer<int> block_minpref;      // len = n_blocks
+StructuredBuffer<int> block_maxdepth;     // len = n_blocks
 StructuredBuffer<int> prefix_sum_in;      // inclusive scanned block sums
 StructuredBuffer<int> prefix_min_in;      // inclusive scanned block min-prefix summaries
 RWStructuredBuffer<int> prefix_sum_out;
 RWStructuredBuffer<int> prefix_min_out;
 RWStructuredBuffer<int> block_prefix;     // len = n_blocks (exclusive)
-RWStructuredBuffer<int> out_depths;       // [0]=final, [1]=min
+RWStructuredBuffer<int> out_depths;       // [0]=final, [1]=min, [2]=max active layer
 RWStructuredBuffer<uint> out_valid;       // set to 1 here; later kernels AND in errors
 
 [shader("compute")]
@@ -57,5 +58,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     int min_depth = prefix_min_in[B - 1u];
     out_depths[0] = final_depth;
     out_depths[1] = min_depth;
+    int layer_offset = min_depth < 0 ? -min_depth : 0;
+    InterlockedMax(out_depths[2], block_prefix[tid.x] + block_maxdepth[tid.x] + layer_offset);
     out_valid[0] = (min_depth >= 0 && final_depth == 0) ? 1u : 0u;
 }

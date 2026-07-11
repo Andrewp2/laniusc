@@ -8,6 +8,8 @@
 //   qualified paths, perform same-source shortcuts, use hash-only lookup, or
 //   ask the CPU to classify paths.
 
+import type_checker.modules.record_candidates;
+
 struct Params
 {
     uint n_tokens;
@@ -31,46 +33,8 @@ StructuredBuffer<uint> hir_item_import_target_kind;
 
 RWStructuredBuffer<uint> record_family_bits;
 
-static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-
-static const uint HIR_TYPE = 5u;
-static const uint HIR_PATH_EXPR = 33u;
-static const uint PROD_PATH = 47u;
-
-static const uint HIR_ITEM_KIND_NONE = 0u;
-static const uint HIR_ITEM_KIND_MODULE = 1u;
-static const uint HIR_ITEM_KIND_IMPORT = 2u;
-static const uint HIR_ITEM_KIND_CONST = 3u;
-static const uint HIR_ITEM_KIND_FN = 4u;
-static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
-static const uint HIR_ITEM_KIND_STRUCT = 6u;
-static const uint HIR_ITEM_KIND_ENUM = 7u;
-static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
-static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
-static const uint HIR_ITEM_KIND_TRAIT = 10u;
-
-static const uint HIR_ITEM_NAMESPACE_NONE = 0u;
-static const uint HIR_ITEM_NAMESPACE_MODULE = 1u;
-static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
-static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
-
-static const uint HIR_ITEM_IMPORT_TARGET_NONE = 0u;
-static const uint HIR_ITEM_IMPORT_TARGET_PATH = 1u;
-static const uint HIR_ITEM_IMPORT_TARGET_STRING = 2u;
-
-static const uint PATH_RECORD_KIND_NONE = 0u;
-static const uint PATH_RECORD_KIND_MODULE_DECL = 1u;
-static const uint PATH_RECORD_KIND_IMPORT_PATH = 2u;
-static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
-static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
-
-static const uint RECORD_FLAG_MODULE = 1u << 0u;
-static const uint RECORD_FLAG_IMPORT = 1u << 1u;
-static const uint RECORD_FLAG_DECL = 1u << 2u;
-static const uint RECORD_FLAG_PATH = 1u << 3u;
-static const uint RECORD_PATH_KIND_SHIFT = 8u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -80,46 +44,6 @@ uint linear_thread_id(uint3 dtid)
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_span(uint start, uint end_exclusive)
-{
-    return start != INVALID && end_exclusive != INVALID && start < end_exclusive &&
-           end_exclusive <= gParams.n_tokens;
-}
-
-bool is_top_level_decl_kind(uint item_kind)
-{
-    return item_kind == HIR_ITEM_KIND_CONST || item_kind == HIR_ITEM_KIND_FN ||
-           item_kind == HIR_ITEM_KIND_EXTERN_FN || item_kind == HIR_ITEM_KIND_STRUCT ||
-           item_kind == HIR_ITEM_KIND_ENUM || item_kind == HIR_ITEM_KIND_TYPE_ALIAS ||
-           item_kind == HIR_ITEM_KIND_ENUM_VARIANT || item_kind == HIR_ITEM_KIND_TRAIT;
-}
-
-bool is_decl_namespace(uint namespace)
-{
-    return namespace == HIR_ITEM_NAMESPACE_VALUE || namespace == HIR_ITEM_NAMESPACE_TYPE;
-}
-
-uint candidate_path_kind(uint i, uint item_kind)
-{
-    if (item_kind == HIR_ITEM_KIND_MODULE &&
-        valid_span(hir_item_path_start[i], hir_item_path_end[i]))
-        return PATH_RECORD_KIND_MODULE_DECL;
-
-    if (item_kind == HIR_ITEM_KIND_IMPORT &&
-        hir_item_import_target_kind[i] == HIR_ITEM_IMPORT_TARGET_PATH &&
-        valid_span(hir_item_path_start[i], hir_item_path_end[i]))
-        return PATH_RECORD_KIND_IMPORT_PATH;
-
-    if (hir_kind[i] == HIR_PATH_EXPR && node_kind[i] == PROD_PATH &&
-        valid_span(hir_token_pos[i], hir_token_end[i]))
-        return PATH_RECORD_KIND_HIR_PATH_EXPR;
-
-    if (hir_kind[i] == HIR_TYPE && valid_span(hir_token_pos[i], hir_token_end[i]))
-        return PATH_RECORD_KIND_HIR_TYPE_EXPR;
-
-    return PATH_RECORD_KIND_NONE;
 }
 
 [shader("compute")]
@@ -136,33 +60,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint item_kind = hir_item_kind[i];
-    uint item_namespace = hir_item_namespace[i];
-    uint bits = 0u;
-
-    if (item_kind == HIR_ITEM_KIND_MODULE &&
-        valid_span(hir_item_path_start[i], hir_item_path_end[i]))
-    {
-        bits |= RECORD_FLAG_MODULE;
-    }
-
-    if (item_kind == HIR_ITEM_KIND_IMPORT &&
-        hir_item_import_target_kind[i] != HIR_ITEM_IMPORT_TARGET_NONE)
-    {
-        bits |= RECORD_FLAG_IMPORT;
-    }
-
-    if (is_top_level_decl_kind(item_kind) && is_decl_namespace(item_namespace) &&
-        hir_item_name_token[i] != INVALID)
-    {
-        bits |= RECORD_FLAG_DECL;
-    }
-
-    uint kind = candidate_path_kind(i, item_kind);
-    if (kind != PATH_RECORD_KIND_NONE)
-    {
-        bits |= RECORD_FLAG_PATH | (kind << RECORD_PATH_KIND_SHIFT);
-    }
-
-    record_family_bits[i] = bits;
+    ModuleRecordCandidate row;
+    row.candidate_node_kind = node_kind[i];
+    row.candidate_hir_kind = hir_kind[i];
+    row.candidate_token_pos = hir_token_pos[i];
+    row.candidate_token_end = hir_token_end[i];
+    row.candidate_item_kind = hir_item_kind[i];
+    row.candidate_item_name_token = hir_item_name_token[i];
+    row.candidate_item_namespace = hir_item_namespace[i];
+    row.candidate_item_path_start = hir_item_path_start[i];
+    row.candidate_item_path_end = hir_item_path_end[i];
+    row.candidate_import_target_kind = hir_item_import_target_kind[i];
+    record_family_bits[i] = module_record_candidate_bits(row, gParams.n_tokens);
 }

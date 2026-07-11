@@ -6,7 +6,10 @@ use std::{
     process::Command,
 };
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use laniusc_compiler::compiler::{
+    compile_entry_to_wasm_with_stdlib,
+    compile_entry_to_x86_64_with_stdlib,
+};
 
 const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/raytracer_ppm");
 
@@ -124,6 +127,40 @@ fn raytracer_ppm_compiles_runs_and_matches_oracle() {
 #[test]
 #[ignore = "native x86_64 execution acceptance test"]
 fn raytracer_ppm_compiles_runs_and_matches_oracle() {}
+
+#[test]
+fn raytracer_ppm_compiles_to_wasm_runs_and_matches_oracle() {
+    common::require_node();
+
+    let source_path = fixture_path("raytracer.lani");
+    let expected_ppm = read_fixture("expected.ppm");
+    let expected_stdout = read_fixture("expected.stdout");
+    let settings = fs::read(fixture_path("render_settings.txt"))
+        .expect("read raytracer settings fixture");
+    let bytes = common::run_gpu_codegen_with_timeout("raytracer PPM fixture Wasm compile", {
+        let source_path = source_path.clone();
+        move || {
+            pollster::block_on(compile_entry_to_wasm_with_stdlib(
+                &source_path,
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib"),
+            ))
+        }
+    })
+    .expect("raytracer fixture should eventually compile to Wasm");
+
+    let result = common::run_wasm_main_with_node_and_files(
+        "raytracer fixture Wasm execution",
+        "raytracer_ppm",
+        &bytes,
+        &[("render_settings.txt".to_owned(), settings)],
+    );
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout, expected_stdout);
+    assert_eq!(
+        result.files.get("lanius_ray.ppm").map(Vec::as_slice),
+        Some(expected_ppm.as_bytes()),
+    );
+}
 
 fn fixture_path(name: &str) -> PathBuf {
     Path::new(FIXTURE_DIR).join(name)

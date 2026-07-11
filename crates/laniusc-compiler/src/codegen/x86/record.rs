@@ -124,12 +124,11 @@ impl GpuX86CodeGenerator {
             external_scratch,
             mut timer,
         } = inputs;
-        let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-            timer.is_none()
-                && crate::gpu::passes_core::compute_pass_batching_enabled()
-                && !crate::gpu::passes_core::validation_scopes_enabled(),
-            "codegen.x86.batch",
-        );
+        // Native lowering is a dependency graph of scans, pointer jumps,
+        // instruction generation, liveness, selection, and encoding. A
+        // single compute pass has no storage barriers between those stages.
+        let _compute_batch =
+            crate::gpu::passes_core::DeferredComputeBatchGuard::begin(false, "codegen.x86.batch");
         let mut host_timer = HostTimer::new();
         let RecordCapacity {
             hir_words,

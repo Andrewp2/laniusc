@@ -25,12 +25,14 @@ RWStructuredBuffer<uint> predicate_hir_dispatch_args;
 RWStructuredBuffer<uint> predicate_radix_prefix_dispatch_args;
 RWStructuredBuffer<uint> predicate_radix_bases_dispatch_args;
 RWStructuredBuffer<uint> predicate_single_dispatch_args;
+RWStructuredBuffer<uint> match_hir_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint RADIX_BUCKETS = 257u;
 static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
 static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
+static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
 
 bool feature_enabled(uint feature)
 {
@@ -74,6 +76,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint active_hir = active_hir_node_count();
     bool methods = feature_enabled(SEMANTIC_FEATURE_METHODS);
     bool predicates = feature_enabled(SEMANTIC_FEATURE_PREDICATES);
+    bool match_syntax = feature_enabled(SEMANTIC_FEATURE_MATCH);
 
     write_record_args(method_token_dispatch_args, active_tokens, methods);
     write_record_args(method_hir_dispatch_args, active_hir, methods);
@@ -86,4 +89,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     write_fixed_args(predicate_radix_prefix_dispatch_args, RADIX_BUCKETS, predicates);
     write_fixed_args(predicate_radix_bases_dispatch_args, 1u, predicates);
     write_fixed_args(predicate_single_dispatch_args, 1u, predicates);
+    write_record_args(match_hir_dispatch_args, active_hir, match_syntax);
 }
