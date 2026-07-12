@@ -30,10 +30,13 @@ ConstantBuffer<FeatureParams> gX86Features;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> x86_decl_node_by_token;
+StructuredBuffer<uint> x86_enclosing_let_node;
+StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint4> x86_call_record;
 StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> call_record_status;
@@ -72,6 +75,9 @@ static const uint X86_ENUM_VALUE_KIND_MASK = 0xfu;
 static const uint X86_ENUM_VALUE_CALL_CTOR = 1u;
 static const uint X86_ENUM_VALUE_UNIT_CTOR = 2u;
 static const uint X86_CALL_TYPE_STRIDE = 3u;
+static const uint X86_DECL_LAYOUT_STRIDE = 4u;
+static const uint STMT_RECORD_STRIDE = 4u;
+static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
@@ -545,6 +551,36 @@ uint function_return_hir_width(uint fn_node)
     return array_type_width_for_type_node(type_node, width) ? width : 1u;
 }
 
+uint contextual_return_width(uint call_node)
+{
+    uint stmt_node = valid_node(call_node) ? x86_enclosing_let_node[call_node] : INVALID;
+    if (!valid_node(stmt_node))
+        return 0u;
+    uint stmt_kind = row_major_load<uint>(
+        hir_stmt_record,
+        stmt_node,
+        STMT_RECORD_STRIDE,
+        0u,
+        INVALID);
+    if (stmt_kind != STMT_RECORD_KIND_LET)
+        return 0u;
+    uint decl_token = row_major_load<uint>(
+        hir_stmt_record,
+        stmt_node,
+        STMT_RECORD_STRIDE,
+        1u,
+        INVALID);
+    if (!valid_token(decl_token))
+        return 0u;
+    uint width = row_major_load<uint>(
+        x86_decl_layout_record,
+        decl_token,
+        X86_DECL_LAYOUT_STRIDE,
+        1u,
+        0u);
+    return width > 1u ? width : 0u;
+}
+
 uint function_node_for_resolver_target(uint resolver_fn_token)
 {
     if (!valid_token(resolver_fn_token))
@@ -603,9 +639,12 @@ void project_call_record(uint call_node)
     uint return_ty = call_type_word(call_node, 0u);
     uint return_ty_token = call_type_word(call_node, 1u);
 
-    uint return_width = max(
-        call_return_width(return_ty, return_ty_token),
-        function_return_hir_width(target_fn));
+    uint context_width = contextual_return_width(call_node);
+    uint return_width = context_width > 1u
+                            ? context_width
+                            : max(
+                                  call_return_width(return_ty, return_ty_token),
+                                  function_return_hir_width(target_fn));
     uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
     bool supported = true;
     bool host_text_write = host_text_write_call(call_record.y, callee_token, target_fn, arg_count, return_width);
@@ -667,7 +706,7 @@ void project_call_record(uint call_node)
         mark_call_arg_count_error(slot != INVALID ? slot : call_node);
         supported = false;
     }
-    if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
+    else if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
     {
         mark_call_abi_error(slot != INVALID ? slot : call_node);
         supported = false;

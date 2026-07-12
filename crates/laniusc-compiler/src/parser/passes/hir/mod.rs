@@ -30,6 +30,8 @@ pub mod method;
 pub mod nodes;
 /// Parameter linking, ranking, id, and field passes.
 pub mod param;
+/// Canonical path segment ownership and ordinal lowering passes.
+pub mod path;
 /// Range-expression span passes.
 pub mod range_spans;
 /// HIR record clearing passes.
@@ -42,6 +44,8 @@ pub mod spans;
 pub mod stmt_fields;
 /// Statement scope relation passes.
 pub mod stmt_scope;
+/// Canonical decoded string literal lowering passes.
+pub mod string;
 /// Struct declaration, field, literal, and rank passes.
 pub mod structs;
 /// Type form, type-path, type-argument, and alias passes.

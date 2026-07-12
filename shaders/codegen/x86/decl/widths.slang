@@ -492,6 +492,32 @@ bool array_literal_width_for_decl_node(uint node, out uint width)
     return true;
 }
 
+bool declared_array_width_for_decl_node(uint node, out uint width)
+{
+    width = 0u;
+    if (!is_local_decl_node(node))
+        return false;
+
+    // The statement's type slot points into the flat statement-record stream;
+    // that stream entry contains the HIR type node. Preserve this parser/HIR
+    // contract as a fallback when semantic type-instance projection has not
+    // attached the explicit local annotation to the declaration token.
+    uint type_record = stmt_slot(node, 3u);
+    if (type_record == INVALID || type_record >= active_hir_node_count() * STMT_RECORD_STRIDE)
+        return false;
+    uint type_node = hir_stmt_record[type_record];
+    if (!valid_node(type_node) ||
+        hir_kind[type_node] != HIR_TYPE ||
+        hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)
+        return false;
+
+    uint len = hir_type_len_value[type_node];
+    if (len == INVALID || len <= 1u)
+        return false;
+    width = len;
+    return true;
+}
+
 bool is_scalar_param_node(uint node)
 {
     uint decl_token = param_decl_token_for_node(node);
@@ -514,6 +540,10 @@ uint local_width_for_node(uint node)
         uint width = width_for_decl(stmt_slot(node, 1u));
         if (width > 1u)
             return width;
+
+        uint declared_array_width = 0u;
+        if (declared_array_width_for_decl_node(node, declared_array_width))
+            return declared_array_width;
 
         uint array_width = 0u;
         if (array_literal_width_for_decl_node(node, array_width))

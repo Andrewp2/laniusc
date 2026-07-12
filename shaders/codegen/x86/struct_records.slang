@@ -37,11 +37,9 @@ StructuredBuffer<uint> hir_struct_lit_field_count;
 StructuredBuffer<uint> hir_struct_decl_field_count;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> hir_struct_lit_field_next;
-StructuredBuffer<uint> hir_array_lit_first_element;
-StructuredBuffer<uint> hir_array_lit_element_count;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
-StructuredBuffer<uint> hir_array_element_next;
+StructuredBuffer<uint> hir_nearest_array_element_node;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> member_result_field_node;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
@@ -383,33 +381,6 @@ bool array_element_record_for_candidate(uint candidate, out uint array_node, out
     return true;
 }
 
-bool array_element_expr_matches_struct_literal(uint element_node, uint literal_node, uint head_node)
-{
-    if (!valid_node(element_node))
-        return false;
-    if (element_node == literal_node || element_node == head_node)
-        return true;
-
-    uint resolved = resolve_expr(element_node);
-    if (!valid_node(resolved))
-        return false;
-    if (resolved == literal_node || resolved == head_node)
-        return true;
-
-    uint literal_cursor = literal_node;
-    uint head_cursor = head_node;
-    for (uint depth = 0u; depth < MAX_STRUCT_LITERAL_ROOT_WALK; depth += 1u)
-    {
-        if (literal_cursor == resolved || head_cursor == resolved)
-            return true;
-        literal_cursor = valid_node(literal_cursor) ? x86_tree_parent[literal_cursor] : INVALID;
-        head_cursor = valid_node(head_cursor) ? x86_tree_parent[head_cursor] : INVALID;
-        if (!valid_node(literal_cursor) && !valid_node(head_cursor))
-            return false;
-    }
-    return false;
-}
-
 bool array_element_record_for_struct_literal(
     uint literal_node,
     out uint array_node,
@@ -426,30 +397,8 @@ bool array_element_record_for_struct_literal(
         array_element_record_for_candidate(resolve_expr(head_node), array_node, element_ordinal))
         return true;
 
-    uint context_stmt = hir_struct_lit_context_stmt_node[literal_node];
-    if (!valid_node(context_stmt) || stmt_slot(context_stmt, 0u) != STMT_RECORD_KIND_LET)
-        return false;
-
-    uint init_expr = stmt_slot(context_stmt, 2u);
-    uint literal_array = resolve_expr(init_expr);
-    if (!valid_node(literal_array) || hir_kind[literal_array] != HIR_ARRAY_EXPR)
-        return false;
-
-    uint count = hir_array_lit_element_count[literal_array];
-    uint element = hir_array_lit_first_element[literal_array];
-    for (uint i = 0u; i < count && i < gParams.n_hir_nodes && valid_node(element); i += 1u)
-    {
-        if (array_element_expr_matches_struct_literal(element, literal_node, head_node))
-        {
-            array_node = literal_array;
-            element_ordinal = hir_array_element_ordinal[element];
-            if (element_ordinal == INVALID)
-                element_ordinal = i;
-            return true;
-        }
-        element = hir_array_element_next[element];
-    }
-    return false;
+    uint element = hir_nearest_array_element_node[literal_node];
+    return array_element_record_for_candidate(element, array_node, element_ordinal);
 }
 
 bool struct_literal_is_array_element(uint literal_node)
@@ -497,7 +446,8 @@ void publish_array_struct_field_store_record(
         X86_AGG_STORE_ARRAY);
 
     uint resolved = resolve_expr(value_node);
-    if (valid_node(resolved))
+    uint literal_head = hir_struct_lit_head_node[literal_node];
+    if (valid_node(resolved) && resolved != literal_node && resolved != literal_head)
     {
         x86_struct_store_record[resolved] = uint4(
             decl_token,
@@ -573,7 +523,10 @@ void publish_struct_field_store_record(uint field_node)
 
     uint decl_token = stmt_slot(let_node, 1u);
     publish_store_record_for_value(value_node, decl_token, offset, literal_node);
-    publish_store_record_for_value(resolve_expr(value_node), decl_token, offset, literal_node);
+    uint resolved = resolve_expr(value_node);
+    uint literal_head = hir_struct_lit_head_node[literal_node];
+    if (resolved != literal_node && resolved != literal_head)
+        publish_store_record_for_value(resolved, decl_token, offset, literal_node);
 }
 
 [shader("compute")]

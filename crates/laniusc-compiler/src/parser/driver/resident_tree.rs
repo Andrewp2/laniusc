@@ -142,6 +142,7 @@ struct ResidentTreeReadbacks {
     hir_nearest_enclosing_control_node: U32Readback,
     hir_nearest_loop_node: U32Readback,
     hir_nearest_fn_node: U32Readback,
+    hir_nearest_array_element_node: U32Readback,
     hir_struct_field_parent_struct: U32Readback,
     hir_struct_field_ordinal: U32Readback,
     hir_struct_field_type_node: U32Readback,
@@ -568,6 +569,11 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_nearest_fn_node",
                 bufs.hir_nearest_fn_node.byte_size,
+            ),
+            hir_nearest_array_element_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_nearest_array_element_node",
+                bufs.hir_nearest_array_element_node.byte_size,
             ),
             hir_struct_field_parent_struct: rb(
                 device,
@@ -1028,6 +1034,11 @@ impl ResidentTreeReadbacks {
             &bufs.hir_nearest_fn_node,
             bufs.hir_nearest_fn_node.byte_size as u64,
         );
+        self.hir_nearest_array_element_node.copy_from(
+            encoder,
+            &bufs.hir_nearest_array_element_node,
+            bufs.hir_nearest_array_element_node.byte_size as u64,
+        );
         self.hir_struct_field_parent_struct.copy_from(
             encoder,
             &bufs.hir_struct_field_parent_struct,
@@ -1173,6 +1184,7 @@ impl ResidentTreeReadbacks {
         self.hir_nearest_enclosing_control_node.map();
         self.hir_nearest_loop_node.map();
         self.hir_nearest_fn_node.map();
+        self.hir_nearest_array_element_node.map();
         self.hir_struct_field_parent_struct.map();
         self.hir_struct_field_ordinal.map();
         self.hir_struct_field_type_node.map();
@@ -1355,6 +1367,9 @@ impl ResidentTreeReadbacks {
                 .read_words(tree_len)?,
             hir_nearest_loop_node: self.hir_nearest_loop_node.read_words(tree_len)?,
             hir_nearest_fn_node: self.hir_nearest_fn_node.read_words(tree_len)?,
+            hir_nearest_array_element_node: self
+                .hir_nearest_array_element_node
+                .read_words(tree_len)?,
             hir_struct_field_parent_struct: self
                 .hir_struct_field_parent_struct
                 .read_words_padded(tree_len, u32::MAX)?,

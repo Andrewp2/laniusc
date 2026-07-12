@@ -47,6 +47,9 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("parent".into(), b.parent.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             (
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),
@@ -62,6 +65,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             (
                 "hir_stmt_record".into(),
                 b.hir_stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_parent_lit".into(),
+                b.hir_array_element_parent_lit.as_entire_binding(),
             ),
             (
                 "hir_stmt_context_link_a".into(),
@@ -90,6 +97,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             (
                 "hir_nearest_fn_value_a".into(),
                 b.hir_nearest_fn_value_a.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_array_element_value_a".into(),
+                b.hir_nearest_array_element_value_a.as_entire_binding(),
             ),
         ])
     }

@@ -24,6 +24,8 @@ use super::{
 
 /// Bind groups used to plan x86 instruction counts, ordering, and worklists.
 pub(super) struct InstPlanBindGroups {
+    pub(super) aggregate_source_init: wgpu::BindGroup,
+    pub(super) aggregate_source_step: Vec<wgpu::BindGroup>,
     pub(super) for_iterable_nodes: wgpu::BindGroup,
     pub(super) control_padding: wgpu::BindGroup,
     pub(super) postfix_operand_owner: wgpu::BindGroup,
@@ -91,6 +93,11 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) match_result_value_owner: &'a wgpu::Buffer,
     pub(super) struct_access_record: &'a wgpu::Buffer,
     pub(super) struct_store_record: &'a wgpu::Buffer,
+    pub(super) aggregate_source_node_a: &'a wgpu::Buffer,
+    pub(super) aggregate_source_node_b: &'a wgpu::Buffer,
+    pub(super) aggregate_source_offset_a: &'a wgpu::Buffer,
+    pub(super) aggregate_source_offset_b: &'a wgpu::Buffer,
+    pub(super) aggregate_source_steps: &'a [u32],
     pub(super) struct_record_status: &'a wgpu::Buffer,
     pub(super) for_iterable_node: &'a wgpu::Buffer,
     pub(super) node_control_padding: &'a wgpu::Buffer,
@@ -194,6 +201,11 @@ pub(super) fn create_inst_plan_bind_groups(
         match_result_value_owner,
         struct_access_record,
         struct_store_record,
+        aggregate_source_node_a,
+        aggregate_source_node_b,
+        aggregate_source_offset_a,
+        aggregate_source_offset_b,
+        aggregate_source_steps,
         struct_record_status,
         for_iterable_node,
         node_control_padding,
@@ -249,6 +261,55 @@ pub(super) fn create_inst_plan_bind_groups(
         index_source_link_b,
         index_source_owner_steps,
     } = inputs;
+
+    let aggregate_source_init = reflected_bind_group(
+        device,
+        Some("codegen.x86.aggregate_source_init.bind_group"),
+        &generator.aggregate_source_init_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            (
+                "x86_struct_access_record",
+                struct_access_record.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_node_out",
+                aggregate_source_node_a.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_offset_out",
+                aggregate_source_offset_a.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let aggregate_source_step = step_pair_groups(
+        device,
+        "codegen.x86.aggregate_source_step.bind_group",
+        &generator.aggregate_source_step_pass,
+        aggregate_source_steps,
+        params,
+        hir_status,
+        &[],
+        StepNames {
+            first_in: "x86_aggregate_source_node_in",
+            second_in: "x86_aggregate_source_offset_in",
+            first_out: "x86_aggregate_source_node_out",
+            second_out: "x86_aggregate_source_offset_out",
+        },
+        StepPairs {
+            first_a: aggregate_source_node_a,
+            first_b: aggregate_source_node_b,
+            second_a: aggregate_source_offset_a,
+            second_b: aggregate_source_offset_b,
+        },
+    )?;
 
     let for_iterable_nodes = reflected_bind_group(
         device,
@@ -461,6 +522,14 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "x86_struct_access_record",
                 struct_access_record.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_node",
+                aggregate_source_node_a.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_offset",
+                aggregate_source_offset_a.as_entire_binding(),
             ),
             (
                 "x86_struct_store_record",
@@ -1067,6 +1136,8 @@ pub(super) fn create_inst_plan_bind_groups(
     )?;
 
     Ok(InstPlanBindGroups {
+        aggregate_source_init,
+        aggregate_source_step,
         for_iterable_nodes,
         control_padding,
         postfix_operand_owner: postfix_operand_owner_bind_group,

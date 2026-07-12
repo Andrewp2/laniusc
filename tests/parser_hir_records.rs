@@ -507,6 +507,40 @@ fn parser_semantic_tokens_close_const_type_before_next_function() {
 }
 
 #[test]
+fn parser_semantic_semicolons_keep_statement_owner_across_struct_literals() {
+    let kinds = parser_semantic_token_kinds_for_source(
+        r#"
+struct Pair {
+    first: i32,
+    second: i32,
+}
+
+fn make_pair() -> Pair {
+    let value: Pair = Pair { first: 1, second: 2 };
+    return Pair { first: value.first, second: value.second };
+}
+"#,
+    );
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::LetSemicolon as u32)
+            .count(),
+        1,
+        "a struct-literal close must not erase the prefix-scanned let owner"
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::ReturnSemicolon as u32)
+            .count(),
+        1,
+        "a struct-literal close must not erase the prefix-scanned return owner"
+    );
+}
+
+#[test]
 fn parser_hir_qualified_generic_constructor_let_keeps_following_statement_in_block() {
     let parsed = parse_resident_source(
         r#"
@@ -1771,6 +1805,55 @@ fn main(values: [i32; 4]) -> i32 {
         valid_element_rows, 4,
         "fixture should not publish extra array element owners"
     );
+}
+
+#[test]
+fn parser_hir_struct_literals_in_arrays_inherit_element_ownership() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair { left: i32, right: i32 }
+fn main() {
+    let values: [Pair; 2] = [
+        Pair { left: 1, right: 2 },
+        Pair { left: 3, right: 4 },
+    ];
+    return 0;
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "parser should accept struct-array fixture"
+    );
+
+    let literals = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| (kind == HIR_NODE_STRUCT_LITERAL_EXPR).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        literals.len(),
+        2,
+        "fixture should contain two struct literals"
+    );
+
+    for literal in literals {
+        let element = parsed.hir_nearest_array_element_node[literal] as usize;
+        assert!(
+            element < parsed.hir_kind.len(),
+            "struct literal should inherit an array element"
+        );
+        assert_ne!(
+            parsed.hir_array_element_parent_lit[element], INVALID,
+            "inherited row should be a ranked array element"
+        );
+        assert!(
+            parsed.hir_token_pos[element] <= parsed.hir_token_pos[literal]
+                && parsed.hir_token_end[literal] <= parsed.hir_token_end[element],
+            "inherited array element should enclose its struct literal"
+        );
+    }
 }
 
 #[test]

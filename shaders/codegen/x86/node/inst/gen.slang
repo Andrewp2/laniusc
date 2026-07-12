@@ -69,6 +69,8 @@ StructuredBuffer<uint4> x86_match_record;
 StructuredBuffer<uint> x86_match_arm_owner;
 StructuredBuffer<uint> x86_match_result_value_owner;
 StructuredBuffer<uint> x86_struct_access_record;
+StructuredBuffer<uint> x86_aggregate_source_node;
+StructuredBuffer<uint> x86_aggregate_source_offset;
 StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
@@ -1994,52 +1996,24 @@ bool member_source_for_expr(uint expr_node, uint owner_fn, out uint source_kind,
     source_kind = 0u;
     payload = INVALID;
     width = 0u;
-    uint current = expr_node;
-    uint offset = 0u;
-    uint limit = active_hir_node_count();
-    for (uint i = 0u; i < limit; i++)
-    {
-        if (valid_node(current) &&
-            hir_kind[current] == HIR_MEMBER_EXPR &&
-            struct_access_kind(current) == X86_STRUCT_ACCESS_MEMBER)
-        {
-            uint member_offset = struct_access_payload1(current);
-            uint receiver = struct_access_payload0(current);
-            if (member_offset == INVALID || !valid_node(receiver))
-                return false;
-            offset += member_offset;
-            current = receiver;
-            continue;
-        }
-
-        uint resolved = resolve_expr(current);
-        if (valid_node(resolved) && resolved != current)
-        {
-            current = resolved;
-            continue;
-        }
-
-        uint decl_token = INVALID;
-        if (decl_token_for_name(current, decl_token))
-        {
-            if (!member_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
-                return false;
-            if (offset >= width)
-                return false;
-            payload = aggregate_source_payload_offset(source_kind, payload, offset);
-            width -= offset;
-            return true;
-        }
-
+    if (!valid_node(expr_node))
         return false;
-    }
-
-    return false;
+    uint current = x86_aggregate_source_node[expr_node];
+    uint offset = x86_aggregate_source_offset[expr_node];
+    uint decl_token = INVALID;
+    if (!decl_token_for_name(current, decl_token) ||
+        !member_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
+        return false;
+    if (offset >= width)
+        return false;
+    payload = aggregate_source_payload_offset(source_kind, payload, offset);
+    width -= offset;
+    return true;
 }
 
 uint member_source_failure_detail(uint expr_node, uint owner_fn)
 {
-    uint name_node = resolve_expr(expr_node);
+    uint name_node = valid_node(expr_node) ? x86_aggregate_source_node[expr_node] : INVALID;
     if (!valid_node(name_node))
         return X86_VINST_ERROR_MEMBER_SOURCE_BAD_NODE;
 
@@ -3482,19 +3456,6 @@ bool aggregate_let_initializer_stores_to_local(uint node)
     return false;
 }
 
-bool struct_literal_child_has_scalar_value_instr(uint node)
-{
-    uint kind = valid_node(node) ? hir_kind[node] : 0u;
-    uint form = expr_form(node);
-    if (kind == HIR_LITERAL_EXPR)
-        return true;
-    if (form == HIR_EXPR_NAME)
-        return scalar_name_expr_has_value_instr(node);
-    return unary_op_for_form(form) != 0u ||
-           binary_op_for_form(form) != 0u ||
-           compare_op_for_form(form) != 0u;
-}
-
 bool emit_expr(uint node, uint2 range)
 {
     uint row = INVALID;
@@ -3572,9 +3533,7 @@ bool emit_expr(uint node, uint2 range)
     }
     uint4 param_record = uint4_fill(INVALID);
     uint extra_store = aggregate_element_store_count(node);
-    if (is_struct_literal_head_or_path_child(node) &&
-        extra_store == 0u &&
-        !struct_literal_child_has_scalar_value_instr(node))
+    if (extra_store == 0u && is_struct_literal_head_or_path_child(node))
         return true;
 
     if (form == HIR_EXPR_NAME && has_enum_value_record(node))

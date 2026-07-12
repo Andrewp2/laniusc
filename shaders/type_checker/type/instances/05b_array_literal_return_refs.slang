@@ -25,7 +25,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
@@ -33,6 +32,7 @@ StructuredBuffer<uint> hir_array_lit_element_count;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_head_node;
+StructuredBuffer<uint> array_element_struct_literal_node;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
@@ -354,19 +354,8 @@ uint direct_struct_literal_node(uint node)
          valid_node(hir_struct_lit_head_node[resolved])))
         return resolved;
 
-    uint end = subtree_end[node];
-    if (end != INVALID && end > node && end <= active_hir_node_count())
-    {
-        for (uint cursor = node + 1u; cursor < end; cursor += 1u)
-        {
-            if ((hir_kind[cursor] == HIR_STRUCT_LITERAL_EXPR ||
-                 node_kind[cursor] == PROD_STRUCT_LIT) &&
-                valid_node(hir_struct_lit_head_node[cursor]))
-                return cursor;
-        }
-    }
-
-    return INVALID;
+    uint literal = array_element_struct_literal_node[node];
+    return valid_node(literal) ? literal : INVALID;
 }
 
 bool struct_literal_expr_ref(uint expr_node, out uint tag, out uint payload)

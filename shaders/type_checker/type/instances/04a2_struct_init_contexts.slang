@@ -5,6 +5,8 @@
 // field. Broader nested context propagation should be added as another explicit
 // relation, not by restoring per-consumer tree walks.
 
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -18,12 +20,12 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
+StructuredBuffer<uint> hir_nearest_array_element_node;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -40,6 +42,7 @@ StructuredBuffer<uint> fn_return_ref_payload;
 
 RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
+RWStructuredBuffer<uint> array_element_struct_literal_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
@@ -249,22 +252,10 @@ uint enclosing_array_element_node(uint literal_node)
 {
     if (!valid_node(literal_node))
         return INVALID;
-
-    // Array-element roots are parser-owned HIR nodes. Follow the literal's
-    // actual ancestor chain instead of scanning every preceding HIR row. The
-    // step bound makes malformed parent data fail closed without turning one
-    // GPU lane into an unbounded walker over the compilation unit.
-    uint node = parent[literal_node];
-    uint remaining = active_node_count();
-    while (valid_node(node) && remaining != 0u)
-    {
-        uint array_node = hir_array_element_parent_lit[node];
-        if (valid_node(array_node))
-            return node;
-        node = parent[node];
-        remaining -= 1u;
-    }
-    return INVALID;
+    uint element = hir_nearest_array_element_node[literal_node];
+    return valid_node(element) && valid_node(hir_array_element_parent_lit[element])
+        ? element
+        : INVALID;
 }
 
 bool publish_array_element_context(uint literal_node, uint stmt_node)
@@ -306,6 +297,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     if (!is_struct_literal(i))
         return;
+
+    uint element_node = enclosing_array_element_node(i);
+    if (valid_node(element_node))
+        atomic_u32_min(array_element_struct_literal_node, element_node, i);
 
     uint stmt_node = hir_struct_lit_context_stmt_node[i];
     if (!valid_node(stmt_node))

@@ -53,6 +53,7 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) hir_param_record_buf: &'a wgpu::Buffer,
     pub(super) fn_entrypoint_tag_buf: &'a wgpu::Buffer,
     pub(super) decl_node_by_token_buf: &'a wgpu::Buffer,
+    pub(super) decl_layout_record_buf: &'a wgpu::Buffer,
     pub(super) struct_type_record_buf: &'a wgpu::Buffer,
     pub(super) struct_record_status_buf: &'a wgpu::Buffer,
     pub(super) enum_type_record_buf: &'a wgpu::Buffer,
@@ -63,6 +64,7 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) local_literal_record_buf: &'a wgpu::Buffer,
     pub(super) local_literal_status_buf: &'a wgpu::Buffer,
     pub(super) enclosing_stmt_step_final_buf: &'a wgpu::Buffer,
+    pub(super) enclosing_let_step_final_buf: &'a wgpu::Buffer,
     pub(super) intrinsic_call_record_buf: &'a wgpu::Buffer,
     pub(super) intrinsic_call_status_buf: &'a wgpu::Buffer,
     pub(super) call_abi_record_buf: &'a wgpu::Buffer,
@@ -103,6 +105,7 @@ pub(super) fn create_call_record_bind_groups(
         hir_param_record_buf,
         fn_entrypoint_tag_buf,
         decl_node_by_token_buf,
+        decl_layout_record_buf,
         struct_type_record_buf,
         struct_record_status_buf,
         enum_type_record_buf,
@@ -113,6 +116,7 @@ pub(super) fn create_call_record_bind_groups(
         local_literal_record_buf,
         local_literal_status_buf,
         enclosing_stmt_step_final_buf,
+        enclosing_let_step_final_buf,
         intrinsic_call_record_buf,
         intrinsic_call_status_buf,
         call_abi_record_buf,
@@ -153,6 +157,14 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "decl_name_token",
                 call_metadata.decl_name_token.as_entire_binding(),
+            ),
+            (
+                "hir_item_name_token",
+                function_metadata.node_name_token.as_entire_binding(),
+            ),
+            (
+                "x86_decl_node_by_token",
+                decl_node_by_token_buf.as_entire_binding(),
             ),
             ("x86_node_func", final_node_func_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
@@ -527,6 +539,10 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_item_kind", hir_item_kind_buf.as_entire_binding()),
             (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            (
                 "hir_fn_return_type_node",
                 function_metadata.fn_return_type_node.as_entire_binding(),
             ),
@@ -538,6 +554,14 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "x86_decl_node_by_token",
                 decl_node_by_token_buf.as_entire_binding(),
+            ),
+            (
+                "x86_enclosing_let_node",
+                enclosing_let_step_final_buf.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_record",
+                decl_layout_record_buf.as_entire_binding(),
             ),
             ("x86_call_record", call_record_buf.as_entire_binding()),
             (

@@ -66,6 +66,8 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) match_result_value_owner: &'a wgpu::Buffer,
     pub(super) struct_access_record: &'a wgpu::Buffer,
     pub(super) struct_store_record: &'a wgpu::Buffer,
+    pub(super) aggregate_source_node: &'a wgpu::Buffer,
+    pub(super) aggregate_source_offset: &'a wgpu::Buffer,
     pub(super) struct_record_status: &'a wgpu::Buffer,
     pub(super) node_inst_range_info: &'a wgpu::Buffer,
     pub(super) node_inst_location_record: &'a wgpu::Buffer,
@@ -137,6 +139,8 @@ pub(super) fn create_inst_gen_bind_groups(
         match_result_value_owner,
         struct_access_record,
         struct_store_record,
+        aggregate_source_node,
+        aggregate_source_offset,
         struct_record_status,
         node_inst_range_info,
         node_inst_location_record,
@@ -351,6 +355,14 @@ pub(super) fn create_inst_gen_bind_groups(
             (
                 "x86_struct_access_record",
                 struct_access_record.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_node",
+                aggregate_source_node.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_offset",
+                aggregate_source_offset.as_entire_binding(),
             ),
             (
                 "x86_struct_store_record",
@@ -882,6 +894,14 @@ pub(super) fn create_inst_gen_bind_groups(
             (
                 "x86_struct_access_record",
                 struct_access_record.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_node",
+                aggregate_source_node.as_entire_binding(),
+            ),
+            (
+                "x86_aggregate_source_offset",
+                aggregate_source_offset.as_entire_binding(),
             ),
             (
                 "x86_struct_store_record",

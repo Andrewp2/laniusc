@@ -15,6 +15,7 @@ impl GpuParser {
         self.resident_buffers_for_with_tree_capacity_and_debug(
             slot,
             token_capacity,
+            token_capacity,
             tables,
             None,
             false,
@@ -31,6 +32,7 @@ impl GpuParser {
     ) -> &'a ParserBuffers {
         self.resident_buffers_for_with_tree_capacity_and_debug(
             slot,
+            token_capacity,
             token_capacity,
             tables,
             None,
@@ -49,6 +51,7 @@ impl GpuParser {
     ) -> &'a ParserBuffers {
         self.resident_buffers_for_with_tree_capacity_and_debug(
             slot,
+            token_capacity,
             token_capacity,
             tables,
             tree_capacity_override,
@@ -70,6 +73,29 @@ impl GpuParser {
         self.resident_buffers_for_with_tree_capacity_and_debug(
             slot,
             token_capacity,
+            token_capacity,
+            tables,
+            tree_capacity_override,
+            false,
+            parser_feature_flags,
+        )
+    }
+
+    pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity_and_source_and_features<
+        'a,
+    >(
+        &self,
+        slot: &'a mut Option<ResidentParserBufferCache>,
+        token_capacity: u32,
+        source_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
+    ) -> &'a ParserBuffers {
+        self.resident_buffers_for_with_tree_capacity_and_debug(
+            slot,
+            token_capacity,
+            source_capacity,
             tables,
             tree_capacity_override,
             false,
@@ -81,6 +107,7 @@ impl GpuParser {
         &self,
         slot: &'a mut Option<ResidentParserBufferCache>,
         token_capacity: u32,
+        source_capacity: u32,
         tables: &PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
@@ -102,6 +129,7 @@ impl GpuParser {
                 || cached.retain_debug_hir_buffers != retain_debug_hir_buffers
                 || cached.parser_feature_flags != parser_feature_flags
                 || cached.buffers.tree_capacity < wanted_tree_capacity
+                || cached.buffers.source_capacity < source_capacity.max(1)
         });
 
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
@@ -142,9 +170,10 @@ impl GpuParser {
                 table_fingerprint: fingerprint,
                 retain_debug_hir_buffers,
                 parser_feature_flags,
-                buffers: ParserBuffers::new_resident_capacity_with_tree_capacity_debug_and_features(
+                buffers: ParserBuffers::new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
                     &self.device,
                     wanted_capacity,
+                    source_capacity,
                     tables.n_kinds,
                     &action_table_bytes,
                     tables,

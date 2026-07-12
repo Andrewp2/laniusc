@@ -13,6 +13,7 @@ impl ParserBuffers {
         Self::new_with_sizing(
             device,
             token_kinds_u32.len() as u32,
+            token_kinds_u32.len() as u32,
             Some(token_kinds_u32),
             n_kinds,
             action_table_bytes,
@@ -101,6 +102,35 @@ impl ParserBuffers {
         Self::new_with_sizing(
             device,
             n_tokens,
+            token_capacity,
+            None,
+            n_kinds,
+            action_table_bytes,
+            tables,
+            true,
+            retain_debug_hir_buffers,
+            tree_capacity_override,
+            parser_feature_flags,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
+        device: &wgpu::Device,
+        token_capacity: u32,
+        source_capacity: u32,
+        n_kinds: u32,
+        action_table_bytes: &[u8],
+        tables: &crate::parser::tables::PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        retain_debug_hir_buffers: bool,
+        parser_feature_flags: u32,
+    ) -> Self {
+        let n_tokens = token_capacity.saturating_add(2);
+        Self::new_with_sizing(
+            device,
+            n_tokens,
+            source_capacity,
             None,
             n_kinds,
             action_table_bytes,

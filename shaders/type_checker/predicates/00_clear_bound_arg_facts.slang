@@ -15,6 +15,7 @@ RWStructuredBuffer<uint> predicate_bound_arg_count;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
 RWStructuredBuffer<uint> predicate_bound_second_arg_token;
 RWStructuredBuffer<uint> predicate_status;
+RWStructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 RWStructuredBuffer<uint> predicate_method_contract_owner_node;
 RWStructuredBuffer<uint> predicate_method_contract_name_token;
 RWStructuredBuffer<uint> predicate_method_contract_name_id;
@@ -59,6 +60,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_bound_first_arg_token[node] = INVALID;
     predicate_bound_second_arg_token[node] = INVALID;
     predicate_status[node] = INVALID;
+    predicate_trait_impl_trait_type_node[node] = INVALID;
     predicate_method_contract_owner_node[node] = INVALID;
     predicate_method_contract_name_token[node] = INVALID;
     predicate_method_contract_name_id[node] = INVALID;

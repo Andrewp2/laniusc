@@ -326,6 +326,7 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark_generic_param_records: wgpu::BindGroup,
     pub(in crate::type_checker) propagate_generic_decl_owner: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) finalize_generic_param_flags: wgpu::BindGroup,
     pub(in crate::type_checker) generic_param_scan: U32ScanBindGroups,
     pub(in crate::type_checker) type_instance_arg_row_scan: U32ScanBindGroups,
     pub(in crate::type_checker) type_instance_arg_row_scan_n_blocks: u32,

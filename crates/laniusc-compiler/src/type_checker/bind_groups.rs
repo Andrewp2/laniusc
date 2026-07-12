@@ -373,6 +373,18 @@ impl GpuTypeChecker {
             hir_visible_decl_scan_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
+        let predicate_bound_list_by_node_a = typed_storage_u32_rw(
+            device,
+            "type_check.resident.predicate_bound_list_by_node_a",
+            hir_visible_decl_scan_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_bound_list_by_node_b = typed_storage_u32_rw(
+            device,
+            "type_check.resident.predicate_bound_list_by_node_b",
+            hir_visible_decl_scan_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let generic_decl_parent_jump_a = typed_storage_u32_rw(
             device,
             "type_check.resident.generic_decl_parent_jump_a",
@@ -2183,6 +2195,13 @@ impl GpuTypeChecker {
             struct_hir_capacity,
             wgpu::BufferUsages::empty(),
         );
+        let array_element_struct_literal_node = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.array_element_struct_literal_node",
+            struct_hir_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let token_active_dispatch_args = typed_storage_u32_rw(
             device,
             "type_check.resident.token_active_dispatch_args",
@@ -2807,6 +2826,10 @@ impl GpuTypeChecker {
             &struct_lit_context_decl_token,
         );
         resources.buffer("struct_lit_context_instance", &struct_lit_context_instance);
+        resources.buffer(
+            "array_element_struct_literal_node",
+            &array_element_struct_literal_node,
+        );
         resources.buffer("generic_decl_owner_by_node", &generic_decl_owner_by_node_a);
         resources.buffer("generic_param_count_out", &generic_param_count_out);
         resources.buffer("generic_param_owner_node", &generic_param_owner_node);
@@ -3286,6 +3309,22 @@ impl GpuTypeChecker {
             "generic_decl_owner_by_node_b",
             &generic_decl_owner_by_node_b,
         );
+        resources.buffer(
+            "predicate_bound_list_by_node_a",
+            &predicate_bound_list_by_node_a,
+        );
+        resources.buffer(
+            "predicate_bound_list_by_node_b",
+            &predicate_bound_list_by_node_b,
+        );
+        resources.buffer(
+            "predicate_bound_list_by_node",
+            &predicate_bound_list_by_node_a,
+        );
+        resources.buffer(
+            "predicate_trait_impl_trait_type_node",
+            &predicate_bound_list_by_node_b,
+        );
         resources.buffer("generic_decl_parent_jump_a", &generic_decl_parent_jump_a);
         resources.buffer("generic_decl_parent_jump_b", &generic_decl_parent_jump_b);
         resources.buffer("generic_decl_owner_by_node", &generic_decl_owner_by_node_a);
@@ -3708,6 +3747,8 @@ impl GpuTypeChecker {
             generic_param_slot_order_tmp,
             generic_decl_owner_by_node_a,
             generic_decl_owner_by_node_b,
+            predicate_bound_list_by_node_a,
+            predicate_bound_list_by_node_b,
             generic_decl_parent_jump_a,
             generic_decl_parent_jump_b,
             token_active_dispatch_args,
@@ -3970,6 +4011,7 @@ impl GpuTypeChecker {
             struct_init_field_decl_node_by_node,
             struct_lit_context_decl_token,
             struct_lit_context_instance,
+            array_element_struct_literal_node,
             name_scan_steps,
             name_bind_groups,
             language_name_bind_groups,

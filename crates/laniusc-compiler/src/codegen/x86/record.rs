@@ -101,7 +101,7 @@ impl GpuX86CodeGenerator {
     ) -> Result<RecordedX86Codegen> {
         let RecordElfInputs {
             source_len,
-            source_bytes_buf,
+            source_bytes_buf: _,
             token_capacity,
             n_hir_nodes,
             inst_hir_node_count,
@@ -227,6 +227,7 @@ impl GpuX86CodeGenerator {
             selected_scan_block,
             text_word,
             elf_header_word,
+            string: string_dispatch,
         } = active_dispatch_args;
         // Expression resolution copies its final output before match-result
         // owner propagation starts. Match-pattern owner propagation starts
@@ -251,6 +252,10 @@ impl GpuX86CodeGenerator {
             struct_field_stream_index_by_node_buf,
             struct_access_record_buf,
             struct_store_record_buf,
+            aggregate_source_node_buf,
+            aggregate_source_offset_buf,
+            aggregate_source_node_scratch_buf,
+            aggregate_source_offset_scratch_buf,
             struct_record_status_buf,
             decl_layout_record_buf,
             decl_layout_status_buf,
@@ -342,6 +347,19 @@ impl GpuX86CodeGenerator {
         } else {
             expr_resolved_b_buf
         };
+        // Keep the A side as the retained terminal-node/offset records. The B
+        // side is aggregate-only scratch: match and instruction-order records
+        // are still live here and cannot be aliased safely. Padding to an even
+        // number of jump steps makes
+        // the final relation land back in retained storage for count/emission.
+        let aggregate_source_node_a_buf = &aggregate_source_node_buf;
+        let aggregate_source_node_b_buf = &aggregate_source_node_scratch_buf;
+        let aggregate_source_offset_a_buf = &aggregate_source_offset_buf;
+        let aggregate_source_offset_b_buf = &aggregate_source_offset_scratch_buf;
+        let mut aggregate_source_steps = expr_resolve_steps.clone();
+        if aggregate_source_steps.len() % 2 != 0 {
+            aggregate_source_steps.push(aggregate_source_steps.len() as u32);
+        }
         // Expression semantic compare mode and pointer-jump links are packed
         // into the same ping-pong scratch rows. node_inst_locations consumes
         // the final record before enclosing-loop propagation reuses the links.
@@ -939,6 +957,7 @@ impl GpuX86CodeGenerator {
                 hir_param_record_buf,
                 fn_entrypoint_tag_buf,
                 decl_node_by_token_buf: &decl_node_by_token_buf,
+                decl_layout_record_buf: &decl_layout_record_buf,
                 struct_type_record_buf: &struct_type_record_buf,
                 struct_record_status_buf: &struct_record_status_buf,
                 enum_type_record_buf: &enum_type_record_buf,
@@ -949,6 +968,7 @@ impl GpuX86CodeGenerator {
                 local_literal_record_buf: &local_literal_record_buf,
                 local_literal_status_buf: &local_literal_status_buf,
                 enclosing_stmt_step_final_buf,
+                enclosing_let_step_final_buf,
                 intrinsic_call_record_buf,
                 intrinsic_call_status_buf: &intrinsic_call_status_buf,
                 call_abi_record_buf: &call_abi_record_buf,
@@ -956,6 +976,8 @@ impl GpuX86CodeGenerator {
             },
         )?;
         let InstPlanBindGroups {
+            aggregate_source_init: aggregate_source_init_bind_group,
+            aggregate_source_step: aggregate_source_step_bind_groups,
             for_iterable_nodes: for_iterable_nodes_bind_group,
             control_padding: control_padding_bind_group,
             postfix_operand_owner: postfix_operand_owner_bind_group,
@@ -1023,6 +1045,11 @@ impl GpuX86CodeGenerator {
                 match_result_value_owner: &match_result_value_owner_buf,
                 struct_access_record: &struct_access_record_buf,
                 struct_store_record: &struct_store_record_buf,
+                aggregate_source_node_a: aggregate_source_node_a_buf,
+                aggregate_source_node_b: aggregate_source_node_b_buf,
+                aggregate_source_offset_a: aggregate_source_offset_a_buf,
+                aggregate_source_offset_b: aggregate_source_offset_b_buf,
+                aggregate_source_steps: &aggregate_source_steps,
                 struct_record_status: &struct_record_status_buf,
                 for_iterable_node: &for_iterable_node_buf,
                 node_control_padding: &node_control_padding_buf,
@@ -1135,6 +1162,8 @@ impl GpuX86CodeGenerator {
                 match_result_value_owner: &match_result_value_owner_buf,
                 struct_access_record: &struct_access_record_buf,
                 struct_store_record: &struct_store_record_buf,
+                aggregate_source_node: aggregate_source_node_a_buf,
+                aggregate_source_offset: aggregate_source_offset_a_buf,
                 struct_record_status: &struct_record_status_buf,
                 node_inst_range_info: &node_inst_range_info_buf,
                 node_inst_location_record: node_inst_location_record_buf,
@@ -1229,6 +1258,7 @@ impl GpuX86CodeGenerator {
             rodata_scan_local: rodata_scan_local_bind_group,
             rodata_scan_block: rodata_scan_block_bind_groups,
             rodata_offsets: rodata_offsets_bind_group,
+            rodata_dispatch_args: rodata_dispatch_args_bind_group,
             rodata_write: rodata_write_bind_group,
             encode: encode_bind_group,
             reloc_patch: reloc_patch_bind_group,
@@ -1241,7 +1271,6 @@ impl GpuX86CodeGenerator {
                 params: &params_buf,
                 text_scan_params: &text_scan_params_buf,
                 rodata_scan_params: &rodata_scan_params_buf,
-                source_bytes: source_bytes_buf,
                 hir_status: hir_status_buf,
                 expr_metadata: &expr_metadata,
                 func_meta: &func_meta_buf,
@@ -1274,6 +1303,7 @@ impl GpuX86CodeGenerator {
                 rodata_size_by_node: &rodata_size_by_node_buf,
                 rodata_offset_by_node: &rodata_offset_by_node_buf,
                 rodata_status: &rodata_status_buf,
+                rodata_dispatch_args: &string_dispatch,
                 rodata_scan_local_prefix: &rodata_scan_local_prefix_buf,
                 rodata_scan_block_sum: &rodata_scan_block_sum_buf,
                 rodata_scan_prefix_a: &rodata_scan_prefix_a_buf,
@@ -1395,6 +1425,8 @@ impl GpuX86CodeGenerator {
                 node_order_scan_block: &node_order_scan_block,
                 virtual_inst: &virtual_inst,
                 node_inst_scan_params: &node_inst_scan_params_buf,
+                aggregate_source_init: &aggregate_source_init_bind_group,
+                aggregate_source_step: &aggregate_source_step_bind_groups,
                 for_iterable_nodes: &for_iterable_nodes_bind_group,
                 control_padding: &control_padding_bind_group,
                 postfix_operand_owner: &postfix_operand_owner_bind_group,
@@ -1480,7 +1512,9 @@ impl GpuX86CodeGenerator {
                 rodata_scan_local: &rodata_scan_local_bind_group,
                 rodata_scan_block: &rodata_scan_block_bind_groups,
                 rodata_offsets: &rodata_offsets_bind_group,
+                rodata_dispatch_args: &rodata_dispatch_args_bind_group,
                 rodata_write: &rodata_write_bind_group,
+                string_dispatch_args: &string_dispatch,
                 output_dispatch_args: &output_dispatch_args_bind_group,
                 encode: &encode_bind_group,
                 reloc_patch: &reloc_patch_bind_group,
@@ -1564,6 +1598,7 @@ impl GpuX86CodeGenerator {
             selected_scan_block,
             text_word,
             elf_header_word,
+            string_dispatch,
             func_meta_buf,
             func_meta_uniform_buf,
             node_tree_status_buf,
@@ -1777,6 +1812,7 @@ impl GpuX86CodeGenerator {
             rodata_sizes_bind_group,
             rodata_scan_local_bind_group,
             rodata_offsets_bind_group,
+            rodata_dispatch_args_bind_group,
             rodata_write_bind_group,
             encode_bind_group,
             reloc_patch_bind_group,

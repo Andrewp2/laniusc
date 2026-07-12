@@ -20,10 +20,14 @@ ConstantBuffer<Params> gHirContextRelations;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_parent;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_array_element_parent_lit;
 
 RWStructuredBuffer<uint> hir_stmt_context_link_a;
 RWStructuredBuffer<uint> hir_contextual_stmt_value_a;
@@ -32,13 +36,16 @@ RWStructuredBuffer<uint> hir_nearest_block_value_a;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
 RWStructuredBuffer<uint> hir_nearest_loop_value_a;
 RWStructuredBuffer<uint> hir_nearest_fn_value_a;
+RWStructuredBuffer<uint> hir_nearest_array_element_value_a;
 
 static const uint INVALID = 0xffffffffu;
+static const uint IMPL_OWNER_TAG = 0x80000000u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_NONE = 0u;
+static const uint IMPL_WRAPPER_CHILD_BUDGET = 4u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
@@ -130,6 +137,36 @@ bool control_node(uint node)
            kind == HIR_FOR_STMT || kind == HIR_MATCH_EXPR;
 }
 
+bool impl_owner_production(uint prod)
+{
+    return prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT;
+}
+
+uint impl_owner_for_context_node(uint node)
+{
+    if (!valid_original_node(node))
+        return INVALID;
+    uint prod = node_kind[node];
+    if (impl_owner_production(prod))
+        return node;
+    if (prod != PROD_ITEM_IMPL && prod != PROD_PUB_IMPL)
+        return INVALID;
+
+    uint child = first_child[node];
+    for (uint step = 0u; step < IMPL_WRAPPER_CHILD_BUDGET; step += 1u)
+    {
+        if (!valid_original_node(child) || parent[child] != node)
+            return INVALID;
+        if (impl_owner_production(node_kind[child]))
+            return child;
+        uint sibling = next_sibling[child];
+        if (!valid_original_node(sibling) || sibling <= child)
+            return INVALID;
+        child = sibling;
+    }
+    return INVALID;
+}
+
 bool loop_node(uint node)
 {
     if (!valid_original_node(node))
@@ -159,10 +196,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         nearest_statement_node(node, parent_node) ? node : INVALID;
     hir_nearest_block_value_a[row] =
         block_node(node) ? node : INVALID;
+    uint impl_owner = impl_owner_for_context_node(node);
     hir_nearest_enclosing_control_value_a[row] =
-        control_node(parent_node) ? parent_node : INVALID;
+        control_node(parent_node)
+            ? parent_node
+            : (valid_original_node(impl_owner) ? (IMPL_OWNER_TAG | impl_owner) : INVALID);
     hir_nearest_loop_value_a[row] =
         loop_node(node) ? node : INVALID;
     hir_nearest_fn_value_a[row] =
         function_node(node) ? node : INVALID;
+    hir_nearest_array_element_value_a[row] =
+        valid_original_node(hir_array_element_parent_lit[node]) ? node : INVALID;
 }

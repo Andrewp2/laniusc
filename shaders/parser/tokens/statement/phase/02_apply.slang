@@ -213,7 +213,8 @@ uint statement_phase_event_for(
         if ((kind == TK_LBRACE || kind == TK_RBRACE) && paren_depth_before != 0)
             return 0u;
         bool rhs_brace = (kind == TK_LBRACE || kind == TK_RBRACE) &&
-            (context_kind == TK_LET || context_kind == TK_CONST || context_kind == TK_RETURN);
+            (context_kind == TK_LET || context_kind == TK_CONST || context_kind == TK_RETURN ||
+             context_kind == TK_TYPE);
         if (rhs_brace)
             return 0u;
         return encode_statement_event(token_i, 0u);

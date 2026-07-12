@@ -25,6 +25,7 @@ impl ParserBuffers {
     fn new_with_sizing(
         device: &wgpu::Device,
         n_tokens: u32,
+        source_capacity: u32,
         token_kinds_u32: Option<&[u32]>,
         n_kinds: u32,
         action_table_bytes: &[u8],
@@ -249,6 +250,11 @@ impl ParserBuffers {
             device,
             "parser.token_brace_semantic_kind",
             n_tokens.max(1) as usize,
+        );
+        let token_braced_rhs_statement_kind = storage_rw_for_array::<u32>(
+            device,
+            "parser.token_braced_rhs_statement_kind",
+            token_input_capacity as usize,
         );
         let token_bracket_semantic_kind = storage_rw_for_array::<u32>(
             device,
@@ -1067,6 +1073,31 @@ impl ParserBuffers {
             "parser.hir_bound_path_owner_by_leaf",
             tree_capacity as usize,
         );
+        let hir_path_root_owner =
+            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
+        let hir_path_segment_owner_a = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_path_segment_owner",
+            tree_capacity as usize,
+        );
+        let hir_path_segment_owner_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
+        let hir_path_segment_link_a =
+            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
+        let hir_path_segment_link_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
+        let hir_path_segment_rank_a = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_path_segment_rank",
+            tree_capacity as usize,
+        );
+        let hir_path_segment_rank_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
+        let hir_path_segment_count = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_path_segment_count",
+            tree_capacity as usize,
+        );
         let hir_type_path_leaf_link_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
         let hir_type_path_leaf_link_b =
@@ -1591,6 +1622,26 @@ impl ParserBuffers {
             "parser.hir_expr_string_len",
             tree_capacity as usize,
         );
+        let hir_string_data_offset = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_string_data_offset",
+            tree_capacity as usize,
+        );
+        let hir_string_decoded_len = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_string_decoded_len",
+            tree_capacity as usize,
+        );
+        let hir_string_data_words = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_string_data_words",
+            source_capacity.max(1).div_ceil(4) as usize,
+        );
+        let hir_string_pool_len =
+            storage_rw_for_array::<u32>(device, "parser.hir_string_pool_len", 1);
+        let hir_string_node =
+            storage_rw_for_array::<u32>(device, "parser.hir_string_node", tree_capacity as usize);
+        let hir_string_count = storage_rw_for_array::<u32>(device, "parser.hir_string_count", 1);
         let hir_member_receiver_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_member_receiver_node",
@@ -1639,6 +1690,11 @@ impl ParserBuffers {
         let hir_nearest_fn_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_nearest_fn_node",
+            tree_capacity as usize,
+        );
+        let hir_nearest_array_element_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_nearest_array_element_node",
             tree_capacity as usize,
         );
         let hir_struct_field_parent_struct = storage_rw_for_array::<u32>(
@@ -1756,6 +1812,14 @@ impl ParserBuffers {
             alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
         let hir_nearest_fn_value_b =
             alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
+        // These scratch rows are dead after expression-root and array-element
+        // records are finalized, immediately before context propagation starts.
+        let hir_nearest_array_element_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
+        let hir_nearest_array_element_value_b = alias_storage_buffer::<u32, u32>(
+            &hir_expr_result_root_scratch_node,
+            tree_capacity as usize,
+        );
         let hir_struct_rank_flag =
             alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
         let hir_struct_rank_local_prefix =
@@ -1790,6 +1854,7 @@ impl ParserBuffers {
         );
 
         Self {
+            source_capacity: source_capacity.max(1),
             n_tokens,
             n_kinds,
             total_sc,
@@ -1843,6 +1908,7 @@ impl ParserBuffers {
             token_statement_event_prefix_b,
             token_statement_event_block_prefix,
             token_brace_semantic_kind,
+            token_braced_rhs_statement_kind,
             token_bracket_semantic_kind,
             token_statement_context_kind,
             token_impl_header_kind,
@@ -2019,6 +2085,14 @@ impl ParserBuffers {
             hir_type_file_id,
             hir_type_path_leaf_node,
             hir_bound_path_owner_by_leaf,
+            hir_path_root_owner,
+            hir_path_segment_owner_a,
+            hir_path_segment_owner_b,
+            hir_path_segment_link_a,
+            hir_path_segment_link_b,
+            hir_path_segment_rank_a,
+            hir_path_segment_rank_b,
+            hir_path_segment_count,
             hir_type_path_leaf_link_a,
             hir_type_path_leaf_link_b,
             hir_type_path_leaf_value_a,
@@ -2179,6 +2253,12 @@ impl ParserBuffers {
             hir_expr_float_bits,
             hir_expr_string_start,
             hir_expr_string_len,
+            hir_string_data_offset,
+            hir_string_decoded_len,
+            hir_string_data_words,
+            hir_string_pool_len,
+            hir_string_node,
+            hir_string_count,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
@@ -2189,6 +2269,7 @@ impl ParserBuffers {
             hir_nearest_enclosing_control_node,
             hir_nearest_loop_node,
             hir_nearest_fn_node,
+            hir_nearest_array_element_node,
             hir_struct_field_parent_struct,
             hir_struct_field_ordinal,
             hir_struct_field_type_node,
@@ -2228,6 +2309,8 @@ impl ParserBuffers {
             hir_nearest_loop_value_b,
             hir_nearest_fn_value_a,
             hir_nearest_fn_value_b,
+            hir_nearest_array_element_value_a,
+            hir_nearest_array_element_value_b,
             hir_struct_rank_flag,
             hir_struct_rank_local_prefix,
             hir_struct_rank_block_sum,

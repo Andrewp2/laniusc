@@ -129,6 +129,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_type_path_leaf_node,
                                             bound_path_owner_by_leaf: &parse_bufs
                                                 .hir_bound_path_owner_by_leaf,
+                                            path_segment_owner: &parse_bufs
+                                                .hir_path_segment_owner_a,
+                                            path_segment_rank: &parse_bufs.hir_path_segment_rank_a,
+                                            path_segment_count: &parse_bufs.hir_path_segment_count,
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
@@ -178,6 +182,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_array_lit_context_stmt_node,
                                             array_element_parent_lit: &parse_bufs
                                                 .hir_array_element_parent_lit,
+                                            nearest_array_element_node: &parse_bufs
+                                                .hir_nearest_array_element_node,
                                             array_element_next: &parse_bufs.hir_array_element_next,
                                             namespace: &parse_bufs.hir_item_namespace,
                                             visibility: &parse_bufs.hir_item_visibility,
@@ -291,6 +297,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &parse_bufs.hir_token_pos,
                                                 &parse_bufs.hir_token_end,
                                                 hir_status,
+                                                &parse_bufs.token_feature_flags,
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,
@@ -668,6 +675,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_type_path_leaf_node,
                                             bound_path_owner_by_leaf: &parse_bufs
                                                 .hir_bound_path_owner_by_leaf,
+                                            path_segment_owner: &parse_bufs
+                                                .hir_path_segment_owner_a,
+                                            path_segment_rank: &parse_bufs
+                                                .hir_path_segment_rank_a,
+                                            path_segment_count: &parse_bufs
+                                                .hir_path_segment_count,
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
@@ -717,6 +730,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_array_lit_context_stmt_node,
                                             array_element_parent_lit: &parse_bufs
                                                 .hir_array_element_parent_lit,
+                                            nearest_array_element_node: &parse_bufs
+                                                .hir_nearest_array_element_node,
                                             array_element_next: &parse_bufs.hir_array_element_next,
                                             namespace: &parse_bufs.hir_item_namespace,
                                             visibility: &parse_bufs.hir_item_visibility,
@@ -832,6 +847,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 &parse_bufs.hir_token_pos,
                                                 &parse_bufs.hir_token_end,
                                                 hir_status,
+                                                &parse_bufs.token_feature_flags,
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,

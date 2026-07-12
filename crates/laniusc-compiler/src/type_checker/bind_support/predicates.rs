@@ -51,6 +51,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             ),
             ("predicate_status", rows.status.as_entire_binding()),
             (
+                "predicate_trait_impl_trait_type_node",
+                resident_resources["predicate_trait_impl_trait_type_node"].clone(),
+            ),
+            (
                 "predicate_method_contract_owner_node",
                 rows.method_contract_owner_node.as_entire_binding(),
             ),
@@ -154,6 +158,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 rows.second_arg_token.as_entire_binding(),
             ),
             ("predicate_status", rows.status.as_entire_binding()),
+            (
+                "predicate_trait_impl_trait_type_node",
+                resident_resources["predicate_trait_impl_trait_type_node"].clone(),
+            ),
         ],
     )?;
 
@@ -281,6 +289,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     items.method_impl_receiver_type_node.as_entire_binding(),
                 ),
                 (
+                    "predicate_trait_impl_trait_type_node",
+                    resident_resources["predicate_trait_impl_trait_type_node"].clone(),
+                ),
+                (
                     "name_id_by_token",
                     input.name_id_by_token.as_entire_binding(),
                 ),
@@ -295,6 +307,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 (
                     "generic_decl_owner_by_node",
                     resident_resources["generic_decl_owner_by_node"].clone(),
+                ),
+                (
+                    "predicate_bound_list_by_node",
+                    resident_resources["predicate_bound_list_by_node"].clone(),
                 ),
                 (
                     "generic_param_count_out",

@@ -6,6 +6,14 @@ import body_plan_validate_common;
 
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
+StructuredBuffer<uint> parser_feature_flags;
+
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
+
+bool struct_metadata_enabled()
+{
+    return (parser_feature_flags[0u] & PARSER_FEATURE_STRUCTS) != 0u;
+}
 
 uint aggregate_value_source_type(uint node)
 {
@@ -274,7 +282,10 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint token = hir_token_pos[node];
     account_let_aggregate_value_copy(node, owner_fn, token);
-    account_let_struct_literal(node, owner_fn, token);
-    account_return_struct_literal(node, owner_fn, token);
-    account_struct_field_store(node, owner_fn, token);
+    if (struct_metadata_enabled())
+    {
+        account_let_struct_literal(node, owner_fn, token);
+        account_return_struct_literal(node, owner_fn, token);
+        account_struct_field_store(node, owner_fn, token);
+    }
 }

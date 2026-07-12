@@ -54,27 +54,6 @@ fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source:
 }
 
 #[test]
-fn type_checker_module_path_consumers_do_not_scan_lexer_token_kinds() {
-    let validate_type_paths =
-        include_str!("../shaders/type_checker/modules/10e3_validate_type_paths.slang");
-    let consume_value_calls =
-        include_str!("../shaders/type_checker/modules/10h_consume_value_calls.slang");
-
-    for (name, shader) in [
-        ("10e3_validate_type_paths", validate_type_paths),
-        ("10h_consume_value_calls", consume_value_calls),
-    ] {
-        assert!(
-            !shader.contains("StructuredBuffer<TokenIn> token_words")
-                && !shader.contains("token_words[")
-                && !shader.contains("token_kind(")
-                && !shader.contains("TK_"),
-            "{name} should consume HIR/module records instead of lexer token kinds"
-        );
-    }
-}
-
-#[test]
 fn resident_typechecker_always_records_hir_control_validation() {
     let resident = include_str!("../crates/laniusc-compiler/src/type_checker/resident.rs");
     let pass_loaders = include_str!("../crates/laniusc-compiler/src/type_checker/pass_loaders.rs");

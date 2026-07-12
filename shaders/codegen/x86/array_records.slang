@@ -46,6 +46,7 @@ static const uint EXPR_RECORD_STRIDE = 4u;
 
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_STRUCT_ACCESS_ARRAY_ELEMENT = 4u;
+static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_AGG_STORE_ARRAY = 2u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
@@ -108,6 +109,14 @@ uint pack_struct_access_info(uint kind, uint payload)
     if (kind > X86_STRUCT_ACCESS_KIND_MASK || payload > X86_STRUCT_ACCESS_PAYLOAD_MAX)
         return INVALID;
     return (payload << X86_STRUCT_ACCESS_KIND_BITS) | kind;
+}
+
+uint struct_access_kind(uint node)
+{
+    if (!valid_node(node))
+        return 0u;
+    uint info = x86_struct_access_record[node * X86_STRUCT_ACCESS_STRIDE + 2u];
+    return info == INVALID ? 0u : info & X86_STRUCT_ACCESS_KIND_MASK;
 }
 
 bool write_struct_access_record(
@@ -192,8 +201,15 @@ void publish_element_store_record(uint node)
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);
+    uint resolved = resolve_expr(node);
+    // Struct-array elements are lowered through their independently parallel
+    // field-store records. Publishing a scalar element store on the resolved
+    // type-name row would make instruction generation treat that name as a
+    // runtime local.
+    if (struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL)
+        return;
     publish_store_record_for_value(node, decl_token, ordinal, array_node);
-    publish_store_record_for_value(resolve_expr(node), decl_token, ordinal, array_node);
+    publish_store_record_for_value(resolved, decl_token, ordinal, array_node);
 }
 
 [shader("compute")]

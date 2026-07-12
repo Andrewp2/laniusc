@@ -37,6 +37,7 @@ RWStructuredBuffer<uint> predicate_bound_arg_count;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
 RWStructuredBuffer<uint> predicate_bound_second_arg_token;
 RWStructuredBuffer<uint> predicate_status;
+RWStructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -105,6 +106,15 @@ bool bound_expr_node(uint node)
         return false;
     uint kind = node_kind[node];
     return kind == PROD_BOUND_TYPE_IDENT || kind == PROD_BOUND_TYPE_REF;
+}
+
+void publish_trait_impl_trait_type(uint node)
+{
+    if (!valid_node(node) || node_kind[node] != PROD_TYPE_IDENT)
+        return;
+    uint owner = parent_node(node);
+    if (valid_node(owner) && node_kind[owner] == PROD_IMPL_TRAIT)
+        atomic_u32_min(predicate_trait_impl_trait_type_node, owner, node);
 }
 
 bool bound_path_node(uint node)
@@ -181,8 +191,12 @@ bool bound_ident_has_arg_list(uint node)
         return false;
 
     uint child = first_child_node(node);
-    while (valid_node(child))
+    // Bound identifiers have a grammar-fixed path/argument child shape. Keep
+    // this bridge explicitly bounded and fail closed if that shape changes.
+    for (uint step = 0u; step < 3u; step += 1u)
     {
+        if (!valid_node(child))
+            return false;
         uint kind = node_kind[child];
         if (kind == PROD_BOUND_TYPE_ARGS_SOME)
             return true;
@@ -302,6 +316,7 @@ void publish_arg_node(uint owner, uint ordinal, uint arg_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
+    publish_trait_impl_trait_type(node);
     if (!bound_expr_node(node))
         return;
 

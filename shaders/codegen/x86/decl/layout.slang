@@ -565,6 +565,28 @@ bool array_literal_width_for_decl_node(uint node, out uint width)
     return true;
 }
 
+bool declared_array_width_for_decl_node(uint node, out uint width)
+{
+    width = 0u;
+    if (!is_local_decl_node(node))
+        return false;
+
+    uint type_record = stmt_slot(node, 3u);
+    if (type_record == INVALID || type_record >= active_hir_node_count() * STMT_RECORD_STRIDE)
+        return false;
+    uint type_node = hir_stmt_record[type_record];
+    if (!valid_node(type_node) ||
+        hir_kind[type_node] != HIR_TYPE ||
+        hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)
+        return false;
+
+    uint len = hir_type_len_value[type_node];
+    if (len == INVALID || len <= 1u)
+        return false;
+    width = len;
+    return true;
+}
+
 bool is_scalar_param_node(uint node)
 {
     uint decl_token = param_decl_token_for_node(node);
@@ -594,6 +616,10 @@ uint local_width_for_node(uint node)
         uint width = width_for_decl(stmt_slot(node, 1u));
         if (width > 1u)
             return width;
+
+        uint declared_array_width = 0u;
+        if (declared_array_width_for_decl_node(node, declared_array_width))
+            return declared_array_width;
 
         uint array_width = 0u;
         if (array_literal_width_for_decl_node(node, array_width))
@@ -745,6 +771,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint semantic_ty = semantic_type_for_decl(decl_token);
     uint agg_kind = semantic_ty == TY_STRING ? X86_DECL_AGG_STRING :
                     (array_len_for_decl(decl_token, array_len) ? X86_DECL_AGG_ARRAY : 0u);
+    if (agg_kind == 0u && declared_array_width_for_decl_node(node, array_len))
+        agg_kind = X86_DECL_AGG_ARRAY;
     if (agg_kind == 0u && array_literal_width_for_decl_node(node, array_len))
         agg_kind = X86_DECL_AGG_ARRAY;
     if (agg_kind == 0u && enum_width_for_decl(decl_token, enum_width))

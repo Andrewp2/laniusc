@@ -34,6 +34,7 @@ RWStructuredBuffer<uint> hir_stmt_record;
 RWStructuredBuffer<uint> hir_stmt_scope_end;
 
 static const uint INVALID = 0xffffffffu;
+static const uint DIRECT_STATEMENT_CHILD_BUDGET = 8u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR = 14u;
@@ -250,8 +251,10 @@ uint direct_expr_child(uint node)
 uint direct_expr_child_scan(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    while (valid_node(child))
+    for (uint step = 0u; step < DIRECT_STATEMENT_CHILD_BUDGET; step += 1u)
     {
+        if (!valid_node(child))
+            return INVALID;
         if (is_hir_expression_kind(hir_kind[child]))
             return child;
         child = direct_next_sibling_or_invalid(node, child);
@@ -270,8 +273,10 @@ bool is_for_iterable_production(uint prod)
 uint direct_for_iterable_child(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    while (valid_node(child))
+    for (uint step = 0u; step < DIRECT_STATEMENT_CHILD_BUDGET; step += 1u)
     {
+        if (!valid_node(child))
+            return INVALID;
         if (is_for_iterable_production(node_kind[child]))
             return child;
         child = direct_next_sibling_or_invalid(node, child);
@@ -290,8 +295,10 @@ uint direct_production_child_after(uint node, uint prod, uint after_node)
 
     uint child = direct_child_or_invalid(node);
     bool after_seen = after_node == INVALID;
-    while (valid_node(child))
+    for (uint step = 0u; step < DIRECT_STATEMENT_CHILD_BUDGET; step += 1u)
     {
+        if (!valid_node(child))
+            break;
         if (child == after_node)
             after_seen = true;
         else if (after_seen && node_kind[child] == prod)
@@ -363,8 +370,10 @@ uint if_then_block(uint node)
 uint else_block_for_if(uint node)
 {
     uint child = direct_child_or_invalid(node);
-    while (valid_node(child))
+    for (uint step = 0u; step < DIRECT_STATEMENT_CHILD_BUDGET; step += 1u)
     {
+        if (!valid_node(child))
+            return INVALID;
         if (node_kind[child] == PROD_ELSE_STMT)
             return block_child(child);
         child = direct_next_sibling_or_invalid(node, child);

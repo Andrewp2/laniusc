@@ -189,9 +189,12 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint reg = op == X86_VINST_PARAM ? x86_virtual_inst_args[row].z
-             : op == X86_VINST_STORE_PARAM_INDEX ? x86_virtual_inst_args[row].x
-             : x86_virtual_inst_args[row].x;
+    uint payload = x86_virtual_inst_args[row].x;
+    uint reg = op == X86_VINST_PARAM
+                   ? x86_virtual_inst_args[row].z
+                   : op == X86_VINST_LOAD_PARAM_SLOT
+                         ? payload
+                         : unpack_u16_pair_low(payload);
     if (!bitset32_valid_bit(reg))
     {
         publish_stage_error_min_detail4(

@@ -24,6 +24,7 @@ pub(super) struct EmitBindGroups {
     pub(super) rodata_scan_local: wgpu::BindGroup,
     pub(super) rodata_scan_block: Vec<wgpu::BindGroup>,
     pub(super) rodata_offsets: wgpu::BindGroup,
+    pub(super) rodata_dispatch_args: wgpu::BindGroup,
     pub(super) rodata_write: wgpu::BindGroup,
     pub(super) encode: wgpu::BindGroup,
     pub(super) reloc_patch: wgpu::BindGroup,
@@ -36,7 +37,6 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
     pub(super) rodata_scan_params: &'a UniformBindingArray,
-    pub(super) source_bytes: &'a wgpu::Buffer,
     pub(super) hir_status: &'a wgpu::Buffer,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) func_meta: &'a wgpu::Buffer,
@@ -69,6 +69,7 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) rodata_size_by_node: &'a wgpu::Buffer,
     pub(super) rodata_offset_by_node: &'a wgpu::Buffer,
     pub(super) rodata_status: &'a wgpu::Buffer,
+    pub(super) rodata_dispatch_args: &'a wgpu::Buffer,
     pub(super) rodata_scan_local_prefix: &'a wgpu::Buffer,
     pub(super) rodata_scan_block_sum: &'a wgpu::Buffer,
     pub(super) rodata_scan_prefix_a: &'a wgpu::Buffer,
@@ -96,7 +97,6 @@ pub(super) fn create_emit_bind_groups(
         params,
         text_scan_params,
         rodata_scan_params,
-        source_bytes,
         hir_status,
         expr_metadata,
         func_meta,
@@ -129,6 +129,7 @@ pub(super) fn create_emit_bind_groups(
         rodata_size_by_node,
         rodata_offset_by_node,
         rodata_status,
+        rodata_dispatch_args,
         rodata_scan_local_prefix,
         rodata_scan_block_sum,
         rodata_scan_prefix_a,
@@ -367,16 +368,11 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("source_bytes", source_bytes.as_entire_binding()),
             ("hir_status", hir_status.as_entire_binding()),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "hir_expr_string_start",
-                expr_metadata.string_start.as_entire_binding(),
-            ),
-            (
-                "hir_expr_string_len",
-                expr_metadata.string_len.as_entire_binding(),
+                "hir_string_decoded_len",
+                expr_metadata.string_decoded_len.as_entire_binding(),
             ),
             (
                 "x86_rodata_size_by_node",
@@ -453,6 +449,22 @@ pub(super) fn create_emit_bind_groups(
             ),
             ("x86_rodata_len", rodata_len.as_entire_binding()),
             ("x86_rodata_status", rodata_status.as_entire_binding()),
+        ],
+    )?;
+    let rodata_dispatch_args = reflected_bind_group(
+        device,
+        Some("codegen.x86.rodata_dispatch_args.bind_group"),
+        &generator.rodata_dispatch_args_pass,
+        0,
+        &[
+            (
+                "hir_string_count",
+                expr_metadata.string_count.as_entire_binding(),
+            ),
+            (
+                "string_dispatch_args",
+                rodata_dispatch_args.as_entire_binding(),
+            ),
         ],
     )?;
     let encode = reflected_bind_group(
@@ -552,15 +564,26 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("source_bytes", source_bytes.as_entire_binding()),
             ("hir_status", hir_status.as_entire_binding()),
             (
-                "hir_expr_string_start",
-                expr_metadata.string_start.as_entire_binding(),
+                "hir_string_data_offset",
+                expr_metadata.string_data_offset.as_entire_binding(),
             ),
             (
-                "hir_expr_string_len",
-                expr_metadata.string_len.as_entire_binding(),
+                "hir_string_decoded_len",
+                expr_metadata.string_decoded_len.as_entire_binding(),
+            ),
+            (
+                "hir_string_data_words",
+                expr_metadata.string_data_words.as_entire_binding(),
+            ),
+            (
+                "hir_string_node",
+                expr_metadata.string_node.as_entire_binding(),
+            ),
+            (
+                "hir_string_count",
+                expr_metadata.string_count.as_entire_binding(),
             ),
             (
                 "x86_rodata_size_by_node",
@@ -592,6 +615,7 @@ pub(super) fn create_emit_bind_groups(
         rodata_scan_local,
         rodata_scan_block,
         rodata_offsets,
+        rodata_dispatch_args,
         rodata_write,
         encode,
         reloc_patch,

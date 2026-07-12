@@ -387,6 +387,7 @@ pub struct ResidentParseResult {
     pub hir_nearest_enclosing_control_node: Vec<u32>,
     pub hir_nearest_loop_node: Vec<u32>,
     pub hir_nearest_fn_node: Vec<u32>,
+    pub hir_nearest_array_element_node: Vec<u32>,
     pub hir_struct_field_parent_struct: Vec<u32>,
     pub hir_struct_field_ordinal: Vec<u32>,
     pub hir_struct_field_type_node: Vec<u32>,

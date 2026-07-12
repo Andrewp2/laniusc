@@ -73,7 +73,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &passes.modules_scatter_path_segments,
         &state.bind_groups.scatter_path_segments,
         "type_check.modules.scatter_path_segments",
-        &state.path_dispatch_args,
+        hir_active_dispatch_args,
     )?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.paths.done");
     record_compute_indirect(

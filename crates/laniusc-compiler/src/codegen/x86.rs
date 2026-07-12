@@ -281,6 +281,11 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub float_bits: &'a wgpu::Buffer,
     pub string_start: &'a wgpu::Buffer,
     pub string_len: &'a wgpu::Buffer,
+    pub string_data_offset: &'a wgpu::Buffer,
+    pub string_decoded_len: &'a wgpu::Buffer,
+    pub string_data_words: &'a wgpu::Buffer,
+    pub string_node: &'a wgpu::Buffer,
+    pub string_count: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
     pub type_len_value: &'a wgpu::Buffer,
@@ -335,6 +340,7 @@ pub struct GpuX86ArrayMetadataBuffers<'a> {
     pub element_parent_lit: &'a wgpu::Buffer,
     pub element_ordinal: &'a wgpu::Buffer,
     pub element_next: &'a wgpu::Buffer,
+    pub nearest_element: &'a wgpu::Buffer,
 }
 
 /// Enum, variant, path, and match metadata buffers needed by x86 lowering.
@@ -482,7 +488,11 @@ impl GpuX86ExternalScratchBuffers<'_> {
 // fixed 16k instruction rows when the frontend already knows the real token
 // count.
 const X86_INST_CAPACITY_HIR_ESTIMATE_CAP: usize = 16_384;
-const MAX_X86_INSTS: usize = 2_097_152;
+// Large resident jobs need more than the old 2M-row ceiling: a 100 MB
+// scalar-heavy source produces roughly 5M selected instructions and more than
+// 32 MiB of ELF bytes. Keep the cap below the per-buffer storage-binding limit
+// while allowing an 8M-row/128 MiB output window.
+const MAX_X86_INSTS: usize = 8_388_608;
 const X86_INST_CAPACITY_MIN: usize = 256;
 const X86_INST_CAPACITY_SLACK: usize = 1_024;
 const X86_INSTS_PER_HIR_NODE_CAPACITY: usize = 8;
@@ -928,6 +938,8 @@ pub struct GpuX86CodeGenerator {
     struct_field_widths_pass: PassData,
     struct_field_stream_pass: PassData,
     struct_records_pass: PassData,
+    aggregate_source_init_pass: PassData,
+    aggregate_source_step_pass: PassData,
     array_records_pass: PassData,
     match_records_pass: PassData,
     match_result_owner_init_pass: PassData,
@@ -1006,6 +1018,7 @@ pub struct GpuX86CodeGenerator {
     rodata_sizes_pass: PassData,
     rodata_scan_local_pass: PassData,
     rodata_offsets_pass: PassData,
+    rodata_dispatch_args_pass: PassData,
     rodata_write_pass: PassData,
     reloc_scan_local_pass: PassData,
     reloc_records_pass: PassData,
@@ -1139,6 +1152,16 @@ impl GpuX86CodeGenerator {
             "struct_records",
             "codegen/x86/struct_records.spv",
             "codegen/x86/struct_records.reflect.json"
+        );
+        let aggregate_source_init_pass = load_x86_pass!(
+            "aggregate_source_init",
+            "codegen/x86/aggregate/source/init.spv",
+            "codegen/x86/aggregate/source/init.reflect.json"
+        );
+        let aggregate_source_step_pass = load_x86_pass!(
+            "aggregate_source_step",
+            "codegen/x86/aggregate/source/step.spv",
+            "codegen/x86/aggregate/source/step.reflect.json"
         );
         let array_records_pass = load_x86_pass!(
             "array_records",
@@ -1530,6 +1553,11 @@ impl GpuX86CodeGenerator {
             "codegen/x86/rodata/offsets.spv",
             "codegen/x86/rodata/offsets.reflect.json"
         );
+        let rodata_dispatch_args_pass = load_x86_pass!(
+            "rodata_dispatch_args",
+            "codegen/x86/rodata/dispatch_args.spv",
+            "codegen/x86/rodata/dispatch_args.reflect.json"
+        );
         let rodata_write_pass = load_x86_pass!(
             "rodata_write",
             "codegen/x86/rodata/write.spv",
@@ -1588,6 +1616,8 @@ impl GpuX86CodeGenerator {
             struct_field_widths_pass,
             struct_field_stream_pass,
             struct_records_pass,
+            aggregate_source_init_pass,
+            aggregate_source_step_pass,
             array_records_pass,
             match_records_pass,
             match_result_owner_init_pass,
@@ -1666,6 +1696,7 @@ impl GpuX86CodeGenerator {
             rodata_sizes_pass,
             rodata_scan_local_pass,
             rodata_offsets_pass,
+            rodata_dispatch_args_pass,
             rodata_write_pass,
             reloc_scan_local_pass,
             reloc_records_pass,
@@ -1798,6 +1829,15 @@ mod tests {
             capacity.inst_capacity > 100usize.saturating_add(X86_INST_CAPACITY_SLACK),
             "dense scalar programs should use the measured scalar instruction summary"
         );
+    }
+
+    #[test]
+    fn x86_large_job_capacity_exceeds_old_two_million_row_ceiling() {
+        let capacity = x86_capacity_estimate_for_hir_and_tokens(25_000_000, 25_000_000);
+
+        assert_eq!(capacity.inst_capacity, MAX_X86_INSTS);
+        assert!(capacity.inst_capacity > 2_097_152);
+        assert!(capacity.output_capacity >= 128 * 1024 * 1024);
     }
 
     #[test]

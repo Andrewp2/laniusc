@@ -693,6 +693,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 call_metadata.member_name_token.as_entire_binding(),
             ),
             (
+                "hir_token_pos",
+                function_metadata.hir_token_pos.as_entire_binding(),
+            ),
+            (
                 "hir_struct_lit_field_parent_lit",
                 struct_metadata
                     .struct_lit_field_parent_lit
@@ -787,14 +791,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 final_node_inst_scan_prefix_buf.as_entire_binding(),
             ),
             (
-                "hir_array_lit_first_element",
-                array_metadata.lit_first_element.as_entire_binding(),
-            ),
-            (
-                "hir_array_lit_element_count",
-                array_metadata.lit_element_count.as_entire_binding(),
-            ),
-            (
                 "hir_array_element_parent_lit",
                 array_metadata.element_parent_lit.as_entire_binding(),
             ),
@@ -803,8 +799,8 @@ pub(super) fn create_semantic_record_bind_groups(
                 array_metadata.element_ordinal.as_entire_binding(),
             ),
             (
-                "hir_array_element_next",
-                array_metadata.element_next.as_entire_binding(),
+                "hir_nearest_array_element_node",
+                array_metadata.nearest_element.as_entire_binding(),
             ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
             (

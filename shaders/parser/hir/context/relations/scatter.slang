@@ -20,17 +20,20 @@ StructuredBuffer<uint> hir_nearest_block_value_a;
 StructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
 StructuredBuffer<uint> hir_nearest_loop_value_a;
 StructuredBuffer<uint> hir_nearest_fn_value_a;
+StructuredBuffer<uint> hir_nearest_array_element_value_a;
 
 RWStructuredBuffer<uint> hir_nearest_stmt_node;
 RWStructuredBuffer<uint> hir_nearest_block_node;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_node;
 RWStructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<uint> hir_nearest_fn_node;
+RWStructuredBuffer<uint> hir_nearest_array_element_node;
 RWStructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_array_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_call_context_stmt_node;
 
 static const uint INVALID = 0xffffffffu;
+static const uint IMPL_OWNER_TAG = 0x80000000u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -75,12 +78,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         valid_original_node(nearest_block) ? nearest_block : INVALID;
     uint nearest_control = hir_nearest_enclosing_control_value_a[row];
     hir_nearest_enclosing_control_node[node] =
-        valid_original_node(nearest_control) ? nearest_control : INVALID;
+        (nearest_control & IMPL_OWNER_TAG) == 0u && valid_original_node(nearest_control)
+            ? nearest_control
+            : INVALID;
     uint nearest_loop = hir_nearest_loop_value_a[row];
     hir_nearest_loop_node[node] =
         valid_original_node(nearest_loop) ? nearest_loop : INVALID;
     uint nearest_fn = hir_nearest_fn_value_a[row];
     hir_nearest_fn_node[node] = valid_original_node(nearest_fn) ? nearest_fn : INVALID;
+    uint nearest_array_element = hir_nearest_array_element_value_a[row];
+    hir_nearest_array_element_node[node] =
+        valid_original_node(nearest_array_element) ? nearest_array_element : INVALID;
 
     uint context = hir_contextual_stmt_value_a[row];
     uint context_node = valid_original_node(context) ? context : INVALID;

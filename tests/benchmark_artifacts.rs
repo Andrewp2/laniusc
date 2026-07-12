@@ -200,13 +200,11 @@ fn grid_checksum_sources_match_generator() {
     );
     for language in LANGUAGES {
         let source = source_name(language);
-        let regenerated = fs::read_to_string(out_abs.join("src").join(source))
-            .unwrap_or_else(|err| panic!("read regenerated {source}: {err}"));
-        let checked = fs::read_to_string(artifact_root().join("src").join(source))
-            .unwrap_or_else(|err| panic!("read checked {source}: {err}"));
+        let regenerated = sha256_file(&out_abs.join("src").join(source));
+        let checked = sha256_file(&artifact_root().join("src").join(source));
         assert_eq!(
             regenerated, checked,
-            "checked {language} benchmark source should match generator output"
+            "checked {language} benchmark source hash should match generator output"
         );
     }
 }

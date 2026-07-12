@@ -39,6 +39,7 @@ RWStructuredBuffer<uint> x86_decl_node_by_token;
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
 static const uint HIR_ITEM_KIND_FN = 4u;
+static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint ENTRYPOINT_MAIN = 1u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_NODE_TREE_OK = 1u;
@@ -89,6 +90,14 @@ bool is_function_record_node(uint node_i)
             is_impl_method_function_node(node_i));
 }
 
+bool is_function_lookup_node(uint node_i)
+{
+    return hir_kind[node_i] == HIR_FN &&
+           (hir_item_kind[node_i] == HIR_ITEM_KIND_FN ||
+            hir_item_kind[node_i] == HIR_ITEM_KIND_EXTERN_FN ||
+            is_impl_method_function_node(node_i));
+}
+
 bool node_tree_ok()
 {
     return x86_node_tree_status[0u] == X86_NODE_TREE_OK &&
@@ -105,7 +114,7 @@ void publish_function_lookup_key(uint key, uint node_i)
 
 void publish_function_lookup(uint node_i)
 {
-    if (!is_function_record_node(node_i))
+    if (!is_function_lookup_node(node_i))
         return;
 
     publish_function_lookup_key(hir_token_pos[node_i], node_i);
@@ -124,11 +133,14 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (node_i >= active_hir_node_count())
         return;
 
+    if (!is_function_lookup_node(node_i))
+        return;
+
+    publish_function_lookup(node_i);
     if (!is_function_record_node(node_i))
         return;
 
     x86_node_func[node_i] = node_i;
-    publish_function_lookup(node_i);
 
     if (!is_main_function_node(node_i))
         return;

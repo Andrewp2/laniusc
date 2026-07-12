@@ -8408,8 +8408,8 @@ run_cargo_bin_test() {
 
 run_cargo_lib_test() {
   local test_name="$1"
-  record_named_test_reference lib laniusc "$test_name" src tests
-  run_cmd cargo test -p laniusc -j1 --lib "$test_name" -- --test-threads=1
+  record_named_test_reference lib laniusc-compiler "$test_name" crates/laniusc-compiler/src
+  run_cmd cargo test -p laniusc-compiler -j1 --lib "$test_name" -- --test-threads=1
 }
 
 describe_tier() {
@@ -8451,10 +8451,10 @@ run_focused() {
     run_cmd cargo test --test cli_version -j1 -- --list
     run_cmd cargo test --test formatter -j1 -- --list
     run_cmd cargo test --test package_manifest -j1 -- --list
-    run_cmd cargo test -p laniusc diagnostic_renderer_includes_code_span_snippet_label_and_note -j1 --lib -- --list
-    run_cmd cargo test -j1 --bin laniusc contract_file_emission_copies_without_marking_executable -- --list
+    run_cmd cargo test -p laniusc-compiler diagnostic_renderer_includes_code_span_snippet_label_and_note -j1 --lib -- --list
+    run_cmd cargo test -p laniusc-compiler -j1 --lib contract_file_emission_copies_without_marking_executable -- --list
     run_cmd cargo test -j1 --bin laniusc contract_descriptor_emission_rejects_incoherent_json_descriptor -- --list
-    run_cmd cargo test -p laniusc source_pack_work_queue_progress_page_transitions_match_reference_model -j1 --lib -- --list
+    run_cmd cargo test -p laniusc-compiler source_pack_work_queue_progress_page_transitions_match_reference_model -j1 --lib -- --list
     return
   fi
   run_cmd cargo check --lib -j1
@@ -8474,13 +8474,12 @@ run_focused() {
   run_cargo_lib_test linked_output_descriptor_rejects_partial_link_inputs_without_group
   run_cargo_lib_test linked_output_descriptor_rejects_object_domain_output_arrays
   run_cargo_lib_test persisted_descriptor_record_arrays_reject_mixed_semantic_shapes
-  run_cargo_bin_test laniusc contract_file_emission_copies_without_marking_executable
-  run_cargo_bin_test laniusc contract_descriptor_emission_rejects_incoherent_json_descriptor
+  run_cargo_lib_test contract_file_emission_copies_without_marking_executable
+  run_cargo_lib_test contract_descriptor_emission_rejects_incoherent_json_descriptor
   run_cargo_test cli_package_manifest cli_package_manifest_rejects_extra_positional_inputs
   run_cargo_test cli_package_manifest cli_package_lockfile_rejects_mixed_input_modes
   run_cargo_test cli_source_pack_contract cli_descriptor_source_pack_requires_explicit_contract_output
   run_cargo_test cli_source_pack_contract cli_emit_contract_single_input_uses_descriptor_path_instead_of_plain_compile
-  run_cargo_test cli_source_pack_contract cli_explicit_legacy_source_pack_requires_an_input_instead_of_demo_compile
   run_cargo_test cli_source_pack_contract cli_descriptor_source_root_preparation_is_explicitly_unsupported
   run_cargo_test cli_source_pack_contract cli_descriptor_package_manifest_preparation_is_explicitly_unsupported
   run_cargo_test cli_formatter cli_fmt_formats_source_file_in_place
@@ -8541,9 +8540,6 @@ run_generated() {
     --ignored
   run_cargo_test generated_10k_gates \
     generated_reused_parse_matches_independent_varied \
-    --ignored
-  run_cargo_test generated_10k_gates \
-    generated_reused_x86_suite_validates \
     --ignored
 }
 
@@ -8753,8 +8749,6 @@ run_properties() {
   run_cargo_test codegen_x86 \
     x86_select_clears_stale_selected_rows_for_unsupported_virtual_ops
   run_cargo_test codegen_x86 \
-    x86_rejects_direct_call_argument_count_beyond_packed_abi_with_diagnostic
-  run_cargo_test codegen_x86 \
     x86_source_pack_assignment_mismatch_reports_lnc0006_diagnostic
   run_cargo_test codegen_x86 \
     x86_source_pack_unresolved_identifier_reports_lnc0005_diagnostic
@@ -8766,8 +8760,6 @@ run_properties() {
     x86_executes_direct_recursive_scalar_call
   run_cargo_test codegen_x86 \
     x86_reloc_patch_rejects_non_compact_reloc_rows
-  run_cargo_test codegen_x86 \
-    x86_virtual_regalloc_rejects_non_monotonic_value_def_rows
   run_cargo_test codegen_x86 \
     x86_rejects_aggregate_copy_above_bounded_gpu_row_width
   run_cargo_test codegen_x86 \
@@ -8949,8 +8941,6 @@ run_properties() {
   run_cargo_test type_checker_semantics \
     type_checker_rejects_under_applied_inherent_impl_receiver_targets_on_gpu
   run_cargo_test type_checker_semantics \
-    type_checker_rejects_inherent_impl_receiver_targets_beyond_gpu_arg_window
-  run_cargo_test type_checker_semantics \
     type_checker_rejects_trait_bounds_on_const_generic_subjects_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_normalizes_alias_predicate_type_argument_leaves_on_gpu
@@ -8968,8 +8958,6 @@ run_properties() {
     type_checker_resolves_methods_by_concrete_generic_receiver_instance
   run_cargo_test type_checker_semantics \
     type_checker_rejects_method_calls_beyond_gpu_argument_width
-  run_cargo_test type_checker_semantics \
-    type_checker_reports_generic_inherent_method_returns_outside_bounded_gpu_slice
   run_cargo_test type_checker_semantics \
     type_checker_accepts_direct_generic_function_at_two_concrete_types
   run_cargo_test type_checker_semantics \

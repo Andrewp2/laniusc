@@ -135,8 +135,8 @@ fn raytracer_ppm_compiles_to_wasm_runs_and_matches_oracle() {
     let source_path = fixture_path("raytracer.lani");
     let expected_ppm = read_fixture("expected.ppm");
     let expected_stdout = read_fixture("expected.stdout");
-    let settings = fs::read(fixture_path("render_settings.txt"))
-        .expect("read raytracer settings fixture");
+    let settings =
+        fs::read(fixture_path("render_settings.txt")).expect("read raytracer settings fixture");
     let bytes = common::run_gpu_codegen_with_timeout("raytracer PPM fixture Wasm compile", {
         let source_path = source_path.clone();
         move || {

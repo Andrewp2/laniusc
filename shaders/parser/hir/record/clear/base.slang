@@ -43,6 +43,7 @@ RWStructuredBuffer<uint> hir_nearest_block_node;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_node;
 RWStructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<uint> hir_nearest_fn_node;
+RWStructuredBuffer<uint> hir_nearest_array_element_node;
 RWStructuredBuffer<uint> hir_type_alias_target_node;
 RWStructuredBuffer<uint> hir_fn_return_type_node;
 RWStructuredBuffer<uint> hir_type_len_value;
@@ -126,4 +127,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_nearest_enclosing_control_node[node] = INVALID;
     hir_nearest_loop_node[node] = INVALID;
     hir_nearest_fn_node[node] = INVALID;
+    hir_nearest_array_element_node[node] = INVALID;
 }

@@ -1,4 +1,5 @@
 import byte_packing;
+import prefix_scan;
 
 struct Params
 {
@@ -15,6 +16,9 @@ StructuredBuffer<uint> body_words;
 StructuredBuffer<uint> body_status;
 StructuredBuffer<uint> body_plan;
 StructuredBuffer<uint> wasm_func_token_by_slot;
+StructuredBuffer<uint> wasm_type_entry_len_by_slot;
+StructuredBuffer<uint> wasm_type_scan_local_prefix;
+StructuredBuffer<uint> wasm_type_scan_block_prefix;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_type;
@@ -29,6 +33,7 @@ RWStructuredBuffer<uint> out_words;
 StructuredBuffer<uint> status;
 
 static const uint WORKGROUP_SIZE = 256u;
+static const uint TYPE_SCAN_WG_SIZE = 256u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint TYPE_SECTION_PAYLOAD_LEN = 756u;
 static const uint TYPE_SECTION_LEN = 762u;
@@ -206,127 +211,19 @@ uint static_type_entries_byte(uint rel)
     return 0u;
 }
 
-bool method_receiver_param(uint fn_token, uint ordinal)
-{
-    if (fn_token == INVALID || ordinal != 0u)
-        return false;
-    uint mode = method_decl_receiver_mode[fn_token];
-    return mode == METHOD_RECEIVER_SELF || mode == METHOD_RECEIVER_REF_SELF;
-}
-
-uint call_param_type_value(uint fn_token, uint ordinal)
-{
-    if (fn_token == INVALID)
-        return 0u;
-
-    uint start = call_param_row_start[fn_token];
-    uint count = call_param_row_count[fn_token];
-    uint row_limit = call_param_row_count_out[0u];
-    if (start == INVALID || ordinal >= count || start > row_limit || ordinal > row_limit - start)
-        return method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : 0u;
-
-    uint row = start + ordinal;
-    if (row >= row_limit ||
-        call_param_row_fn_token[row] != fn_token ||
-        call_param_row_ordinal[row] != ordinal)
-    {
-        return method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : 0u;
-    }
-
-    uint ty = call_param_row_type[row];
-    return ty == 0u && method_receiver_param(fn_token, ordinal) ? TY_ARRAY_BASE : ty;
-}
-
-uint wasm_param_abi_width(uint ty)
-{
-    return ty == TY_STRING ? 2u : 1u;
-}
-
-uint function_signature_param_count(uint fn_token)
-{
-    if (fn_token == INVALID)
-        return 0u;
-
-    uint count = call_param_count[fn_token];
-    uint total = 0u;
-    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
-        total += wasm_param_abi_width(call_param_type_value(fn_token, ordinal));
-    return total;
-}
-
-uint function_signature_result_type(uint fn_token)
-{
-    uint ret = fn_token == INVALID ? 0u : call_return_type[fn_token];
-    if (ret == TY_BOOL || ret == TY_INT || ret == TY_UINT || ret >= TY_ARRAY_BASE)
-        return WASM_VALTYPE_I32;
-    if (ret == TY_FLOAT)
-        return WASM_VALTYPE_F32;
-    return 0u;
-}
-
-uint function_signature_param_type(uint fn_token, uint ordinal)
-{
-    uint count = fn_token == INVALID ? 0u : call_param_count[fn_token];
-    uint flat = 0u;
-    for (uint param_i = 0u; param_i < count; param_i += 1u)
-    {
-        uint ty = call_param_type_value(fn_token, param_i);
-        uint width = wasm_param_abi_width(ty);
-        if (ordinal >= flat && ordinal < flat + width)
-            return ty == TY_FLOAT ? WASM_VALTYPE_F32 : WASM_VALTYPE_I32;
-        flat += width;
-    }
-    return WASM_VALTYPE_I32;
-}
-
-uint function_signature_type_entry_len(uint fn_token)
-{
-    uint param_count = function_signature_param_count(fn_token);
-    uint result_count = function_signature_result_type(fn_token) == 0u ? 0u : 1u;
-    return 1u + 5u + param_count + 1u + result_count;
-}
-
-uint function_signature_type_entry_byte(uint fn_token, uint byte_i)
-{
-    uint param_count = function_signature_param_count(fn_token);
-    if (byte_i == 0u)
-        return 0x60u;
-    if (byte_i >= 1u && byte_i < 6u)
-        return leb5_byte(param_count, byte_i - 1u);
-    uint params_start = 6u;
-    if (byte_i >= params_start && byte_i < params_start + param_count)
-        return function_signature_param_type(fn_token, byte_i - params_start);
-    uint result_count_i = params_start + param_count;
-    uint result_type = function_signature_result_type(fn_token);
-    if (byte_i == result_count_i)
-        return result_type == 0u ? 0u : 1u;
-    if (byte_i == result_count_i + 1u && result_type != 0u)
-        return result_type;
-    return 0u;
-}
-
 uint dynamic_type_entries_len(uint function_count)
 {
-    uint total = 0u;
-    for (uint slot = 0u; slot < function_count; slot += 1u)
-    {
-        uint fn_token = wasm_func_token_by_slot[slot];
-        total += function_signature_type_entry_len(fn_token);
-    }
-    return total;
+    if (function_count == 0u)
+        return 0u;
+    uint last = function_count - 1u;
+    return global_exclusive_prefix(last, TYPE_SCAN_WG_SIZE, wasm_type_scan_local_prefix, wasm_type_scan_block_prefix) +
+           wasm_type_entry_len_by_slot[last];
 }
 
 uint dynamic_type_entries_byte(uint rel, uint function_count)
 {
-    uint offset = 0u;
-    for (uint slot = 0u; slot < function_count; slot += 1u)
-    {
-        uint fn_token = wasm_func_token_by_slot[slot];
-        uint len = function_signature_type_entry_len(fn_token);
-        if (rel < offset + len)
-            return function_signature_type_entry_byte(fn_token, rel - offset);
-        offset += len;
-    }
+    // Dynamic entries are scattered by module_type_bytes after this pass has
+    // zero-filled their output range.
     return 0u;
 }
 

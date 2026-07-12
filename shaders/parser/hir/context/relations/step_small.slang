@@ -22,6 +22,7 @@ RWStructuredBuffer<uint> hir_nearest_block_value_a;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
 RWStructuredBuffer<uint> hir_nearest_loop_value_a;
 RWStructuredBuffer<uint> hir_nearest_fn_value_a;
+RWStructuredBuffer<uint> hir_nearest_array_element_value_a;
 
 RWStructuredBuffer<uint> hir_stmt_context_link_b;
 RWStructuredBuffer<uint> hir_contextual_stmt_value_b;
@@ -30,6 +31,7 @@ RWStructuredBuffer<uint> hir_nearest_block_value_b;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_value_b;
 RWStructuredBuffer<uint> hir_nearest_loop_value_b;
 RWStructuredBuffer<uint> hir_nearest_fn_value_b;
+RWStructuredBuffer<uint> hir_nearest_array_element_value_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -60,6 +62,7 @@ void propagate_a_to_b(uint row, uint semantic_count)
     uint nearest_control = hir_nearest_enclosing_control_value_a[row];
     uint nearest_loop = hir_nearest_loop_value_a[row];
     uint nearest_fn = hir_nearest_fn_value_a[row];
+    uint nearest_array_element = hir_nearest_array_element_value_a[row];
     if (valid_semantic_row(link, semantic_count))
     {
         if (context_value == INVALID)
@@ -74,6 +77,8 @@ void propagate_a_to_b(uint row, uint semantic_count)
             nearest_loop = hir_nearest_loop_value_a[link];
         if (nearest_fn == INVALID)
             nearest_fn = hir_nearest_fn_value_a[link];
+        if (nearest_array_element == INVALID)
+            nearest_array_element = hir_nearest_array_element_value_a[link];
         uint parent_link = hir_stmt_context_link_a[link];
         link = valid_semantic_row(parent_link, semantic_count) ? parent_link : INVALID;
     }
@@ -85,6 +90,7 @@ void propagate_a_to_b(uint row, uint semantic_count)
     hir_nearest_enclosing_control_value_b[row] = nearest_control;
     hir_nearest_loop_value_b[row] = nearest_loop;
     hir_nearest_fn_value_b[row] = nearest_fn;
+    hir_nearest_array_element_value_b[row] = nearest_array_element;
 }
 
 void propagate_b_to_a(uint row, uint semantic_count)
@@ -96,6 +102,7 @@ void propagate_b_to_a(uint row, uint semantic_count)
     uint nearest_control = hir_nearest_enclosing_control_value_b[row];
     uint nearest_loop = hir_nearest_loop_value_b[row];
     uint nearest_fn = hir_nearest_fn_value_b[row];
+    uint nearest_array_element = hir_nearest_array_element_value_b[row];
     if (valid_semantic_row(link, semantic_count))
     {
         if (context_value == INVALID)
@@ -110,6 +117,8 @@ void propagate_b_to_a(uint row, uint semantic_count)
             nearest_loop = hir_nearest_loop_value_b[link];
         if (nearest_fn == INVALID)
             nearest_fn = hir_nearest_fn_value_b[link];
+        if (nearest_array_element == INVALID)
+            nearest_array_element = hir_nearest_array_element_value_b[link];
         uint parent_link = hir_stmt_context_link_b[link];
         link = valid_semantic_row(parent_link, semantic_count) ? parent_link : INVALID;
     }
@@ -121,6 +130,7 @@ void propagate_b_to_a(uint row, uint semantic_count)
     hir_nearest_enclosing_control_value_a[row] = nearest_control;
     hir_nearest_loop_value_a[row] = nearest_loop;
     hir_nearest_fn_value_a[row] = nearest_fn;
+    hir_nearest_array_element_value_a[row] = nearest_array_element;
 }
 
 [shader("compute")]
@@ -154,6 +164,8 @@ void main(uint3 gtid: SV_GroupThreadID)
                 hir_nearest_enclosing_control_value_b[row];
             hir_nearest_loop_value_a[row] = hir_nearest_loop_value_b[row];
             hir_nearest_fn_value_a[row] = hir_nearest_fn_value_b[row];
+            hir_nearest_array_element_value_a[row] =
+                hir_nearest_array_element_value_b[row];
         }
     }
 }

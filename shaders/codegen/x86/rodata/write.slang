@@ -14,10 +14,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_expr_string_start;
-StructuredBuffer<uint> hir_expr_string_len;
+StructuredBuffer<uint> hir_string_data_offset;
+StructuredBuffer<uint> hir_string_decoded_len;
+StructuredBuffer<uint> hir_string_data_words;
+StructuredBuffer<uint> hir_string_node;
+StructuredBuffer<uint> hir_string_count;
 StructuredBuffer<uint> x86_rodata_size_by_node;
 StructuredBuffer<uint> x86_rodata_offset_by_node;
 StructuredBuffer<uint> x86_rodata_len;
@@ -29,6 +31,8 @@ RWStructuredBuffer<uint> out_words;
 RWStructuredBuffer<uint> status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_RODATA_OK = 1u;
 static const uint X86_LAYOUT_OK = 1u;
@@ -104,99 +108,58 @@ void publish_upstream_error()
     status[3u] = INVALID;
 }
 
-uint source_byte(uint pos)
+uint canonical_string_byte(uint pos)
 {
-    if (pos >= gParams.source_len)
-        return 0u;
-    return byte_address_load_u8(source_bytes, pos);
+    uint packed = hir_string_data_words[pos >> 2u];
+    return (packed >> ((pos & 3u) * 8u)) & 0xffu;
 }
 
-uint decoded_escape_byte(uint escaped)
+void write_node_rodata(uint node, uint rodata_offset, uint lane)
 {
-    if (escaped == 110u) return 10u;  // n
-    if (escaped == 114u) return 13u;  // r
-    if (escaped == 116u) return 9u;   // t
-    if (escaped == 48u) return 0u;    // 0
-    if (escaped == 34u) return 34u;   // "
-    if (escaped == 92u) return 92u;   // backslash
-    return escaped;
-}
-
-uint decoded_string_len(uint start, uint raw_len)
-{
-    uint decoded_len = 0u;
-    for (uint byte_i = 0u; byte_i < raw_len; byte_i += 1u)
-    {
-        uint byte_value = source_byte(start + byte_i);
-        if (byte_value == 92u && byte_i + 1u < raw_len)
-        {
-            byte_i += 1u;
-            decoded_escape_byte(source_byte(start + byte_i));
-        }
-        decoded_len += 1u;
-    }
-    return decoded_len;
-}
-
-void write_node_rodata(uint node, uint rodata_offset)
-{
-    uint start = hir_expr_string_start[node];
-    uint raw_len = hir_expr_string_len[node];
+    uint start = hir_string_data_offset[node];
+    uint decoded_len = hir_string_decoded_len[node];
     uint data_offset = x86_rodata_offset_by_node[node];
     uint size = x86_rodata_size_by_node[node];
     if (size == 0u)
         return;
-    if (start == INVALID || start > gParams.source_len || raw_len > gParams.source_len - start)
-    {
-        publish_output_error(node);
-        return;
-    }
-
-    uint decoded_len = decoded_string_len(start, raw_len);
     if (decoded_len + 1u != size)
     {
         publish_output_error(node);
         return;
     }
 
-    uint out_i = 0u;
-    for (uint byte_i = 0u; byte_i < raw_len; byte_i += 1u)
+    for (uint byte_i = lane; byte_i < decoded_len; byte_i += WG_SIZE)
     {
-        uint byte_value = source_byte(start + byte_i);
-        if (byte_value == 92u && byte_i + 1u < raw_len)
-        {
-            byte_i += 1u;
-            byte_value = decoded_escape_byte(source_byte(start + byte_i));
-        }
-
-        uint file_pos = rodata_offset + data_offset + out_i;
+        uint file_pos = rodata_offset + data_offset + byte_i;
         if (file_pos >= gParams.out_capacity)
         {
             publish_output_error(node);
             return;
         }
-        scatter_file_byte(file_pos, byte_value);
-        out_i += 1u;
+        scatter_file_byte(file_pos, canonical_string_byte(start + byte_i));
     }
-    scatter_file_byte(rodata_offset + data_offset + decoded_len, 0u);
+    if (lane == 0u)
+        scatter_file_byte(rodata_offset + data_offset + decoded_len, 0u);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint node = linear_dispatch_id(tid);
-    uint active_count = active_hir_node_count();
+    uint row = gid.x + gid.y * MAX_GROUPS_X;
     bool ok = upstream_ok();
 
-    if (node == 0u)
+    if (row == 0u && ltid.x == 0u)
     {
         if (!ok && status[2u] == 0u)
             publish_upstream_error();
     }
 
-    if (!ok || node >= active_count || x86_rodata_len[0u] == 0u)
+    if (!ok || row >= hir_string_count[0u] || x86_rodata_len[0u] == 0u)
         return;
 
-    write_node_rodata(node, x86_elf_layout[LAYOUT_RODATA_OFFSET]);
+    uint node = hir_string_node[row];
+    if (node >= active_hir_node_count())
+        return;
+    write_node_rodata(node, x86_elf_layout[LAYOUT_RODATA_OFFSET], ltid.x);
 }

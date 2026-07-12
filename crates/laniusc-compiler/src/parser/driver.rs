@@ -425,9 +425,10 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_source_and_features(
             &mut resident_guard,
             token_capacity,
+            source_len,
             tables,
             tree_capacity_override,
             parser_feature_flags,

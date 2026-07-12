@@ -3,8 +3,8 @@
 // GPU-only scheduling contract:
 // - Dispatch after a GPU exclusive prefix sum over name_lexeme_flag.
 // - This pass scatters compact NameSpan records for the radix name sorter.
-// - String lexemes use their raw interior byte span. Escape interpretation is a
-//   later string-literal semantic step and is not part of module resolution.
+// - Literal payloads are not names. Canonical string lowering belongs to HIR
+//   construction and does not enter the declaration/path name table.
 
 import scatter;
 import status;
@@ -59,7 +59,6 @@ static const uint LANGUAGE_SYMBOL_COUNT = 53u;
 
 static const uint NAME_KIND_NONE = 0u;
 static const uint NAME_KIND_IDENTIFIER = 1u;
-static const uint NAME_KIND_STRING = 2u;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
 
 uint linear_thread_id(uint3 dtid)
@@ -91,12 +90,6 @@ NameSpan make_name_span(uint token_i, uint kind)
 {
     uint start = token_start(token_i);
     uint len = token_len(token_i);
-    if (kind == NAME_KIND_STRING && len >= 2u)
-    {
-        start += 1u;
-        len -= 2u;
-    }
-
     NameSpan span;
     span.start = start;
     span.len = len;

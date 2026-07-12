@@ -31,6 +31,8 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) node_order_scan_block: &'a wgpu::Buffer,
     pub(super) virtual_inst: &'a wgpu::Buffer,
     pub(super) node_inst_scan_params: &'a UniformBindingArray,
+    pub(super) aggregate_source_init: &'a wgpu::BindGroup,
+    pub(super) aggregate_source_step: &'a [wgpu::BindGroup],
     pub(super) for_iterable_nodes: &'a wgpu::BindGroup,
     pub(super) control_padding: &'a wgpu::BindGroup,
     pub(super) postfix_operand_owner: &'a wgpu::BindGroup,
@@ -84,6 +86,8 @@ pub(super) fn record_instruction_dispatches(
         node_order_scan_block,
         virtual_inst,
         node_inst_scan_params,
+        aggregate_source_init,
+        aggregate_source_step,
         for_iterable_nodes,
         control_padding,
         postfix_operand_owner,
@@ -121,6 +125,23 @@ pub(super) fn record_instruction_dispatches(
         aggregate_literal_return_copy,
     } = inputs;
 
+    if has_aggregate {
+        dispatch_x86_stage_indirect(
+            encoder,
+            "aggregate_source_init",
+            &generator.aggregate_source_init_pass,
+            aggregate_source_init,
+            active_hir_dispatch_args,
+        );
+        dispatch_compute_pass_indirect_bind_group_steps(
+            encoder,
+            "aggregate_source_step",
+            "codegen.x86.aggregate_source_step",
+            &generator.aggregate_source_step_pass,
+            aggregate_source_step,
+            active_hir_dispatch_args,
+        );
+    }
     dispatch_x86_stages_indirect(
         encoder,
         &[
@@ -484,7 +505,9 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) rodata_scan_local: &'a wgpu::BindGroup,
     pub(super) rodata_scan_block: &'a [wgpu::BindGroup],
     pub(super) rodata_offsets: &'a wgpu::BindGroup,
+    pub(super) rodata_dispatch_args: &'a wgpu::BindGroup,
     pub(super) rodata_write: &'a wgpu::BindGroup,
+    pub(super) string_dispatch_args: &'a wgpu::Buffer,
     pub(super) output_dispatch_args: &'a wgpu::BindGroup,
     pub(super) encode: &'a wgpu::BindGroup,
     pub(super) reloc_patch: &'a wgpu::BindGroup,
@@ -541,7 +564,9 @@ pub(super) fn record_virtual_emit_dispatches(
         rodata_scan_local,
         rodata_scan_block,
         rodata_offsets,
+        rodata_dispatch_args,
         rodata_write,
+        string_dispatch_args,
         output_dispatch_args,
         encode,
         reloc_patch,
@@ -772,6 +797,13 @@ pub(super) fn record_virtual_emit_dispatches(
     stamp_timer(timer, encoder, "x86.rodata_offsets.done");
     dispatch_x86_stage(
         encoder,
+        "rodata_dispatch_args",
+        &generator.rodata_dispatch_args_pass,
+        rodata_dispatch_args,
+        (1, 1),
+    );
+    dispatch_x86_stage(
+        encoder,
         "output_dispatch_args",
         &generator.output_dispatch_args_pass,
         output_dispatch_args,
@@ -815,7 +847,7 @@ pub(super) fn record_virtual_emit_dispatches(
         "rodata_write",
         &generator.rodata_write_pass,
         rodata_write,
-        active_hir_dispatch_args,
+        string_dispatch_args,
     );
     stamp_timer(timer, encoder, "x86.emit.done");
 }

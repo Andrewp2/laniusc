@@ -196,13 +196,20 @@ uint path_id_for_callee_node(uint callee_node)
     return INVALID;
 }
 
-void mark_associated_receiver_span(uint owner_token, uint method_token)
+void mark_associated_path_segments(uint path_i, uint method_token)
 {
-    if (!valid_token(owner_token) || !valid_token(method_token) || owner_token >= method_token)
+    if (path_i == INVALID || path_i >= gParams.n_hir_nodes || !valid_token(method_token))
         return;
 
-    for (uint token = owner_token; token < method_token; token += 1u)
-        module_value_path_associated_method_token[token] = method_token;
+    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    for (uint segment_i = 0u; segment_i < MAX_PATH_SEGMENTS; segment_i += 1u)
+    {
+        if (segment_i >= count)
+            break;
+        uint token = path_segment_token_at(path_i, segment_i);
+        if (valid_token(token))
+            module_value_path_associated_method_token[token] = method_token;
+    }
 }
 
 uint receiver_token_for_associated_path(uint path_i, uint method_token)
@@ -271,7 +278,7 @@ bool mark_path_call(uint path_i, uint call_node, uint leaf_token)
         if (leaf_token != owner_token)
         {
             uint receiver_token = receiver_token_for_associated_path(path_i, leaf_token);
-            mark_associated_receiver_span(owner_token, leaf_token);
+            mark_associated_path_segments(path_i, leaf_token);
             module_value_path_associated_method_token[owner_token] = leaf_token;
             module_value_path_associated_method_token[leaf_token] = leaf_token;
             module_value_path_associated_receiver_token[leaf_token] = receiver_token;

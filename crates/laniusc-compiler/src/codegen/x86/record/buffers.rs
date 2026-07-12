@@ -85,6 +85,10 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) struct_field_stream_index_by_node_buf: LaniusBuffer<u32>,
     pub(super) struct_access_record_buf: LaniusBuffer<u32>,
     pub(super) struct_store_record_buf: LaniusBuffer<u32>,
+    pub(super) aggregate_source_node_buf: LaniusBuffer<u32>,
+    pub(super) aggregate_source_offset_buf: LaniusBuffer<u32>,
+    pub(super) aggregate_source_node_scratch_buf: LaniusBuffer<u32>,
+    pub(super) aggregate_source_offset_scratch_buf: LaniusBuffer<u32>,
     pub(super) struct_record_status_buf: PooledStorageBuffer,
     pub(super) decl_layout_record_buf: LaniusBuffer<u32>,
     pub(super) decl_layout_status_buf: PooledStorageBuffer,
@@ -464,6 +468,26 @@ pub(super) fn create_metadata_record_buffers(
         "codegen.x86.struct_store_record",
         aggregate_record_rows * 4,
     );
+    let aggregate_source_node_buf = storage_u32_copy(
+        device,
+        "codegen.x86.aggregate_source_node",
+        aggregate_record_rows,
+    );
+    let aggregate_source_offset_buf = storage_u32_copy(
+        device,
+        "codegen.x86.aggregate_source_offset",
+        aggregate_record_rows,
+    );
+    let aggregate_source_node_scratch_buf = storage_u32_copy(
+        device,
+        "codegen.x86.aggregate_source_node.scratch",
+        aggregate_record_rows,
+    );
+    let aggregate_source_offset_scratch_buf = storage_u32_copy(
+        device,
+        "codegen.x86.aggregate_source_offset.scratch",
+        aggregate_record_rows,
+    );
     let struct_record_status_buf =
         pooled_storage_u32_copy(device, "codegen.x86.struct_record_status", 4);
     let decl_layout_record_buf = external_or_storage_u32_copy(
@@ -608,6 +632,10 @@ pub(super) fn create_metadata_record_buffers(
         struct_field_stream_index_by_node_buf,
         struct_access_record_buf,
         struct_store_record_buf,
+        aggregate_source_node_buf,
+        aggregate_source_offset_buf,
+        aggregate_source_node_scratch_buf,
+        aggregate_source_offset_scratch_buf,
         struct_record_status_buf,
         decl_layout_record_buf,
         decl_layout_status_buf,

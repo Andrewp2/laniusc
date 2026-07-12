@@ -15,6 +15,7 @@ pub(super) struct ActiveDispatchArgBuffers {
     pub(super) selected_scan_block: PooledStorageBuffer,
     pub(super) text_word: PooledStorageBuffer,
     pub(super) elf_header_word: PooledStorageBuffer,
+    pub(super) string: PooledStorageBuffer,
 }
 
 impl ActiveDispatchArgBuffers {
@@ -100,6 +101,12 @@ impl ActiveDispatchArgBuffers {
             elf_header_word: pooled_storage_u32_rw(
                 device,
                 "codegen.x86.active_elf_header_word_dispatch_args",
+                3,
+                wgpu::BufferUsages::INDIRECT,
+            ),
+            string: pooled_storage_u32_rw(
+                device,
+                "codegen.x86.active_string_dispatch_args",
                 3,
                 wgpu::BufferUsages::INDIRECT,
             ),

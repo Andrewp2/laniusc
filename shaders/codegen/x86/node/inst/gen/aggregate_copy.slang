@@ -28,6 +28,8 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_field_node;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> x86_struct_access_record;
+StructuredBuffer<uint> x86_aggregate_source_node;
+StructuredBuffer<uint> x86_aggregate_source_offset;
 StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
@@ -394,60 +396,37 @@ bool aggregate_source_for_expr(
     source_kind = 0u;
     payload = INVALID;
     width = 0u;
-    uint current = expr_node;
-    uint offset = 0u;
-    uint selected_width = 0u;
-    for (uint i = 0u; i < gParams.n_hir_nodes; i++)
-    {
-        if (valid_node(current) &&
-            hir_kind[current] == HIR_MEMBER_EXPR &&
-            struct_access_kind(current) == X86_STRUCT_ACCESS_MEMBER)
-        {
-            uint member_offset = struct_access_payload1(current);
-            uint receiver = struct_access_payload0(current);
-            uint member_token = struct_access_payload2(current);
-            uint field_node = valid_token(member_token)
-                                  ? member_result_field_node[member_token]
-                                  : INVALID;
-            uint member_width = valid_node(field_node)
-                                    ? x86_struct_field_width_by_node[field_node]
-                                    : 0u;
-            if (member_offset == INVALID ||
-                !valid_node(receiver) ||
-                member_width <= 1u)
-                return false;
-            if (selected_width == 0u)
-                selected_width = member_width;
-            offset += member_offset;
-            current = receiver;
-            continue;
-        }
-
-        uint resolved = resolve_expr(current);
-        if (valid_node(resolved) && resolved != current)
-        {
-            current = resolved;
-            continue;
-        }
-
-        uint decl_token = INVALID;
-        if (decl_token_for_name(current, decl_token))
-        {
-            if (!aggregate_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
-                return false;
-            if (selected_width == 0u)
-                selected_width = width;
-            if (offset > width || selected_width > width - offset)
-                return false;
-            payload = aggregate_source_payload_offset(source_kind, payload, offset);
-            width = selected_width;
-            return true;
-        }
-
+    if (!valid_node(expr_node))
         return false;
+    uint current = x86_aggregate_source_node[expr_node];
+    uint offset = x86_aggregate_source_offset[expr_node];
+    uint selected_width = 0u;
+    uint first = resolve_expr(expr_node);
+    if (valid_node(first) &&
+        hir_kind[first] == HIR_MEMBER_EXPR &&
+        struct_access_kind(first) == X86_STRUCT_ACCESS_MEMBER)
+    {
+        uint member_token = struct_access_payload2(first);
+        uint field_node = valid_token(member_token)
+                              ? member_result_field_node[member_token]
+                              : INVALID;
+        selected_width = valid_node(field_node)
+                             ? x86_struct_field_width_by_node[field_node]
+                             : 0u;
+        if (selected_width <= 1u)
+            return false;
     }
-
-    return false;
+    uint decl_token = INVALID;
+    if (!decl_token_for_name(current, decl_token) ||
+        !aggregate_source_for_decl(decl_token, owner_fn, source_kind, payload, width))
+        return false;
+    if (selected_width == 0u)
+        selected_width = width;
+    if (offset > width || selected_width > width - offset)
+        return false;
+    payload = aggregate_source_payload_offset(source_kind, payload, offset);
+    width = selected_width;
+    return true;
 }
 
 bool range_for_node(uint node, out uint2 range)

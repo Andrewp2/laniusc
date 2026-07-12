@@ -167,6 +167,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 "hir_nearest_fn_node".into(),
                 b.hir_nearest_fn_node.as_entire_binding(),
             ),
+            (
+                "hir_nearest_array_element_node".into(),
+                b.hir_nearest_array_element_node.as_entire_binding(),
+            ),
         ])
     }
 }

@@ -77,6 +77,9 @@ pub(super) fn register_hir_item_resources<'a>(
         "hir_bound_path_owner_by_leaf",
         &hir_items.bound_path_owner_by_leaf,
     );
+    resources.buffer("hir_path_segment_owner", &hir_items.path_segment_owner);
+    resources.buffer("hir_path_segment_rank", &hir_items.path_segment_rank);
+    resources.buffer("hir_path_segment_count", &hir_items.path_segment_count);
     resources.buffer("hir_type_arg_start", &hir_items.type_arg_start);
     resources.buffer("hir_type_arg_count", &hir_items.type_arg_count);
     resources.buffer("hir_type_arg_next", &hir_items.type_arg_next);
@@ -144,6 +147,10 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer(
         "hir_array_element_parent_lit",
         &hir_items.array_element_parent_lit,
+    );
+    resources.buffer(
+        "hir_nearest_array_element_node",
+        &hir_items.nearest_array_element_node,
     );
     resources.buffer("hir_array_element_next", &hir_items.array_element_next);
     resources.buffer("hir_item_path_node", &hir_items.path_node);
@@ -281,6 +288,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_array_lit_element_count", &empty_hir.node_kind);
     resources.buffer("hir_array_lit_context_stmt_node", &empty_hir.parent);
     resources.buffer("hir_array_element_parent_lit", &empty_hir.parent);
+    resources.buffer("hir_nearest_array_element_node", &empty_hir.parent);
     resources.buffer("hir_array_element_next", &empty_hir.parent);
     resources.buffer("hir_item_path_node", &empty_hir.parent);
     resources.buffer("hir_call_callee_node", &empty_hir.parent);

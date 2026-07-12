@@ -620,6 +620,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             resources["generic_decl_parent_jump_b"].clone()
         };
+        let read_bound_list = if step % 2 == 0 {
+            resources["predicate_bound_list_by_node_a"].clone()
+        } else {
+            resources["predicate_bound_list_by_node_b"].clone()
+        };
         let write_owner = if step % 2 == 0 {
             resources["generic_decl_owner_by_node_b"].clone()
         } else {
@@ -630,6 +635,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             resources["generic_decl_parent_jump_a"].clone()
         };
+        let write_bound_list = if step % 2 == 0 {
+            resources["predicate_bound_list_by_node_b"].clone()
+        } else {
+            resources["predicate_bound_list_by_node_a"].clone()
+        };
         propagate_generic_decl_owner.push(bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check_type_instances_00a1_propagate_generic_decl_owner"),
@@ -639,8 +649,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ("gParams", resources["gParams"].clone()),
                 ("hir_status", resources["hir_status"].clone()),
                 ("generic_decl_owner_by_node_in", read_owner),
+                ("predicate_bound_list_by_node_in", read_bound_list),
                 ("generic_decl_parent_jump_in", read_jump),
                 ("generic_decl_owner_by_node_out", write_owner),
+                ("predicate_bound_list_by_node_out", write_bound_list),
                 ("generic_decl_parent_jump_out", write_jump),
             ],
         )?);
@@ -819,6 +831,12 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             resources,
         )?,
         propagate_generic_decl_owner,
+        finalize_generic_param_flags: reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_type_instances_finalize_generic_param_flags",
+            &passes.type_instances_finalize_generic_param_flags,
+            resources,
+        )?,
         generic_param_scan: U32ScanBindGroups {
             local: generic_param_scan_local,
             blocks: generic_param_scan_blocks,

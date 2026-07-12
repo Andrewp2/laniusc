@@ -33,10 +33,8 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint NAME_KIND_NONE = 0u;
 static const uint NAME_KIND_IDENTIFIER = 1u;
-static const uint NAME_KIND_STRING = 2u;
 
 static const uint TK_IDENT = 1u;
-static const uint TK_STRING = 32u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
@@ -77,8 +75,6 @@ uint name_kind_for_token(uint kind)
         kind == TK_BOUND_TYPE_IDENT ||
         kind == TK_PATH_GENERIC_IDENT)
         return NAME_KIND_IDENTIFIER;
-    if (kind == TK_STRING)
-        return NAME_KIND_STRING;
     return NAME_KIND_NONE;
 }
 

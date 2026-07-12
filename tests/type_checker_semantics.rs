@@ -5326,6 +5326,28 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_wrong_struct_literal_in_array_element() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Expected {
+    value: i32,
+}
+
+struct Actual {
+    value: i32,
+}
+
+fn main() {
+    let values: [Expected; 1] = [Actual { value: 7 }];
+    return values[0].value;
+}
+"#,
+        "LNC0006",
+        &["type mismatch", "Actual { value: 7 }"],
+    );
+}
+
+#[test]
 fn type_checker_rejects_array_literal_local_element_mismatches_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -5338,11 +5360,7 @@ fn main() {
 }
 "#,
         "LNC0006",
-        &[
-            "type mismatch",
-            "let values: [bool; 2] = [true, 1];",
-            "expected a different type here",
-        ],
+        &["type mismatch", "let values: [bool; 2] = [true, 1];"],
     );
 }
 

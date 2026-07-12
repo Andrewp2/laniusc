@@ -29,6 +29,7 @@ StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_parent;
+StructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
 StructuredBuffer<uint4> hir_param_record;
 
 RWStructuredBuffer<uint> hir_method_owner_node;
@@ -40,6 +41,8 @@ RWStructuredBuffer<uint> hir_method_visibility;
 RWStructuredBuffer<uint> hir_method_impl_receiver_type_node;
 
 static const uint INVALID = 0xffffffffu;
+static const uint IMPL_OWNER_TAG = 0x80000000u;
+static const uint NODE_VALUE_MASK = 0x7fffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -129,93 +132,21 @@ uint semantic_row_for_node(uint node)
     return valid_semantic_row(row) && hir_semantic_dense_node[row] == node ? row : INVALID;
 }
 
-bool is_impl_method_wrapper(uint prod)
-{
-    return prod == PROD_IMPL_METHOD || prod == PROD_IMPL_METHOD_PUB;
-}
-
-bool is_impl_item_wrapper(uint prod)
-{
-    return prod == PROD_ITEM_IMPL || prod == PROD_PUB_IMPL;
-}
-
 bool is_impl_owner_node(uint prod)
 {
     return prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT;
 }
 
-uint impl_owner_child(uint node)
+uint nearest_impl_owner(uint node)
 {
-    uint child = first_child_node(node);
-    while (valid_node(child))
-    {
-        if (is_impl_owner_node(node_kind[child]))
-            return child;
-        child = next_sibling_node(child);
-    }
-    return INVALID;
-}
-
-uint preceding_impl_owner_sibling(uint node)
-{
-    uint owner = parent_node(node);
-    if (!valid_node(owner))
+    uint row = semantic_row_for_node(node);
+    if (!valid_semantic_row(row))
         return INVALID;
-
-    uint child = first_child_node(owner);
-    uint impl_node = INVALID;
-    while (valid_node(child) && child < node)
-    {
-        uint prod = node_kind[child];
-        if (is_impl_owner_node(prod))
-            impl_node = child;
-        else if (is_impl_item_wrapper(prod))
-        {
-            uint wrapped_impl = impl_owner_child(child);
-            if (valid_node(wrapped_impl))
-                impl_node = wrapped_impl;
-        }
-
-        child = next_sibling_node(child);
-    }
-
-    return child == node ? impl_node : INVALID;
-}
-
-uint preceding_inherent_impl_header(uint node)
-{
-    if (!valid_node(node))
+    uint encoded = hir_nearest_enclosing_control_value_a[row];
+    if ((encoded & IMPL_OWNER_TAG) == 0u)
         return INVALID;
-
-    uint start = hir_token_pos[node];
-    uint cursor = node;
-    while (cursor > 0u)
-    {
-        cursor -= 1u;
-        if (!valid_node(cursor) || node_kind[cursor] != PROD_IMPL_INHERENT)
-            continue;
-
-        uint impl_start = hir_token_pos[cursor];
-        if (impl_start != INVALID && impl_start < start)
-            return cursor;
-    }
-    return INVALID;
-}
-
-uint impl_owner_from_item_list(uint node)
-{
-    uint child = first_child_node(node);
-    while (valid_node(child))
-    {
-        if (is_impl_item_wrapper(node_kind[child]))
-        {
-            uint owner = impl_owner_child(child);
-            if (valid_node(owner))
-                return owner;
-        }
-        child = next_sibling_node(child);
-    }
-    return INVALID;
+    uint owner = encoded & NODE_VALUE_MASK;
+    return valid_node(owner) && is_impl_owner_node(node_kind[owner]) ? owner : INVALID;
 }
 
 bool is_trait_method_node(uint node)
@@ -244,60 +175,7 @@ uint method_impl_node_for_fn(uint fn_node)
 {
     if (!valid_node(fn_node) || hir_kind[fn_node] != HIR_FN || node_kind[fn_node] != PROD_IMPL_FN)
         return INVALID;
-
-    bool saw_method_wrapper = false;
-    uint ancestor = parent_node(fn_node);
-    while (valid_node(ancestor))
-    {
-        uint prod = node_kind[ancestor];
-        if (is_impl_method_wrapper(prod))
-            saw_method_wrapper = true;
-        if (saw_method_wrapper && is_impl_owner_node(prod))
-            return ancestor;
-        if (saw_method_wrapper && prod == PROD_IMPL_METHODS_SOME)
-        {
-            uint list_parent = parent_node(ancestor);
-            if (valid_node(list_parent) && is_impl_owner_node(node_kind[list_parent]))
-                return list_parent;
-
-            uint owner = impl_owner_from_item_list(list_parent);
-            if (!valid_node(owner))
-                owner = preceding_inherent_impl_header(ancestor);
-            if (valid_node(owner))
-                return owner;
-        }
-        uint next_ancestor = parent_node(ancestor);
-        if (valid_node(next_ancestor) && next_ancestor >= ancestor)
-            break;
-        ancestor = next_ancestor;
-    }
-
-    uint fn_row = semantic_row_for_node(fn_node);
-    if (!valid_semantic_row(fn_row))
-        return INVALID;
-
-    uint row = hir_semantic_parent[fn_row];
-    uint remaining = active_semantic_count();
-    while (valid_semantic_row(row) && remaining > 0u)
-    {
-        remaining -= 1u;
-        uint node = semantic_row_node(row);
-        if (valid_node(node) && is_impl_owner_node(node_kind[node]))
-            return node;
-
-        if (valid_node(node) && is_impl_item_wrapper(node_kind[node]))
-        {
-            uint owner = impl_owner_child(node);
-            if (valid_node(owner))
-                return owner;
-        }
-
-        uint next_row = hir_semantic_parent[row];
-        if (valid_semantic_row(next_row) && next_row == row)
-            break;
-        row = next_row;
-    }
-    return INVALID;
+    return nearest_impl_owner(fn_node);
 }
 
 bool has_later_direct_impl_type_sibling(uint type_node)
@@ -399,26 +277,8 @@ void publish_method_first_param(uint param_node)
 
 void publish_impl_receiver_type(uint type_node)
 {
-    uint impl_node = parent_node(type_node);
+    uint impl_node = nearest_impl_owner(type_node);
     uint prod = valid_node(impl_node) ? node_kind[impl_node] : INVALID;
-    if (!is_impl_owner_node(prod))
-    {
-        uint sibling_impl = preceding_impl_owner_sibling(type_node);
-        if (valid_node(sibling_impl) && node_kind[sibling_impl] == PROD_IMPL_INHERENT)
-        {
-            impl_node = sibling_impl;
-            prod = node_kind[impl_node];
-        }
-    }
-    if (!is_impl_owner_node(prod) && !valid_node(parent_node(type_node)))
-    {
-        uint preceding_impl = preceding_inherent_impl_header(type_node);
-        if (valid_node(preceding_impl))
-        {
-            impl_node = preceding_impl;
-            prod = node_kind[impl_node];
-        }
-    }
 
     if (prod == PROD_IMPL_INHERENT)
         hir_method_impl_receiver_type_node[impl_node] = type_node;

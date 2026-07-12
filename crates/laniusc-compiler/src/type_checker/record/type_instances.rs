@@ -84,6 +84,19 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         "typecheck.type_instances.generic_params.owner.done",
     );
 
+    record_compute_indirect(
+        encoder,
+        &passes.type_instances_finalize_generic_param_flags,
+        &type_instances.finalize_generic_param_flags,
+        "type_check.resident.type_instances.finalize_generic_param_flags.pass",
+        hir_active_dispatch_args,
+    )?;
+    stamp_typecheck_timer(
+        &mut timer,
+        encoder,
+        "typecheck.type_instances.generic_params.finalize.done",
+    );
+
     record_counted_u32_scan_bind_groups_with_passes(
         passes,
         encoder,

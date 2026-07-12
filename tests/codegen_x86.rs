@@ -165,21 +165,6 @@ fn x86_buffer_from_u32s(
     })
 }
 
-fn x86_buffer_from_bytes(
-    device: &wgpu::Device,
-    label: &str,
-    usage: wgpu::BufferUsages,
-    bytes: &[u8],
-) -> wgpu::Buffer {
-    use wgpu::util::DeviceExt;
-
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: bytes,
-        usage,
-    })
-}
-
 fn x86_read_u32s(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -263,12 +248,6 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             &[8, 8, 512, 4],
         );
-        let source = x86_buffer_from_bytes(
-            device,
-            "x86_rodata.source",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            b"xabcx\\n ",
-        );
         let scan_params = x86_buffer_from_u32s(
             device,
             "x86_rodata.scan_params",
@@ -304,17 +283,11 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
                 INVALID,
             ],
         );
-        let string_start = x86_buffer_from_u32s(
+        let decoded_len = x86_buffer_from_u32s(
             device,
-            "x86_rodata.string_start",
+            "x86_rodata.decoded_len",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[1, INVALID, 5, INVALID],
-        );
-        let string_len = x86_buffer_from_u32s(
-            device,
-            "x86_rodata.string_len",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[3, 0, 2, 0],
+            &[3, 0, 1, 0],
         );
         let size_by_node = x86_buffer_from_u32s(
             device,
@@ -381,11 +354,9 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
-                    ("source_bytes", source.as_entire_binding()),
                     ("hir_status", hir_status.as_entire_binding()),
                     ("hir_expr_record", expr_record.as_entire_binding()),
-                    ("hir_expr_string_start", string_start.as_entire_binding()),
-                    ("hir_expr_string_len", string_len.as_entire_binding()),
+                    ("hir_string_decoded_len", decoded_len.as_entire_binding()),
                     ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
                     ("x86_rodata_status", rodata_status.as_entire_binding()),
                 ],
@@ -500,11 +471,11 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             &[8, 8, 160, 4],
         );
-        let source = x86_buffer_from_bytes(
+        let string_data_words = x86_buffer_from_u32s(
             device,
-            "x86_rodata_write.source",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            b"xabcx\\n ",
+            "x86_rodata_write.string_data_words",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0x0a63_6261],
         );
         let hir_status = x86_buffer_from_u32s(
             device,
@@ -512,17 +483,29 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[1, 0, INVALID, 0, 0, 4],
         );
-        let string_start = x86_buffer_from_u32s(
+        let string_data_offset = x86_buffer_from_u32s(
             device,
-            "x86_rodata_write.string_start",
+            "x86_rodata_write.string_data_offset",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[1, INVALID, 5, INVALID],
+            &[0, 0, 3, 0],
         );
-        let string_len = x86_buffer_from_u32s(
+        let decoded_len = x86_buffer_from_u32s(
             device,
-            "x86_rodata_write.string_len",
+            "x86_rodata_write.decoded_len",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[3, 0, 2, 0],
+            &[3, 0, 1, 0],
+        );
+        let string_node = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.string_node",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0, 2],
+        );
+        let string_count = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.string_count",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[2],
         );
         let size_by_node = x86_buffer_from_u32s(
             device,
@@ -594,10 +577,18 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
-                    ("source_bytes", source.as_entire_binding()),
                     ("hir_status", hir_status.as_entire_binding()),
-                    ("hir_expr_string_start", string_start.as_entire_binding()),
-                    ("hir_expr_string_len", string_len.as_entire_binding()),
+                    (
+                        "hir_string_data_offset",
+                        string_data_offset.as_entire_binding(),
+                    ),
+                    ("hir_string_decoded_len", decoded_len.as_entire_binding()),
+                    (
+                        "hir_string_data_words",
+                        string_data_words.as_entire_binding(),
+                    ),
+                    ("hir_string_node", string_node.as_entire_binding()),
+                    ("hir_string_count", string_count.as_entire_binding()),
                     ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
                     (
                         "x86_rodata_offset_by_node",
@@ -623,7 +614,7 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
             });
             compute.set_pipeline(&write_pass.pipeline);
             compute.set_bind_group(0, &bind_group, &[]);
-            compute.dispatch_workgroups(1, 1, 1);
+            compute.dispatch_workgroups(2, 1, 1);
         }
         queue.submit(Some(encoder.finish()));
 
@@ -1170,6 +1161,18 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[INVALID],
         );
+        let hir_fn_kind = buffer_from_u32s(
+            device,
+            "x86_call_abi.hir_fn_kind",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[3],
+        );
+        let hir_fn_item_kind = buffer_from_u32s(
+            device,
+            "x86_call_abi.hir_fn_item_kind",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[1],
+        );
         let two_word_invalid = buffer_from_u32s(
             device,
             "x86_call_abi.two_word_invalid",
@@ -1187,6 +1190,18 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             "x86_call_abi.token_words_zero",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[0, 0],
+        );
+        let zero_words = buffer_from_u32s(
+            device,
+            "x86_call_abi.zero_words",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0; 64],
+        );
+        let decl_layout_record = buffer_from_u32s(
+            device,
+            "x86_call_abi.decl_layout_record",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[INVALID, 0, INVALID, 0, INVALID, 0, INVALID, 0],
         );
         let call_record = buffer_from_u32s(
             device,
@@ -1257,7 +1272,9 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                     ("gParams", params.as_entire_binding()),
                     ("gX86Features", feature_params.as_entire_binding()),
                     ("hir_status", hir_status.as_entire_binding()),
-                    ("hir_kind", one_word_invalid.as_entire_binding()),
+                    ("hir_kind", hir_fn_kind.as_entire_binding()),
+                    ("hir_item_kind", hir_fn_item_kind.as_entire_binding()),
+                    ("hir_stmt_record", zero_words.as_entire_binding()),
                     (
                         "hir_fn_return_type_node",
                         one_word_invalid.as_entire_binding(),
@@ -1268,14 +1285,33 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                         "x86_decl_node_by_token",
                         decl_node_by_token.as_entire_binding(),
                     ),
+                    (
+                        "x86_enclosing_let_node",
+                        one_word_invalid.as_entire_binding(),
+                    ),
+                    (
+                        "x86_decl_layout_record",
+                        decl_layout_record.as_entire_binding(),
+                    ),
                     ("x86_call_record", call_record.as_entire_binding()),
                     ("x86_call_type_record", call_type_record.as_entire_binding()),
                     ("call_record_status", call_record_status.as_entire_binding()),
                     ("call_intrinsic_tag", call_intrinsic_tag.as_entire_binding()),
+                    ("call_param_type", zero_words.as_entire_binding()),
+                    ("name_id_by_token", token_words_zero.as_entire_binding()),
+                    ("language_name_id", zero_words.as_entire_binding()),
                     ("type_instance_kind", token_words_zero.as_entire_binding()),
                     (
                         "type_instance_decl_token",
                         two_word_invalid.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_elem_ref_tag",
+                        token_words_zero.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_elem_ref_payload",
+                        token_words_zero.as_entire_binding(),
                     ),
                     (
                         "type_instance_len_kind",
@@ -1372,7 +1408,9 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                     ("gParams", params.as_entire_binding()),
                     ("gX86Features", feature_params.as_entire_binding()),
                     ("hir_status", hir_status.as_entire_binding()),
-                    ("hir_kind", one_word_invalid.as_entire_binding()),
+                    ("hir_kind", hir_fn_kind.as_entire_binding()),
+                    ("hir_item_kind", hir_fn_item_kind.as_entire_binding()),
+                    ("hir_stmt_record", zero_words.as_entire_binding()),
                     (
                         "hir_fn_return_type_node",
                         one_word_invalid.as_entire_binding(),
@@ -1384,16 +1422,35 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
                         decl_node_by_token.as_entire_binding(),
                     ),
                     (
+                        "x86_enclosing_let_node",
+                        one_word_invalid.as_entire_binding(),
+                    ),
+                    (
+                        "x86_decl_layout_record",
+                        decl_layout_record.as_entire_binding(),
+                    ),
+                    (
                         "x86_call_record",
                         invalid_owner_call_record.as_entire_binding(),
                     ),
                     ("x86_call_type_record", call_type_record.as_entire_binding()),
                     ("call_record_status", call_record_status.as_entire_binding()),
                     ("call_intrinsic_tag", call_intrinsic_tag.as_entire_binding()),
+                    ("call_param_type", zero_words.as_entire_binding()),
+                    ("name_id_by_token", token_words_zero.as_entire_binding()),
+                    ("language_name_id", zero_words.as_entire_binding()),
                     ("type_instance_kind", token_words_zero.as_entire_binding()),
                     (
                         "type_instance_decl_token",
                         two_word_invalid.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_elem_ref_tag",
+                        token_words_zero.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_elem_ref_payload",
+                        token_words_zero.as_entire_binding(),
                     ),
                     (
                         "type_instance_len_kind",
@@ -7646,6 +7703,62 @@ fn main() {
         "x86_lanius_std_direct_text_write_stdout",
         &bytes,
         "ready",
+    );
+}
+
+#[test]
+fn x86_executes_parser_decoded_string_escapes() {
+    let bytes = compile_source(
+        "x86 parser decoded string escapes",
+        r#"
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn main() {
+    let result: i32 = write_text(1, "line1\nquote:\" slash:\\ unknown:\q");
+    if (result < 0) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 parser decoded string escapes",
+        "x86_parser_decoded_string_escapes",
+        &bytes,
+        "line1\nquote:\" slash:\\ unknown:q",
+    );
+}
+
+#[test]
+fn x86_executes_long_parser_decoded_string_across_dfa_chunks() {
+    let left = "a".repeat(130);
+    let right = "b".repeat(130);
+    let source = format!(
+        r#"
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+fn main() {{
+    let result: i32 = write_text(1, "{left}\n{right}");
+    if (result < 0) {{
+        return 1;
+    }}
+    return 0;
+}}
+"#
+    );
+    let bytes = compile_source("x86 long parser decoded string", &source);
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 long parser decoded string",
+        "x86_long_parser_decoded_string",
+        &bytes,
+        &format!("{left}\n{right}"),
     );
 }
 

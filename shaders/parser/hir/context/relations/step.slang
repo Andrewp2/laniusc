@@ -17,6 +17,7 @@ StructuredBuffer<uint> hir_nearest_block_value_in;
 StructuredBuffer<uint> hir_nearest_enclosing_control_value_in;
 StructuredBuffer<uint> hir_nearest_loop_value_in;
 StructuredBuffer<uint> hir_nearest_fn_value_in;
+StructuredBuffer<uint> hir_nearest_array_element_value_in;
 
 RWStructuredBuffer<uint> hir_stmt_context_link_out;
 RWStructuredBuffer<uint> hir_contextual_stmt_value_out;
@@ -25,6 +26,7 @@ RWStructuredBuffer<uint> hir_nearest_block_value_out;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_value_out;
 RWStructuredBuffer<uint> hir_nearest_loop_value_out;
 RWStructuredBuffer<uint> hir_nearest_fn_value_out;
+RWStructuredBuffer<uint> hir_nearest_array_element_value_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -68,6 +70,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint nearest_enclosing_control = hir_nearest_enclosing_control_value_in[row];
     uint nearest_loop = hir_nearest_loop_value_in[row];
     uint nearest_fn = hir_nearest_fn_value_in[row];
+    uint nearest_array_element = hir_nearest_array_element_value_in[row];
     if (valid_semantic_row(link, semantic_count))
     {
         if (context_value == INVALID)
@@ -112,6 +115,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 nearest_loop = parent_value;
         }
 
+        if (nearest_array_element == INVALID)
+        {
+            uint parent_value = hir_nearest_array_element_value_in[link];
+            if (parent_value != INVALID)
+                nearest_array_element = parent_value;
+        }
+
         uint parent_link = hir_stmt_context_link_in[link];
         link = valid_semantic_row(parent_link, semantic_count) ? parent_link : INVALID;
     }
@@ -123,4 +133,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_nearest_enclosing_control_value_out[row] = nearest_enclosing_control;
     hir_nearest_loop_value_out[row] = nearest_loop;
     hir_nearest_fn_value_out[row] = nearest_fn;
+    hir_nearest_array_element_value_out[row] = nearest_array_element;
 }

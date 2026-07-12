@@ -28,6 +28,8 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> hir_call_callee_node;
@@ -204,7 +206,11 @@ void mark_call_callee_name_wrapper(uint call_node, uint callee_node)
         mark_call_callee_root(call_node, parent);
 }
 
-void write_call_type_record(uint call_node, uint return_ty, uint return_ty_token, uint callee_token)
+void write_call_type_record(
+    uint call_node,
+    uint return_ty,
+    uint return_ty_token,
+    uint callee_token)
 {
     row_major_store<uint>(x86_call_type_record, call_node, X86_CALL_TYPE_STRIDE, 0u, return_ty);
     row_major_store<uint>(
@@ -254,6 +260,12 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint target_fn = valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
     if (!valid_token(target_fn) && valid_token(resolved_fn_token))
         target_fn = resolved_fn_token;
+    uint target_fn_node = valid_token(target_fn) ? x86_decl_node_by_token[target_fn] : INVALID;
+    uint target_name_token = valid_node(target_fn_node)
+                                 ? hir_item_name_token[target_fn_node]
+                                 : INVALID;
+    if (valid_token(target_name_token))
+        abi_name_token = target_name_token;
     uint return_ty = valid_token(metadata_token) ? call_return_type[metadata_token] : 0u;
     uint return_ty_token = valid_token(metadata_token) ? call_return_type_token[metadata_token] : INVALID;
     uint receiver_arg_count =

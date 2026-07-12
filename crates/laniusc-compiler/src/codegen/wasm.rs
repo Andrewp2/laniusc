@@ -901,6 +901,7 @@ struct ResidentWasmBuffers {
     func_scan_param_bufs: Vec<LaniusBuffer<WasmScanParams>>,
     func_scan_blocks: u32,
     body_dispatch_buf: LaniusBuffer<u32>,
+    _module_type_dispatch_buf: LaniusBuffer<u32>,
     _body_buf: LaniusBuffer<u32>,
     body_plan_buf: LaniusBuffer<u32>,
     _wasm_func_flag_buf: LaniusBuffer<u32>,
@@ -1048,6 +1049,9 @@ struct ResidentWasmBuffers {
     hir_assert_module_bind_group: wgpu::BindGroup,
     hir_enum_match_records_bind_group: wgpu::BindGroup,
     wasm_const_values_bind_group: wgpu::BindGroup,
+    module_type_lengths_bind_group: wgpu::BindGroup,
+    module_type_dispatch_args_bind_group: wgpu::BindGroup,
+    module_type_bytes_bind_group: wgpu::BindGroup,
     module_status_bind_group: wgpu::BindGroup,
     bind_group: wgpu::BindGroup,
     pack_bind_group: wgpu::BindGroup,
@@ -1128,6 +1132,9 @@ pub struct GpuWasmCodeGenerator {
     hir_assert_module_pass: LazyWasmPass,
     hir_enum_match_records_pass: LazyWasmPass,
     wasm_const_values_pass: LazyWasmPass,
+    module_type_lengths_pass: LazyWasmPass,
+    module_type_dispatch_args_pass: LazyWasmPass,
+    module_type_bytes_pass: LazyWasmPass,
     module_status_pass: LazyWasmPass,
     pass: LazyWasmPass,
     pack_pass: LazyWasmPass,
@@ -1605,6 +1612,24 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/const_values.spv",
             "codegen/wasm/const_values.reflect.json"
         );
+        let module_type_lengths_pass = wasm_pass!(
+            "module_type_lengths",
+            "codegen_wasm_module_type_lengths",
+            "codegen/wasm/module_type_lengths.spv",
+            "codegen/wasm/module_type_lengths.reflect.json"
+        );
+        let module_type_dispatch_args_pass = wasm_pass!(
+            "module_type_dispatch_args",
+            "codegen_wasm_module_type_dispatch_args",
+            "codegen/wasm/module_type_dispatch_args.spv",
+            "codegen/wasm/module_type_dispatch_args.reflect.json"
+        );
+        let module_type_bytes_pass = wasm_pass!(
+            "module_type_bytes",
+            "codegen_wasm_module_type_bytes",
+            "codegen/wasm/module_type_bytes.spv",
+            "codegen/wasm/module_type_bytes.reflect.json"
+        );
         let module_status_pass = wasm_pass!(
             "module_status",
             "codegen_wasm_module_status",
@@ -1883,6 +1908,15 @@ impl GpuWasmCodeGenerator {
                 "hir_enum_match_records"
             ),
             wasm_const_values_pass: join_wasm_pass!(wasm_const_values_pass, "const_values"),
+            module_type_lengths_pass: join_wasm_pass!(
+                module_type_lengths_pass,
+                "module_type_lengths"
+            ),
+            module_type_dispatch_args_pass: join_wasm_pass!(
+                module_type_dispatch_args_pass,
+                "module_type_dispatch_args"
+            ),
+            module_type_bytes_pass: join_wasm_pass!(module_type_bytes_pass, "module_type_bytes"),
             module_status_pass: join_wasm_pass!(module_status_pass, "module_status"),
             pass: join_wasm_pass!(pass, "module"),
             pack_pass: join_wasm_pass!(pack_pass, "pack"),
@@ -1980,6 +2014,9 @@ impl GpuWasmCodeGenerator {
             &self.hir_assert_module_pass,
             &self.hir_enum_match_records_pass,
             &self.wasm_const_values_pass,
+            &self.module_type_lengths_pass,
+            &self.module_type_dispatch_args_pass,
+            &self.module_type_bytes_pass,
             &self.module_status_pass,
             &self.pass,
             &self.pack_pass,
@@ -2016,6 +2053,7 @@ impl GpuWasmCodeGenerator {
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        parser_feature_flags_buf: &wgpu::Buffer,
         visible_decl_buf: &wgpu::Buffer,
         visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
@@ -2080,6 +2118,7 @@ impl GpuWasmCodeGenerator {
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_status_buf,
+            parser_feature_flags_buf,
             visible_decl_buf,
             visible_type_buf,
             name_id_by_token_buf,
@@ -2196,6 +2235,7 @@ impl GpuWasmCodeGenerator {
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_status_buf,
+            parser_feature_flags_buf,
             visible_decl_buf,
             visible_type_buf,
             name_id_by_token_buf,
@@ -3417,6 +3457,11 @@ impl GpuWasmCodeGenerator {
         let token_capacity = recorded.token_capacity;
         let token_groups = token_capacity.div_ceil(256).max(1);
         let (token_groups_x, token_groups_y) = workgroup_grid_1d(token_groups);
+        let (func_scan_local_groups_x, func_scan_local_groups_y) =
+            workgroup_grid_1d(bufs.func_scan_blocks);
+        let func_scan_block_groups = bufs.func_scan_blocks.div_ceil(256).max(1);
+        let (func_scan_block_groups_x, func_scan_block_groups_y) =
+            workgroup_grid_1d(func_scan_block_groups);
         let body_scatter_items = output_capacity as u32;
         let body_scatter_groups = body_scatter_items.div_ceil(256).max(1);
         let (body_scatter_groups_x, body_scatter_groups_y) = workgroup_grid_1d(body_scatter_groups);
@@ -3870,6 +3915,44 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.phase2.dispatch.hir_enum_match_records.done");
 
+        trace_wasm_codegen("record.phase2.dispatch.module_type_lengths.start");
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.module_type_dispatch_args"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(self.module_type_dispatch_args_pass.pipeline()?.as_ref());
+        compute.set_bind_group(0, Some(&bufs.module_type_dispatch_args_bind_group), &[]);
+        compute.dispatch_workgroups(1, 1, 1);
+        drop(compute);
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.module_type_lengths"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(self.module_type_lengths_pass.pipeline()?.as_ref());
+        compute.set_bind_group(0, Some(&bufs.module_type_lengths_bind_group), &[]);
+        compute.dispatch_workgroups_indirect(&bufs._module_type_dispatch_buf, 0);
+        drop(compute);
+        trace_wasm_codegen("record.phase2.dispatch.module_type_lengths.done");
+
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.module_type_scan_local"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(self.hir_body_scan_local_pass.pipeline()?.as_ref());
+        compute.set_bind_group(0, Some(&bufs.hir_func_scan_local_bind_group), &[]);
+        compute.dispatch_workgroups(func_scan_local_groups_x, func_scan_local_groups_y, 1);
+        drop(compute);
+        for bind_group in &bufs.hir_func_scan_block_bind_groups {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.module_type_scan_blocks"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(self.hir_body_scan_blocks_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(bind_group), &[]);
+            compute.dispatch_workgroups(func_scan_block_groups_x, func_scan_block_groups_y, 1);
+            drop(compute);
+        }
+
         trace_wasm_codegen("record.phase2.dispatch.module_status.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.module_status"),
@@ -3891,6 +3974,17 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);
         drop(compute);
         trace_wasm_codegen("record.phase2.dispatch.module.done");
+
+        trace_wasm_codegen("record.phase2.dispatch.module_type_bytes.start");
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.module_type_bytes"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(self.module_type_bytes_pass.pipeline()?.as_ref());
+        compute.set_bind_group(0, Some(&bufs.module_type_bytes_bind_group), &[]);
+        compute.dispatch_workgroups_indirect(&bufs._module_type_dispatch_buf, 0);
+        drop(compute);
+        trace_wasm_codegen("record.phase2.dispatch.module_type_bytes.done");
 
         trace_wasm_codegen("record.phase2.dispatch.hir_assert_module.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -4105,6 +4199,7 @@ impl GpuWasmCodeGenerator {
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        parser_feature_flags_buf: &wgpu::Buffer,
         visible_decl_buf: &wgpu::Buffer,
         visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
@@ -4176,6 +4271,7 @@ impl GpuWasmCodeGenerator {
                 hir_token_pos_buf,
                 hir_token_end_buf,
                 hir_status_buf,
+                parser_feature_flags_buf,
                 visible_decl_buf,
                 visible_type_buf,
                 name_id_by_token_buf,
@@ -4246,6 +4342,7 @@ impl GpuWasmCodeGenerator {
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        parser_feature_flags_buf: &wgpu::Buffer,
         visible_decl_buf: &wgpu::Buffer,
         visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
@@ -4374,6 +4471,12 @@ impl GpuWasmCodeGenerator {
         let body_dispatch_buf = storage_u32_rw(
             device,
             "codegen.wasm.body_dispatch",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let module_type_dispatch_buf = storage_u32_rw(
+            device,
+            "codegen.wasm.module_type_dispatch",
             3,
             wgpu::BufferUsages::INDIRECT,
         );
@@ -5678,6 +5781,10 @@ impl GpuWasmCodeGenerator {
         let mut hir_body_plan_validate_bindings = Vec::new();
         add_hir_body_common_bindings!(hir_body_plan_validate_bindings, final_agg_scan_block_prefix);
         hir_body_plan_validate_bindings.extend([
+            (
+                "parser_feature_flags",
+                parser_feature_flags_buf.as_entire_binding(),
+            ),
             ("status", status_buf.as_entire_binding()),
             ("body_plan", body_plan_buf.as_entire_binding()),
             (
@@ -5874,6 +5981,10 @@ impl GpuWasmCodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("status", status_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
+                (
+                    "parser_feature_flags",
+                    parser_feature_flags_buf.as_entire_binding(),
+                ),
                 ("parent", parent_buf.as_entire_binding()),
                 ("first_child", first_child_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
@@ -7177,22 +7288,92 @@ impl GpuWasmCodeGenerator {
             ],
         )?;
 
-        let module_status_bind_group = create_wasm_bind_group(
+        let module_type_dispatch_args_bind_group = create_wasm_bind_group(
             device,
-            Some("codegen_wasm_module_status"),
-            &self.module_status_pass,
+            Some("codegen_wasm_module_type_dispatch_args"),
+            &self.module_type_dispatch_args_pass,
+            0,
+            &[
+                ("body_plan", body_plan_buf.as_entire_binding()),
+                (
+                    "module_type_dispatch_args",
+                    module_type_dispatch_buf.as_entire_binding(),
+                ),
+            ],
+        )?;
+
+        let module_type_lengths_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_module_type_lengths"),
+            &self.module_type_lengths_pass,
             0,
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("body_plan", body_plan_buf.as_entire_binding()),
-                ("body_status", body_status_buf.as_entire_binding()),
                 (
                     "wasm_func_token_by_slot",
                     wasm_func_token_by_slot_buf.as_entire_binding(),
                 ),
                 ("call_return_type", call_return_type_buf.as_entire_binding()),
                 ("call_param_count", call_param_count_buf.as_entire_binding()),
-                ("call_param_type", call_param_type_buf.as_entire_binding()),
+                (
+                    "call_param_row_count_out",
+                    call_metadata.param_row_count_out.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_fn_token",
+                    call_metadata.param_row_fn_token.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_ordinal",
+                    call_metadata.param_row_ordinal.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_type",
+                    call_metadata.param_row_type.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_start",
+                    call_metadata.param_row_start.as_entire_binding(),
+                ),
+                (
+                    "call_param_row_count",
+                    call_metadata.param_row_count.as_entire_binding(),
+                ),
+                (
+                    "method_decl_receiver_mode",
+                    method_decl_receiver_mode_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_entry_len_by_slot",
+                    wasm_func_flag_buf.as_entire_binding(),
+                ),
+            ],
+        )?;
+
+        let module_type_bytes_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_module_type_bytes"),
+            &self.module_type_bytes_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                ("body_plan", body_plan_buf.as_entire_binding()),
+                (
+                    "wasm_func_token_by_slot",
+                    wasm_func_token_by_slot_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_local_prefix",
+                    wasm_func_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_block_prefix",
+                    final_func_scan_block_prefix.as_entire_binding(),
+                ),
+                ("call_return_type", call_return_type_buf.as_entire_binding()),
+                ("call_param_count", call_param_count_buf.as_entire_binding()),
                 (
                     "call_param_row_count_out",
                     call_metadata.param_row_count_out.as_entire_binding(),
@@ -7222,6 +7403,32 @@ impl GpuWasmCodeGenerator {
                     method_decl_receiver_mode_buf.as_entire_binding(),
                 ),
                 ("status", status_buf.as_entire_binding()),
+                ("out_words", out_buf.as_entire_binding()),
+            ],
+        )?;
+
+        let module_status_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_module_status"),
+            &self.module_status_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("body_plan", body_plan_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                (
+                    "wasm_type_entry_len_by_slot",
+                    wasm_func_flag_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_local_prefix",
+                    wasm_func_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_block_prefix",
+                    final_func_scan_block_prefix.as_entire_binding(),
+                ),
+                ("status", status_buf.as_entire_binding()),
             ],
         )?;
 
@@ -7239,6 +7446,18 @@ impl GpuWasmCodeGenerator {
                 (
                     "wasm_func_token_by_slot",
                     wasm_func_token_by_slot_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_entry_len_by_slot",
+                    wasm_func_flag_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_local_prefix",
+                    wasm_func_scan_local_prefix_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_type_scan_block_prefix",
+                    final_func_scan_block_prefix.as_entire_binding(),
                 ),
                 ("call_return_type", call_return_type_buf.as_entire_binding()),
                 ("call_param_count", call_param_count_buf.as_entire_binding()),
@@ -7303,6 +7522,7 @@ impl GpuWasmCodeGenerator {
             func_scan_param_bufs,
             func_scan_blocks,
             body_dispatch_buf,
+            _module_type_dispatch_buf: module_type_dispatch_buf,
             _body_buf: body_buf,
             body_plan_buf,
             _wasm_func_flag_buf: wasm_func_flag_buf,
@@ -7450,6 +7670,9 @@ impl GpuWasmCodeGenerator {
             hir_assert_module_bind_group,
             hir_enum_match_records_bind_group,
             wasm_const_values_bind_group,
+            module_type_lengths_bind_group,
+            module_type_dispatch_args_bind_group,
+            module_type_bytes_bind_group,
             module_status_bind_group,
             bind_group,
             pack_bind_group,

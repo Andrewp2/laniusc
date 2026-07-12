@@ -16,6 +16,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> status;
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> parser_feature_flags;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
@@ -79,6 +80,7 @@ RWStructuredBuffer<uint4> body_fragment_meta;
 RWStructuredBuffer<uint4> body_fragment_aux;
 
 static const uint INVALID = 0xffffffffu;
+static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 static const uint BODY_PLAN_MAIN_COUNT = 8u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
@@ -1361,7 +1363,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint token = hir_token_pos[node];
-    account_let_array(node, owner_fn, token);
-    account_array_element(node, owner_fn, token);
+    if ((parser_feature_flags[0u] & PARSER_FEATURE_ARRAYS) != 0u)
+    {
+        account_let_array(node, owner_fn, token);
+        account_array_element(node, owner_fn, token);
+    }
     account_assign_index(node, owner_fn, token);
 }

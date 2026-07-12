@@ -1149,6 +1149,14 @@ impl GpuParser {
                 "brace_semantic_kind".into(),
                 bufs.token_brace_semantic_kind.as_entire_binding(),
             ),
+            (
+                "statement_context_kind".into(),
+                bufs.token_statement_context_kind.as_entire_binding(),
+            ),
+            (
+                "braced_rhs_statement_kind".into(),
+                bufs.token_braced_rhs_statement_kind.as_entire_binding(),
+            ),
         ]);
         let pair_bind_group = self.cached_token_bind_group(
             "parser_tokens_brace_match_03_pair_pse",
@@ -1781,6 +1789,7 @@ impl GpuParser {
             &bufs.token_angle_match_block_min,
             &bufs.token_angle_match_min_tree,
             &bufs.token_brace_semantic_kind,
+            &bufs.token_braced_rhs_statement_kind,
             &bufs.token_bracket_semantic_kind,
             &bufs.token_statement_context_kind,
             &bufs.token_impl_header_kind,
@@ -1798,6 +1807,14 @@ impl GpuParser {
             .as_ref()
             .is_none_or(|cached| cached.input_fingerprint != fingerprint)
         {
+            // Every token-frontend pass shares the generic bind-group cache.
+            // A new lexer allocation changes token_buf/token_count_buf while
+            // parser-owned resident buffers can remain reusable, so invalidate
+            // all token-pass bindings before recreating the specialized pair.
+            self.bg_cache
+                .lock()
+                .expect("parser.bg_cache poisoned")
+                .clear();
             *slot = Some(self.create_resident_token_kind_bind_groups(
                 fingerprint,
                 token_buf,
@@ -1916,6 +1933,10 @@ impl GpuParser {
                 (
                     "brace_semantic_kind".into(),
                     bufs.token_brace_semantic_kind.as_entire_binding(),
+                ),
+                (
+                    "braced_rhs_statement_kind".into(),
+                    bufs.token_braced_rhs_statement_kind.as_entire_binding(),
                 ),
                 (
                     "bracket_semantic_kind".into(),

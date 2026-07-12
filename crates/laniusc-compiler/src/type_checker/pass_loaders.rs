@@ -347,6 +347,10 @@ impl TypeCheckPasses {
                 "type_check_type_instances_00a1_propagate_generic_decl_owner",
                 "type_checker/type/instances/00a1_propagate_generic_decl_owner"
             ),
+            type_instances_finalize_generic_param_flags: pass!(
+                "type_check_type_instances_00a2_finalize_generic_param_flags",
+                "type_checker/type/instances/00a2_finalize_generic_param_flags"
+            ),
             type_instances_decl_generic_params: pass!(
                 "type_check_type_instances_00b_decl_generic_params",
                 "type_checker/type/instances/00b_decl_generic_params"

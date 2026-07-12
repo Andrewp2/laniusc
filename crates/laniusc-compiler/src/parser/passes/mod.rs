@@ -105,6 +105,10 @@ pub struct ParserPasses {
     pub hir_type_path_leaf_links: hir::types::path::leaf::links::HirTypePathLeafLinksPass,
     pub hir_type_path_leaf_step: hir::types::path::leaf::step::HirTypePathLeafStepPass,
     pub hir_type_path_leaf_scatter: hir::types::path::leaf::scatter::HirTypePathLeafScatterPass,
+    pub hir_path_segment_root: hir::path::segment::root::HirPathSegmentRootPass,
+    pub hir_path_segment_links: hir::path::segment::links::HirPathSegmentLinksPass,
+    pub hir_path_segment_step: hir::path::segment::step::HirPathSegmentStepPass,
+    pub hir_path_segment_scatter: hir::path::segment::scatter::HirPathSegmentScatterPass,
     pub hir_list_rank_prefix_local: hir::list::rank::prefix_local::HirListRankPrefixLocalPass,
     pub hir_list_rank_compact_scatter:
         hir::list::rank::compact_scatter::HirListRankCompactScatterPass,
@@ -141,6 +145,11 @@ pub struct ParserPasses {
     pub hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass,
     pub hir_stmt_scope: hir::stmt_scope::HirStmtScopePass,
     pub hir_literal_values: hir::literal_values::HirLiteralValuesPass,
+    pub hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass,
+    pub hir_string_compact_scatter: hir::string::compact_scatter::HirStringCompactScatterPass,
+    pub hir_string_offset_local: hir::string::offset_local::HirStringOffsetLocalPass,
+    pub hir_string_offset_scatter: hir::string::offset_scatter::HirStringOffsetScatterPass,
+    pub hir_string_decode: hir::string::decode::HirStringDecodePass,
     pub hir_call_fields: hir::call::fields::HirCallFieldsPass,
     pub hir_call_spans: hir::call::spans::HirCallSpansPass,
     pub hir_call_arg_links: hir::call::arg::links::HirCallArgLinksPass,
@@ -264,6 +273,14 @@ impl ParserPasses {
             )?,
             hir_type_path_leaf_scatter:
                 hir::types::path::leaf::scatter::HirTypePathLeafScatterPass::new(device)?,
+            hir_path_segment_root: hir::path::segment::root::HirPathSegmentRootPass::new(device)?,
+            hir_path_segment_links: hir::path::segment::links::HirPathSegmentLinksPass::new(
+                device,
+            )?,
+            hir_path_segment_step: hir::path::segment::step::HirPathSegmentStepPass::new(device)?,
+            hir_path_segment_scatter: hir::path::segment::scatter::HirPathSegmentScatterPass::new(
+                device,
+            )?,
             hir_list_rank_prefix_local:
                 hir::list::rank::prefix_local::HirListRankPrefixLocalPass::new(device)?,
             hir_list_rank_compact_scatter:
@@ -308,6 +325,17 @@ impl ParserPasses {
             hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass::new(device)?,
             hir_stmt_scope: hir::stmt_scope::HirStmtScopePass::new(device)?,
             hir_literal_values: hir::literal_values::HirLiteralValuesPass::new(device)?,
+            hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass::new(
+                device,
+            )?,
+            hir_string_compact_scatter:
+                hir::string::compact_scatter::HirStringCompactScatterPass::new(device)?,
+            hir_string_offset_local: hir::string::offset_local::HirStringOffsetLocalPass::new(
+                device,
+            )?,
+            hir_string_offset_scatter:
+                hir::string::offset_scatter::HirStringOffsetScatterPass::new(device)?,
+            hir_string_decode: hir::string::decode::HirStringDecodePass::new(device)?,
             hir_call_fields: hir::call::fields::HirCallFieldsPass::new(device)?,
             hir_call_spans: hir::call::spans::HirCallSpansPass::new(device)?,
             hir_call_arg_links: hir::call::arg::links::HirCallArgLinksPass::new(device)?,
@@ -517,6 +545,17 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_item_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_path_segment_root.record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_path_segment_links
+        .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_path_segment_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.tree_active_dispatch_args,
+    )?;
+    p.hir_path_segment_scatter
+        .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_type_alias_owner_init
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_type_alias_owner_step.record_steps_indirect(

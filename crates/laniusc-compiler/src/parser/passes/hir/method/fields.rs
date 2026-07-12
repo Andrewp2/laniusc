@@ -101,6 +101,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMethodFieldsP
                 b.hir_semantic_parent.as_entire_binding(),
             ),
             (
+                "hir_nearest_enclosing_control_value_a".into(),
+                b.hir_nearest_enclosing_control_value_a.as_entire_binding(),
+            ),
+            (
                 "hir_param_record".into(),
                 b.hir_param_record.as_entire_binding(),
             ),
