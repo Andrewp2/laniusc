@@ -139,14 +139,10 @@ bool is_statement_starter(uint kind)
            kind == TK_TRAIT;
 }
 
-bool is_statement_reset_boundary(uint kind)
-{
-    return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE;
-}
-
 uint statement_event_for(
     uint token_i,
     uint kind,
+    uint brace_open_kind,
     int global_paren_depth_before,
     int global_bracket_depth_before)
 {
@@ -156,7 +152,9 @@ uint statement_event_for(
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
     if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)
         return 0u;
-    if (is_statement_reset_boundary(kind))
+    if (kind == TK_SEMICOLON)
+        return (token_i + 1u) << 8u;
+    if (kind == TK_LBRACE && brace_open_kind != TK_STRUCT_LIT_LBRACE)
         return (token_i + 1u) << 8u;
     return 0u;
 }
@@ -219,7 +217,12 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         brace_semantic_kind[token_i] = semantic_kind;
 
     uint statement_event = token_i < count
-        ? statement_event_for(token_i, kind, paren_depth_before, bracket_depth_before)
+        ? statement_event_for(
+            token_i,
+            kind,
+            semantic_kind,
+            paren_depth_before,
+            bracket_depth_before)
         : 0u;
     prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,

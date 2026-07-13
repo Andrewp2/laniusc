@@ -18,8 +18,9 @@ RWStructuredBuffer<uint> wasm_func_invalid_count_by_token;
 RWStructuredBuffer<uint> wasm_func_detail_by_token;
 
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint TY_VOID = 1u;
 static const uint TY_BOOL = 2u;
-static const uint WASM_IMPORT_FUNCTION_COUNT = 31u;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
 static const uint HIR_STMT = 7u;
 static const uint INTRINSIC_TEXT_WRITE = 1u;
 static const uint BODY_PLAN_MAIN_COUNT = 8u;
@@ -28,8 +29,10 @@ static const uint BODY_PLAN_PRINT_COUNT_AGG = 17u;
 static const uint BODY_PLAN_PRINT_MAX_TOKEN = 19u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
+static const uint BODY_FEATURE_DIRECT = 1u << 1u;
 static const uint BODY_FEATURE_STMT_PRINT_DIRECT = 1u << 22u;
 static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
 static const uint WASM_PRINT_I64_FUNC_INDEX = 0u;
 
 bool type_is_i32_value(uint ty)
@@ -126,6 +129,50 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
     return true;
 }
 
+bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
+{
+    aux = uint4(INVALID, 0u, INVALID, 0u);
+    len = 0u;
+    call_node = resolve_expr_node(call_node);
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return false;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token) || call_intrinsic_tag[callee_token] != 0u)
+        return false;
+
+    uint fn_token = call_fn_token_for_call(call_node, callee_token);
+    uint return_ty = call_return_type_for_call(call_node, callee_token, fn_token);
+    if (!supported_function_token(fn_token) ||
+        (return_ty != TY_UNKNOWN && return_ty != TY_VOID))
+        return false;
+
+    uint explicit_arg_count = hir_call_arg_count[call_node];
+    bool has_receiver_arg = direct_call_has_receiver_arg(call_node, fn_token);
+    uint arg_count = explicit_arg_count + (has_receiver_arg ? 1u : 0u);
+    if (call_param_count[fn_token] != arg_count)
+        return false;
+
+    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    uint total = 1u + u32_leb_len(wasm_func_index);
+    for (uint i = 0u; i < arg_count; i += 1u)
+    {
+        uint arg_node = direct_call_abi_arg_node(call_node, fn_token, i);
+        uint arg_len = 0u;
+        if (!direct_call_arg_abi_expr_and_len(
+                arg_node,
+                call_param_type_value(fn_token, i),
+                arg_len) ||
+            arg_len == 0u)
+            return false;
+        total += arg_len;
+    }
+
+    aux = uint4(wasm_func_index, arg_count, fn_token, 0u);
+    len = total;
+    return true;
+}
+
 uint print_direct_call_tail_len(uint4 aux)
 {
     return 1u + u32_leb_len(aux.x) + 3u;
@@ -181,7 +228,20 @@ void validate_main_call(uint node, uint token)
     }
 
     if (!print_call_node(node))
+    {
+        uint4 direct_aux = uint4(INVALID, 0u, INVALID, 0u);
+        uint len = 0u;
+        if (!direct_void_call_header_aux(node, direct_aux, len))
+            return;
+
+        add_func_body_len(owner_fn, len);
+        uint slot = token * 2u;
+        body_fragment_len[slot] = len;
+        body_fragment_meta[slot] = uint4(BODY_FRAGMENT_DIRECT_CALL_VOID, node, len, token);
+        body_fragment_aux[slot] = direct_aux;
+        atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_DIRECT);
         return;
+    }
 
     uint arg0 = resolve_expr_node(print_call_arg0_node(node));
     if (!valid_node(arg0) || hir_kind[arg0] != HIR_CALL_EXPR)

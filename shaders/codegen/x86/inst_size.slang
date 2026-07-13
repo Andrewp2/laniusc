@@ -147,6 +147,16 @@ static const uint X86_INST_V_HOST_FS_OPEN_APPEND = 110u;
 static const uint X86_INST_V_HOST_STDIN_READ = 111u;
 static const uint X86_INST_V_HOST_STDOUT_WRITE = 112u;
 static const uint X86_INST_V_HOST_STDERR_WRITE = 113u;
+static const uint X86_INST_V_HOST_FILL_SECURE_BYTES = 114u;
+static const uint X86_INST_V_HOST_FS_REMOVE_FILE = 115u;
+static const uint X86_INST_V_HOST_FS_CREATE_DIR = 116u;
+static const uint X86_INST_V_HOST_FS_REMOVE_DIR = 117u;
+static const uint X86_INST_V_HOST_FS_RENAME = 118u;
+static const uint X86_INST_V_HOST_TIME_MONOTONIC_READ = 119u;
+static const uint X86_INST_V_HOST_TIME_SYSTEM_READ = 120u;
+static const uint X86_INST_V_HOST_TIME_SLEEP_MS_I32 = 121u;
+static const uint X86_INST_V_HOST_REALLOC = 122u;
+static const uint X86_INST_V_HOST_ALLOC_FAILED = 123u;
 static const uint HOST_PATH_BUFFER_BYTES = 4096u;
 static const uint HOST_PATH_MAX_BYTES = 4095u;
 static const uint X86_ARG_SCALAR = 1u;
@@ -1066,6 +1076,103 @@ uint host_open_path_buffer_size(uint packed, uint dst)
            fail_size;
 }
 
+uint host_path_syscall_size(uint packed, uint dst, bool has_mode)
+{
+    uint path_ptr = packed_reg_a(packed);
+    uint path_len = packed_reg_b(packed);
+    uint load_ptr = host_arg_source_r32_size(X86_REG_R8D, path_ptr);
+    uint load_len = host_arg_source_r32_size(X86_REG_R9D, path_len);
+    uint len_check = cmp_r32_imm_size(X86_REG_R9D, HOST_PATH_MAX_BYTES);
+    uint copy_size = host_path_buffer_copy_size();
+    if (load_ptr == 0u || load_len == 0u || len_check == 0u || copy_size == 0u || !valid_reg(dst))
+        return 0u;
+    uint finish_size = host_path_open_finish_size(dst);
+    uint normal_size = copy_size +
+                       (has_mode ? mov_r32_imm32_size(X86_REG_ESI) : 0u) +
+                       mov_r32_imm32_size(X86_REG_EAX) + 2u + finish_size;
+    uint fail_size = mov_r32_imm32_size(X86_REG_EAX) + finish_size;
+    return print_save_restore_size() + 4u + load_ptr + load_len + 7u +
+           len_check + 2u + normal_size + 2u + fail_size;
+}
+
+uint host_rename_path_buffer_size(uint from_packed, uint to_packed, uint dst)
+{
+    uint from_ptr = packed_reg_a(from_packed);
+    uint from_len = packed_reg_b(from_packed);
+    uint to_ptr = packed_reg_a(to_packed);
+    uint to_len = packed_reg_b(to_packed);
+    uint loads = host_arg_source_r32_size(X86_REG_R8D, from_ptr) +
+                 host_arg_source_r32_size(X86_REG_R9D, from_len) +
+                 host_arg_source_r32_size(X86_REG_R10D, to_ptr) +
+                 host_arg_source_r32_size(X86_REG_R11D, to_len);
+    uint from_check = cmp_r32_imm_size(X86_REG_R9D, HOST_PATH_MAX_BYTES);
+    uint to_check = cmp_r32_imm_size(X86_REG_R11D, HOST_PATH_MAX_BYTES);
+    uint copy_size = host_path_buffer_copy_size();
+    uint second_copy_size = lea_r64_rsp_size(X86_REG_ESI, HOST_PATH_BUFFER_BYTES) +
+                            xor_r32_self_size(X86_REG_ECX) +
+                            cmp_r32_r32_size(X86_REG_ECX, X86_REG_R11D) +
+                            2u + 4u + 3u + add_r32_imm8_size(X86_REG_ECX) + 2u + 5u;
+    uint finish_size = 14u + print_save_restore_size() +
+                       (dst == X86_REG_EAX ? 0u : mov_r32_r32_size(dst, X86_REG_EAX));
+    if (loads == 0u || from_check == 0u || to_check == 0u || copy_size == 0u ||
+        second_copy_size == 0u || !valid_reg(dst))
+        return 0u;
+    uint normal_size = copy_size + second_copy_size + mov_r32_imm32_size(X86_REG_EAX) + 2u + finish_size;
+    uint fail_size = mov_r32_imm32_size(X86_REG_EAX) + finish_size;
+    return print_save_restore_size() + 4u + loads + 7u + from_check + 2u +
+           to_check + 2u + normal_size + 2u + fail_size;
+}
+
+uint host_result_i32_finish_size(uint dst)
+{
+    return 8u + print_save_restore_size() +
+           (dst == X86_REG_EAX ? 0u : mov_r32_r32_size(dst, X86_REG_EAX));
+}
+
+uint host_clock_read_size(uint packed, uint dst)
+{
+    uint ptr = packed_reg_a(packed);
+    uint len = packed_reg_b(packed);
+    uint load_ptr = host_arg_source_r32_size(X86_REG_ESI, ptr);
+    uint load_len = host_arg_source_r32_size(X86_REG_R9D, len);
+    uint len_check = cmp_r32_imm_size(X86_REG_R9D, 16u);
+    uint finish = host_result_i32_finish_size(dst);
+    if (load_ptr == 0u || load_len == 0u || len_check == 0u || !valid_reg(dst))
+        return 0u;
+    uint normal = mov_r32_imm32_size(X86_REG_EDI) + mov_r32_imm32_size(X86_REG_EAX) + 2u + finish;
+    uint fail = mov_r32_imm32_size(X86_REG_EAX) + finish;
+    return print_save_restore_size() + 4u + load_ptr + load_len + len_check + 2u + normal + 2u + fail;
+}
+
+uint host_sleep_ms_i32_size(uint milliseconds, uint dst)
+{
+    uint load_ms = host_arg_source_r32_size(X86_REG_R10D, milliseconds);
+    uint negative_check = cmp_r32_imm_size(X86_REG_R10D, 0u);
+    uint finish = host_result_i32_finish_size(dst);
+    if (load_ms == 0u || negative_check == 0u || !valid_reg(dst))
+        return 0u;
+    uint normal = mov_r32_r32_size(X86_REG_EDX, X86_REG_R10D) +
+                  xor_r32_self_size(X86_REG_EDI) + xor_r32_self_size(X86_REG_ESI) +
+                  mov_r32_imm32_size(X86_REG_EAX) + 2u + finish;
+    uint fail = mov_r32_imm32_size(X86_REG_EAX) + finish;
+    return print_save_restore_size() + 4u + load_ms + negative_check + 2u + normal + 2u + fail;
+}
+
+uint host_realloc_size(uint old_packed, uint new_packed, uint dst)
+{
+    uint ptr = packed_reg_a(old_packed);
+    uint old_size = packed_reg_b(old_packed);
+    uint new_size = packed_reg_a(new_packed);
+    uint loads = host_arg_source_r32_size(X86_REG_EDI, ptr) +
+                 host_arg_source_r32_size(X86_REG_ESI, old_size) +
+                 host_arg_source_r32_size(X86_REG_EDX, new_size);
+    if (loads == 0u || !valid_reg(dst))
+        return 0u;
+    return print_save_restore_size() + 4u + loads +
+           mov_r32_imm32_size(X86_REG_R10D) + mov_r32_imm32_size(X86_REG_EAX) + 2u +
+           2u + 2u + xor_r32_self_size(X86_REG_EAX) + host_result_i32_finish_size(dst);
+}
+
 uint host_write_byte_size(uint packed, uint value, uint dst, bool immediate_newline)
 {
     uint handle = packed_reg_a(packed);
@@ -1177,6 +1284,27 @@ uint host_secure_u32_size(uint dst)
            mov_r32_imm32_size(X86_REG_EAX) +
            2u +
            load_rsp_disp8_r32_size(X86_REG_EAX) +
+           4u +
+           4u +
+           print_save_restore_size() +
+           (dst == X86_REG_EAX ? 0u : mov_r32_r32_size(dst, X86_REG_EAX));
+}
+
+uint host_fill_secure_bytes_size(uint packed, uint dst)
+{
+    uint ptr = packed_reg_a(packed);
+    uint len = packed_reg_b(packed);
+    uint load_ptr = host_arg_source_r32_size(X86_REG_EDI, ptr);
+    uint load_len = host_arg_source_r32_size(X86_REG_ESI, len);
+    if (load_ptr == 0u || load_len == 0u || !valid_reg(dst))
+        return 0u;
+    return print_save_restore_size() +
+           4u +
+           load_ptr +
+           load_len +
+           xor_r32_self_size(X86_REG_EDX) +
+           mov_r32_imm32_size(X86_REG_EAX) +
+           2u +
            4u +
            4u +
            print_save_restore_size() +
@@ -1692,6 +1820,24 @@ uint byte_size_for_inst(uint inst_i)
         kind == X86_INST_V_HOST_STDOUT_WRITE ||
         kind == X86_INST_V_HOST_STDERR_WRITE)
         return host_stdio_read_write_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_HOST_FILL_SECURE_BYTES)
+        return host_fill_secure_bytes_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_HOST_FS_REMOVE_FILE ||
+        kind == X86_INST_V_HOST_FS_REMOVE_DIR)
+        return host_path_syscall_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], false);
+    if (kind == X86_INST_V_HOST_FS_CREATE_DIR)
+        return host_path_syscall_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], true);
+    if (kind == X86_INST_V_HOST_FS_RENAME)
+        return host_rename_path_buffer_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_HOST_TIME_MONOTONIC_READ ||
+        kind == X86_INST_V_HOST_TIME_SYSTEM_READ)
+        return host_clock_read_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_HOST_TIME_SLEEP_MS_I32)
+        return host_sleep_ms_i32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_HOST_REALLOC)
+        return host_realloc_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_HOST_ALLOC_FAILED)
+        return 12u;
     if (kind == X86_INST_V_LOAD_LOCAL_R32) return local_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_STORE_LOCAL_R32) return local_mem_r32_size(x86_inst_arg1[inst_i], x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_LOAD_LOCAL_INDEX_R32) return checked_local_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);

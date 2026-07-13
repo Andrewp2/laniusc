@@ -24,6 +24,7 @@ StructuredBuffer<uint> hir_kind;
 
 RWStructuredBuffer<uint> hir_match_scrutinee_node;
 RWStructuredBuffer<uint> hir_match_arm_pattern_node;
+RWStructuredBuffer<uint> hir_match_pattern_owner_arm;
 RWStructuredBuffer<uint> hir_match_arm_result_node;
 RWStructuredBuffer<uint> hir_match_arm_owner_a;
 RWStructuredBuffer<uint> hir_match_arm_link_a;
@@ -216,7 +217,10 @@ void seed_match_arm(uint node)
 {
     uint pattern = first_child_node(node);
     if (valid_node(pattern) && is_pattern_production(node_kind[pattern]))
+    {
         hir_match_arm_pattern_node[node] = pattern;
+        hir_match_pattern_owner_arm[pattern] = node;
+    }
 
     uint result = next_sibling_node(pattern);
     if (valid_node(result) && hir_kind[result] == HIR_EXPR)

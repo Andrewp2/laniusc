@@ -27,12 +27,21 @@ fn main() -> i32 {
         return 3;
     }
 
+    let reported_cwd_len: i32 = std::env::current_dir_len();
+    if (reported_cwd_len <= 0) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 4;
+    }
     let cwd_len: i32 = std::env::current_dir_read(ptr, capacity);
     if (cwd_len <= 0) {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 4;
     }
     if (cwd_len > capacity_i32) {
+        alloc::allocator::dealloc(ptr, capacity, align);
+        return 4;
+    }
+    if (cwd_len != reported_cwd_len) {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 4;
     }

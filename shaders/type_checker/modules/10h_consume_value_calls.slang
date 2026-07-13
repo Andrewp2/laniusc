@@ -29,11 +29,8 @@ StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_token_start;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
@@ -120,49 +117,15 @@ uint call_node_for_marked_head(uint owner_token)
         : INVALID;
 }
 
-uint normalized_path_owner_hir(uint owner_hir)
-{
-    uint node = owner_hir;
-    for (uint step = 0u; step < 8u; step += 1u)
-    {
-        if (!valid_node(node))
-            return INVALID;
-        uint kind = hir_kind[node];
-        if (kind == HIR_PATH_EXPR || kind == HIR_NAME_EXPR)
-            return node;
-        uint next = parent[node];
-        if (!valid_node(next) || next == node)
-            return node;
-        node = next;
-    }
-    return node;
-}
-
 uint call_node_for_owner_hir(uint path_i)
 {
     uint owner_hir = path_i < active_path_count() ? path_owner_hir[path_i] : INVALID;
     if (!valid_node(owner_hir))
         return INVALID;
-
-    uint callee_anchor = normalized_path_owner_hir(owner_hir);
-    if (!valid_node(callee_anchor))
-        return INVALID;
-    uint name_parent = parent[callee_anchor];
-
-    if (hir_kind[callee_anchor] == HIR_PATH_EXPR &&
-        valid_node(name_parent) &&
-        hir_kind[name_parent] == HIR_NAME_EXPR)
-    {
-        callee_anchor = name_parent;
-        name_parent = parent[name_parent];
-    }
-
-    if (valid_node(name_parent) && hir_kind[name_parent] == HIR_CALL_EXPR &&
-        hir_call_callee_node[name_parent] == callee_anchor)
-        return name_parent;
-
-    uint call_expr = valid_node(callee_anchor) ? next_sibling[callee_anchor] : INVALID;
-    return valid_node(call_expr) && hir_kind[call_expr] == HIR_CALL_EXPR ? call_expr : INVALID;
+    uint call_node = hir_call_parent_by_callee[owner_hir];
+    return valid_node(call_node) && hir_kind[call_node] == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
 }
 
 uint path_leaf_token(uint path_i, uint owner_token)

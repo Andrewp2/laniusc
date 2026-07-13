@@ -120,6 +120,7 @@ static const uint LANGUAGE_SYMBOL_WRITE_I32 = 24u;
 static const uint LANGUAGE_SYMBOL_WRITE_BYTE = 25u;
 static const uint LANGUAGE_SYMBOL_WRITE_NEWLINE = 26u;
 static const uint LANGUAGE_SYMBOL_CLOSE_FILE = 27u;
+static const uint LANGUAGE_SYMBOL_EXIT = 29u;
 static const uint LANGUAGE_SYMBOL_SECURE_U32 = 30u;
 static const uint LANGUAGE_SYMBOL_ALLOC = 31u;
 static const uint LANGUAGE_SYMBOL_DEALLOC = 32u;
@@ -143,6 +144,16 @@ static const uint LANGUAGE_SYMBOL_WRITE_STDOUT = 49u;
 static const uint LANGUAGE_SYMBOL_WRITE_STDERR = 50u;
 static const uint LANGUAGE_SYMBOL_READ_STDIN = 51u;
 static const uint LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR = 52u;
+static const uint LANGUAGE_SYMBOL_FILL_SECURE_BYTES = 53u;
+static const uint LANGUAGE_SYMBOL_REMOVE_FILE = 54u;
+static const uint LANGUAGE_SYMBOL_CREATE_DIR = 55u;
+static const uint LANGUAGE_SYMBOL_REMOVE_DIR = 56u;
+static const uint LANGUAGE_SYMBOL_RENAME = 57u;
+static const uint LANGUAGE_SYMBOL_MONOTONIC_READ = 58u;
+static const uint LANGUAGE_SYMBOL_SYSTEM_READ = 59u;
+static const uint LANGUAGE_SYMBOL_SLEEP_MS_I32 = 60u;
+static const uint LANGUAGE_SYMBOL_REALLOC = 61u;
+static const uint LANGUAGE_SYMBOL_ALLOC_FAILED = 62u;
 static const uint HOST_STR_CALL_OPEN_READ_PATH = 1u;
 static const uint HOST_STR_CALL_OPEN_WRITE_PATH = 2u;
 static const uint HOST_STR_CALL_WRITE_TEXT = 3u;
@@ -254,7 +265,18 @@ static const uint WASM_STD_WRITE_NEWLINE_FUNC_INDEX = 27u;
 static const uint WASM_STD_OPEN_READ_PATH_FUNC_INDEX = 28u;
 static const uint WASM_STD_OPEN_WRITE_PATH_FUNC_INDEX = 29u;
 static const uint WASM_STD_WRITE_TEXT_FUNC_INDEX = 30u;
-static const uint WASM_IMPORT_FUNCTION_COUNT = 31u;
+static const uint WASM_RANDOM_FILL_SECURE_BYTES_FUNC_INDEX = 31u;
+static const uint WASM_FS_REMOVE_FILE_FUNC_INDEX = 32u;
+static const uint WASM_FS_CREATE_DIR_FUNC_INDEX = 33u;
+static const uint WASM_FS_REMOVE_DIR_FUNC_INDEX = 34u;
+static const uint WASM_FS_RENAME_FUNC_INDEX = 35u;
+static const uint WASM_TIME_MONOTONIC_READ_FUNC_INDEX = 36u;
+static const uint WASM_TIME_SYSTEM_READ_FUNC_INDEX = 37u;
+static const uint WASM_TIME_SLEEP_MS_I32_FUNC_INDEX = 38u;
+static const uint WASM_REALLOC_FUNC_INDEX = 39u;
+static const uint WASM_ALLOC_FAILED_FUNC_INDEX = 40u;
+static const uint WASM_PROCESS_EXIT_FUNC_INDEX = 41u;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
 static const uint WASM_UNREACHABLE = 0x00u;
 static const uint WASM_I32_CONST = 0x41u;
 static const uint WASM_I64_CONST = 0x42u;
@@ -344,6 +366,7 @@ static const uint BODY_FRAGMENT_IF_OPEN_LOCAL_I32 = 42u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 static const uint BODY_FRAGMENT_RETURN_HOST_CALL_I32 = 47u;
 static const uint BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32 = 48u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
 static const uint MAX_CONST_EVAL_STACK = 16u;
 static const uint MAX_CONST_EVAL_STEPS = 48u;
 static const uint MAX_EXPR_EMIT_STACK = 16u;
@@ -909,7 +932,7 @@ bool direct_user_call_node(
 
 bool token_has_language_name(uint name_token, uint language_symbol)
 {
-    if (!valid_token(name_token) || language_symbol >= 53u)
+    if (!valid_token(name_token) || language_symbol >= 63u)
         return false;
     uint name_id = name_id_by_token[name_token];
     uint language_id = language_name_id[language_symbol];
@@ -3461,6 +3484,123 @@ bool supported_let_file_stdio_host_i32_call_fragment(
     {
         wasm_func_index = WASM_STDIO_READ_STDIN_FUNC_INDEX;
         arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_FILL_SECURE_BYTES,
+            WASM_RANDOM_FILL_SECURE_BYTES_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_RANDOM_FILL_SECURE_BYTES_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_REMOVE_FILE,
+            WASM_FS_REMOVE_FILE_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_FS_REMOVE_FILE_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_CREATE_DIR,
+            WASM_FS_CREATE_DIR_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_FS_CREATE_DIR_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_REMOVE_DIR,
+            WASM_FS_REMOVE_DIR_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_FS_REMOVE_DIR_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_RENAME,
+            WASM_FS_RENAME_FUNC_INDEX,
+            4u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_FS_RENAME_FUNC_INDEX;
+        arg_count = 4u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_MONOTONIC_READ,
+            WASM_TIME_MONOTONIC_READ_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_TIME_MONOTONIC_READ_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_SYSTEM_READ,
+            WASM_TIME_SYSTEM_READ_FUNC_INDEX,
+            2u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_TIME_SYSTEM_READ_FUNC_INDEX;
+        arg_count = 2u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_SLEEP_MS_I32,
+            WASM_TIME_SLEEP_MS_I32_FUNC_INDEX,
+            1u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_TIME_SLEEP_MS_I32_FUNC_INDEX;
+        arg_count = 1u;
+        return true;
+    }
+    if (supported_let_host_i32_call_fragment(
+            node,
+            LANGUAGE_SYMBOL_REALLOC,
+            WASM_REALLOC_FUNC_INDEX,
+            4u,
+            decl_token,
+            call_node,
+            len))
+    {
+        wasm_func_index = WASM_REALLOC_FUNC_INDEX;
+        arg_count = 4u;
         return true;
     }
     return false;

@@ -287,6 +287,7 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub string_node: &'a wgpu::Buffer,
     pub string_count: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
+    pub nearest_loop_node: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
     pub type_len_value: &'a wgpu::Buffer,
 }
@@ -296,6 +297,7 @@ pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub node_decl_token: &'a wgpu::Buffer,
     pub node_name_token: &'a wgpu::Buffer,
     pub hir_token_pos: &'a wgpu::Buffer,
+    pub nearest_fn_node: &'a wgpu::Buffer,
     pub fn_return_type_node: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
@@ -417,7 +419,7 @@ pub struct GpuX86TypeMetadataBuffers<'a> {
 pub struct GpuX86ExternalScratchBuffers<'a> {
     pub expr_resolved_final: Option<&'a wgpu::Buffer>,
     pub node_func: Option<&'a wgpu::Buffer>,
-    pub func_owner_scan_local_prefix: Option<&'a wgpu::Buffer>,
+    pub node_inst_scan_input: Option<&'a wgpu::Buffer>,
     pub func_slot_by_node: Option<&'a wgpu::Buffer>,
     pub match_pattern_owner: Option<&'a wgpu::Buffer>,
     pub match_pattern_node_owner: Option<&'a wgpu::Buffer>,
@@ -450,7 +452,7 @@ impl GpuX86ExternalScratchBuffers<'_> {
         [
             self.expr_resolved_final,
             self.node_func,
-            self.func_owner_scan_local_prefix,
+            self.node_inst_scan_input,
             self.func_slot_by_node,
             self.match_pattern_owner,
             self.match_pattern_node_owner,
@@ -538,7 +540,7 @@ const X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS: &str = "bounded";
 const X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS: &str = "fail-closed";
 const X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS: &str = "blocked";
 const X86_CONTROL_FLOW_BRIDGE_RELATIONS: &str =
-    "node_inst_same_end_rank,enclosing_loop,short_circuit_rhs,index_source_owner";
+    "node_inst_same_end_rank,short_circuit_rhs,index_source_owner";
 const X86_CONTROL_FLOW_BRIDGE_CLAIM_BLOCKERS: &str = "pre_basic_block_owner_bridge,pointer_jump_widths_scale_with_hir_rows,virtual_generation_consumes_bridge_rows";
 const X86_CONTROL_FLOW_BRIDGE_REQUIRED_REPLACEMENT: &str =
     "basic_block_edge_rows,control_region_records,segmented_control_flow_scans";
@@ -638,7 +640,7 @@ pub fn x86_control_flow_bridge_pass_contract() -> X86ControlFlowBridgePassContra
         loop_status: X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS,
         fallback_status: X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS,
         claim_status: X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS,
-        relation_count: 4,
+        relation_count: 3,
         relations: X86_CONTROL_FLOW_BRIDGE_RELATIONS,
         claim_blockers: X86_CONTROL_FLOW_BRIDGE_CLAIM_BLOCKERS,
         required_replacement: X86_CONTROL_FLOW_BRIDGE_REQUIRED_REPLACEMENT,
@@ -926,10 +928,6 @@ pub struct GpuX86CodeGenerator {
     func_discover_pass: PassData,
     func_slot_flags_pass: PassData,
     func_slot_scatter_pass: PassData,
-    func_owner_scan_local_pass: PassData,
-    func_owner_scan_blocks_pass: PassData,
-    func_assign_nodes_pass: PassData,
-    func_assign_nodes_step_pass: PassData,
     expr_resolve_init_pass: PassData,
     expr_resolve_step_pass: PassData,
     expr_semantic_type_init_pass: PassData,
@@ -982,8 +980,6 @@ pub struct GpuX86CodeGenerator {
     node_inst_locations_pass: PassData,
     node_inst_gen_worklist_scatter_pass: PassData,
     node_inst_gen_worklist_dispatch_args_pass: PassData,
-    enclosing_loop_init_pass: PassData,
-    enclosing_loop_step_pass: PassData,
     short_circuit_rhs_init_pass: PassData,
     short_circuit_rhs_step_pass: PassData,
     index_source_owner_init_pass: PassData,
@@ -1029,6 +1025,12 @@ pub struct GpuX86CodeGenerator {
 }
 
 impl GpuX86CodeGenerator {
+    /// Releases idle pooled backend scratch for this device while retaining
+    /// all x86 compute pipelines.
+    pub(crate) fn release_pooled_buffers(&self, device: &wgpu::Device) -> (usize, u64) {
+        support::release_pooled_buffers_for_device(device)
+    }
+
     /// Loads all x86 backend compute passes for a GPU device.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         macro_rules! load_x86_pass {
@@ -1092,26 +1094,6 @@ impl GpuX86CodeGenerator {
             "func_slot_scatter",
             "codegen/x86/func/slot/scatter.spv",
             "codegen/x86/func/slot/scatter.reflect.json"
-        );
-        let func_owner_scan_local_pass = load_x86_pass!(
-            "func_owner_scan_local",
-            "codegen/x86/func/owner/scan/local.spv",
-            "codegen/x86/func/owner/scan/local.reflect.json"
-        );
-        let func_owner_scan_blocks_pass = load_x86_pass!(
-            "func_owner_scan_blocks",
-            "codegen/x86/func/owner/scan/blocks.spv",
-            "codegen/x86/func/owner/scan/blocks.reflect.json"
-        );
-        let func_assign_nodes_pass = load_x86_pass!(
-            "func_assign_nodes",
-            "codegen/x86/func/assign/nodes.spv",
-            "codegen/x86/func/assign/nodes.reflect.json"
-        );
-        let func_assign_nodes_step_pass = load_x86_pass!(
-            "func_assign_nodes_step",
-            "codegen/x86/func/assign/nodes/step.spv",
-            "codegen/x86/func/assign/nodes/step.reflect.json"
         );
         let expr_resolve_init_pass = load_x86_pass!(
             "expr_resolve_init",
@@ -1373,16 +1355,6 @@ impl GpuX86CodeGenerator {
             "codegen/x86/node/inst/gen/worklist/dispatch_args.spv",
             "codegen/x86/node/inst/gen/worklist/dispatch_args.reflect.json"
         );
-        let enclosing_loop_init_pass = load_x86_pass!(
-            "enclosing_loop_init",
-            "codegen/x86/enclosing/loop/init.spv",
-            "codegen/x86/enclosing/loop/init.reflect.json"
-        );
-        let enclosing_loop_step_pass = load_x86_pass!(
-            "enclosing_loop_step",
-            "codegen/x86/enclosing/loop/step.spv",
-            "codegen/x86/enclosing/loop/step.reflect.json"
-        );
         let short_circuit_rhs_init_pass = load_x86_pass!(
             "short_circuit_rhs_init",
             "codegen/x86/short/circuit/rhs/init.spv",
@@ -1604,10 +1576,6 @@ impl GpuX86CodeGenerator {
             func_discover_pass,
             func_slot_flags_pass,
             func_slot_scatter_pass,
-            func_owner_scan_local_pass,
-            func_owner_scan_blocks_pass,
-            func_assign_nodes_pass,
-            func_assign_nodes_step_pass,
             expr_resolve_init_pass,
             expr_resolve_step_pass,
             expr_semantic_type_init_pass,
@@ -1660,8 +1628,6 @@ impl GpuX86CodeGenerator {
             node_inst_locations_pass,
             node_inst_gen_worklist_scatter_pass,
             node_inst_gen_worklist_dispatch_args_pass,
-            enclosing_loop_init_pass,
-            enclosing_loop_step_pass,
             short_circuit_rhs_init_pass,
             short_circuit_rhs_step_pass,
             index_source_owner_init_pass,
@@ -1898,10 +1864,10 @@ mod tests {
         assert_eq!(contract.loop_status, "bounded");
         assert_eq!(contract.fallback_status, "fail-closed");
         assert_eq!(contract.claim_status, "blocked");
-        assert_eq!(contract.relation_count, 4);
+        assert_eq!(contract.relation_count, 3);
         assert_eq!(
             contract.relations,
-            "node_inst_same_end_rank,enclosing_loop,short_circuit_rhs,index_source_owner"
+            "node_inst_same_end_rank,short_circuit_rhs,index_source_owner"
         );
         assert!(
             contract

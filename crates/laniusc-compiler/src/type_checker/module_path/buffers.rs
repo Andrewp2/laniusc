@@ -77,6 +77,9 @@ pub(super) struct Buffers {
     pub(super) decl_value_key_count_out: LaniusBuffer<u32>,
     pub(super) decl_type_key_to_decl_id: LaniusBuffer<u32>,
     pub(super) decl_value_key_to_decl_id: LaniusBuffer<u32>,
+    pub(super) interface_public_decl_count: LaniusBuffer<u32>,
+    pub(super) interface_public_decl_local_id: LaniusBuffer<u32>,
+    pub(super) interface_public_decl_index_by_local: LaniusBuffer<u32>,
     pub(super) import_visible_type_count: LaniusBuffer<u32>,
     pub(super) import_visible_value_count: LaniusBuffer<u32>,
     pub(super) import_visible_type_prefix: LaniusBuffer<u32>,
@@ -586,6 +589,26 @@ impl Buffers {
             record_capacity,
             None,
         );
+        // Persisted semantic-interface declaration identity crosses the point
+        // where namespace/public-key scratch is reused by type instances.
+        let interface_public_decl_count = typed_storage_u32_rw(
+            device,
+            "type_check.resident.interface_public_decl_count",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let interface_public_decl_local_id = typed_storage_u32_rw(
+            device,
+            "type_check.resident.interface_public_decl_local_id",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let interface_public_decl_index_by_local = typed_storage_u32_rw(
+            device,
+            "type_check.resident.interface_public_decl_index_by_local",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        );
         let import_visible_type_count = typed_alias_or_storage_u32(
             device,
             "type_check.resident.import_visible_type_count",
@@ -970,6 +993,9 @@ impl Buffers {
             decl_value_key_count_out,
             decl_type_key_to_decl_id,
             decl_value_key_to_decl_id,
+            interface_public_decl_count,
+            interface_public_decl_local_id,
+            interface_public_decl_index_by_local,
             import_visible_type_count,
             import_visible_value_count,
             import_visible_type_prefix,

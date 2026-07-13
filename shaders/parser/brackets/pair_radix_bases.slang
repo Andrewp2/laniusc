@@ -27,9 +27,10 @@ void main(uint3 ltid: SV_GroupThreadID)
     bool keyStepActive = gParams.key_step == 0u || (maxKey >> (gParams.key_step * 8u)) != 0u;
     if (n <= SMALL_PAIR_CAPACITY || !keyStepActive)
         return;
+    uint activeBuckets = min((maxKey >> (gParams.key_step * 8u)) + 1u, RADIX_BUCKETS);
     radix_bucket_base_scan_2<256, 512>(
         ltid.x,
-        RADIX_BUCKETS,
+        activeBuckets,
         radix_bucket_total,
         radix_bucket_base,
         scan_values);

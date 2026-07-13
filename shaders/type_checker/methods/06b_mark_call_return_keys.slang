@@ -42,8 +42,9 @@ StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_callee_path_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
@@ -67,11 +68,8 @@ RWStructuredBuffer<uint> method_call_site_module_id;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
-static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_PATH_EXPR = 33u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
 static const uint MAX_PATH_SEGMENTS = 9u;
@@ -186,24 +184,12 @@ uint path_id_for_callee_node(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-
-    if (hir_kind[callee_node] == HIR_PATH_EXPR || hir_kind[callee_node] == HIR_TYPE)
-    {
-        uint path_i = path_id_by_owner_hir[callee_node];
-        return valid_path(path_i) ? path_i : INVALID;
-    }
-
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
-        {
-            uint path_i = path_id_by_owner_hir[child];
-            return valid_path(path_i) ? path_i : INVALID;
-        }
-    }
-
-    return INVALID;
+    uint call_node = hir_call_parent_by_callee[callee_node];
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+    uint path_node = hir_call_callee_path_node[call_node];
+    uint path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+    return valid_path(path_i) ? path_i : INVALID;
 }
 
 uint path_leaf_token(uint path_i)

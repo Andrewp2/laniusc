@@ -587,11 +587,14 @@ impl WideProgramGenerator {
                 out.push(')');
             }
             2 => {
+                // Keep recursively generated prefix operators lexically
+                // distinct from `++` and `--`.
                 out.push_str(match rng.random_range(0..3) {
                     0 => "+",
                     1 => "-",
                     _ => "!",
                 });
+                out.push(' ');
                 self.push_expr(rng, out, locals, depth - 1);
             }
             3 if !locals.is_empty() => {
@@ -791,7 +794,9 @@ impl WideProgramGenerator {
         }
         match rng.random_range(0..5) {
             0 => {
-                out.push('&');
+                // Keep adjacent reference tokens from maximal-munching into
+                // the expression-level `&&` token.
+                out.push_str("& ");
                 self.push_type_expr(rng, out, depth - 1);
             }
             1 => {
@@ -885,7 +890,7 @@ impl WideProgramGenerator {
 
     fn push_bound_type_expr<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
         if depth > 0 && rng.random_bool(0.25) {
-            out.push('&');
+            out.push_str("& ");
             self.push_bound_type_expr(rng, out, depth - 1);
             return;
         }

@@ -48,13 +48,22 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
         "type_check.fn_context.local",
         token_capacity.max(1),
     )?;
-    for bind_group in &groups.scan {
+    for step in &groups.hierarchy_up {
         record_compute(
             encoder,
-            &passes.fn_context_scan,
-            bind_group,
-            "type_check.fn_context.scan",
-            n_blocks.max(1),
+            &passes.fn_context_hierarchy_up,
+            &step.bind_group,
+            "type_check.fn_context.hierarchy_up",
+            step.work_items,
+        )?;
+    }
+    for step in &groups.hierarchy_down {
+        record_compute(
+            encoder,
+            &passes.fn_context_hierarchy_down,
+            &step.bind_group,
+            "type_check.fn_context.hierarchy_down",
+            step.work_items,
         )?;
     }
     record_compute(
@@ -96,13 +105,22 @@ pub(in crate::type_checker) fn record_loop_depth_bind_groups_with_passes(
         "type_check.loop_depth.local",
         n_blocks.saturating_mul(256),
     )?;
-    for scan_group in &groups.scan {
+    for step in &groups.hierarchy_up {
         record_compute(
             encoder,
-            &passes.loop_depth_scan,
-            scan_group,
-            "type_check.loop_depth.scan",
-            n_blocks,
+            &passes.loop_depth_hierarchy_up,
+            &step.bind_group,
+            "type_check.loop_depth.hierarchy_up",
+            step.work_items,
+        )?;
+    }
+    for step in &groups.hierarchy_down {
+        record_compute(
+            encoder,
+            &passes.loop_depth_hierarchy_down,
+            &step.bind_group,
+            "type_check.loop_depth.hierarchy_down",
+            step.work_items,
         )?;
     }
     record_compute(

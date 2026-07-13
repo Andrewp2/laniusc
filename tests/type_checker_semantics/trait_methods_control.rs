@@ -1256,7 +1256,33 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_overwide_generic_instance_parameters_until_rows_carry_all_args() {
+fn type_checker_checks_arbitrary_width_generic_instance_parameter_rows() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Wide<A, B, C, D, E, F, G, H, I> {
+    value: A,
+}
+
+trait TakeWide {
+    fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, bool>) -> i32;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl TakeWide for Target {
+    fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, bool>) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
     assert_gpu_type_check_diagnostic(
         r#"
 struct Wide<A, B, C, D, E, F, G, H, I> {
@@ -1284,16 +1310,48 @@ fn main() {
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, i32>) -> i32;",
+            "impl TakeWide for Target {",
             "trait impl method signature does not match the trait declaration",
             "match each implemented method's parameter and return types",
+        ],
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Wide<A, B, C, D, E, F, G, H, I> {
+    value: A,
+}
+
+trait MakeWide {
+    fn make() -> Wide<i32, i32, i32, i32, i32, i32, i32, i32, i32>;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl MakeWide for Target {
+    fn make() -> Wide<i32, i32, i32, i32, i32, i32, i32, i32, bool> {
+        return Wide { value: 0 };
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl MakeWide for Target {",
+            "trait impl method signature does not match the trait declaration",
         ],
     );
 }
 
 #[test]
-fn type_checker_rejects_nested_trait_method_generic_instances_without_partial_match() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_nested_trait_method_generic_instance_parameters() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed<T> {
     value: T,
@@ -1321,19 +1379,12 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "fn read(value: Maybe<Boxed<T>>) -> T;",
-            "trait impl method signature does not match the trait declaration",
-            "nested generic instance parameters are rejected for now rather than partially matched",
-        ],
     );
 }
 
 #[test]
-fn type_checker_rejects_nested_trait_method_generic_instance_returns_without_partial_match() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_nested_trait_method_generic_instance_returns() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed<T> {
     value: T,
@@ -1344,7 +1395,7 @@ struct Maybe<T> {
 }
 
 trait WrapNested<T> {
-    fn wrap(value: T) -> Maybe<Boxed<T>>;
+    fn wrap(value: Maybe<Boxed<T>>) -> Maybe<Boxed<T>>;
 }
 
 struct Target {
@@ -1352,8 +1403,8 @@ struct Target {
 }
 
 impl WrapNested<i32> for Target {
-    fn wrap(value: i32) -> Maybe<Boxed<i32>> {
-        return Maybe { value: Boxed { value: value } };
+    fn wrap(value: Maybe<Boxed<i32>>) -> Maybe<Boxed<i32>> {
+        return value;
     }
 }
 
@@ -1361,12 +1412,33 @@ fn main() {
     return 0;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_trait_method_generic_instance_mismatches() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> { value: T, }
+struct Maybe<T> { value: T, }
+
+trait ReadNested<T> {
+    fn read(value: Maybe<Boxed<Maybe<T>>>) -> T;
+}
+
+struct Target { value: i32, }
+
+impl ReadNested<i32> for Target {
+    fn read(value: Maybe<Boxed<Maybe<bool>>>) -> i32 { return 0; }
+}
+
+fn main() { return 0; }
+"#,
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "fn wrap(value: T) -> Maybe<Boxed<T>>;",
+            "impl ReadNested<i32> for Target {",
             "trait impl method signature does not match the trait declaration",
-            "nested generic instance parameters are rejected for now rather than partially matched",
         ],
     );
 }

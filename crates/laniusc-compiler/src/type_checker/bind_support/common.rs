@@ -78,3 +78,19 @@ pub(in crate::type_checker) fn reflected_bind_group_from_resources(
         resources,
     )
 }
+
+/// Borrows the buffer behind one reflected binding resource.
+pub(in crate::type_checker) fn buffer_from_resources<'buffer>(
+    resources: &HashMap<String, wgpu::BindingResource<'buffer>>,
+    name: &str,
+) -> Result<&'buffer wgpu::Buffer> {
+    match resources.get(name) {
+        Some(wgpu::BindingResource::Buffer(binding)) => Ok(binding.buffer),
+        Some(_) => Err(anyhow::anyhow!(
+            "type-check resource `{name}` is not a buffer binding"
+        )),
+        None => Err(anyhow::anyhow!(
+            "type-check resource `{name}` is not registered"
+        )),
+    }
+}

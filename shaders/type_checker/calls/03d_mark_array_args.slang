@@ -5,7 +5,7 @@
 // and atomically marks the owning call when the argument is array-typed.
 
 import atomics;
-import generated_parse_production_ids;
+import hir_expr_semantics;
 
 struct Params
 {
@@ -18,7 +18,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
@@ -196,27 +195,12 @@ uint visible_type_for_token(uint token)
     return call_return_type[token];
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint direct_node_type(uint node)
 {
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -233,7 +217,7 @@ uint direct_node_type(uint node)
         return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
     }
 
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR || node_kind[node] == PROD_STRUCT_LIT)
+    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
     {
         uint head_node = hir_struct_lit_head_node[node];
         return valid_node(head_node) ? visible_type_for_token(hir_token_pos[head_node]) : TY_UNKNOWN;
@@ -332,8 +316,7 @@ bool expression_result_node(uint node)
            hir_kind[node] == HIR_MEMBER_EXPR ||
            hir_kind[node] == HIR_INDEX_EXPR ||
            hir_kind[node] == HIR_MATCH_EXPR ||
-           hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
-           node_kind[node] == PROD_STRUCT_LIT;
+           hir_kind[node] == HIR_STRUCT_LITERAL_EXPR;
 }
 
 uint first_value_type_from_node(uint root)

@@ -503,7 +503,7 @@ uint call_return_type_for_call(uint call_node, uint callee_token, uint fn_token)
 
 bool token_has_language_name(uint name_token, uint language_symbol)
 {
-    if (!valid_token(name_token) || language_symbol >= 53u)
+    if (!valid_token(name_token) || language_symbol >= 63u)
         return false;
     uint name_id = name_id_by_token[name_token];
     uint language_id = language_name_id[language_symbol];

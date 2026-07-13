@@ -120,6 +120,7 @@ static const uint LANGUAGE_SYMBOL_WRITE_I32 = 24u;
 static const uint LANGUAGE_SYMBOL_WRITE_BYTE = 25u;
 static const uint LANGUAGE_SYMBOL_WRITE_NEWLINE = 26u;
 static const uint LANGUAGE_SYMBOL_CLOSE_FILE = 27u;
+static const uint LANGUAGE_SYMBOL_EXIT = 29u;
 static const uint LANGUAGE_SYMBOL_I32_TO_F32 = 28u;
 static const uint LANGUAGE_SYMBOL_SECURE_U32 = 30u;
 static const uint LANGUAGE_SYMBOL_ALLOC = 31u;
@@ -144,6 +145,16 @@ static const uint LANGUAGE_SYMBOL_WRITE_STDOUT = 49u;
 static const uint LANGUAGE_SYMBOL_WRITE_STDERR = 50u;
 static const uint LANGUAGE_SYMBOL_READ_STDIN = 51u;
 static const uint LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR = 52u;
+static const uint LANGUAGE_SYMBOL_FILL_SECURE_BYTES = 53u;
+static const uint LANGUAGE_SYMBOL_REMOVE_FILE = 54u;
+static const uint LANGUAGE_SYMBOL_CREATE_DIR = 55u;
+static const uint LANGUAGE_SYMBOL_REMOVE_DIR = 56u;
+static const uint LANGUAGE_SYMBOL_RENAME = 57u;
+static const uint LANGUAGE_SYMBOL_MONOTONIC_READ = 58u;
+static const uint LANGUAGE_SYMBOL_SYSTEM_READ = 59u;
+static const uint LANGUAGE_SYMBOL_SLEEP_MS_I32 = 60u;
+static const uint LANGUAGE_SYMBOL_REALLOC = 61u;
+static const uint LANGUAGE_SYMBOL_ALLOC_FAILED = 62u;
 static const uint INTRINSIC_TEXT_WRITE = 1u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
@@ -595,9 +606,9 @@ bool token_has_host_language_name(uint token)
         return false;
 
     uint name_id = name_id_by_token[token];
-    for (uint symbol = LANGUAGE_SYMBOL_OPEN_READ_PATH; symbol <= LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR; symbol += 1u)
+    for (uint symbol = LANGUAGE_SYMBOL_OPEN_READ_PATH; symbol <= LANGUAGE_SYMBOL_ALLOC_FAILED; symbol += 1u)
     {
-        if (symbol == 28u || symbol == 29u)
+        if (symbol == 28u)
             continue;
         uint language_id = language_name_id[symbol];
         if (language_id != INVALID && language_id == name_id)
@@ -631,7 +642,18 @@ uint host_token_feature_mask(uint token)
         token_has_language_name(token, LANGUAGE_SYMBOL_OPEN_WRITE) ||
         token_has_language_name(token, LANGUAGE_SYMBOL_OPEN_APPEND) ||
         token_has_language_name(token, LANGUAGE_SYMBOL_WRITE_STDERR) ||
-        token_has_language_name(token, LANGUAGE_SYMBOL_READ_STDIN))
+        token_has_language_name(token, LANGUAGE_SYMBOL_READ_STDIN) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_FILL_SECURE_BYTES) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_REMOVE_FILE) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_CREATE_DIR) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_REMOVE_DIR) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_RENAME) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_MONOTONIC_READ) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_SYSTEM_READ) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_SLEEP_MS_I32) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_REALLOC) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_EXIT) ||
+        token_has_language_name(token, LANGUAGE_SYMBOL_ALLOC_FAILED))
     {
         return BODY_FEATURE_HOST_IO | BODY_FEATURE_HOST_IO_I32;
     }
@@ -824,7 +846,9 @@ uint collect_feature_mask(uint node)
                         mask |= BODY_FEATURE_EXPR_CONTROL;
                 }
             }
-            if (host_void_call_node_for_symbol(node, LANGUAGE_SYMBOL_DEALLOC))
+            if (host_void_call_node_for_symbol(node, LANGUAGE_SYMBOL_DEALLOC) ||
+                host_void_call_node_for_symbol(node, LANGUAGE_SYMBOL_EXIT) ||
+                host_void_call_node_for_symbol(node, LANGUAGE_SYMBOL_ALLOC_FAILED))
                 mask |= BODY_FEATURE_STMT_HOST_VOID | BODY_FEATURE_HOST_VOID;
             if ((mask & (BODY_FEATURE_STMT_PRINT | BODY_FEATURE_STMT_PRINT_DIRECT | BODY_FEATURE_STMT_HOST_VOID)) != 0u)
                 mask |= BODY_FEATURE_STMT_CALL;

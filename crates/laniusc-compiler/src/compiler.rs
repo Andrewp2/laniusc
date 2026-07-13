@@ -110,6 +110,21 @@ pub use artifact_descriptor::{
     GpuSourcePackRecordArrayDescriptor,
 };
 
+mod semantic_interface;
+pub use semantic_interface::{
+    GPU_SEMANTIC_INTERFACE_VERSION,
+    GpuSemanticInterfaceArtifact,
+    GpuSemanticInterfaceDeclarationRecord,
+    GpuSemanticInterfaceIdentityArtifact,
+    GpuSemanticInterfaceMemberKind,
+    GpuSemanticInterfaceMemberRecord,
+    GpuSemanticInterfaceModuleRecord,
+    GpuSemanticInterfaceModuleSegmentRecord,
+    GpuSemanticInterfaceTypeEdge,
+    GpuSemanticInterfaceTypeKind,
+    GpuSemanticInterfaceTypeRecord,
+};
+
 mod source_pack;
 pub use source_pack::*;
 

@@ -366,6 +366,8 @@ pub struct ResidentParseResult {
     pub hir_match_payload_match_node: Vec<u32>,
     pub hir_match_payload_ordinal: Vec<u32>,
     pub hir_call_callee_node: Vec<u32>,
+    pub hir_call_callee_path_node: Vec<u32>,
+    pub hir_call_parent_by_callee: Vec<u32>,
     pub hir_call_context_stmt_node: Vec<u32>,
     pub hir_call_arg_start: Vec<u32>,
     pub hir_call_arg_end: Vec<u32>,
@@ -378,6 +380,7 @@ pub struct ResidentParseResult {
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
+    pub hir_expr_name_role: Vec<u32>,
     pub hir_expr_result_root_node: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
@@ -407,25 +410,60 @@ pub struct RecordedResidentLl1HirCheck {
     pub(super) status_readback: wgpu::Buffer,
 }
 
+/// Parser status map queued while the host records independent downstream work.
+pub(crate) struct PendingResidentLl1HirStatus {
+    status_readback: wgpu::Buffer,
+    map: crate::gpu::passes_core::PendingReadbackMap,
+}
+
 impl RecordedResidentLl1HirCheck {
     /// Reads the recorded parser status buffer into a host status result.
     pub(crate) fn read_status_result(
         &self,
         device: &wgpu::Device,
     ) -> anyhow::Result<Ll1AcceptResult> {
+        self.read_status_feature_flags_and_pointer_jump_steps_result(device)
+            .map(|(status, _feature_flags, _pointer_jump_steps)| status)
+    }
+
+    /// Reads parser status, feature mask, and the depth-bounded round count.
+    pub(crate) fn read_status_feature_flags_and_pointer_jump_steps_result(
+        &self,
+        device: &wgpu::Device,
+    ) -> anyhow::Result<(Ll1AcceptResult, u32, u32)> {
+        self.begin_status_and_feature_flags_read().finish(device)
+    }
+
+    /// Queues parser status mapping without waiting for GPU completion.
+    pub(crate) fn begin_status_and_feature_flags_read(&self) -> PendingResidentLl1HirStatus {
         let slice = self.status_readback.slice(..);
-        crate::gpu::passes_core::map_readback_blocking(
-            device,
-            &slice,
-            "parser.recorded-ll1-hir.status",
-        )?;
-        let mapped = slice.get_mapped_range();
+        let map =
+            crate::gpu::passes_core::begin_readback_map(&slice, "parser.recorded-ll1-hir.status");
+        PendingResidentLl1HirStatus {
+            status_readback: self.status_readback.clone(),
+            map,
+        }
+    }
+}
+
+impl PendingResidentLl1HirStatus {
+    /// Waits for the queued map and decodes status plus GPU scheduling metadata.
+    pub(crate) fn finish(
+        self,
+        device: &wgpu::Device,
+    ) -> anyhow::Result<(Ll1AcceptResult, u32, u32)> {
+        crate::gpu::passes_core::finish_readback_map_blocking(device, self.map)?;
+        let mapped = self.status_readback.slice(..).get_mapped_range();
         let words =
-            crate::gpu::readback::read_u32_words::<6>(&mapped, "parser.recorded-ll1-hir.status")?;
+            crate::gpu::readback::read_u32_words::<8>(&mapped, "parser.recorded-ll1-hir.status")?;
         drop(mapped);
         self.status_readback.unmap();
 
-        Ok(Ll1AcceptResult::from_status_words(&words))
+        Ok((
+            Ll1AcceptResult::from_status_words(&words[..6]),
+            words[6],
+            words[7],
+        ))
     }
 }
 

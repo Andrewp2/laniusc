@@ -11,7 +11,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-ByteAddressBuffer source_bytes;
+ByteAddressBuffer hir_string_data_words;
+StructuredBuffer<uint> hir_string_pool_len;
 StructuredBuffer<uint> body_words;
 StructuredBuffer<uint> body_status;
 StructuredBuffer<uint> body_plan;
@@ -42,11 +43,11 @@ static const uint TYPE_ENTRIES_LEN = TYPE_SECTION_PAYLOAD_LEN - 1u;
 static const uint FIXED_TYPE_COUNT = 21u;
 static const uint MIXED_TYPE_BASE = FIXED_TYPE_COUNT;
 static const uint MIXED_TYPES_PER_RETURN = 31u;
-static const uint IMPORT_SECTION_PAYLOAD_LEN = 515u;
-static const uint IMPORT_SECTION_LEN = 521u;
+static const uint IMPORT_SECTION_PAYLOAD_LEN = 706u;
+static const uint IMPORT_SECTION_LEN = 712u;
 static const uint MEMORY_SECTION_LEN = 17u;
 static const uint EXPORT_SECTION_LEN = 31u;
-static const uint WASM_IMPORT_FUNCTION_COUNT = 31u;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
 static const uint BODY_PLAN_FUNCTION_COUNT = 31u;
 static const uint BODY_PLAN_MAIN_SLOT = 34u;
 static const uint INVALID = 0xffffffffu;
@@ -74,11 +75,11 @@ uint body_byte(uint i)
     return body_words[i];
 }
 
-uint source_byte(uint pos)
+uint string_data_byte(uint pos)
 {
-    if (pos >= gParams.source_len)
+    if (pos >= hir_string_pool_len[0u])
         return 0u;
-    return byte_address_load_u8(source_bytes, pos);
+    return byte_address_load_u8(hir_string_data_words, pos);
 }
 
 uint leb5_byte(uint value, uint i)
@@ -288,6 +289,17 @@ uint import_name_len(uint import_i)
     if (import_i == 28u) return 14u;
     if (import_i == 29u) return 15u;
     if (import_i == 30u) return 10u;
+    if (import_i == 31u) return 17u;
+    if (import_i == 32u) return 11u;
+    if (import_i == 33u) return 10u;
+    if (import_i == 34u) return 10u;
+    if (import_i == 35u) return 6u;
+    if (import_i == 36u) return 14u;
+    if (import_i == 37u) return 11u;
+    if (import_i == 38u) return 12u;
+    if (import_i == 39u) return 7u;
+    if (import_i == 40u) return 12u;
+    if (import_i == 41u) return 4u;
     return 0u;
 }
 
@@ -324,6 +336,17 @@ uint import_type_index(uint import_i)
     if (import_i == 28u) return 3u;
     if (import_i == 29u) return 3u;
     if (import_i == 30u) return 4u;
+    if (import_i == 31u) return 3u;
+    if (import_i == 32u) return 3u;
+    if (import_i == 33u) return 3u;
+    if (import_i == 34u) return 3u;
+    if (import_i == 35u) return 5u;
+    if (import_i == 36u) return 3u;
+    if (import_i == 37u) return 3u;
+    if (import_i == 38u) return 2u;
+    if (import_i == 39u) return 5u;
+    if (import_i == 40u) return 9u;
+    if (import_i == 41u) return 8u;
     return 0u;
 }
 
@@ -626,6 +649,120 @@ uint import_name_byte(uint import_i, uint byte_i)
     if (import_i == 30u && byte_i == 7u) return 101u;
     if (import_i == 30u && byte_i == 8u) return 120u;
     if (import_i == 30u && byte_i == 9u) return 116u;
+    if (import_i == 31u && byte_i == 0u) return 102u;
+    if (import_i == 31u && byte_i == 1u) return 105u;
+    if (import_i == 31u && byte_i == 2u) return 108u;
+    if (import_i == 31u && byte_i == 3u) return 108u;
+    if (import_i == 31u && byte_i == 4u) return 95u;
+    if (import_i == 31u && byte_i == 5u) return 115u;
+    if (import_i == 31u && byte_i == 6u) return 101u;
+    if (import_i == 31u && byte_i == 7u) return 99u;
+    if (import_i == 31u && byte_i == 8u) return 117u;
+    if (import_i == 31u && byte_i == 9u) return 114u;
+    if (import_i == 31u && byte_i == 10u) return 101u;
+    if (import_i == 31u && byte_i == 11u) return 95u;
+    if (import_i == 31u && byte_i == 12u) return 98u;
+    if (import_i == 31u && byte_i == 13u) return 121u;
+    if (import_i == 31u && byte_i == 14u) return 116u;
+    if (import_i == 31u && byte_i == 15u) return 101u;
+    if (import_i == 31u && byte_i == 16u) return 115u;
+    if (import_i == 32u && byte_i == 0u) return 114u;
+    if (import_i == 32u && byte_i == 1u) return 101u;
+    if (import_i == 32u && byte_i == 2u) return 109u;
+    if (import_i == 32u && byte_i == 3u) return 111u;
+    if (import_i == 32u && byte_i == 4u) return 118u;
+    if (import_i == 32u && byte_i == 5u) return 101u;
+    if (import_i == 32u && byte_i == 6u) return 95u;
+    if (import_i == 32u && byte_i == 7u) return 102u;
+    if (import_i == 32u && byte_i == 8u) return 105u;
+    if (import_i == 32u && byte_i == 9u) return 108u;
+    if (import_i == 32u && byte_i == 10u) return 101u;
+    if (import_i == 33u && byte_i == 0u) return 99u;
+    if (import_i == 33u && byte_i == 1u) return 114u;
+    if (import_i == 33u && byte_i == 2u) return 101u;
+    if (import_i == 33u && byte_i == 3u) return 97u;
+    if (import_i == 33u && byte_i == 4u) return 116u;
+    if (import_i == 33u && byte_i == 5u) return 101u;
+    if (import_i == 33u && byte_i == 6u) return 95u;
+    if (import_i == 33u && byte_i == 7u) return 100u;
+    if (import_i == 33u && byte_i == 8u) return 105u;
+    if (import_i == 33u && byte_i == 9u) return 114u;
+    if (import_i == 34u && byte_i == 0u) return 114u;
+    if (import_i == 34u && byte_i == 1u) return 101u;
+    if (import_i == 34u && byte_i == 2u) return 109u;
+    if (import_i == 34u && byte_i == 3u) return 111u;
+    if (import_i == 34u && byte_i == 4u) return 118u;
+    if (import_i == 34u && byte_i == 5u) return 101u;
+    if (import_i == 34u && byte_i == 6u) return 95u;
+    if (import_i == 34u && byte_i == 7u) return 100u;
+    if (import_i == 34u && byte_i == 8u) return 105u;
+    if (import_i == 34u && byte_i == 9u) return 114u;
+    if (import_i == 35u && byte_i == 0u) return 114u;
+    if (import_i == 35u && byte_i == 1u) return 101u;
+    if (import_i == 35u && byte_i == 2u) return 110u;
+    if (import_i == 35u && byte_i == 3u) return 97u;
+    if (import_i == 35u && byte_i == 4u) return 109u;
+    if (import_i == 35u && byte_i == 5u) return 101u;
+    if (import_i == 36u && byte_i == 0u) return 109u;
+    if (import_i == 36u && byte_i == 1u) return 111u;
+    if (import_i == 36u && byte_i == 2u) return 110u;
+    if (import_i == 36u && byte_i == 3u) return 111u;
+    if (import_i == 36u && byte_i == 4u) return 116u;
+    if (import_i == 36u && byte_i == 5u) return 111u;
+    if (import_i == 36u && byte_i == 6u) return 110u;
+    if (import_i == 36u && byte_i == 7u) return 105u;
+    if (import_i == 36u && byte_i == 8u) return 99u;
+    if (import_i == 36u && byte_i == 9u) return 95u;
+    if (import_i == 36u && byte_i == 10u) return 114u;
+    if (import_i == 36u && byte_i == 11u) return 101u;
+    if (import_i == 36u && byte_i == 12u) return 97u;
+    if (import_i == 36u && byte_i == 13u) return 100u;
+    if (import_i == 37u && byte_i == 0u) return 115u;
+    if (import_i == 37u && byte_i == 1u) return 121u;
+    if (import_i == 37u && byte_i == 2u) return 115u;
+    if (import_i == 37u && byte_i == 3u) return 116u;
+    if (import_i == 37u && byte_i == 4u) return 101u;
+    if (import_i == 37u && byte_i == 5u) return 109u;
+    if (import_i == 37u && byte_i == 6u) return 95u;
+    if (import_i == 37u && byte_i == 7u) return 114u;
+    if (import_i == 37u && byte_i == 8u) return 101u;
+    if (import_i == 37u && byte_i == 9u) return 97u;
+    if (import_i == 37u && byte_i == 10u) return 100u;
+    if (import_i == 38u && byte_i == 0u) return 115u;
+    if (import_i == 38u && byte_i == 1u) return 108u;
+    if (import_i == 38u && byte_i == 2u) return 101u;
+    if (import_i == 38u && byte_i == 3u) return 101u;
+    if (import_i == 38u && byte_i == 4u) return 112u;
+    if (import_i == 38u && byte_i == 5u) return 95u;
+    if (import_i == 38u && byte_i == 6u) return 109u;
+    if (import_i == 38u && byte_i == 7u) return 115u;
+    if (import_i == 38u && byte_i == 8u) return 95u;
+    if (import_i == 38u && byte_i == 9u) return 105u;
+    if (import_i == 38u && byte_i == 10u) return 51u;
+    if (import_i == 38u && byte_i == 11u) return 50u;
+    if (import_i == 39u && byte_i == 0u) return 114u;
+    if (import_i == 39u && byte_i == 1u) return 101u;
+    if (import_i == 39u && byte_i == 2u) return 97u;
+    if (import_i == 39u && byte_i == 3u) return 108u;
+    if (import_i == 39u && byte_i == 4u) return 108u;
+    if (import_i == 39u && byte_i == 5u) return 111u;
+    if (import_i == 39u && byte_i == 6u) return 99u;
+    if (import_i == 40u && byte_i == 0u) return 97u;
+    if (import_i == 40u && byte_i == 1u) return 108u;
+    if (import_i == 40u && byte_i == 2u) return 108u;
+    if (import_i == 40u && byte_i == 3u) return 111u;
+    if (import_i == 40u && byte_i == 4u) return 99u;
+    if (import_i == 40u && byte_i == 5u) return 95u;
+    if (import_i == 40u && byte_i == 6u) return 102u;
+    if (import_i == 40u && byte_i == 7u) return 97u;
+    if (import_i == 40u && byte_i == 8u) return 105u;
+    if (import_i == 40u && byte_i == 9u) return 108u;
+    if (import_i == 40u && byte_i == 10u) return 101u;
+    if (import_i == 40u && byte_i == 11u) return 100u;
+    if (import_i == 41u && byte_i == 0u) return 101u;
+    if (import_i == 41u && byte_i == 1u) return 120u;
+    if (import_i == 41u && byte_i == 2u) return 105u;
+    if (import_i == 41u && byte_i == 3u) return 116u;
     return 0u;
 }
 
@@ -690,12 +827,12 @@ uint function_section_byte(uint pos, uint function_count)
 
 uint memory_page_count()
 {
-    uint source_end = (gParams.n_tokens + 1u) * 4u + gParams.source_len;
+    uint source_end = (gParams.n_tokens + 1u) * 4u + hir_string_pool_len[0u];
     uint bytes = ((source_end + 3u) & ~3u) + gParams.n_tokens * 4u;
     return max(1u, (bytes + 65535u) / 65536u);
 }
 
-uint source_data_base()
+uint string_data_base()
 {
     return (gParams.n_tokens + 1u) * 4u;
 }
@@ -749,20 +886,21 @@ uint code_section_byte(uint pos, uint function_count, uint body_len)
 
 uint data_section_len()
 {
-    return 24u + gParams.source_len;
+    return 24u + hir_string_pool_len[0u];
 }
 
 uint data_section_byte(uint pos)
 {
     if (pos == 0u) return 11u;
-    if (pos >= 1u && pos < 6u) return leb5_byte(18u + gParams.source_len, pos - 1u);
+    uint pool_len = hir_string_pool_len[0u];
+    if (pos >= 1u && pos < 6u) return leb5_byte(18u + pool_len, pos - 1u);
     if (pos >= 6u && pos < 11u) return leb5_byte(1u, pos - 6u);
     if (pos == 11u) return 0u;
     if (pos == 12u) return 0x41u;
-    if (pos >= 13u && pos < 18u) return leb5_byte(source_data_base(), pos - 13u);
+    if (pos >= 13u && pos < 18u) return leb5_byte(string_data_base(), pos - 13u);
     if (pos == 18u) return 0x0bu;
-    if (pos >= 19u && pos < 24u) return leb5_byte(gParams.source_len, pos - 19u);
-    return source_byte(pos - 24u);
+    if (pos >= 19u && pos < 24u) return leb5_byte(pool_len, pos - 19u);
+    return string_data_byte(pos - 24u);
 }
 
 uint module_body_start(uint function_count)

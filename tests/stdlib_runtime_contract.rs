@@ -109,16 +109,39 @@ fn runtime_bound_api_is_compiler_backed(api_name: &str) -> bool {
     matches!(
         api_name,
         "alloc::allocator::alloc"
+            | "alloc::allocator::realloc"
             | "alloc::allocator::dealloc"
+            | "alloc::allocator::alloc_failed"
             | "std::io::write_stdout"
             | "std::io::write_stderr"
             | "std::io::read_stdin"
             | "std::io::print_i32"
             | "std::random::secure_u32"
+            | "std::random::fill_secure_bytes"
+            | "std::env::var_len"
+            | "std::env::var_read"
+            | "std::env::var_count"
+            | "std::env::var_key_len"
+            | "std::env::var_key_read"
+            | "std::env::current_dir_read"
             | "std::process::argc"
             | "std::process::arg_len"
             | "std::process::arg_read"
             | "std::process::exit"
+            | "std::fs::open_read"
+            | "std::fs::open_write"
+            | "std::fs::open_append"
+            | "std::fs::close"
+            | "std::fs::read"
+            | "std::fs::write"
+            | "std::fs::remove_file"
+            | "std::fs::create_dir"
+            | "std::fs::remove_dir"
+            | "std::fs::rename"
+            | "std::time::unix_seconds"
+            | "std::time::monotonic_read"
+            | "std::time::system_read"
+            | "std::time::sleep_ms_i32"
     )
 }
 
@@ -506,14 +529,19 @@ fn runtime_service_boundary_diagnostic_catalog_matches_runtime_contract_ids() {
             diagnostic.service_id, *service_id,
             "{service_constant} should share the stdlib/runtime descriptor id"
         );
-        assert_eq!(
-            diagnostic.current_status, "known-unbound",
-            "{service_constant} should remain a known but unbound runtime boundary"
-        );
-        assert!(
-            !diagnostic.executable,
-            "{service_constant} must not become executable without a runtime binding"
-        );
+        if matches!(*service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+            assert_eq!(diagnostic.current_status, "executable");
+            assert!(diagnostic.executable);
+        } else {
+            assert_eq!(
+                diagnostic.current_status, "known-unbound",
+                "{service_constant} should remain a known but unbound runtime boundary"
+            );
+            assert!(
+                !diagnostic.executable,
+                "{service_constant} must not become executable without a runtime binding"
+            );
+        }
         assert_eq!(
             runtime_service_boundary_diagnostic_info(*service_id),
             Some(diagnostic),
@@ -531,7 +559,15 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
     assert!(
         RUNTIME_BOUND_API_DIAGNOSTICS
             .iter()
-            .filter(|api| !runtime_bound_api_is_compiler_backed(api.api_name))
+            .filter(|api| {
+                !runtime_bound_api_is_compiler_backed(api.api_name)
+                    && !matches!(
+                        api.api_name,
+                        "std::io::flush_stdout"
+                            | "std::io::flush_stderr"
+                            | "std::env::current_dir_len"
+                    )
+            })
             .all(|api| api.diagnostic_code == "LNC0038"
                 && api.current_status == "known-unbound"
                 && !api.executable),
@@ -731,7 +767,14 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                     .contains(&"service_api_name"),
             "{service_api_selector} should remain a public no-run selector"
         );
-        if runtime_bound_api_is_compiler_backed(api.api_name) {
+        if matches!(
+            api.api_name,
+            "std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len"
+        ) {
+            assert_eq!(api.current_status, "executable-stdlib");
+            assert_eq!(api.extern_abi, "lanius_stdlib");
+            assert!(api.executable);
+        } else if runtime_bound_api_is_compiler_backed(api.api_name) {
             assert_eq!(api.current_status, "executable-compiler-primitive");
             assert!(api.executable);
             if api.api_name == "std::io::print_i32" {
@@ -740,6 +783,10 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 assert_eq!(api.extern_abi, "compiler_host_stdio");
             } else if api.api_name.starts_with("alloc::allocator::") {
                 assert_eq!(api.extern_abi, "lanius_alloc");
+            } else if api.api_name.starts_with("std::fs::") {
+                assert_eq!(api.extern_abi, "compiler_host_filesystem");
+            } else if api.api_name.starts_with("std::time::") {
+                assert_eq!(api.extern_abi, "compiler_host_clock");
             } else {
                 assert_eq!(api.extern_abi, "lanius_std");
             }
@@ -750,11 +797,16 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 "{service_api_selector} must remain contract-only until a runtime binding exists"
             );
         }
-        assert_eq!(service.current_status, "known-unbound");
-        assert!(
-            !service.executable,
-            "{service_api_selector} should not make the whole service executable"
-        );
+        if matches!(service.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+            assert_eq!(service.current_status, "executable");
+            assert!(service.executable);
+        } else {
+            assert_eq!(service.current_status, "known-unbound");
+            assert!(
+                !service.executable,
+                "{service_api_selector} should not make the whole service executable"
+            );
+        }
     }
 
     assert!(
@@ -773,32 +825,10 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
 }
 
 #[test]
-fn process_exit_runtime_contract_distinguishes_bound_apis_from_exit_code_helpers() {
+fn process_exit_runtime_contract_distinguishes_exit_from_exit_code_helpers() {
     let process_service_id = runtime_descriptor_value("SERVICE_PROCESS_ID");
     let process_service = runtime_service_boundary_diagnostic_info(process_service_id)
         .expect("process runtime service boundary should be public");
-
-    let set_exit_code = runtime_bound_api_diagnostic_info("std::process::set_exit_code")
-        .expect("std::process::set_exit_code should have a public runtime-bound API row");
-    assert_eq!(
-        set_exit_code.service_id, process_service_id,
-        "std::process::set_exit_code should require the process runtime service"
-    );
-    assert_eq!(set_exit_code.module_path, "std::process");
-    assert_eq!(
-        set_exit_code.service_module_path,
-        process_service.module_path
-    );
-    assert_eq!(
-        set_exit_code.service_current_status,
-        process_service.current_status
-    );
-    assert_eq!(set_exit_code.service_executable, process_service.executable);
-    assert_eq!(set_exit_code.current_status, "known-unbound");
-    assert!(
-        !set_exit_code.executable,
-        "std::process::set_exit_code must stay non-executable until it is bound"
-    );
 
     for api_name in ["std::process::exit"] {
         let api = runtime_bound_api_diagnostic_info(api_name)
@@ -866,7 +896,7 @@ fn test_assert_helpers_do_not_require_test_harness_runtime_binding() {
 }
 
 #[test]
-fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
+fn runtime_boundary_explanation_reports_executable_stdio_service() {
     let json = diagnostic_explanation_json_pretty("lnc0038")
         .expect("runtime-bound diagnostic explanation should serialize");
     let explanation: serde_json::Value =
@@ -884,8 +914,8 @@ fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
         })
         .expect("LNC0038 explanation should include the stdio service boundary");
     assert_eq!(stdio_service["module_path"], "std::io");
-    assert_eq!(stdio_service["current_status"], "known-unbound");
-    assert_eq!(stdio_service["executable"], false);
+    assert_eq!(stdio_service["current_status"], "executable");
+    assert_eq!(stdio_service["executable"], true);
     assert!(
         stdio_service["binding_probe"]
             .as_str()
@@ -946,15 +976,18 @@ fn runtime_boundary_explanation_keeps_stdlib_apis_contract_only() {
         Some(u64::from(GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID))
     );
     assert_eq!(print_i32["extern_abi"], "compiler_print_i32");
-    assert_eq!(print_i32["service_current_status"], "known-unbound");
-    assert_eq!(print_i32["service_executable"], false);
+    assert_eq!(print_i32["service_current_status"], "executable");
+    assert_eq!(print_i32["service_executable"], true);
     assert_eq!(print_i32["current_status"], "executable-compiler-primitive");
     assert_eq!(print_i32["executable"], true);
 
     assert!(
         apis.iter()
             .filter(|api| {
-                !api["api_name"]
+                !matches!(
+                    api["service_id"].as_u64(),
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                ) && !api["api_name"]
                     .as_str()
                     .is_some_and(runtime_bound_api_is_compiler_backed)
             })
@@ -1071,10 +1104,10 @@ fn runtime_bound_descriptor_persists_flat_service_requirement_rows() {
         required_service_ids.len(),
         "runtime descriptor rows should align one-for-one with the service id list"
     );
-    for (row, expected_service_id) in required_service_rows
-        .iter()
-        .zip([allocator_service_id, stdio_service_id])
-    {
+    for (row, (expected_service_id, expected_status)) in required_service_rows.iter().zip([
+        (allocator_service_id, unavailable_status),
+        (stdio_service_id, available_status),
+    ]) {
         assert_eq!(
             row.get("service_id").and_then(|value| value.as_u64()),
             Some(u64::from(expected_service_id)),
@@ -1088,8 +1121,8 @@ fn runtime_bound_descriptor_persists_flat_service_requirement_rows() {
         );
         assert_eq!(
             row.get("service_status").and_then(|value| value.as_u64()),
-            Some(u64::from(unavailable_status)),
-            "runtime service requirement row should remain contract-only and unavailable"
+            Some(u64::from(expected_status)),
+            "runtime service requirement row should report the compiler's current binding status"
         );
     }
     serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document.clone())
@@ -1102,14 +1135,14 @@ fn runtime_bound_descriptor_persists_flat_service_requirement_rows() {
         .get_mut("required_runtime_services")
         .and_then(|value| value.as_array_mut())
         .expect("runtime descriptor JSON should expose mutable service rows");
-    service_rows[1]["service_status"] = serde_json::Value::from(available_status);
+    service_rows[1]["service_status"] = serde_json::Value::from(unavailable_status);
     let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(invalid_document)
         .expect("parse descriptor JSON with an invalid runtime service status row");
     let err = parsed
         .validate_contract()
-        .expect_err("runtime service rows must not claim executable bindings");
+        .expect_err("runtime service rows must match current compiler bindings");
     assert!(
-        err.contains("claims available status"),
+        err.contains("expected current compiler/runtime status"),
         "unexpected runtime service row validation error: {err}"
     );
 }
@@ -1465,6 +1498,7 @@ fn link_descriptor_summary_runtime_services_persist_partial_rows_and_gate_final_
     let allocator_service_id = runtime_descriptor_value("SERVICE_ALLOCATOR_ID");
     let stdio_service_id = runtime_descriptor_value("SERVICE_STDIO_ID");
     let unavailable_status = runtime_descriptor_value("SERVICE_STATUS_UNAVAILABLE");
+    let available_status = runtime_descriptor_value("SERVICE_STATUS_AVAILABLE");
 
     let partial_page = link_execution_page(false, vec![allocator_service_id, stdio_service_id]);
     let partial_descriptor =
@@ -1497,10 +1531,15 @@ fn link_descriptor_summary_runtime_services_persist_partial_rows_and_gate_final_
             row.get("service_id").and_then(|value| value.as_u64()),
             Some(u64::from(*service_id))
         );
+        let expected_status = if *service_id == stdio_service_id {
+            available_status
+        } else {
+            unavailable_status
+        };
         assert_eq!(
             row.get("service_status").and_then(|value| value.as_u64()),
-            Some(u64::from(unavailable_status)),
-            "link-summary runtime rows should remain unbound contract metadata"
+            Some(u64::from(expected_status)),
+            "link-summary runtime rows should reflect current compiler bindings"
         );
     }
     let runtime_record = document
@@ -3570,7 +3609,7 @@ fn main() {
 }
 
 #[test]
-fn alloc_allocator_contract_type_checks_against_unbound_runtime_allocator_through_stdlib_root() {
+fn alloc_allocator_contract_type_checks_against_available_runtime_allocator_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "allocator", Some("lani"));
     entry.write_str(
@@ -3594,7 +3633,7 @@ fn main() {
     let allocator_status: alloc::allocator::AllocatorServiceStatus =
         alloc::allocator::allocator_service_status();
     let declared_status: AllocatorServiceStatus =
-        ALLOCATOR_SERVICE_STATUS_UNAVAILABLE;
+        ALLOCATOR_SERVICE_STATUS_AVAILABLE;
     let runtime_status: core::runtime::RuntimeServiceStatus =
         core::runtime::service_status(runtime_allocator_id);
     let unknown_status: core::runtime::RuntimeServiceStatus =
@@ -3662,19 +3701,19 @@ fn main() {
     if (allocator_abi != declared_abi || allocator_abi != runtime_abi) {
         return 1;
     }
-    if (!allocator_known || !allocator_metadata_available || allocator_available || !allocator_blocked || !allocator_known_unbound || declared_binding || !declared_alloc_binding || !declared_dealloc_binding || !allocator_needs_binding || !imported_needs_binding || !allocator_contract_only || !runtime_needs_binding) {
+    if (!allocator_known || !allocator_metadata_available || !allocator_available || allocator_blocked || allocator_known_unbound || !declared_binding || !declared_alloc_binding || !declared_dealloc_binding || allocator_needs_binding || imported_needs_binding || allocator_contract_only || runtime_needs_binding) {
         return 1;
     }
-    if (!alloc_executable || realloc_executable || !dealloc_executable || alloc_failed_executable) {
+    if (!alloc_executable || !realloc_executable || !dealloc_executable || !alloc_failed_executable) {
         return 1;
     }
-    if (alloc_blocked || !realloc_blocked || dealloc_blocked || !alloc_failed_blocked) {
+    if (alloc_blocked || realloc_blocked || dealloc_blocked || alloc_failed_blocked) {
         return 1;
     }
-    if (alloc_known_unbound || !realloc_known_unbound || dealloc_known_unbound || !alloc_failed_known_unbound) {
+    if (alloc_known_unbound || realloc_known_unbound || dealloc_known_unbound || alloc_failed_known_unbound) {
         return 1;
     }
-    if (alloc_needs_binding || !realloc_needs_binding || dealloc_needs_binding || !alloc_failed_needs_binding) {
+    if (alloc_needs_binding || realloc_needs_binding || dealloc_needs_binding || alloc_failed_needs_binding) {
         return 1;
     }
     return 0;
@@ -3700,7 +3739,7 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "alloc::allocator should advertise the same unbound allocator service contract as core::runtime",
+        "alloc::allocator should advertise the same available allocator service contract as core::runtime",
     );
 }
 
@@ -3779,7 +3818,7 @@ fn main() {
 }
 
 #[test]
-fn std_io_contract_matches_unbound_runtime_stdio_service() {
+fn std_io_contract_matches_executable_runtime_stdio_service() {
     common::type_check_source_pack_with_timeout(&[
         include_str!("../stdlib/core/runtime.lani"),
         include_str!("../stdlib/std/io.lani"),
@@ -3828,14 +3867,14 @@ fn main() {
     if (io_abi != declared_abi || io_abi != runtime_abi) {
         return 1;
     }
-    if (!io_known || io_available || !io_blocked || !io_needs_binding || !print_i32_executable || print_i32_blocked || print_i32_needs_binding || runtime_api_executable || !runtime_api_needs_binding || !runtime_needs_binding) {
+    if (!io_known || !io_available || io_blocked || io_needs_binding || !print_i32_executable || print_i32_blocked || print_i32_needs_binding || !runtime_api_executable || runtime_api_needs_binding || runtime_needs_binding) {
         return 1;
     }
     return 0;
 }
 "#,
     ])
-    .expect("std::io should advertise the same unbound stdio service contract as core::runtime");
+    .expect("std::io should advertise the same executable stdio service contract as core::runtime");
 }
 
 #[test]
@@ -4452,7 +4491,7 @@ fn main() {
 }
 
 #[test]
-fn std_fs_contract_type_checks_against_unbound_runtime_filesystem_service_through_stdlib_root() {
+fn std_fs_contract_type_checks_against_executable_runtime_filesystem_service_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "fs", Some("lani"));
     entry.write_str(
@@ -4469,7 +4508,7 @@ fn main() {
     let unknown_runtime_service_id: core::runtime::RuntimeServiceId = 99;
     let fs_known: FilesystemCapability = filesystem_service_is_known();
     let fs_status: std::fs::FilesystemServiceStatus = std::fs::filesystem_service_status();
-    let declared_status: FilesystemServiceStatus = FILESYSTEM_SERVICE_STATUS_UNAVAILABLE;
+    let declared_status: FilesystemServiceStatus = FILESYSTEM_SERVICE_STATUS_AVAILABLE;
     let runtime_status: core::runtime::RuntimeServiceStatus =
         core::runtime::service_status(runtime_fs_id);
     let unknown_status: core::runtime::RuntimeServiceStatus =
@@ -4496,7 +4535,7 @@ fn main() {
     if (fs_abi != declared_abi || fs_abi != runtime_abi) {
         return 1;
     }
-    if (!fs_known || fs_available || declared_binding || !fs_needs_binding || !imported_needs_binding || !runtime_needs_binding) {
+    if (!fs_known || !fs_available || !declared_binding || fs_needs_binding || imported_needs_binding || runtime_needs_binding) {
         return 1;
     }
     return 0;
@@ -4509,7 +4548,7 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::fs should advertise the same unbound filesystem service contract as core::runtime",
+        "std::fs should advertise the same executable filesystem service contract as core::runtime",
     );
 }
 
@@ -4548,16 +4587,16 @@ fn main() {
         std::fs::path_mutation_api_is_known_but_unbound();
     let path_mutation_needs_binding: FilesystemCapability =
         path_mutation_api_requires_runtime_binding();
-    if (fs_available || !fs_metadata_available || !fs_blocked || !fs_known_unbound || !fs_needs_binding || !fs_contract_only) {
+    if (!fs_available || !fs_metadata_available || fs_blocked || fs_known_unbound || fs_needs_binding || fs_contract_only) {
         return 1;
     }
-    if (file_io_executable || !file_io_blocked || !file_io_needs_binding) {
+    if (!file_io_executable || file_io_blocked || file_io_needs_binding) {
         return 1;
     }
-    if (!file_io_known_unbound || !path_mutation_known_unbound) {
+    if (file_io_known_unbound || path_mutation_known_unbound) {
         return 1;
     }
-    if (path_mutation_executable || !path_mutation_blocked || !path_mutation_needs_binding) {
+    if (!path_mutation_executable || path_mutation_blocked || path_mutation_needs_binding) {
         return 1;
     }
     return 0;
@@ -4632,16 +4671,16 @@ fn main() {
         rename_is_known_but_unbound();
     let rename_needs_binding: FilesystemCapability =
         rename_requires_runtime_binding();
-    if (path_mutation_executable || remove_file_executable || create_dir_executable || remove_dir_executable || rename_executable) {
+    if (!path_mutation_executable || !remove_file_executable || !create_dir_executable || !remove_dir_executable || !rename_executable) {
         return 1;
     }
-    if (!path_mutation_blocked || !remove_file_blocked || !create_dir_blocked || !remove_dir_blocked || !rename_blocked) {
+    if (path_mutation_blocked || remove_file_blocked || create_dir_blocked || remove_dir_blocked || rename_blocked) {
         return 1;
     }
-    if (!remove_file_known_unbound || !create_dir_known_unbound || !remove_dir_known_unbound || !rename_known_unbound) {
+    if (remove_file_known_unbound || create_dir_known_unbound || remove_dir_known_unbound || rename_known_unbound) {
         return 1;
     }
-    if (!path_mutation_needs_binding || !remove_file_needs_binding || !create_dir_needs_binding || !remove_dir_needs_binding || !rename_needs_binding) {
+    if (path_mutation_needs_binding || remove_file_needs_binding || create_dir_needs_binding || remove_dir_needs_binding || rename_needs_binding) {
         return 1;
     }
     return 0;
@@ -4688,7 +4727,7 @@ fn main() {
     let rename_status: i32 = std::fs::rename(0, 0, 0, 0);
     let path_mutation_blocked: std::fs::FilesystemCapability =
         std::fs::path_mutation_api_is_blocked();
-    if (!path_mutation_blocked) {
+    if (path_mutation_blocked) {
         return 1;
     }
     return remove_file_status + create_dir_status + remove_dir_status + rename_status - remove_file_status - create_dir_status - remove_dir_status - rename_status;
@@ -4711,7 +4750,7 @@ fn main() {
         "GPU type check stdlib-root std::fs path-mutation public calls",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::fs path-mutation calls should type check through --stdlib-root while unbound");
+    .expect("std::fs executable path-mutation calls should type check through --stdlib-root");
 }
 
 #[test]
@@ -5681,7 +5720,7 @@ fn main() {
 }
 
 #[test]
-fn std_process_contract_type_checks_against_unbound_runtime_process_service() {
+fn std_process_contract_type_checks_against_available_runtime_process_service() {
     common::type_check_source_pack_with_timeout(&[
         include_str!("../stdlib/core/runtime.lani"),
         include_str!("../stdlib/std/process.lani"),
@@ -5701,7 +5740,7 @@ fn main() {
     let process_known: ProcessCapability = process_service_is_known();
     let process_status: std::process::ProcessServiceStatus =
         std::process::process_service_status();
-    let declared_status: ProcessServiceStatus = PROCESS_SERVICE_STATUS_UNAVAILABLE;
+    let declared_status: ProcessServiceStatus = PROCESS_SERVICE_STATUS_AVAILABLE;
     let runtime_status: core::runtime::RuntimeServiceStatus =
         core::runtime::service_status(runtime_process_id);
     let unknown_status: core::runtime::RuntimeServiceStatus =
@@ -5728,18 +5767,19 @@ fn main() {
     if (process_abi != declared_abi || process_abi != runtime_abi) {
         return 1;
     }
-    if (!process_known || process_available || declared_binding || !process_needs_binding || !imported_needs_binding || !runtime_needs_binding) {
+    if (!process_known || !process_available || !declared_binding || process_needs_binding || imported_needs_binding || runtime_needs_binding) {
         return 1;
     }
     return 0;
 }
 "#,
     ])
-    .expect("std::process should advertise the same unbound process service contract as core::runtime");
+    .expect("std::process should advertise the same available process service contract as core::runtime");
 }
 
 #[test]
-fn std_process_contract_type_checks_against_unbound_runtime_process_service_through_stdlib_root() {
+fn std_process_contract_type_checks_against_available_runtime_process_service_through_stdlib_root()
+{
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "process", Some("lani"));
     entry.write_str(
@@ -5767,7 +5807,7 @@ fn main() {
     if (process_service_id != runtime_process_id || process_status != runtime_status) {
         return 1;
     }
-    if (process_abi != runtime_abi || !process_needs_binding || !runtime_needs_binding) {
+    if (process_abi != runtime_abi || process_needs_binding || runtime_needs_binding) {
         return 1;
     }
     return 0;
@@ -5797,7 +5837,7 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::process should advertise the same unbound process service contract through --stdlib-root",
+        "std::process should advertise the same available process service contract through --stdlib-root",
     );
 }
 
@@ -5851,19 +5891,12 @@ fn main() {
     let arg_read_known_unbound: std::process::ProcessCapability =
         std::process::arg_read_is_known_but_unbound();
     let arg_read_needs_binding: ProcessCapability = arg_read_requires_runtime_binding();
-    let set_exit_code_executable: std::process::ProcessCapability =
-        std::process::set_exit_code_is_executable();
-    let set_exit_code_blocked: ProcessCapability = set_exit_code_is_blocked();
-    let set_exit_code_known_unbound: ProcessCapability =
-        set_exit_code_is_known_but_unbound();
-    let set_exit_code_needs_binding: ProcessCapability =
-        set_exit_code_requires_runtime_binding();
     let exit_call_executable: ProcessCapability = exit_is_executable();
     let exit_call_blocked: std::process::ProcessCapability =
         std::process::exit_is_blocked();
     let exit_call_known_unbound: ProcessCapability = exit_is_known_but_unbound();
     let exit_call_needs_binding: ProcessCapability = exit_requires_runtime_binding();
-    if (process_available || !process_metadata_available || !process_blocked || !process_known_unbound || !process_needs_binding || !process_contract_only) {
+    if (!process_available || !process_metadata_available || process_blocked || process_known_unbound || process_needs_binding || process_contract_only) {
         return 1;
     }
     if (!args_executable || args_blocked || args_known_unbound || args_need_binding) {
@@ -5872,16 +5905,16 @@ fn main() {
     if (!exit_executable || exit_blocked || exit_known_unbound || exit_needs_binding) {
         return 1;
     }
-    if (!argc_executable || !arg_len_executable || !arg_read_executable || set_exit_code_executable || !exit_call_executable) {
+    if (!argc_executable || !arg_len_executable || !arg_read_executable || !exit_call_executable) {
         return 1;
     }
-    if (argc_blocked || arg_len_blocked || arg_read_blocked || !set_exit_code_blocked || exit_call_blocked) {
+    if (argc_blocked || arg_len_blocked || arg_read_blocked || exit_call_blocked) {
         return 1;
     }
-    if (argc_known_unbound || arg_len_known_unbound || arg_read_known_unbound || !set_exit_code_known_unbound || exit_call_known_unbound) {
+    if (argc_known_unbound || arg_len_known_unbound || arg_read_known_unbound || exit_call_known_unbound) {
         return 1;
     }
-    if (argc_needs_binding || arg_len_needs_binding || arg_read_needs_binding || !set_exit_code_needs_binding || exit_call_needs_binding) {
+    if (argc_needs_binding || arg_len_needs_binding || arg_read_needs_binding || exit_call_needs_binding) {
         return 1;
     }
     return 0;
@@ -5990,13 +6023,11 @@ fn main() {
         "GPU type check stdlib-root std::process argument-result contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect(
-        "std::process argument-result helpers should type check while process args remain unbound",
-    );
+    .expect("std::process argument-result helpers should type check with executable process args");
 }
 
 #[test]
-fn std_process_exit_code_contract_type_checks_without_runtime_binding() {
+fn std_process_exit_code_contract_type_checks_independently_of_runtime_calls() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry =
         common::TempArtifact::new("laniusc_stdlib_runtime", "process_exit_code", Some("lani"));
@@ -6040,7 +6071,7 @@ fn main() {
     if (!success_ok || !failure_ok || !alternate_failure_ok) {
         return 1;
     }
-    if (process_available || !process_blocked || !exit_executable || exit_needs_binding) {
+    if (!process_available || process_blocked || !exit_executable || exit_needs_binding) {
         return 1;
     }
     return success;
@@ -6064,12 +6095,12 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::process exit-code helpers should type check without binding process runtime APIs",
+        "std::process exit-code helpers should type check independently of invoking process runtime APIs",
     );
 }
 
 #[test]
-fn std_env_contract_type_checks_against_unbound_runtime_env_service_through_stdlib_root() {
+fn std_env_contract_type_checks_against_executable_runtime_env_service_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "env", Some("lani"));
     entry.write_str(
@@ -6087,7 +6118,7 @@ fn main() {
     let env_metadata_available: EnvCapability =
         std::env::env_contract_metadata_is_available();
     let env_status: std::env::EnvServiceStatus = std::env::env_service_status();
-    let declared_status: EnvServiceStatus = ENV_SERVICE_STATUS_UNAVAILABLE;
+    let declared_status: EnvServiceStatus = ENV_SERVICE_STATUS_AVAILABLE;
     let runtime_status: core::runtime::RuntimeServiceStatus =
         core::runtime::service_status(runtime_env_id);
     let env_abi: std::env::EnvRuntimeAbiVersion = env_runtime_abi_version();
@@ -6174,16 +6205,16 @@ fn main() {
     if (env_abi != declared_abi || env_abi != runtime_abi) {
         return 1;
     }
-    if (!env_known || !env_metadata_available || env_available || !env_blocked || !env_known_unbound || declared_binding || !env_needs_binding || !imported_needs_binding || !env_contract_only || !runtime_needs_binding) {
+    if (!env_known || !env_metadata_available || !env_available || env_blocked || env_known_unbound || !declared_binding || env_needs_binding || imported_needs_binding || env_contract_only || runtime_needs_binding) {
         return 1;
     }
-    if (!env_vars_executable || !var_len_executable || !var_read_executable || !var_count_executable || !var_key_len_executable || !var_key_read_executable || current_dir_executable || current_dir_len_executable || !current_dir_read_executable) {
+    if (!env_vars_executable || !var_len_executable || !var_read_executable || !var_count_executable || !var_key_len_executable || !var_key_read_executable || !current_dir_executable || !current_dir_len_executable || !current_dir_read_executable) {
         return 1;
     }
-    if (env_vars_blocked || env_vars_known_unbound || var_len_blocked || var_len_known_unbound || var_read_blocked || var_read_known_unbound || var_count_blocked || var_count_known_unbound || var_key_len_blocked || var_key_len_known_unbound || var_key_read_blocked || var_key_read_known_unbound || !current_dir_blocked || !current_dir_known_unbound || !current_dir_len_blocked || !current_dir_len_known_unbound || current_dir_read_blocked || current_dir_read_known_unbound) {
+    if (env_vars_blocked || env_vars_known_unbound || var_len_blocked || var_len_known_unbound || var_read_blocked || var_read_known_unbound || var_count_blocked || var_count_known_unbound || var_key_len_blocked || var_key_len_known_unbound || var_key_read_blocked || var_key_read_known_unbound || current_dir_blocked || current_dir_known_unbound || current_dir_len_blocked || current_dir_len_known_unbound || current_dir_read_blocked || current_dir_read_known_unbound) {
         return 1;
     }
-    if (env_vars_needs_binding || var_len_needs_binding || var_read_needs_binding || var_count_needs_binding || var_key_len_needs_binding || var_key_read_needs_binding || !current_dir_needs_binding || !current_dir_len_needs_binding || current_dir_read_needs_binding) {
+    if (env_vars_needs_binding || var_len_needs_binding || var_read_needs_binding || var_count_needs_binding || var_key_len_needs_binding || var_key_read_needs_binding || current_dir_needs_binding || current_dir_len_needs_binding || current_dir_read_needs_binding) {
         return 1;
     }
     return 0;
@@ -6205,13 +6236,13 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env runtime contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::env should advertise the same unbound env service contract as core::runtime");
+    .expect("std::env should advertise the same executable env service contract as core::runtime");
 }
 
 #[test]
@@ -6236,7 +6267,7 @@ fn main() {
         std::env::environment_variables_api_is_blocked();
     let current_dir_blocked: std::env::EnvCapability =
         std::env::current_dir_api_is_blocked();
-    if (!env_vars_blocked || !current_dir_blocked) {
+    if (env_vars_blocked || current_dir_blocked) {
         return 1;
     }
     return key_count + key_len + key_read + value_len + value_read + current_len + current_read - key_count - key_len - key_read - value_len - value_read - current_len - current_read;
@@ -6253,13 +6284,13 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/env.lani")),
         "path manifest should include std::env from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 3);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env public read calls",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::env read calls should type check through --stdlib-root while unbound");
+    .expect("std::env read calls should type check through --stdlib-root when executable");
 }
 
 #[test]
@@ -6311,13 +6342,13 @@ fn main() {
     if (!empty_succeeded || !byte_count_succeeded || !unavailable_failed) {
         return 1;
     }
-    if (!unavailable_is_known || !unavailable_is_fail_closed || env_var_fail_closed || current_dir_fail_closed) {
+    if (!unavailable_is_known || unavailable_is_fail_closed || env_var_fail_closed || current_dir_fail_closed) {
         return 1;
     }
     if (other_failure_is_unavailable || other_failure_is_fail_closed) {
         return 1;
     }
-    if (!env_blocked || !env_known_unbound) {
+    if (env_blocked || env_known_unbound) {
         return 1;
     }
     return key_count + value_len + current_len - key_count - value_len - current_len;
@@ -6334,17 +6365,17 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/env.lani")),
         "path manifest should include std::env from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 3);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env read-result contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::env read-result helpers should type check while the env service remains unbound");
+    .expect("std::env read-result helpers should type check with executable env support");
 }
 
 #[test]
-fn std_random_contract_type_checks_against_unbound_secure_rng_service_through_stdlib_root() {
+fn std_random_contract_type_checks_against_executable_secure_rng_service_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "random", Some("lani"));
     entry.write_str(
@@ -6365,7 +6396,7 @@ fn main() {
         std::random::random_contract_metadata_is_available();
     let random_status: std::random::RandomServiceStatus =
         std::random::random_service_status();
-    let declared_status: RandomServiceStatus = RANDOM_SERVICE_STATUS_UNAVAILABLE;
+    let declared_status: RandomServiceStatus = RANDOM_SERVICE_STATUS_AVAILABLE;
     let runtime_status: core::runtime::RuntimeServiceStatus =
         core::runtime::service_status(runtime_random_id);
     let random_abi: std::random::RandomRuntimeAbiVersion =
@@ -6422,22 +6453,22 @@ fn main() {
     if (random_abi != declared_abi || random_abi != runtime_abi) {
         return 1;
     }
-    if (!random_known || !random_metadata_available || random_available || !random_blocked || !random_known_unbound || declared_binding || !random_needs_binding || !imported_needs_binding || !random_contract_only || !runtime_needs_binding) {
+    if (!random_known || !random_metadata_available || !random_available || random_blocked || random_known_unbound || !declared_binding || random_needs_binding || imported_needs_binding || random_contract_only || runtime_needs_binding) {
         return 1;
     }
-    if (secure_rng_executable || !secure_rng_blocked || !secure_rng_known_unbound || !secure_rng_needs_binding) {
+    if (!secure_rng_executable || secure_rng_blocked || secure_rng_known_unbound || secure_rng_needs_binding) {
         return 1;
     }
-    if (fill_bytes_executable || !secure_u32_executable) {
+    if (!fill_bytes_executable || !secure_u32_executable) {
         return 1;
     }
-    if (!fill_bytes_blocked || secure_u32_blocked) {
+    if (fill_bytes_blocked || secure_u32_blocked) {
         return 1;
     }
-    if (!fill_bytes_known_unbound || secure_u32_known_unbound) {
+    if (fill_bytes_known_unbound || secure_u32_known_unbound) {
         return 1;
     }
-    if (!fill_bytes_needs_binding || secure_u32_needs_binding) {
+    if (fill_bytes_needs_binding || secure_u32_needs_binding) {
         return 1;
     }
     return fill_status - fill_status;
@@ -6468,12 +6499,12 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::random should advertise the same unbound secure RNG service contract as core::runtime",
+        "std::random should advertise the same executable secure RNG service contract as core::runtime",
     );
 }
 
 #[test]
-fn std_random_operation_result_contract_type_checks_fail_closed_through_stdlib_root() {
+fn std_random_operation_result_contract_type_checks_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new(
         "laniusc_stdlib_runtime",
@@ -6525,10 +6556,10 @@ fn main() {
     if (!ok_succeeded || !byte_count_succeeded || !unavailable_failed) {
         return 1;
     }
-    if (!unavailable_is_known || !unavailable_is_fail_closed || other_failure_is_unavailable || other_failure_is_fail_closed) {
+    if (!unavailable_is_known || unavailable_is_fail_closed || other_failure_is_unavailable || other_failure_is_fail_closed) {
         return 1;
     }
-    if (!random_blocked || !random_known_unbound) {
+    if (random_blocked || random_known_unbound) {
         return 1;
     }
     return ok + fill_result - fill_result;
@@ -6551,9 +6582,7 @@ fn main() {
         "GPU type check stdlib-root std::random operation-result contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect(
-        "std::random operation-result helpers should type check while secure RNG remains unbound",
-    );
+    .expect("std::random operation-result helpers should type check with executable secure RNG");
 }
 
 #[test]
@@ -7354,7 +7383,6 @@ fn main() {
     let recv: i32 = std::net::tcp_recv(tcp, grown, grown_size);
     let udp: i32 = std::net::udp_bind(zero_ptr, size, 53);
     let udp_sent: i32 = std::net::udp_send_to(udp, zero_ptr, grown, grown_size);
-    std::process::set_exit_code(0);
     alloc::allocator::dealloc(grown, grown_size, align);
     alloc::allocator::alloc_failed(grown_size, align);
     core::panic::unreachable();

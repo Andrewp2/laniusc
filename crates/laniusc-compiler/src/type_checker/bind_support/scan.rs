@@ -17,7 +17,8 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_with_passes(
 ) -> Result<U32ScanBindGroups> {
     create_counted_u32_scan_bind_groups_from_passes(
         &passes.counted_scan_local,
-        &passes.counted_scan_blocks,
+        &passes.counted_scan_hierarchy_up,
+        &passes.counted_scan_hierarchy_down,
         &passes.counted_scan_apply,
         device,
         label,
@@ -37,7 +38,8 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_with_passes(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_from_passes(
     counted_scan_local: &PassData,
-    counted_scan_blocks: &PassData,
+    counted_scan_hierarchy_up: &PassData,
+    counted_scan_hierarchy_down: &PassData,
     counted_scan_apply: &PassData,
     device: &wgpu::Device,
     label: &'static str,
@@ -65,42 +67,78 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_from_passes(
         ],
     )?;
 
-    let mut blocks = Vec::with_capacity(scan_steps.len());
-    for step in scan_steps {
-        let prefix_in = if step.read_from_a {
-            scan_prefix_a
-        } else {
-            scan_prefix_b
-        };
-        let prefix_out = if step.write_to_a {
-            scan_prefix_a
-        } else {
-            scan_prefix_b
-        };
-        blocks.push(bind_group::create_bind_group_from_bindings(
+    let n_items = (scan_local_prefix.size() / 4).min(u32::MAX as u64) as u32;
+    let n_blocks = (scan_block_sum.size() / 4).min(u32::MAX as u64) as u32;
+    let levels = crate::gpu::scan::hierarchical_scan_levels(n_blocks);
+
+    let mut hierarchy_up = Vec::with_capacity(levels.len());
+    for (index, level) in levels.iter().copied().enumerate() {
+        let parent = levels.get(index + 1).copied();
+        let params = uniform_from_val(
             device,
-            Some(&format!("{label}.counted_scan_blocks")),
-            counted_scan_blocks,
+            &format!("{label}.counted_scan_hierarchy_up.{index}"),
+            &CountedScanHierarchyParams {
+                n_items,
+                n_blocks,
+                level_divisor: level.divisor,
+                level_offset: level.offset,
+                parent_divisor: parent.map_or(0, |parent| parent.divisor),
+                parent_offset: parent.map_or(0, |parent| parent.offset),
+            },
+        );
+        let bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some(&format!("{label}.counted_scan_hierarchy_up")),
+            counted_scan_hierarchy_up,
             0,
             &[
-                ("gScan", step.params.as_entire_binding()),
+                ("gHierarchy", params.as_entire_binding()),
                 ("scan_count", scan_count.as_entire_binding()),
                 ("scan_block_sum", scan_block_sum.as_entire_binding()),
-                ("scan_block_prefix_in", prefix_in.as_entire_binding()),
-                ("scan_block_prefix_out", prefix_out.as_entire_binding()),
+                ("scan_block_prefix", scan_prefix_a.as_entire_binding()),
+                ("scan_hierarchy", scan_prefix_b.as_entire_binding()),
             ],
-        )?);
+        )?;
+        hierarchy_up.push(ScanHierarchyStep {
+            bind_group,
+            work_items: level.count,
+        });
     }
 
-    let final_prefix = if scan_steps
-        .last()
-        .map(|step| step.write_to_a)
-        .unwrap_or(true)
-    {
-        scan_prefix_a
-    } else {
-        scan_prefix_b
-    };
+    let mut hierarchy_down = Vec::with_capacity(levels.len().saturating_sub(1));
+    for child_index in (0..levels.len().saturating_sub(1)).rev() {
+        let child = levels[child_index];
+        let parent = levels[child_index + 1];
+        let params = uniform_from_val(
+            device,
+            &format!("{label}.counted_scan_hierarchy_down.{child_index}"),
+            &CountedScanHierarchyParams {
+                n_items,
+                n_blocks,
+                level_divisor: child.divisor,
+                level_offset: child.offset,
+                parent_divisor: parent.divisor,
+                parent_offset: parent.offset,
+            },
+        );
+        let bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some(&format!("{label}.counted_scan_hierarchy_down")),
+            counted_scan_hierarchy_down,
+            0,
+            &[
+                ("gHierarchy", params.as_entire_binding()),
+                ("scan_count", scan_count.as_entire_binding()),
+                ("scan_block_prefix", scan_prefix_a.as_entire_binding()),
+                ("scan_hierarchy", scan_prefix_b.as_entire_binding()),
+            ],
+        )?;
+        hierarchy_down.push(ScanHierarchyStep {
+            bind_group,
+            work_items: child.count,
+        });
+    }
+
     let apply = bind_group::create_bind_group_from_bindings(
         device,
         Some(&format!("{label}.counted_scan_apply")),
@@ -110,111 +148,25 @@ pub(in crate::type_checker) fn create_counted_u32_scan_bind_groups_from_passes(
             ("gScan", scan_steps[0].params.as_entire_binding()),
             ("scan_count", scan_count.as_entire_binding()),
             ("scan_local_prefix", scan_local_prefix.as_entire_binding()),
-            ("scan_block_prefix", final_prefix.as_entire_binding()),
+            ("scan_block_prefix", scan_prefix_a.as_entire_binding()),
             ("scan_output_prefix", scan_output_prefix.as_entire_binding()),
             ("scan_total", scan_total.as_entire_binding()),
         ],
     )?;
     Ok(U32ScanBindGroups {
         local,
-        blocks,
+        hierarchy_up,
+        hierarchy_down,
         apply,
     })
 }
 
-/// Creates ping-pong scan parameter packets for loop-depth propagation.
-pub(in crate::type_checker) fn make_loop_depth_scan_steps(
-    device: &wgpu::Device,
-    base: LoopDepthParams,
-) -> Vec<LoopDepthScanStep> {
-    crate::gpu::scan::ping_pong_scan_steps(
-        base.n_blocks,
-        crate::gpu::scan::ScanFinalize::Always(base.n_blocks),
-    )
-    .into_iter()
-    .map(|plan| {
-        let label = if plan.scan_step == 0 {
-            "type_check.loop_depth.scan.params.init"
-        } else if plan.scan_step == base.n_blocks {
-            "type_check.loop_depth.scan.params.finalize"
-        } else {
-            "type_check.loop_depth.scan.params.step"
-        };
-        LoopDepthScanStep {
-            params: uniform_from_val(
-                device,
-                label,
-                &LoopDepthParams {
-                    scan_step: plan.scan_step,
-                    ..base
-                },
-            ),
-            read_from_a: plan.read_from_a,
-            write_to_a: plan.write_to_a,
-        }
-    })
-    .collect()
-}
-
-/// Creates ping-pong scan parameter packets for name-like counted scans.
+/// Creates the shared base parameter packet for hierarchical counted scans.
 pub(in crate::type_checker) fn make_name_scan_steps(
     device: &wgpu::Device,
     base: NameScanParams,
 ) -> Vec<NameScanStep> {
-    crate::gpu::scan::ping_pong_scan_steps(base.n_blocks, crate::gpu::scan::ScanFinalize::None)
-        .into_iter()
-        .map(|plan| {
-            let label = if plan.scan_step == 0 {
-                "type_check.names.scan.params.init"
-            } else {
-                "type_check.names.scan.params.step"
-            };
-            NameScanStep {
-                params: uniform_from_val(
-                    device,
-                    label,
-                    &NameScanParams {
-                        scan_step: plan.scan_step,
-                        ..base
-                    },
-                ),
-                read_from_a: plan.read_from_a,
-                write_to_a: plan.write_to_a,
-            }
-        })
-        .collect()
-}
-
-/// Creates ping-pong scan parameter packets for enclosing-function context.
-pub(in crate::type_checker) fn make_fn_context_scan_steps(
-    device: &wgpu::Device,
-    base: FnContextParams,
-) -> Vec<FnContextScanStep> {
-    crate::gpu::scan::ping_pong_scan_steps(
-        base.n_blocks,
-        crate::gpu::scan::ScanFinalize::Always(base.n_blocks),
-    )
-    .into_iter()
-    .map(|plan| {
-        let label = if plan.scan_step == 0 {
-            "type_check.fn_context.scan.params.init"
-        } else if plan.scan_step == base.n_blocks {
-            "type_check.fn_context.scan.params.finalize"
-        } else {
-            "type_check.fn_context.scan.params.step"
-        };
-        FnContextScanStep {
-            params: uniform_from_val(
-                device,
-                label,
-                &FnContextParams {
-                    scan_step: plan.scan_step,
-                    ..base
-                },
-            ),
-            read_from_a: plan.read_from_a,
-            write_to_a: plan.write_to_a,
-        }
-    })
-    .collect()
+    vec![NameScanStep {
+        params: uniform_from_val(device, "type_check.names.scan.params", &base),
+    }]
 }

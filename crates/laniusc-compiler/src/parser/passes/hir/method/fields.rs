@@ -133,6 +133,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMethodFieldsP
                 b.hir_method_visibility.as_entire_binding(),
             ),
             (
+                "hir_method_signature_flags".into(),
+                b.hir_method_signature_flags.as_entire_binding(),
+            ),
+            (
                 "hir_method_impl_receiver_type_node".into(),
                 b.hir_method_impl_receiver_type_node.as_entire_binding(),
             ),

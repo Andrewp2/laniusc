@@ -10,7 +10,6 @@
 
 import range_query;
 import status;
-import generated_parse_production_ids;
 
 struct Params
 {
@@ -21,7 +20,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> subtree_end;
@@ -205,12 +203,10 @@ void bind_decl(uint use_i, uint decl_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint arm_node = linear_thread_id(dtid);
-    if (!valid_node(arm_node) || node_kind[arm_node] != PROD_MATCH_ARM)
+    if (!valid_node(arm_node) || !valid_node(hir_match_arm_pattern_node[arm_node]))
         return;
 
     uint pattern_node = hir_match_arm_pattern_node[arm_node];
-    if (!valid_node(pattern_node))
-        return;
 
     uint pattern_token = hir_token_pos[pattern_node];
     if (!valid_token(pattern_token))

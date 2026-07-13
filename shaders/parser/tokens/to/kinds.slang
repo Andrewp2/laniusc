@@ -515,6 +515,22 @@ uint raw_kind_at(uint parser_i, uint count)
     return token_words[parser_i - 1u].kind;
 }
 
+bool semantic_token_before_ends_primary(uint parser_i, uint count)
+{
+    if (parser_i == 0u)
+        return false;
+    uint prev_parser_i = parser_i - 1u;
+    uint prev_raw = raw_kind_at(prev_parser_i, count);
+    if (semantic_token_ends_primary(prev_raw))
+        return true;
+    if (prev_raw != TK_RBRACE || prev_parser_i == 0u)
+        return false;
+
+    uint prev_token_i = prev_parser_i - 1u;
+    return prev_token_i < gParams.token_capacity &&
+           brace_semantic_kind[prev_token_i] == TK_STRUCT_LIT_RBRACE;
+}
+
 uint raw_token_kind(uint token_i)
 {
     if (token_i >= min(gParams.token_capacity, lexer_token_count[0]))
@@ -590,6 +606,7 @@ bool bound_type_context_before(uint parser_i, uint count);
 bool impl_type_context_before(uint parser_i, uint count);
 bool where_clause_context_before(uint parser_i, uint count);
 bool path_type_arg_open_has_value_path_tail(uint open_parser_i, uint count);
+uint semantic_colon_kind_for(uint parser_i, uint count);
 bool matching_raw_paren_open_before(uint parser_i, uint count, out uint open_i);
 bool matching_raw_bracket_open_before(uint parser_i, uint count, out uint open_i);
 uint matching_semantic_paren_open_before(uint parser_i, uint count);
@@ -617,7 +634,7 @@ uint semantic_open_kind_for(uint parser_i, uint count, uint raw_kind)
 {
     uint prev = raw_kind_at(parser_i - 1u, count);
     uint prev2 = raw_kind_at(parser_i - 2u, count);
-    bool prev_ends_primary = semantic_token_ends_primary(prev);
+    bool prev_ends_primary = semantic_token_before_ends_primary(parser_i, count);
 
     if (raw_kind == TK_LPAREN)
     {
@@ -968,8 +985,7 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
     }
     if (prev_raw == TK_IDENT &&
         prev2_raw == TK_COLON &&
-        !value_expression_context_before(parser_i) &&
-        matching_semantic_brace_open_before(parser_i - 2u, count) != TK_STRUCT_LIT_LBRACE)
+        semantic_colon_kind_for(parser_i - 2u, count) == TK_TYPE_COLON)
     {
         return TK_TYPE_ARG_LT;
     }
@@ -1297,7 +1313,7 @@ uint semantic_plus_kind_for(uint parser_i, uint count)
 {
     if (bound_plus_context(parser_i, count))
         return TK_BOUND_PLUS;
-    return semantic_token_ends_primary(raw_kind_at(parser_i - 1u, count))
+    return semantic_token_before_ends_primary(parser_i, count)
         ? TK_INFIX_PLUS
         : TK_PREFIX_PLUS;
 }
@@ -1306,7 +1322,7 @@ uint semantic_ampersand_kind_for(uint parser_i, uint count)
 {
     if (bound_type_context_before(parser_i, count))
         return TK_BOUND_TYPE_AMPERSAND;
-    return semantic_token_ends_primary(raw_kind_at(parser_i - 1u, count))
+    return semantic_token_before_ends_primary(parser_i, count)
         ? TK_AMPERSAND
         : TK_TYPE_AMPERSAND;
 }
@@ -1359,6 +1375,13 @@ bool extern_abi_string_context_before(uint token_i)
 uint semantic_semicolon_kind_for(uint parser_i, uint count)
 {
     uint token_i = parser_i - 1u;
+    if (bracket_semantic_kind[token_i] == TK_TYPE_SEMICOLON)
+        return TK_TYPE_SEMICOLON;
+    if (in_trait_body_context(parser_i, count))
+        return TK_TRAIT_METHOD_SEMICOLON;
+    if (extern_fn_signature_context_before(token_i))
+        return TK_EXTERN_SEMICOLON;
+
     uint recorded = semicolon_kind_for_statement_context(statement_context_token_kind(token_i));
     if (recorded != 0u)
         return recorded;
@@ -1369,14 +1392,6 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
         if (braced != 0u)
             return braced;
     }
-    if (extern_fn_signature_context_before(token_i))
-        return TK_EXTERN_SEMICOLON;
-
-    if (bracket_semantic_kind[token_i] == TK_TYPE_SEMICOLON)
-        return TK_TYPE_SEMICOLON;
-    if (in_trait_body_context(parser_i, count))
-        return TK_TRAIT_METHOD_SEMICOLON;
-
     return TK_EXPR_SEMICOLON;
 }
 
@@ -1440,7 +1455,7 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
     if (raw_kind == TK_PLUS)
         return semantic_plus_kind_for(parser_i, count);
     if (raw_kind == TK_MINUS)
-        return semantic_token_ends_primary(raw_kind_at(parser_i - 1u, count)) ? TK_INFIX_MINUS : TK_PREFIX_MINUS;
+        return semantic_token_before_ends_primary(parser_i, count) ? TK_INFIX_MINUS : TK_PREFIX_MINUS;
 
     return raw_kind;
 }

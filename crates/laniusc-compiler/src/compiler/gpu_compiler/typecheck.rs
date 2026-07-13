@@ -41,6 +41,32 @@ impl<'gpu> GpuCompiler<'gpu> {
         )?;
         self.type_check_explicit_source_pack(sources).await
     }
+
+    /// Type-checks one bounded library unit and exports the canonical public
+    /// identity portion of its semantic interface. Typed signatures and
+    /// members are deliberately not serialized until their export stage is
+    /// complete.
+    pub async fn semantic_interface_identity_for_source_pack<S: AsRef<str>>(
+        &self,
+        library_id: u32,
+        sources: &[S],
+    ) -> Result<crate::compiler::GpuSemanticInterfaceIdentityArtifact, CompileError> {
+        validate_in_memory_source_pack_fits_default_codegen_unit(
+            "semantic interface source pack",
+            sources,
+        )?;
+        self.type_check_explicit_source_pack_with_paths_and_identity(
+            sources,
+            None,
+            Some(library_id),
+        )
+        .await?
+        .ok_or_else(|| {
+            CompileError::GpuFrontend(
+                "semantic-interface identity export did not produce an artifact".to_string(),
+            )
+        })
+    }
     /// Type-check an explicit in-memory source-pack manifest and preserve any
     /// manifest source paths for diagnostics.
     pub async fn type_check_source_pack_manifest(
@@ -210,6 +236,17 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<(), CompileError> {
+        self.type_check_explicit_source_pack_with_paths_and_identity(sources, source_paths, None)
+            .await
+            .map(|_| ())
+    }
+
+    async fn type_check_explicit_source_pack_with_paths_and_identity<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+        semantic_interface_library_id: Option<u32>,
+    ) -> Result<Option<crate::compiler::GpuSemanticInterfaceIdentityArtifact>, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
@@ -314,9 +351,27 @@ impl<'gpu> GpuCompiler<'gpu> {
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
+                    let semantic_interface_identity = semantic_interface_library_id
+                        .map(|library_id| {
+                            self.type_checker
+                                .record_semantic_interface_identity(
+                                    device,
+                                    encoder,
+                                    library_id,
+                                    bufs.n,
+                                    &bufs.in_bytes,
+                                )
+                                .map_err(|err| {
+                                    CompileError::GpuFrontend(format!(
+                                        "semantic-interface identity recording failed: {err}"
+                                    ))
+                                })
+                        })
+                        .transpose()?;
                     Ok(RecordedTypeCheckWithDiagnosticBuffers {
                         type_check,
                         diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
+                        semantic_interface_identity,
                     })
                 },
                 |device, queue, recorded| {
@@ -330,7 +385,20 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 &diagnostic_files,
                                 err,
                             )
+                        })?;
+                    recorded
+                        .semantic_interface_identity
+                        .as_ref()
+                        .map(|identity| {
+                            self.type_checker
+                                .finish_semantic_interface_identity(device, identity)
+                                .map_err(|err| {
+                                    CompileError::GpuFrontend(format!(
+                                        "semantic-interface identity readback failed: {err}"
+                                    ))
+                                })
                         })
+                        .transpose()
                 },
             )
             .await
@@ -497,6 +565,7 @@ impl<'gpu> GpuCompiler<'gpu> {
 struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
     diagnostic_tokens: DiagnosticTokenBuffer,
+    semantic_interface_identity: Option<gpu_type_checker::RecordedSemanticInterfaceIdentity>,
 }
 
 struct DiagnosticTokenBuffer {

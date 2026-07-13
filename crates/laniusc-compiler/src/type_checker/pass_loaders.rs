@@ -17,8 +17,28 @@ impl TypeCheckPasses {
                 ))
             } else {
                 None
-            };
+        };
         Ok(Self {
+            interface_public_decls_clear: pass!(
+                "type_check_interface_public_decls_00_clear",
+                "type_checker/interface/public_decls/00_clear"
+            ),
+            interface_public_decls_map: pass!(
+                "type_check_interface_public_decls_01_map",
+                "type_checker/interface/public_decls/01_map"
+            ),
+            interface_identity_sizes: pass!(
+                "type_check_interface_00_identity_sizes",
+                "type_checker/interface/00_identity_sizes"
+            ),
+            interface_identity_records: pass!(
+                "type_check_interface_01_identity_records",
+                "type_checker/interface/01_identity_records"
+            ),
+            interface_identity_bytes: pass!(
+                "type_check_interface_02_identity_bytes",
+                "type_checker/interface/02_identity_bytes"
+            ),
             hir_active_dispatch_args: pass!(
                 "type_check_hir_active_dispatch_args",
                 "type_checker/hir_active_dispatch_args"
@@ -39,9 +59,13 @@ impl TypeCheckPasses {
                 "type_check_counted_scan_00_local",
                 "type_checker/counted/scan/00_local"
             ),
-            counted_scan_blocks: pass!(
-                "type_check_counted_scan_01_blocks",
-                "type_checker/counted/scan/01_blocks"
+            counted_scan_hierarchy_up: pass!(
+                "type_check_counted_scan_01_hierarchy_up",
+                "type_checker/counted/scan/01_hierarchy_up"
+            ),
+            counted_scan_hierarchy_down: pass!(
+                "type_check_counted_scan_02_hierarchy_down",
+                "type_checker/counted/scan/02_hierarchy_down"
             ),
             counted_scan_apply: pass!(
                 "type_check_counted_scan_02_apply",
@@ -512,6 +536,10 @@ impl TypeCheckPasses {
                 "type_check_predicates_01f_emit_method_validation_rows",
                 "type_checker/predicates/01f_emit_method_validation_rows"
             ),
+            predicates_validate_method_type_arg_rows: pass!(
+                "type_check_predicates_01f2_validate_method_type_arg_rows",
+                "type_checker/predicates/01f2_validate_method_type_arg_rows"
+            ),
             predicates_reduce_method_validation_errors: pass!(
                 "type_check_predicates_01g_reduce_method_validation_errors",
                 "type_checker/predicates/01g_reduce_method_validation_errors"
@@ -760,9 +788,13 @@ impl TypeCheckPasses {
                 "type_check_fn_context_03_local",
                 "type_checker/fn/context/03_local"
             ),
-            fn_context_scan: pass!(
-                "type_check_fn_context_04_scan_blocks",
-                "type_checker/fn/context/04_scan_blocks"
+            fn_context_hierarchy_up: pass!(
+                "type_check_fn_context_04_hierarchy_up",
+                "type_checker/fn/context/04_hierarchy_up"
+            ),
+            fn_context_hierarchy_down: pass!(
+                "type_check_fn_context_04_hierarchy_down",
+                "type_checker/fn/context/04_hierarchy_down"
             ),
             fn_context_apply: pass!(
                 "type_check_fn_context_05_apply",
@@ -780,9 +812,13 @@ impl TypeCheckPasses {
                 "type_check_loop_depth_03_local",
                 "type_checker/loop/depth/03_local"
             ),
-            loop_depth_scan: pass!(
-                "type_check_loop_depth_04_scan_blocks",
-                "type_checker/loop/depth/04_scan_blocks"
+            loop_depth_hierarchy_up: pass!(
+                "type_check_loop_depth_04_hierarchy_up",
+                "type_checker/loop/depth/04_hierarchy_up"
+            ),
+            loop_depth_hierarchy_down: pass!(
+                "type_check_loop_depth_04_hierarchy_down",
+                "type_checker/loop/depth/04_hierarchy_down"
             ),
             loop_depth_apply: pass!(
                 "type_check_loop_depth_05_apply",

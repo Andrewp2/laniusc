@@ -85,6 +85,7 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_type_arg_next", &hir_items.type_arg_next);
     resources.buffer("hir_type_arg_owner", &hir_items.type_arg_owner);
     resources.buffer("hir_type_arg_rank", &hir_items.type_arg_rank);
+    resources.buffer("hir_type_root_owner", &hir_items.type_root_owner);
     resources.buffer(
         "hir_type_alias_target_node",
         &hir_items.type_alias_target_node,
@@ -110,6 +111,7 @@ pub(super) fn register_hir_item_resources<'a>(
         &hir_items.method_impl_receiver_type_node,
     );
     resources.buffer("hir_expr_record", &hir_items.expr_record);
+    resources.buffer("hir_expr_name_role", &hir_items.expr_name_role);
     resources.buffer("hir_expr_result_node", &hir_items.expr_result_node);
     resources.buffer(
         "hir_expr_result_root_node",
@@ -156,6 +158,14 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_item_path_node", &hir_items.path_node);
     resources.buffer("hir_call_callee_node", &hir_items.call_callee_node);
     resources.buffer(
+        "hir_call_callee_path_node",
+        &hir_items.call_callee_path_node,
+    );
+    resources.buffer(
+        "hir_call_parent_by_callee",
+        &hir_items.call_parent_by_callee,
+    );
+    resources.buffer(
         "hir_call_context_stmt_node",
         &hir_items.call_context_stmt_node,
     );
@@ -177,6 +187,14 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer(
         "hir_match_arm_result_node",
         &hir_items.match_arm_result_node,
+    );
+    resources.buffer(
+        "hir_match_arm_pattern_node",
+        &hir_items.match_arm_pattern_node,
+    );
+    resources.buffer(
+        "hir_match_pattern_owner_arm",
+        &hir_items.match_pattern_owner_arm,
     );
     resources.buffer(
         "hir_match_payload_owner_arm",
@@ -258,6 +276,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_type_arg_next", &empty_hir.parent);
     resources.buffer("hir_type_arg_owner", &empty_hir.parent);
     resources.buffer("hir_type_arg_rank", &empty_hir.node_kind);
+    resources.buffer("hir_type_root_owner", &empty_hir.parent);
     resources.buffer("hir_type_alias_target_node", &empty_hir.parent);
     resources.buffer("hir_fn_return_type_node", &empty_hir.parent);
     resources.buffer("hir_param_record", &empty_hir.parent);
@@ -271,6 +290,7 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_method_signature_flags", &empty_hir.node_kind);
     resources.buffer("hir_method_impl_receiver_type_node", &empty_hir.parent);
     resources.buffer("hir_expr_record", &empty_hir.parent);
+    resources.buffer("hir_expr_name_role", &empty_hir.node_kind);
     resources.buffer("hir_expr_result_node", &empty_hir.parent);
     resources.buffer("hir_expr_result_root_node", &empty_hir.parent);
     resources.buffer("hir_expr_int_value", &empty_hir.node_kind);
@@ -292,6 +312,8 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_array_element_next", &empty_hir.parent);
     resources.buffer("hir_item_path_node", &empty_hir.parent);
     resources.buffer("hir_call_callee_node", &empty_hir.parent);
+    resources.buffer("hir_call_callee_path_node", &empty_hir.parent);
+    resources.buffer("hir_call_parent_by_callee", &empty_hir.parent);
     resources.buffer("hir_call_context_stmt_node", &empty_hir.parent);
     resources.buffer("hir_call_arg_start", &empty_hir.parent);
     resources.buffer("hir_call_arg_end", &empty_hir.parent);
@@ -303,6 +325,8 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_variant_payload_count", &empty_hir.node_kind);
     resources.buffer("hir_variant_payload_node", &empty_hir.parent);
     resources.buffer("hir_match_arm_result_node", &empty_hir.parent);
+    resources.buffer("hir_match_arm_pattern_node", &empty_hir.parent);
+    resources.buffer("hir_match_pattern_owner_arm", &empty_hir.parent);
     resources.buffer("hir_match_payload_owner_arm", &empty_hir.parent);
     resources.buffer("hir_match_payload_match_node", &empty_hir.parent);
     resources.buffer("hir_match_payload_ordinal", &empty_hir.parent);

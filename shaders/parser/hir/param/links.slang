@@ -1,10 +1,10 @@
-// Seed parser-owned function-parameter links from grammar tree records.
+// Seed parser-owned function-parameter owners from the semantic HIR tree.
 //
-// Parameter lists are right-recursive. First parameters seed the owning
-// function, and later parameters point at their previous parameter. A separate
-// pointer-jump pass computes owners and ordinals.
-
-import generated_parse_production_ids;
+// Parameters are direct semantic children of their function. The semantic
+// parent relation is therefore the canonical ownership source; reconstructing
+// it through the grammar's right-recursive parameter-list shape would duplicate
+// parsing work and require logarithmic pointer-jump rounds. Ordinals are
+// assigned separately from the compact source-ordered parameter worklist.
 
 struct Params
 {
@@ -15,19 +15,13 @@ struct Params
 ConstantBuffer<Params> gHirParam;
 
 StructuredBuffer<uint> tree_count_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_fn_signature_function_owner;
+StructuredBuffer<uint> hir_node_dense_id;
+StructuredBuffer<uint> hir_semantic_parent;
+StructuredBuffer<uint> hir_semantic_dense_node;
 
 RWStructuredBuffer<uint> hir_param_owner_a;
 RWStructuredBuffer<uint> hir_param_link_a;
-RWStructuredBuffer<uint> hir_param_rank_a;
-RWStructuredBuffer<uint> hir_param_previous;
-RWStructuredBuffer<uint> hir_param_owner_b;
-RWStructuredBuffer<uint> hir_param_link_b;
-RWStructuredBuffer<uint> hir_param_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -51,56 +45,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-uint parent_node(uint node)
+uint semantic_owner_function(uint node)
 {
-    if (!valid_node(node))
+    uint row = hir_node_dense_id[node];
+    if (!valid_node(row))
         return INVALID;
-    uint p = parent[node];
-    return valid_node(p) ? p : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    if (!valid_node(node))
+    uint parent_row = hir_semantic_parent[row];
+    if (!valid_node(parent_row))
         return INVALID;
-    uint child = first_child[node];
-    return valid_node(child) ? child : INVALID;
-}
-
-bool is_param_container(uint prod)
-{
-    return prod == PROD_PARAMS_SOME ||
-           prod == PROD_PARAMS_AFTER_COMMA_MORE;
-}
-
-uint param_from_container(uint container)
-{
-    if (!valid_node(container) || !is_param_container(node_kind[container]))
-        return INVALID;
-    uint param = first_child_node(container);
-    return valid_node(param) && hir_kind[param] == HIR_PARAM ? param : INVALID;
-}
-
-uint owner_seed_for_first_param_container(uint container)
-{
-    if (!valid_node(container) || node_kind[container] != PROD_PARAMS_SOME)
-        return INVALID;
-    uint signature_owner = hir_fn_signature_function_owner[container];
-    if (valid_node(signature_owner) && hir_kind[signature_owner] == HIR_FN)
-        return signature_owner;
-    uint fn_node = parent_node(container);
-    return valid_node(fn_node) && hir_kind[fn_node] == HIR_FN ? fn_node : INVALID;
-}
-
-uint previous_param_for_after_comma_container(uint container)
-{
-    if (!valid_node(container) ||
-        node_kind[container] != PROD_PARAMS_AFTER_COMMA_MORE)
-        return INVALID;
-
-    uint more = parent_node(container);
-    uint previous_container = parent_node(more);
-    return param_from_container(previous_container);
+    uint owner = hir_semantic_dense_node[parent_row];
+    return valid_node(owner) && hir_kind[owner] == HIR_FN ? owner : INVALID;
 }
 
 [shader("compute")]
@@ -113,31 +67,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     hir_param_owner_a[node] = INVALID;
     hir_param_link_a[node] = INVALID;
-    hir_param_rank_a[node] = 0u;
-    hir_param_previous[node] = INVALID;
-    hir_param_owner_b[node] = INVALID;
-    hir_param_link_b[node] = INVALID;
-    hir_param_rank_b[node] = 0u;
 
     if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
         return;
-
-    uint container = parent_node(node);
-    uint prod = valid_node(container) ? node_kind[container] : INVALID;
-    if (prod == PROD_PARAMS_SOME)
-    {
-        hir_param_owner_a[node] = owner_seed_for_first_param_container(container);
-        return;
-    }
-
-    if (prod == PROD_PARAMS_AFTER_COMMA_MORE)
-    {
-        uint previous = previous_param_for_after_comma_container(container);
-        if (valid_node(previous))
-        {
-            hir_param_link_a[node] = previous;
-            hir_param_rank_a[node] = 1u;
-            hir_param_previous[node] = previous;
-        }
-    }
+    hir_param_owner_a[node] = semantic_owner_function(node);
 }

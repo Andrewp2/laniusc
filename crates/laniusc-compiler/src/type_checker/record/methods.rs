@@ -4,13 +4,11 @@ use super::*;
 
 const METHOD_CALL_RESULT_RECEIVER_PASSES: usize = 8;
 
-/// Records method declaration collection and receiver metadata binding.
-pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
+/// Clears token-indexed method declaration and call metadata.
+pub(in crate::type_checker) fn record_method_clear_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     token_active_dispatch_args: &wgpu::Buffer,
-    method_token_dispatch_args: &wgpu::Buffer,
-    method_hir_dispatch_args: &wgpu::Buffer,
     groups: &MethodBindGroups,
 ) -> Result<()> {
     record_compute_indirect(
@@ -19,7 +17,17 @@ pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
         &groups.clear,
         "type_check.methods.clear",
         token_active_dispatch_args,
-    )?;
+    )
+}
+
+/// Records method declaration collection and receiver metadata binding after clearing.
+pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    method_token_dispatch_args: &wgpu::Buffer,
+    method_hir_dispatch_args: &wgpu::Buffer,
+    groups: &MethodBindGroups,
+) -> Result<()> {
     record_compute_indirect(
         encoder,
         &passes.methods_collect,

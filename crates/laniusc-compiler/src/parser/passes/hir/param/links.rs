@@ -5,7 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Pass that links parameter nodes into owner-local parameter lists.
+/// Pass that seeds parameter ownership from the semantic HIR tree.
 pub struct HirParamLinksPass {
     data: PassData,
 }
@@ -45,13 +45,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamLinksPas
                     b.ll1_status.as_entire_binding()
                 },
             ),
-            ("node_kind".into(), b.node_kind.as_entire_binding()),
-            ("parent".into(), b.parent.as_entire_binding()),
-            ("first_child".into(), b.first_child.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
-                "hir_fn_signature_function_owner".into(),
-                b.hir_fn_signature_function_owner_a.as_entire_binding(),
+                "hir_node_dense_id".into(),
+                b.hir_node_dense_id.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_parent".into(),
+                b.hir_semantic_parent.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
             ),
             (
                 "hir_param_owner_a".into(),
@@ -60,26 +65,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamLinksPas
             (
                 "hir_param_link_a".into(),
                 b.hir_param_link_a.as_entire_binding(),
-            ),
-            (
-                "hir_param_rank_a".into(),
-                b.hir_param_rank_a.as_entire_binding(),
-            ),
-            (
-                "hir_param_previous".into(),
-                b.hir_param_previous.as_entire_binding(),
-            ),
-            (
-                "hir_param_owner_b".into(),
-                b.hir_param_owner_b.as_entire_binding(),
-            ),
-            (
-                "hir_param_link_b".into(),
-                b.hir_param_link_b.as_entire_binding(),
-            ),
-            (
-                "hir_param_rank_b".into(),
-                b.hir_param_rank_b.as_entire_binding(),
             ),
         ])
     }

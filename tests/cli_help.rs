@@ -34,7 +34,7 @@ fn cli_top_level_help_short_circuits_compile_arguments() {
         "top-level help should list the check command\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("Usage: laniusc daemon --stdio")
+        stderr.contains("Usage: laniusc daemon (--stdio | --unix-socket path)")
             && stderr.contains("keeps one GPU compiler resident"),
         "top-level help should expose the resident compiler daemon\nstderr:\n{stderr}"
     );

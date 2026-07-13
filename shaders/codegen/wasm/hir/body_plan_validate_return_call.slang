@@ -18,7 +18,7 @@ RWStructuredBuffer<uint> wasm_func_detail_by_token;
 
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 static const uint TY_BOOL = 2u;
-static const uint WASM_IMPORT_FUNCTION_COUNT = 31u;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint BODY_PLAN_MAIN_COUNT = 8u;

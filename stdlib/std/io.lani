@@ -1,6 +1,4 @@
 // Source-level standard I/O declarations.
-// Most host ABI declarations below remain unbound; integer printing is backed
-// by the compiler's existing print primitive.
 
 module std::io;
 
@@ -12,13 +10,14 @@ pub type StdioOperationResult = i32;
 
 pub const STDIO_RUNTIME_ABI_VERSION: StdioRuntimeAbiVersion = 1;
 pub const STDIO_SERVICE_ID: StdioServiceId = 3;
+pub const STDIO_SERVICE_STATUS_AVAILABLE: StdioServiceStatus = 2;
 pub const STDIO_SERVICE_STATUS_UNAVAILABLE: StdioServiceStatus = 1;
-pub const STDIO_HAS_RUNTIME_BINDING: StdioCapability = false;
+pub const STDIO_HAS_RUNTIME_BINDING: StdioCapability = true;
 pub const STDIO_WRITE_STDOUT_HAS_RUNTIME_BINDING: StdioCapability = true;
 pub const STDIO_WRITE_STDERR_HAS_RUNTIME_BINDING: StdioCapability = true;
 pub const STDIO_READ_STDIN_HAS_RUNTIME_BINDING: StdioCapability = true;
-pub const STDIO_FLUSH_STDOUT_HAS_RUNTIME_BINDING: StdioCapability = false;
-pub const STDIO_FLUSH_STDERR_HAS_RUNTIME_BINDING: StdioCapability = false;
+pub const STDIO_FLUSH_STDOUT_HAS_RUNTIME_BINDING: StdioCapability = true;
+pub const STDIO_FLUSH_STDERR_HAS_RUNTIME_BINDING: StdioCapability = true;
 pub const STDIO_OPERATION_OK: StdioOperationResult = 0;
 pub const STDIO_OPERATION_UNAVAILABLE: StdioOperationResult = -1;
 
@@ -39,7 +38,7 @@ pub fn stdio_contract_metadata_is_available() -> StdioCapability {
 }
 
 pub fn stdio_service_status() -> StdioServiceStatus {
-    return STDIO_SERVICE_STATUS_UNAVAILABLE;
+    return STDIO_SERVICE_STATUS_AVAILABLE;
 }
 
 pub fn stdio_is_available() -> StdioCapability {
@@ -251,9 +250,15 @@ pub extern "lanius_std" fn write_stderr(ptr: u32, len: usize) -> StdioOperationR
 
 pub extern "lanius_std" fn read_stdin(ptr: u32, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn flush_stdout() -> StdioOperationResult;
+// Output crosses both supported host boundaries synchronously, so there is no
+// compiler-owned userspace buffer left to drain after a write completes.
+pub fn flush_stdout() -> StdioOperationResult {
+    return STDIO_OPERATION_OK;
+}
 
-pub extern "lanius_std" fn flush_stderr() -> StdioOperationResult;
+pub fn flush_stderr() -> StdioOperationResult {
+    return STDIO_OPERATION_OK;
+}
 
 pub extern "lanius_std" fn write_text(handle: i32, text: str) -> StdioOperationResult;
 

@@ -27,6 +27,31 @@ public uint radix_byte_key(uint value, uint key_step)
     return packed_u8_at(value, key_step);
 }
 
+// Reads one byte from a three-field LSD key whose field widths are packed as
+// nibbles in low-to-high field order. An even-schedule padding step maps to
+// zero, preserving stable order while returning the ping/pong output to its
+// canonical buffer.
+public uint radix_packed_u32x3_byte_key(
+    uint field0,
+    uint field1,
+    uint field2,
+    uint key_step,
+    uint packed_widths)
+{
+    uint width0 = clamp(packed_widths & 0xfu, 1u, 4u);
+    uint width1 = clamp((packed_widths >> 4u) & 0xfu, 1u, 4u);
+    uint width2 = clamp((packed_widths >> 8u) & 0xfu, 1u, 4u);
+    if (key_step < width0)
+        return radix_byte_key(field0, key_step);
+    key_step -= width0;
+    if (key_step < width1)
+        return radix_byte_key(field1, key_step);
+    key_step -= width1;
+    if (key_step < width2)
+        return radix_byte_key(field2, key_step);
+    return 0u;
+}
+
 public uint radix_histogram_slot(uint block_idx, uint bucket, uint bucket_count)
 {
     return block_idx * bucket_count + bucket;

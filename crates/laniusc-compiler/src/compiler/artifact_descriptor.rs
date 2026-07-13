@@ -368,6 +368,30 @@ impl GpuSourcePackRuntimeServiceRequirement {
             service_status: GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE,
         }
     }
+
+    /// Creates a requirement row using the compiler's current binding status.
+    pub fn current(service_id: u32) -> Self {
+        Self {
+            service_id,
+            required_abi_version: GPU_SOURCE_PACK_RUNTIME_ABI_VERSION,
+            service_status: runtime_service_status(service_id),
+        }
+    }
+}
+
+const fn runtime_service_status(service_id: u32) -> u32 {
+    if service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_FILESYSTEM_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_CLOCK_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_SECURE_RNG_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_PROCESS_ID
+        || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_ENV_ID
+    {
+        GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_AVAILABLE
+    } else {
+        GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE
+    }
 }
 
 impl GpuSourcePackRuntimeAbiMetadata {
@@ -505,7 +529,7 @@ impl GpuSourcePackArtifactDescriptor {
             .required_runtime_service_ids
             .iter()
             .copied()
-            .map(GpuSourcePackRuntimeServiceRequirement::contract_only)
+            .map(GpuSourcePackRuntimeServiceRequirement::current)
             .collect();
         self.required_runtime_abi_version = if self.required_runtime_service_ids.is_empty() {
             None
@@ -1139,16 +1163,11 @@ impl GpuSourcePackArtifactDescriptor {
                     GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNKNOWN
                 ));
             }
-            if row.service_status == GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_AVAILABLE {
+            let expected_status = runtime_service_status(service_id);
+            if row.service_status != expected_status {
                 return Err(format!(
-                    "descriptor runtime service row {index} for service id {service_id} claims available status {}; runtime service requirements are contract-only until a linker/runtime binding exists",
-                    GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_AVAILABLE
-                ));
-            }
-            if row.service_status != GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE {
-                return Err(format!(
-                    "descriptor runtime service row {index} for service id {service_id} has unsupported status {}; expected unavailable status {}",
-                    row.service_status, GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE
+                    "descriptor runtime service row {index} for service id {service_id} has status {}; expected current compiler/runtime status {expected_status}",
+                    row.service_status
                 ));
             }
         }

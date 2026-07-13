@@ -231,6 +231,15 @@ fn compile_scaling_1101000_artifacts_are_checked_and_reproducible() {
         assert_command_array(&commands["run"], language, "compile scaling");
     }
     assert_command_array(&commands["lanius"], "daemon_start", "compile scaling");
+    assert_command_array(&commands["lanius"], "runner", "compile scaling");
+    assert_eq!(
+        commands["lanius"]["runner_sha256"],
+        sha256_file(&repo.join("tools/run_daemon_benchmark.py"))
+    );
+    assert_eq!(
+        commands["lanius"]["scheduling_policy"],
+        "all requests are queued immediately after the ready event and before reading the first job response"
+    );
     let requests = commands["lanius"]["requests"]
         .as_array()
         .expect("Lanius scaling requests should be an array");

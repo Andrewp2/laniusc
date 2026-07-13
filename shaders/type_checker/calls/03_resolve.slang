@@ -21,13 +21,13 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_callee_path_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> call_arg_record;
@@ -60,7 +60,6 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
@@ -143,16 +142,7 @@ bool call_record_is_qualified_path_call(uint call_node)
     if (!valid_node(callee_node))
         return false;
 
-    uint path_node = INVALID;
-    if (hir_kind[callee_node] == HIR_PATH_EXPR)
-        path_node = callee_node;
-    else if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && hir_kind[child] == HIR_PATH_EXPR)
-            path_node = child;
-    }
-
+    uint path_node = hir_call_callee_path_node[call_node];
     if (!valid_node(path_node))
         return false;
     uint start = hir_token_pos[path_node];
@@ -196,18 +186,10 @@ uint path_node_for_call(uint call_node)
     if (!valid_node(call_node))
         return INVALID;
 
-    uint callee_node = hir_call_callee_node[call_node];
-    if (!valid_node(callee_node))
-        return INVALID;
-    if (hir_kind[callee_node] == HIR_PATH_EXPR)
-        return callee_node;
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && hir_kind[child] == HIR_PATH_EXPR)
-            return child;
-    }
-    return INVALID;
+    uint path_node = hir_call_callee_path_node[call_node];
+    return valid_node(path_node) && hir_kind[path_node] == HIR_PATH_EXPR
+        ? path_node
+        : INVALID;
 }
 
 uint path_id_for_call(uint call_node)

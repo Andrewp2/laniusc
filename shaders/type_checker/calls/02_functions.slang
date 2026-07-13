@@ -6,7 +6,6 @@
 // and declaration-type pass so this shader stays within the WebGPU storage
 // buffer limit.
 
-import generated_parse_production_ids;
 import lookup;
 
 struct Params
@@ -19,12 +18,12 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> hir_method_owner_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> generic_param_count_out;
@@ -73,7 +72,6 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
-static const uint HIR_FN = 3u;
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
@@ -442,7 +440,7 @@ bool function_item_kind(uint item_kind)
 bool function_decl_node(uint node)
 {
     return function_item_kind(hir_item_kind[node]) ||
-           (hir_kind[node] == HIR_FN && node_kind[node] == PROD_IMPL_FN);
+           valid_node(hir_method_owner_node[node]);
 }
 
 [shader("compute")]

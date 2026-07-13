@@ -79,7 +79,7 @@ StructuredBuffer<uint> x86_node_inst_subtree_bound_end;
 StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
 StructuredBuffer<uint2> x86_node_inst_gen_node_record;
-StructuredBuffer<uint> x86_enclosing_loop_node;
+StructuredBuffer<uint> hir_nearest_loop_node;
 StructuredBuffer<uint> x86_short_circuit_rhs_node;
 StructuredBuffer<uint> x86_index_source_owner;
 StructuredBuffer<uint> x86_match_return_node;
@@ -154,6 +154,11 @@ static const uint X86_CALL_TARGET_HOST_VAR_READ = 0xffffffe8u;
 static const uint X86_CALL_TARGET_HOST_FS_WRITE = 0xffffffe6u;
 static const uint X86_CALL_TARGET_HOST_FS_OPEN_APPEND = 0xffffffe3u;
 static const uint X86_CALL_TARGET_HOST_STDERR_WRITE = 0xffffffe0u;
+static const uint X86_CALL_TARGET_HOST_FILL_SECURE_BYTES = 0xffffffdfu;
+static const uint X86_CALL_TARGET_HOST_FS_RENAME = 0xffffffdbu;
+static const uint X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32 = 0xffffffd8u;
+static const uint X86_CALL_TARGET_HOST_REALLOC = 0xffffffd7u;
+static const uint X86_CALL_TARGET_HOST_ALLOC_FAILED = 0xffffffd6u;
 static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 static const uint X86_VINST_ERROR_MATCH_ARMS = 2201u;
 static const uint X86_VINST_ERROR_MATCH_PATTERN = 2202u;
@@ -895,7 +900,7 @@ bool row_after_subtree(uint root, out uint row)
 
 bool enclosing_while_for_node(uint node, out uint loop_node)
 {
-    loop_node = valid_node(node) ? x86_enclosing_loop_node[node] : INVALID;
+    loop_node = valid_node(node) ? hir_nearest_loop_node[node] : INVALID;
     return valid_node(loop_node);
 }
 
@@ -2754,7 +2759,7 @@ bool write_loop_call_value_error(uint value_node)
 {
     uint call_node = call_node_for_expr(value_node);
     if (!valid_node(call_node) ||
-        !valid_node(x86_enclosing_loop_node[call_node]))
+        !valid_node(hir_nearest_loop_node[call_node]))
         return false;
 
     if (call_record_slot(call_node) == INVALID && intrinsic_call_tag(call_node) == 0u)
@@ -3177,7 +3182,7 @@ uint call_abi_return_width(uint2 abi)
 
 bool has_call_abi_record(uint2 abi)
 {
-    bool host_call = abi.x >= X86_CALL_TARGET_HOST_STDERR_WRITE &&
+    bool host_call = abi.x >= X86_CALL_TARGET_HOST_ALLOC_FAILED &&
                      abi.x <= X86_CALL_TARGET_HOST_TEXT_WRITE;
     if (abi.x == INVALID || abi.y == INVALID || (!host_call && !valid_node(abi.x)))
         return false;
@@ -3192,7 +3197,7 @@ bool has_call_abi_record(uint2 abi)
 bool host_call_abi_record(uint2 abi)
 {
     return has_call_abi_record(abi) &&
-           abi.x >= X86_CALL_TARGET_HOST_STDERR_WRITE &&
+           abi.x >= X86_CALL_TARGET_HOST_ALLOC_FAILED &&
            abi.x <= X86_CALL_TARGET_HOST_TEXT_WRITE;
 }
 

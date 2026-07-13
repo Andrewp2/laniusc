@@ -7,7 +7,6 @@
 // of scanning declaration subtrees.
 
 import fixed.key;
-import generated_parse_production_ids;
 import range_query;
 
 struct Params
@@ -23,8 +22,8 @@ ConstantBuffer<Params> gParams;
 
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
@@ -52,6 +51,8 @@ RWStructuredBuffer<uint> struct_init_field_decl_node_by_node;
 static const uint INVALID = 0xffffffffu;
 
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -124,7 +125,7 @@ uint struct_node_for_decl_token(uint decl_token)
     if (!valid_token(decl_token))
         return INVALID;
     uint node = type_decl_hir_node_by_token[decl_token];
-    return valid_node(node) && node_kind[node] == PROD_STRUCT ? node : INVALID;
+    return valid_node(node) && hir_kind[node] == HIR_STRUCT_ITEM ? node : INVALID;
 }
 
 bool same_name_id(uint left_token, uint right_token)
@@ -155,12 +156,12 @@ public struct StructFieldFixedKey : IFixedU32RowKey<StructFieldLookupKey>
     public static uint row_lane(uint row, uint lane)
     {
         uint field_node = row < active_node_count() ? struct_field_key_order[row] : INVALID;
-        if (!valid_node(field_node) || node_kind[field_node] != PROD_STRUCT_FIELD)
+        if (!valid_node(field_node))
             return 0u;
         uint owner = hir_struct_field_parent_struct[field_node];
         uint token = hir_token_pos[field_node];
         uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
-        if (!valid_node(owner) || name_id == INVALID)
+        if (!valid_node(owner) || hir_kind[owner] != HIR_STRUCT_ITEM || name_id == INVALID)
             return 0u;
         if (lane == 0u)
             return fixed_key_encode_nullable_u32(owner, INVALID);
@@ -212,8 +213,8 @@ bool field_node_for_literal_field(uint struct_node, uint field_token, out uint f
 
     field_node = struct_field_key_order[range.begin];
     if (!valid_node(field_node) ||
-        node_kind[field_node] != PROD_STRUCT_FIELD ||
-        hir_struct_field_parent_struct[field_node] != struct_node)
+        hir_struct_field_parent_struct[field_node] != struct_node ||
+        hir_kind[struct_node] != HIR_STRUCT_ITEM)
         return false;
     field_ordinal = hir_struct_field_ordinal[field_node];
     return field_ordinal != INVALID;
@@ -282,7 +283,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     struct_init_field_ordinal_by_node[i] = INVALID;
     struct_init_field_decl_node_by_node[i] = INVALID;
 
-    if (node_kind[i] != PROD_STRUCT_LIT_FIELD)
+    uint literal_node = hir_struct_lit_field_parent_lit[i];
+    if (!valid_node(literal_node) || hir_kind[literal_node] != HIR_STRUCT_LITERAL_EXPR)
         return;
     publish_struct_init_field_node(i);
 }

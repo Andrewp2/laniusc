@@ -2,10 +2,73 @@ mod common;
 
 use laniusc_compiler::compiler::{
     CompileError,
+    GpuCompiler,
+    GpuCompilerBackends,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
 };
+
+#[test]
+fn x86_same_compiler_retries_speculative_frontend_capacity_and_feature_growth() {
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 speculative frontend capacity and feature growth",
+        move || {
+            pollster::block_on(async {
+                let compiler = GpuCompiler::new_with_device_and_backends(
+                    laniusc_compiler::gpu::device::global(),
+                    GpuCompilerBackends::x86_only(),
+                )
+                .await?;
+                compiler
+                    .compile_source_pack_to_x86_64(&["fn main() -> i32 { return 1; }"])
+                    .await?;
+                compiler
+                    .compile_source_pack_to_x86_64(&["fn broken( { return 2; }"])
+                    .await
+                    .expect_err("a rejected speculative parse must discard downstream commands");
+
+                let mut larger = String::new();
+                for function in 0..64 {
+                    larger.push_str(&format!(
+                        "fn f{function}(value: i32) -> i32 {{ return value + {function}; }}\n"
+                    ));
+                }
+                larger.push_str("fn main() -> i32 { return f63(0); }\n");
+                compiler
+                    .compile_source_pack_to_x86_64(&[larger.as_str()])
+                    .await?;
+                let fitting = larger.replace("return f63(0)", "return f62(0)");
+                compiler
+                    .compile_source_pack_to_x86_64(&[fitting.as_str()])
+                    .await?;
+                compiler
+                    .compile_source_pack_to_x86_64(&[r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, right: 5 };
+    return pair.left + pair.right;
+}
+"#])
+                    .await
+            })
+        },
+    )
+    .expect("capacity and feature growth should safely retry after speculation underfits");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 speculative frontend capacity and feature growth",
+        "x86_speculative_frontend_capacity_and_feature_growth",
+        &bytes,
+        12,
+    );
+}
 
 fn make_x86_test_pass(
     device: &wgpu::Device,
@@ -817,105 +880,139 @@ fn run_x86_64_elf_output_in_dir_with_args(
 }
 
 #[test]
-fn x86_func_owner_scan_local_ignores_non_executable_fn_records() {
-    common::run_gpu_codegen_with_timeout("x86 function owner local scan", || {
+fn x86_func_discover_projects_parser_function_owners_to_executable_functions() {
+    common::run_gpu_codegen_with_timeout("x86 executable function owner projection", || {
         const HIR_FN: u32 = 3;
         const HIR_ITEM_KIND_FN: u32 = 4;
+        const INVALID: u32 = u32::MAX;
 
         let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
         let device = gpu.device.as_ref();
         let queue = gpu.queue.as_ref();
         let pass = make_x86_test_pass(
             device,
-            "test.x86_func_owner_scan_local",
-            "codegen/x86/func/owner/scan/local",
+            "test.x86_func_discover",
+            "codegen/x86/func/discover",
         );
 
         let storage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC;
         let storage_rw = storage | wgpu::BufferUsages::COPY_DST;
         let params = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.params",
+            "x86_func_discover.params",
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            &[6, 1, 0, 0],
+            &[8, 1, 0, 8, 1, 0, 0, 0, 8],
         );
         let hir_status = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.hir_status",
+            "x86_func_discover.hir_status",
             storage,
-            &[0, 0, 0, 0, 0, 6],
+            &[0, 0, 0, 0, 0, 8],
         );
         let hir_kind = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.hir_kind",
+            "x86_func_discover.hir_kind",
             storage,
-            &[HIR_FN, 0, 0, HIR_FN, 0, HIR_FN],
+            &[HIR_FN, 0, 0, HIR_FN, 0, HIR_FN, 0, 0],
         );
         let hir_item_kind = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.hir_item_kind",
+            "x86_func_discover.hir_item_kind",
             storage,
-            &[HIR_ITEM_KIND_FN, 0, 0, 0, 0, HIR_ITEM_KIND_FN],
+            &[HIR_ITEM_KIND_FN, 0, 0, 0, 0, 0, 0, 0],
         );
         let hir_token_pos = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.hir_token_pos",
+            "x86_func_discover.hir_token_pos",
             storage,
-            &[0, 1, 2, 3, 4, 5],
+            &[0, 1, 2, 3, 4, 5, 6, 7],
         );
         let method_decl_param_offset = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.method_decl_param_offset",
+            "x86_func_discover.method_decl_param_offset",
             storage,
-            &[u32::MAX; 6],
+            &[
+                INVALID, INVALID, INVALID, INVALID, INVALID, 0, INVALID, INVALID,
+            ],
         );
-        let local_prefix = x86_buffer_from_u32s(
+        let nearest_fn_node = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.prefix",
-            storage_rw,
-            &[99; 6],
+            "x86_func_discover.nearest_fn_node",
+            storage,
+            &[0, 0, 0, 3, 3, 5, 5, INVALID],
         );
-        let block_sum = x86_buffer_from_u32s(
+        let node_func =
+            x86_buffer_from_u32s(device, "x86_func_discover.node_func", storage_rw, &[99; 8]);
+        let node_tree_status = x86_buffer_from_u32s(
             device,
-            "x86_func_owner_scan_local.block_sum",
+            "x86_func_discover.node_tree_status",
+            storage,
+            &[1, 0, INVALID, 0],
+        );
+        let node_decl_token = x86_buffer_from_u32s(
+            device,
+            "x86_func_discover.node_decl_token",
+            storage,
+            &[INVALID; 8],
+        );
+        let item_name_token = x86_buffer_from_u32s(
+            device,
+            "x86_func_discover.item_name_token",
+            storage,
+            &[INVALID; 8],
+        );
+        let entrypoint_tag =
+            x86_buffer_from_u32s(device, "x86_func_discover.entrypoint_tag", storage, &[0; 8]);
+        let func_meta = x86_buffer_from_u32s(
+            device,
+            "x86_func_discover.func_meta",
             storage_rw,
-            &[99],
+            &[0, 0, 0, 0, INVALID, 0, 0, 0],
+        );
+        let decl_node_by_token = x86_buffer_from_u32s(
+            device,
+            "x86_func_discover.decl_node_by_token",
+            storage_rw,
+            &[INVALID; 8],
         );
 
         let bind_group =
             laniusc_compiler::gpu::passes_core::bind_group::create_bind_group_from_bindings(
                 device,
-                Some("test.x86_func_owner_scan_local.bind_group"),
+                Some("test.x86_func_discover.bind_group"),
                 &pass,
                 0,
                 &[
-                    ("gScan", params.as_entire_binding()),
+                    ("gParams", params.as_entire_binding()),
                     ("hir_status", hir_status.as_entire_binding()),
                     ("hir_kind", hir_kind.as_entire_binding()),
                     ("hir_item_kind", hir_item_kind.as_entire_binding()),
+                    ("x86_node_tree_status", node_tree_status.as_entire_binding()),
                     ("hir_token_pos", hir_token_pos.as_entire_binding()),
                     (
                         "method_decl_param_offset",
                         method_decl_param_offset.as_entire_binding(),
                     ),
+                    ("hir_node_decl_token", node_decl_token.as_entire_binding()),
+                    ("hir_item_name_token", item_name_token.as_entire_binding()),
+                    ("fn_entrypoint_tag", entrypoint_tag.as_entire_binding()),
+                    ("hir_nearest_fn_node", nearest_fn_node.as_entire_binding()),
+                    ("x86_func_meta", func_meta.as_entire_binding()),
+                    ("x86_node_func", node_func.as_entire_binding()),
                     (
-                        "x86_func_owner_scan_local_prefix",
-                        local_prefix.as_entire_binding(),
-                    ),
-                    (
-                        "x86_func_owner_scan_block_sum",
-                        block_sum.as_entire_binding(),
+                        "x86_decl_node_by_token",
+                        decl_node_by_token.as_entire_binding(),
                     ),
                 ],
             )
-            .expect("create x86_func_owner_scan_local bind group");
+            .expect("create x86_func_discover bind group");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("test.x86_func_owner_scan_local.encoder"),
+            label: Some("test.x86_func_discover.encoder"),
         });
         {
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("test.x86_func_owner_scan_local"),
+                label: Some("test.x86_func_discover"),
                 timestamp_writes: None,
             });
             compute.set_pipeline(&pass.pipeline);
@@ -924,25 +1021,18 @@ fn x86_func_owner_scan_local_ignores_non_executable_fn_records() {
         }
         queue.submit(Some(encoder.finish()));
 
-        let prefix_words = x86_read_u32s(
+        let owner_words = x86_read_u32s(
             device,
             queue,
-            &local_prefix,
-            "x86 function owner local prefix",
-            6,
+            &node_func,
+            "x86 executable function owners",
+            8,
         );
-        let block_words =
-            x86_read_u32s(device, queue, &block_sum, "x86 function owner block sum", 1);
 
         assert_eq!(
-            prefix_words,
-            vec![1, 1, 1, 1, 1, 6],
-            "non-executable HIR_FN rows must not start a new function-owner segment"
-        );
-        assert_eq!(
-            block_words,
-            vec![6],
-            "block summary should carry only executable function-item seeds"
+            owner_words,
+            vec![0, 0, 0, INVALID, INVALID, 5, 5, INVALID],
+            "parser function ownership must retain free functions and impl methods while rejecting non-executable signatures"
         );
     });
 }
@@ -9044,6 +9134,56 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_source_pack_std_io_flush_operations() {
+    let sources = [
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import std::io;
+
+fn main() -> i32 {
+    if (!std::io::stdio_is_available()) {
+        return 3;
+    }
+    if (std::io::stdio_requires_runtime_binding()) {
+        return 4;
+    }
+    if (!std::io::flush_stdout_is_executable()) {
+        return 5;
+    }
+    if (!std::io::flush_stderr_is_executable()) {
+        return 6;
+    }
+    let stdout_result: i32 = std::io::flush_stdout();
+    let stderr_result: i32 = std::io::flush_stderr();
+    if (stdout_result != std::io::STDIO_OPERATION_OK) {
+        return 1;
+    }
+    if (stderr_result != std::io::STDIO_OPERATION_OK) {
+        return 2;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::io flush operations",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("std::io flush operations should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source pack std::io flush operations",
+        "x86_source_pack_std_io_flush",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
 fn x86_executes_source_pack_std_io_raw_stdout_and_stderr() {
     let sources = [
         include_str!("../stdlib/alloc/allocator.lani"),
@@ -9741,6 +9881,140 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_source_pack_std_random_fill_secure_bytes() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        include_str!("../stdlib/std/random.lani"),
+        r#"
+module app::main;
+
+import alloc::allocator;
+import std::io;
+import std::random;
+
+fn main() -> i32 {
+    if (!std::random::random_is_available()) {
+        return 4;
+    }
+    if (!std::random::fill_secure_bytes_is_executable()) {
+        return 5;
+    }
+    let len: usize = 16;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(len, align);
+    if (ptr == 0) {
+        return 1;
+    }
+    let filled: i32 = std::random::fill_secure_bytes(ptr, len);
+    if (filled != 16) {
+        alloc::allocator::dealloc(ptr, len, align);
+        return 2;
+    }
+    let written: i32 = std::io::write_stdout(ptr, len);
+    alloc::allocator::dealloc(ptr, len, align);
+    if (written != filled) {
+        return 3;
+    }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source pack std::random fill_secure_bytes",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source pack std::random fill_secure_bytes should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    let output = common::run_x86_64_elf_output(
+        "x86 source pack std::random fill_secure_bytes",
+        "x86_source_pack_std_random_fill_secure_bytes",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout.len(), 16);
+    assert!(output.stdout.iter().any(|byte| *byte != 0));
+}
+
+#[test]
+fn x86_executes_source_pack_std_fs_path_mutations() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        include_str!("../stdlib/std/fs.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::process;
+import std::fs;
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let path_len: usize = 20;
+    let from_ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let to_ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let from_read_result: i32 = std::process::arg_read(1, from_ptr, capacity);
+    let to_read_result: i32 = std::process::arg_read(2, to_ptr, capacity);
+    if (from_read_result != 20) {
+        return 1;
+    }
+    if (to_read_result != 20) {
+        return 1;
+    }
+    let create_result: i32 = std::fs::create_dir(from_ptr, path_len);
+    if (create_result != 0) {
+        return 2;
+    }
+    let rename_dir_result: i32 = std::fs::rename(from_ptr, path_len, to_ptr, path_len);
+    if (rename_dir_result != 0) {
+        return 3;
+    }
+    let remove_dir_result: i32 = std::fs::remove_dir(to_ptr, path_len);
+    if (remove_dir_result != 0) {
+        return 4;
+    }
+    let handle: i32 = std::fs::open_write(from_ptr, path_len);
+    if (handle < 0) {
+        return 5;
+    }
+    let close_result: i32 = std::fs::close(handle);
+    if (close_result != 0) {
+        return 6;
+    }
+    let rename_file_result: i32 = std::fs::rename(from_ptr, path_len, to_ptr, path_len);
+    if (rename_file_result != 0) {
+        return 7;
+    }
+    let remove_file_result: i32 = std::fs::remove_file(to_ptr, path_len);
+    if (remove_file_result != 0) {
+        return 8;
+    }
+    alloc::allocator::dealloc(from_ptr, capacity, 4);
+    alloc::allocator::dealloc(to_ptr, capacity, 4);
+    return 0;
+}
+"#,
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 source pack std::fs path mutations", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("source pack std::fs path mutations should compile to x86_64");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output_with_args(
+            "x86 source pack std::fs path mutations",
+            "x86_source_pack_std_fs_path_mutations",
+            &bytes,
+            &["lanius_fs_mutation_x", "lanius_fs_mutation_y"],
+        );
+        assert_eq!(output.status.code(), Some(0));
+    }
+}
+
+#[test]
 fn x86_executes_source_pack_std_time_unix_seconds() {
     let sources = [
         include_str!("../stdlib/std/time.lani"),
@@ -9756,6 +10030,7 @@ fn main() -> i32 {
     }
     return 1;
 }
+
 "#,
     ];
     let bytes =
@@ -9769,6 +10044,56 @@ fn main() -> i32 {
     assert_x86_exit_code(
         "x86 source pack std::time unix_seconds",
         "x86_source_pack_std_time_unix_seconds",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_source_pack_exact_clock_buffer_api() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/time.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::time;
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(16, 8);
+    let monotonic_status: i32 = std::time::monotonic_read(ptr, 16);
+    if (monotonic_status != 0) {
+        return 1;
+    }
+    let system_status: i32 = std::time::system_read(ptr, 16);
+    if (system_status != 0) {
+        return 2;
+    }
+    let short_status: i32 = std::time::monotonic_read(ptr, 15);
+    if (short_status != -1) {
+        return 3;
+    }
+    let sleep_status: i32 = std::time::sleep_ms_i32(0);
+    if (sleep_status != 0) {
+        return 4;
+    }
+    let negative_status: i32 = std::time::sleep_ms_i32(-1);
+    if (negative_status != -1) {
+        return 5;
+    }
+    alloc::allocator::dealloc(ptr, 16, 8);
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 exact clock buffer API", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("exact clock buffer API should compile to x86_64");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 exact clock buffer API",
+        "exact_clock_buffer",
         &bytes,
         0,
     );
@@ -9790,6 +10115,10 @@ fn read_current_dir(ptr: u32, capacity: usize) -> i32 {
 }
 
 fn main() -> i32 {
+    let reported_len: i32 = std::env::current_dir_len();
+    if (reported_len <= 0) {
+        return 9;
+    }
     let capacity: usize = 256;
     let capacity_i32: i32 = 256;
     let align: usize = 4;
@@ -9804,6 +10133,9 @@ fn main() -> i32 {
     }
     if (read > capacity_i32) {
         return 12;
+    }
+    if (read != reported_len) {
+        return 13;
     }
     return 0;
 }
@@ -11071,4 +11403,74 @@ fn x86_reads_source_from_path() {
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code("x86 source path", "x86_source_path", &bytes, 37);
+}
+
+#[test]
+fn x86_realloc_preserves_existing_bytes() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::process;
+import std::io;
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(32, 4);
+    let read: i32 = std::process::arg_read(1, ptr, 32);
+    if (read != 15) {
+        return 1;
+    }
+    let grown: u32 = alloc::allocator::realloc(ptr, 32, 64, 4);
+    if (grown == 0) {
+        return 2;
+    }
+    let written: i32 = std::io::write_stdout(grown, 15);
+    if (written != 15) {
+        return 3;
+    }
+    alloc::allocator::dealloc(grown, 64, 4);
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 realloc preservation", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("realloc preservation should compile to x86_64");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output_with_args(
+            "x86 realloc preservation",
+            "realloc_preservation",
+            &bytes,
+            &["LANIUS_TEST_ENV"],
+        );
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stdout, b"LANIUS_TEST_ENV");
+    }
+}
+
+#[test]
+fn x86_alloc_failed_is_non_returning() {
+    let sources = [
+        include_str!("../stdlib/alloc/allocator.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+fn main() -> i32 {
+    alloc::allocator::alloc_failed(64, 8);
+    return 99;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 alloc_failed", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("alloc_failed should compile to x86_64");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 alloc_failed", "alloc_failed", &bytes, 1);
 }

@@ -18,12 +18,13 @@ StructuredBuffer<uint> body_status;
 StructuredBuffer<uint> wasm_type_entry_len_by_slot;
 StructuredBuffer<uint> wasm_type_scan_local_prefix;
 StructuredBuffer<uint> wasm_type_scan_block_prefix;
+StructuredBuffer<uint> hir_string_pool_len;
 RWStructuredBuffer<uint> status;
 
 static const uint TYPE_SECTION_PAYLOAD_LEN = 756u;
 static const uint TYPE_COUNT = 114u;
 static const uint TYPE_ENTRIES_LEN = TYPE_SECTION_PAYLOAD_LEN - 1u;
-static const uint IMPORT_SECTION_LEN = 521u;
+static const uint IMPORT_SECTION_LEN = 712u;
 static const uint MEMORY_SECTION_LEN = 17u;
 static const uint EXPORT_SECTION_LEN = 31u;
 static const uint BODY_PLAN_FUNCTION_COUNT = 31u;
@@ -75,7 +76,7 @@ uint module_body_start(uint function_count)
 
 uint data_section_len()
 {
-    return 24u + gParams.source_len;
+    return 24u + hir_string_pool_len[0u];
 }
 
 [shader("compute")]

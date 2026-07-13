@@ -1,6 +1,4 @@
 // Source-level process host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind process APIs.
 
 module std::process;
 
@@ -14,7 +12,8 @@ pub type ProcessArgumentResult = i32;
 pub const PROCESS_RUNTIME_ABI_VERSION: ProcessRuntimeAbiVersion = 1;
 pub const PROCESS_SERVICE_ID: ProcessServiceId = 11;
 pub const PROCESS_SERVICE_STATUS_UNAVAILABLE: ProcessServiceStatus = 1;
-pub const PROCESS_HAS_RUNTIME_BINDING: ProcessCapability = false;
+pub const PROCESS_SERVICE_STATUS_AVAILABLE: ProcessServiceStatus = 2;
+pub const PROCESS_HAS_RUNTIME_BINDING: ProcessCapability = true;
 pub const PROCESS_ARGC_HAS_RUNTIME_BINDING: ProcessCapability = true;
 pub const PROCESS_ARG_LEN_HAS_RUNTIME_BINDING: ProcessCapability = true;
 pub const PROCESS_ARG_READ_HAS_RUNTIME_BINDING: ProcessCapability = true;
@@ -40,7 +39,7 @@ pub fn process_contract_metadata_is_available() -> ProcessCapability {
 }
 
 pub fn process_service_status() -> ProcessServiceStatus {
-    return PROCESS_SERVICE_STATUS_UNAVAILABLE;
+    return PROCESS_SERVICE_STATUS_AVAILABLE;
 }
 
 pub fn process_is_available() -> ProcessCapability {
@@ -208,25 +207,6 @@ pub fn process_exit_requires_runtime_binding() -> ProcessCapability {
     return !process_exit_is_executable();
 }
 
-pub fn set_exit_code_is_executable() -> ProcessCapability {
-    return process_exit_is_executable();
-}
-
-pub fn set_exit_code_is_blocked() -> ProcessCapability {
-    return !set_exit_code_is_executable();
-}
-
-pub fn set_exit_code_is_known_but_unbound() -> ProcessCapability {
-    if (process_service_is_known()) {
-        return set_exit_code_is_blocked();
-    }
-    return false;
-}
-
-pub fn set_exit_code_requires_runtime_binding() -> ProcessCapability {
-    return !set_exit_code_is_executable();
-}
-
 pub fn exit_is_executable() -> ProcessCapability {
     return process_exit_is_executable();
 }
@@ -251,7 +231,5 @@ pub extern "lanius_std" fn argc() -> i32;
 pub extern "lanius_std" fn arg_len(index: i32) -> i32;
 
 pub extern "lanius_std" fn arg_read(index: i32, ptr: u32, len: usize) -> i32;
-
-pub extern "lanius_std" fn set_exit_code(code: i32);
 
 pub extern "lanius_std" fn exit(code: i32);

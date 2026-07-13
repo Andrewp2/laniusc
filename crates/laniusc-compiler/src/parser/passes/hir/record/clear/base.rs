@@ -128,6 +128,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_expr_record.as_entire_binding(),
             ),
             (
+                "hir_expr_name_role".into(),
+                b.hir_expr_name_role.as_entire_binding(),
+            ),
+            (
                 "hir_expr_result_node".into(),
                 b.hir_expr_result_node.as_entire_binding(),
             ),

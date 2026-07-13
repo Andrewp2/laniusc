@@ -46,6 +46,7 @@ static const uint TK_LPAREN = 4u;
 static const uint TK_LT = 12u;
 static const uint TK_LBRACKET = 20u;
 static const uint TK_LBRACE = 22u;
+static const uint TK_RBRACE = 23u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_AMPERSAND = 25u;
 static const uint TK_COMMA = 36u;
@@ -61,6 +62,8 @@ static const uint TK_INDEX_RBRACKET = 65u;
 static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_ARRAY_RBRACKET = 64u;
 static const uint TK_ENUM_LBRACE = 129u;
+static const uint TK_STRUCT_LIT_LBRACE = 125u;
+static const uint TK_STRUCT_LIT_RBRACE = 126u;
 static const int INF = 2147483647;
 
 uint active_token_count()
@@ -425,6 +428,22 @@ void main(uint3 tid: SV_DispatchThreadID)
         depth_bracket_inblock[token_i];
     if (raw_kind == TK_LBRACKET)
     {
+        uint prev = token_i == 0u ? 0u : token_words[token_i - 1u].kind;
+        if (token_i > 0u && prev == TK_RBRACE &&
+            brace_semantic_kind[token_i - 1u] == TK_STRUCT_LIT_RBRACE)
+        {
+            bracket_semantic_kind[token_i] = TK_INDEX_LBRACKET;
+            return;
+        }
+        if (bracket_semantic_kind[token_i] == TK_TYPE_ARRAY_LBRACKET &&
+            prev == TK_COLON &&
+            enclosing_semantic_brace_open_before(token_i) == TK_STRUCT_LIT_LBRACE)
+        {
+            // The raw-colon seed cannot distinguish a declaration type from a
+            // struct-literal field value. Semantic brace ownership can.
+            bracket_semantic_kind[token_i] = TK_ARRAY_LBRACKET;
+            return;
+        }
         if (type_array_open_context(token_i, depth_before))
             bracket_semantic_kind[token_i] = TK_TYPE_ARRAY_LBRACKET;
         return;

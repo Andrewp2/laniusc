@@ -46,18 +46,18 @@ pub const SERVICE_PROCESS_ID: RuntimeServiceId = 11;
 pub const SERVICE_ENV_ID: RuntimeServiceId = 12;
 pub const SERVICE_TEST_HARNESS_ID: RuntimeServiceId = 13;
 
-pub const HAS_ALLOCATOR: Capability = false;
-pub const HAS_FILESYSTEM: Capability = false;
-pub const HAS_STDIO: Capability = false;
-pub const HAS_CLOCK: Capability = false;
+pub const HAS_ALLOCATOR: Capability = true;
+pub const HAS_FILESYSTEM: Capability = true;
+pub const HAS_STDIO: Capability = true;
+pub const HAS_CLOCK: Capability = true;
 pub const HAS_NETWORK: Capability = false;
 pub const HAS_PANIC_HOOK: Capability = false;
 pub const HAS_HOST_SERVICES: Capability = false;
 pub const HAS_THREADS: Capability = false;
-pub const HAS_SECURE_RNG: Capability = false;
+pub const HAS_SECURE_RNG: Capability = true;
 pub const HAS_GPU: Capability = false;
-pub const HAS_PROCESS: Capability = false;
-pub const HAS_ENV: Capability = false;
+pub const HAS_PROCESS: Capability = true;
+pub const HAS_ENV: Capability = true;
 pub const HAS_TEST_HARNESS: Capability = false;
 pub const HAS_RUNTIME_SERVICES: Capability = false;
 

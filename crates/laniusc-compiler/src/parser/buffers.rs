@@ -10,8 +10,18 @@ pub use model::{ActionHeader, ParserBuffers, TokenBraceMatchParams, TokenDelimit
 pub use scan_steps::*;
 use scans::*;
 pub(crate) use sizing::resident_partial_parse_tree_capacity_for_tables;
-use sizing::{ParserFamilyCapacities, resident_partial_parse_tree_capacity};
-use storage::{alias_storage_buffer, dispatch_args_buffer};
+use sizing::{
+    ParserFamilyCapacities,
+    resident_partial_parse_tree_capacity,
+    resident_virtual_pair_width,
+};
+use storage::{
+    alias_storage_buffer,
+    dispatch_args_buffer,
+    dispatch_args_schedule_buffer,
+    dispatch_args_schedule_with_count_buffer,
+};
+pub(crate) use storage::{dispatch_args_schedule_count_offset, pointer_jump_step_capacity};
 
 use crate::gpu::buffers::{
     LaniusBuffer,
@@ -291,6 +301,46 @@ impl ParserBuffers {
             "parser.token_match_pattern_context_event",
             token_input_capacity as usize,
         );
+        let token_generic_shr_block_sum = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.block_sum",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_block_min = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.block_min",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_prefix_sum_a = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.prefix_sum_a",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_prefix_sum_b = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.prefix_sum_b",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_prefix_min_a = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.prefix_min_a",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_prefix_min_b = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.prefix_min_b",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_block_prefix_sum = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.block_prefix_sum",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_generic_shr_block_prefix_min = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_generic_shr.block_prefix_min",
+            token_delimiter_n_blocks as usize,
+        );
         let token_brace_match_params = uniform_from_val(
             device,
             "parser.token_brace_match.params",
@@ -403,8 +453,8 @@ impl ParserBuffers {
         let (mut acc_sc, mut acc_emit) = (0u32, 0u32);
 
         if resident_partial_parse_capacity {
-            let max_sc_len = tables.sc_len.iter().copied().max().unwrap_or(0);
-            let max_emit_len = tables.pp_len.iter().copied().max().unwrap_or(0);
+            let max_sc_len = resident_virtual_pair_width(&tables.sc_len, n_kinds);
+            let max_emit_len = resident_virtual_pair_width(&tables.pp_len, n_kinds);
             acc_sc = (n_pairs as u32).saturating_mul(max_sc_len);
             acc_emit = (n_pairs as u32).saturating_mul(max_emit_len);
         } else {
@@ -680,8 +730,23 @@ impl ParserBuffers {
             dispatch_args_buffer(device, "parser.tree_match_dispatch_args");
         let tree_struct_dispatch_args =
             dispatch_args_buffer(device, "parser.tree_struct_dispatch_args");
+        let tree_pointer_jump_dispatch_args = dispatch_args_schedule_with_count_buffer(
+            device,
+            "parser.tree_pointer_jump_dispatch_args",
+            pointer_jump_step_capacity(tree_capacity) as usize,
+        );
         let hir_semantic_dispatch_args =
             dispatch_args_buffer(device, "parser.hir_semantic_dispatch_args");
+        let hir_semantic_depth_block_max = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_semantic_depth_block_max",
+            tree_n_node_blocks as usize,
+        );
+        let hir_semantic_pointer_jump_dispatch_args = dispatch_args_schedule_buffer(
+            device,
+            "parser.hir_semantic_pointer_jump_dispatch_args",
+            pointer_jump_step_capacity(tree_capacity) as usize,
+        );
         let tree_prefix_scan_steps =
             make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
         let tree_prefix_inblock = storage_rw_for_array::<i32>(
@@ -775,6 +840,8 @@ impl ParserBuffers {
             &super::passes::hir::nodes::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
+                semantic_parent_local_ancestor_span:
+                    super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
             },
         );
         let hir_span_params = uniform_from_val(
@@ -1164,6 +1231,11 @@ impl ParserBuffers {
             alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
         let hir_type_arg_previous =
             alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
+        let hir_type_root_owner = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_type_root_owner",
+            tree_capacity as usize,
+        );
         let hir_type_alias_owner_link_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
         let hir_type_alias_owner_link_b =
@@ -1408,6 +1480,11 @@ impl ParserBuffers {
             "parser.hir_match_arm_pattern_node",
             family_capacities.enum_match as usize,
         );
+        let hir_match_pattern_owner_arm = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_match_pattern_owner_arm",
+            family_capacities.enum_match as usize,
+        );
         let hir_match_arm_payload_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_match_arm_payload_start",
@@ -1482,6 +1559,16 @@ impl ParserBuffers {
         let hir_call_callee_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_call_callee_node",
+            tree_capacity as usize,
+        );
+        let hir_call_callee_path_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_call_callee_path_node",
+            tree_capacity as usize,
+        );
+        let hir_call_parent_by_callee = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_call_parent_by_callee",
             tree_capacity as usize,
         );
         let hir_call_context_stmt_node = storage_rw_for_array::<u32>(
@@ -1578,6 +1665,11 @@ impl ParserBuffers {
             device,
             "parser.hir_expr_record",
             tree_capacity.saturating_mul(4) as usize,
+        );
+        let hir_expr_name_role = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_name_role",
+            tree_capacity as usize,
         );
         let hir_expr_result_node = storage_rw_for_array::<u32>(
             device,
@@ -1916,6 +2008,14 @@ impl ParserBuffers {
             token_type_path_context_kind,
             token_where_context_event,
             token_match_pattern_context_event,
+            token_generic_shr_block_sum,
+            token_generic_shr_block_min,
+            token_generic_shr_prefix_sum_a,
+            token_generic_shr_prefix_sum_b,
+            token_generic_shr_prefix_min_a,
+            token_generic_shr_prefix_min_b,
+            token_generic_shr_block_prefix_sum,
+            token_generic_shr_block_prefix_min,
             token_brace_match_params,
             token_brace_match_depth,
             token_brace_match_block_min,
@@ -2010,7 +2110,10 @@ impl ParserBuffers {
             tree_enum_dispatch_args,
             tree_match_dispatch_args,
             tree_struct_dispatch_args,
+            tree_pointer_jump_dispatch_args,
             hir_semantic_dispatch_args,
+            hir_semantic_depth_block_max,
+            hir_semantic_pointer_jump_dispatch_args,
             tree_prefix_inblock,
             tree_block_sum,
             tree_block_prefix_a,
@@ -2115,6 +2218,7 @@ impl ParserBuffers {
             hir_type_arg_rank_a,
             hir_type_arg_rank_b,
             hir_type_arg_previous,
+            hir_type_root_owner,
             hir_type_alias_owner_link_a,
             hir_type_alias_owner_link_b,
             hir_type_alias_owner_value_a,
@@ -2184,6 +2288,7 @@ impl ParserBuffers {
             hir_match_arm_count,
             hir_match_arm_next,
             hir_match_arm_pattern_node,
+            hir_match_pattern_owner_arm,
             hir_match_arm_payload_start,
             hir_match_arm_payload_count,
             hir_match_arm_result_node,
@@ -2212,6 +2317,8 @@ impl ParserBuffers {
             hir_match_rank_count,
             hir_match_rank_dispatch_args,
             hir_call_callee_node,
+            hir_call_callee_path_node,
+            hir_call_parent_by_callee,
             hir_call_context_stmt_node,
             hir_call_arg_start,
             hir_call_arg_end,
@@ -2242,6 +2349,7 @@ impl ParserBuffers {
             hir_expr_right_node,
             hir_expr_value_token,
             hir_expr_record,
+            hir_expr_name_role,
             hir_expr_result_node,
             hir_expr_result_root_node,
             hir_expr_result_root_scratch_node,

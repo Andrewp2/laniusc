@@ -15,13 +15,18 @@ pub type FileHandle = i32;
 pub const FILESYSTEM_RUNTIME_ABI_VERSION: FilesystemRuntimeAbiVersion = 1;
 pub const FILESYSTEM_SERVICE_ID: FilesystemServiceId = 2;
 pub const FILESYSTEM_SERVICE_STATUS_UNAVAILABLE: FilesystemServiceStatus = 1;
-pub const FILESYSTEM_HAS_RUNTIME_BINDING: FilesystemCapability = false;
+pub const FILESYSTEM_SERVICE_STATUS_AVAILABLE: FilesystemServiceStatus = 2;
+pub const FILESYSTEM_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_OPEN_READ_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_OPEN_WRITE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_OPEN_APPEND_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_CLOSE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_READ_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_WRITE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_REMOVE_FILE_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_CREATE_DIR_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_REMOVE_DIR_HAS_RUNTIME_BINDING: FilesystemCapability = true;
+pub const FILESYSTEM_RENAME_HAS_RUNTIME_BINDING: FilesystemCapability = true;
 pub const FILESYSTEM_OPERATION_OK: FilesystemOperationResult = 0;
 pub const FILESYSTEM_OPERATION_UNAVAILABLE: FilesystemOperationResult = -1;
 pub const FILE_HANDLE_INVALID: FileHandle = -1;
@@ -43,7 +48,7 @@ pub fn filesystem_contract_metadata_is_available() -> FilesystemCapability {
 }
 
 pub fn filesystem_service_status() -> FilesystemServiceStatus {
-    return FILESYSTEM_SERVICE_STATUS_UNAVAILABLE;
+    return FILESYSTEM_SERVICE_STATUS_AVAILABLE;
 }
 
 pub fn filesystem_is_available() -> FilesystemCapability {
@@ -247,7 +252,10 @@ pub fn write_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn path_mutation_api_is_executable() -> FilesystemCapability {
-    return FILESYSTEM_HAS_RUNTIME_BINDING;
+    return FILESYSTEM_REMOVE_FILE_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_CREATE_DIR_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_REMOVE_DIR_HAS_RUNTIME_BINDING &&
+        FILESYSTEM_RENAME_HAS_RUNTIME_BINDING;
 }
 
 pub fn path_mutation_api_is_blocked() -> FilesystemCapability {
@@ -266,7 +274,7 @@ pub fn path_mutation_api_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn remove_file_is_executable() -> FilesystemCapability {
-    return path_mutation_api_is_executable();
+    return FILESYSTEM_REMOVE_FILE_HAS_RUNTIME_BINDING;
 }
 
 pub fn remove_file_is_blocked() -> FilesystemCapability {
@@ -285,7 +293,7 @@ pub fn remove_file_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn create_dir_is_executable() -> FilesystemCapability {
-    return path_mutation_api_is_executable();
+    return FILESYSTEM_CREATE_DIR_HAS_RUNTIME_BINDING;
 }
 
 pub fn create_dir_is_blocked() -> FilesystemCapability {
@@ -304,7 +312,7 @@ pub fn create_dir_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn remove_dir_is_executable() -> FilesystemCapability {
-    return path_mutation_api_is_executable();
+    return FILESYSTEM_REMOVE_DIR_HAS_RUNTIME_BINDING;
 }
 
 pub fn remove_dir_is_blocked() -> FilesystemCapability {
@@ -323,7 +331,7 @@ pub fn remove_dir_requires_runtime_binding() -> FilesystemCapability {
 }
 
 pub fn rename_is_executable() -> FilesystemCapability {
-    return path_mutation_api_is_executable();
+    return FILESYSTEM_RENAME_HAS_RUNTIME_BINDING;
 }
 
 pub fn rename_is_blocked() -> FilesystemCapability {

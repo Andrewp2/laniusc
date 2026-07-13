@@ -25,6 +25,8 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_RANGE,
                 HIR_EXPR_FORM_STRING,
                 HIR_EXPR_FORM_TRUE,
+                HIR_EXPR_NAME_ROLE_NONE,
+                HIR_EXPR_NAME_ROLE_SELF,
             },
             item::fields::{
                 HIR_ITEM_IMPORT_TARGET_NONE,
@@ -59,6 +61,7 @@ use laniusc_compiler::{
                 signature_status::{
                     HIR_METHOD_SIGNATURE_HAS_GENERICS,
                     HIR_METHOD_SIGNATURE_HAS_WHERE,
+                    HIR_METHOD_SIGNATURE_INHERENT_IMPL,
                 },
             },
             nodes::{
@@ -605,6 +608,37 @@ fn make_world() -> i32 {
         parsed.hir_kind[init_root], HIR_NODE_CALL_EXPR,
         "qualified generic constructor initializer should canonicalize to the call expression, not an intermediate postfix wrapper"
     );
+    let callee_node = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_call_callee_node[init_root],
+        "qualified generic constructor callee",
+    );
+    assert_eq!(
+        parsed.hir_call_parent_by_callee[callee_node] as usize, init_root,
+        "the parser-owned reverse call relation should map the canonical callee to the constructor call"
+    );
+    if parsed.hir_kind[callee_node] == HIR_NODE_NAME_EXPR {
+        let path_node = assert_valid_hir_node_index(
+            &parsed,
+            parsed.first_child[callee_node],
+            "qualified generic constructor path owner",
+        );
+        assert!(
+            matches!(
+                parsed.hir_kind[path_node],
+                HIR_NODE_PATH_EXPR | HIR_NODE_TYPE
+            ),
+            "the name-expression callee child should be the canonical path owner"
+        );
+        assert_eq!(
+            parsed.hir_call_callee_path_node[init_root] as usize, path_node,
+            "the call record should publish its canonical path owner directly"
+        );
+        assert_eq!(
+            parsed.hir_call_parent_by_callee[path_node] as usize, init_root,
+            "the parser-owned reverse call relation should alias the compact path owner to the constructor call"
+        );
+    }
     assert_eq!(
         parsed.hir_nearest_stmt_node[init_root] as usize, let_node,
         "qualified generic constructor call should retain the let statement as context"
@@ -707,6 +741,478 @@ pub extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
         kinds.contains(&(TokenKind::ExternSemicolon as u32)),
         "public extern declarations without return types should retain extern semicolon boundaries: {:?}",
         token_kind_names(&kinds)
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_classify_reference_type_arguments_from_type_colons() {
+    let source = r#"
+struct Holder {
+    value: Box<&bool>,
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgLt as u32,
+        TokenKind::TypeAmpersand as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgGt as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "reference type arguments after a type colon must stay in the type grammar: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "reference type argument should parse");
+}
+
+#[test]
+fn parser_semantic_tokens_keep_const_generic_trait_method_terminators() {
+    let source = r#"
+trait Contract {
+    fn apply<T, const N: bool>(values: [u32; N]) -> u32 where T: Contract;
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    assert!(
+        kinds.contains(&(TokenKind::TraitMethodSemicolon as u32)),
+        "trait ownership must outrank nested const-generic statement context: {:?}",
+        token_kind_names(&kinds)
+    );
+    assert!(
+        kinds.contains(&(TokenKind::TypeSemicolon as u32)),
+        "array delimiters inside the signature must retain local ownership: {:?}",
+        token_kind_names(&kinds)
+    );
+    assert!(
+        !kinds.contains(&(TokenKind::ConstSemicolon as u32)),
+        "const generic parameters must not retag the method terminator: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "const-generic trait method should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_keep_impl_const_generic_names_as_identifiers() {
+    let source = r#"
+impl<T: Copy, const N: u32> Debug for bool {
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::Const as u32,
+        TokenKind::Ident as u32,
+        TokenKind::TypeColon as u32,
+        TokenKind::TypeIdent as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "const generic names must remain declarations inside impl type context: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "const-generic impl should parse");
+}
+
+#[test]
+fn parser_semantic_tokens_match_type_argument_close_across_token_blocks() {
+    let mut source = String::from("fn pad() {\n");
+    for _ in 0..121 {
+        source.push_str("    a;\n");
+    }
+    source.push_str("}\nfn target(p: Box<u32>) {}\n");
+
+    let kinds = parser_semantic_token_kinds_for_source(&source);
+    assert_eq!(
+        kinds[257],
+        TokenKind::TypeArgGt as u32,
+        "a type-argument close at raw token 256 must find its opener in the previous GPU block"
+    );
+
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "cross-block type-argument delimiters should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_keep_empty_array_struct_field_boundaries() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f() {
+    let value = Pair { field0: [], field1: other };
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::StructLitLBrace as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::ArrayLBracket as u32,
+        TokenKind::ArrayRBracket as u32,
+        TokenKind::StructLitComma as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitRBrace as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "empty array values must close before the enclosing struct-field comma: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "empty array struct fields should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_restore_array_context_after_struct_literals() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(p0: i32) {
+    if ([Pair { field0: p0, field1: p0 }]) {
+    }
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::ArrayLBracket as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitLBrace as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitComma as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::ArrayRBracket as u32,
+        TokenKind::GroupRParen as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "struct literals must return control to the enclosing array expression: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tables/parse_tables.bin"
+    )))
+    .expect("load precomputed parse tables");
+    let cpu = tables.test_cpu_ll1_production_stream(&kinds);
+    assert!(
+        cpu.is_ok(),
+        "CPU LL(1) should accept the classified stream: {cpu:?}; {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "arrays containing struct literals should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_classify_lexically_separated_nested_references() {
+    let source = "fn f() { let value: & &i32; }\n";
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::TypeAmpersand as u32,
+        TokenKind::TypeAmpersand as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::LetSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "separate reference tokens must remain in recursive type context: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "nested reference types should parse");
+}
+
+#[test]
+fn parser_semantic_tokens_classify_index_after_struct_literal() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(p0: i32) {
+    Pair { field0: p0, field1: p0 }[p0];
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::IndexLBracket as u32,
+        TokenKind::Ident as u32,
+        TokenKind::IndexRBracket as u32,
+        TokenKind::ExprSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "a struct-literal result must own a following index operation: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "indexing a struct literal should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_keep_struct_literals_inside_while_conditions() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(p0: i32) {
+    while (Pair { field0: p0, field1: p0 }) {
+    }
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::GroupLParen as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitLBrace as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitComma as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Colon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::GroupRParen as u32,
+        TokenKind::LBrace as u32,
+        TokenKind::RBrace as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "while-body ownership must not capture braces inside its condition: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "struct literals inside while conditions should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_keep_infix_operators_after_struct_literals() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(p0: i32) {
+    let value = Pair { field0: p0, field1: p0 } || p0;
+    let difference = Pair { field0: p0, field1: p0 } - p0;
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected_or = [
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::OrOr as u32,
+        TokenKind::Ident as u32,
+        TokenKind::LetSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected_or.len())
+            .any(|window| window == expected_or),
+        "a struct-literal result must complete before an infix boolean operator: {:?}",
+        token_kind_names(&kinds)
+    );
+    let expected_minus = [
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::InfixMinus as u32,
+        TokenKind::Ident as u32,
+        TokenKind::LetSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected_minus.len())
+            .any(|window| window == expected_minus),
+        "a struct-literal result must be a primary before infix minus: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "infix operators after struct literals should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_classify_call_after_struct_literal() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(p0: i32) {
+    let value = Pair { field0: p0, field1: p0 }(p0);
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::StructLitRBrace as u32,
+        TokenKind::CallLParen as u32,
+        TokenKind::Ident as u32,
+        TokenKind::CallRParen as u32,
+        TokenKind::LetSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "a struct-literal result must own a following call operation: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "calling a struct literal result should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_classify_nested_postfix_chain_around_struct_literal() {
+    let source = r#"
+struct Pair { field0: i32, field1: i32 }
+fn f(flag: bool) {
+    ('\n'(Pair { field0: 193, field1: flag })).field0;
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tables/parse_tables.bin"
+    )))
+    .expect("load precomputed parse tables");
+    let cpu = tables.test_cpu_ll1_production_stream(&kinds);
+    assert!(
+        cpu.is_ok(),
+        "CPU LL(1) should accept the nested postfix chain: {cpu:?}; {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "postfix chains containing struct literals should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_preserve_nested_block_control_flow_context() {
+    let source = r#"
+module fuzz::case;
+
+struct Pair { field0: i32, field1: i32 }
+
+fn f0(p0: i32, p1: i32, flag: bool) -> i32 {
+    if (p0) {
+    }
+    else {
+        let v0 = p0 < p0;
+    }
+    {
+        if (p0 || 6) {
+            Pair { field0: Pair { field0: 235, field1: 116 }, field1: -204 };
+            [!137, -true];
+        }
+        else {
+            return p0;
+            ('\n'(Pair { field0: 193, field1: flag })).field0;
+        }
+    }
+    return p0;
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tables/parse_tables.bin"
+    )))
+    .expect("load precomputed parse tables");
+    let cpu = tables.test_cpu_ll1_production_stream(&kinds);
+    assert!(
+        cpu.is_ok(),
+        "CPU LL(1) should accept nested block control flow: {cpu:?}; {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "nested block control flow should parse"
+    );
+}
+
+#[test]
+fn parser_semantic_tokens_classify_if_inside_standalone_block() {
+    let source = r#"
+fn f(p0: i32) {
+    {
+        if (p0) {
+        }
+    }
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::LBrace as u32,
+        TokenKind::If as u32,
+        TokenKind::GroupLParen as u32,
+        TokenKind::Ident as u32,
+        TokenKind::GroupRParen as u32,
+        TokenKind::IfLBrace as u32,
+        TokenKind::IfRBrace as u32,
+        TokenKind::RBrace as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "an if header must own its body inside a standalone block: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(
+        parsed.ll1.accepted,
+        "if statements inside blocks should parse"
     );
 }
 
@@ -1273,6 +1779,14 @@ fn main(pair: Pair) -> i32 {
         parsed.hir_kind[callee_node], HIR_NODE_MEMBER_EXPR,
         "method call callee should be the parser-owned member HIR node"
     );
+    assert_eq!(
+        parsed.hir_call_callee_path_node[call_node], INVALID,
+        "member calls should not forge a path-callee relation"
+    );
+    assert_eq!(
+        parsed.hir_call_parent_by_callee[callee_node] as usize, call_node,
+        "member callee should publish the reverse parser-owned call edge"
+    );
 
     let receiver_node = parsed.hir_member_receiver_node[callee_node] as usize;
     assert_ne!(
@@ -1341,6 +1855,54 @@ fn main(pair: Pair) -> i32 {
 }
 
 #[test]
+fn parser_hir_self_member_receiver_publishes_semantic_name_role() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair {
+    left: i32,
+}
+
+impl Pair {
+    fn left_value(&self) -> i32 {
+        return self.left;
+    }
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the self-receiver fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let member_node = parsed
+        .hir_member_receiver_node
+        .iter()
+        .enumerate()
+        .find_map(|(node, &receiver)| {
+            (receiver != INVALID && parsed.hir_kind[node] == HIR_NODE_MEMBER_EXPR).then_some(node)
+        })
+        .expect("fixture should publish the self member expression");
+    let receiver_node = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_member_receiver_node[member_node],
+        "self member receiver",
+    );
+    assert_eq!(
+        parsed.hir_expr_name_role[receiver_node], HIR_EXPR_NAME_ROLE_SELF,
+        "the parser should classify the reserved self value for downstream semantic consumers"
+    );
+    assert!(
+        parsed
+            .hir_expr_name_role
+            .iter()
+            .enumerate()
+            .all(|(node, &role)| node == receiver_node || role == HIR_EXPR_NAME_ROLE_NONE),
+        "ordinary names and non-name HIR rows should not acquire the self role"
+    );
+}
+
+#[test]
 fn parser_hir_chained_method_call_receiver_records_link_inner_call_as_receiver() {
     let parsed = parse_resident_source(
         r#"
@@ -1388,6 +1950,10 @@ fn main(arg: i32) -> bool {
         parsed.hir_kind[outer_member], HIR_NODE_MEMBER_EXPR,
         "outer call callee should be the parser-owned member row"
     );
+    assert_eq!(
+        parsed.hir_call_parent_by_callee[outer_member] as usize, outer_call,
+        "outer member should point back to its parser-owned call row"
+    );
 
     let inner_call = assert_valid_hir_node_index(
         &parsed,
@@ -1411,6 +1977,25 @@ fn main(arg: i32) -> bool {
         ),
         "inner call callee should be the parser-owned callee name/path row"
     );
+    assert_eq!(
+        parsed.hir_call_parent_by_callee[inner_callee] as usize, inner_call,
+        "inner callee should point back to its parser-owned call row"
+    );
+    if parsed.hir_kind[inner_callee] == HIR_NODE_NAME_EXPR {
+        let path_child = assert_valid_hir_node_index(
+            &parsed,
+            parsed.first_child[inner_callee],
+            "inner callee path child",
+        );
+        assert_eq!(
+            parsed.hir_kind[path_child], HIR_NODE_PATH_EXPR,
+            "name-wrapped callee should expose its parser-owned path child"
+        );
+        assert_eq!(
+            parsed.hir_call_parent_by_callee[path_child] as usize, inner_call,
+            "callee path alias should point at the same parser-owned call row"
+        );
+    }
     assert_eq!(
         parsed.hir_member_receiver_token[outer_member], parsed.hir_token_pos[inner_callee],
         "outer member receiver token should come from the inner call callee token"
@@ -2924,6 +3509,119 @@ fn main(value: i32) -> i32 {
             && call_expr_row < parsed.hir_semantic_subtree_end[main_fn_row] as usize,
         "downstream consumers should be able to place call expressions inside function subtrees without parse-tree walks"
     );
+}
+
+#[test]
+fn parser_hir_semantic_parents_match_raw_tree_oracle_for_deeply_nested_source() {
+    const NESTING: usize = 96;
+    let source = format!(
+        "fn main() -> i32 {{ return {}1{}; }}",
+        "(".repeat(NESTING),
+        ")".repeat(NESTING),
+    );
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the deeply nested fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let semantic_count = parsed
+        .hir_kind
+        .iter()
+        .filter(|&&kind| kind != HIR_NODE_NONE)
+        .count();
+    for row in 0..semantic_count {
+        let node = parsed.hir_semantic_dense_node[row] as usize;
+        let mut ancestor = parsed.parent[node];
+        let expected = loop {
+            if ancestor == INVALID {
+                break INVALID;
+            }
+            let ancestor_usize = ancestor as usize;
+            assert!(
+                ancestor_usize < parsed.parent.len(),
+                "raw parent chain for semantic row {row} should remain bounded"
+            );
+            if parsed.hir_kind[ancestor_usize] != HIR_NODE_NONE {
+                break parsed.hir_semantic_prefix_before_node[ancestor_usize];
+            }
+            let next = parsed.parent[ancestor_usize];
+            assert_ne!(
+                next, ancestor,
+                "raw parent chain for semantic row {row} should not contain a self-cycle"
+            );
+            ancestor = next;
+        };
+        assert_eq!(
+            parsed.hir_semantic_parent[row], expected,
+            "hybrid GPU ancestor propagation should match the raw-tree oracle for semantic row {row}"
+        );
+    }
+}
+
+#[test]
+fn parser_bracket_pairing_scales_past_65536_events() {
+    const FUNCTIONS: usize = 1_500;
+    let mut source = String::with_capacity(FUNCTIONS * 44);
+    for function in 0..FUNCTIONS {
+        source.push_str(&format!(
+            "fn f{function}() -> i32 {{ return {function}; }}\n"
+        ));
+    }
+
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the wide bracket fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+    let function_count = parsed
+        .hir_kind
+        .iter()
+        .filter(|&&kind| kind == HIR_NODE_FN)
+        .count();
+    assert_eq!(function_count, FUNCTIONS);
+}
+
+#[test]
+fn parser_hir_child_indices_cross_local_sibling_blocks() {
+    const FUNCTIONS: usize = 96;
+    let mut source = String::new();
+    for function in 0..FUNCTIONS {
+        source.push_str(&format!(
+            "fn f{function}() -> i32 {{ return {function}; }}\n"
+        ));
+    }
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the wide fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let semantic_count = parsed
+        .hir_kind
+        .iter()
+        .filter(|&&kind| kind != HIR_NODE_NONE)
+        .count();
+    let file_row = (0..semantic_count)
+        .find(|&row| parsed.hir_kind[parsed.hir_semantic_dense_node[row] as usize] == HIR_NODE_FILE)
+        .expect("wide fixture should publish a semantic file root");
+    let children = (0..semantic_count)
+        .filter(|&row| parsed.hir_semantic_parent[row] == file_row as u32)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        children.len(),
+        FUNCTIONS,
+        "each top-level function should publish one direct semantic item child"
+    );
+    for (expected_index, row) in children.into_iter().enumerate() {
+        assert_eq!(
+            parsed.hir_semantic_child_index[row], expected_index as u32,
+            "semantic child rank should cross local sibling blocks without resetting"
+        );
+    }
 }
 
 #[test]
@@ -4812,6 +5510,20 @@ fn parser_hir_function_parameter_ordinals_cross_scan_boundary() {
     );
 
     for (expected_ordinal, param_node) in params.into_iter().enumerate() {
+        let param_row = parsed
+            .hir_semantic_dense_node
+            .iter()
+            .position(|&node| node as usize == param_node)
+            .expect("parameter HIR node should have a dense semantic row");
+        let semantic_parent_row = parsed.hir_semantic_parent[param_row] as usize;
+        assert!(
+            semantic_parent_row < parsed.hir_semantic_dense_node.len(),
+            "parameter semantic parent should be a bounded dense row"
+        );
+        assert_eq!(
+            parsed.hir_semantic_dense_node[semantic_parent_row] as usize, function_node,
+            "parameter ownership should come directly from the semantic HIR tree"
+        );
         assert_eq!(
             parsed.hir_param_ordinal[param_node], expected_ordinal as u32,
             "wide function parameter row should publish a scan-assigned source-order ordinal"
@@ -5801,7 +6513,7 @@ struct Boxed<A, B, C, D, E> {
 }
 
 impl<A, B, C, D, E> Boxed<A, B, C, D, E> {
-    fn present(self) -> bool {
+    fn present<T>(self) -> bool {
         return true;
     }
 }
@@ -5872,6 +6584,16 @@ impl<A, B, C, D, E> Boxed<A, B, C, D, E> {
     assert_eq!(
         parsed.hir_method_receiver_mode[method_node], HIR_METHOD_RECEIVER_SELF,
         "plain self receiver should be published for the generic impl method"
+    );
+    assert_ne!(
+        parsed.hir_method_signature_flags[method_node] & HIR_METHOD_SIGNATURE_INHERENT_IMPL,
+        0,
+        "inherent impl methods should publish parser-owned owner classification"
+    );
+    assert_ne!(
+        parsed.hir_method_signature_flags[method_node] & HIR_METHOD_SIGNATURE_HAS_GENERICS,
+        0,
+        "inherent classification must compose with the parser-owned method generic flag"
     );
 
     let return_type = assert_valid_source_pack_hir_node_index(

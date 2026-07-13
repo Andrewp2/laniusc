@@ -45,6 +45,20 @@ ActionHeader table_header(uint prev_kind, uint this_kind)
     return action_table[prev_kind * gParams.n_kinds + this_kind];
 }
 
+ActionHeader concat_headers(ActionHeader first, ActionHeader second)
+{
+    ActionHeader combined;
+    combined.push_len = first.push_len + second.push_len;
+    combined.emit_len = first.emit_len + second.emit_len;
+    combined.pop_tag = 0u;
+    combined.pop_count = first.pop_count + second.pop_count;
+    return combined;
+}
+
+bool is_generic_shr(uint raw_i) { return (token_kinds[raw_i + 1u] & 0x80000000u) != 0u; }
+uint generic_shr_inner(uint raw_i) { return token_kinds[raw_i + 1u] & 0x7fffu; }
+uint generic_shr_outer(uint raw_i) { return (token_kinds[raw_i + 1u] >> 15u) & 0x7fffu; }
+
 bool source_file_boundary_pair(uint pair_i, uint token_count_value)
 {
     if (pair_i == 0u || pair_i >= token_count_value)
@@ -88,17 +102,34 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         return;
     }
 
+    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
     uint prev_kind = token_kinds[i];
     uint this_kind = token_kinds[i + 1];
+    bool prev_is_generic_shr = i > 0u && is_generic_shr(i - 1u);
+    bool this_is_generic_shr = i < count && is_generic_shr(i);
+    if (prev_is_generic_shr)
+        prev_kind = generic_shr_outer(i - 1u);
 
-    if (!valid_kind(prev_kind) || !valid_kind(this_kind))
+    uint checked_this_kind = this_is_generic_shr ? generic_shr_inner(i) : this_kind;
+    if (!valid_kind(prev_kind) || !valid_kind(checked_this_kind))
     {
         out_headers[i] = zero_header();
         return;
     }
 
-    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
-    out_headers[i] = source_file_boundary_pair(i, count)
-        ? combine_virtual_boundary_headers(prev_kind, this_kind)
-        : table_header(prev_kind, this_kind);
+    if (source_file_boundary_pair(i, count))
+    {
+        out_headers[i] = combine_virtual_boundary_headers(prev_kind, this_kind);
+        return;
+    }
+    if (this_is_generic_shr)
+    {
+        uint inner_kind = generic_shr_inner(i);
+        uint outer_kind = generic_shr_outer(i);
+        out_headers[i] = concat_headers(
+            table_header(prev_kind, inner_kind),
+            table_header(inner_kind, outer_kind));
+        return;
+    }
+    out_headers[i] = table_header(prev_kind, this_kind);
 }

@@ -1,0 +1,24 @@
+module app::main;
+
+import alloc::allocator;
+import std::process;
+import std::io;
+
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(32, 4);
+    let read: i32 = std::process::arg_read(1, ptr, 32);
+    if (read != 15) {
+        return 1;
+    }
+    let grown: u32 = alloc::allocator::realloc(ptr, 32, 64, 4);
+    if (grown == 0) {
+        return 2;
+    }
+    let written: i32 = std::io::write_stdout(grown, 15);
+    if (written != 15) {
+        return 3;
+    }
+    print(0);
+    alloc::allocator::dealloc(grown, 64, 4);
+    return 0;
+}

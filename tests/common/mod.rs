@@ -26,6 +26,7 @@ use laniusc_compiler::compiler::{
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
+    semantic_interface_identity_for_source_pack_with_gpu,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
@@ -141,6 +142,21 @@ pub fn type_check_source_pack_with_timeout(sources: &[&str]) -> Result<(), Compi
         .collect::<Vec<_>>();
     run_with_timeout("GPU source-pack type check", move || {
         pollster::block_on(type_check_source_pack_with_gpu(&sources))
+    })
+}
+
+pub fn semantic_interface_identity_with_timeout(
+    library_id: u32,
+    sources: &[&str],
+) -> Result<laniusc_compiler::compiler::GpuSemanticInterfaceIdentityArtifact, CompileError> {
+    let sources = sources
+        .iter()
+        .map(|source| (*source).to_owned())
+        .collect::<Vec<_>>();
+    run_with_timeout("GPU semantic-interface identity export", move || {
+        pollster::block_on(semantic_interface_identity_for_source_pack_with_gpu(
+            library_id, &sources,
+        ))
     })
 }
 
@@ -607,6 +623,7 @@ const fs = require('fs');
   const envKeys = Object.keys(laniusEnv);
   const stdinBytes = Buffer.from('S', 'utf8');
   const fileStore = new Map();
+  const dirStore = new Set();
   const fileHandles = new Map();
   let nextFileHandle = 3;
   let heapPtr = 1024;
@@ -633,6 +650,14 @@ const fs = require('fs');
     heapPtr = end;
     return start | 0;
   }
+  function reallocMemory(ptr, oldSize, newSize, align) {
+    const next = allocMemory(newSize, align);
+    if (next === 0) return 0;
+    const count = Math.min(oldSize >>> 0, newSize >>> 0);
+    const source = new Uint8Array(memory().buffer, ptr >>> 0, count);
+    new Uint8Array(memory().buffer, next >>> 0, count).set(source);
+    return next | 0;
+  }
   function writeBytes(ptr, len, text) {
     const bytes = Buffer.from(text, 'utf8');
     const start = ptr >>> 0;
@@ -650,6 +675,13 @@ const fs = require('fs');
     const start = ptr >>> 0;
     const count = len >>> 0;
     return Buffer.from(new Uint8Array(memory().buffer, start, count));
+  }
+  function writeTimespec(ptr, len, seconds, nanoseconds) {
+    if ((len >>> 0) < 16) return -1;
+    const view = new DataView(memory().buffer);
+    view.setBigInt64(ptr >>> 0, BigInt(seconds), true);
+    view.setBigInt64((ptr >>> 0) + 8, BigInt(nanoseconds), true);
+    return 0;
   }
   function decodeLaniusStringLiteral(ptr, len) {
     const bytes = readBytes(ptr, len);
@@ -689,6 +721,54 @@ const fs = require('fs');
     const handle = nextFileHandle++;
     fileHandles.set(handle, { path, offset: mode === 'append' ? fileStore.get(path).length : 0, mode });
     return handle | 0;
+  }
+  function removeFile(path) {
+    if (!fileStore.has(path)) return -1;
+    fileStore.delete(path);
+    return 0;
+  }
+  function createDir(path) {
+    if (fileStore.has(path) || dirStore.has(path)) return -1;
+    dirStore.add(path);
+    return 0;
+  }
+  function removeDir(path) {
+    if (!dirStore.has(path)) return -1;
+    const prefix = path.endsWith('/') ? path : path + '/';
+    for (const name of fileStore.keys()) if (name.startsWith(prefix)) return -1;
+    for (const name of dirStore) if (name !== path && name.startsWith(prefix)) return -1;
+    dirStore.delete(path);
+    return 0;
+  }
+  function renamePath(from, to) {
+    if (from === to && (fileStore.has(from) || dirStore.has(from))) return 0;
+    if (fileStore.has(to) || dirStore.has(to)) return -1;
+    if (fileStore.has(from)) {
+      const bytes = fileStore.get(from);
+      fileStore.delete(from);
+      fileStore.set(to, bytes);
+      for (const record of fileHandles.values()) if (record.path === from) record.path = to;
+      return 0;
+    }
+    if (!dirStore.has(from)) return -1;
+    const prefix = from.endsWith('/') ? from : from + '/';
+    const replacement = to.endsWith('/') ? to : to + '/';
+    const files = Array.from(fileStore.entries());
+    const dirs = Array.from(dirStore);
+    dirStore.delete(from);
+    dirStore.add(to);
+    for (const [name, bytes] of files) if (name.startsWith(prefix)) {
+      fileStore.delete(name);
+      fileStore.set(replacement + name.slice(prefix.length), bytes);
+    }
+    for (const name of dirs) if (name.startsWith(prefix)) {
+      dirStore.delete(name);
+      dirStore.add(replacement + name.slice(prefix.length));
+    }
+    for (const record of fileHandles.values()) if (record.path.startsWith(prefix)) {
+      record.path = replacement + record.path.slice(prefix.length);
+    }
+    return 0;
   }
   function fileRead(handle, ptr, len) {
     const record = fileHandles.get(handle | 0);
@@ -768,11 +848,36 @@ const fs = require('fs');
         new Uint8Array(memory.buffer, start, count).set(bytes.subarray(0, count));
         return count | 0;
       },
+      exit(code) {
+        throw { laniusExitCode: code | 0 };
+      },
       secure_u32() {
         return 1234567;
       },
+      fill_secure_bytes(ptr, len) {
+        const memory = instance && instance.exports && instance.exports.memory;
+        if (!memory) {
+          return -1;
+        }
+        const start = ptr >>> 0;
+        const count = len >>> 0;
+        const bytes = new Uint8Array(memory.buffer, start, count);
+        for (let i = 0; i < count; i += 1) {
+          bytes[i] = (i * 37 + 11) & 255;
+        }
+        return count | 0;
+      },
       unix_seconds() {
         return 1234567890;
+      },
+      monotonic_read(ptr, len) {
+        return writeTimespec(ptr, len, 123, 456000000);
+      },
+      system_read(ptr, len) {
+        return writeTimespec(ptr, len, 1234567890, 789000000);
+      },
+      sleep_ms_i32(milliseconds) {
+        return (milliseconds | 0) < 0 ? -1 : 0;
       },
       current_dir_read(ptr, len) {
         return writeBytes(ptr, len, cwd);
@@ -819,6 +924,18 @@ const fs = require('fs');
       open_append(ptr, len) {
         return openFile(readString(ptr, len), 'append');
       },
+      remove_file(ptr, len) {
+        return removeFile(readString(ptr, len));
+      },
+      create_dir(ptr, len) {
+        return createDir(readString(ptr, len));
+      },
+      remove_dir(ptr, len) {
+        return removeDir(readString(ptr, len));
+      },
+      rename(fromPtr, fromLen, toPtr, toLen) {
+        return renamePath(readString(fromPtr, fromLen), readString(toPtr, toLen));
+      },
       open_read_path(ptr, len) {
         return openFile(decodeLaniusStringLiteral(ptr, len), 'read');
       },
@@ -851,6 +968,12 @@ const fs = require('fs');
       alloc(size, align) {
         return allocMemory(size, align);
       },
+      realloc(ptr, oldSize, newSize, align) {
+        return reallocMemory(ptr, oldSize, newSize, align);
+      },
+      alloc_failed(_size, _align) {
+        throw { laniusExitCode: 1 };
+      },
       dealloc(_ptr, _size, _align) {},
       write_stdout(ptr, len) {
         const memory = instance && instance.exports && instance.exports.memory;
@@ -871,7 +994,16 @@ const fs = require('fs');
   if (typeof main !== 'function') {
     throw new Error('missing exported main function');
   }
-  const status = main();
+  let status;
+  try {
+    status = main();
+  } catch (err) {
+    if (err && Number.isInteger(err.laniusExitCode)) {
+      status = err.laniusExitCode | 0;
+    } else {
+      throw err;
+    }
+  }
   if (!Number.isInteger(status)) {
     throw new Error(`main returned non-integer ${String(status)}`);
   }
@@ -938,6 +1070,7 @@ const fs = require('fs');
   const envKeys = Object.keys(laniusEnv);
   const stdinBytes = Buffer.from('S', 'utf8');
   const fileStore = new Map();
+  const dirStore = new Set();
   const fileHandles = new Map();
   let nextFileHandle = 3;
   let heapPtr = 1024;
@@ -961,6 +1094,14 @@ const fs = require('fs');
     heapPtr = end;
     return start | 0;
   }
+  function reallocMemory(ptr, oldSize, newSize, align) {
+    const next = allocMemory(newSize, align);
+    if (next === 0) return 0;
+    const count = Math.min(oldSize >>> 0, newSize >>> 0);
+    const source = new Uint8Array(memory().buffer, ptr >>> 0, count);
+    new Uint8Array(memory().buffer, next >>> 0, count).set(source);
+    return next | 0;
+  }
   function writeBytes(ptr, len, text) {
     const bytes = Buffer.from(text, 'utf8');
     const start = ptr >>> 0;
@@ -978,6 +1119,13 @@ const fs = require('fs');
     const start = ptr >>> 0;
     const count = len >>> 0;
     return Buffer.from(new Uint8Array(memory().buffer, start, count));
+  }
+  function writeTimespec(ptr, len, seconds, nanoseconds) {
+    if ((len >>> 0) < 16) return -1;
+    const view = new DataView(memory().buffer);
+    view.setBigInt64(ptr >>> 0, BigInt(seconds), true);
+    view.setBigInt64((ptr >>> 0) + 8, BigInt(nanoseconds), true);
+    return 0;
   }
   function decodeLaniusStringLiteral(ptr, len) {
     const bytes = readBytes(ptr, len);
@@ -1017,6 +1165,54 @@ const fs = require('fs');
     const handle = nextFileHandle++;
     fileHandles.set(handle, { path, offset: mode === 'append' ? fileStore.get(path).length : 0, mode });
     return handle | 0;
+  }
+  function removeFile(path) {
+    if (!fileStore.has(path)) return -1;
+    fileStore.delete(path);
+    return 0;
+  }
+  function createDir(path) {
+    if (fileStore.has(path) || dirStore.has(path)) return -1;
+    dirStore.add(path);
+    return 0;
+  }
+  function removeDir(path) {
+    if (!dirStore.has(path)) return -1;
+    const prefix = path.endsWith('/') ? path : path + '/';
+    for (const name of fileStore.keys()) if (name.startsWith(prefix)) return -1;
+    for (const name of dirStore) if (name !== path && name.startsWith(prefix)) return -1;
+    dirStore.delete(path);
+    return 0;
+  }
+  function renamePath(from, to) {
+    if (from === to && (fileStore.has(from) || dirStore.has(from))) return 0;
+    if (fileStore.has(to) || dirStore.has(to)) return -1;
+    if (fileStore.has(from)) {
+      const bytes = fileStore.get(from);
+      fileStore.delete(from);
+      fileStore.set(to, bytes);
+      for (const record of fileHandles.values()) if (record.path === from) record.path = to;
+      return 0;
+    }
+    if (!dirStore.has(from)) return -1;
+    const prefix = from.endsWith('/') ? from : from + '/';
+    const replacement = to.endsWith('/') ? to : to + '/';
+    const files = Array.from(fileStore.entries());
+    const dirs = Array.from(dirStore);
+    dirStore.delete(from);
+    dirStore.add(to);
+    for (const [name, bytes] of files) if (name.startsWith(prefix)) {
+      fileStore.delete(name);
+      fileStore.set(replacement + name.slice(prefix.length), bytes);
+    }
+    for (const name of dirs) if (name.startsWith(prefix)) {
+      dirStore.delete(name);
+      dirStore.add(replacement + name.slice(prefix.length));
+    }
+    for (const record of fileHandles.values()) if (record.path.startsWith(prefix)) {
+      record.path = replacement + record.path.slice(prefix.length);
+    }
+    return 0;
   }
   function fileRead(handle, ptr, len) {
     const record = fileHandles.get(handle | 0);
@@ -1094,11 +1290,36 @@ const fs = require('fs');
         new Uint8Array(memory.buffer, start, count).set(bytes.subarray(0, count));
         return count | 0;
       },
+      exit(code) {
+        throw { laniusExitCode: code | 0 };
+      },
       secure_u32() {
         return 1234567;
       },
+      fill_secure_bytes(ptr, len) {
+        const memory = instance && instance.exports && instance.exports.memory;
+        if (!memory) {
+          return -1;
+        }
+        const start = ptr >>> 0;
+        const count = len >>> 0;
+        const bytes = new Uint8Array(memory.buffer, start, count);
+        for (let i = 0; i < count; i += 1) {
+          bytes[i] = (i * 37 + 11) & 255;
+        }
+        return count | 0;
+      },
       unix_seconds() {
         return 1234567890;
+      },
+      monotonic_read(ptr, len) {
+        return writeTimespec(ptr, len, 123, 456000000);
+      },
+      system_read(ptr, len) {
+        return writeTimespec(ptr, len, 1234567890, 789000000);
+      },
+      sleep_ms_i32(milliseconds) {
+        return (milliseconds | 0) < 0 ? -1 : 0;
       },
       current_dir_read(ptr, len) {
         return writeBytes(ptr, len, cwd);
@@ -1145,6 +1366,18 @@ const fs = require('fs');
       open_append(ptr, len) {
         return openFile(readString(ptr, len), 'append');
       },
+      remove_file(ptr, len) {
+        return removeFile(readString(ptr, len));
+      },
+      create_dir(ptr, len) {
+        return createDir(readString(ptr, len));
+      },
+      remove_dir(ptr, len) {
+        return removeDir(readString(ptr, len));
+      },
+      rename(fromPtr, fromLen, toPtr, toLen) {
+        return renamePath(readString(fromPtr, fromLen), readString(toPtr, toLen));
+      },
       open_read_path(ptr, len) {
         return openFile(decodeLaniusStringLiteral(ptr, len), 'read');
       },
@@ -1177,6 +1410,12 @@ const fs = require('fs');
       alloc(size, align) {
         return allocMemory(size, align);
       },
+      realloc(ptr, oldSize, newSize, align) {
+        return reallocMemory(ptr, oldSize, newSize, align);
+      },
+      alloc_failed(_size, _align) {
+        throw { laniusExitCode: 1 };
+      },
       dealloc(_ptr, _size, _align) {},
       write_stdout(_ptr, len) {
         return len | 0;
@@ -1189,7 +1428,16 @@ const fs = require('fs');
   if (typeof main !== 'function') {
     throw new Error('missing exported main function');
   }
-  const status = main();
+  let status;
+  try {
+    status = main();
+  } catch (err) {
+    if (err && Number.isInteger(err.laniusExitCode)) {
+      status = err.laniusExitCode | 0;
+    } else {
+      throw err;
+    }
+  }
   if (!Number.isInteger(status)) {
     throw new Error(`main returned non-integer ${String(status)}`);
   }
@@ -1227,6 +1475,16 @@ pub fn run_x86_64_elf_output(
     artifact_stem: &str,
     elf: &[u8],
 ) -> Output {
+    run_x86_64_elf_output_with_args(context, artifact_stem, elf, &[])
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+pub fn run_x86_64_elf_output_with_args(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    elf: &[u8],
+    args: &[&str],
+) -> Output {
     use std::os::unix::fs::PermissionsExt;
 
     let context = context.to_string();
@@ -1250,6 +1508,7 @@ pub fn run_x86_64_elf_output(
     });
 
     let mut command = Command::new(exe_path.path());
+    command.args(args);
     short_process_output_with_timeout(
         format!("{context}: run native ELF {}", exe_path.path().display()),
         &mut command,

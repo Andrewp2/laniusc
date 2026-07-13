@@ -84,6 +84,10 @@ bool valid_kind(uint kind)
     return kind < gParams.n_kinds;
 }
 
+bool is_generic_shr(uint raw_i) { return (token_kinds[raw_i + 1u] & 0x80000000u) != 0u; }
+uint generic_shr_inner(uint raw_i) { return token_kinds[raw_i + 1u] & 0x7fffu; }
+uint generic_shr_outer(uint raw_i) { return (token_kinds[raw_i + 1u] >> 15u) & 0x7fffu; }
+
 uint table_index(uint prev_kind, uint this_kind)
 {
     return prev_kind * gParams.n_kinds + this_kind;
@@ -146,14 +150,19 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     if (i >= n_pairs)
         return;
 
+    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
     uint prev = token_kinds[i];
     uint thisK = token_kinds[i + 1];
-    if (!valid_kind(prev) || !valid_kind(thisK))
+    bool prev_is_generic_shr = i > 0u && is_generic_shr(i - 1u);
+    bool this_is_generic_shr = i < count && is_generic_shr(i);
+    if (prev_is_generic_shr)
+        prev = generic_shr_outer(i - 1u);
+    uint checked_this = this_is_generic_shr ? generic_shr_inner(i) : thisK;
+    if (!valid_kind(prev) || !valid_kind(checked_this))
         return;
 
     uint dst_sc = sc_offsets[i];
     uint dst_emit = emit_offsets[i];
-    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
     if (source_file_boundary_pair(i, count))
     {
         uint close_idx = table_index(prev, 0u);
@@ -164,6 +173,21 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
             copy_sc_pair(open_idx, lane - first_sc_len, dst_sc + first_sc_len);
         if (lane >= first_emit_len)
             copy_emit_pair(open_idx, lane - first_emit_len, dst_emit + first_emit_len, i);
+        return;
+    }
+
+    if (this_is_generic_shr)
+    {
+        uint inner = generic_shr_inner(i);
+        uint outer = generic_shr_outer(i);
+        uint first_idx = table_index(prev, inner);
+        uint second_idx = table_index(inner, outer);
+        uint first_sc_len = copy_sc_pair(first_idx, lane, dst_sc);
+        uint first_emit_len = copy_emit_pair(first_idx, lane, dst_emit, i);
+        if (lane >= first_sc_len)
+            copy_sc_pair(second_idx, lane - first_sc_len, dst_sc + first_sc_len);
+        if (lane >= first_emit_len)
+            copy_emit_pair(second_idx, lane - first_emit_len, dst_emit + first_emit_len, i);
         return;
     }
 

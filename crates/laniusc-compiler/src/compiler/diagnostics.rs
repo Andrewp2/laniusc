@@ -541,7 +541,7 @@ pub const DIAGNOSTIC_EXPLANATION_SCHEMA_NAME: &str = "laniusc.diagnostics.explan
 /// Schema name for the diagnostic output-format registry payload.
 pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME: &str = "laniusc.diagnostics.output-formats";
 /// Version of the full diagnostic registry payload.
-pub const DIAGNOSTIC_REGISTRY_SCHEMA_VERSION: u32 = 24;
+pub const DIAGNOSTIC_REGISTRY_SCHEMA_VERSION: u32 = 32;
 /// Version of the diagnostic explanation payload.
 pub const DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION: u32 = 14;
 /// Version of the diagnostic output-format registry payload.
@@ -885,7 +885,7 @@ pub const DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS: DiagnosticExplanationNoRunGuards
         target_codegen: false,
     };
 
-/// Runtime services that are known but not executable without host bindings.
+/// Runtime service binding status exposed through diagnostic metadata.
 pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnosticInfo] = &[
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -896,8 +896,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "allocator_service_status()",
         binding_probe: "allocator_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -908,8 +908,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "filesystem_service_status()",
         binding_probe: "filesystem_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -920,8 +920,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "stdio_service_status()",
         binding_probe: "stdio_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -932,8 +932,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "clock_service_status()",
         binding_probe: "clock_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -992,8 +992,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "random_service_status()",
         binding_probe: "random_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -1016,8 +1016,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "process_service_status()",
         binding_probe: "process_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -1028,8 +1028,8 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         status_probe: "env_service_status()",
         binding_probe: "env_requires_runtime_binding()",
         accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
-        current_status: "known-unbound",
-        executable: false,
+        current_status: "executable",
+        executable: true,
     },
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -1084,6 +1084,27 @@ const fn executable_runtime_api(
         executable_probe,
         binding_probe,
         "executable-compiler-primitive",
+        true,
+    )
+}
+
+const fn executable_stdlib_api(
+    service_id: u32,
+    service_name: &'static str,
+    module_path: &'static str,
+    api_name: &'static str,
+    executable_probe: &'static str,
+    binding_probe: &'static str,
+) -> RuntimeBoundApiDiagnosticInfo {
+    runtime_api(
+        service_id,
+        service_name,
+        module_path,
+        api_name,
+        "lanius_stdlib",
+        executable_probe,
+        binding_probe,
+        "executable-stdlib",
         true,
     )
 }
@@ -1198,13 +1219,14 @@ const fn runtime_service_binding_probe(service_id: u32) -> &'static str {
 
 const fn runtime_service_current_status(service_id: u32) -> &'static str {
     match service_id {
+        1 | 2 | 3 | 4 | 9 | 11 | 12 => "executable",
         1..=13 => "known-unbound",
         _ => "unknown",
     }
 }
 
-const fn runtime_service_executable(_service_id: u32) -> bool {
-    false
+const fn runtime_service_executable(service_id: u32) -> bool {
+    matches!(service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12)
 }
 
 const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
@@ -1228,11 +1250,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "alloc_is_executable()",
         "alloc_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         1,
         "allocator",
         "alloc::allocator",
         "alloc::allocator::realloc",
+        "lanius_alloc",
         "realloc_is_executable()",
         "realloc_requires_runtime_binding()",
     ),
@@ -1245,91 +1268,102 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "dealloc_is_executable()",
         "dealloc_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         1,
         "allocator",
         "alloc::allocator",
         "alloc::allocator::alloc_failed",
+        "lanius_alloc",
         "alloc_failed_is_executable()",
         "alloc_failed_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::open_read",
+        "compiler_host_filesystem",
         "open_read_is_executable()",
         "open_read_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::open_write",
+        "compiler_host_filesystem",
         "open_write_is_executable()",
         "open_write_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::open_append",
+        "compiler_host_filesystem",
         "open_append_is_executable()",
         "open_append_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::close",
+        "compiler_host_filesystem",
         "close_is_executable()",
         "close_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::read",
+        "compiler_host_filesystem",
         "read_is_executable()",
         "read_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::write",
+        "compiler_host_filesystem",
         "write_is_executable()",
         "write_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::remove_file",
+        "compiler_host_filesystem",
         "path_mutation_api_is_executable()",
         "path_mutation_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::create_dir",
+        "compiler_host_filesystem",
         "path_mutation_api_is_executable()",
         "path_mutation_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::remove_dir",
+        "compiler_host_filesystem",
         "path_mutation_api_is_executable()",
         "path_mutation_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         2,
         "filesystem",
         "std::fs",
         "std::fs::rename",
+        "compiler_host_filesystem",
         "path_mutation_api_is_executable()",
         "path_mutation_api_requires_runtime_binding()",
     ),
@@ -1360,7 +1394,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "read_stdin_is_executable()",
         "read_stdin_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         3,
         "stdio",
         "std::io",
@@ -1368,7 +1402,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "flush_stdout_is_executable()",
         "flush_stdout_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         3,
         "stdio",
         "std::io",
@@ -1384,6 +1418,42 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "compiler_print_i32",
         "print_i32_is_executable()",
         "print_i32_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        4,
+        "clock",
+        "std::time",
+        "std::time::unix_seconds",
+        "compiler_host_clock",
+        "unix_seconds_is_executable()",
+        "unix_seconds_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        4,
+        "clock",
+        "std::time",
+        "std::time::monotonic_read",
+        "compiler_host_clock",
+        "timespec_read_api_is_executable()",
+        "timespec_read_api_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        4,
+        "clock",
+        "std::time",
+        "std::time::system_read",
+        "compiler_host_clock",
+        "timespec_read_api_is_executable()",
+        "timespec_read_api_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        4,
+        "clock",
+        "std::time",
+        "std::time::sleep_ms_i32",
+        "compiler_host_clock",
+        "sleep_ms_i32_is_executable()",
+        "sleep_ms_i32_requires_runtime_binding()",
     ),
     runtime_bound_api(
         4,
@@ -1537,11 +1607,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "thread_current_id_is_executable()",
         "thread_current_id_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         9,
         "secure RNG",
         "std::random",
         "std::random::fill_secure_bytes",
+        "lanius_std",
         "fill_secure_bytes_is_executable()",
         "fill_secure_bytes_requires_runtime_binding()",
     ),
@@ -1621,14 +1692,6 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "arg_read_is_executable()",
         "arg_read_requires_runtime_binding()",
     ),
-    runtime_bound_api(
-        11,
-        "process",
-        "std::process",
-        "std::process::set_exit_code",
-        "set_exit_code_is_executable()",
-        "set_exit_code_requires_runtime_binding()",
-    ),
     executable_runtime_api(
         11,
         "process",
@@ -1638,47 +1701,52 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "exit_is_executable()",
         "exit_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::var_len",
+        "lanius_std",
         "var_len_is_executable()",
         "var_len_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::var_read",
+        "lanius_std",
         "var_read_is_executable()",
         "var_read_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::var_count",
+        "lanius_std",
         "var_count_is_executable()",
         "var_count_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::var_key_len",
+        "lanius_std",
         "var_key_len_is_executable()",
         "var_key_len_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::var_key_read",
+        "lanius_std",
         "var_key_read_is_executable()",
         "var_key_read_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         12,
         "environment",
         "std::env",
@@ -1686,11 +1754,12 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "current_dir_len_is_executable()",
         "current_dir_len_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_runtime_api(
         12,
         "environment",
         "std::env",
         "std::env::current_dir_read",
+        "lanius_std",
         "current_dir_read_is_executable()",
         "current_dir_read_requires_runtime_binding()",
     ),
@@ -4200,14 +4269,41 @@ mod tests {
     use crate::parser::tables::PrecomputedParseTables;
 
     fn api_info_has_expected_status(api: &RuntimeBoundApiDiagnosticInfo) -> bool {
+        if matches!(
+            api.api_name,
+            "std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len"
+        ) {
+            return api.extern_abi == "lanius_stdlib"
+                && api.current_status == "executable-stdlib"
+                && api.executable;
+        }
         let expected_extern_abi = if api.api_name == "std::io::print_i32" {
             Some("compiler_print_i32")
-        } else if api.api_name == "alloc::allocator::alloc" {
+        } else if matches!(
+            api.api_name,
+            "alloc::allocator::alloc"
+                | "alloc::allocator::realloc"
+                | "alloc::allocator::dealloc"
+                | "alloc::allocator::alloc_failed"
+        ) {
             Some("lanius_alloc")
-        } else if api.api_name == "alloc::allocator::dealloc" {
-            Some("lanius_alloc")
-        } else if api.api_name == "std::random::secure_u32" {
+        } else if matches!(
+            api.api_name,
+            "std::random::secure_u32" | "std::random::fill_secure_bytes"
+        ) {
             Some("lanius_std")
+        } else if api.api_name.starts_with("std::env::") {
+            Some("lanius_std")
+        } else if api.api_name.starts_with("std::fs::") {
+            Some("compiler_host_filesystem")
+        } else if matches!(
+            api.api_name,
+            "std::time::unix_seconds"
+                | "std::time::monotonic_read"
+                | "std::time::system_read"
+                | "std::time::sleep_ms_i32"
+        ) {
+            Some("compiler_host_clock")
         } else if api.api_name == "std::process::exit" {
             Some("lanius_std")
         } else if api.api_name == "std::process::argc" {
@@ -4234,14 +4330,50 @@ mod tests {
     }
 
     fn api_json_has_expected_status(api: &serde_json::Value) -> bool {
+        if matches!(
+            api["api_name"].as_str(),
+            Some("std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len")
+        ) {
+            return api["extern_abi"] == "lanius_stdlib"
+                && api["current_status"] == "executable-stdlib"
+                && api["executable"] == true;
+        }
         let expected_extern_abi = if api["api_name"] == "std::io::print_i32" {
             Some("compiler_print_i32")
-        } else if api["api_name"] == "alloc::allocator::alloc" {
+        } else if matches!(
+            api["api_name"].as_str(),
+            Some(
+                "alloc::allocator::alloc"
+                    | "alloc::allocator::realloc"
+                    | "alloc::allocator::dealloc"
+            )
+        ) {
             Some("lanius_alloc")
-        } else if api["api_name"] == "alloc::allocator::dealloc" {
-            Some("lanius_alloc")
-        } else if api["api_name"] == "std::random::secure_u32" {
+        } else if matches!(
+            api["api_name"].as_str(),
+            Some("std::random::secure_u32" | "std::random::fill_secure_bytes")
+        ) {
             Some("lanius_std")
+        } else if api["api_name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("std::env::"))
+        {
+            Some("lanius_std")
+        } else if api["api_name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("std::fs::"))
+        {
+            Some("compiler_host_filesystem")
+        } else if matches!(
+            api["api_name"].as_str(),
+            Some(
+                "std::time::unix_seconds"
+                    | "std::time::monotonic_read"
+                    | "std::time::system_read"
+                    | "std::time::sleep_ms_i32"
+            )
+        ) {
+            Some("compiler_host_clock")
         } else if api["api_name"] == "std::process::exit" {
             Some("lanius_std")
         } else if api["api_name"] == "std::process::argc" {
@@ -4575,7 +4707,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_service_boundary_diagnostics_describe_fail_closed_services() {
+    fn runtime_service_boundary_diagnostics_describe_current_services() {
         let json = runtime_service_boundary_diagnostics_json_pretty()
             .expect("runtime-service boundary registry should serialize");
         let value: serde_json::Value =
@@ -4601,8 +4733,13 @@ mod tests {
                 entry.accepted_selector_kinds,
                 RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS
             );
-            assert_eq!(entry.current_status, "known-unbound");
-            assert!(!entry.executable);
+            if matches!(entry.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+                assert_eq!(entry.current_status, "executable");
+                assert!(entry.executable);
+            } else {
+                assert_eq!(entry.current_status, "known-unbound");
+                assert!(!entry.executable);
+            }
             assert_eq!(
                 runtime_service_boundary_diagnostic_info(entry.service_id),
                 Some(entry),
@@ -4624,8 +4761,8 @@ mod tests {
             stdio["accepted_selector_kinds"],
             serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
         );
-        assert_eq!(stdio["current_status"], "known-unbound");
-        assert_eq!(stdio["executable"], false);
+        assert_eq!(stdio["current_status"], "executable");
+        assert_eq!(stdio["executable"], true);
     }
 
     #[test]
@@ -4827,8 +4964,11 @@ mod tests {
             service["diagnostic_code"] == "LNC0038"
                 && service["accepted_selector_kinds"]
                     == serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
-                && service["current_status"] == "known-unbound"
-                && service["executable"] == false
+                && if matches!(service["service_id"].as_u64(), Some(3 | 9 | 12)) {
+                    service["current_status"] == "executable" && service["executable"] == true
+                } else {
+                    service["current_status"] == "known-unbound" && service["executable"] == false
+                }
         }));
         let runtime_apis = runtime["runtime_bound_apis"]
             .as_array()
@@ -4840,7 +4980,7 @@ mod tests {
                 && api["binding_probe"] == "write_stdout_requires_runtime_binding()"
                 && api["accepted_selector_kinds"]
                     == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
-                && api["executable"] == false
+                && api["executable"] == true
         }));
         assert!(runtime_apis.iter().all(|api| {
             let service_id = api["service_id"]

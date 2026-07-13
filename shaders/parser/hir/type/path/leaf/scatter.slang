@@ -2,6 +2,7 @@
 // leaf-to-owner links for bound predicate paths.
 
 import generated_parse_production_ids;
+import atomics;
 
 struct Params
 {
@@ -24,6 +25,7 @@ RWStructuredBuffer<uint> hir_type_path_owner_by_leaf;
 RWStructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 
 static const uint INVALID = 0xffffffffu;
+static const uint OWNER_NODE_MASK = 0x7fffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -91,5 +93,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint leaf = hir_type_path_leaf_value_a[path_node];
     hir_type_path_leaf_node[node] = leaf;
     if (valid_node(leaf))
-        hir_type_path_owner_by_leaf[leaf] = node;
+    {
+        // Grammar wrapper records can publish the same leaf as their semantic
+        // HIR_TYPE owner. Prefer the lower (outer semantic) node independent
+        // of lane order while preserving zero as the host-clear sentinel.
+        uint encoded_owner = OWNER_NODE_MASK - node;
+        atomic_u32_max(hir_type_path_owner_by_leaf, leaf, encoded_owner);
+    }
 }

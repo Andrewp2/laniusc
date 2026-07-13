@@ -136,7 +136,8 @@ uint owner_header_event_for(
     if (kind == TK_SEMICOLON &&
         header_reset_delimiter_context(paren_depth, bracket_depth, angle_depth))
         return encode_owner_event(token_i, 0u);
-    if (kind == TK_LBRACE || kind == TK_RBRACE)
+    if ((kind == TK_LBRACE || kind == TK_RBRACE) &&
+        header_reset_delimiter_context(paren_depth, bracket_depth, angle_depth))
         return encode_owner_event(token_i, 0u);
     return 0u;
 }

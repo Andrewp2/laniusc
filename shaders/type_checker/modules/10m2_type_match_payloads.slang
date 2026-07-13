@@ -5,8 +5,6 @@
 // binder declarations. Uses of those binders are resolved by the normal HIR
 // visible-name table and then receive their type in the scope pass.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -17,7 +15,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_match_scrutinee_node;
 StructuredBuffer<uint> hir_match_arm_pattern_node;
@@ -81,12 +78,6 @@ bool valid_token(uint token)
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
-}
-
-bool is_pattern_production(uint prod)
-{
-    return prod == PROD_PATTERN_IDENT || prod == PROD_PATTERN_INT ||
-           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE;
 }
 
 uint type_ref_to_type_code(uint tag, uint payload)
@@ -228,7 +219,7 @@ uint payload_type_for_node(uint payload_node, uint owner_arm, uint ordinal)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint payload_node = linear_thread_id(dtid);
-    if (!valid_node(payload_node) || !is_pattern_production(node_kind[payload_node]))
+    if (!valid_node(payload_node))
         return;
 
     uint owner_arm = hir_match_payload_owner_arm[payload_node];

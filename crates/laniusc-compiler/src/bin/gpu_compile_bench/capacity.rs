@@ -702,8 +702,8 @@ pub(super) fn x86_allocation_floor_bytes(
     let hir_words = capacity.hir_words.max(1);
     let inst = capacity.inst_capacity.max(1);
     let output_words = capacity.output_capacity.div_ceil(4).max(1);
-    let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
     let node_inst_scan_words = hir_words.saturating_add(1);
+    let node_inst_scan_blocks = node_inst_scan_words.div_ceil(256).max(1);
     let text_scan_blocks = inst.div_ceil(256).max(1);
 
     let hir_scaled_words_per_node = (
@@ -860,7 +860,7 @@ pub(super) fn x86_allocation_floor_bytes(
         // materialization was removed.
         4 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1,
     );
-    let scan_words = func_owner_scan_blocks
+    let scan_words = node_inst_scan_blocks
         .saturating_mul(3)
         .saturating_add(node_inst_scan_words.saturating_mul(5))
         .saturating_add(text_scan_blocks.saturating_mul(3));

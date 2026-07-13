@@ -8,6 +8,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
 };
 
 ConstantBuffer<Params> gHirSemantic;
@@ -52,8 +53,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= semantic_count)
         return;
 
-    uint parent = hir_semantic_parent[row];
-    bool has_parent = valid_semantic_row(parent, semantic_count);
-    hir_semantic_depth_link_a[row] = has_parent ? parent : INVALID;
-    hir_semantic_depth_value_a[row] = has_parent ? 1u : 0u;
+    uint ancestor = hir_semantic_parent[row];
+    uint depth = 0u;
+    uint local_span = max(1u, gHirSemantic.semantic_parent_local_ancestor_span);
+    for (uint hop = 0u; hop < local_span; ++hop)
+    {
+        if (!valid_semantic_row(ancestor, semantic_count))
+            break;
+        depth += 1u;
+        if (hop + 1u == local_span)
+        {
+            hir_semantic_depth_link_a[row] = ancestor;
+            hir_semantic_depth_value_a[row] = depth;
+            return;
+        }
+        ancestor = hir_semantic_parent[ancestor];
+    }
+    hir_semantic_depth_link_a[row] = INVALID;
+    hir_semantic_depth_value_a[row] = depth;
 }

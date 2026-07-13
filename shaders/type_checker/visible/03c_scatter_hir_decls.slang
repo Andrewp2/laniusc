@@ -10,8 +10,6 @@
 //   context records, and interned name ids. It does not inspect source text,
 //   token spelling, helper names, or function body shapes.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -25,7 +23,6 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
@@ -48,7 +45,7 @@ RWStructuredBuffer<uint> hir_visible_decl_node;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_PARAM = 4u;
@@ -100,20 +97,13 @@ uint stmt_slot(uint node, uint slot)
     return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
 }
 
-bool is_pattern_production(uint prod)
-{
-    return prod == PROD_PATTERN_IDENT || prod == PROD_PATTERN_INT ||
-           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE;
-}
-
 uint decl_token_for_hir_node(uint node)
 {
     uint4 param = hir_param_record[node];
     if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
         return param[HIR_PARAM_RECORD_NAME_TOKEN];
 
-    if (is_pattern_production(node_kind[node]) &&
-        valid_node(hir_match_payload_owner_arm[node]))
+    if (valid_node(hir_match_payload_owner_arm[node]))
         return hir_token_pos[node];
 
     uint stmt_kind = stmt_slot(node, 0u);
@@ -152,9 +142,7 @@ uint parser_stmt_scope_end_or_zero(uint node)
 
 uint scope_end_for_hir_decl_node(uint node)
 {
-    uint arm = valid_node(node) && is_pattern_production(node_kind[node])
-                   ? hir_match_payload_owner_arm[node]
-                   : INVALID;
+    uint arm = valid_node(node) ? hir_match_payload_owner_arm[node] : INVALID;
     if (valid_node(arm))
     {
         uint result = hir_match_arm_result_node[arm];

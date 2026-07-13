@@ -8,6 +8,50 @@ pub struct TypeCheckPreflightCapacities {
     pub call_arg_rows: u32,
 }
 
+impl TypeCheckPreflightCapacities {
+    /// Whether these required row counts fit inside an allocated capacity set.
+    pub(crate) fn fits_within(self, allocated: Self) -> bool {
+        self.module_records <= allocated.module_records
+            && self.call_param_rows <= allocated.call_param_rows
+            && self.call_arg_rows <= allocated.call_arg_rows
+    }
+
+    /// Component-wise high-water mark suitable for later speculative allocation.
+    pub(crate) fn union(self, other: Self) -> Self {
+        Self {
+            module_records: self.module_records.max(other.module_records),
+            call_param_rows: self.call_param_rows.max(other.call_param_rows),
+            call_arg_rows: self.call_arg_rows.max(other.call_arg_rows),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TypeCheckPreflightCapacities;
+
+    #[test]
+    fn preflight_capacity_high_water_is_component_wise_and_safe() {
+        let first = TypeCheckPreflightCapacities {
+            module_records: 10,
+            call_param_rows: 4,
+            call_arg_rows: 8,
+        };
+        let second = TypeCheckPreflightCapacities {
+            module_records: 7,
+            call_param_rows: 6,
+            call_arg_rows: 3,
+        };
+        let high_water = first.union(second);
+        assert_eq!(high_water.module_records, 10);
+        assert_eq!(high_water.call_param_rows, 6);
+        assert_eq!(high_water.call_arg_rows, 8);
+        assert!(first.fits_within(high_water));
+        assert!(second.fits_within(high_water));
+        assert!(!high_water.fits_within(first));
+    }
+}
+
 /// Host-readable result of the GPU compact-record preflight.
 pub struct RecordedModuleRecordCapacity {
     candidate_counts: LaniusBuffer<u32>,

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN},
 };
 
 /// Pointer-jump pass that propagates nearest semantic parent records.
@@ -26,7 +26,7 @@ impl HirSemanticParentStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = pointer_jump_steps_after_local_span(buffers.tree_capacity);
         for step in 0..steps {
             self.record_step(device, encoder, buffers, step % 2 == 0)?;
         }
@@ -131,13 +131,28 @@ impl HirSemanticParentStepPass {
     }
 }
 
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
+pub(crate) fn pointer_jump_steps_after_local_span(items: u32) -> u32 {
     let mut span = 1u32;
     let mut steps = 0u32;
-    let target = items.max(1);
+    let target = items.max(1).div_ceil(SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN);
     while span < target {
         span = span.saturating_mul(2);
         steps += 1;
     }
     steps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pointer_jump_steps_after_local_span;
+
+    #[test]
+    fn local_walk_reduces_global_pointer_jump_rounds_without_losing_depth_coverage() {
+        assert_eq!(pointer_jump_steps_after_local_span(1), 0);
+        assert_eq!(pointer_jump_steps_after_local_span(32), 0);
+        assert_eq!(pointer_jump_steps_after_local_span(33), 1);
+        assert_eq!(pointer_jump_steps_after_local_span(64), 1);
+        assert_eq!(pointer_jump_steps_after_local_span(65), 2);
+        assert_eq!(pointer_jump_steps_after_local_span(1_687_524), 16);
+    }
 }

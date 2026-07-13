@@ -1,6 +1,7 @@
 use super::*;
 
 mod empty_hir_bindings;
+mod module_path_resources;
 mod visible_scratch;
 
 use empty_hir_bindings::{
@@ -8,6 +9,7 @@ use empty_hir_bindings::{
     register_empty_hir_resources,
     register_hir_item_resources,
 };
+use module_path_resources::register_module_path_resources;
 use visible_scratch::ResidentVisibleScratch;
 
 impl GpuTypeChecker {
@@ -255,7 +257,7 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.generic_param_count_out",
             1,
-            wgpu::BufferUsages::empty(),
+            wgpu::BufferUsages::COPY_DST,
         );
         let generic_param_owner_node = typed_storage_u32_rw(
             device,
@@ -622,13 +624,11 @@ impl GpuTypeChecker {
             "type_check.resident.loop_depth.params",
             &loop_params_value,
         );
-        let loop_scan_steps = make_loop_depth_scan_steps(device, loop_params_value);
         let fn_params = uniform_from_val(
             device,
             "type_check.resident.fn_context.params",
             &fn_params_value,
         );
-        let fn_scan_steps = make_fn_context_scan_steps(device, fn_params_value);
         let loop_delta = typed_storage_i32_rw(
             device,
             "type_check.resident.loop_delta",
@@ -1524,8 +1524,15 @@ impl GpuTypeChecker {
         // pipeline clears and publishes function entrypoint tags.
         let type_decl_const_param_count_by_node =
             typed_alias_storage_u32(&fn_entrypoint_tag, hir_node_capacity as usize);
-        let type_decl_hir_node_by_token =
-            typed_alias_storage_u32(&name_spans, token_capacity as usize);
+        // Canonical name spans remain live through semantic-interface export.
+        // Type-instance collection therefore owns its token-to-declaration
+        // projection instead of overwriting the first quarter of that table.
+        let type_decl_hir_node_by_token = typed_storage_u32_rw(
+            device,
+            "type_check.resident.type_decl_hir_node_by_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let type_generic_param_slot_by_token = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_generic_param_slot_by_token",
@@ -2105,13 +2112,13 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.member_result_ref_payload",
             member_capacity,
-            external_scratch.map(|scratch| scratch.member_result_ref_payload),
+            None,
         );
         let member_result_field_ordinal = typed_reuse_storage_u32(
             device,
             "type_check.resident.member_result_field_ordinal",
             member_capacity,
-            external_scratch.map(|scratch| scratch.member_result_field_ordinal),
+            None,
         );
         let member_result_field_node = typed_storage_u32_fill_rw(
             device,
@@ -2139,25 +2146,25 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.struct_init_field_expected_ref_tag",
             struct_token_capacity,
-            external_scratch.map(|scratch| scratch.struct_init_field_expected_ref_tag),
+            None,
         );
         let struct_init_field_expected_ref_payload = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_init_field_expected_ref_payload",
             struct_token_capacity,
-            external_scratch.map(|scratch| scratch.struct_init_field_expected_ref_payload),
+            None,
         );
         let struct_init_field_context_instance = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_init_field_context_instance",
             struct_token_capacity,
-            external_scratch.map(|scratch| scratch.struct_init_field_context_instance),
+            None,
         );
         let struct_init_field_ordinal = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_init_field_ordinal",
             struct_token_capacity,
-            external_scratch.map(|scratch| scratch.struct_init_field_ordinal),
+            None,
         );
         let record_family_flag_scratch = external_scratch
             .and_then(|scratch| scratch.record_family_flag)
@@ -2990,175 +2997,7 @@ impl GpuTypeChecker {
             None
         };
         allocation_stamp!("module_path");
-        if let Some(module_path) = module_path.as_ref() {
-            resources.buffer(
-                "module_table_count_out",
-                &module_path.module_table_count_out,
-            );
-            resources.buffer("module_id_by_file_id", &module_path.module_id_by_file_id);
-            resources.buffer("path_count_out", &module_path.path_count_out);
-            resources.buffer("path_kind", &module_path.path_kind);
-            resources.buffer("path_segment_count", &module_path.path_segment_count);
-            resources.buffer("path_segment_base", &module_path.path_segment_base);
-            resources.buffer("path_segment_name_id", &module_path.path_segment_name_id);
-            resources.buffer("path_segment_token", &module_path.path_segment_token);
-            resources.buffer("path_owner_hir", &module_path.path_owner_hir);
-            resources.buffer("path_owner_token", &module_path.path_owner_token);
-            resources.buffer("path_id_by_owner_hir", &module_path.path_id_by_owner_hir);
-            resources.buffer(
-                "path_id_by_owner_token",
-                &module_path.path_id_by_owner_token,
-            );
-            resources.buffer("path_owner_module_id", &module_path.path_owner_module_id);
-            resources.buffer("resolved_type_decl", &module_path.resolved_type_decl);
-            resources.buffer("resolved_value_decl", &module_path.resolved_value_decl);
-            resources.buffer("resolved_value_status", &module_path.resolved_value_status);
-            resources.buffer("decl_token_start", &module_path.decl_token_start);
-            resources.buffer(
-                "decl_type_key_count_out",
-                &module_path.decl_type_key_count_out,
-            );
-            resources.buffer(
-                "decl_type_key_to_decl_id",
-                &module_path.decl_type_key_to_decl_id,
-            );
-            resources.buffer(
-                "decl_value_key_count_out",
-                &module_path.decl_value_key_count_out,
-            );
-            resources.buffer(
-                "decl_value_key_to_decl_id",
-                &module_path.decl_value_key_to_decl_id,
-            );
-            resources.buffer("decl_module_id", &module_path.decl_module_id);
-            resources.buffer("decl_name_id", &module_path.decl_name_id);
-            resources.buffer("decl_name_token", &module_path.decl_name_token);
-            resources.buffer("decl_kind", &module_path.decl_kind);
-            resources.buffer(
-                "import_visible_type_count_out",
-                &module_path.import_visible_type_count_out,
-            );
-            resources.buffer(
-                "import_visible_type_key_module_id",
-                &module_path.import_visible_type_key_module_id,
-            );
-            resources.buffer(
-                "import_visible_type_key_name_id",
-                &module_path.import_visible_type_key_name_id,
-            );
-            resources.buffer(
-                "import_visible_type_key_to_decl_id",
-                &module_path.import_visible_type_key_to_decl_id,
-            );
-            resources.buffer(
-                "import_visible_type_status",
-                &module_path.import_visible_type_status,
-            );
-            resources.buffer(
-                "import_visible_value_count_out",
-                &module_path.import_visible_value_count_out,
-            );
-            resources.buffer(
-                "import_visible_value_key_module_id",
-                &module_path.import_visible_value_key_module_id,
-            );
-            resources.buffer(
-                "import_visible_value_key_name_id",
-                &module_path.import_visible_value_key_name_id,
-            );
-            resources.buffer(
-                "import_visible_value_key_to_decl_id",
-                &module_path.import_visible_value_key_to_decl_id,
-            );
-            resources.buffer(
-                "import_visible_value_status",
-                &module_path.import_visible_value_status,
-            );
-        } else {
-            resources.add(
-                "module_table_count_out",
-                resources["hir_active_count"].clone(),
-            );
-            resources.add("module_id_by_file_id", resources["visible_decl"].clone());
-            resources.add("path_count_out", resources["hir_active_count"].clone());
-            resources.add("path_kind", resources["parent"].clone());
-            resources.add("path_segment_count", resources["parent"].clone());
-            resources.add("path_segment_base", resources["parent"].clone());
-            resources.add("path_segment_name_id", resources["parent"].clone());
-            resources.add("path_segment_token", resources["parent"].clone());
-            resources.add("path_owner_hir", resources["parent"].clone());
-            resources.add("path_owner_token", resources["parent"].clone());
-            resources.add("path_id_by_owner_hir", resources["parent"].clone());
-            resources.add("path_id_by_owner_token", resources["parent"].clone());
-            resources.add(
-                "path_owner_module_id",
-                resources["module_value_path_status"].clone(),
-            );
-            resources.add("resolved_type_decl", resources["visible_decl"].clone());
-            resources.add("resolved_value_decl", resources["visible_decl"].clone());
-            resources.add("resolved_value_status", resources["visible_decl"].clone());
-            resources.add("decl_token_start", resources["visible_decl"].clone());
-            resources.add(
-                "decl_type_key_count_out",
-                resources["hir_active_count"].clone(),
-            );
-            resources.add(
-                "decl_type_key_to_decl_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "decl_value_key_count_out",
-                resources["hir_active_count"].clone(),
-            );
-            resources.add(
-                "decl_value_key_to_decl_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add("decl_module_id", resources["visible_decl"].clone());
-            resources.add("decl_name_id", resources["visible_decl"].clone());
-            resources.add("decl_name_token", resources["visible_decl"].clone());
-            resources.add("decl_kind", resources["visible_decl"].clone());
-            resources.add(
-                "import_visible_type_count_out",
-                resources["hir_active_count"].clone(),
-            );
-            resources.add(
-                "import_visible_type_key_module_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_type_key_name_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_type_key_to_decl_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_type_status",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_value_count_out",
-                resources["hir_active_count"].clone(),
-            );
-            resources.add(
-                "import_visible_value_key_module_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_value_key_name_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_value_key_to_decl_id",
-                resources["visible_decl"].clone(),
-            );
-            resources.add(
-                "import_visible_value_status",
-                resources["visible_decl"].clone(),
-            );
-        }
+        register_module_path_resources(&mut resources, module_path.as_ref());
         resources.buffer("module_value_path_call_open", &module_value_path_call_open);
         resources.buffer(
             "module_value_path_call_path_id",
@@ -3573,7 +3412,6 @@ impl GpuTypeChecker {
             passes,
             device,
             &loop_params,
-            &loop_scan_steps,
             token_buf,
             token_count_buf,
             hir_kind_buf,
@@ -3592,7 +3430,6 @@ impl GpuTypeChecker {
             passes,
             device,
             &fn_params,
-            &fn_scan_steps,
             hir_kind_buf,
             hir_token_pos_buf,
             hir_token_end_buf,
@@ -3661,6 +3498,9 @@ impl GpuTypeChecker {
                     .max(1),
                 call_param_row_capacity,
                 call_arg_row_capacity,
+                parser_feature_flags: hir_items
+                    .map(|items| items.parser_feature_flags)
+                    .unwrap_or(u32::MAX),
                 input_fingerprint,
                 uses_hir_items,
             },
@@ -3677,6 +3517,7 @@ impl GpuTypeChecker {
             name_scan_prefix_b,
             name_scan_total,
             name_spans,
+            language_symbol_bytes,
             name_order_in,
             name_order_tmp,
             name_id_by_token,
@@ -4016,9 +3857,7 @@ impl GpuTypeChecker {
             name_bind_groups,
             language_name_bind_groups,
             loop_params,
-            loop_scan_steps,
             fn_params,
-            fn_scan_steps,
             loop_bind_groups,
             fn_context_bind_groups,
             visible_bind_groups,

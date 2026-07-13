@@ -111,7 +111,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         path_owner_hir,
         path_owner_token,
         path_id_by_owner_hir,
-        path_id_by_owner_token,
         path_kind,
         path_count_out,
         ..
@@ -340,8 +339,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("gParams", params.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("parent", hir_items.parent.as_entire_binding()),
-            ("first_child", hir_items.first_child.as_entire_binding()),
-            ("next_sibling", hir_items.next_sibling.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             ("hir_token_end", hir_token_end_buf.as_entire_binding()),
@@ -354,19 +351,14 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 hir_items.call_callee_node.as_entire_binding(),
             ),
             (
-                "hir_call_arg_start",
-                hir_items.call_arg_start.as_entire_binding(),
+                "hir_call_parent_by_callee",
+                hir_items.call_parent_by_callee.as_entire_binding(),
             ),
             (
                 "path_id_by_owner_hir",
                 path_id_by_owner_hir.as_entire_binding(),
             ),
-            (
-                "path_id_by_owner_token",
-                path_id_by_owner_token.as_entire_binding(),
-            ),
             ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
             ("path_segment_count", path_segment_count.as_entire_binding()),
             ("path_segment_base", path_segment_base.as_entire_binding()),
             ("path_segment_token", path_segment_token.as_entire_binding()),
@@ -506,16 +498,10 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 resolved_value_status.as_entire_binding(),
             ),
             ("decl_token_start", decl_token_start.as_entire_binding()),
-            ("parent", hir_items.parent.as_entire_binding()),
-            ("next_sibling", hir_items.next_sibling.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             (
-                "hir_call_callee_node",
-                hir_items.call_callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_member_name_token",
-                hir_items.member_name_token.as_entire_binding(),
+                "hir_call_parent_by_callee",
+                hir_items.call_parent_by_callee.as_entire_binding(),
             ),
             (
                 "hir_call_arg_count",

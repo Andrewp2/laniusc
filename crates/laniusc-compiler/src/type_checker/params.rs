@@ -50,6 +50,54 @@ pub(in crate::type_checker) struct NameScanParams {
     pub(in crate::type_checker) scan_step: u32,
 }
 
+/// Capacity packet for semantic-interface identity sizing.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct SemanticInterfaceIdentitySizeParams {
+    pub(in crate::type_checker) name_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) decl_capacity: u32,
+    pub(in crate::type_checker) module_segment_capacity: u32,
+    pub(in crate::type_checker) module_segment_row_width: u32,
+}
+
+/// Capacity and producer identity packet for interface record scatter.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct SemanticInterfaceIdentityRecordParams {
+    pub(in crate::type_checker) library_id: u32,
+    pub(in crate::type_checker) name_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) decl_capacity: u32,
+    pub(in crate::type_checker) module_segment_capacity: u32,
+    pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) name_byte_capacity: u32,
+}
+
+/// Capacity packet for canonical interface-name byte scatter.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct SemanticInterfaceIdentityByteParams {
+    pub(in crate::type_checker) name_capacity: u32,
+    pub(in crate::type_checker) source_len: u32,
+    pub(in crate::type_checker) name_ref_count: u32,
+    pub(in crate::type_checker) module_segment_capacity: u32,
+    pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) decl_capacity: u32,
+}
+
+/// Uniform for one level of the 256-way counted-scan hierarchy.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct CountedScanHierarchyParams {
+    pub(in crate::type_checker) n_items: u32,
+    pub(in crate::type_checker) n_blocks: u32,
+    pub(in crate::type_checker) level_divisor: u32,
+    pub(in crate::type_checker) level_offset: u32,
+    pub(in crate::type_checker) parent_divisor: u32,
+    pub(in crate::type_checker) parent_offset: u32,
+}
+
 /// Uniform for one visible-declaration scope-tree construction level.
 ///
 /// Visible HIR declarations are compacted into rows and then reduced into a
@@ -247,23 +295,98 @@ pub(in crate::type_checker) fn member_capacity_for_features(
     }
 }
 
+/// Whether aggregate field lookup needs its struct-field key radix table.
+pub(in crate::type_checker) fn struct_field_key_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRUCTS != 0
+}
+
+/// Whether generic rows or struct declaration-node lookups must be materialized.
+pub(in crate::type_checker) fn generic_param_record_passes_required(
+    parser_feature_flags: u32,
+) -> bool {
+    use crate::lexer::features::{
+        PARSER_FEATURE_PREDICATES,
+        PARSER_FEATURE_STRUCTS,
+        PARSER_FEATURE_TYPE_ARGS,
+    };
+    parser_feature_flags
+        & (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES | PARSER_FEATURE_STRUCTS)
+        != 0
+}
+
+/// Whether method declarations or member-call sites can exist in this source pack.
+pub(in crate::type_checker) fn method_passes_required(parser_feature_flags: u32) -> bool {
+    use crate::lexer::features::{PARSER_FEATURE_MEMBERS, PARSER_FEATURE_PREDICATES};
+    parser_feature_flags & (PARSER_FEATURE_MEMBERS | PARSER_FEATURE_PREDICATES) != 0
+}
+
+/// Whether call rows can emit generic or const-generic consistency claims.
+pub(in crate::type_checker) fn generic_call_claim_passes_required(
+    parser_feature_flags: u32,
+) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ARGS != 0
+}
+
+/// Whether array construction, indexing, or array-result propagation can occur.
+pub(in crate::type_checker) fn array_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_ARRAYS != 0
+}
+
+/// Whether struct declaration/literal initialization metadata can occur.
+pub(in crate::type_checker) fn struct_init_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRUCTS != 0
+}
+
+/// Whether field/member receiver and result propagation can occur.
+pub(in crate::type_checker) fn member_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MEMBERS != 0
+}
+
+/// Whether enum constructor resolution can occur.
+pub(in crate::type_checker) fn enum_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_ENUMS != 0
+}
+
+/// Whether match-pattern binding and match-result typing can occur.
+pub(in crate::type_checker) fn match_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MATCHES != 0
+}
+
+/// Whether aggregate comparison/access validation needs compact aggregate rows.
+pub(in crate::type_checker) fn aggregate_passes_required(parser_feature_flags: u32) -> bool {
+    use crate::lexer::features::{
+        PARSER_FEATURE_ARRAYS,
+        PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_STRUCTS,
+        PARSER_FEATURE_TYPE_ARGS,
+    };
+    parser_feature_flags
+        & (PARSER_FEATURE_ARRAYS
+            | PARSER_FEATURE_ENUMS
+            | PARSER_FEATURE_STRUCTS
+            | PARSER_FEATURE_TYPE_ARGS)
+        != 0
+}
+
 /// Bucket count for byte-wise radix sorting plus an end-of-name bucket.
 pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
 /// Number of builtin symbols materialized before user names are resolved.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 53;
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 63;
 /// Concatenated builtin symbol spelling table.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_BYTES: &[u8] =
-    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptr";
+    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptrfill_secure_bytesremove_filecreate_dirremove_dirrenamemonotonic_readsystem_readsleep_ms_i32reallocalloc_failed";
 /// Start offsets into `LANGUAGE_SYMBOL_BYTES` for each builtin symbol.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_STARTS: &[u32] = &[
     0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73, 74, 88, 103, 111,
     121, 130, 140, 153, 163, 173, 177, 187, 192, 199, 203, 210, 218, 230, 246, 255, 266, 278, 285,
-    293, 298, 302, 307, 316, 326, 337, 349, 361, 371,
+    293, 298, 302, 307, 316, 326, 337, 349, 361, 371, 389, 406, 417, 427, 437, 443, 457, 468, 480,
+    487,
 ];
 /// Byte lengths for each builtin symbol spelling.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] = &[
     4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1, 14, 15, 8, 10, 9, 10, 13, 10, 10,
-    4, 10, 5, 7, 4, 7, 8, 12, 16, 9, 11, 12, 7, 8, 5, 4, 5, 9, 10, 11, 12, 12, 10, 18,
+    4, 10, 5, 7, 4, 7, 8, 12, 16, 9, 11, 12, 7, 8, 5, 4, 5, 9, 10, 11, 12, 12, 10, 18, 17, 11, 10,
+    10, 6, 14, 11, 12, 7, 12,
 ];
 /// Number of language declarations materialized from builtin symbols.
 pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 19;
@@ -330,8 +453,40 @@ pub(in crate::type_checker) const MODULE_KEY_SEGMENT_ROW_WIDTH: usize =
 pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = MODULE_KEY_SORT_SEGMENTS * 4;
 /// Largest source-file table sorted cooperatively by one 256-lane workgroup.
 pub(in crate::type_checker) const MODULE_KEY_SMALL_SORT_CAPACITY: u32 = 256;
-/// Byte-step count for declaration-key sorting.
-pub(in crate::type_checker) const DECL_KEY_RADIX_STEPS: u32 = 12;
+/// Packs the per-field byte widths and even pass count for declaration keys.
+///
+/// Declaration order is `(module_id, namespace, name_id)`, so the LSD radix
+/// schedule consumes name bytes first, the one-byte namespace tag second, and
+/// module bytes last. The returned pass count is even so the final order lands
+/// in the canonical ping/pong buffer.
+pub(in crate::type_checker) fn decl_key_radix_layout(
+    token_capacity: u32,
+    module_capacity: u32,
+) -> (u32, u32) {
+    let name_bytes = radix_bytes_for_max_key(
+        token_capacity
+            .saturating_add(LANGUAGE_SYMBOL_COUNT)
+            .saturating_add(1),
+    );
+    let namespace_bytes = 1;
+    let module_bytes = radix_bytes_for_max_key(module_capacity.saturating_add(1));
+    let packed_widths = name_bytes | (namespace_bytes << 4) | (module_bytes << 8);
+    let steps = name_bytes + namespace_bytes + module_bytes;
+    let even_steps = steps + (steps & 1);
+    (packed_widths, even_steps)
+}
+
+fn radix_bytes_for_max_key(max_key: u32) -> u32 {
+    if max_key <= 0xff {
+        1
+    } else if max_key <= 0xffff {
+        2
+    } else if max_key <= 0x00ff_ffff {
+        3
+    } else {
+        4
+    }
+}
 /// Largest compact module relation sorted by one cooperative 256-lane workgroup.
 pub(in crate::type_checker) const MODULE_RELATION_SMALL_SORT_CAPACITY: u32 = 2048;
 /// Byte-step count for import-edge sorting.
@@ -375,15 +530,7 @@ pub(in crate::type_checker) fn visible_decl_key_radix_bytes(decl_capacity: u32) 
         .saturating_add(LANGUAGE_SYMBOL_COUNT)
         .saturating_add(1)
         .max(1);
-    if max_key <= 0xff {
-        1
-    } else if max_key <= 0xffff {
-        2
-    } else if max_key <= 0x00ff_ffff {
-        3
-    } else {
-        4
-    }
+    radix_bytes_for_max_key(max_key)
 }
 
 /// Returns the even radix-step count used for visible-declaration key sorting.
@@ -391,4 +538,109 @@ pub(in crate::type_checker) fn visible_decl_key_radix_steps(decl_capacity: u32) 
     let steps = visible_decl_key_radix_bytes(decl_capacity) * VISIBLE_DECL_KEY_FIELD_COUNT;
     let even_steps = if steps % 2 == 0 { steps } else { steps + 1 };
     even_steps.min(VISIBLE_DECL_KEY_MAX_RADIX_STEPS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        aggregate_passes_required,
+        array_passes_required,
+        decl_key_radix_layout,
+        enum_passes_required,
+        generic_call_claim_passes_required,
+        generic_param_record_passes_required,
+        match_passes_required,
+        member_passes_required,
+        method_passes_required,
+        struct_field_key_passes_required,
+        struct_init_passes_required,
+    };
+    use crate::lexer::features::{
+        PARSER_FEATURE_ARRAYS,
+        PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_IMPORTS,
+        PARSER_FEATURE_MATCHES,
+        PARSER_FEATURE_MEMBERS,
+        PARSER_FEATURE_PREDICATES,
+        PARSER_FEATURE_STRUCTS,
+        PARSER_FEATURE_TYPE_ARGS,
+    };
+
+    #[test]
+    fn declaration_radix_layout_uses_field_specific_safe_widths() {
+        assert_eq!(decl_key_radix_layout(0, 0), (0x111, 4));
+        assert_eq!(decl_key_radix_layout(312_822, 69_510), (0x313, 8));
+        assert_eq!(decl_key_radix_layout(u32::MAX, u32::MAX), (0x414, 10));
+    }
+
+    #[test]
+    fn struct_field_key_passes_follow_the_parser_struct_feature() {
+        assert!(!struct_field_key_passes_required(0));
+        assert!(!struct_field_key_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(struct_field_key_passes_required(PARSER_FEATURE_STRUCTS));
+        assert!(struct_field_key_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn generic_param_record_passes_follow_generic_and_struct_features() {
+        assert!(!generic_param_record_passes_required(0));
+        assert!(!generic_param_record_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(!generic_param_record_passes_required(
+            PARSER_FEATURE_IMPORTS
+        ));
+        assert!(generic_param_record_passes_required(
+            PARSER_FEATURE_TYPE_ARGS
+        ));
+        assert!(generic_param_record_passes_required(
+            PARSER_FEATURE_PREDICATES
+        ));
+        assert!(generic_param_record_passes_required(PARSER_FEATURE_STRUCTS));
+        assert!(generic_param_record_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn method_passes_follow_member_and_predicate_features() {
+        assert!(!method_passes_required(0));
+        assert!(!method_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(!method_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(method_passes_required(PARSER_FEATURE_MEMBERS));
+        assert!(method_passes_required(PARSER_FEATURE_PREDICATES));
+        assert!(method_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn generic_call_claim_passes_follow_type_argument_features() {
+        assert!(!generic_call_claim_passes_required(0));
+        assert!(!generic_call_claim_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(!generic_call_claim_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(!generic_call_claim_passes_required(
+            PARSER_FEATURE_PREDICATES
+        ));
+        assert!(generic_call_claim_passes_required(PARSER_FEATURE_TYPE_ARGS));
+        assert!(generic_call_claim_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn semantic_family_passes_follow_their_parser_features() {
+        assert!(!array_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(array_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(!struct_init_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(struct_init_passes_required(PARSER_FEATURE_STRUCTS));
+        assert!(!member_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(member_passes_required(PARSER_FEATURE_MEMBERS));
+        assert!(!enum_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(enum_passes_required(PARSER_FEATURE_ENUMS));
+        assert!(!match_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(match_passes_required(PARSER_FEATURE_MATCHES));
+        assert!(!aggregate_passes_required(PARSER_FEATURE_IMPORTS));
+        for feature in [
+            PARSER_FEATURE_ARRAYS,
+            PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_STRUCTS,
+            PARSER_FEATURE_TYPE_ARGS,
+        ] {
+            assert!(aggregate_passes_required(feature));
+        }
+        assert!(aggregate_passes_required(u32::MAX));
+    }
 }

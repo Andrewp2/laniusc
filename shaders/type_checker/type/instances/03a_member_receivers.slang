@@ -4,8 +4,6 @@
 // for generic receiver instances, the receiver instance token needed by the
 // later generic substitution pass.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -16,14 +14,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
@@ -68,6 +65,7 @@ static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_EXPR_NAME_ROLE_SELF = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -217,24 +215,18 @@ bool indexed_receiver_type_ref(uint member_node, out uint tag, out uint payload)
 bool member_receiver_is_self(uint member_node)
 {
     uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
-    return valid_node(receiver_node) && node_kind[receiver_node] == PROD_SELF_VALUE;
+    return valid_node(receiver_node) &&
+           hir_expr_name_role[receiver_node] == HIR_EXPR_NAME_ROLE_SELF;
 }
 
 bool member_expr_is_call_callee(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
         return false;
-
-    uint owner = parent[node];
-    if (valid_node(owner) &&
-        hir_kind[owner] == HIR_CALL_EXPR &&
-        hir_call_callee_node[owner] == node)
-        return true;
-
-    uint child = first_child[node];
-    return valid_node(child) &&
-           hir_kind[child] == HIR_CALL_EXPR &&
-           hir_call_callee_node[child] == node;
+    uint call_node = hir_call_parent_by_callee[node];
+    return valid_node(call_node) &&
+           hir_kind[call_node] == HIR_CALL_EXPR &&
+           hir_call_callee_node[call_node] == node;
 }
 
 void clear_member_result(uint member_token)

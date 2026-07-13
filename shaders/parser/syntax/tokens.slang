@@ -1,6 +1,9 @@
 import segment_tree;
 import status;
 
+// Final syntax validation consumes the independently published delimiter and
+// context relations below; it does not reconstruct those relations locally.
+
 struct Params
 {
     uint n_tokens;
@@ -768,16 +771,18 @@ uint find_condition_close(uint start_i)
 
 uint find_fn_param_open(uint fn_i)
 {
-    if (token_kind(fn_i + 2u) == TK_PARAM_LPAREN)
+    uint direct_open = token_kind(fn_i + 2u);
+    if (direct_open == TK_PARAM_LPAREN || direct_open == TK_LPAREN)
         return fn_i + 2u;
 
     if (token_kind(fn_i + 2u) != TK_LT || !can_start_generic_angle_list(fn_i + 2u))
         return INVALID;
 
     uint generic_end = generic_angle_list_end(fn_i + 2u);
-    return generic_end != INVALID && token_kind(generic_end) == TK_PARAM_LPAREN ?
-        generic_end :
-        INVALID;
+    uint generic_open = generic_end != INVALID ? token_kind(generic_end) : INVALID;
+    return generic_open == TK_PARAM_LPAREN || generic_open == TK_LPAREN
+        ? generic_end
+        : INVALID;
 }
 
 bool is_trait_method_fn(uint fn_i)

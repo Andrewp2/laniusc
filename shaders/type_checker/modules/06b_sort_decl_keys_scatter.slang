@@ -3,7 +3,7 @@
 // Scheduling contract:
 // - Dispatch after type_check_modules_06_sort_decl_keys.slang and GPU scans
 //   over radix bucket counts for the same key_step.
-// - This pass performs the stable scatter for one radix key byte over
+// - This pass performs the stable scatter for one capacity-derived key byte over
 //   declaration keys ordered by (module_id, namespace, name_id).
 // - It does not resolve imports, validate duplicates, perform lookup, scan
 //   source bytes, use hashes, or apply same-source shortcuts.
@@ -63,9 +63,12 @@ uint decl_key_field(uint decl_i, uint field_i)
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint field_i = radix_field_index(key_step, 2u);
-    uint value = decl_key_field(decl_i, field_i);
-    return radix_byte_key(value, key_step);
+    return radix_packed_u32x3_byte_key(
+        decl_key_field(decl_i, 0u),
+        decl_key_field(decl_i, 1u),
+        decl_key_field(decl_i, 2u),
+        key_step,
+        gParams.reserved);
 }
 
 public struct DeclKeyScatterSource : IStableRadixScatterSource<uint>

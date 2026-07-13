@@ -118,6 +118,16 @@ static const uint X86_VINST_HOST_FS_OPEN_APPEND = 60u;
 static const uint X86_VINST_HOST_STDIN_READ = 61u;
 static const uint X86_VINST_HOST_STDOUT_WRITE = 62u;
 static const uint X86_VINST_HOST_STDERR_WRITE = 63u;
+static const uint X86_VINST_HOST_FILL_SECURE_BYTES = 64u;
+static const uint X86_VINST_HOST_FS_REMOVE_FILE = 65u;
+static const uint X86_VINST_HOST_FS_CREATE_DIR = 66u;
+static const uint X86_VINST_HOST_FS_REMOVE_DIR = 67u;
+static const uint X86_VINST_HOST_FS_RENAME = 68u;
+static const uint X86_VINST_HOST_TIME_MONOTONIC_READ = 69u;
+static const uint X86_VINST_HOST_TIME_SYSTEM_READ = 70u;
+static const uint X86_VINST_HOST_TIME_SLEEP_MS_I32 = 71u;
+static const uint X86_VINST_HOST_REALLOC = 72u;
+static const uint X86_VINST_HOST_ALLOC_FAILED = 73u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -186,6 +196,16 @@ static const uint X86_INST_V_HOST_FS_OPEN_APPEND = 110u;
 static const uint X86_INST_V_HOST_STDIN_READ = 111u;
 static const uint X86_INST_V_HOST_STDOUT_WRITE = 112u;
 static const uint X86_INST_V_HOST_STDERR_WRITE = 113u;
+static const uint X86_INST_V_HOST_FILL_SECURE_BYTES = 114u;
+static const uint X86_INST_V_HOST_FS_REMOVE_FILE = 115u;
+static const uint X86_INST_V_HOST_FS_CREATE_DIR = 116u;
+static const uint X86_INST_V_HOST_FS_REMOVE_DIR = 117u;
+static const uint X86_INST_V_HOST_FS_RENAME = 118u;
+static const uint X86_INST_V_HOST_TIME_MONOTONIC_READ = 119u;
+static const uint X86_INST_V_HOST_TIME_SYSTEM_READ = 120u;
+static const uint X86_INST_V_HOST_TIME_SLEEP_MS_I32 = 121u;
+static const uint X86_INST_V_HOST_REALLOC = 122u;
+static const uint X86_INST_V_HOST_ALLOC_FAILED = 123u;
 static const uint X86_INTRINSIC_TEXT_WRITE = 1u;
 static const uint X86_OP_ADD_I32 = 1u;
 static const uint X86_OP_MUL_I32 = 3u;
@@ -1111,7 +1131,8 @@ bool select_virtual_inst(uint row, uint inst_count)
 
     if (op == X86_VINST_HOST_STDIN_READ ||
         op == X86_VINST_HOST_STDOUT_WRITE ||
-        op == X86_VINST_HOST_STDERR_WRITE)
+        op == X86_VINST_HOST_STDERR_WRITE ||
+        op == X86_VINST_HOST_FILL_SECURE_BYTES)
     {
         uint ptr = INVALID;
         uint len = INVALID;
@@ -1124,9 +1145,120 @@ bool select_virtual_inst(uint row, uint inst_count)
                                      ? X86_INST_V_HOST_STDIN_READ
                                      : op == X86_VINST_HOST_STDOUT_WRITE
                                          ? X86_INST_V_HOST_STDOUT_WRITE
-                                         : X86_INST_V_HOST_STDERR_WRITE;
+                                         : op == X86_VINST_HOST_STDERR_WRITE
+                                             ? X86_INST_V_HOST_STDERR_WRITE
+                                             : X86_INST_V_HOST_FILL_SECURE_BYTES;
         x86_inst_arg0[out_row] = pack_regs(ptr, len);
         x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_FS_REMOVE_FILE ||
+        op == X86_VINST_HOST_FS_CREATE_DIR ||
+        op == X86_VINST_HOST_FS_REMOVE_DIR)
+    {
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_FS_REMOVE_FILE
+                                     ? X86_INST_V_HOST_FS_REMOVE_FILE
+                                     : op == X86_VINST_HOST_FS_CREATE_DIR
+                                         ? X86_INST_V_HOST_FS_CREATE_DIR
+                                         : X86_INST_V_HOST_FS_REMOVE_DIR;
+        x86_inst_arg0[out_row] = pack_regs(ptr, len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_FS_RENAME)
+    {
+        uint from_ptr = INVALID;
+        uint from_len = INVALID;
+        uint to_ptr = INVALID;
+        uint to_len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, from_ptr) ||
+            !phys_reg_for_value(args.y, inst_count, from_len) ||
+            !phys_reg_for_value(args.z, inst_count, to_ptr) ||
+            !phys_reg_for_value(args.w, inst_count, to_len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_FS_RENAME;
+        x86_inst_arg0[out_row] = pack_regs(from_ptr, from_len);
+        x86_inst_arg1[out_row] = pack_regs(to_ptr, to_len);
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_TIME_MONOTONIC_READ ||
+        op == X86_VINST_HOST_TIME_SYSTEM_READ)
+    {
+        uint ptr = INVALID;
+        uint len = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, len) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = op == X86_VINST_HOST_TIME_MONOTONIC_READ
+                                     ? X86_INST_V_HOST_TIME_MONOTONIC_READ
+                                     : X86_INST_V_HOST_TIME_SYSTEM_READ;
+        x86_inst_arg0[out_row] = pack_regs(ptr, len);
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_TIME_SLEEP_MS_I32)
+    {
+        uint milliseconds = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, milliseconds) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_TIME_SLEEP_MS_I32;
+        x86_inst_arg0[out_row] = milliseconds;
+        x86_inst_arg1[out_row] = dst;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_REALLOC)
+    {
+        uint ptr = INVALID;
+        uint old_size = INVALID;
+        uint new_size = INVALID;
+        uint align = INVALID;
+        uint dst = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, ptr) ||
+            !phys_reg_for_value(args.y, inst_count, old_size) ||
+            !phys_reg_for_value(args.z, inst_count, new_size) ||
+            !phys_reg_for_value(args.w, inst_count, align) ||
+            !phys_reg_for_value(row, inst_count, dst))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_REALLOC;
+        x86_inst_arg0[out_row] = pack_regs(ptr, old_size);
+        x86_inst_arg1[out_row] = pack_regs(new_size, align);
+        x86_inst_arg2[out_row] = dst;
+        return true;
+    }
+
+    if (op == X86_VINST_HOST_ALLOC_FAILED)
+    {
+        uint size = INVALID;
+        uint align = INVALID;
+        if (!phys_reg_for_value(args.x, inst_count, size) ||
+            !phys_reg_for_value(args.y, inst_count, align))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_HOST_ALLOC_FAILED;
+        x86_inst_arg0[out_row] = pack_regs(size, align);
+        x86_inst_arg1[out_row] = 0u;
         x86_inst_arg2[out_row] = 0u;
         return true;
     }

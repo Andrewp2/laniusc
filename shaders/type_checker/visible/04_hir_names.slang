@@ -57,7 +57,7 @@ RWStructuredBuffer<uint> visible_decl;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 static const uint HIR_VISIBLE_DECL_ROW_BLOCK_SIZE = 64u;
 
 static const uint ERR_UNRESOLVED_IDENT = 2u;

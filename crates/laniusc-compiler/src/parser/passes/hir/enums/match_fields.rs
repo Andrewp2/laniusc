@@ -88,6 +88,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumMatchFiel
                 b.hir_match_arm_pattern_node.as_entire_binding(),
             ),
             (
+                "hir_match_pattern_owner_arm".into(),
+                b.hir_match_pattern_owner_arm.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_payload_start".into(),
                 b.hir_match_arm_payload_start.as_entire_binding(),
             ),

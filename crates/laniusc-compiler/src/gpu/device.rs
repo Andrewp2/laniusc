@@ -15,6 +15,7 @@ const PIPELINE_CACHE_HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 8;
 
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
+    instance: wgpu::Instance,
     /// Shared wgpu device.
     pub device: Arc<wgpu::Device>,
     /// Shared wgpu queue.
@@ -22,11 +23,27 @@ pub struct GpuDevice {
     /// Whether timestamp queries were requested successfully.
     pub timers_supported: bool,
     /// Pipeline cache associated with this device, when supported.
-    pub pipeline_cache: Option<Arc<wgpu::PipelineCache>>,
+    pipeline_cache: Mutex<Option<Arc<wgpu::PipelineCache>>>,
     pipeline_cache_path: Option<PathBuf>,
     pipeline_cache_identity_hash: Option<u64>,
     pipeline_cache_should_persist: bool,
     pipeline_cache_persisted_hash: Mutex<Option<u64>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WgpuRegistryStats {
+    pub kept_from_user: usize,
+    pub released_from_user: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WgpuResourceStats {
+    pub buffers: WgpuRegistryStats,
+    pub bind_groups: WgpuRegistryStats,
+    pub command_encoders: WgpuRegistryStats,
+    pub command_buffers: WgpuRegistryStats,
+    pub compute_pipelines: WgpuRegistryStats,
+    pub query_sets: WgpuRegistryStats,
 }
 
 impl GpuDevice {
@@ -35,10 +52,38 @@ impl GpuDevice {
         create_context()
     }
 
+    /// Returns wgpu-core's current user-owned and dependency-retained resource
+    /// counts. This excludes backend-private Vulkan driver allocations.
+    pub fn resource_stats(&self) -> Option<WgpuResourceStats> {
+        let report = self.instance.generate_report()?;
+        let hub = report.hub_report();
+        macro_rules! registry_stats {
+            ($report:expr) => {
+                WgpuRegistryStats {
+                    kept_from_user: $report.num_kept_from_user,
+                    released_from_user: $report.num_released_from_user,
+                }
+            };
+        }
+        Some(WgpuResourceStats {
+            buffers: registry_stats!(hub.buffers),
+            bind_groups: registry_stats!(hub.bind_groups),
+            command_encoders: registry_stats!(hub.command_encoders),
+            command_buffers: registry_stats!(hub.command_buffers),
+            compute_pipelines: registry_stats!(hub.compute_pipelines),
+            query_sets: registry_stats!(hub.query_sets),
+        })
+    }
+
     /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
         let timer = PipelineCachePersistTimer::new();
-        let Some(cache) = self.pipeline_cache.as_ref() else {
+        let Some(cache) = self
+            .pipeline_cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.clone())
+        else {
             return;
         };
         let Some(path) = self.pipeline_cache_path.as_ref() else {
@@ -121,9 +166,21 @@ impl GpuDevice {
     /// Returns current pipeline-cache payload length, if cache data is available.
     pub fn pipeline_cache_data_len(&self) -> Option<usize> {
         self.pipeline_cache
-            .as_ref()
+            .lock()
+            .ok()
+            .and_then(|cache| cache.clone())
             .and_then(|cache| cache.get_data())
             .map(|data| data.len())
+    }
+
+    /// Persists and releases the driver cache after eager pipeline creation.
+    pub fn persist_and_release_pipeline_cache(&self) {
+        self.persist_pipeline_cache();
+        unregister_pipeline_cache(&self.device);
+        if let Ok(mut cache) = self.pipeline_cache.lock() {
+            cache.take();
+        }
+        let _ = self.device.poll(wgpu::PollType::Poll);
     }
 }
 
@@ -235,6 +292,10 @@ fn create_context() -> GpuDevice {
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends,
+        flags: instance_flags(crate::gpu::env::env_bool_truthy(
+            "LANIUS_GPU_DEBUG_LABELS",
+            false,
+        )),
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
@@ -253,13 +314,13 @@ fn create_context() -> GpuDevice {
     // selected device genuinely cannot support the compiler's record tables.
     limits.max_storage_buffers_per_shader_stage =
         adapter_limits.max_storage_buffers_per_shader_stage;
-    // Native desktop adapters generally expose at least 32 KiB of workgroup
-    // storage. Request it when available so bounded cooperative compiler sorts
-    // can replace long radix command schedules, while retaining the WebGPU
-    // baseline on adapters that only expose the default 16 KiB.
+    // The fast byte-wide radix scatter uses eight 256-bin virtual-warp
+    // histograms (plus one digit row), matching the proven renderer sorter in
+    // ~/code/game. Request up to 48 KiB when available; adapters below the
+    // exact 33 KiB requirement select the prefix-scan fallback pipeline.
     limits.max_compute_workgroup_storage_size = adapter_limits
         .max_compute_workgroup_storage_size
-        .min(32 * 1024);
+        .min(48 * 1024);
     limits.max_storage_buffer_binding_size = 2_147_483_644;
     limits.max_buffer_size = 2_147_483_644;
 
@@ -314,15 +375,22 @@ fn create_context() -> GpuDevice {
     register_pipeline_cache(&device, pipeline_cache.as_ref());
 
     GpuDevice {
+        instance,
         device,
         queue: Arc::new(queue),
         timers_supported,
-        pipeline_cache,
+        pipeline_cache: Mutex::new(pipeline_cache),
         pipeline_cache_path,
         pipeline_cache_identity_hash,
         pipeline_cache_should_persist,
         pipeline_cache_persisted_hash: Mutex::new(pipeline_cache_persisted_hash),
     }
+}
+
+fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
+    let mut flags = wgpu::InstanceFlags::from_build_config();
+    flags.set(wgpu::InstanceFlags::DEBUG, debug_labels);
+    flags
 }
 
 /// Returns a reference to the global GPU context (created on first use).
@@ -370,6 +438,13 @@ fn register_pipeline_cache(device: &Arc<wgpu::Device>, cache: Option<&Arc<wgpu::
         Err(err) => {
             warn!("failed to register pipeline cache due poisoned lock: {err}");
         }
+    }
+}
+
+fn unregister_pipeline_cache(device: &Arc<wgpu::Device>) {
+    let key = Arc::as_ptr(device) as usize;
+    if let Ok(mut caches) = pipeline_cache_registry().lock() {
+        caches.remove(&key);
     }
 }
 
@@ -732,6 +807,17 @@ fn remove_pipeline_cache_file(path: &std::path::Path, reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profiling_labels_enable_debug_names_without_enabling_validation() {
+        let flags = instance_flags(true);
+
+        assert!(flags.contains(wgpu::InstanceFlags::DEBUG));
+        assert_eq!(
+            flags.contains(wgpu::InstanceFlags::VALIDATION),
+            wgpu::InstanceFlags::from_build_config().contains(wgpu::InstanceFlags::VALIDATION)
+        );
+    }
 
     #[test]
     fn pipeline_cache_file_round_trips_opaque_blob() {

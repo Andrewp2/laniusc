@@ -184,18 +184,41 @@ uint owner_header_event_for(
     if (kind == TK_SEMICOLON &&
         header_reset_delimiter_context(paren_depth, bracket_depth, angle_depth))
         return encode_owner_event(token_i, 0u);
-    if (kind == TK_LBRACE || kind == TK_RBRACE)
+    if ((kind == TK_LBRACE || kind == TK_RBRACE) &&
+        header_reset_delimiter_context(paren_depth, bracket_depth, angle_depth))
         return encode_owner_event(token_i, 0u);
     return 0u;
 }
 
-uint brace_open_kind_for(uint parser_i, uint count, uint header_context)
+uint brace_open_kind_for(
+    uint parser_i,
+    uint count,
+    uint header_context,
+    int paren_depth,
+    int bracket_depth)
 {
     uint owner = decode_owner_kind(header_context);
+    uint prev_raw = raw_kind_at(parser_i - 1u, count);
+    // Raw `<`/`>` depth is ambiguous until generic delimiters have been
+    // semantically retagged: an earlier comparison such as `a < b` can leave
+    // the raw angle depth open across later statements. Parenthesis and bracket
+    // depth are sufficient here, while `if`/`match` bodies are also confirmed
+    // by their immediately preceding `)` below.
+    bool nested_in_header_expression = paren_depth > 0 || bracket_depth > 0;
+    if (nested_in_header_expression &&
+        (owner == TK_IF_LBRACE || owner == TK_MATCH_LBRACE || owner == TK_LBRACE))
+    {
+        owner = 0u;
+    }
+    if ((owner == TK_IF_LBRACE || owner == TK_MATCH_LBRACE) && prev_raw != TK_RPAREN)
+    {
+        // `if` and `match` own the brace after their parenthesized condition,
+        // not braces nested inside that condition.
+        owner = 0u;
+    }
     if (owner != 0u)
         return owner;
 
-    uint prev_raw = raw_kind_at(parser_i - 1u, count);
     if (semantic_token_ends_primary(prev_raw))
         return TK_STRUCT_LIT_LBRACE;
 
@@ -224,14 +247,10 @@ bool is_statement_starter(uint kind)
            kind == TK_TRAIT;
 }
 
-bool is_statement_reset_boundary(uint kind)
-{
-    return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE;
-}
-
 uint statement_event_for(
     uint token_i,
     uint kind,
+    uint brace_open_kind,
     int global_paren_depth_before,
     int global_bracket_depth_before)
 {
@@ -241,8 +260,15 @@ uint statement_event_for(
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
     if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)
         return 0u;
-    if (is_statement_reset_boundary(kind))
+    if (kind == TK_SEMICOLON)
         return (token_i + 1u) << 8u;
+    if (kind == TK_LBRACE)
+    {
+        if (brace_open_kind != TK_STRUCT_LIT_LBRACE)
+            return (token_i + 1u) << 8u;
+    }
+    if (kind == TK_RBRACE)
+        return 0u;
     return 0u;
 }
 
@@ -288,7 +314,12 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint open_kind = 0u;
     if (token_i < count && kind == TK_LBRACE)
     {
-        uint candidate = brace_open_kind_for(parser_i, count, header_before);
+        uint candidate = brace_open_kind_for(
+            parser_i,
+            count,
+            header_before,
+            paren_depth,
+            bracket_depth);
         bool defer_impl_method_body = brace_depth != 0 && candidate == TK_FN_BLOCK_LBRACE;
         open_kind = defer_impl_method_body ? TK_DEFERRED_FN_BLOCK_LBRACE : candidate;
         if (brace_depth == 0)
@@ -303,7 +334,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         top_brace_owner_block[block_idx] = owner_prefix;
 
     uint statement_event = token_i < count
-        ? statement_event_for(token_i, kind, paren_depth, bracket_depth)
+        ? statement_event_for(token_i, kind, open_kind, paren_depth, bracket_depth)
         : 0u;
     uint statement_prefix = prefix_scan_u32_max_256(lane, statement_event);
     if (lane + 1u == WG_SIZE)

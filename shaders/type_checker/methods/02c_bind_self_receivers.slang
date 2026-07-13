@@ -7,8 +7,6 @@
 // enclosing_fn relation produced by the function-context scan, not rediscovered
 // by walking HIR parents.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -19,9 +17,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> enclosing_fn;
@@ -37,6 +35,7 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint METHOD_RECEIVER_NONE = 0u;
+static const uint HIR_EXPR_NAME_ROLE_SELF = 1u;
 
 static const uint HIR_MEMBER_EXPR = 21u;
 
@@ -102,7 +101,8 @@ void bind_self_receiver_for_member(uint member_node)
         return;
 
     uint receiver_node = hir_member_receiver_node[member_node];
-    if (!valid_node(receiver_node) || node_kind[receiver_node] != PROD_SELF_VALUE)
+    if (!valid_node(receiver_node) ||
+        hir_expr_name_role[receiver_node] != HIR_EXPR_NAME_ROLE_SELF)
         return;
 
     uint self_token = hir_member_receiver_token[member_node];
@@ -117,7 +117,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    if (node_kind[node] == PROD_SELF_VALUE)
+    if (hir_expr_name_role[node] == HIR_EXPR_NAME_ROLE_SELF)
         bind_self_token(hir_token_pos[node]);
 
     bind_self_receiver_for_member(node);

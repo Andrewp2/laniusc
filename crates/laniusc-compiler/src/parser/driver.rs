@@ -102,6 +102,12 @@ pub struct GpuParser {
     tokens_type_path_context_01_local: PassData,
     tokens_type_path_context_02_apply: PassData,
     tokens_to_identifier_kinds: PassData,
+    tokens_generic_shr_00_raw_local: PassData,
+    tokens_generic_shr_00_raw_apply: PassData,
+    tokens_generic_shr_01_local: PassData,
+    tokens_generic_shr_02_scan: PassData,
+    tokens_generic_shr_03_apply: PassData,
+    tokens_generic_shr_04_close_kinds: PassData,
     passes: ParserPasses,
 
     // Bind group cache so passes do not recreate BGs every dispatch.
@@ -235,6 +241,30 @@ impl GpuParser {
             tokens_to_identifier_kinds: make_parser_pass!(
                 "tokens_to_identifier_kinds",
                 make_tokens_to_identifier_kinds_pass
+            ),
+            tokens_generic_shr_00_raw_local: make_parser_pass!(
+                "tokens_generic_shr_00_raw_local",
+                make_tokens_generic_shr_00_raw_local_pass
+            ),
+            tokens_generic_shr_00_raw_apply: make_parser_pass!(
+                "tokens_generic_shr_00_raw_apply",
+                make_tokens_generic_shr_00_raw_apply_pass
+            ),
+            tokens_generic_shr_01_local: make_parser_pass!(
+                "tokens_generic_shr_01_local",
+                make_tokens_generic_shr_01_local_pass
+            ),
+            tokens_generic_shr_02_scan: make_parser_pass!(
+                "tokens_generic_shr_02_scan",
+                make_tokens_generic_shr_02_scan_pass
+            ),
+            tokens_generic_shr_03_apply: make_parser_pass!(
+                "tokens_generic_shr_03_apply",
+                make_tokens_generic_shr_03_apply_pass
+            ),
+            tokens_generic_shr_04_close_kinds: make_parser_pass!(
+                "tokens_generic_shr_04_close_kinds",
+                make_tokens_generic_shr_04_close_kinds_pass
             ),
             passes: { ParserPasses::new(&ctx.device)? },
             bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
@@ -488,11 +518,29 @@ impl GpuParser {
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.recorded_ll1_hir.status"),
-            size: 24,
+            size: 32,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
         parser_copy_buffer_to_buffer(encoder, &bufs.ll1_status, 0, &status_readback, 0, 24);
+        parser_copy_buffer_to_buffer(
+            encoder,
+            &bufs.token_feature_flags,
+            0,
+            &status_readback,
+            24,
+            4,
+        );
+        parser_copy_buffer_to_buffer(
+            encoder,
+            &bufs.tree_pointer_jump_dispatch_args,
+            crate::parser::buffers::dispatch_args_schedule_count_offset(
+                crate::parser::buffers::pointer_jump_step_capacity(bufs.tree_capacity) as usize,
+            ),
+            &status_readback,
+            28,
+            4,
+        );
         drop(parser_batch);
 
         let consumed = consume(bufs, encoder, timer_ref);
@@ -592,6 +640,19 @@ impl GpuParser {
         let words = read_u32_words(&mapped, 7)?;
         drop(mapped);
         status_readback.unmap();
+
+        // The capacity probe deliberately uses temporary parser buffers, but
+        // token-frontend bind groups are cached on `GpuParser`. Do not let
+        // those bind groups outlive the temporary buffers and get reused by
+        // the following full resident parse when GPU buffer ids are recycled.
+        *self
+            .resident_token_kind_bind_groups
+            .lock()
+            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+        self.bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .clear();
 
         let emit_capacity = if words[0] == 0 && words[2] == 3 {
             words[3]

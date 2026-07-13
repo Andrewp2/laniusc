@@ -46,11 +46,51 @@ radix_pass!(
     "brackets_pair_radix_bases",
     "parser/brackets/pair_radix_bases"
 );
-radix_pass!(
-    PairRadixScatterPass,
-    "brackets_pair_radix_scatter",
-    "parser/brackets/pair_radix_scatter"
-);
+
+struct PairRadixScatterPass {
+    data: PassData,
+}
+
+const WARP_HISTOGRAM_STORAGE_BYTES: u32 = 33 * 1024;
+
+fn pair_radix_scatter_shader(max_workgroup_storage_bytes: u32) -> &'static str {
+    if max_workgroup_storage_bytes >= WARP_HISTOGRAM_STORAGE_BYTES {
+        "parser/brackets/pair_radix_scatter"
+    } else {
+        "parser/brackets/pair_radix_scatter_prefix"
+    }
+}
+
+impl PairRadixScatterPass {
+    fn new(device: &wgpu::Device) -> Result<Self> {
+        let shader = pair_radix_scatter_shader(device.limits().max_compute_workgroup_storage_size);
+        Ok(Self {
+            data: crate::gpu::passes_core::make_pass_data_from_shader_key(
+                device,
+                "brackets_pair_radix_scatter",
+                "main",
+                shader,
+            )?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scatter_pipeline_respects_exact_workgroup_storage_boundary() {
+        assert_eq!(
+            pair_radix_scatter_shader(WARP_HISTOGRAM_STORAGE_BYTES - 1),
+            "parser/brackets/pair_radix_scatter_prefix"
+        );
+        assert_eq!(
+            pair_radix_scatter_shader(WARP_HISTOGRAM_STORAGE_BYTES),
+            "parser/brackets/pair_radix_scatter"
+        );
+    }
+}
 
 /// Stable GPU radix sorter for bracket events by `(layer, push/pop)`.
 pub struct BracketsPairRadixPass {

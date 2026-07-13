@@ -23,18 +23,14 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_start;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> path_id_by_owner_hir;
-StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -144,11 +140,6 @@ uint path_leaf_token(uint path_i)
     return slot < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
 }
 
-uint call_leaf_token_for_path(uint path_i)
-{
-    return path_leaf_token(path_i);
-}
-
 uint path_segment_token_at(uint path_i, uint segment_i)
 {
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
@@ -170,30 +161,6 @@ uint type_path_leaf_token(uint type_node, uint fallback_path_i, uint fallback_to
         ? path_leaf_token(fallback_path_i)
         : INVALID;
     return valid_token(leaf_token) ? leaf_token : fallback_token;
-}
-
-uint path_id_for_callee_node(uint callee_node)
-{
-    if (!valid_node(callee_node))
-        return INVALID;
-
-    if (hir_kind[callee_node] == HIR_PATH_EXPR || hir_kind[callee_node] == HIR_TYPE)
-    {
-        uint path_i = path_id_by_owner_hir[callee_node];
-        return path_i != INVALID && path_i < gParams.n_hir_nodes ? path_i : INVALID;
-    }
-
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
-        {
-            uint path_i = path_id_by_owner_hir[child];
-            return path_i != INVALID && path_i < gParams.n_hir_nodes ? path_i : INVALID;
-        }
-    }
-
-    return INVALID;
 }
 
 void mark_associated_path_segments(uint path_i, uint method_token)
@@ -289,54 +256,6 @@ bool mark_path_call(uint path_i, uint call_node, uint leaf_token)
     return true;
 }
 
-bool mark_hir_call(uint call_node)
-{
-    if (!valid_hir_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
-        return false;
-
-    uint callee_node = hir_call_callee_node[call_node];
-    uint path_i = path_id_for_callee_node(callee_node);
-    return mark_path_call(path_i, call_node, call_leaf_token_for_callee_path(path_i, callee_node));
-}
-
-uint call_expr_for_callee_anchor(uint callee_anchor)
-{
-    if (!valid_node(callee_anchor))
-        return INVALID;
-
-    uint owner = parent[callee_anchor];
-    if (valid_node(owner) &&
-        hir_kind[owner] == HIR_CALL_EXPR &&
-        hir_call_callee_node[owner] == callee_anchor)
-        return owner;
-
-    uint child = first_child[callee_anchor];
-    if (valid_node(child) &&
-        hir_kind[child] == HIR_CALL_EXPR &&
-        hir_call_callee_node[child] == callee_anchor)
-        return child;
-
-    uint sibling = next_sibling[callee_anchor];
-    return valid_node(sibling) && hir_kind[sibling] == HIR_CALL_EXPR ? sibling : INVALID;
-}
-
-uint call_expr_for_enclosing_callee(uint node)
-{
-    uint cursor = node;
-    for (uint step = 0u; step < 8u; step += 1u)
-    {
-        uint call_expr = call_expr_for_callee_anchor(cursor);
-        if (valid_hir_node(call_expr))
-            return call_expr;
-
-        uint owner = valid_node(cursor) ? parent[cursor] : INVALID;
-        if (!valid_node(owner) || owner == cursor)
-            return INVALID;
-        cursor = owner;
-    }
-    return INVALID;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -344,11 +263,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (i >= parser_hir_node_count())
         return;
-    if (hir_kind[i] == HIR_CALL_EXPR)
-    {
-        mark_hir_call(i);
-        return;
-    }
     if (i >= active_hir_node_count())
         return;
     if (hir_kind[i] != HIR_PATH_EXPR && hir_kind[i] != HIR_TYPE)
@@ -361,13 +275,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint path_i = path_id_by_owner_hir[i];
-    uint callee_anchor = i;
     uint name_expr = parent[i];
     uint name_parent = INVALID;
     if (name_expr != INVALID && name_expr < active_hir_node_count() &&
         hir_kind[name_expr] == HIR_NAME_EXPR)
     {
-        callee_anchor = name_expr;
         name_parent = parent[name_expr];
     }
     else
@@ -382,7 +294,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     module_value_path_expr_head[token_i] = 1u;
 
-    uint call_expr = call_expr_for_enclosing_callee(callee_anchor);
+    uint call_expr = hir_call_parent_by_callee[i];
     if (valid_hir_node(call_expr) && hir_kind[call_expr] == HIR_CALL_EXPR)
     {
         uint call_callee = hir_call_callee_node[call_expr];

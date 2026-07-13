@@ -1,0 +1,13 @@
+module app::main;
+
+import std::process;
+
+fn finish(code: i32) {
+    std::process::exit(code);
+}
+
+fn main() -> i32 {
+    print(0);
+    finish(7);
+    return 99;
+}

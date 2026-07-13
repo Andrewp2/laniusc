@@ -16,6 +16,7 @@ RWStructuredBuffer<uint> hir_path_segment_link_a;
 RWStructuredBuffer<uint> hir_path_segment_rank_a;
 
 static const uint INVALID = 0xffffffffu;
+static const uint OWNER_NODE_MASK = 0x7fffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -49,10 +50,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(container))
         return;
 
-    uint owner = hir_path_root_owner[container];
-    if (valid_node(owner))
+    uint encoded_owner = hir_path_root_owner[container];
+    if (encoded_owner != 0u)
     {
-        hir_path_segment_owner_a[node] = owner;
+        uint owner = (encoded_owner & OWNER_NODE_MASK) - 1u;
+        hir_path_segment_owner_a[node] = valid_node(owner) ? owner : INVALID;
         return;
     }
 

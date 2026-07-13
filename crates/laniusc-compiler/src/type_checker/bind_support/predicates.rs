@@ -626,14 +626,9 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 items.type_path_leaf_node.as_entire_binding(),
             ),
             (
-                "hir_type_arg_start",
-                items.type_arg_start.as_entire_binding(),
-            ),
-            (
                 "hir_type_arg_count",
                 items.type_arg_count.as_entire_binding(),
             ),
-            ("hir_type_arg_next", items.type_arg_next.as_entire_binding()),
             (
                 "name_id_by_token",
                 input.name_id_by_token.as_entire_binding(),
@@ -732,6 +727,12 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 resident_resources["predicate_method_validation_detail_token"].clone(),
             ),
         ],
+    )?;
+    let validate_method_type_arg_rows = reflected_bind_group_from_resources(
+        device,
+        "type_check_resident_predicates_validate_method_type_arg_rows",
+        &passes.predicates_validate_method_type_arg_rows,
+        resident_resources,
     )?;
     let reduce_method_validation_errors = bind_group::create_bind_group_from_bindings(
         device,
@@ -948,6 +949,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         sort_method_param_key_scatter: method_param_keys.sort_key_scatter,
         build_method_contract_owner_ranges,
         emit_method_validation_rows,
+        validate_method_type_arg_rows,
         reduce_method_validation_errors,
         apply_method_validation_errors,
         _owner_key_radix_steps: owner_keys.steps,

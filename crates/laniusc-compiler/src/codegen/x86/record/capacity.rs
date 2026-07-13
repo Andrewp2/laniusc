@@ -29,7 +29,6 @@ pub(super) struct RecordCapacity {
     pub(super) output_readback_bytes: u64,
     pub(super) node_inst_scan_words: usize,
     pub(super) node_inst_scan_blocks: usize,
-    pub(super) node_func_owner_steps: Vec<u32>,
     pub(super) expr_resolve_steps: Vec<u32>,
     pub(super) expr_semantic_type_steps: Vec<u32>,
     pub(super) enclosing_return_steps: Vec<u32>,
@@ -39,10 +38,8 @@ pub(super) struct RecordCapacity {
     pub(super) match_result_owner_steps: Vec<u32>,
     pub(super) match_pattern_owner_steps: Vec<u32>,
     pub(super) node_inst_same_end_rank_steps: Vec<u32>,
-    pub(super) enclosing_loop_steps: Vec<u32>,
     pub(super) short_circuit_rhs_steps: Vec<u32>,
     pub(super) index_source_owner_steps: Vec<u32>,
-    pub(super) func_owner_scan_blocks: usize,
     pub(super) node_inst_order_rows: usize,
     pub(super) virtual_next_call_steps: Vec<u32>,
     pub(super) virtual_regalloc_chunk_count: usize,
@@ -59,6 +56,7 @@ impl RecordCapacity {
         token_capacity: u32,
         n_hir_nodes: u32,
         inst_hir_node_count: usize,
+        pointer_jump_step_count: u32,
         feature_summary: X86FeatureSummary,
     ) -> Self {
         let capacity = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
@@ -85,20 +83,22 @@ impl RecordCapacity {
             x86_initial_output_readback_bytes(output_capacity, source_len as usize) as u64;
         let node_inst_scan_words = hir_words + 1;
         let node_inst_scan_blocks = node_inst_scan_words.div_ceil(256).max(1);
-        let node_func_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let expr_resolve_steps = pointer_jump_steps_for_items(hir_words);
-        let expr_semantic_type_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_return_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_let_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_stmt_steps = pointer_jump_steps_for_items(hir_words);
-        let call_callee_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let match_result_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let match_pattern_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let node_inst_same_end_rank_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_loop_steps = pointer_jump_steps_for_items(hir_words);
-        let short_circuit_rhs_steps = pointer_jump_steps_for_items(hir_words);
-        let index_source_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
+        let pointer_jump_steps = || {
+            let mut steps = pointer_jump_steps_for_items(hir_words);
+            steps.truncate(pointer_jump_step_count as usize);
+            steps
+        };
+        let expr_resolve_steps = pointer_jump_steps();
+        let expr_semantic_type_steps = pointer_jump_steps();
+        let enclosing_return_steps = pointer_jump_steps();
+        let enclosing_let_steps = pointer_jump_steps();
+        let enclosing_stmt_steps = pointer_jump_steps();
+        let call_callee_owner_steps = pointer_jump_steps();
+        let match_result_owner_steps = pointer_jump_steps();
+        let match_pattern_owner_steps = pointer_jump_steps();
+        let node_inst_same_end_rank_steps = pointer_jump_steps();
+        let short_circuit_rhs_steps = pointer_jump_steps();
+        let index_source_owner_steps = pointer_jump_steps();
         let virtual_next_call_steps = scan_steps_for_blocks(inst_capacity);
         let regalloc_recorded_steps = regalloc_recorded_step_count(inst_capacity);
         // Regalloc now has one validation/status phase followed by one
@@ -140,7 +140,6 @@ impl RecordCapacity {
             function_slot_capacity,
             node_inst_order_rows,
             &node_inst_same_end_rank_steps,
-            &enclosing_loop_steps,
             &short_circuit_rhs_steps,
             &index_source_owner_steps,
             feature_summary,
@@ -154,7 +153,6 @@ impl RecordCapacity {
             output_readback_bytes,
             node_inst_scan_words,
             node_inst_scan_blocks,
-            node_func_owner_steps,
             expr_resolve_steps,
             expr_semantic_type_steps,
             enclosing_return_steps,
@@ -164,10 +162,8 @@ impl RecordCapacity {
             match_result_owner_steps,
             match_pattern_owner_steps,
             node_inst_same_end_rank_steps,
-            enclosing_loop_steps,
             short_circuit_rhs_steps,
             index_source_owner_steps,
-            func_owner_scan_blocks,
             node_inst_order_rows,
             virtual_next_call_steps,
             virtual_regalloc_chunk_count,
@@ -188,7 +184,6 @@ fn trace_capacity(
     function_slot_capacity: usize,
     node_inst_order_rows: usize,
     node_inst_same_end_rank_steps: &[u32],
-    enclosing_loop_steps: &[u32],
     short_circuit_rhs_steps: &[u32],
     index_source_owner_steps: &[u32],
     feature_summary: X86FeatureSummary,
@@ -219,7 +214,6 @@ fn trace_capacity(
         && encode_contract.source_text_status == "not-consumed";
     let control_bridge_max_steps = [
         node_inst_same_end_rank_steps.len(),
-        enclosing_loop_steps.len(),
         short_circuit_rhs_steps.len(),
         index_source_owner_steps.len(),
     ]
@@ -354,10 +348,6 @@ fn trace_capacity(
         (
             "x86.control_bridge_node_inst_same_end_rank_steps",
             node_inst_same_end_rank_steps.len(),
-        ),
-        (
-            "x86.control_bridge_enclosing_loop_steps",
-            enclosing_loop_steps.len(),
         ),
         (
             "x86.control_bridge_short_circuit_rhs_steps",

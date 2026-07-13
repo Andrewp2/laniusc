@@ -56,7 +56,8 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
 
     let name_lexeme_scan = create_counted_u32_scan_bind_groups_from_passes(
         &passes.counted_scan_local,
-        &passes.counted_scan_blocks,
+        &passes.counted_scan_hierarchy_up,
+        &passes.counted_scan_hierarchy_down,
         &passes.counted_scan_apply,
         device,
         "type_check.names.lexeme_scan",
@@ -164,9 +165,7 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
         token_scan_n_blocks,
         name_max_len: (*name_max_len).clone(),
         mark,
-        scan_local: name_lexeme_scan.local,
-        scan_blocks: name_lexeme_scan.blocks,
-        scan_apply: name_lexeme_scan.apply,
+        scan: name_lexeme_scan,
         scatter,
         hash_work_items,
         _hash_params: hash_params,

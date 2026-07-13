@@ -91,6 +91,16 @@
       "--stdlib-root",
       "stdlib"
     ],
+    "runner": [
+      "python3",
+      "tools/run_daemon_benchmark.py",
+      "--commands",
+      "benchmark_artifacts/compile_scaling_1101000/commands.json",
+      "--output",
+      "target/lanius-compile-scaling/daemon-transcript.json"
+    ],
+    "runner_sha256": "b9fe2f1d65caaf73ddd912347b3adaa41e5051926b0d381a4c1b95f30416055c",
+    "scheduling_policy": "all requests are queued immediately after the ready event and before reading the first job response",
     "requests": [
       {
         "command": "compile",

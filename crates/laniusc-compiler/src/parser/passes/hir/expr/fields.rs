@@ -21,6 +21,10 @@ pub const HIR_EXPR_FORM_NONE: u32 = 0;
 pub const HIR_EXPR_FORM_FORWARD: u32 = 1;
 /// Name reference expression.
 pub const HIR_EXPR_FORM_NAME: u32 = 2;
+/// Ordinary name expression with no reserved semantic role.
+pub const HIR_EXPR_NAME_ROLE_NONE: u32 = 0;
+/// The reserved `self` value expression.
+pub const HIR_EXPR_NAME_ROLE_SELF: u32 = 1;
 /// Integer literal expression.
 pub const HIR_EXPR_FORM_INT: u32 = 3;
 /// `true` literal expression.
@@ -147,6 +151,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirExprFieldsPas
             (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_name_role".into(),
+                b.hir_expr_name_role.as_entire_binding(),
             ),
             (
                 "hir_expr_result_node".into(),

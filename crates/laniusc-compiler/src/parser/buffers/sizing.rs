@@ -1,10 +1,5 @@
 use crate::{
-    lexer::features::{
-        PARSER_FEATURE_ARRAYS,
-        PARSER_FEATURE_ENUMS,
-        PARSER_FEATURE_MATCHES,
-        PARSER_FEATURE_STRUCTS,
-    },
+    lexer::features::{PARSER_FEATURE_ARRAYS, PARSER_FEATURE_STRUCTS},
     parser::tables::PrecomputedParseTables,
 };
 
@@ -20,14 +15,11 @@ impl ParserFamilyCapacities {
         let tree_capacity = tree_capacity.max(1);
         Self {
             arrays: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_ARRAYS),
-            // Enum and match records share one clear pass and uniform. Keep the
-            // pair at one common capacity so that pass can never bind unequal
-            // output lengths.
-            enum_match: feature_capacity(
-                tree_capacity,
-                parser_feature_flags,
-                PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES,
-            ),
+            // Enum and match relations remain source-node-addressable in shared
+            // parser consumers even when their construction passes are skipped.
+            // Keep their physical address space complete until those consumers
+            // are migrated to compact record ids.
+            enum_match: tree_capacity,
             structs: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_STRUCTS),
         }
     }
@@ -47,9 +39,33 @@ pub(crate) fn resident_partial_parse_tree_capacity_for_tables(
     tables: &PrecomputedParseTables,
 ) -> u32 {
     let n_pairs = n_tokens.saturating_sub(1);
-    let max_emit_len = tables.pp_len.iter().copied().max().unwrap_or(0);
+    let max_emit_len = resident_virtual_pair_width(&tables.pp_len, tables.n_kinds);
     let total_emit = n_pairs.saturating_mul(max_emit_len);
     resident_partial_parse_tree_capacity(total_emit)
+}
+
+/// Maximum table width emitted by one physical adjacent pair. A contextual
+/// `>>` concatenates `(previous, inner-close)` and
+/// `(inner-close, outer-close)`; no other physical pair expands.
+pub(super) fn resident_virtual_pair_width(widths: &[u32], n_kinds: u32) -> u32 {
+    let mut maximum = widths.iter().copied().max().unwrap_or(0);
+    const GENERIC_CLOSE_KINDS: [u32; 4] = [132, 134, 176, 185];
+    for previous in 0..n_kinds {
+        for inner in GENERIC_CLOSE_KINDS {
+            for outer in GENERIC_CLOSE_KINDS {
+                let first = widths
+                    .get((previous * n_kinds + inner) as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let second = widths
+                    .get((inner * n_kinds + outer) as usize)
+                    .copied()
+                    .unwrap_or(0);
+                maximum = maximum.max(first.saturating_add(second));
+            }
+        }
+    }
+    maximum
 }
 
 /// Normalizes resident tree capacity to at least one row.
@@ -60,6 +76,7 @@ pub(super) fn resident_partial_parse_tree_capacity(total_emit: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::features::{PARSER_FEATURE_ENUMS, PARSER_FEATURE_MATCHES};
 
     #[test]
     fn resident_tree_capacity_is_capacity_derived_and_bounded() {
@@ -80,12 +97,12 @@ mod tests {
     }
 
     #[test]
-    fn absent_optional_parser_families_use_one_safe_binding_row() {
+    fn enum_match_relations_retain_source_node_address_space() {
         assert_eq!(
             ParserFamilyCapacities::new(1_000_000, 0),
             ParserFamilyCapacities {
                 arrays: 1,
-                enum_match: 1,
+                enum_match: 1_000_000,
                 structs: 1,
             }
         );
@@ -97,7 +114,7 @@ mod tests {
             ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_ARRAYS),
             ParserFamilyCapacities {
                 arrays: 1_000_000,
-                enum_match: 1,
+                enum_match: 1_000_000,
                 structs: 1,
             }
         );
@@ -121,7 +138,7 @@ mod tests {
             ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_STRUCTS),
             ParserFamilyCapacities {
                 arrays: 1,
-                enum_match: 1,
+                enum_match: 1_000_000,
                 structs: 1_000_000,
             }
         );

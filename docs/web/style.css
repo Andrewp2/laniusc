@@ -1,5 +1,6 @@
 :root {
   font-family:
+    "IBM Plex Sans",
     Inter,
     ui-sans-serif,
     system-ui,
@@ -8,12 +9,20 @@
     "Segoe UI",
     sans-serif;
 
-  color: #111820;
-  background: #f5f5f2;
+  color: var(--color-text);
+  background: var(--color-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+
+  --color-bg: #f5f5f2;
+  --color-text: #111820;
+  --color-muted: #59636e;
+  --color-accent: #18b6e7;
+  --color-border: #d9dddf;
+  --color-surface: #ffffff;
 }
+
 
 *,
 *::before,
@@ -84,13 +93,13 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid #18b6e7;
+  outline: 3px solid var(--color-accent);
   outline-offset: 3px;
 }
 
 ::selection {
-  color: #111820;
-  background: #18b6e7;
+  color: var(--color-text);
+  background: var(--color-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -107,13 +116,136 @@ a {
   }
 }
 
-.header {
-  display: flex;
+.hero {
   align-items: center;
   gap: 0.75rem;
 }
 
-.header h1 {
+.header {
+  display: flex;
+  gap: 2rem;
+}
+
+.navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  margin-left: auto;
+  gap: 2rem;
+}
+
+h1 {
+  font-family:
+    "Oxanium",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+h2 {
+  font-family:
+    "Oxanium",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+h3 {
+  font-family:
+    "Oxanium",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.tagline {
+  max-width: 52rem;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  text-wrap: balance;
+  margin-bottom: 1.0rem;
+}
+
+.hero h1 {
   margin: 0;
-  font-size: 72px
+  font-size: 72px;
+  padding-top: 0.75rem;
+}
+
+.disabled-link {
+  color: var(--color-muted);
+  text-decoration: line-through underline;
+}
+
+.plan-list {
+  margin: 0;
+  padding-left: 2.5rem;
+}
+
+.plan-list>li {
+  margin-bottom: 1.5rem;
+  padding-left: 0.25rem;
+}
+
+.plan-list>li::marker {
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.plan h2 {
+  /* margin: 0; */
+  margin: 0 0 0.5rem 0;
+  padding: 0 0 0 0;
+  font-size: 2.0rem;
+}
+
+.plan-list h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.plan-list p {
+  max-width: 42rem;
+  margin: 0.75rem 0 0;
+  line-height: 1.5;
+}
+
+.plan-list>li::marker {
+  font-family: "Oxanium";
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: #111820;
+  color: #f5f5f2;
+  line-height: 1.5;
+}
+
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+pre code {
+  font-size: 0.95rem;
 }

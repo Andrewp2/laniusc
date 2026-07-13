@@ -544,6 +544,37 @@ fn storage_buffer_pool() -> &'static Mutex<HashMap<PooledStorageBufferKey, Vec<w
     POOL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Drops every currently idle pooled x86 buffer for one device.
+///
+/// Checked-out buffers are unaffected and return to the pool normally when
+/// their recording handle is dropped. The compiler calls this only while its
+/// resident pipeline lock excludes active compilation.
+pub(super) fn release_pooled_buffers_for_device(device: &wgpu::Device) -> (usize, u64) {
+    let device_key = device as *const wgpu::Device as usize;
+    let mut released = Vec::new();
+    let mut released_bytes = 0u64;
+    {
+        let mut pool = storage_buffer_pool()
+            .lock()
+            .expect("x86 storage buffer pool poisoned");
+        let keys = pool
+            .keys()
+            .copied()
+            .filter(|key| key.device == device_key)
+            .collect::<Vec<_>>();
+        for key in keys {
+            if let Some(mut buffers) = pool.remove(&key) {
+                released_bytes =
+                    released_bytes.saturating_add(key.size.saturating_mul(buffers.len() as u64));
+                released.append(&mut buffers);
+            }
+        }
+    }
+    let released_count = released.len();
+    drop(released);
+    (released_count, released_bytes)
+}
+
 /// Allocates a host-readable readback buffer for `count` `u32` words.
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
@@ -866,6 +897,29 @@ pub(super) fn dispatch_compute_pass_indirect_bind_group_steps(
             pass,
             bind_group,
             indirect_buffer,
+        );
+    }
+}
+
+/// Records a capacity-stable step sequence from per-round indirect commands.
+pub(super) fn dispatch_compute_pass_indirect_bind_group_scheduled_steps(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage_prefix: &str,
+    label: &str,
+    pass: &PassData,
+    bind_groups: &[wgpu::BindGroup],
+    schedule_buffer: &wgpu::Buffer,
+) {
+    for (step_i, bind_group) in bind_groups.iter().enumerate() {
+        let trace_stage = format!("{trace_stage_prefix}.{step_i}");
+        dispatch_compute_pass_indirect_offset(
+            encoder,
+            &trace_stage,
+            label,
+            pass,
+            bind_group,
+            schedule_buffer,
+            (step_i * 3 * std::mem::size_of::<u32>()) as u64,
         );
     }
 }

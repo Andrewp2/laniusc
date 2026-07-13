@@ -81,7 +81,6 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) active_virtual_inst_dispatch_args: &'a wgpu::Buffer,
     pub(super) enclosing_return_step_final: &'a wgpu::Buffer,
     pub(super) enclosing_let_step_final: &'a wgpu::Buffer,
-    pub(super) enclosing_loop_step_final: &'a wgpu::Buffer,
     pub(super) for_iterable_node: &'a wgpu::Buffer,
     pub(super) short_circuit_rhs_step_final: &'a wgpu::Buffer,
     pub(super) index_source_owner_step_final: &'a wgpu::Buffer,
@@ -154,7 +153,6 @@ pub(super) fn create_inst_gen_bind_groups(
         active_virtual_inst_dispatch_args,
         enclosing_return_step_final,
         enclosing_let_step_final,
-        enclosing_loop_step_final,
         for_iterable_node,
         short_circuit_rhs_step_final,
         index_source_owner_step_final,
@@ -397,8 +395,8 @@ pub(super) fn create_inst_gen_bind_groups(
                 node_inst_gen_node_record.as_entire_binding(),
             ),
             (
-                "x86_enclosing_loop_node",
-                enclosing_loop_step_final.as_entire_binding(),
+                "hir_nearest_loop_node",
+                expr_metadata.nearest_loop_node.as_entire_binding(),
             ),
             (
                 "x86_for_iterable_node",

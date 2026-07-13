@@ -83,6 +83,16 @@ static const uint X86_VINST_HOST_FS_OPEN_APPEND = 60u;
 static const uint X86_VINST_HOST_STDIN_READ = 61u;
 static const uint X86_VINST_HOST_STDOUT_WRITE = 62u;
 static const uint X86_VINST_HOST_STDERR_WRITE = 63u;
+static const uint X86_VINST_HOST_FILL_SECURE_BYTES = 64u;
+static const uint X86_VINST_HOST_FS_REMOVE_FILE = 65u;
+static const uint X86_VINST_HOST_FS_CREATE_DIR = 66u;
+static const uint X86_VINST_HOST_FS_REMOVE_DIR = 67u;
+static const uint X86_VINST_HOST_FS_RENAME = 68u;
+static const uint X86_VINST_HOST_TIME_MONOTONIC_READ = 69u;
+static const uint X86_VINST_HOST_TIME_SYSTEM_READ = 70u;
+static const uint X86_VINST_HOST_TIME_SLEEP_MS_I32 = 71u;
+static const uint X86_VINST_HOST_REALLOC = 72u;
+static const uint X86_VINST_HOST_ALLOC_FAILED = 73u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -261,8 +271,16 @@ uint operand_count_for_row(uint row)
         op == X86_VINST_HOST_FS_OPEN_APPEND ||
         op == X86_VINST_HOST_STDIN_READ ||
         op == X86_VINST_HOST_STDOUT_WRITE ||
-        op == X86_VINST_HOST_STDERR_WRITE)
+        op == X86_VINST_HOST_STDERR_WRITE ||
+        op == X86_VINST_HOST_FILL_SECURE_BYTES ||
+        op == X86_VINST_HOST_FS_REMOVE_FILE ||
+        op == X86_VINST_HOST_FS_CREATE_DIR ||
+        op == X86_VINST_HOST_FS_REMOVE_DIR ||
+        op == X86_VINST_HOST_TIME_MONOTONIC_READ ||
+        op == X86_VINST_HOST_TIME_SYSTEM_READ)
         return 2u;
+    if (op == X86_VINST_HOST_TIME_SLEEP_MS_I32)
+        return 1u;
     if (op == X86_VINST_CALL_MIXED)
         return mixed_scalar_operand_count(row);
     if (op == X86_VINST_HOST_DEALLOC)
@@ -276,6 +294,12 @@ uint operand_count_for_row(uint row)
         return 3u;
     if (op == X86_VINST_HOST_VAR_READ)
         return 4u;
+    if (op == X86_VINST_HOST_FS_RENAME)
+        return 4u;
+    if (op == X86_VINST_HOST_REALLOC)
+        return 4u;
+    if (op == X86_VINST_HOST_ALLOC_FAILED)
+        return 2u;
     if (op == X86_VINST_BINARY ||
         op == X86_VINST_COMPARE ||
         op == X86_VINST_STORE_LOCAL_INDEX ||
@@ -330,12 +354,20 @@ uint operand_at(uint row, uint slot)
         op == X86_VINST_HOST_FS_OPEN_APPEND ||
         op == X86_VINST_HOST_STDIN_READ ||
         op == X86_VINST_HOST_STDOUT_WRITE ||
-        op == X86_VINST_HOST_STDERR_WRITE)
+        op == X86_VINST_HOST_STDERR_WRITE ||
+        op == X86_VINST_HOST_FILL_SECURE_BYTES ||
+        op == X86_VINST_HOST_FS_REMOVE_FILE ||
+        op == X86_VINST_HOST_FS_CREATE_DIR ||
+        op == X86_VINST_HOST_FS_REMOVE_DIR ||
+        op == X86_VINST_HOST_TIME_MONOTONIC_READ ||
+        op == X86_VINST_HOST_TIME_SYSTEM_READ)
     {
         if (slot == 0u) return args.x;
         if (slot == 1u) return args.y;
         return INVALID;
     }
+    if (op == X86_VINST_HOST_TIME_SLEEP_MS_I32)
+        return slot == 0u ? args.x : INVALID;
     if (op == X86_VINST_HOST_DEALLOC)
     {
         if (slot == 0u) return args.x;
@@ -371,6 +403,28 @@ uint operand_at(uint row, uint slot)
         if (slot == 1u) return args.y;
         if (slot == 2u) return args.z;
         if (slot == 3u) return args.w;
+        return INVALID;
+    }
+    if (op == X86_VINST_HOST_FS_RENAME)
+    {
+        if (slot == 0u) return args.x;
+        if (slot == 1u) return args.y;
+        if (slot == 2u) return args.z;
+        if (slot == 3u) return args.w;
+        return INVALID;
+    }
+    if (op == X86_VINST_HOST_REALLOC)
+    {
+        if (slot == 0u) return args.x;
+        if (slot == 1u) return args.y;
+        if (slot == 2u) return args.z;
+        if (slot == 3u) return args.w;
+        return INVALID;
+    }
+    if (op == X86_VINST_HOST_ALLOC_FAILED)
+    {
+        if (slot == 0u) return args.x;
+        if (slot == 1u) return args.y;
         return INVALID;
     }
     if (op == X86_VINST_ALIAS ||

@@ -38,6 +38,7 @@ RWStructuredBuffer<uint> hir_method_name_token;
 RWStructuredBuffer<uint> hir_method_first_param_token;
 RWStructuredBuffer<uint> hir_method_receiver_mode;
 RWStructuredBuffer<uint> hir_method_visibility;
+RWStructuredBuffer<uint> hir_method_signature_flags;
 RWStructuredBuffer<uint> hir_method_impl_receiver_type_node;
 
 static const uint INVALID = 0xffffffffu;
@@ -58,6 +59,7 @@ static const uint TK_SELF_VALUE = 105u;
 
 static const uint METHOD_VIS_PRIVATE = 0u;
 static const uint METHOD_VIS_PUBLIC = 1u;
+static const uint METHOD_SIGNATURE_INHERENT_IMPL = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -236,6 +238,11 @@ void publish_method_function(uint fn_node)
     hir_method_impl_node[fn_node] = impl_node;
     hir_method_name_token[fn_node] = name_token;
     hir_method_visibility[fn_node] = method_visibility_for_fn(fn_node);
+    if (node_kind[impl_node] == PROD_IMPL_INHERENT)
+        atomic_u32_or(
+            hir_method_signature_flags,
+            fn_node,
+            METHOD_SIGNATURE_INHERENT_IMPL);
 
     uint method_end = hir_token_end[fn_node];
     if (method_end != INVALID)
@@ -277,7 +284,10 @@ void publish_method_first_param(uint param_node)
 
 void publish_impl_receiver_type(uint type_node)
 {
-    uint impl_node = nearest_impl_owner(type_node);
+    // Only type records directly owned by the impl header may define its
+    // receiver. Method parameter/return/body types share the same nearest impl
+    // owner but are not receiver candidates.
+    uint impl_node = parent_node(type_node);
     uint prod = valid_node(impl_node) ? node_kind[impl_node] : INVALID;
 
     if (prod == PROD_IMPL_INHERENT)

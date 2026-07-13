@@ -6,6 +6,7 @@
 
 import fixed.key;
 import generated_parse_production_ids;
+import hir_expr_semantics;
 import range_query;
 import status;
 
@@ -275,21 +276,6 @@ uint visible_type_for_token(uint token_i)
     return call_return_type[token_i];
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint call_callee_token(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -318,7 +304,7 @@ uint direct_node_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -335,7 +321,7 @@ uint direct_node_type(uint node)
         return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
     }
 
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR || node_kind[node] == PROD_STRUCT_LIT)
+    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
     {
         uint head_node = hir_struct_lit_head_node[node];
         if (!valid_node(head_node))

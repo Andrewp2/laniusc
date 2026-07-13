@@ -1,6 +1,4 @@
 // Source-level randomness host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind entropy.
 
 module std::random;
 
@@ -12,8 +10,9 @@ pub type RandomOperationResult = i32;
 
 pub const RANDOM_RUNTIME_ABI_VERSION: RandomRuntimeAbiVersion = 1;
 pub const RANDOM_SERVICE_ID: RandomServiceId = 9;
+pub const RANDOM_SERVICE_STATUS_AVAILABLE: RandomServiceStatus = 2;
 pub const RANDOM_SERVICE_STATUS_UNAVAILABLE: RandomServiceStatus = 1;
-pub const RANDOM_HAS_RUNTIME_BINDING: RandomCapability = false;
+pub const RANDOM_HAS_RUNTIME_BINDING: RandomCapability = true;
 pub const RANDOM_SECURE_U32_HAS_RUNTIME_BINDING: RandomCapability = true;
 pub const RANDOM_OPERATION_OK: RandomOperationResult = 0;
 pub const RANDOM_OPERATION_UNAVAILABLE: RandomOperationResult = -1;
@@ -35,7 +34,7 @@ pub fn random_contract_metadata_is_available() -> RandomCapability {
 }
 
 pub fn random_service_status() -> RandomServiceStatus {
-    return RANDOM_SERVICE_STATUS_UNAVAILABLE;
+    return RANDOM_SERVICE_STATUS_AVAILABLE;
 }
 
 pub fn random_is_available() -> RandomCapability {

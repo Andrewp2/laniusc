@@ -4,12 +4,16 @@ array_return_helpers	array_return_helpers.stdout	0	-	-	array returns and helper 
 array_sum	array_sum.stdout	0	-	-	array indexing and repeated accumulation	x86_64,wasm	checked by sample_programs target tests
 bitwise_ops	bitwise_ops.stdout	0	-	-	bitwise integer operators	x86_64,wasm	checked by sample_programs target tests
 bool_branch	bool_branch.stdout	0	-	-	boolean branch control	x86_64,wasm	checked by sample_programs target tests
+allocator_failure	allocator_failure.stdout	1	-	-	non-returning allocation failure exits through the host ABI	x86_64,wasm	checked by sample_programs target tests
+allocator_realloc	allocator_realloc.stdout	0	-	-	reallocation preserves existing bytes across growth	x86_64,wasm	checked by sample_programs target tests
 checkout_fee	checkout_fee.stdout	0	-	-	small external-user function call	x86_64,wasm	checked by sample_programs target tests
+clock_exact	clock_exact.stdout	0	-	-	exact timespec clock reads and bounded millisecond sleep	x86_64,wasm	checked by sample_programs target tests
 comparison_else_matrix	comparison_else_matrix.stdout	0	-	-	comparison branches with else paths	x86_64,wasm	checked by sample_programs target tests
 comparison_matrix	comparison_matrix.stdout	0	-	-	comparison operator matrix	x86_64,wasm	checked by sample_programs target tests
 compound_assignments	compound_assignments.stdout	0	-	-	compound assignment operators	x86_64,wasm	checked by sample_programs target tests
 factorial_loop	factorial_loop.stdout	0	-	-	repeated factorial arithmetic	x86_64,wasm	checked by sample_programs target tests
 factorial_recursive	factorial_recursive.stdout	0	-	-	recursive function call	x86_64,wasm	checked by sample_programs target tests
+filesystem_mutations	filesystem_mutations.stdout	0	-	-	filesystem path creation rename and removal	x86_64,wasm	checked by sample_programs target tests
 fibonacci_loop	fibonacci_loop.stdout	0	-	-	repeated fibonacci values	x86_64,wasm	checked by sample_programs target tests
 grid_distance_checksum	grid_distance_checksum.stdout	0	-	-	integer grid distance checksum exit status	x86_64,wasm	checked by sample_programs target tests
 host_runtime_files	host_runtime_files.stdout	0	-	-	filesystem host API smoke	x86_64,wasm	checked by sample_programs target tests
@@ -23,9 +27,12 @@ nested_blocks_shadowing	nested_blocks_shadowing.stdout	0	-	-	nested scopes and s
 numeric_range_sum	numeric_range_sum.stdout	0	-	-	numeric range accumulation	x86_64,wasm	checked by sample_programs target tests
 option_result_helpers	option_result_helpers.stdout	0	-	-	core option and result helpers	-	documentation-smoke only; not backend or conformance evidence
 process_exit_status	process_exit_status.stdout	7	-	-	nonzero process exit status	x86_64,wasm	checked by sample_programs target tests
+random_fill	random_fill.stdout	0	-	-	secure random byte filling	x86_64,wasm	checked by sample_programs target tests
+process_exit	process_exit.stdout	7	-	-	non-returning process exit from a nested helper	x86_64,wasm	checked by sample_programs target tests
 range_sum	range_sum.stdout	0	-	-	range iteration helper surface	x86_64,wasm	checked by sample_programs target tests
 raytracer_ppm	raytracer_ppm.stdout	0	render_settings.txt=raytracer_ppm.render_settings.txt	lanius_ray.ppm=raytracer_ppm.expected.ppm	PPM raytracer file output	x86_64,wasm	checked by sample_programs target tests
 slice_helpers	slice_helpers.stdout	0	-	-	slice helper surface	-	documentation-smoke only; not backend or conformance evidence
+stdio_flush	stdio_flush.stdout	0	-	-	stdlib synchronous flush operations	x86_64,wasm	checked by sample_programs target tests
 stdio_print_i32	stdio_print_i32.stdout	0	-	-	stdlib stdout integer wrapper	x86_64,wasm	checked by sample_programs target tests
 struct_fields	struct_fields.stdout	0	-	-	struct fields and access	x86_64,wasm	checked by sample_programs target tests
 top_level_script	top_level_script.stdout	0	-	-	top-level script entry behavior	x86_64,wasm	checked by sample_programs target tests

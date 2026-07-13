@@ -18,11 +18,18 @@ impl HirPathSegmentStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_schedule: &wgpu::Buffer,
     ) -> Result<()> {
         let steps = pointer_jump_steps(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step % 2 == 0,
+                dispatch_schedule,
+                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
+            )?;
         }
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
@@ -53,7 +60,8 @@ impl HirPathSegmentStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_a: bool,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_schedule: &wgpu::Buffer,
+        dispatch_offset: u64,
     ) -> Result<()> {
         let (owner_in, link_in, rank_in, owner_out, link_out, rank_out) = if read_a {
             (
@@ -120,12 +128,13 @@ impl HirPathSegmentStepPass {
             0,
             &resources,
         )?;
-        crate::gpu::passes_core::record_or_defer_compute_indirect(
+        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
             encoder,
             &self.data,
             &group,
             "hir_path_segment_step",
-            dispatch_args,
+            dispatch_schedule,
+            dispatch_offset,
         );
         Ok(())
     }

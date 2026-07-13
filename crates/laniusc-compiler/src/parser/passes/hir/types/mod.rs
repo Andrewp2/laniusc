@@ -6,3 +6,5 @@ pub mod arg;
 pub mod fields;
 /// Type path leaf ownership passes.
 pub mod path;
+/// Topmost type-expression root ownership.
+pub mod root;

@@ -6,7 +6,6 @@
 // matching parentheses/commas in token ranges, or walking child lists.
 
 import gpu_index;
-import generated_parse_production_ids;
 import status;
 
 struct Params
@@ -19,11 +18,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_callee_path_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
@@ -90,11 +89,8 @@ static const uint CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE = 0xffffff03u;
 static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 static const uint METHOD_SIGNATURE_HAS_WHERE = 2u;
 
-static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_PATH_EXPR = 33u;
 
 static const uint METHOD_RECEIVER_NONE = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
@@ -314,24 +310,12 @@ uint path_id_for_callee_node(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-
-    if (hir_kind[callee_node] == HIR_PATH_EXPR || hir_kind[callee_node] == HIR_TYPE)
-    {
-        uint path_i = path_id_by_owner_hir[callee_node];
-        return valid_path(path_i) ? path_i : INVALID;
-    }
-
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
-        {
-            uint path_i = path_id_by_owner_hir[child];
-            return valid_path(path_i) ? path_i : INVALID;
-        }
-    }
-
-    return INVALID;
+    uint call_node = hir_call_parent_by_callee[callee_node];
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+    uint path_node = hir_call_callee_path_node[call_node];
+    uint path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+    return valid_path(path_i) ? path_i : INVALID;
 }
 
 uint path_leaf_token(uint path_i)
@@ -492,19 +476,10 @@ uint call_node_for_member_node(uint member_node)
     if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
         return INVALID;
 
-    uint owner = parent[member_node];
-    if (valid_node(owner) &&
-        hir_kind[owner] == HIR_CALL_EXPR &&
-        hir_call_callee_node[owner] == member_node)
-        return owner;
-
-    uint child = first_child[member_node];
-    if (valid_node(child) &&
-        hir_kind[child] == HIR_CALL_EXPR &&
-        hir_call_callee_node[child] == member_node)
-        return child;
-
-    return INVALID;
+    uint call_node = hir_call_parent_by_callee[member_node];
+    return valid_node(call_node) && hir_kind[call_node] == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
 }
 
 uint call_node_for_method_member(uint method_i, uint member_node)

@@ -21,8 +21,11 @@ mod module_path;
 mod params;
 mod pass_loaders;
 mod preflight;
+pub(crate) use preflight::{RecordedModuleRecordCapacity, TypeCheckPreflightCapacities};
 mod record;
 mod resident;
+mod semantic_interface;
+pub use semantic_interface::RecordedSemanticInterfaceIdentity;
 mod util;
 
 use anyhow::Result;
@@ -176,6 +179,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub type_arg_next: &'a wgpu::Buffer,
     pub type_arg_owner: &'a wgpu::Buffer,
     pub type_arg_rank: &'a wgpu::Buffer,
+    pub type_root_owner: &'a wgpu::Buffer,
     pub type_alias_target_node: &'a wgpu::Buffer,
     pub fn_return_type_node: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
@@ -189,6 +193,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub method_signature_flags: &'a wgpu::Buffer,
     pub method_impl_receiver_type_node: &'a wgpu::Buffer,
     pub expr_record: &'a wgpu::Buffer,
+    pub expr_name_role: &'a wgpu::Buffer,
     pub expr_result_node: &'a wgpu::Buffer,
     pub expr_result_root_node: &'a wgpu::Buffer,
     pub expr_int_value: &'a wgpu::Buffer,
@@ -216,6 +221,8 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub file_id: &'a wgpu::Buffer,
     pub import_target_kind: &'a wgpu::Buffer,
     pub call_callee_node: &'a wgpu::Buffer,
+    pub call_callee_path_node: &'a wgpu::Buffer,
+    pub call_parent_by_callee: &'a wgpu::Buffer,
     pub call_context_stmt_node: &'a wgpu::Buffer,
     pub call_arg_start: &'a wgpu::Buffer,
     pub call_arg_end: &'a wgpu::Buffer,
@@ -231,6 +238,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub match_arm_count: &'a wgpu::Buffer,
     pub match_arm_next: &'a wgpu::Buffer,
     pub match_arm_pattern_node: &'a wgpu::Buffer,
+    pub match_pattern_owner_arm: &'a wgpu::Buffer,
     pub match_arm_payload_start: &'a wgpu::Buffer,
     pub match_arm_payload_count: &'a wgpu::Buffer,
     pub match_arm_result_node: &'a wgpu::Buffer,
@@ -424,17 +432,24 @@ struct ResidentTypeCheckCacheKey {
     module_record_capacity: u32,
     call_param_row_capacity: u32,
     call_arg_row_capacity: u32,
+    parser_feature_flags: u32,
     input_fingerprint: u64,
     uses_hir_items: bool,
 }
 
 struct TypeCheckPasses {
+    interface_public_decls_clear: PassData,
+    interface_public_decls_map: PassData,
+    interface_identity_sizes: PassData,
+    interface_identity_records: PassData,
+    interface_identity_bytes: PassData,
     hir_active_dispatch_args: PassData,
     semantic_features_collect: PassData,
     semantic_features_dispatch_args: PassData,
     names_mark_lexemes: PassData,
     counted_scan_local: PassData,
-    counted_scan_blocks: PassData,
+    counted_scan_hierarchy_up: PassData,
+    counted_scan_hierarchy_down: PassData,
     counted_scan_apply: PassData,
     count_dispatch_args: PassData,
     count_pair_max_dispatch_args: PassData,
@@ -553,6 +568,7 @@ struct TypeCheckPasses {
     predicates_sort_keys_scatter: PassData,
     predicates_build_method_owner_ranges: PassData,
     predicates_emit_method_validation_rows: PassData,
+    predicates_validate_method_type_arg_rows: PassData,
     predicates_reduce_method_validation_errors: PassData,
     predicates_apply_method_validation_errors: PassData,
     predicates_obligations: PassData,
@@ -618,12 +634,14 @@ struct TypeCheckPasses {
     fn_context_clear: PassData,
     fn_context_mark: PassData,
     fn_context_local: PassData,
-    fn_context_scan: PassData,
+    fn_context_hierarchy_up: PassData,
+    fn_context_hierarchy_down: PassData,
     fn_context_apply: PassData,
     loop_depth_clear: PassData,
     loop_depth_mark: PassData,
     loop_depth_local: PassData,
-    loop_depth_scan: PassData,
+    loop_depth_hierarchy_up: PassData,
+    loop_depth_hierarchy_down: PassData,
     loop_depth_apply: PassData,
 }
 
@@ -646,6 +664,7 @@ struct ResidentTypeCheckState {
     name_scan_prefix_b: LaniusBuffer<u32>,
     name_scan_total: LaniusBuffer<u32>,
     name_spans: LaniusBuffer<u32>,
+    language_symbol_bytes: LaniusBuffer<u8>,
     name_order_in: LaniusBuffer<u32>,
     name_order_tmp: LaniusBuffer<u32>,
     name_id_by_token: LaniusBuffer<u32>,
@@ -985,9 +1004,7 @@ struct ResidentTypeCheckState {
     name_bind_groups: NameBindGroups,
     language_name_bind_groups: LanguageNameBindGroups,
     loop_params: LaniusBuffer<LoopDepthParams>,
-    loop_scan_steps: Vec<LoopDepthScanStep>,
     fn_params: LaniusBuffer<FnContextParams>,
-    fn_scan_steps: Vec<FnContextScanStep>,
     loop_bind_groups: LoopDepthBindGroups,
     fn_context_bind_groups: FnContextBindGroups,
     visible_bind_groups: VisibleBindGroups,
@@ -1017,6 +1034,7 @@ impl ResidentTypeCheckState {
             && self.cache_key.module_record_capacity >= key.module_record_capacity
             && self.cache_key.call_param_row_capacity >= key.call_param_row_capacity
             && self.cache_key.call_arg_row_capacity >= key.call_arg_row_capacity
+            && self.cache_key.parser_feature_flags == key.parser_feature_flags
             && self.cache_key.input_fingerprint == key.input_fingerprint
             && self.cache_key.uses_hir_items == key.uses_hir_items
     }
@@ -1108,6 +1126,36 @@ pub struct GpuCodegenBuffers<'a> {
     pub struct_init_field_ordinal: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
     pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
+}
+
+/// Borrowed GPU tables required to canonicalize a bounded unit's public
+/// semantic interface. Source bytes and parser-owned signature/member tables
+/// are supplied separately by the compiler orchestration layer.
+#[derive(Clone, Copy)]
+pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
+    pub name_count_out: &'a wgpu::Buffer,
+    pub name_spans: &'a wgpu::Buffer,
+    pub name_hash_lo: &'a wgpu::Buffer,
+    pub name_hash_hi: &'a wgpu::Buffer,
+    pub language_symbol_bytes: &'a wgpu::Buffer,
+    pub module_count_out: &'a wgpu::Buffer,
+    pub module_key_segment_count: &'a wgpu::Buffer,
+    pub module_key_segment_base: &'a wgpu::Buffer,
+    pub module_key_segment_name_id: &'a wgpu::Buffer,
+    pub decl_count_out: &'a wgpu::Buffer,
+    pub decl_module_id: &'a wgpu::Buffer,
+    pub decl_name_id: &'a wgpu::Buffer,
+    pub decl_kind: &'a wgpu::Buffer,
+    pub decl_namespace: &'a wgpu::Buffer,
+    pub decl_visibility: &'a wgpu::Buffer,
+    pub decl_parent_type_decl: &'a wgpu::Buffer,
+    pub public_decl_count: &'a wgpu::Buffer,
+    pub public_decl_local_id: &'a wgpu::Buffer,
+    pub public_decl_index_by_local: &'a wgpu::Buffer,
+    pub decl_type_ref_tag: &'a wgpu::Buffer,
+    pub decl_type_ref_payload: &'a wgpu::Buffer,
+    pub fn_return_ref_tag: &'a wgpu::Buffer,
+    pub fn_return_ref_payload: &'a wgpu::Buffer,
 }
 
 /// Owned copy of generic backend semantic metadata produced by type checking.

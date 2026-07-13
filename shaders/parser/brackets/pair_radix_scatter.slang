@@ -25,7 +25,11 @@ static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint RADIX_BUCKETS = 256u;
 static const uint SMALL_PAIR_CAPACITY = 2048u;
-groupshared uint local_radix_keys[256];
+static const uint WG_SIZE = 256u;
+static const uint VIRTUAL_WARP_SIZE = 32u;
+static const uint VIRTUAL_WARP_COUNT = WG_SIZE / VIRTUAL_WARP_SIZE;
+groupshared uint local_radix_warp_pop[VIRTUAL_WARP_COUNT][RADIX_BUCKETS];
+groupshared uint local_radix_digits[WG_SIZE];
 
 uint pair_active_count()
 {
@@ -38,15 +42,38 @@ uint pair_key(uint row)
     return layer[row] * 2u + kind;
 }
 
-public struct PairScatterSource : IStableRadixScatterSource<uint>
+uint stable_local_rank(uint lane, uint key, bool active)
 {
-    public static uint active_count() { return pair_active_count(); }
-    public static uint inactive_value() { return INVALID; }
-    public static uint ordered_value(uint order_i) { return order_in[order_i]; }
-    public static uint radix_key(uint value, uint key_step)
+    // This is the proven layout used by the renderer radix sort in
+    // ~/code/game: each lane clears one bucket for all eight virtual warps,
+    // then active lanes atomically publish their per-warp digit population.
+    [unroll]
+    for (uint warp = 0u; warp < VIRTUAL_WARP_COUNT; warp += 1u)
+        local_radix_warp_pop[warp][lane] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    uint virtual_warp = lane / VIRTUAL_WARP_SIZE;
+    uint warp_lane = lane & (VIRTUAL_WARP_SIZE - 1u);
+    if (active)
     {
-        return radix_byte_key(pair_key(value), key_step);
+        uint prior = 0u;
+        InterlockedAdd(local_radix_warp_pop[virtual_warp][key], 1u, prior);
     }
+    local_radix_digits[lane] = active ? key : INVALID;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (!active)
+        return 0u;
+    uint rank_in_warp = 0u;
+    uint warp_base = virtual_warp * VIRTUAL_WARP_SIZE;
+    for (uint prior_lane = 0u; prior_lane < warp_lane; prior_lane += 1u)
+        rank_in_warp += uint(local_radix_digits[warp_base + prior_lane] == key);
+
+    uint rank_in_prior_warps = 0u;
+    [unroll]
+    for (uint warp = 0u; warp < virtual_warp; warp += 1u)
+        rank_in_prior_warps += local_radix_warp_pop[warp][key];
+    return rank_in_prior_warps + rank_in_warp;
 }
 
 public struct PairOrderSink : IScatterSink<uint>
@@ -80,13 +107,21 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         }
         return;
     }
-    stable_radix_scatter_block<uint, PairScatterSource, PairOrderSink, 256>(
-        linear_group_id_2d(gid, MAX_GROUPS_X),
-        ltid.x,
-        gParams.n_blocks,
-        gParams.key_step,
-        RADIX_BUCKETS,
-        radix_bucket_base,
-        radix_block_bucket_prefix,
-        local_radix_keys);
+    uint block_idx = linear_group_id_2d(gid, MAX_GROUPS_X);
+    if (block_idx >= gParams.n_blocks)
+        return;
+    uint order_i = block_idx * WG_SIZE + ltid.x;
+    bool active = order_i < n;
+    uint value = active ? order_in[order_i] : INVALID;
+    uint key = active ? radix_byte_key(pair_key(value), gParams.key_step) : INVALID;
+    uint local_rank = stable_local_rank(ltid.x, key, active);
+    if (!active)
+        return;
+
+    uint prefix_slot = radix_block_bucket_slot(block_idx, key, RADIX_BUCKETS);
+    uint dst = stable_radix_dst(
+        radix_bucket_base[key],
+        radix_block_bucket_prefix[prefix_slot],
+        local_rank);
+    scatter_emit<uint, PairOrderSink>(dst, n, value);
 }

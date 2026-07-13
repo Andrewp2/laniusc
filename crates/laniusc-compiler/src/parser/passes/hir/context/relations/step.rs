@@ -25,11 +25,18 @@ impl HirContextRelationsStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_schedule: &wgpu::Buffer,
     ) -> Result<()> {
         let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step % 2 == 0,
+                dispatch_schedule,
+                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
+            )?;
         }
 
         if steps % 2 == 1 {
@@ -82,7 +89,8 @@ impl HirContextRelationsStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_from_a: bool,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_schedule: &wgpu::Buffer,
+        dispatch_offset: u64,
     ) -> Result<()> {
         let (link_in, value_in, link_out, value_out) = if read_from_a {
             (
@@ -258,12 +266,13 @@ impl HirContextRelationsStepPass {
             &resources,
         )?;
 
-        crate::gpu::passes_core::record_or_defer_compute_indirect(
+        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
             encoder,
             &self.data,
             &bind_group,
             "hir_context_relations_step",
-            dispatch_args,
+            dispatch_schedule,
+            dispatch_offset,
         );
         Ok(())
     }

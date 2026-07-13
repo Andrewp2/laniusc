@@ -55,7 +55,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_NAME_RADIX_BYTES = 64u;
 static const uint ERR_NAME_LIMIT = 11u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 
 static const uint NAME_KIND_NONE = 0u;
 static const uint NAME_KIND_IDENTIFIER = 1u;

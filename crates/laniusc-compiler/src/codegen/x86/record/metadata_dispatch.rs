@@ -7,7 +7,7 @@ use super::{
             UniformBindingArray,
             copy_x86_buffer_to_buffer,
             dispatch_compute_pass_indirect,
-            dispatch_compute_pass_indirect_bind_group_steps,
+            dispatch_compute_pass_indirect_bind_group_scheduled_steps,
             dispatch_compute_pass_indirect_ping_pong_scan_steps,
             dispatch_x86_stage,
             dispatch_x86_stage_indirect,
@@ -28,17 +28,14 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) match_record_rows: usize,
     pub(super) has_match: bool,
     pub(super) needs_enclosing_return_records: bool,
-    pub(super) node_func_owner_needs_copyback: bool,
     pub(super) enclosing_let_needs_copyback: bool,
     pub(super) match_pattern_owner_needs_copyback: bool,
     pub(super) active_hir_dispatch_args_buf: &'a wgpu::Buffer,
+    pub(super) pointer_jump_dispatch_args_buf: &'a wgpu::Buffer,
     pub(super) hir_count: &'a wgpu::Buffer,
     pub(super) hir_plus_one: &'a wgpu::Buffer,
     pub(super) hir_scan_block: &'a wgpu::Buffer,
-    pub(super) func_owner_scan_params_buf: &'a UniformBindingArray,
     pub(super) node_inst_scan_params_buf: &'a UniformBindingArray,
-    pub(super) node_func_owner_b_buf: &'a wgpu::Buffer,
-    pub(super) node_func_buf: &'a wgpu::Buffer,
     pub(super) expr_resolved_step_final_buf: &'a wgpu::Buffer,
     pub(super) expr_resolved_final_buf: &'a wgpu::Buffer,
     pub(super) match_result_owner_step_final_buf: &'a wgpu::Buffer,
@@ -62,10 +59,6 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) active_scan_dispatch_args_bind_group: &'a wgpu::BindGroup,
     pub(super) node_tree_info_bind_group: &'a wgpu::BindGroup,
     pub(super) func_bind_group: &'a wgpu::BindGroup,
-    pub(super) func_owner_scan_local_bind_group: &'a wgpu::BindGroup,
-    pub(super) func_owner_scan_block_bind_groups: &'a [wgpu::BindGroup],
-    pub(super) func_assign_nodes_bind_group: &'a wgpu::BindGroup,
-    pub(super) func_assign_nodes_step_bind_groups: &'a [wgpu::BindGroup],
     pub(super) func_slot_flags_bind_group: &'a wgpu::BindGroup,
     pub(super) func_slot_scatter_bind_group: &'a wgpu::BindGroup,
     pub(super) expr_resolve_init_bind_group: &'a wgpu::BindGroup,
@@ -120,17 +113,14 @@ pub(super) fn record_metadata_and_call_dispatches(
         match_record_rows,
         has_match,
         needs_enclosing_return_records,
-        node_func_owner_needs_copyback,
         enclosing_let_needs_copyback,
         match_pattern_owner_needs_copyback,
         active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
         hir_count,
         hir_plus_one,
         hir_scan_block,
-        func_owner_scan_params_buf,
         node_inst_scan_params_buf,
-        node_func_owner_b_buf,
-        node_func_buf,
         expr_resolved_step_final_buf,
         expr_resolved_final_buf,
         match_result_owner_step_final_buf,
@@ -154,10 +144,6 @@ pub(super) fn record_metadata_and_call_dispatches(
         active_scan_dispatch_args_bind_group,
         node_tree_info_bind_group,
         func_bind_group,
-        func_owner_scan_local_bind_group,
-        func_owner_scan_block_bind_groups,
-        func_assign_nodes_bind_group,
-        func_assign_nodes_step_bind_groups,
         func_slot_flags_bind_group,
         func_slot_scatter_bind_group,
         expr_resolve_init_bind_group,
@@ -222,47 +208,6 @@ pub(super) fn record_metadata_and_call_dispatches(
         ],
         active_hir_dispatch_args_buf,
     );
-    dispatch_x86_stage_indirect(
-        encoder,
-        "func_owner_scan_local",
-        &generator.func_owner_scan_local_pass,
-        func_owner_scan_local_bind_group,
-        active_hir_dispatch_args_buf,
-    );
-    dispatch_compute_pass_indirect_ping_pong_scan_steps(
-        encoder,
-        "func_owner_scan_blocks",
-        "codegen.x86.func_owner_scan_blocks",
-        &generator.func_owner_scan_blocks_pass,
-        func_owner_scan_block_bind_groups,
-        func_owner_scan_params_buf,
-        hir_scan_block,
-    );
-    dispatch_x86_stage_indirect(
-        encoder,
-        "func_assign_nodes",
-        &generator.func_assign_nodes_pass,
-        func_assign_nodes_bind_group,
-        active_hir_dispatch_args_buf,
-    );
-    dispatch_compute_pass_indirect_bind_group_steps(
-        encoder,
-        "func_assign_nodes_step",
-        "codegen.x86.func_assign_nodes_step",
-        &generator.func_assign_nodes_step_pass,
-        func_assign_nodes_step_bind_groups,
-        active_hir_dispatch_args_buf,
-    );
-    if node_func_owner_needs_copyback {
-        copy_x86_buffer_to_buffer(
-            encoder,
-            node_func_owner_b_buf,
-            0,
-            node_func_buf,
-            0,
-            (hir_words * 4) as u64,
-        );
-    }
     dispatch_x86_stages_indirect(
         encoder,
         &[
@@ -303,13 +248,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         expr_resolve_init_bind_group,
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "expr_resolve_step",
         "codegen.x86.expr_resolve_step",
         &generator.expr_resolve_step_pass,
         expr_resolve_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     copy_x86_buffer_to_buffer(
         encoder,
@@ -344,13 +289,13 @@ pub(super) fn record_metadata_and_call_dispatches(
             enclosing_return_init_bind_group,
             active_hir_dispatch_args_buf,
         );
-        dispatch_compute_pass_indirect_bind_group_steps(
+        dispatch_compute_pass_indirect_bind_group_scheduled_steps(
             encoder,
             "enclosing_return_step",
             "codegen.x86.enclosing_return_step",
             &generator.enclosing_return_step_pass,
             enclosing_return_step_bind_groups,
-            active_hir_dispatch_args_buf,
+            pointer_jump_dispatch_args_buf,
         );
     }
     dispatch_x86_stages_indirect(
@@ -369,13 +314,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         ],
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "match_result_owner_step",
         "codegen.x86.match_result_owner_step",
         &generator.match_result_owner_step_pass,
         match_result_owner_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     copy_x86_buffer_to_buffer(
         encoder,
@@ -393,13 +338,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         enclosing_let_init_bind_group,
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "enclosing_let_step",
         "codegen.x86.enclosing_let_step",
         &generator.enclosing_let_step_pass,
         enclosing_let_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     if enclosing_let_needs_copyback {
         copy_x86_buffer_to_buffer(
@@ -428,13 +373,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         ],
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "match_pattern_owner_step",
         "codegen.x86.match_pattern_owner_step",
         &generator.match_pattern_owner_step_pass,
         match_pattern_owner_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     if match_pattern_owner_needs_copyback {
         copy_x86_buffer_to_buffer(
@@ -605,13 +550,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         enclosing_stmt_init_bind_group,
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "enclosing_stmt_step",
         "codegen.x86.enclosing_stmt_step",
         &generator.enclosing_stmt_step_pass,
         enclosing_stmt_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     stamp_timer(timer, encoder, "x86.metadata.enclosing_stmt.done");
     dispatch_x86_stages_indirect(
@@ -741,13 +686,13 @@ pub(super) fn record_metadata_and_call_dispatches(
         ],
         active_hir_dispatch_args_buf,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "call_callee_owner_step",
         "codegen.x86.call_callee_owner_step",
         &generator.call_callee_owner_step_pass,
         call_callee_owner_step_bind_groups,
-        active_hir_dispatch_args_buf,
+        pointer_jump_dispatch_args_buf,
     );
     copy_x86_buffer_to_buffer(
         encoder,

@@ -35,10 +35,10 @@ pub(super) struct InitialRecordBuffers {
     pub(super) node_tree_status_buf: PooledStorageBuffer,
     pub(super) expr_resolved_final_buf: LaniusBuffer<u32>,
     pub(super) node_func_buf: LaniusBuffer<u32>,
-    pub(super) func_owner_scan_local_prefix_buf: LaniusBuffer<u32>,
-    pub(super) func_owner_scan_block_sum_buf: LaniusBuffer<u32>,
-    pub(super) func_owner_scan_prefix_a_buf: LaniusBuffer<u32>,
-    pub(super) func_owner_scan_prefix_b_buf: LaniusBuffer<u32>,
+    pub(super) node_inst_scan_input_buf: LaniusBuffer<u32>,
+    pub(super) node_inst_scan_block_sum_buf: LaniusBuffer<u32>,
+    pub(super) node_inst_scan_prefix_a_buf: LaniusBuffer<u32>,
+    pub(super) node_inst_scan_prefix_b_buf: LaniusBuffer<u32>,
     pub(super) enum_value_record_rows: usize,
     pub(super) enum_type_record_buf: LaniusBuffer<u32>,
     pub(super) enum_value_record_buf: LaniusBuffer<u32>,
@@ -257,25 +257,25 @@ pub(super) fn create_initial_record_buffers(
         hir_words,
         external_scratch.node_func,
     );
-    let func_owner_scan_local_prefix_buf = external_or_storage_u32_copy(
+    let node_inst_scan_input_buf = external_or_storage_u32_copy(
         device,
-        "codegen.x86.func_owner_scan_local_prefix",
+        "codegen.x86.node_inst_scan_input",
         node_inst_scan_words,
-        external_scratch.func_owner_scan_local_prefix,
+        external_scratch.node_inst_scan_input,
     );
-    let func_owner_scan_block_sum_buf = storage_u32_copy(
+    let node_inst_scan_block_sum_buf = storage_u32_copy(
         device,
-        "codegen.x86.func_owner_scan_block_sum",
+        "codegen.x86.node_inst_scan_block_sum",
         node_inst_scan_blocks,
     );
-    let func_owner_scan_prefix_a_buf = storage_u32_copy(
+    let node_inst_scan_prefix_a_buf = storage_u32_copy(
         device,
-        "codegen.x86.func_owner_scan_prefix_a",
+        "codegen.x86.node_inst_scan_prefix_a",
         node_inst_scan_blocks,
     );
-    let func_owner_scan_prefix_b_buf = storage_u32_copy(
+    let node_inst_scan_prefix_b_buf = storage_u32_copy(
         device,
-        "codegen.x86.func_owner_scan_prefix_b",
+        "codegen.x86.node_inst_scan_prefix_b",
         node_inst_scan_blocks,
     );
     allocation_scope.checkpoint("metadata tree/function buffer allocation")?;
@@ -356,10 +356,10 @@ pub(super) fn create_initial_record_buffers(
         node_tree_status_buf,
         expr_resolved_final_buf,
         node_func_buf,
-        func_owner_scan_local_prefix_buf,
-        func_owner_scan_block_sum_buf,
-        func_owner_scan_prefix_a_buf,
-        func_owner_scan_prefix_b_buf,
+        node_inst_scan_input_buf,
+        node_inst_scan_block_sum_buf,
+        node_inst_scan_prefix_a_buf,
+        node_inst_scan_prefix_b_buf,
         enum_value_record_rows,
         enum_type_record_buf,
         enum_value_record_buf,

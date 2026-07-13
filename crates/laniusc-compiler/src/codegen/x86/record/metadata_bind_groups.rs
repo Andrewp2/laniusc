@@ -5,9 +5,9 @@ use super::{
         GpuX86CodeGenerator,
         GpuX86ExprMetadataBuffers,
         GpuX86FunctionMetadataBuffers,
-        support::{UniformBindingArray, reflected_bind_group},
+        support::reflected_bind_group,
     },
-    bind_helpers::{StepNames, StepPairs, scan_block_groups, step_pair_groups},
+    bind_helpers::{StepNames, StepPairs, step_pair_groups},
 };
 
 /// Bind groups used by x86 dispatch-argument setup passes.
@@ -185,10 +185,6 @@ pub(super) fn create_dispatch_setup_bind_groups(
 pub(super) struct FunctionDiscoveryBindGroups {
     pub(super) node_tree_info: wgpu::BindGroup,
     pub(super) func: wgpu::BindGroup,
-    pub(super) func_owner_scan_local: wgpu::BindGroup,
-    pub(super) func_owner_scan_block: Vec<wgpu::BindGroup>,
-    pub(super) func_assign_nodes: wgpu::BindGroup,
-    pub(super) func_assign_nodes_step: Vec<wgpu::BindGroup>,
     pub(super) func_slot_flags: wgpu::BindGroup,
     pub(super) func_slot_scatter: wgpu::BindGroup,
     pub(super) expr_resolve_init: wgpu::BindGroup,
@@ -211,16 +207,6 @@ pub(super) struct FunctionDiscoveryInputs<'a> {
     pub(super) node_func: &'a wgpu::Buffer,
     pub(super) decl_node_by_token: &'a wgpu::Buffer,
     pub(super) func_slot_by_node: &'a wgpu::Buffer,
-    pub(super) func_owner_scan_params: &'a UniformBindingArray,
-    pub(super) func_owner_scan_local_prefix: &'a wgpu::Buffer,
-    pub(super) func_owner_scan_block_sum: &'a wgpu::Buffer,
-    pub(super) func_owner_scan_prefix_a: &'a wgpu::Buffer,
-    pub(super) func_owner_scan_prefix_b: &'a wgpu::Buffer,
-    pub(super) final_func_owner_scan_prefix: &'a wgpu::Buffer,
-    pub(super) node_func_owner_steps: &'a [u32],
-    pub(super) node_func_owner_link_a: &'a wgpu::Buffer,
-    pub(super) node_func_owner_link_b: &'a wgpu::Buffer,
-    pub(super) node_func_owner_b: &'a wgpu::Buffer,
     pub(super) node_inst_scan_input: &'a wgpu::Buffer,
     pub(super) node_inst_scan_local_prefix: &'a wgpu::Buffer,
     pub(super) final_node_inst_scan_prefix: &'a wgpu::Buffer,
@@ -291,6 +277,10 @@ pub(super) fn create_function_discovery_bind_groups(
                 "fn_entrypoint_tag",
                 inputs.fn_entrypoint_tag.as_entire_binding(),
             ),
+            (
+                "hir_nearest_fn_node",
+                inputs.function_metadata.nearest_fn_node.as_entire_binding(),
+            ),
             ("x86_func_meta", inputs.func_meta.as_entire_binding()),
             ("x86_node_func", inputs.node_func.as_entire_binding()),
             (
@@ -298,119 +288,6 @@ pub(super) fn create_function_discovery_bind_groups(
                 inputs.decl_node_by_token.as_entire_binding(),
             ),
         ],
-    )?;
-    let func_owner_scan_local = reflected_bind_group(
-        device,
-        Some("codegen.x86.func_owner_scan_local.bind_group"),
-        &generator.func_owner_scan_local_pass,
-        0,
-        &[
-            ("gScan", inputs.func_owner_scan_params.binding(0)),
-            ("hir_status", inputs.hir_status.as_entire_binding()),
-            ("hir_kind", inputs.hir_kind.as_entire_binding()),
-            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
-            (
-                "hir_token_pos",
-                inputs.function_metadata.hir_token_pos.as_entire_binding(),
-            ),
-            (
-                "method_decl_param_offset",
-                inputs
-                    .function_metadata
-                    .method_decl_param_offset
-                    .as_entire_binding(),
-            ),
-            (
-                "x86_func_owner_scan_local_prefix",
-                inputs.func_owner_scan_local_prefix.as_entire_binding(),
-            ),
-            (
-                "x86_func_owner_scan_block_sum",
-                inputs.func_owner_scan_block_sum.as_entire_binding(),
-            ),
-        ],
-    )?;
-    let func_owner_scan_block = scan_block_groups(
-        device,
-        [
-            "codegen.x86.func_owner_scan_blocks.even.bind_group",
-            "codegen.x86.func_owner_scan_blocks.odd.bind_group",
-        ],
-        &generator.func_owner_scan_blocks_pass,
-        inputs.func_owner_scan_params,
-        "gFuncOwnerBlockScan",
-        "x86_func_owner_scan_block_sum",
-        "x86_func_owner_scan_block_prefix_in",
-        "x86_func_owner_scan_block_prefix_out",
-        inputs.func_owner_scan_block_sum,
-        inputs.func_owner_scan_prefix_a,
-        inputs.func_owner_scan_prefix_b,
-    )?;
-    let func_assign_nodes = reflected_bind_group(
-        device,
-        Some("codegen.x86.func_assign_nodes.bind_group"),
-        &generator.func_assign_nodes_pass,
-        0,
-        &[
-            ("gParams", inputs.params.as_entire_binding()),
-            ("hir_status", inputs.hir_status.as_entire_binding()),
-            ("hir_kind", inputs.hir_kind.as_entire_binding()),
-            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
-            (
-                "hir_token_pos",
-                inputs.function_metadata.hir_token_pos.as_entire_binding(),
-            ),
-            (
-                "method_decl_param_offset",
-                inputs
-                    .function_metadata
-                    .method_decl_param_offset
-                    .as_entire_binding(),
-            ),
-            ("x86_tree_parent", inputs.parent.as_entire_binding()),
-            (
-                "x86_tree_subtree_end",
-                inputs.subtree_end.as_entire_binding(),
-            ),
-            (
-                "x86_node_tree_status",
-                inputs.node_tree_status.as_entire_binding(),
-            ),
-            (
-                "x86_func_owner_scan_local_prefix",
-                inputs.func_owner_scan_local_prefix.as_entire_binding(),
-            ),
-            (
-                "x86_func_owner_scan_block_prefix",
-                inputs.final_func_owner_scan_prefix.as_entire_binding(),
-            ),
-            ("x86_node_func", inputs.node_func.as_entire_binding()),
-            (
-                "x86_func_owner_link",
-                inputs.node_func_owner_link_a.as_entire_binding(),
-            ),
-        ],
-    )?;
-    let func_assign_nodes_step = step_pair_groups(
-        device,
-        "codegen.x86.func_assign_nodes_step.bind_group",
-        &generator.func_assign_nodes_step_pass,
-        inputs.node_func_owner_steps,
-        inputs.params,
-        inputs.hir_status,
-        &[("x86_node_tree_status", inputs.node_tree_status)],
-        StepNames {
-            first_in: "x86_func_owner_link_in",
-            second_in: "x86_node_func_in",
-            first_out: "x86_func_owner_link_out",
-            second_out: "x86_node_func_out",
-        },
-        StepPairs {
-            first_a: inputs.node_func_owner_link_a,
-            first_b: inputs.node_func_owner_link_b,
-            second_a: inputs.node_func,
-            second_b: inputs.node_func_owner_b,
-        },
     )?;
     let func_slot_flags = reflected_bind_group(
         device,
@@ -517,10 +394,6 @@ pub(super) fn create_function_discovery_bind_groups(
     Ok(FunctionDiscoveryBindGroups {
         node_tree_info,
         func,
-        func_owner_scan_local,
-        func_owner_scan_block,
-        func_assign_nodes,
-        func_assign_nodes_step,
         func_slot_flags,
         func_slot_scatter,
         expr_resolve_init,

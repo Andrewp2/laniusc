@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{PassData, bind_group},
     parser::buffers::ParserBuffers,
 };
 
@@ -25,31 +25,18 @@ impl HirExprResultRootStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
-    }
-
-    /// Records expression result-root propagation steps with direct dispatch.
-    pub fn record_steps(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, None)
-    }
-
-    fn record_steps_inner(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_schedule: &wgpu::Buffer,
     ) -> Result<()> {
         let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step % 2 == 0,
+                dispatch_schedule,
+                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
+            )?;
         }
 
         if steps % 2 == 1 {
@@ -73,7 +60,8 @@ impl HirExprResultRootStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_from_root: bool,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_schedule: &wgpu::Buffer,
+        dispatch_offset: u64,
     ) -> Result<()> {
         let (root_in, root_out) = if read_from_root {
             (
@@ -119,29 +107,14 @@ impl HirExprResultRootStepPass {
             &resources,
         )?;
 
-        if let Some(dispatch_args) = dispatch_args {
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
-                encoder,
-                &self.data,
-                &bind_group,
-                "hir_expr_result_root_step",
-                dispatch_args,
-            );
-        } else {
-            let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let groups = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(buffers.tree_capacity),
-                [tgsx, tgsy, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder,
-                &self.data,
-                &bind_group,
-                "hir_expr_result_root_step",
-                groups,
-            );
-        }
+        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+            encoder,
+            &self.data,
+            &bind_group,
+            "hir_expr_result_root_step",
+            dispatch_schedule,
+            dispatch_offset,
+        );
         Ok(())
     }
 }

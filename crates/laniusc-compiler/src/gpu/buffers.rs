@@ -1,4 +1,48 @@
-use std::ops::Deref;
+use std::{
+    ops::Deref,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+
+static LIVE_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
+
+/// Process-wide logical allocation totals for live buffers created through
+/// Lanius's typed GPU-buffer helpers. Cloning a buffer handle does not count as
+/// a new allocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrackedBufferAllocationStats {
+    pub allocations: u64,
+    pub bytes: u64,
+}
+
+pub fn tracked_buffer_allocation_stats() -> TrackedBufferAllocationStats {
+    TrackedBufferAllocationStats {
+        allocations: LIVE_BUFFER_ALLOCATIONS.load(Ordering::Relaxed),
+        bytes: LIVE_BUFFER_BYTES.load(Ordering::Relaxed),
+    }
+}
+
+struct BufferAllocationLedger {
+    bytes: u64,
+}
+
+impl BufferAllocationLedger {
+    fn new(bytes: u64) -> Arc<Self> {
+        LIVE_BUFFER_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        LIVE_BUFFER_BYTES.fetch_add(bytes, Ordering::Relaxed);
+        Arc::new(Self { bytes })
+    }
+}
+
+impl Drop for BufferAllocationLedger {
+    fn drop(&mut self) {
+        LIVE_BUFFER_ALLOCATIONS.fetch_sub(1, Ordering::Relaxed);
+        LIVE_BUFFER_BYTES.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
 
 /// A thin wrapper around `wgpu::Buffer` that also tracks element count and byte size.
 /// Always create these via the helpers below so we respect WGSL/encase layout rules.
@@ -9,6 +53,7 @@ pub struct LaniusBuffer<T> {
     pub byte_size: usize,
     /// number of logical T elements
     pub count: usize,
+    _allocation: Arc<BufferAllocationLedger>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -19,6 +64,7 @@ impl<T> LaniusBuffer<T> {
             buffer,
             byte_size: byte_size as usize,
             count,
+            _allocation: BufferAllocationLedger::new(byte_size),
             _marker: std::marker::PhantomData,
         }
     }

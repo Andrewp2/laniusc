@@ -98,6 +98,7 @@ uint body_fragment_feature_mask(uint kind)
     if (kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32)
         return BODY_FEATURE_RETURN_DIRECT;
     if (kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
+        kind == BODY_FRAGMENT_DIRECT_CALL_VOID ||
         kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
         return BODY_FEATURE_DIRECT;

@@ -60,6 +60,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmLinks
                 b.hir_match_arm_pattern_node.as_entire_binding(),
             ),
             (
+                "hir_match_pattern_owner_arm".into(),
+                b.hir_match_pattern_owner_arm.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_result_node".into(),
                 b.hir_match_arm_result_node.as_entire_binding(),
             ),

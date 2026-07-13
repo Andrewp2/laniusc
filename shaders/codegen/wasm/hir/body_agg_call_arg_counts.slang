@@ -26,6 +26,7 @@ static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -52,7 +53,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
         kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 ||
-        kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32
+        kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 ||
+        kind == BODY_FRAGMENT_DIRECT_CALL_VOID
             ? body_fragment_aux[fragment_i].y
             : 0u;
     wasm_agg_call_arg_count_by_fragment[fragment_i] = count;

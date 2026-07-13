@@ -1,0 +1,9 @@
+module app::main;
+
+import alloc::allocator;
+
+fn main() -> i32 {
+    print(0);
+    alloc::allocator::alloc_failed(64, 8);
+    return 99;
+}

@@ -121,6 +121,8 @@ struct ResidentTreeReadbacks {
     hir_match_payload_match_node: U32Readback,
     hir_match_payload_ordinal: U32Readback,
     hir_call_callee_node: U32Readback,
+    hir_call_callee_path_node: U32Readback,
+    hir_call_parent_by_callee: U32Readback,
     hir_call_context_stmt_node: U32Readback,
     hir_call_arg_start: U32Readback,
     hir_call_arg_end: U32Readback,
@@ -133,6 +135,7 @@ struct ResidentTreeReadbacks {
     hir_array_element_parent_lit: U32Readback,
     hir_array_element_ordinal: U32Readback,
     hir_array_element_next: U32Readback,
+    hir_expr_name_role: U32Readback,
     hir_expr_result_root_node: U32Readback,
     hir_member_receiver_node: U32Readback,
     hir_member_receiver_token: U32Readback,
@@ -465,6 +468,16 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_call_callee_node",
                 bufs.hir_call_callee_node.byte_size,
             ),
+            hir_call_callee_path_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_call_callee_path_node",
+                bufs.hir_call_callee_path_node.byte_size,
+            ),
+            hir_call_parent_by_callee: rb(
+                device,
+                "rb.parser.resident_tree.hir_call_parent_by_callee",
+                bufs.hir_call_parent_by_callee.byte_size,
+            ),
             hir_call_context_stmt_node: rb(
                 device,
                 "rb.parser.resident_tree.hir_call_context_stmt_node",
@@ -524,6 +537,11 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_array_element_next",
                 bufs.hir_array_element_next.byte_size,
+            ),
+            hir_expr_name_role: rb(
+                device,
+                "rb.parser.resident_tree.hir_expr_name_role",
+                bufs.hir_expr_name_role.byte_size,
             ),
             hir_expr_result_root_node: rb(
                 device,
@@ -929,6 +947,16 @@ impl ResidentTreeReadbacks {
             &bufs.hir_call_callee_node,
             bufs.hir_call_callee_node.byte_size as u64,
         );
+        self.hir_call_callee_path_node.copy_from(
+            encoder,
+            &bufs.hir_call_callee_path_node,
+            bufs.hir_call_callee_path_node.byte_size as u64,
+        );
+        self.hir_call_parent_by_callee.copy_from(
+            encoder,
+            &bufs.hir_call_parent_by_callee,
+            bufs.hir_call_parent_by_callee.byte_size as u64,
+        );
         self.hir_call_context_stmt_node.copy_from(
             encoder,
             &bufs.hir_call_context_stmt_node,
@@ -988,6 +1016,11 @@ impl ResidentTreeReadbacks {
             encoder,
             &bufs.hir_array_element_next,
             bufs.hir_array_element_next.byte_size as u64,
+        );
+        self.hir_expr_name_role.copy_from(
+            encoder,
+            &bufs.hir_expr_name_role,
+            bufs.hir_expr_name_role.byte_size as u64,
         );
         self.hir_expr_result_root_node.copy_from(
             encoder,
@@ -1163,6 +1196,8 @@ impl ResidentTreeReadbacks {
         self.hir_match_payload_match_node.map();
         self.hir_match_payload_ordinal.map();
         self.hir_call_callee_node.map();
+        self.hir_call_callee_path_node.map();
+        self.hir_call_parent_by_callee.map();
         self.hir_call_context_stmt_node.map();
         self.hir_call_arg_start.map();
         self.hir_call_arg_end.map();
@@ -1175,6 +1210,7 @@ impl ResidentTreeReadbacks {
         self.hir_array_element_parent_lit.map();
         self.hir_array_element_ordinal.map();
         self.hir_array_element_next.map();
+        self.hir_expr_name_role.map();
         self.hir_expr_result_root_node.map();
         self.hir_member_receiver_node.map();
         self.hir_member_receiver_token.map();
@@ -1332,6 +1368,8 @@ impl ResidentTreeReadbacks {
                 .hir_match_payload_ordinal
                 .read_words_padded(tree_len, u32::MAX)?,
             hir_call_callee_node: self.hir_call_callee_node.read_words(tree_len)?,
+            hir_call_callee_path_node: self.hir_call_callee_path_node.read_words(tree_len)?,
+            hir_call_parent_by_callee: self.hir_call_parent_by_callee.read_words(tree_len)?,
             hir_call_context_stmt_node: self.hir_call_context_stmt_node.read_words(tree_len)?,
             hir_call_arg_start: self.hir_call_arg_start.read_words(tree_len)?,
             hir_call_arg_end: self.hir_call_arg_end.read_words(tree_len)?,
@@ -1356,6 +1394,7 @@ impl ResidentTreeReadbacks {
             hir_array_element_next: self
                 .hir_array_element_next
                 .read_words_padded(tree_len, u32::MAX)?,
+            hir_expr_name_role: self.hir_expr_name_role.read_words(tree_len)?,
             hir_expr_result_root_node: self.hir_expr_result_root_node.read_words(tree_len)?,
             hir_member_receiver_node: self.hir_member_receiver_node.read_words(tree_len)?,
             hir_member_receiver_token: self.hir_member_receiver_token.read_words(tree_len)?,

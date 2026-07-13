@@ -4,6 +4,7 @@
 // inspect token neighborhoods, source bytes, helper names, or stdlib names.
 
 import generated_parse_production_ids;
+import atomics;
 
 struct Params
 {
@@ -23,6 +24,8 @@ StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_call_callee_node;
+RWStructuredBuffer<uint> hir_call_callee_path_node;
+RWStructuredBuffer<uint> hir_call_parent_by_callee;
 RWStructuredBuffer<uint> hir_call_context_stmt_node;
 RWStructuredBuffer<uint> hir_call_arg_start;
 RWStructuredBuffer<uint> hir_call_arg_end;
@@ -35,6 +38,9 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_EXPR = 14u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -151,6 +157,7 @@ uint callee_for_call(uint call_node)
 void clear_fields(uint i)
 {
     hir_call_callee_node[i] = INVALID;
+    hir_call_callee_path_node[i] = INVALID;
     hir_call_context_stmt_node[i] = INVALID;
     hir_call_arg_start[i] = INVALID;
     hir_call_arg_end[i] = INVALID;
@@ -161,7 +168,24 @@ void clear_fields(uint i)
 
 void publish_call_expr(uint i)
 {
-    hir_call_callee_node[i] = callee_for_call(i);
+    uint callee = callee_for_call(i);
+    hir_call_callee_node[i] = callee;
+    if (valid_node(callee))
+    {
+        atomic_u32_min(hir_call_parent_by_callee, callee, i);
+        if (hir_kind[callee] == HIR_PATH_EXPR || hir_kind[callee] == HIR_TYPE)
+            hir_call_callee_path_node[i] = callee;
+        if (hir_kind[callee] == HIR_NAME_EXPR)
+        {
+            uint child = first_child_node(callee);
+            if (valid_node(child) &&
+                (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
+            {
+                hir_call_callee_path_node[i] = child;
+                atomic_u32_min(hir_call_parent_by_callee, child, i);
+            }
+        }
+    }
     hir_call_arg_start[i] = first_arg_for_call(i);
 }
 

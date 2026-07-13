@@ -27,22 +27,24 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
         hir_active_dispatch_args,
     )?;
     stamp_typecheck_timer(&mut timer, encoder, labels.named);
-    record_compute_indirect(
-        encoder,
-        &passes.type_instances_collect_aggregate_refs,
-        &state.type_instances.collect_aggregate_refs,
-        "type_check.resident.type_instances_collect_aggregate_refs.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_refs);
-    record_compute_indirect(
-        encoder,
-        &passes.type_instances_collect_aggregate_details,
-        &state.type_instances.collect_aggregate_details,
-        "type_check.resident.type_instances_collect_aggregate_details.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
+    if aggregate_passes_required(state.cache_key.parser_feature_flags) {
+        record_compute_indirect(
+            encoder,
+            &passes.type_instances_collect_aggregate_refs,
+            &state.type_instances.collect_aggregate_refs,
+            "type_check.resident.type_instances_collect_aggregate_refs.pass",
+            hir_active_dispatch_args,
+        )?;
+        stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_refs);
+        record_compute_indirect(
+            encoder,
+            &passes.type_instances_collect_aggregate_details,
+            &state.type_instances.collect_aggregate_details,
+            "type_check.resident.type_instances_collect_aggregate_details.pass",
+            hir_active_dispatch_args,
+        )?;
+        stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
+    }
 
     Ok(())
 }
@@ -150,72 +152,81 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
             "typecheck.type_instances.generic_param_slots.sort.done",
         );
     } else {
-        for i in 0..type_instances.sort_generic_param_key_scatter.len() {
-            record_compute_indirect(
+        let steps = type_instances.sort_generic_param_key_scatter.len();
+        debug_assert_eq!(steps, type_instances.sort_generic_param_slot_scatter.len());
+        for i in 0..steps {
+            count_recorded_compute_pass();
+            let mut histogram = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,
+                "type_check.type_instances.sort_generic_params.histogram.paired",
+            );
+            histogram.record_raw_indirect(
                 &passes.type_instances_sort_generic_param_keys,
                 &type_instances.sort_generic_param_key_histogram[i],
-                "type_check.type_instances.sort_generic_param_keys_histogram",
                 &type_instances.generic_param_key_radix_dispatch_args,
-            )?;
-            record_compute(
+            );
+            histogram.record_raw_indirect(
+                &passes.type_instances_sort_generic_param_slots,
+                &type_instances.sort_generic_param_slot_histogram[i],
+                &type_instances.generic_param_key_radix_dispatch_args,
+            );
+            drop(histogram);
+
+            count_recorded_compute_pass();
+            let mut prefix = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,
+                "type_check.type_instances.sort_generic_params.prefix.paired",
+            );
+            prefix.record_raw(
                 &passes.names_radix_bucket_prefix,
                 &type_instances.sort_generic_param_key_bucket_prefix[i],
-                "type_check.type_instances.sort_generic_param_keys_bucket_prefix",
                 NAME_RADIX_BUCKETS.saturating_mul(256),
             )?;
-            record_compute(
+            prefix.record_raw(
+                &passes.names_radix_bucket_prefix,
+                &type_instances.sort_generic_param_slot_bucket_prefix[i],
+                NAME_RADIX_BUCKETS.saturating_mul(256),
+            )?;
+            drop(prefix);
+
+            count_recorded_compute_pass();
+            let mut bases = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,
+                "type_check.type_instances.sort_generic_params.bases.paired",
+            );
+            bases.record_raw(
                 &passes.names_radix_bucket_bases,
                 &type_instances.sort_generic_param_key_bucket_bases[i],
-                "type_check.type_instances.sort_generic_param_keys_bucket_bases",
                 256,
             )?;
-            record_compute_indirect(
+            bases.record_raw(
+                &passes.names_radix_bucket_bases,
+                &type_instances.sort_generic_param_slot_bucket_bases[i],
+                256,
+            )?;
+            drop(bases);
+
+            count_recorded_compute_pass();
+            let mut scatter = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,
+                "type_check.type_instances.sort_generic_params.scatter.paired",
+            );
+            scatter.record_raw_indirect(
                 &passes.type_instances_sort_generic_param_keys_scatter,
                 &type_instances.sort_generic_param_key_scatter[i],
-                "type_check.type_instances.sort_generic_param_keys_scatter",
                 &type_instances.generic_param_key_radix_dispatch_args,
-            )?;
+            );
+            scatter.record_raw_indirect(
+                &passes.type_instances_sort_generic_param_slots_scatter,
+                &type_instances.sort_generic_param_slot_scatter[i],
+                &type_instances.generic_param_key_radix_dispatch_args,
+            );
         }
         stamp_typecheck_timer(
             &mut timer,
             encoder,
             "typecheck.type_instances.generic_params.sort.done",
         );
-
-        for i in 0..type_instances.sort_generic_param_slot_scatter.len() {
-            record_compute_indirect(
-                encoder,
-                &passes.type_instances_sort_generic_param_slots,
-                &type_instances.sort_generic_param_slot_histogram[i],
-                "type_check.type_instances.sort_generic_param_slots_histogram",
-                &type_instances.generic_param_key_radix_dispatch_args,
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_prefix,
-                &type_instances.sort_generic_param_slot_bucket_prefix[i],
-                "type_check.type_instances.sort_generic_param_slots_bucket_prefix",
-                NAME_RADIX_BUCKETS.saturating_mul(256),
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_bases,
-                &type_instances.sort_generic_param_slot_bucket_bases[i],
-                "type_check.type_instances.sort_generic_param_slots_bucket_bases",
-                256,
-            )?;
-            record_compute_indirect(
-                encoder,
-                &passes.type_instances_sort_generic_param_slots_scatter,
-                &type_instances.sort_generic_param_slot_scatter[i],
-                "type_check.type_instances.sort_generic_param_slots_scatter",
-                &type_instances.generic_param_key_radix_dispatch_args,
-            )?;
-        }
         stamp_typecheck_timer(
             &mut timer,
             encoder,
@@ -310,7 +321,7 @@ pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
 pub(in crate::type_checker) fn record_counted_u32_scan_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    n_blocks: u32,
+    _n_blocks: u32,
     dispatch_args: &wgpu::Buffer,
     scan: &U32ScanBindGroups,
     label: &'static str,
@@ -322,13 +333,22 @@ pub(in crate::type_checker) fn record_counted_u32_scan_bind_groups_with_passes(
         label,
         dispatch_args,
     )?;
-    for bind_group in &scan.blocks {
+    for step in &scan.hierarchy_up {
         record_compute(
             encoder,
-            &passes.counted_scan_blocks,
-            bind_group,
+            &passes.counted_scan_hierarchy_up,
+            &step.bind_group,
             label,
-            n_blocks.max(1),
+            step.work_items,
+        )?;
+    }
+    for step in &scan.hierarchy_down {
+        record_compute(
+            encoder,
+            &passes.counted_scan_hierarchy_down,
+            &step.bind_group,
+            label,
+            step.work_items,
         )?;
     }
     record_compute_indirect(
@@ -338,4 +358,79 @@ pub(in crate::type_checker) fn record_counted_u32_scan_bind_groups_with_passes(
         label,
         dispatch_args,
     )
+}
+
+/// Records two independent counted scans stage-by-stage. Corresponding stages
+/// share a compute pass, while pass boundaries remain between dependent scan
+/// levels so storage visibility is unchanged.
+pub(in crate::type_checker) fn record_counted_u32_scan_pair_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    _left_n_blocks: u32,
+    left_dispatch_args: &wgpu::Buffer,
+    left: &U32ScanBindGroups,
+    _right_n_blocks: u32,
+    right_dispatch_args: &wgpu::Buffer,
+    right: &U32ScanBindGroups,
+    label: &'static str,
+) -> Result<()> {
+    {
+        count_recorded_compute_pass();
+        let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(encoder, label);
+        batch.record_raw_indirect(&passes.counted_scan_local, &left.local, left_dispatch_args);
+        batch.record_raw_indirect(
+            &passes.counted_scan_local,
+            &right.local,
+            right_dispatch_args,
+        );
+    }
+    let up_steps = left.hierarchy_up.len().max(right.hierarchy_up.len());
+    for step_index in 0..up_steps {
+        count_recorded_compute_pass();
+        let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(encoder, label);
+        if let Some(step) = left.hierarchy_up.get(step_index) {
+            batch.record_raw(
+                &passes.counted_scan_hierarchy_up,
+                &step.bind_group,
+                step.work_items,
+            )?;
+        }
+        if let Some(step) = right.hierarchy_up.get(step_index) {
+            batch.record_raw(
+                &passes.counted_scan_hierarchy_up,
+                &step.bind_group,
+                step.work_items,
+            )?;
+        }
+    }
+    let down_steps = left.hierarchy_down.len().max(right.hierarchy_down.len());
+    for step_index in 0..down_steps {
+        count_recorded_compute_pass();
+        let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(encoder, label);
+        if let Some(step) = left.hierarchy_down.get(step_index) {
+            batch.record_raw(
+                &passes.counted_scan_hierarchy_down,
+                &step.bind_group,
+                step.work_items,
+            )?;
+        }
+        if let Some(step) = right.hierarchy_down.get(step_index) {
+            batch.record_raw(
+                &passes.counted_scan_hierarchy_down,
+                &step.bind_group,
+                step.work_items,
+            )?;
+        }
+    }
+    {
+        count_recorded_compute_pass();
+        let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(encoder, label);
+        batch.record_raw_indirect(&passes.counted_scan_apply, &left.apply, left_dispatch_args);
+        batch.record_raw_indirect(
+            &passes.counted_scan_apply,
+            &right.apply,
+            right_dispatch_args,
+        );
+    }
+    Ok(())
 }

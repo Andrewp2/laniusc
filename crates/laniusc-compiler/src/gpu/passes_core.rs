@@ -208,7 +208,20 @@ pub(crate) fn record_or_defer_compute_indirect(
     label: &'static str,
     dispatch_args: &wgpu::Buffer,
 ) {
-    if defer_compute_indirect(pass, bind_group, dispatch_args, 0, &[]) {
+    record_or_defer_compute_indirect_offset(encoder, pass, bind_group, label, dispatch_args, 0);
+}
+
+/// Records one indirect dispatch from `dispatch_offset` immediately, or
+/// appends it to the active ordered compute batch.
+pub(crate) fn record_or_defer_compute_indirect_offset(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &'static str,
+    dispatch_args: &wgpu::Buffer,
+    dispatch_offset: u64,
+) {
+    if defer_compute_indirect(pass, bind_group, dispatch_args, dispatch_offset, &[]) {
         return;
     }
     flush_deferred_compute(encoder);
@@ -218,7 +231,7 @@ pub(crate) fn record_or_defer_compute_indirect(
     });
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
-    compute.dispatch_workgroups_indirect(dispatch_args, 0);
+    compute.dispatch_workgroups_indirect(dispatch_args, dispatch_offset);
 }
 
 /// Flushes all deferred dispatches as one ordered compute pass.
@@ -233,6 +246,9 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     if commands.is_empty() {
         return;
     }
+    let host_timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+    let started = host_timing.then(Instant::now);
+    let command_count = commands.len();
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
         label: Some(label),
         timestamp_writes: None,
@@ -269,6 +285,13 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
                 compute.dispatch_workgroups_indirect(dispatch_args, *dispatch_offset);
             }
         }
+    }
+    drop(compute);
+    if let Some(started) = started {
+        eprintln!(
+            "[gpu_compile_host_timer] compute_batch.flush: label={label} commands={command_count} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1000.0,
+        );
     }
 }
 
@@ -516,11 +539,14 @@ pub(crate) fn map_readback_blocking(
     slice: &wgpu::BufferSlice<'_>,
     label: &str,
 ) -> Result<()> {
-    let timeout = Duration::from_millis(crate::gpu::env::env_u64(
+    wait_for_readback_map(device, slice, label, readback_timeout())
+}
+
+fn readback_timeout() -> Duration {
+    Duration::from_millis(crate::gpu::env::env_u64(
         "LANIUS_READBACK_TIMEOUT_MS",
         120_000,
-    ));
-    wait_for_readback_map(device, slice, label, timeout)
+    ))
 }
 
 /// Waits for a readback map callback with explicit timeout and progress output.
@@ -530,6 +556,27 @@ pub(crate) fn wait_for_readback_map(
     label: &str,
     timeout: Duration,
 ) -> Result<()> {
+    let pending = begin_readback_map(slice, label);
+    finish_readback_map(device, pending, timeout)
+}
+
+/// Finishes a queued readback using the standard configured timeout.
+pub(crate) fn finish_readback_map_blocking(
+    device: &wgpu::Device,
+    pending: PendingReadbackMap,
+) -> Result<()> {
+    finish_readback_map(device, pending, readback_timeout())
+}
+
+/// Pending asynchronous readback map whose wait may be overlapped with host work.
+pub(crate) struct PendingReadbackMap {
+    receiver: mpsc::Receiver<std::result::Result<(), wgpu::BufferAsyncError>>,
+    label: String,
+    started: Instant,
+}
+
+/// Queues a readback map callback without polling the device.
+pub(crate) fn begin_readback_map(slice: &wgpu::BufferSlice<'_>, label: &str) -> PendingReadbackMap {
     let label = label.to_string();
     let cb_label = label.clone();
     let (tx, rx) = mpsc::channel();
@@ -540,19 +587,40 @@ pub(crate) fn wait_for_readback_map(
         }
     });
     trace_gpu_progress(&format!("map.queued :: {label}"));
+    PendingReadbackMap {
+        receiver: rx,
+        label,
+        started: Instant::now(),
+    }
+}
 
-    let start = Instant::now();
+/// Polls until a previously queued readback map completes.
+pub(crate) fn finish_readback_map(
+    device: &wgpu::Device,
+    pending: PendingReadbackMap,
+    timeout: Duration,
+) -> Result<()> {
+    let PendingReadbackMap {
+        receiver,
+        label,
+        started,
+    } = pending;
     let mut next_progress = Duration::from_millis(500);
     loop {
         device
             .poll(wgpu::PollType::Poll)
             .map_err(|err| anyhow!("{label} readback poll failed: {err}"))?;
-        match rx.try_recv() {
+        match receiver.try_recv() {
             Ok(Ok(())) => {
-                crate::gpu::trace::record_host_span("host.readback", &label, start, Instant::now());
+                crate::gpu::trace::record_host_span(
+                    "host.readback",
+                    &label,
+                    started,
+                    Instant::now(),
+                );
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
-                    start.elapsed().as_millis()
+                    started.elapsed().as_millis()
                 ));
                 return Ok(());
             }
@@ -562,7 +630,7 @@ pub(crate) fn wait_for_readback_map(
                 return Err(anyhow!("{label} readback callback disconnected"));
             }
         }
-        let elapsed = start.elapsed();
+        let elapsed = started.elapsed();
         if elapsed >= timeout {
             return Err(anyhow!(
                 "{label} readback did not complete within {} ms",
@@ -1155,6 +1223,37 @@ impl<'encoder> ComputePassBatch<'encoder> {
             pass,
             retained_bind_groups: Vec::new(),
         }
+    }
+
+    /// Records one pre-bound direct dispatch into this compute pass.
+    pub(crate) fn record_raw(
+        &mut self,
+        pass: &'encoder PassData,
+        bind_group: &'encoder wgpu::BindGroup,
+        n_elements: u32,
+    ) -> Result<()> {
+        let [tgsx, tgsy, _] = pass.thread_group_size;
+        let (gx, gy, gz) = plan_workgroups(
+            DispatchDim::D1,
+            InputElements::Elements1D(n_elements),
+            [tgsx, tgsy, 1],
+        )?;
+        self.pass.set_pipeline(&pass.pipeline);
+        self.pass.set_bind_group(0, Some(bind_group), &[]);
+        self.pass.dispatch_workgroups(gx, gy, gz);
+        Ok(())
+    }
+
+    /// Records one pre-bound indirect dispatch into this compute pass.
+    pub(crate) fn record_raw_indirect(
+        &mut self,
+        pass: &'encoder PassData,
+        bind_group: &'encoder wgpu::BindGroup,
+        dispatch_args: &'encoder wgpu::Buffer,
+    ) {
+        self.pass.set_pipeline(&pass.pipeline);
+        self.pass.set_bind_group(0, Some(bind_group), &[]);
+        self.pass.dispatch_workgroups_indirect(dispatch_args, 0);
     }
 
     /// Records one reflected pass using cached bind groups.

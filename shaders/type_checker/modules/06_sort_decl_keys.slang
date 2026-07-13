@@ -3,10 +3,11 @@
 // Scheduling contract:
 // - Dispatch after type_check_modules_06a_seed_decl_key_order.slang or an
 //   equivalent GPU declaration-order seed has initialized decl_key_order_in.
-// - For key_step 0..11, the host schedules histogram, GPU bucket-prefix scan,
-//   GPU bucket-base scan, and stable scatter.
-// - key_step walks the fixed declaration key from least-significant to
-//   most-significant: name_id, namespace, then module_id.
+// - For each capacity-derived key byte, the host schedules histogram, GPU
+//   bucket-prefix scan, GPU bucket-base scan, and stable scatter.
+// - key_step walks the declaration key from least-significant to
+//   most-significant: name_id, namespace, then module_id. gParams.reserved
+//   packs the safe byte width of each field.
 // - Invalid module/name ids are encoded as sentinel 0; real ids are encoded as
 //   id + 1. This keeps invalid keys fail-closed and sortable.
 // - This pass only counts radix buckets. It does not resolve imports, validate
@@ -63,9 +64,12 @@ uint decl_key_field(uint decl_i, uint field_i)
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint field_i = radix_field_index(key_step, 2u);
-    uint value = decl_key_field(decl_i, field_i);
-    return radix_byte_key(value, key_step);
+    return radix_packed_u32x3_byte_key(
+        decl_key_field(decl_i, 0u),
+        decl_key_field(decl_i, 1u),
+        decl_key_field(decl_i, 2u),
+        key_step,
+        gParams.reserved);
 }
 
 public struct DeclKeyRadixSource : IRadixU8KeySource

@@ -94,6 +94,60 @@ bool host_io_i32_spec(uint call_node, out uint wasm_func_index, out uint arg_cou
         wasm_func_index = WASM_STDIO_READ_STDIN_FUNC_INDEX;
         arg_count = 2u;
     }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_FILL_SECURE_BYTES) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_FILL_SECURE_BYTES))
+    {
+        wasm_func_index = WASM_RANDOM_FILL_SECURE_BYTES_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_REMOVE_FILE) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_REMOVE_FILE))
+    {
+        wasm_func_index = WASM_FS_REMOVE_FILE_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_CREATE_DIR) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_CREATE_DIR))
+    {
+        wasm_func_index = WASM_FS_CREATE_DIR_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_REMOVE_DIR) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_REMOVE_DIR))
+    {
+        wasm_func_index = WASM_FS_REMOVE_DIR_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_RENAME) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_RENAME))
+    {
+        wasm_func_index = WASM_FS_RENAME_FUNC_INDEX;
+        arg_count = 4u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_MONOTONIC_READ) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_MONOTONIC_READ))
+    {
+        wasm_func_index = WASM_TIME_MONOTONIC_READ_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_SYSTEM_READ) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_SYSTEM_READ))
+    {
+        wasm_func_index = WASM_TIME_SYSTEM_READ_FUNC_INDEX;
+        arg_count = 2u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_SLEEP_MS_I32) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_SLEEP_MS_I32))
+    {
+        wasm_func_index = WASM_TIME_SLEEP_MS_I32_FUNC_INDEX;
+        arg_count = 1u;
+    }
+    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_REALLOC) ||
+             token_has_language_name(fn_token, LANGUAGE_SYMBOL_REALLOC))
+    {
+        wasm_func_index = WASM_REALLOC_FUNC_INDEX;
+        arg_count = 4u;
+    }
     else
     {
         return false;

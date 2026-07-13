@@ -22,6 +22,7 @@ RWStructuredBuffer<uint> hir_match_arm_start;
 RWStructuredBuffer<uint> hir_match_arm_count;
 RWStructuredBuffer<uint> hir_match_arm_next;
 RWStructuredBuffer<uint> hir_match_arm_pattern_node;
+RWStructuredBuffer<uint> hir_match_pattern_owner_arm;
 RWStructuredBuffer<uint> hir_match_arm_payload_start;
 RWStructuredBuffer<uint> hir_match_arm_payload_count;
 RWStructuredBuffer<uint> hir_match_arm_result_node;
@@ -60,6 +61,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_match_arm_count[node] = 0u;
     hir_match_arm_next[node] = INVALID;
     hir_match_arm_pattern_node[node] = INVALID;
+    hir_match_pattern_owner_arm[node] = INVALID;
     hir_match_arm_payload_start[node] = INVALID;
     hir_match_arm_payload_count[node] = 0u;
     hir_match_arm_result_node[node] = INVALID;

@@ -1,0 +1,21 @@
+module app::main;
+
+import alloc::allocator;
+import std::io;
+import std::random;
+
+fn main() -> i32 {
+    let len: usize = 16;
+    let align: usize = 4;
+    let ptr: u32 = alloc::allocator::alloc(len, align);
+    if (ptr == 0) {
+        return 1;
+    }
+    let filled: i32 = std::random::fill_secure_bytes(ptr, len);
+    alloc::allocator::dealloc(ptr, len, align);
+    if (filled != 16) {
+        return 2;
+    }
+    std::io::print_i32(91);
+    return 0;
+}

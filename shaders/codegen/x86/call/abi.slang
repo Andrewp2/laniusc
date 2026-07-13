@@ -114,6 +114,16 @@ static const uint X86_CALL_TARGET_HOST_FS_OPEN_APPEND = 0xffffffe3u;
 static const uint X86_CALL_TARGET_HOST_STDIN_READ = 0xffffffe2u;
 static const uint X86_CALL_TARGET_HOST_STDOUT_WRITE = 0xffffffe1u;
 static const uint X86_CALL_TARGET_HOST_STDERR_WRITE = 0xffffffe0u;
+static const uint X86_CALL_TARGET_HOST_FILL_SECURE_BYTES = 0xffffffdfu;
+static const uint X86_CALL_TARGET_HOST_FS_REMOVE_FILE = 0xffffffdeu;
+static const uint X86_CALL_TARGET_HOST_FS_CREATE_DIR = 0xffffffddu;
+static const uint X86_CALL_TARGET_HOST_FS_REMOVE_DIR = 0xffffffdcu;
+static const uint X86_CALL_TARGET_HOST_FS_RENAME = 0xffffffdbu;
+static const uint X86_CALL_TARGET_HOST_TIME_MONOTONIC_READ = 0xffffffdau;
+static const uint X86_CALL_TARGET_HOST_TIME_SYSTEM_READ = 0xffffffd9u;
+static const uint X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32 = 0xffffffd8u;
+static const uint X86_CALL_TARGET_HOST_REALLOC = 0xffffffd7u;
+static const uint X86_CALL_TARGET_HOST_ALLOC_FAILED = 0xffffffd6u;
 static const uint CALL_PARAM_CACHE_STRIDE = 4u;
 static const uint LANGUAGE_SYMBOL_OPEN_READ_PATH = 20u;
 static const uint LANGUAGE_SYMBOL_OPEN_WRITE_PATH = 21u;
@@ -147,6 +157,16 @@ static const uint LANGUAGE_SYMBOL_OPEN_APPEND = 48u;
 static const uint LANGUAGE_SYMBOL_WRITE_STDOUT = 49u;
 static const uint LANGUAGE_SYMBOL_WRITE_STDERR = 50u;
 static const uint LANGUAGE_SYMBOL_READ_STDIN = 51u;
+static const uint LANGUAGE_SYMBOL_FILL_SECURE_BYTES = 53u;
+static const uint LANGUAGE_SYMBOL_REMOVE_FILE = 54u;
+static const uint LANGUAGE_SYMBOL_CREATE_DIR = 55u;
+static const uint LANGUAGE_SYMBOL_REMOVE_DIR = 56u;
+static const uint LANGUAGE_SYMBOL_RENAME = 57u;
+static const uint LANGUAGE_SYMBOL_MONOTONIC_READ = 58u;
+static const uint LANGUAGE_SYMBOL_SYSTEM_READ = 59u;
+static const uint LANGUAGE_SYMBOL_SLEEP_MS_I32 = 60u;
+static const uint LANGUAGE_SYMBOL_REALLOC = 61u;
+static const uint LANGUAGE_SYMBOL_ALLOC_FAILED = 62u;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
 static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
@@ -444,6 +464,19 @@ bool host_u32_u32_u32_u32_i32_return_call(uint call_node, uint resolver_fn_token
            extern_or_unlowered_target(target_fn);
 }
 
+bool host_u32_u32_u32_u32_u32_return_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 4u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_UINT &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
+           host_param(resolver_fn_token, 2u) == TY_UINT &&
+           host_param(resolver_fn_token, 3u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
 bool host_u32_u32_u32_void_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
 {
     return arg_count == 3u &&
@@ -453,6 +486,17 @@ bool host_u32_u32_u32_void_call(uint call_node, uint resolver_fn_token, uint cal
            host_param(resolver_fn_token, 0u) == TY_UINT &&
            host_param(resolver_fn_token, 1u) == TY_UINT &&
            host_param(resolver_fn_token, 2u) == TY_UINT &&
+           extern_or_unlowered_target(target_fn);
+}
+
+bool host_u32_u32_void_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)
+{
+    return arg_count == 2u &&
+           return_width == 1u &&
+           call_type_word(call_node, 0u) == TY_VOID &&
+           call_has_language_name(callee_token, resolver_fn_token, language_symbol) &&
+           host_param(resolver_fn_token, 0u) == TY_UINT &&
+           host_param(resolver_fn_token, 1u) == TY_UINT &&
            extern_or_unlowered_target(target_fn);
 }
 
@@ -679,6 +723,16 @@ void project_call_record(uint call_node)
     bool host_stdin_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_READ_STDIN);
     bool host_stdout_write = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_STDOUT);
     bool host_stderr_write = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_WRITE_STDERR);
+    bool host_fill_secure_bytes = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_FILL_SECURE_BYTES);
+    bool host_fs_remove_file = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_REMOVE_FILE);
+    bool host_fs_create_dir = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_CREATE_DIR);
+    bool host_fs_remove_dir = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_REMOVE_DIR);
+    bool host_fs_rename = host_u32_u32_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_RENAME);
+    bool host_time_monotonic_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_MONOTONIC_READ);
+    bool host_time_system_read = host_u32_u32_i32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_SYSTEM_READ);
+    bool host_time_sleep_ms_i32 = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_SLEEP_MS_I32);
+    bool host_realloc = host_u32_u32_u32_u32_u32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_REALLOC);
+    bool host_alloc_failed = host_u32_u32_void_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ALLOC_FAILED);
     bool host_call = host_text_write || host_i32_to_f32 ||
                      host_open_read_path || host_open_write_path ||
                      host_read_i32 || host_write_i32 || host_write_byte ||
@@ -690,7 +744,11 @@ void project_call_record(uint call_node)
                      host_var_len || host_var_read ||
                      host_fs_read || host_fs_write ||
                      host_fs_open_read || host_fs_open_write || host_fs_open_append ||
-                     host_stdin_read || host_stdout_write || host_stderr_write;
+                     host_stdin_read || host_stdout_write || host_stderr_write ||
+                     host_fill_secure_bytes || host_fs_remove_file ||
+                     host_fs_create_dir || host_fs_remove_dir || host_fs_rename ||
+                     host_time_monotonic_read || host_time_system_read || host_time_sleep_ms_i32 ||
+                     host_realloc || host_alloc_failed;
     if (!host_call && !valid_node(target_fn))
     {
         mark_call_abi_error(slot != INVALID ? slot : call_node);
@@ -752,6 +810,16 @@ void project_call_record(uint call_node)
           : host_stdin_read ? X86_CALL_TARGET_HOST_STDIN_READ
           : host_stdout_write ? X86_CALL_TARGET_HOST_STDOUT_WRITE
           : host_stderr_write ? X86_CALL_TARGET_HOST_STDERR_WRITE
+          : host_fill_secure_bytes ? X86_CALL_TARGET_HOST_FILL_SECURE_BYTES
+          : host_fs_remove_file ? X86_CALL_TARGET_HOST_FS_REMOVE_FILE
+          : host_fs_create_dir ? X86_CALL_TARGET_HOST_FS_CREATE_DIR
+          : host_fs_remove_dir ? X86_CALL_TARGET_HOST_FS_REMOVE_DIR
+          : host_fs_rename ? X86_CALL_TARGET_HOST_FS_RENAME
+          : host_time_monotonic_read ? X86_CALL_TARGET_HOST_TIME_MONOTONIC_READ
+          : host_time_system_read ? X86_CALL_TARGET_HOST_TIME_SYSTEM_READ
+          : host_time_sleep_ms_i32 ? X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32
+          : host_realloc ? X86_CALL_TARGET_HOST_REALLOC
+          : host_alloc_failed ? X86_CALL_TARGET_HOST_ALLOC_FAILED
           : target_fn,
             abi_info);
 }

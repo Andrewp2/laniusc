@@ -21,7 +21,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_ITEM_KIND_FN = 4u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 static const uint ENTRYPOINT_MAIN = 1u;
 
 uint linear_thread_id(uint3 dtid)

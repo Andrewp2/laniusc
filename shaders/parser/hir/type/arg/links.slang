@@ -31,6 +31,7 @@ RWStructuredBuffer<uint> hir_type_arg_rank_a;
 RWStructuredBuffer<uint> hir_type_arg_previous;
 
 static const uint INVALID = 0xffffffffu;
+static const uint OWNER_NODE_MASK = 0x7fffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -136,8 +137,7 @@ uint owner_seed_for_arg_container(uint container)
 
 bool valid_path_type_owner(uint owner, uint leaf)
 {
-    return owner != 0u &&
-           valid_node(owner) &&
+    return valid_node(owner) &&
            hir_kind[owner] == HIR_TYPE &&
            hir_type_form[owner] == HIR_TYPE_FORM_PATH &&
            hir_type_path_leaf_node[owner] == leaf;
@@ -149,7 +149,10 @@ uint owner_seed_for_path_arg(uint node)
     if (!valid_node(leaf) || !is_type_path_segment(node_kind[leaf]))
         return INVALID;
 
-    uint owner = hir_type_path_owner_by_leaf[leaf];
+    uint encoded_owner = hir_type_path_owner_by_leaf[leaf];
+    if (encoded_owner == 0u || encoded_owner > OWNER_NODE_MASK)
+        return INVALID;
+    uint owner = OWNER_NODE_MASK - encoded_owner;
     return valid_path_type_owner(owner, leaf) ? owner : INVALID;
 }
 

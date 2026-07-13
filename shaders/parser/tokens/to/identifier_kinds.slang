@@ -22,6 +22,7 @@ RWStructuredBuffer<uint> semantic_token_kinds;
 static const uint TK_IDENT = 1u;
 static const uint TK_DOT = 35u;
 static const uint TK_LET = 68u;
+static const uint TK_CONST = 92u;
 static const uint TK_PARAM_LPAREN = 76u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_PARAM_IDENT = 79u;
@@ -129,6 +130,11 @@ uint identifier_kind_for(uint parser_i, uint count)
         return TK_RANGE_END_IDENT;
     if (prev_raw == TK_LET)
         return TK_LET_IDENT;
+    // `const` owns the following identifier as a declaration name. This must
+    // outrank broad enclosing contexts such as an impl header; the type
+    // context begins only after the declaration's colon.
+    if (prev_raw == TK_CONST)
+        return TK_IDENT;
     if (prev_raw == TK_TYPE)
         return TK_TYPE_ALIAS_NAME_IDENT;
     if (prev_raw == TK_TRAIT)

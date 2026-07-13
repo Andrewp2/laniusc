@@ -161,6 +161,7 @@ impl SampleExpectedFile {
 pub fn load_sample_programs() -> Vec<SampleProgram> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("sample_programs");
     let manifest = load_sample_manifest(&root);
+    assert_command_catalog_covers_manifest(&root, &manifest);
     let mut programs = Vec::new();
     let mut expected_stdout_files = Vec::new();
 
@@ -193,6 +194,68 @@ pub fn load_sample_programs() -> Vec<SampleProgram> {
         .into_iter()
         .map(|path| load_sample_program(path, &manifest))
         .collect::<Vec<_>>()
+}
+
+fn assert_command_catalog_covers_manifest(
+    root: &Path,
+    manifest: &HashMap<String, SampleManifestEntry>,
+) {
+    let path = root.join("COMMANDS.json");
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("read sample command catalog {}: {err}", path.display()));
+    let document: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("parse sample command catalog {}: {err}", path.display()));
+    assert_eq!(
+        document["schema"], "lanius.sample-program-commands.v1",
+        "sample command catalog schema should be checked"
+    );
+    for variable in [
+        "source",
+        "expected_stdout",
+        "expected_exit_code",
+        "expected_files",
+    ] {
+        assert!(
+            document["variables"][variable]
+                .as_str()
+                .is_some_and(|value| !value.is_empty()),
+            "sample command catalog should define {variable} evidence"
+        );
+    }
+
+    for (sample, entry) in manifest {
+        for target in &entry.checked_targets {
+            let command = document["targets"][target]["build_run"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{sample}: missing {target} build/run command"));
+            assert!(
+                !command.is_empty(),
+                "{sample}: empty {target} build/run command"
+            );
+            let materialized = command
+                .iter()
+                .map(|part| {
+                    part.as_str()
+                        .unwrap_or_else(|| {
+                            panic!("{sample}: {target} command part is not a string")
+                        })
+                        .replace("{sample}", sample)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                materialized.iter().all(|part| !part.contains('{')),
+                "{sample}: {target} command contains an unresolved variable"
+            );
+            assert!(
+                materialized.iter().any(|part| part == "cargo")
+                    && materialized.iter().any(|part| part == "--exact")
+                    && materialized
+                        .iter()
+                        .any(|part| part == &format!("LANIUS_SAMPLE_FILTER={sample}")),
+                "{sample}: {target} command must select and exactly run this checked sample"
+            );
+        }
+    }
 }
 
 fn selected_by_env_filter(name: &str) -> bool {

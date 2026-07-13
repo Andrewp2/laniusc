@@ -7,16 +7,69 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
   <link rel="manifest" href="favicon/site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Jersey+10&family=Oxanium:wght@200..800&display=swap"
+    rel="stylesheet">
 </head>
 
 <body>
   <header class="header">
-    <img src="lanius_logo.svg" height="72" />
-    <h1>Lanius</h1>
+    <img src="lanius_logo.svg" alt="Lanius logo" height="36" width="36" />
+    <nav class="navigation">
+      <a href="" class="disabled-link" aria-disabled="true">Install</a>
+      <a href="" class="disabled-link" aria-disabled="true">Learn</a>
+      <a href="" class="disabled-link" aria-disabled="true">Docs</a>
+      <a href="" class="disabled-link" aria-disabled="true">Tools</a>
+      <a href="" class="disabled-link" aria-disabled="true">Community</a>
+      <a href="" class="disabled-link" aria-disabled="true">Blog</a>
+      <a href="" class="disabled-link" aria-disabled="true">Samsara</a>
+      <a href="https://github.com/Andrewp2/laniusc">Github</a>
+    </nav>
   </header>
+  <section class="hero">
+    <h1>Lanius</h1>
+    <p class="tagline">
+      A general-purpose programming language that makes compilation, optimization, and formal reasoning scale with
+      compute.
+    </p class="tagline">
+  </section>
 
-  <h2>Lanius is a general-purpose programming language for creating and maintaining huge codebases. </h2>
-  <h3></h3>
+  <section class="example">
+    <pre><code>fn main() {
+  let x: i32 = 3;
+  let y: i32 = 4;
+  print(x * x + y * y);
+  return 0;
+}</code></pre>
+  </section>
+
+  <section class="plan" aria-labelledby="plan-heading">
+    <h2 id="plan-heading">A four-part plan</h2>
+    <ol class="plan-list">
+      <li>
+        <h3>Build the fastest compiler in the world</h3>
+        <p>A compiler that lexes, parses, type checks, and emits code entirely on the GPU compiles orders of magnitude
+          faster than traditional compilers.
+        </p>
+      </li>
+      <li>
+        <h3>Design expressive, explicit language features</h3>
+        <p>Algebraic data types and a powerful type system encode complex ideas directly and precisely.</p>
+      </li>
+      <li>
+        <h3>Define the language formally</h3>
+        <p>Formal proofs establish behavioral guarantees far beyond that of fixed-purpose static analyzers.</p>
+      </li>
+      <li>
+        <h3>Build the optimizer that scales</h3>
+        <p>An optimizer that uses learning and search efficiently outcompetes any other optimizer, given enough
+          scale.</p>
+      </li>
+    </ol>
+  </section>
 </body>
 
 </html>

@@ -14,6 +14,8 @@ pub struct HirMethodSignatureStatusPass {
 pub const HIR_METHOD_SIGNATURE_HAS_GENERICS: u32 = 1;
 /// Status bit set when a method signature contains a where clause.
 pub const HIR_METHOD_SIGNATURE_HAS_WHERE: u32 = 2;
+/// Method is declared by an inherent impl rather than a trait impl.
+pub const HIR_METHOD_SIGNATURE_INHERENT_IMPL: u32 = 4;
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirMethodSignatureStatusPass,

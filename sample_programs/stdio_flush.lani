@@ -1,0 +1,20 @@
+module app::main;
+
+import std::io;
+
+fn main() -> i32 {
+    let before: i32 = std::io::flush_stdout();
+    std::io::print_i32(73);
+    let stdout_result: i32 = std::io::flush_stdout();
+    let stderr_result: i32 = std::io::flush_stderr();
+    if (before != std::io::STDIO_OPERATION_OK) {
+        return 1;
+    }
+    if (stdout_result != std::io::STDIO_OPERATION_OK) {
+        return 2;
+    }
+    if (stderr_result != std::io::STDIO_OPERATION_OK) {
+        return 3;
+    }
+    return 0;
+}

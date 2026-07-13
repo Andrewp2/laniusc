@@ -374,6 +374,17 @@ pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
         .await
 }
 
+/// Type-checks one bounded library source pack and returns its canonical
+/// public semantic identities from the process-global frontend compiler.
+pub async fn semantic_interface_identity_for_source_pack_with_gpu<S: AsRef<str>>(
+    library_id: u32,
+    sources: &[S],
+) -> Result<GpuSemanticInterfaceIdentityArtifact, CompileError> {
+    global_frontend_gpu_compiler()?
+        .semantic_interface_identity_for_source_pack(library_id, sources)
+        .await
+}
+
 /// Type-check an explicit in-memory source-pack manifest with the global
 /// frontend GPU compiler.
 pub async fn type_check_source_pack_manifest_with_gpu(

@@ -93,6 +93,56 @@ pub(super) fn make_tokens_to_identifier_kinds_pass(device: &wgpu::Device) -> Res
     )
 }
 
+pub(super) fn make_tokens_generic_shr_01_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_01_local",
+        shader: "parser/tokens/generic/shr/01_local"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_00_raw_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_00_raw_local",
+        shader: "parser/tokens/generic/shr/00_raw_local"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_00_raw_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_00_raw_apply",
+        shader: "parser/tokens/generic/shr/00_raw_apply"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_02_scan_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_02_scan",
+        shader: "parser/tokens/generic/shr/02_scan"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_03_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_03_apply",
+        shader: "parser/tokens/generic/shr/03_apply"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_04_close_kinds_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_04_close_kinds",
+        shader: "parser/tokens/generic/shr/04_close_kinds"
+    )
+}
+
 /// Loads the local type-path context pass for parser tokens.
 pub(super) fn make_tokens_type_path_context_01_local_pass(
     device: &wgpu::Device,

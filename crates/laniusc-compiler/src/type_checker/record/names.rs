@@ -18,28 +18,13 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
         "type_check.names.mark_lexemes",
         token_active_dispatch_args,
     )?;
-    record_compute_indirect(
+    record_counted_u32_scan_bind_groups_with_passes(
+        passes,
         encoder,
-        &passes.counted_scan_local,
-        &groups.scan_local,
-        "type_check.names.scan_local",
+        groups.token_scan_n_blocks,
         token_active_dispatch_args,
-    )?;
-    for bind_group in &groups.scan_blocks {
-        record_compute(
-            encoder,
-            &passes.counted_scan_blocks,
-            bind_group,
-            "type_check.names.scan_blocks",
-            groups.token_scan_n_blocks.max(1),
-        )?;
-    }
-    record_compute_indirect(
-        encoder,
-        &passes.counted_scan_apply,
-        &groups.scan_apply,
-        "type_check.names.scan_apply",
-        token_active_dispatch_args,
+        &groups.scan,
+        "type_check.names.scan",
     )?;
     record_compute_indirect(
         encoder,

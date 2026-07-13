@@ -24,7 +24,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
@@ -59,7 +58,6 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-static const uint PROD_STRUCT_LIT = 275u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -343,14 +341,12 @@ uint direct_struct_literal_node(uint node)
     if (!valid_node(node))
         return INVALID;
     if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
-        node_kind[node] == PROD_STRUCT_LIT ||
         valid_node(hir_struct_lit_head_node[node]))
         return node;
 
     uint resolved = resolve_expr_node(node);
     if (valid_node(resolved) &&
         (hir_kind[resolved] == HIR_STRUCT_LITERAL_EXPR ||
-         node_kind[resolved] == PROD_STRUCT_LIT ||
          valid_node(hir_struct_lit_head_node[resolved])))
         return resolved;
 

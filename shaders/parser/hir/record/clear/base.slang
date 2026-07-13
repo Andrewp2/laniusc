@@ -33,6 +33,7 @@ RWStructuredBuffer<uint> hir_method_visibility;
 RWStructuredBuffer<uint> hir_method_signature_flags;
 RWStructuredBuffer<uint> hir_method_impl_receiver_type_node;
 RWStructuredBuffer<uint> hir_expr_record;
+RWStructuredBuffer<uint> hir_expr_name_role;
 RWStructuredBuffer<uint> hir_expr_result_node;
 RWStructuredBuffer<uint> hir_expr_result_root_node;
 RWStructuredBuffer<uint> hir_expr_result_root_scratch_node;
@@ -113,6 +114,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_expr_record[slot(node, 1u)] = INVALID;
     hir_expr_record[slot(node, 2u)] = INVALID;
     hir_expr_record[slot(node, 3u)] = INVALID;
+    hir_expr_name_role[node] = 0u;
     hir_expr_result_node[node] = INVALID;
     hir_expr_result_root_node[node] = INVALID;
     hir_expr_result_root_scratch_node[node] = INVALID;

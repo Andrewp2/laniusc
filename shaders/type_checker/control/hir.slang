@@ -4,7 +4,7 @@
 // It intentionally does not inspect token spelling, token neighborhoods, source
 // bytes, helper names, or function-body shapes.
 
-import generated_parse_production_ids;
+import hir_expr_semantics;
 import status;
 
 struct Params
@@ -16,7 +16,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_status;
@@ -173,28 +172,13 @@ uint visible_type_for_token(uint token_i)
     return call_return_type[token_i];
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint direct_arithmetic_operand_type(uint node)
 {
     node = expr_result_root(node);
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint literal_ty = scalar_type_for_literal_prod(node_kind[node]);
+    uint literal_ty = hir_scalar_type_for_expr_form(expr_form(node));
     if (literal_ty != TY_UNKNOWN)
         return literal_ty;
 
@@ -235,7 +219,7 @@ uint direct_expr_record_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint literal_ty = scalar_type_for_literal_prod(node_kind[node]);
+    uint literal_ty = hir_scalar_type_for_expr_form(expr_form(node));
     if (literal_ty != TY_UNKNOWN)
         return literal_ty;
 

@@ -8,7 +8,7 @@
 // type argument.
 
 import atomics;
-import generated_parse_production_ids;
+import hir_expr_semantics;
 import status;
 
 struct Params
@@ -22,7 +22,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
@@ -256,21 +255,6 @@ uint visible_type_for_token(uint token)
     return call_return_type[token];
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint inferred_call_return_type(uint callee_token)
 {
     if (!valid_token(callee_token))
@@ -326,7 +310,7 @@ uint direct_node_type_no_nested_call(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 

@@ -67,6 +67,7 @@ static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
 static const uint WASM_PRINT_I64_FUNC_INDEX = 0u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
@@ -858,6 +859,18 @@ uint print_direct_call_i64_fragment_byte(uint call_node, uint4 aux, uint fragmen
     return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
+uint direct_call_void_fragment_byte(uint4 aux, uint fragment_len, uint byte_i)
+{
+    uint wasm_func_index = aux.x;
+    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint arg_len = fragment_len > tail_len ? fragment_len - tail_len : 0u;
+    if (byte_i < arg_len)
+        return 0u;
+    if (byte_i == arg_len)
+        return WASM_CALL;
+    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -894,6 +907,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (meta.x != BODY_FRAGMENT_LET_DIRECT_CALL_I32 &&
         meta.x != BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 &&
         meta.x != BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 &&
+        meta.x != BODY_FRAGMENT_DIRECT_CALL_VOID &&
         meta.x != BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 &&
         meta.x != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
         return;
@@ -913,6 +927,11 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (meta.x == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64)
     {
         body_words[offset + byte_i] = print_direct_call_i64_fragment_byte(meta.y, aux, len, byte_i);
+        return;
+    }
+    if (meta.x == BODY_FRAGMENT_DIRECT_CALL_VOID)
+    {
+        body_words[offset + byte_i] = direct_call_void_fragment_byte(aux, len, byte_i);
         return;
     }
     body_words[offset + byte_i] =

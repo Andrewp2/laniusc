@@ -4,7 +4,10 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{PassData, bind_group},
-    parser::buffers::ParserBuffers,
+    parser::{
+        buffers::ParserBuffers,
+        passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span,
+    },
 };
 
 /// Pointer-jump pass that computes each semantic node's index within its parent.
@@ -27,12 +30,12 @@ impl HirSemanticChildIndexRankStepPass {
         buffers: &ParserBuffers,
         dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = pointer_jump_steps_after_local_span(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(device, encoder, buffers, step % 2 != 0, dispatch_args)?;
         }
 
-        if steps % 2 == 1 {
+        if steps % 2 == 0 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
             for (src, dst) in [
@@ -137,15 +140,4 @@ impl HirSemanticChildIndexRankStepPass {
         );
         Ok(())
     }
-}
-
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    let target = items.max(1);
-    while span < target {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
 }

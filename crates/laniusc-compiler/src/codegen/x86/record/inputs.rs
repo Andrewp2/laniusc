@@ -3,12 +3,13 @@ use super::super::*;
 /// Borrowed parser, type-check, feature, and scratch inputs for one x86 recording.
 pub struct RecordElfInputs<'a, 'timer> {
     pub source_len: u32,
-    pub source_bytes_buf: &'a wgpu::Buffer,
     pub token_capacity: u32,
     pub n_hir_nodes: u32,
     pub inst_hir_node_count: u32,
+    pub pointer_jump_steps: u32,
     pub hir_status_buf: &'a wgpu::Buffer,
     pub active_hir_dispatch_args_buf: &'a wgpu::Buffer,
+    pub pointer_jump_dispatch_args_buf: &'a wgpu::Buffer,
     pub hir_kind_buf: &'a wgpu::Buffer,
     pub hir_item_kind_buf: &'a wgpu::Buffer,
     pub parent_buf: &'a wgpu::Buffer,

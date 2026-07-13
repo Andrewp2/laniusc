@@ -1,14 +1,17 @@
 // Seed nearest-semantic-parent pointer jumping over the original parse tree.
 //
 // The semantic HIR stream is already compacted into dense rows. This pass
-// initializes a Pareas-style parent-link rewrite: each original parse node
-// points at its parse parent and carries the dense row of that parent when the
-// parent is itself semantic HIR.
+// initializes a Pareas-style hybrid parent-link rewrite. Each lane first walks
+// a bounded block locally, which is efficient for the short chains common in
+// parse trees, and leaves a block link for logarithmic Hillis-Steele rounds.
+// The bounded walk keeps the worst case logarithmic without paying one global
+// read/write round per individual parent edge.
 
 struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
 };
 
 ConstantBuffer<Params> gHirSemantic;
@@ -55,11 +58,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    uint p = parent[node];
-    if (!valid_node(p) || p == node)
-        return;
+    uint ancestor = parent[node];
+    uint local_span = max(1u, gHirSemantic.semantic_parent_local_ancestor_span);
+    for (uint hop = 0u; hop < local_span; ++hop)
+    {
+        if (!valid_node(ancestor) || ancestor == node)
+            return;
+        if (hir_kind[ancestor] != HIR_NONE)
+        {
+            hir_semantic_parent_value_a[node] = hir_node_dense_id[ancestor];
+            return;
+        }
 
-    hir_semantic_parent_link_a[node] = p;
-    if (hir_kind[p] != HIR_NONE)
-        hir_semantic_parent_value_a[node] = hir_node_dense_id[p];
+        // Keep the final examined non-semantic node as the block link. Its own
+        // independently initialized row represents the following block.
+        if (hop + 1u == local_span)
+        {
+            hir_semantic_parent_link_a[node] = ancestor;
+            return;
+        }
+        uint next = parent[ancestor];
+        if (!valid_node(next) || next == ancestor)
+            return;
+        ancestor = next;
+    }
 }

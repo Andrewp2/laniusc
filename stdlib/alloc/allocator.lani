@@ -1,7 +1,4 @@
 // Source-level allocator ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind heap
-// allocation.
 
 module alloc::allocator;
 
@@ -14,9 +11,12 @@ pub type AllocatorServiceStatus = u32;
 pub const ALLOCATOR_RUNTIME_ABI_VERSION: AllocatorRuntimeAbiVersion = 1;
 pub const ALLOCATOR_SERVICE_ID: AllocatorServiceId = 1;
 pub const ALLOCATOR_SERVICE_STATUS_UNAVAILABLE: AllocatorServiceStatus = 1;
-pub const ALLOCATOR_HAS_RUNTIME_BINDING: AllocatorCapability = false;
+pub const ALLOCATOR_SERVICE_STATUS_AVAILABLE: AllocatorServiceStatus = 2;
+pub const ALLOCATOR_HAS_RUNTIME_BINDING: AllocatorCapability = true;
 pub const ALLOC_HAS_RUNTIME_BINDING: AllocatorCapability = true;
 pub const DEALLOC_HAS_RUNTIME_BINDING: AllocatorCapability = true;
+pub const REALLOC_HAS_RUNTIME_BINDING: AllocatorCapability = true;
+pub const ALLOC_FAILED_HAS_RUNTIME_BINDING: AllocatorCapability = true;
 pub const ALLOCATOR_POINTER_UNAVAILABLE: AllocatorPointer = 0;
 
 pub fn allocator_runtime_abi_version() -> AllocatorRuntimeAbiVersion {
@@ -36,7 +36,7 @@ pub fn allocator_contract_metadata_is_available() -> AllocatorCapability {
 }
 
 pub fn allocator_service_status() -> AllocatorServiceStatus {
-    return ALLOCATOR_SERVICE_STATUS_UNAVAILABLE;
+    return ALLOCATOR_SERVICE_STATUS_AVAILABLE;
 }
 
 pub fn allocator_is_available() -> AllocatorCapability {
@@ -82,7 +82,7 @@ pub fn alloc_requires_runtime_binding() -> AllocatorCapability {
 }
 
 pub fn realloc_is_executable() -> AllocatorCapability {
-    return ALLOCATOR_HAS_RUNTIME_BINDING;
+    return REALLOC_HAS_RUNTIME_BINDING;
 }
 
 pub fn realloc_is_blocked() -> AllocatorCapability {
@@ -120,7 +120,7 @@ pub fn dealloc_requires_runtime_binding() -> AllocatorCapability {
 }
 
 pub fn alloc_failed_is_executable() -> AllocatorCapability {
-    return ALLOCATOR_HAS_RUNTIME_BINDING;
+    return ALLOC_FAILED_HAS_RUNTIME_BINDING;
 }
 
 pub fn alloc_failed_is_blocked() -> AllocatorCapability {

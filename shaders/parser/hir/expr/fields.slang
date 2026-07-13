@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_expr_record;
+RWStructuredBuffer<uint> hir_expr_name_role;
 RWStructuredBuffer<uint> hir_expr_result_node;
 RWStructuredBuffer<uint> hir_expr_result_root_node;
 
@@ -82,6 +83,8 @@ static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
+static const uint HIR_EXPR_NAME_ROLE_NONE = 0u;
+static const uint HIR_EXPR_NAME_ROLE_SELF = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -518,6 +521,9 @@ void publish_expr(uint i)
 {
     uint prod = node_kind[i];
     uint child = first_child_node(i);
+    hir_expr_name_role[i] = prod == PROD_SELF_VALUE
+        ? HIR_EXPR_NAME_ROLE_SELF
+        : HIR_EXPR_NAME_ROLE_NONE;
 
     if (is_direct_result_hir_kind(hir_kind[i]))
         publish_expr_result(i, i);

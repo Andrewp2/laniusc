@@ -5,7 +5,7 @@
 // field selections from materialized relations instead of walking expression or
 // call subtrees in this consumer.
 
-import generated_parse_production_ids;
+import hir_expr_semantics;
 import status;
 
 struct Params
@@ -18,14 +18,12 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
@@ -64,6 +62,8 @@ static const uint TY_STRING = 7u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -127,12 +127,13 @@ void record_error(uint token_i, uint code, uint detail)
 
 bool valid_struct_field_key_node(uint field_node)
 {
-    if (!valid_node(field_node) || node_kind[field_node] != PROD_STRUCT_FIELD)
+    if (!valid_node(field_node))
         return false;
 
     uint owner = hir_struct_field_parent_struct[field_node];
     uint token_i = hir_token_pos[field_node];
     return valid_node(owner) &&
+           hir_kind[owner] == HIR_STRUCT_ITEM &&
            valid_token(token_i) &&
            name_id_by_token[token_i] != INVALID;
 }
@@ -177,21 +178,6 @@ bool assignable(uint dst, uint src)
     if (dst == TY_FLOAT)
         return src == TY_INT || src == TY_UINT || src == TY_CHAR;
     return false;
-}
-
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
 }
 
 uint visible_type_for_token(uint token_i)
@@ -343,7 +329,7 @@ uint direct_value_type(uint node)
     if (record_ty != TY_UNKNOWN)
         return record_ty;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -433,17 +419,10 @@ bool member_expr_is_call_callee(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
         return false;
-
-    uint owner = parent[node];
-    if (valid_node(owner) &&
-        hir_kind[owner] == HIR_CALL_EXPR &&
-        hir_call_callee_node[owner] == node)
-        return true;
-
-    uint child = first_child[node];
-    return valid_node(child) &&
-           hir_kind[child] == HIR_CALL_EXPR &&
-           hir_call_callee_node[child] == node;
+    uint call_node = hir_call_parent_by_callee[node];
+    return valid_node(call_node) &&
+           hir_kind[call_node] == HIR_CALL_EXPR &&
+           hir_call_callee_node[call_node] == node;
 }
 
 void validate_member_expr_node(uint node)
@@ -477,6 +456,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (hir_kind[node] == HIR_MEMBER_EXPR)
         validate_member_expr_node(node);
-    else if (node_kind[node] == PROD_STRUCT_LIT_FIELD)
+    else if (valid_node(hir_struct_lit_field_parent_lit[node]) &&
+             hir_kind[hir_struct_lit_field_parent_lit[node]] == HIR_STRUCT_LITERAL_EXPR)
         validate_struct_literal_field_node(node);
 }

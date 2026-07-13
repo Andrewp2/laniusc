@@ -47,10 +47,12 @@ use calls::{CallRecordBindGroups, CallRecordInputs, create_call_record_bind_grou
 use capacity::RecordCapacity;
 use dispatch_args::ActiveDispatchArgBuffers;
 use dispatch_recording::{
+    ExecutableFinalizeDispatchInputs,
     InstructionDispatchInputs,
-    VirtualEmitDispatchInputs,
+    VirtualObjectDispatchInputs,
+    record_executable_finalize_dispatches,
     record_instruction_dispatches,
-    record_virtual_emit_dispatches,
+    record_virtual_object_dispatches,
 };
 use emit_bind_groups::{EmitBindGroupInputs, EmitBindGroups, create_emit_bind_groups};
 use enum_match_bind_groups::{
@@ -101,12 +103,13 @@ impl GpuX86CodeGenerator {
     ) -> Result<RecordedX86Codegen> {
         let RecordElfInputs {
             source_len,
-            source_bytes_buf: _,
             token_capacity,
             n_hir_nodes,
             inst_hir_node_count,
+            pointer_jump_steps,
             hir_status_buf,
             active_hir_dispatch_args_buf,
+            pointer_jump_dispatch_args_buf,
             hir_kind_buf,
             hir_item_kind_buf,
             parent_buf,
@@ -138,7 +141,6 @@ impl GpuX86CodeGenerator {
             output_readback_bytes,
             node_inst_scan_words,
             node_inst_scan_blocks,
-            node_func_owner_steps,
             expr_resolve_steps,
             expr_semantic_type_steps,
             enclosing_return_steps,
@@ -148,10 +150,8 @@ impl GpuX86CodeGenerator {
             match_result_owner_steps,
             match_pattern_owner_steps,
             node_inst_same_end_rank_steps,
-            enclosing_loop_steps,
             short_circuit_rhs_steps,
             index_source_owner_steps,
-            func_owner_scan_blocks,
             node_inst_order_rows,
             virtual_next_call_steps,
             virtual_regalloc_chunk_count,
@@ -164,6 +164,7 @@ impl GpuX86CodeGenerator {
             token_capacity,
             n_hir_nodes,
             inst_hir_node_count as usize,
+            pointer_jump_steps,
             feature_summary,
         );
         host_timer.stamp("capacity");
@@ -179,10 +180,10 @@ impl GpuX86CodeGenerator {
             node_tree_status_buf,
             expr_resolved_final_buf,
             node_func_buf,
-            func_owner_scan_local_prefix_buf,
-            func_owner_scan_block_sum_buf,
-            func_owner_scan_prefix_a_buf,
-            func_owner_scan_prefix_b_buf,
+            node_inst_scan_input_buf,
+            node_inst_scan_block_sum_buf,
+            node_inst_scan_prefix_a_buf,
+            node_inst_scan_prefix_b_buf,
             enum_value_record_rows,
             enum_type_record_buf,
             enum_value_record_buf,
@@ -299,10 +300,6 @@ impl GpuX86CodeGenerator {
                 external_scratch: &external_scratch,
             },
         )?;
-        // Function-owner pointer jumping completes before match-pattern
-        // candidate projection. Copy an odd-step result back to node_func and
-        // reuse this HIR-sized storage for the later first-use candidate rows.
-        let node_func_owner_b_buf = &match_pattern_first_use_node_buf;
         // No-match programs skip the pattern-record/finalize reads. Reuse
         // already allocated HIR scratch for later enclosing-stmt/callee-owner
         // pointer jumping instead of retaining two extra match-only tables.
@@ -328,12 +325,6 @@ impl GpuX86CodeGenerator {
         // materialization. Reuse the info table once instruction
         // location planning has finished.
         let func_param_reg_mask_buf = &node_inst_count_info_buf;
-        // Function-owner propagation completes before same-end rank init, so
-        // reuse that stage's link ping-pong buffers instead of allocating a
-        // separate pair of HIR-sized temporaries.
-        let node_func_owner_link_a_buf = &node_inst_same_end_link_a_buf;
-        let node_func_owner_link_b_buf = &node_inst_same_end_link_b_buf;
-        let node_func_owner_needs_copyback = node_func_owner_steps.len() % 2 != 0;
         let final_node_func_buf = &node_func_buf;
         // Match-pattern candidate records are finalized before node instruction
         // ordering begins. Reuse those HIR-sized scratch buffers for the later
@@ -420,21 +411,11 @@ impl GpuX86CodeGenerator {
         } else {
             node_inst_same_end_rank_b_buf
         };
-        let enclosing_loop_node_a_buf = &match_pattern_node_owner_buf;
-        let enclosing_loop_node_b_buf = &match_pattern_node_variant_buf;
-        let enclosing_loop_link_a_buf = &node_inst_same_end_link_a_buf;
-        let enclosing_loop_link_b_buf = &node_inst_same_end_link_b_buf;
-        let enclosing_loop_step_final_buf = if enclosing_loop_steps.len() % 2 == 0 {
-            enclosing_loop_node_a_buf
-        } else {
-            enclosing_loop_node_b_buf
-        };
         let node_inst_same_end_bucket_count_buf = &match_pattern_first_use_node_buf;
         // Call records are no longer read after node instruction counts. The
         // slot-bounds pass and the later location pass run sequentially, so
         // they can reuse the same HIR-sized storage.
         let node_inst_subtree_slot_bounds_buf = &call_record_buf;
-        let node_inst_scan_input_buf = &func_owner_scan_local_prefix_buf;
         let InstructionRecordBuffers {
             node_inst_count_status_buf,
             node_inst_order_status_buf,
@@ -512,9 +493,6 @@ impl GpuX86CodeGenerator {
                 external_scratch: &external_scratch,
             },
         )?;
-        let node_inst_scan_block_sum_buf = &func_owner_scan_block_sum_buf;
-        let node_inst_scan_prefix_a_buf = &func_owner_scan_prefix_a_buf;
-        let node_inst_scan_prefix_b_buf = &func_owner_scan_prefix_b_buf;
         let node_inst_location_record_buf = &call_record_buf;
         let short_circuit_rhs_step_final_buf = if short_circuit_rhs_steps.len() % 2 == 0 {
             &short_circuit_rhs_node_a_buf
@@ -564,18 +542,6 @@ impl GpuX86CodeGenerator {
         let reloc_site_inst_buf = &virtual_value_def_row_buf;
         let reloc_target_inst_buf = &virtual_call_live_reg_mask_buf;
         host_timer.stamp("scratch_buffers");
-        let func_owner_scan_params_buf = scan_params(
-            device,
-            "codegen.x86.func_owner_scan.params",
-            hir_words,
-            func_owner_scan_blocks,
-            inst_capacity,
-        );
-        let final_func_owner_scan_prefix_buf = final_ping_pong_scan_prefix(
-            &func_owner_scan_params_buf,
-            &func_owner_scan_prefix_a_buf,
-            &func_owner_scan_prefix_b_buf,
-        );
         let node_inst_scan_params_buf = scan_params(
             device,
             "codegen.x86.node_inst_scan.params",
@@ -725,7 +691,7 @@ impl GpuX86CodeGenerator {
                 hir_count: &hir_count,
                 hir_plus_one: &hir_plus_one,
                 hir_scan_block: &hir_scan_block,
-                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_scan_input: &node_inst_scan_input_buf,
                 call_callee_root_call: call_callee_root_call_buf,
                 node_inst_order_status: &node_inst_order_status_buf,
                 node_order_scan: &node_order_scan,
@@ -747,10 +713,6 @@ impl GpuX86CodeGenerator {
         let FunctionDiscoveryBindGroups {
             node_tree_info: node_tree_info_bind_group,
             func: func_bind_group,
-            func_owner_scan_local: func_owner_scan_local_bind_group,
-            func_owner_scan_block: func_owner_scan_block_bind_groups,
-            func_assign_nodes: func_assign_nodes_bind_group,
-            func_assign_nodes_step: func_assign_nodes_step_bind_groups,
             func_slot_flags: func_slot_flags_bind_group,
             func_slot_scatter: func_slot_scatter_bind_group,
             expr_resolve_init: expr_resolve_init_bind_group,
@@ -773,17 +735,7 @@ impl GpuX86CodeGenerator {
                 node_func: &node_func_buf,
                 decl_node_by_token: &decl_node_by_token_buf,
                 func_slot_by_node: &func_slot_by_node_buf,
-                func_owner_scan_params: &func_owner_scan_params_buf,
-                func_owner_scan_local_prefix: &func_owner_scan_local_prefix_buf,
-                func_owner_scan_block_sum: &func_owner_scan_block_sum_buf,
-                func_owner_scan_prefix_a: &func_owner_scan_prefix_a_buf,
-                func_owner_scan_prefix_b: &func_owner_scan_prefix_b_buf,
-                final_func_owner_scan_prefix: final_func_owner_scan_prefix_buf,
-                node_func_owner_steps: &node_func_owner_steps,
-                node_func_owner_link_a: node_func_owner_link_a_buf,
-                node_func_owner_link_b: node_func_owner_link_b_buf,
-                node_func_owner_b: node_func_owner_b_buf,
-                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_scan_input: &node_inst_scan_input_buf,
                 node_inst_scan_local_prefix: &node_inst_scan_local_prefix_buf,
                 final_node_inst_scan_prefix: final_node_inst_scan_prefix_buf,
                 func_slot_by_index: &func_slot_by_index_buf,
@@ -909,7 +861,7 @@ impl GpuX86CodeGenerator {
                 enum_record_status_buf: &enum_record_status_buf,
                 hir_param_record_buf,
                 final_node_func_buf,
-                node_inst_scan_input_buf,
+                node_inst_scan_input_buf: &node_inst_scan_input_buf,
                 decl_node_by_token_buf: &decl_node_by_token_buf,
                 node_inst_scan_local_prefix_buf: &node_inst_scan_local_prefix_buf,
                 final_node_inst_scan_prefix_buf,
@@ -995,8 +947,6 @@ impl GpuX86CodeGenerator {
             locations: node_inst_locations_bind_group,
             worklist_scatter: node_inst_gen_worklist_scatter_bind_group,
             worklist_dispatch_args: node_inst_gen_worklist_dispatch_args_bind_group,
-            enclosing_loop_init: enclosing_loop_init_bind_group,
-            enclosing_loop_step: enclosing_loop_step_bind_groups,
             short_circuit_rhs_init: short_circuit_rhs_init_bind_group,
             short_circuit_rhs_step: short_circuit_rhs_step_bind_groups,
             index_source_owner_init: index_source_owner_init_bind_group,
@@ -1063,7 +1013,7 @@ impl GpuX86CodeGenerator {
                 node_inst_same_end_rank_b: node_inst_same_end_rank_b_buf,
                 node_inst_same_end_rank_final: node_inst_same_end_rank_final_buf,
                 node_inst_same_end_rank_steps: &node_inst_same_end_rank_steps,
-                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_scan_input: &node_inst_scan_input_buf,
                 node_inst_order_record: &node_inst_order_record_buf,
                 node_inst_same_end_bucket_count: node_inst_same_end_bucket_count_buf,
                 node_inst_subtree_slot_bounds: node_inst_subtree_slot_bounds_buf,
@@ -1072,9 +1022,9 @@ impl GpuX86CodeGenerator {
                 node_inst_range_status: &node_inst_range_status_buf,
                 node_inst_order_status: &node_inst_order_status_buf,
                 node_inst_scan_local_prefix: &node_inst_scan_local_prefix_buf,
-                node_inst_scan_block_sum: node_inst_scan_block_sum_buf,
-                node_inst_scan_prefix_a: node_inst_scan_prefix_a_buf,
-                node_inst_scan_prefix_b: node_inst_scan_prefix_b_buf,
+                node_inst_scan_block_sum: &node_inst_scan_block_sum_buf,
+                node_inst_scan_prefix_a: &node_inst_scan_prefix_a_buf,
+                node_inst_scan_prefix_b: &node_inst_scan_prefix_b_buf,
                 final_node_inst_scan_prefix: final_node_inst_scan_prefix_buf,
                 node_inst_subtree_bound_start: &node_inst_subtree_bound_start_buf,
                 node_inst_subtree_bound_end: &node_inst_subtree_bound_end_buf,
@@ -1089,11 +1039,6 @@ impl GpuX86CodeGenerator {
                 node_inst_gen_input_status: &node_inst_gen_input_status_buf,
                 active_node_inst_gen_dispatch_args: &node_order_scan,
                 active_node_inst_gen_aggregate_copy_dispatch_args: &node_order_scan_block,
-                enclosing_loop_node_a: enclosing_loop_node_a_buf,
-                enclosing_loop_node_b: enclosing_loop_node_b_buf,
-                enclosing_loop_link_a: enclosing_loop_link_a_buf,
-                enclosing_loop_link_b: enclosing_loop_link_b_buf,
-                enclosing_loop_steps: &enclosing_loop_steps,
                 short_circuit_rhs_node_a: &short_circuit_rhs_node_a_buf,
                 short_circuit_rhs_node_b: &short_circuit_rhs_node_b_buf,
                 short_circuit_rhs_link_a: &short_circuit_rhs_link_a_buf,
@@ -1171,13 +1116,12 @@ impl GpuX86CodeGenerator {
                 node_inst_subtree_bound_start: &node_inst_subtree_bound_start_buf,
                 node_inst_subtree_bound_end: &node_inst_subtree_bound_end_buf,
                 expr_semantic_type_final: expr_semantic_type_final_buf,
-                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_scan_input: &node_inst_scan_input_buf,
                 node_inst_gen_input_status: &node_inst_gen_input_status_buf,
                 node_inst_gen_node_record: &node_inst_gen_node_record_buf,
                 active_virtual_inst_dispatch_args: &virtual_inst,
                 enclosing_return_step_final: enclosing_return_step_final_buf,
                 enclosing_let_step_final: enclosing_let_step_final_buf,
-                enclosing_loop_step_final: enclosing_loop_step_final_buf,
                 for_iterable_node: &for_iterable_node_buf,
                 short_circuit_rhs_step_final: short_circuit_rhs_step_final_buf,
                 index_source_owner_step_final: index_source_owner_step_final_buf,
@@ -1334,17 +1278,14 @@ impl GpuX86CodeGenerator {
                 match_record_rows,
                 has_match: feature_summary.has_match(),
                 needs_enclosing_return_records,
-                node_func_owner_needs_copyback,
                 enclosing_let_needs_copyback,
                 match_pattern_owner_needs_copyback: match_pattern_owner_steps.len() % 2 != 0,
                 active_hir_dispatch_args_buf,
+                pointer_jump_dispatch_args_buf,
                 hir_count: &hir_count,
                 hir_plus_one: &hir_plus_one,
                 hir_scan_block: &hir_scan_block,
-                func_owner_scan_params_buf: &func_owner_scan_params_buf,
                 node_inst_scan_params_buf: &node_inst_scan_params_buf,
-                node_func_owner_b_buf,
-                node_func_buf: &node_func_buf,
                 expr_resolved_step_final_buf,
                 expr_resolved_final_buf: &expr_resolved_final_buf,
                 match_result_owner_step_final_buf,
@@ -1368,10 +1309,6 @@ impl GpuX86CodeGenerator {
                 active_scan_dispatch_args_bind_group: &active_scan_dispatch_args_bind_group,
                 node_tree_info_bind_group: &node_tree_info_bind_group,
                 func_bind_group: &func_bind_group,
-                func_owner_scan_local_bind_group: &func_owner_scan_local_bind_group,
-                func_owner_scan_block_bind_groups: &func_owner_scan_block_bind_groups,
-                func_assign_nodes_bind_group: &func_assign_nodes_bind_group,
-                func_assign_nodes_step_bind_groups: &func_assign_nodes_step_bind_groups,
                 func_slot_flags_bind_group: &func_slot_flags_bind_group,
                 func_slot_scatter_bind_group: &func_slot_scatter_bind_group,
                 expr_resolve_init_bind_group: &expr_resolve_init_bind_group,
@@ -1419,6 +1356,7 @@ impl GpuX86CodeGenerator {
                 timer: &mut timer,
                 has_aggregate: feature_summary.has_aggregate(),
                 active_hir_dispatch_args: active_hir_dispatch_args_buf,
+                pointer_jump_dispatch_args: pointer_jump_dispatch_args_buf,
                 hir_plus_one: &hir_plus_one,
                 hir_scan_block: &hir_scan_block,
                 node_order_scan: &node_order_scan,
@@ -1446,8 +1384,6 @@ impl GpuX86CodeGenerator {
                 node_inst_gen_worklist_scatter: &node_inst_gen_worklist_scatter_bind_group,
                 node_inst_gen_worklist_dispatch_args:
                     &node_inst_gen_worklist_dispatch_args_bind_group,
-                enclosing_loop_init: &enclosing_loop_init_bind_group,
-                enclosing_loop_step: &enclosing_loop_step_bind_groups,
                 short_circuit_rhs_init: &short_circuit_rhs_init_bind_group,
                 short_circuit_rhs_step: &short_circuit_rhs_step_bind_groups,
                 index_source_owner_init: &index_source_owner_init_bind_group,
@@ -1466,9 +1402,9 @@ impl GpuX86CodeGenerator {
                 aggregate_literal_return_copy: &aggregate_literal_return_copy_bind_group,
             },
         );
-        record_virtual_emit_dispatches(
+        record_virtual_object_dispatches(
             self,
-            VirtualEmitDispatchInputs {
+            VirtualObjectDispatchInputs {
                 encoder,
                 timer: &mut timer,
                 virtual_dispatch_arg_groups,
@@ -1484,7 +1420,6 @@ impl GpuX86CodeGenerator {
                 virtual_regalloc: &virtual_regalloc,
                 selected_inst: &selected_inst,
                 selected_scan_block: &selected_scan_block,
-                elf_header_word: &elf_header_word,
                 virtual_dispatch_args: &virtual_dispatch_args_bind_group,
                 virtual_func_rows_init: &virtual_func_rows_init_bind_group,
                 virtual_func_first_row: &virtual_func_first_row_bind_group,
@@ -1513,13 +1448,22 @@ impl GpuX86CodeGenerator {
                 rodata_scan_block: &rodata_scan_block_bind_groups,
                 rodata_offsets: &rodata_offsets_bind_group,
                 rodata_dispatch_args: &rodata_dispatch_args_bind_group,
-                rodata_write: &rodata_write_bind_group,
-                string_dispatch_args: &string_dispatch,
                 output_dispatch_args: &output_dispatch_args_bind_group,
                 encode: &encode_bind_group,
+            },
+        );
+        record_executable_finalize_dispatches(
+            self,
+            ExecutableFinalizeDispatchInputs {
+                encoder,
+                timer: &mut timer,
+                selected_inst: &selected_inst,
+                elf_header_word: &elf_header_word,
+                string_dispatch_args: &string_dispatch,
                 reloc_patch: &reloc_patch_bind_group,
                 elf_layout: &elf_layout_bind_group,
                 elf: &elf_bind_group,
+                rodata_write: &rodata_write_bind_group,
             },
         );
         copy_x86_buffer_to_buffer(
@@ -1604,10 +1548,10 @@ impl GpuX86CodeGenerator {
             node_tree_status_buf,
             expr_resolved_final_buf,
             node_func_buf,
-            func_owner_scan_local_prefix_buf,
-            func_owner_scan_block_sum_buf,
-            func_owner_scan_prefix_a_buf,
-            func_owner_scan_prefix_b_buf,
+            node_inst_scan_input_buf,
+            node_inst_scan_block_sum_buf,
+            node_inst_scan_prefix_a_buf,
+            node_inst_scan_prefix_b_buf,
             enum_type_record_buf,
             enum_value_record_buf,
             enum_record_status_buf,
@@ -1720,9 +1664,6 @@ impl GpuX86CodeGenerator {
             retained_buffers.push(RetainedX86Buffer::from(buffer));
         }
         retained_buffers.push(RetainedX86Buffer::from(
-            func_owner_scan_params_buf.into_buffer(),
-        ));
-        retained_buffers.push(RetainedX86Buffer::from(
             node_inst_scan_params_buf.into_buffer(),
         ));
         retained_buffers.push(RetainedX86Buffer::from(text_scan_params_buf.into_buffer()));
@@ -1745,8 +1686,6 @@ impl GpuX86CodeGenerator {
             output_dispatch_args_bind_group,
             node_tree_info_bind_group,
             func_bind_group,
-            func_owner_scan_local_bind_group,
-            func_assign_nodes_bind_group,
             expr_resolve_init_bind_group,
             enum_records_bind_group,
             match_records_bind_group,
@@ -1776,7 +1715,6 @@ impl GpuX86CodeGenerator {
             node_inst_same_end_rank_init_bind_group,
             node_inst_end_counts_bind_group,
             node_inst_counts_bind_group,
-            enclosing_loop_init_bind_group,
             short_circuit_rhs_init_bind_group,
             index_source_owner_init_bind_group,
             node_inst_scan_local_bind_group,
@@ -1819,8 +1757,6 @@ impl GpuX86CodeGenerator {
             elf_layout_bind_group,
             elf_bind_group,
         ];
-        retained_bind_groups.extend(func_owner_scan_block_bind_groups);
-        retained_bind_groups.extend(func_assign_nodes_step_bind_groups);
         retained_bind_groups.extend(expr_resolve_step_bind_groups);
         retained_bind_groups.extend(enclosing_return_step_bind_groups);
         retained_bind_groups.extend(enclosing_let_step_bind_groups);
@@ -1830,7 +1766,6 @@ impl GpuX86CodeGenerator {
         retained_bind_groups.extend(match_pattern_owner_step_bind_groups);
         retained_bind_groups.extend(node_inst_same_end_rank_step_bind_groups);
         retained_bind_groups.extend(expr_semantic_type_step_bind_groups);
-        retained_bind_groups.extend(enclosing_loop_step_bind_groups);
         retained_bind_groups.extend(short_circuit_rhs_step_bind_groups);
         retained_bind_groups.extend(index_source_owner_step_bind_groups);
         retained_bind_groups.extend(node_inst_scan_block_bind_groups);

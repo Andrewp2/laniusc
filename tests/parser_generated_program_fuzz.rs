@@ -9,7 +9,7 @@ use proptest::{
     collection::vec,
     prelude::*,
     sample::select,
-    test_runner::{Config, TestCaseError, TestRunner},
+    test_runner::{Config, RngSeed, TestCaseError, TestRunner},
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -39,8 +39,12 @@ fn resident_parser_accepts_seeded_and_proptest_generated_programs() {
         let strategy = lanius_program();
         let mut runner = TestRunner::new(Config {
             cases: 48,
-            max_shrink_iters: 2_048,
+            // This is a deterministic GPU integration corpus. Replaying up to
+            // thousands of GPU parses to shrink a failure obscures the useful
+            // semantic diagnostic and can exceed the test's outer timeout.
+            max_shrink_iters: 0,
             failure_persistence: None,
+            rng_seed: RngSeed::Fixed(0x4c41_4e49_5553),
             ..Config::default()
         });
 
@@ -113,7 +117,11 @@ async fn assert_resident_parse_accepts(
         .map_err(|err| format!("resident parse failed: {err:#}"))?;
 
     if !result.ll1.accepted {
-        return Err(result.ll1.rejection_message());
+        let cpu_oracle = semantic_rejection_diagnostic(lexer, parser, tables, source).await;
+        return Err(format!(
+            "{}\nCPU LL(1) oracle: {cpu_oracle:?}",
+            result.ll1.rejection_message()
+        ));
     }
 
     Ok(())
@@ -138,9 +146,60 @@ async fn assert_resident_syntax_accepts(
         .await
         .map_err(|err| format!("resident lex failed: {err:#}"))?;
 
-    let consumed = checked.map_err(|err| format!("resident LL(1) parse failed: {err:#}"))?;
-    consumed.map_err(|err| format!("resident LL(1) consume failed: {err}"))?;
+    let consumed = match checked {
+        Ok(consumed) => consumed,
+        Err(err) => {
+            let cpu_oracle = semantic_rejection_diagnostic(lexer, parser, tables, source).await;
+            return Err(format!(
+                "resident LL(1) parse failed: {err:#}\nCPU LL(1) oracle: {cpu_oracle:?}"
+            ));
+        }
+    };
+    if let Err(err) = consumed {
+        let cpu_oracle = semantic_rejection_diagnostic(lexer, parser, tables, source).await;
+        return Err(format!(
+            "resident LL(1) consume failed: {err}\nCPU LL(1) oracle: {cpu_oracle:?}"
+        ));
+    }
     Ok(())
+}
+
+async fn semantic_rejection_diagnostic(
+    lexer: &GpuLexer,
+    parser: &GpuParser,
+    tables: &PrecomputedParseTables,
+    source: &str,
+) -> Result<String, String> {
+    let tokens = lexer
+        .lex(source)
+        .await
+        .map_err(|err| format!("debug lex failed: {err:#}"))?;
+    let raw: Vec<u32> = tokens.iter().map(|token| token.kind as u32).collect();
+    parser
+        .debug_semantic_token_kinds_for_raw_token_kinds(&raw, tables)
+        .map(|semantic| {
+            let replay = tables.test_cpu_ll1_production_stream(&semantic);
+            let context = replay.as_ref().err().map(|error| {
+                let start = error.pos.saturating_sub(20);
+                let end = (error.pos + 4).min(semantic.len().saturating_sub(1));
+                (start..=end)
+                    .map(|parser_i| {
+                        let raw = parser_i.checked_sub(1).and_then(|token_i| {
+                            tokens.get(token_i).map(|token| {
+                                let end = token.start.saturating_add(token.len);
+                                let text = source
+                                    .get(token.start..end)
+                                    .unwrap_or("<invalid utf8 boundary>");
+                                format!("{:?} {text:?}", token.kind)
+                            })
+                        });
+                        format!("{parser_i}: semantic={} raw={raw:?}", semantic[parser_i])
+                    })
+                    .collect::<Vec<_>>()
+            });
+            format!("{replay:?}; context={context:#?}")
+        })
+        .map_err(|err| format!("semantic classification failed: {err:#}"))
 }
 
 fn lanius_program() -> impl Strategy<Value = String> {
@@ -314,7 +373,9 @@ fn expr_with_braced_literals(_depth: u32) -> BoxedStrategy<String> {
         ]);
         let common = prop_oneof![
             inner.clone().prop_map(|expr| format!("({expr})")),
-            inner.clone().prop_map(|expr| format!("-{expr}")),
+            // Keep recursively nested unary minuses from maximal-munching into
+            // the decrement token.
+            inner.clone().prop_map(|expr| format!("- {expr}")),
             inner.clone().prop_map(|expr| format!("!{expr}")),
             (inner.clone(), op, inner.clone())
                 .prop_map(|(left, op, right)| { format!("{left} {op} {right}") }),
@@ -340,7 +401,9 @@ fn type_expr() -> BoxedStrategy<String> {
     let leaf = select(vec!["i32", "bool", "u32", "usize", "Pair"]).prop_map(|ty| ty.to_string());
     leaf.prop_recursive(2, 24, 2, |inner| {
         prop_oneof![
-            inner.clone().prop_map(|ty| format!("&{ty}")),
+            // Keep recursively nested reference tokens lexically distinct from
+            // the expression-level `&&` token produced by maximal munch.
+            inner.clone().prop_map(|ty| format!("& {ty}")),
             inner.clone().prop_map(|ty| format!("[{ty}]")),
             (inner.clone(), 0_u32..=8).prop_map(|(ty, len)| format!("[{ty}; {len}]")),
         ]

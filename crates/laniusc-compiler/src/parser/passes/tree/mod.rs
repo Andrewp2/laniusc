@@ -1,3 +1,5 @@
+/// Raw parse-tree depth and pointer-jump scheduling passes.
+pub mod depth;
 /// Recovered tree parent construction pass.
 pub mod parent;
 /// Tree prefix-scan and max-tree passes.

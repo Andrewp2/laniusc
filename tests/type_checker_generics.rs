@@ -431,8 +431,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_nested_generic_instance_parameters_without_partial_outer_match() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_nested_generic_instance_parameters() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed<T> {
     value: T,
@@ -451,13 +451,31 @@ fn main() {
     return value;
 }
 "#,
-        "LNC0008",
-        &[
-            "error[LNC0008]: unsatisfied trait bound",
-            "let value: i32 = take_nested(Maybe { value: Boxed { value: 7 } });",
-            "the compiler rejects it rather than matching only the visible top-level type",
-        ],
     );
+}
+
+#[test]
+fn type_checker_accepts_nested_generics_after_shift_underflow_across_token_blocks() {
+    let mut source = String::from(
+        r#"
+struct Boxed<T> { value: T, }
+struct Maybe<T> { value: T, }
+"#,
+    );
+    for i in 0..80 {
+        source.push_str(&format!("fn filler_{i}() -> i32 {{ return {i}; }}\n"));
+    }
+    source.push_str(
+        r#"
+fn take_nested(value: Maybe<Boxed<i32>>) -> i32 { return 0; }
+fn main() -> i32 {
+    let shifted: i32 = 32 >> 2;
+    let value: i32 = take_nested(Maybe { value: Boxed { value: shifted } });
+    return value;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(&source);
 }
 
 #[test]

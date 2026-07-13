@@ -81,7 +81,8 @@ bool fragment_for_arg_record(uint record_i, out uint fragment_i, out uint ordina
 uint direct_fragment_call_node(uint kind, uint4 meta)
 {
     return kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
-           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID
                ? meta.y
                : meta.z;
 }
@@ -124,7 +125,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         kind != BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 &&
         kind != BODY_FRAGMENT_LET_DIRECT_CALL_I32 &&
         kind != BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 &&
-        kind != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
+        kind != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 &&
+        kind != BODY_FRAGMENT_DIRECT_CALL_VOID)
     {
         return;
     }

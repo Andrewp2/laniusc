@@ -9,7 +9,7 @@
 //   produced by type_check_modules_10m_bind_match_patterns.slang.
 
 import atomics;
-import generated_parse_production_ids;
+import hir_expr_semantics;
 import status;
 
 struct Params
@@ -23,7 +23,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_call_callee_node;
@@ -168,27 +167,12 @@ uint visible_type_for_token(uint token)
     return call_return_type[token];
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint direct_node_type(uint node)
 {
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -393,7 +377,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         validate_match_node(i, match_i);
     }
 
-    if (node_kind[i] == PROD_MATCH_ARM)
+    if (valid_node(hir_match_arm_result_node[i]))
     {
         publish_match_arm_type(i);
     }

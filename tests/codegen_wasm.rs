@@ -99,6 +99,51 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_std_io_flush_operations_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import std::io;
+
+fn main() -> i32 {
+    if (!std::io::stdio_is_available()) {
+        return 3;
+    }
+    if (std::io::stdio_requires_runtime_binding()) {
+        return 4;
+    }
+    if (!std::io::flush_stdout_is_executable()) {
+        return 5;
+    }
+    if (!std::io::flush_stderr_is_executable()) {
+        return 6;
+    }
+    let stdout_result: i32 = std::io::flush_stdout();
+    let stderr_result: i32 = std::io::flush_stderr();
+    if (stdout_result != std::io::STDIO_OPERATION_OK) {
+        return 1;
+    }
+    if (stderr_result != std::io::STDIO_OPERATION_OK) {
+        return 2;
+    }
+    return 0;
+}
+"#,
+    ])
+    .expect("std::io flush operations should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM std::io flush operations",
+        "stdio_flush",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
 fn wasm_executes_std_process_argc_import_with_node() {
     common::require_node();
     let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
@@ -122,6 +167,36 @@ fn main() -> i32 {
     let status =
         common::run_wasm_main_return_with_node("WASM std::process argc", "process_argc", &wasm);
     assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_std_process_exit_from_nested_helper_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/std/process.lani"),
+        r#"
+module app::main;
+
+import std::process;
+
+fn finish(code: i32) {
+    std::process::exit(code);
+}
+
+fn main() -> i32 {
+    finish(7);
+    return 99;
+}
+"#,
+    ])
+    .expect("nested std::process exit should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM nested std::process exit",
+        "process_exit_nested",
+        &wasm,
+    );
+    assert_eq!(status, 7);
 }
 
 #[test]
@@ -207,6 +282,113 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_std_random_fill_secure_bytes_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        include_str!("../stdlib/std/random.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+import std::io;
+import std::random;
+
+fn main() -> i32 {
+    if (!std::random::random_is_available()) {
+        return 3;
+    }
+    if (!std::random::fill_secure_bytes_is_executable()) {
+        return 4;
+    }
+    let values: [i32; 1] = [0];
+    let ptr: u32 = core::mem::i32_array_data_ptr(values);
+    let filled: i32 = std::random::fill_secure_bytes(ptr, 4);
+    if (filled != 4) {
+        return 1;
+    }
+    let written: i32 = std::io::write_stdout(ptr, 4);
+    if (written != filled) {
+        return 2;
+    }
+    return 0;
+}
+"#,
+    ])
+    .expect("std::random fill_secure_bytes should compile to WASM");
+
+    let stdout = common::run_wasm_main_with_node(
+        "WASM std::random fill_secure_bytes",
+        "random_fill_secure_bytes",
+        &wasm,
+    );
+    assert_eq!(stdout.as_bytes(), &[11, 48, 85, 122]);
+}
+
+#[test]
+fn wasm_executes_std_fs_path_mutations_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        include_str!("../stdlib/std/fs.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::process;
+import std::fs;
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let path_len: usize = 15;
+    let ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let arg_read_result: i32 = std::process::arg_read(1, ptr, capacity);
+    if (arg_read_result != 15) {
+        return 1;
+    }
+    let create_result: i32 = std::fs::create_dir(ptr, path_len);
+    if (create_result != 0) {
+        return 2;
+    }
+    let rename_dir_result: i32 = std::fs::rename(ptr, path_len, ptr, path_len);
+    if (rename_dir_result != 0) {
+        return 3;
+    }
+    let remove_dir_result: i32 = std::fs::remove_dir(ptr, path_len);
+    if (remove_dir_result != 0) {
+        return 4;
+    }
+    let handle: i32 = std::fs::open_write(ptr, path_len);
+    if (handle < 0) {
+        return 5;
+    }
+    let close_result: i32 = std::fs::close(handle);
+    if (close_result != 0) {
+        return 6;
+    }
+    let rename_file_result: i32 = std::fs::rename(ptr, path_len, ptr, path_len);
+    if (rename_file_result != 0) {
+        return 7;
+    }
+    let remove_file_result: i32 = std::fs::remove_file(ptr, path_len);
+    if (remove_file_result != 0) {
+        return 8;
+    }
+    alloc::allocator::dealloc(ptr, capacity, 4);
+    return 0;
+}
+"#,
+    ])
+    .expect("std::fs path mutations should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM std::fs path mutations",
+        "filesystem_path_mutations",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
 fn wasm_executes_alloc_allocator_alloc_dealloc_with_node() {
     common::require_node();
     let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
@@ -262,6 +444,7 @@ fn wasm_executes_host_runtime_smoke_source_pack_with_node() {
 fn wasm_executes_std_env_imports_with_node() {
     common::require_node();
     let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
         include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/std/env.lani"),
         r#"
@@ -273,9 +456,13 @@ import std::env;
 fn main() -> i32 {
     let buffer: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
     let ptr: u32 = core::mem::i32_array_data_ptr(buffer);
+    let reported_cwd_len: i32 = std::env::current_dir_len();
     let cwd_len: i32 = std::env::current_dir_read(ptr, 64);
     if (cwd_len <= 0) {
         return 1;
+    }
+    if (cwd_len != reported_cwd_len) {
+        return 7;
     }
 
     let count: i32 = std::env::var_count();
@@ -455,6 +642,91 @@ fn main() -> i32 {
     assert_eq!(
         result.files.get("dynamic_path.txt").map(Vec::as_slice),
         Some(b"saved".as_slice())
+    );
+}
+
+#[test]
+fn wasm_executes_parser_decoded_string_escapes_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+extern "lanius_std" fn open_write_path(path: str) -> i32;
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+extern "lanius_std" fn close_file(handle: i32) -> i32;
+
+fn main() -> i32 {
+    let file: i32 = open_write_path("wasm_escape.txt");
+    if (file < 0) {
+        return 1;
+    }
+    let written: i32 = write_text(file, "line\nnext\tend");
+    let closed: i32 = close_file(file);
+    if (written != 13) {
+        return 2;
+    }
+    if (closed != 0) {
+        return 3;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("parser-decoded string escapes should compile to WASM");
+
+    let result = common::run_wasm_main_with_node_and_files(
+        "WASM parser-decoded string escapes",
+        "parser_decoded_string_escapes",
+        &wasm,
+        &[],
+    );
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.files.get("wasm_escape.txt").map(Vec::as_slice),
+        Some(b"line\nnext\tend".as_slice())
+    );
+}
+
+#[test]
+fn wasm_executes_long_parser_decoded_string_across_dfa_chunks_with_node() {
+    common::require_node();
+    let payload = format!("{}\\n{}", "a".repeat(130), "b".repeat(130));
+    let source = format!(
+        r#"
+extern "lanius_std" fn open_write_path(path: str) -> i32;
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+extern "lanius_std" fn close_file(handle: i32) -> i32;
+
+fn main() -> i32 {{
+    let file: i32 = open_write_path("wasm_long_escape.txt");
+    if (file < 0) {{
+        return 1;
+    }}
+    let written: i32 = write_text(file, "{payload}");
+    let closed: i32 = close_file(file);
+    if (written != 261) {{
+        return 2;
+    }}
+    if (closed != 0) {{
+        return 3;
+    }}
+    return 0;
+}}
+"#
+    );
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("long parser-decoded string should compile to WASM");
+
+    let result = common::run_wasm_main_with_node_and_files(
+        "WASM long parser-decoded string",
+        "long_parser_decoded_string",
+        &wasm,
+        &[],
+    );
+    let expected = format!("{}\n{}", "a".repeat(130), "b".repeat(130));
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.files.get("wasm_long_escape.txt").map(Vec::as_slice),
+        Some(expected.as_bytes())
     );
 }
 
@@ -2368,4 +2640,106 @@ fn main() {
         &wasm,
     );
     assert_eq!(stdout, "23\n");
+}
+
+#[test]
+fn wasm_executes_exact_clock_buffer_api_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/time.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::time;
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(16, 8);
+    let monotonic_status: i32 = std::time::monotonic_read(ptr, 16);
+    if (monotonic_status != 0) {
+        return 1;
+    }
+    let system_status: i32 = std::time::system_read(ptr, 16);
+    if (system_status != 0) {
+        return 2;
+    }
+    let short_status: i32 = std::time::monotonic_read(ptr, 15);
+    if (short_status != -1) {
+        return 3;
+    }
+    let sleep_status: i32 = std::time::sleep_ms_i32(0);
+    if (sleep_status != 0) {
+        return 4;
+    }
+    let negative_status: i32 = std::time::sleep_ms_i32(-1);
+    if (negative_status != -1) {
+        return 5;
+    }
+    alloc::allocator::dealloc(ptr, 16, 8);
+    return 0;
+}
+"#,
+    ])
+    .expect("exact clock buffer API should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM exact clock buffer API",
+        "exact_clock_buffer",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_realloc_preserves_existing_bytes_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/std/process.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+import std::process;
+import std::io;
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(32, 4);
+    let read: i32 = std::process::arg_read(1, ptr, 32);
+    if (read != 15) {
+        return 1;
+    }
+    let grown: u32 = alloc::allocator::realloc(ptr, 32, 64, 4);
+    if (grown == 0) {
+        return 2;
+    }
+    let written: i32 = std::io::write_stdout(grown, 15);
+    if (written != 15) {
+        return 3;
+    }
+    alloc::allocator::dealloc(grown, 64, 4);
+    return 0;
+}
+"#,
+    ])
+    .expect("realloc preservation should compile to WASM");
+    let stdout =
+        common::run_wasm_main_with_node("WASM realloc preservation", "realloc_preservation", &wasm);
+    assert_eq!(stdout, "LANIUS_TEST_ENV");
+}
+
+#[test]
+fn wasm_alloc_failed_is_non_returning_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
+        r#"
+module app::main;
+import alloc::allocator;
+fn main() -> i32 {
+    alloc::allocator::alloc_failed(64, 8);
+    return 99;
+}
+"#,
+    ])
+    .expect("alloc_failed should compile to WASM");
+    let status = common::run_wasm_main_return_with_node("WASM alloc_failed", "alloc_failed", &wasm);
+    assert_eq!(status, 1);
 }

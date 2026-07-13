@@ -36,9 +36,7 @@ StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_len_token;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
-StructuredBuffer<uint> hir_type_arg_next;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -504,22 +502,6 @@ bool predicate_arg_ref(uint arg, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID && tag != TYPE_REF_ERROR;
 }
 
-uint direct_type_arg_node(uint type_node, uint ordinal)
-{
-    if (!valid_node(type_node) || ordinal >= hir_type_arg_count[type_node])
-        return INVALID;
-
-    uint first = hir_type_arg_start[type_node];
-    if (ordinal == 0u)
-        return valid_node(first) ? first : INVALID;
-
-    uint second = valid_node(first) ? hir_type_arg_next[first] : INVALID;
-    if (ordinal == 1u)
-        return valid_node(second) ? second : INVALID;
-
-    return INVALID;
-}
-
 uint predicate_trait_arg_for_slot(uint impl_owner, uint slot)
 {
     if (!trait_impl_owner_node(impl_owner))
@@ -664,21 +646,7 @@ bool top_level_type_args_definitely_mismatch(
     uint impl_count = valid_node(impl_type) ? hir_type_arg_count[impl_type] : 0u;
     if (trait_count != impl_count)
         return true;
-
-    if (trait_count == 0u)
-        return false;
-
-    uint trait_arg0 = direct_type_arg_node(trait_type, 0u);
-    uint impl_arg0 = direct_type_arg_node(impl_type, 0u);
-    if (direct_leaf_or_generic_definitely_mismatch(trait_arg0, impl_arg0, impl_owner))
-        return true;
-
-    if (trait_count == 1u)
-        return false;
-
-    uint trait_arg1 = direct_type_arg_node(trait_type, 1u);
-    uint impl_arg1 = direct_type_arg_node(impl_type, 1u);
-    return direct_leaf_or_generic_definitely_mismatch(trait_arg1, impl_arg1, impl_owner);
+    return false;
 }
 
 bool flat_type_forms_definitely_mismatch(uint trait_type, uint impl_type, uint impl_owner)
@@ -777,6 +745,18 @@ void publish_validation_row(uint method_node, uint owner, uint peer, uint status
     predicate_method_validation_detail_token[method_node] = detail;
 }
 
+void publish_type_peer(uint impl_type, uint trait_type, uint owner, uint method_node)
+{
+    if (!valid_node(impl_type) || !valid_node(trait_type) || !valid_node(owner))
+        return;
+
+    predicate_method_validation_owner_node[impl_type] = owner;
+    predicate_method_validation_peer_node[impl_type] = trait_type;
+    predicate_method_validation_status[impl_type] = PREDICATE_STATUS_OK;
+    predicate_method_validation_detail_token[impl_type] =
+        method_contract_diagnostic_token(method_node);
+}
+
 bool validate_impl_param_row(uint param_node)
 {
     if (!method_param_lookup_row_valid(param_node))
@@ -806,6 +786,12 @@ bool validate_impl_param_row(uint param_node)
     if (ordinal >= method_param_count(trait_method) ||
         ordinal >= method_param_count(impl_method))
         return true;
+
+    publish_type_peer(
+        method_param_type_node(param_node),
+        method_param_type_node(method_param_for_ordinal(trait_method, ordinal)),
+        owner,
+        impl_method);
 
     if (method_param_signature_definitely_mismatches(trait_method, impl_method, owner, ordinal))
     {
@@ -942,6 +928,12 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
             detail_token);
         return;
     }
+
+    publish_type_peer(
+        method_return_type_node(method_node),
+        method_return_type_node(trait_method),
+        owner,
+        method_node);
 
     if (trait_impl_method_return_signature_definitely_mismatches(
             trait_method,

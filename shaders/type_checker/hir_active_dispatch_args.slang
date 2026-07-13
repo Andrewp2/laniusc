@@ -26,20 +26,22 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return hir_status[0u] == 0u || gParams.n_hir_nodes == 0u
+        ? 0u
+        : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
 uint active_token_count()
 {
-    return min(gParams.n_tokens, token_count[0u]);
+    return hir_status[0u] == 0u ? 0u : min(gParams.n_tokens, token_count[0u]);
 }
 
 void write_dispatch_args(RWStructuredBuffer<uint> args, uint active_records)
 {
-    uint groups = max(1u, (active_records + WG_SIZE - 1u) / WG_SIZE);
+    uint groups = (active_records + WG_SIZE - 1u) / WG_SIZE;
     args[0u] = min(groups, MAX_GROUPS_X);
-    args[1u] = max(1u, (groups + MAX_GROUPS_X - 1u) / MAX_GROUPS_X);
-    args[2u] = 1u;
+    args[1u] = groups == 0u ? 0u : (groups + MAX_GROUPS_X - 1u) / MAX_GROUPS_X;
+    args[2u] = groups == 0u ? 0u : 1u;
 }
 
 [shader("compute")]

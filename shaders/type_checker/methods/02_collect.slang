@@ -9,8 +9,6 @@
 // owner kind to keep those tables separate; it does not walk parse-tree
 // ancestors, child lists, token neighborhoods, or source bytes.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -21,7 +19,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_method_impl_node;
@@ -29,6 +26,7 @@ StructuredBuffer<uint> hir_method_name_token;
 StructuredBuffer<uint> hir_method_first_param_token;
 StructuredBuffer<uint> hir_method_receiver_mode;
 StructuredBuffer<uint> hir_method_visibility;
+StructuredBuffer<uint> hir_method_signature_flags;
 
 RWStructuredBuffer<uint> method_decl_impl_node;
 RWStructuredBuffer<uint> method_decl_name_token;
@@ -41,6 +39,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_FN = 3u;
+static const uint METHOD_SIGNATURE_INHERENT_IMPL = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -62,11 +61,6 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-bool inherent_impl_owner(uint impl_node)
-{
-    return valid_node(impl_node) && node_kind[impl_node] == PROD_IMPL_INHERENT;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -76,7 +70,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint impl_node = hir_method_impl_node[node];
-    if (!inherent_impl_owner(impl_node))
+    if (!valid_node(impl_node) ||
+        (hir_method_signature_flags[node] & METHOD_SIGNATURE_INHERENT_IMPL) == 0u)
         return;
 
     uint fn_token = hir_token_pos[node];

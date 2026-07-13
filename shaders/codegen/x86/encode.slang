@@ -159,9 +159,21 @@ static const uint X86_INST_V_HOST_FS_OPEN_APPEND = 110u;
 static const uint X86_INST_V_HOST_STDIN_READ = 111u;
 static const uint X86_INST_V_HOST_STDOUT_WRITE = 112u;
 static const uint X86_INST_V_HOST_STDERR_WRITE = 113u;
+static const uint X86_INST_V_HOST_FILL_SECURE_BYTES = 114u;
+static const uint X86_INST_V_HOST_FS_REMOVE_FILE = 115u;
+static const uint X86_INST_V_HOST_FS_CREATE_DIR = 116u;
+static const uint X86_INST_V_HOST_FS_REMOVE_DIR = 117u;
+static const uint X86_INST_V_HOST_FS_RENAME = 118u;
+static const uint X86_INST_V_HOST_TIME_MONOTONIC_READ = 119u;
+static const uint X86_INST_V_HOST_TIME_SYSTEM_READ = 120u;
+static const uint X86_INST_V_HOST_TIME_SLEEP_MS_I32 = 121u;
+static const uint X86_INST_V_HOST_REALLOC = 122u;
+static const uint X86_INST_V_HOST_ALLOC_FAILED = 123u;
 static const uint HOST_PATH_BUFFER_BYTES = 4096u;
 static const uint HOST_PATH_MAX_BYTES = 4095u;
 static const uint HOST_PATH_RESULT_DISP = 4160u;
+static const uint HOST_RENAME_BUFFER_BYTES = 8192u;
+static const uint HOST_RENAME_RESULT_DISP = 8256u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -3231,6 +3243,320 @@ uint host_open_path_buffer_macro_byte(uint packed, uint dst, uint flags, uint mo
     return host_path_open_finish_byte(dst, byte_i);
 }
 
+uint host_path_syscall_macro_byte(uint packed, uint dst, uint syscall_number, bool has_mode, uint byte_i)
+{
+    uint path_ptr = packed_reg_a(packed);
+    uint path_len = packed_reg_b(packed);
+    uint save_size = print_save_restore_size();
+    if (byte_i < save_size) return print_save_regs_byte(byte_i);
+    byte_i -= save_size;
+    if (byte_i < 4u) return sub_r64_rsp_imm8_byte(16u, byte_i);
+    byte_i -= 4u;
+    uint load_ptr = host_arg_source_r32_size(X86_REG_R8D, path_ptr);
+    if (byte_i < load_ptr) return host_arg_source_r32_byte(X86_REG_R8D, path_ptr, byte_i);
+    byte_i -= load_ptr;
+    uint load_len = host_arg_source_r32_size(X86_REG_R9D, path_len);
+    if (byte_i < load_len) return host_arg_source_r32_byte(X86_REG_R9D, path_len, byte_i);
+    byte_i -= load_len;
+    if (byte_i < 7u) return sub_r64_rsp_imm32_byte(HOST_PATH_BUFFER_BYTES - 16u, byte_i);
+    byte_i -= 7u;
+    uint len_check = cmp_r32_imm_size(X86_REG_R9D, HOST_PATH_MAX_BYTES);
+    if (byte_i < len_check) return cmp_r32_imm_byte(X86_REG_R9D, HOST_PATH_MAX_BYTES, byte_i);
+    byte_i -= len_check;
+    uint copy_size = host_path_buffer_copy_size();
+    uint finish_size = host_path_open_finish_size(dst);
+    uint normal_size = copy_size + (has_mode ? mov_r32_imm32_size(X86_REG_ESI) : 0u) +
+                       mov_r32_imm32_size(X86_REG_EAX) + 2u + finish_size;
+    uint fail_size = mov_r32_imm32_size(X86_REG_EAX) + finish_size;
+    if (byte_i < 2u) return jcc_rel8_byte(0x77u, normal_size + 2u, byte_i);
+    byte_i -= 2u;
+    if (byte_i < copy_size) return host_path_buffer_copy_byte(byte_i);
+    byte_i -= copy_size;
+    if (has_mode)
+    {
+        uint mode_size = mov_r32_imm32_size(X86_REG_ESI);
+        if (byte_i < mode_size) return mov_r32_imm32_byte(X86_REG_ESI, 493u, byte_i);
+        byte_i -= mode_size;
+    }
+    uint syscall_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_size) return mov_r32_imm32_byte(X86_REG_EAX, syscall_number, byte_i);
+    byte_i -= syscall_size;
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
+    if (byte_i < finish_size) return host_path_open_finish_byte(dst, byte_i);
+    byte_i -= finish_size;
+    if (byte_i < 2u) return jcc_rel8_byte(0xebu, fail_size, byte_i);
+    byte_i -= 2u;
+    uint fail_value_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < fail_value_size) return mov_r32_imm32_byte(X86_REG_EAX, 0xffffffffu, byte_i);
+    byte_i -= fail_value_size;
+    return host_path_open_finish_byte(dst, byte_i);
+}
+
+uint host_second_path_buffer_copy_size()
+{
+    return lea_r64_rsp_size(X86_REG_ESI, HOST_PATH_BUFFER_BYTES) +
+           xor_r32_self_size(X86_REG_ECX) +
+           cmp_r32_r32_size(X86_REG_ECX, X86_REG_R11D) +
+           2u + 4u + 3u + add_r32_imm8_size(X86_REG_ECX) + 2u + 5u;
+}
+
+uint host_second_path_buffer_copy_byte(uint byte_i)
+{
+    uint lea_size = lea_r64_rsp_size(X86_REG_ESI, HOST_PATH_BUFFER_BYTES);
+    if (byte_i < lea_size) return lea_r64_rsp_byte(X86_REG_ESI, HOST_PATH_BUFFER_BYTES, byte_i);
+    byte_i -= lea_size;
+    uint zero_size = xor_r32_self_size(X86_REG_ECX);
+    if (byte_i < zero_size) return xor_r32_r32_byte(X86_REG_ECX, byte_i);
+    byte_i -= zero_size;
+    uint cmp_size = cmp_r32_r32_size(X86_REG_ECX, X86_REG_R11D);
+    if (byte_i < cmp_size) return cmp_r32_r32_byte(X86_REG_ECX, X86_REG_R11D, byte_i);
+    byte_i -= cmp_size;
+    uint step_size = add_r32_imm8_size(X86_REG_ECX);
+    uint body_size = 4u + 3u + step_size + 2u;
+    if (byte_i < 2u) return jcc_rel8_byte(0x74u, body_size, byte_i);
+    byte_i -= 2u;
+    if (byte_i < 4u)
+    {
+        if (byte_i == 0u) return 0x41u;
+        if (byte_i == 1u) return 0x8au;
+        if (byte_i == 2u) return 0x14u;
+        return 0x0au;
+    }
+    byte_i -= 4u;
+    if (byte_i < 3u)
+    {
+        if (byte_i == 0u) return 0x88u;
+        if (byte_i == 1u) return 0x14u;
+        return 0x0eu;
+    }
+    byte_i -= 3u;
+    if (byte_i < step_size) return add_r32_imm8_byte(X86_REG_ECX, 1u, byte_i);
+    byte_i -= step_size;
+    if (byte_i < 2u)
+    {
+        uint back_distance = cmp_size + 2u + body_size;
+        return jcc_rel8_byte(0xebu, 256u - back_distance, byte_i);
+    }
+    byte_i -= 2u;
+    if (byte_i == 0u) return 0x42u;
+    if (byte_i == 1u) return 0xc6u;
+    if (byte_i == 2u) return 0x04u;
+    if (byte_i == 3u) return 0x1eu;
+    return 0u;
+}
+
+uint host_rename_finish_size(uint dst)
+{
+    return 14u + print_save_restore_size() +
+           (dst == X86_REG_EAX ? 0u : mov_r32_r32_size(dst, X86_REG_EAX));
+}
+
+uint host_rename_finish_byte(uint dst, uint byte_i)
+{
+    if (byte_i < 7u) return store_eax_rsp_disp32_byte(HOST_RENAME_RESULT_DISP, byte_i);
+    byte_i -= 7u;
+    if (byte_i < 7u) return add_r64_rsp_imm32_byte(HOST_RENAME_BUFFER_BYTES, byte_i);
+    byte_i -= 7u;
+    uint save_size = print_save_restore_size();
+    if (byte_i < save_size) return print_restore_regs_byte(byte_i);
+    byte_i -= save_size;
+    return dst == X86_REG_EAX ? 0u : mov_r32_r32_byte(dst, X86_REG_EAX, byte_i);
+}
+
+uint host_rename_path_buffer_macro_byte(uint from_packed, uint to_packed, uint dst, uint byte_i)
+{
+    uint4 regs = uint4(packed_reg_a(from_packed), packed_reg_b(from_packed),
+                       packed_reg_a(to_packed), packed_reg_b(to_packed));
+    uint save_size = print_save_restore_size();
+    if (byte_i < save_size) return print_save_regs_byte(byte_i);
+    byte_i -= save_size;
+    if (byte_i < 4u) return sub_r64_rsp_imm8_byte(16u, byte_i);
+    byte_i -= 4u;
+    uint4 dst_regs = uint4(X86_REG_R8D, X86_REG_R9D, X86_REG_R10D, X86_REG_R11D);
+    for (uint i = 0u; i < 4u; i += 1u)
+    {
+        uint load_size = host_arg_source_r32_size(dst_regs[i], regs[i]);
+        if (byte_i < load_size) return host_arg_source_r32_byte(dst_regs[i], regs[i], byte_i);
+        byte_i -= load_size;
+    }
+    if (byte_i < 7u) return sub_r64_rsp_imm32_byte(HOST_RENAME_BUFFER_BYTES - 16u, byte_i);
+    byte_i -= 7u;
+    uint from_check = cmp_r32_imm_size(X86_REG_R9D, HOST_PATH_MAX_BYTES);
+    if (byte_i < from_check) return cmp_r32_imm_byte(X86_REG_R9D, HOST_PATH_MAX_BYTES, byte_i);
+    byte_i -= from_check;
+    uint to_check = cmp_r32_imm_size(X86_REG_R11D, HOST_PATH_MAX_BYTES);
+    uint copy_size = host_path_buffer_copy_size();
+    uint second_copy_size = host_second_path_buffer_copy_size();
+    uint finish_size = host_rename_finish_size(dst);
+    uint normal_size = copy_size + second_copy_size + mov_r32_imm32_size(X86_REG_EAX) + 2u + finish_size;
+    uint fail_size = mov_r32_imm32_size(X86_REG_EAX) + finish_size;
+    if (byte_i < 2u) return jcc_rel8_byte(0x77u, to_check + 2u + normal_size + 2u, byte_i);
+    byte_i -= 2u;
+    if (byte_i < to_check) return cmp_r32_imm_byte(X86_REG_R11D, HOST_PATH_MAX_BYTES, byte_i);
+    byte_i -= to_check;
+    if (byte_i < 2u) return jcc_rel8_byte(0x77u, normal_size + 2u, byte_i);
+    byte_i -= 2u;
+    if (byte_i < copy_size) return host_path_buffer_copy_byte(byte_i);
+    byte_i -= copy_size;
+    if (byte_i < second_copy_size) return host_second_path_buffer_copy_byte(byte_i);
+    byte_i -= second_copy_size;
+    uint syscall_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_size) return mov_r32_imm32_byte(X86_REG_EAX, 82u, byte_i);
+    byte_i -= syscall_size;
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
+    if (byte_i < finish_size) return host_rename_finish_byte(dst, byte_i);
+    byte_i -= finish_size;
+    if (byte_i < 2u) return jcc_rel8_byte(0xebu, fail_size, byte_i);
+    byte_i -= 2u;
+    uint fail_value_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < fail_value_size) return mov_r32_imm32_byte(X86_REG_EAX, 0xffffffffu, byte_i);
+    byte_i -= fail_value_size;
+    return host_rename_finish_byte(dst, byte_i);
+}
+
+uint host_result_i32_finish_size(uint dst)
+{
+    return 8u + print_save_restore_size() +
+           (dst == X86_REG_EAX ? 0u : mov_r32_r32_size(dst, X86_REG_EAX));
+}
+
+uint host_result_i32_finish_byte(uint dst, uint byte_i)
+{
+    if (byte_i < 4u) return store_eax_rsp_disp8_byte(80u, byte_i);
+    byte_i -= 4u;
+    if (byte_i < 4u) return alu_r64_rsp_imm8_byte(0u, 16u, byte_i);
+    byte_i -= 4u;
+    uint restore = print_save_restore_size();
+    if (byte_i < restore) return print_restore_regs_byte(byte_i);
+    byte_i -= restore;
+    return dst == X86_REG_EAX ? 0u : mov_r32_r32_byte(dst, X86_REG_EAX, byte_i);
+}
+
+uint host_clock_read_macro_byte(uint packed, uint dst, uint clock_id, uint byte_i)
+{
+    uint ptr = packed_reg_a(packed);
+    uint len = packed_reg_b(packed);
+    uint save = print_save_restore_size();
+    if (byte_i < save) return print_save_regs_byte(byte_i);
+    byte_i -= save;
+    if (byte_i < 4u) return alu_r64_rsp_imm8_byte(1u, 16u, byte_i);
+    byte_i -= 4u;
+    uint load_ptr = host_arg_source_r32_size(X86_REG_ESI, ptr);
+    if (byte_i < load_ptr) return host_arg_source_r32_byte(X86_REG_ESI, ptr, byte_i);
+    byte_i -= load_ptr;
+    uint load_len = host_arg_source_r32_size(X86_REG_R9D, len);
+    if (byte_i < load_len) return host_arg_source_r32_byte(X86_REG_R9D, len, byte_i);
+    byte_i -= load_len;
+    uint len_check = cmp_r32_imm_size(X86_REG_R9D, 16u);
+    if (byte_i < len_check) return cmp_r32_imm_byte(X86_REG_R9D, 16u, byte_i);
+    byte_i -= len_check;
+    uint finish = host_result_i32_finish_size(dst);
+    uint normal = mov_r32_imm32_size(X86_REG_EDI) + mov_r32_imm32_size(X86_REG_EAX) + 2u + finish;
+    uint fail = mov_r32_imm32_size(X86_REG_EAX) + finish;
+    if (byte_i < 2u) return jcc_rel8_byte(0x72u, normal + 2u, byte_i);
+    byte_i -= 2u;
+    uint clock_size = mov_r32_imm32_size(X86_REG_EDI);
+    if (byte_i < clock_size) return mov_r32_imm32_byte(X86_REG_EDI, clock_id, byte_i);
+    byte_i -= clock_size;
+    uint syscall_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_size) return mov_r32_imm32_byte(X86_REG_EAX, 228u, byte_i);
+    byte_i -= syscall_size;
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
+    if (byte_i < finish) return host_result_i32_finish_byte(dst, byte_i);
+    byte_i -= finish;
+    if (byte_i < 2u) return jcc_rel8_byte(0xebu, fail, byte_i);
+    byte_i -= 2u;
+    uint fail_value = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < fail_value) return mov_r32_imm32_byte(X86_REG_EAX, 0xffffffffu, byte_i);
+    byte_i -= fail_value;
+    return host_result_i32_finish_byte(dst, byte_i);
+}
+
+uint host_sleep_ms_i32_macro_byte(uint milliseconds, uint dst, uint byte_i)
+{
+    uint save = print_save_restore_size();
+    if (byte_i < save) return print_save_regs_byte(byte_i);
+    byte_i -= save;
+    if (byte_i < 4u) return alu_r64_rsp_imm8_byte(1u, 16u, byte_i);
+    byte_i -= 4u;
+    uint load_ms = host_arg_source_r32_size(X86_REG_R10D, milliseconds);
+    if (byte_i < load_ms) return host_arg_source_r32_byte(X86_REG_R10D, milliseconds, byte_i);
+    byte_i -= load_ms;
+    uint check = cmp_r32_imm_size(X86_REG_R10D, 0u);
+    if (byte_i < check) return cmp_r32_imm_byte(X86_REG_R10D, 0u, byte_i);
+    byte_i -= check;
+    uint finish = host_result_i32_finish_size(dst);
+    uint normal = mov_r32_r32_size(X86_REG_EDX, X86_REG_R10D) +
+                  xor_r32_self_size(X86_REG_EDI) + xor_r32_self_size(X86_REG_ESI) +
+                  mov_r32_imm32_size(X86_REG_EAX) + 2u + finish;
+    uint fail = mov_r32_imm32_size(X86_REG_EAX) + finish;
+    if (byte_i < 2u) return jcc_rel8_byte(0x7cu, normal + 2u, byte_i);
+    byte_i -= 2u;
+    uint timeout_move = mov_r32_r32_size(X86_REG_EDX, X86_REG_R10D);
+    if (byte_i < timeout_move) return mov_r32_r32_byte(X86_REG_EDX, X86_REG_R10D, byte_i);
+    byte_i -= timeout_move;
+    uint zero_edi = xor_r32_self_size(X86_REG_EDI);
+    if (byte_i < zero_edi) return xor_r32_r32_byte(X86_REG_EDI, byte_i);
+    byte_i -= zero_edi;
+    uint zero_esi = xor_r32_self_size(X86_REG_ESI);
+    if (byte_i < zero_esi) return xor_r32_r32_byte(X86_REG_ESI, byte_i);
+    byte_i -= zero_esi;
+    uint syscall_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_size) return mov_r32_imm32_byte(X86_REG_EAX, 7u, byte_i);
+    byte_i -= syscall_size;
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
+    if (byte_i < finish) return host_result_i32_finish_byte(dst, byte_i);
+    byte_i -= finish;
+    if (byte_i < 2u) return jcc_rel8_byte(0xebu, fail, byte_i);
+    byte_i -= 2u;
+    uint fail_value = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < fail_value) return mov_r32_imm32_byte(X86_REG_EAX, 0xffffffffu, byte_i);
+    byte_i -= fail_value;
+    return host_result_i32_finish_byte(dst, byte_i);
+}
+
+uint host_realloc_macro_byte(uint old_packed, uint new_packed, uint dst, uint byte_i)
+{
+    uint3 src = uint3(packed_reg_a(old_packed), packed_reg_b(old_packed), packed_reg_a(new_packed));
+    uint3 target = uint3(X86_REG_EDI, X86_REG_ESI, X86_REG_EDX);
+    uint save = print_save_restore_size();
+    if (byte_i < save) return print_save_regs_byte(byte_i);
+    byte_i -= save;
+    if (byte_i < 4u) return alu_r64_rsp_imm8_byte(1u, 16u, byte_i);
+    byte_i -= 4u;
+    for (uint i = 0u; i < 3u; i += 1u)
+    {
+        uint load = host_arg_source_r32_size(target[i], src[i]);
+        if (byte_i < load) return host_arg_source_r32_byte(target[i], src[i], byte_i);
+        byte_i -= load;
+    }
+    uint flags = mov_r32_imm32_size(X86_REG_R10D);
+    if (byte_i < flags) return mov_r32_imm32_byte(X86_REG_R10D, 1u, byte_i);
+    byte_i -= flags;
+    uint syscall_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_size) return mov_r32_imm32_byte(X86_REG_EAX, 25u, byte_i);
+    byte_i -= syscall_size;
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
+    if (byte_i < 2u) return test_r32_r32_byte(X86_REG_EAX, byte_i);
+    byte_i -= 2u;
+    uint zero_size = xor_r32_self_size(X86_REG_EAX);
+    if (byte_i < 2u) return jcc_rel8_byte(0x79u, zero_size, byte_i);
+    byte_i -= 2u;
+    if (byte_i < zero_size) return xor_r32_r32_byte(X86_REG_EAX, byte_i);
+    byte_i -= zero_size;
+    return host_result_i32_finish_byte(dst, byte_i);
+}
+
 uint host_read_i32_macro_byte(uint packed, uint dst, uint byte_i)
 {
     uint handle = packed_reg_a(packed);
@@ -3478,6 +3804,60 @@ uint host_secure_u32_macro_byte(uint dst, uint byte_i)
     if (byte_i < load_size)
         return load_rsp_disp8_r32_byte(X86_REG_EAX, 12u, byte_i);
     byte_i -= load_size;
+
+    if (byte_i < 4u)
+        return store_eax_rsp_disp8_byte(80u, byte_i);
+    byte_i -= 4u;
+
+    if (byte_i < 4u)
+        return alu_r64_rsp_imm8_byte(0u, 16u, byte_i);
+    byte_i -= 4u;
+
+    if (byte_i < save_size)
+        return print_restore_regs_byte(byte_i);
+    byte_i -= save_size;
+
+    if (dst == X86_REG_EAX)
+        return 0u;
+    return mov_r32_r32_byte(dst, X86_REG_EAX, byte_i);
+}
+
+uint host_fill_secure_bytes_macro_byte(uint packed, uint dst, uint byte_i)
+{
+    uint ptr = packed_reg_a(packed);
+    uint len = packed_reg_b(packed);
+    uint save_size = print_save_restore_size();
+    if (byte_i < save_size)
+        return print_save_regs_byte(byte_i);
+    byte_i -= save_size;
+
+    if (byte_i < 4u)
+        return alu_r64_rsp_imm8_byte(1u, 16u, byte_i);
+    byte_i -= 4u;
+
+    uint ptr_load = host_arg_source_r32_size(X86_REG_EDI, ptr);
+    if (byte_i < ptr_load)
+        return host_arg_source_r32_byte(X86_REG_EDI, ptr, byte_i);
+    byte_i -= ptr_load;
+
+    uint len_load = host_arg_source_r32_size(X86_REG_ESI, len);
+    if (byte_i < len_load)
+        return host_arg_source_r32_byte(X86_REG_ESI, len, byte_i);
+    byte_i -= len_load;
+
+    uint flags_size = xor_r32_self_size(X86_REG_EDX);
+    if (byte_i < flags_size)
+        return xor_r32_r32_byte(X86_REG_EDX, byte_i);
+    byte_i -= flags_size;
+
+    uint syscall_number_size = mov_r32_imm32_size(X86_REG_EAX);
+    if (byte_i < syscall_number_size)
+        return mov_r32_imm32_byte(X86_REG_EAX, 318u, byte_i);
+    byte_i -= syscall_number_size;
+
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x05u;
+    byte_i -= 2u;
 
     if (byte_i < 4u)
         return store_eax_rsp_disp8_byte(80u, byte_i);
@@ -4736,6 +5116,22 @@ uint host_text_write_macro_byte(uint packed, uint text_payload, uint text_len, u
     return xor_r32_r32_byte(dst, byte_i);
 }
 
+uint host_alloc_failed_macro_byte(uint byte_i)
+{
+    // exit_group is unnecessary for these single-threaded artifacts. The
+    // ordinary exit syscall is non-returning and preserves the language ABI's
+    // allocation-failure contract through nested calls.
+    if (byte_i == 0u) return 0xbfu;
+    if (byte_i == 1u) return 1u;
+    if (byte_i >= 2u && byte_i < 5u) return 0u;
+    if (byte_i == 5u) return 0xb8u;
+    if (byte_i == 6u) return 60u;
+    if (byte_i >= 7u && byte_i < 10u) return 0u;
+    if (byte_i == 10u) return 0x0fu;
+    if (byte_i == 11u) return 0x05u;
+    return 0u;
+}
+
 uint inst_kind_tag(uint inst_i)
 {
     return x86_inst_kind[inst_i] & 0xffu;
@@ -5083,6 +5479,26 @@ uint instruction_byte(uint inst_i, uint byte_i)
         return host_stdio_read_write_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 1u, 1u, byte_i);
     if (kind == X86_INST_V_HOST_STDERR_WRITE)
         return host_stdio_read_write_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 2u, 1u, byte_i);
+    if (kind == X86_INST_V_HOST_FILL_SECURE_BYTES)
+        return host_fill_secure_bytes_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
+    if (kind == X86_INST_V_HOST_FS_REMOVE_FILE)
+        return host_path_syscall_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 87u, false, byte_i);
+    if (kind == X86_INST_V_HOST_FS_CREATE_DIR)
+        return host_path_syscall_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 83u, true, byte_i);
+    if (kind == X86_INST_V_HOST_FS_REMOVE_DIR)
+        return host_path_syscall_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 84u, false, byte_i);
+    if (kind == X86_INST_V_HOST_FS_RENAME)
+        return host_rename_path_buffer_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], byte_i);
+    if (kind == X86_INST_V_HOST_TIME_MONOTONIC_READ)
+        return host_clock_read_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 1u, byte_i);
+    if (kind == X86_INST_V_HOST_TIME_SYSTEM_READ)
+        return host_clock_read_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], 0u, byte_i);
+    if (kind == X86_INST_V_HOST_TIME_SLEEP_MS_I32)
+        return host_sleep_ms_i32_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
+    if (kind == X86_INST_V_HOST_REALLOC)
+        return host_realloc_macro_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], byte_i);
+    if (kind == X86_INST_V_HOST_ALLOC_FAILED)
+        return host_alloc_failed_macro_byte(byte_i);
     if (kind == X86_INST_V_HOST_WRITE_BYTE)
         return host_write_byte_macro_byte(x86_inst_arg0[inst_i], packed_reg_b(x86_inst_arg0[inst_i]), x86_inst_arg1[inst_i], false, byte_i);
     if (kind == X86_INST_V_HOST_WRITE_NEWLINE)

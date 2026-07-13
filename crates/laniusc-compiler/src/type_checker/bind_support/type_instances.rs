@@ -1,4 +1,8 @@
-use super::{super::*, common::reflected_bind_group_from_resources};
+use super::{
+    super::*,
+    common::{buffer_from_resources, reflected_bind_group_from_resources},
+    scan::create_counted_u32_scan_bind_groups_with_passes,
+};
 
 const GENERIC_PARAM_KEY_FIELD_COUNT: u32 = 3;
 const GENERIC_PARAM_KEY_MAX_RADIX_STEPS: u32 = 12;
@@ -329,6 +333,38 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         )?);
     }
 
+    // Key-order and slot-order sorts consume independently seeded order rows.
+    // Give the slot sort separate scratch so corresponding radix stages can be
+    // recorded together without storage hazards.
+    let slot_radix_block_histogram = typed_storage_u32_rw(
+        device,
+        "type_check.type_instances.slot_radix_block_histogram",
+        (buffer_from_resources(resources, "generic_param_key_radix_block_histogram")?.size() / 4)
+            as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let slot_radix_block_bucket_prefix = typed_storage_u32_rw(
+        device,
+        "type_check.type_instances.slot_radix_block_bucket_prefix",
+        (buffer_from_resources(resources, "generic_param_key_radix_block_bucket_prefix")?.size()
+            / 4) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let slot_radix_bucket_total = typed_storage_u32_rw(
+        device,
+        "type_check.type_instances.slot_radix_bucket_total",
+        (buffer_from_resources(resources, "generic_param_key_radix_bucket_total")?.size() / 4)
+            as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let slot_radix_bucket_base = typed_storage_u32_rw(
+        device,
+        "type_check.type_instances.slot_radix_bucket_base",
+        (buffer_from_resources(resources, "generic_param_key_radix_bucket_base")?.size() / 4)
+            as usize,
+        wgpu::BufferUsages::empty(),
+    );
+
     for key_step in 0..radix_steps {
         let step_params = uniform_from_val(
             device,
@@ -377,7 +413,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ("generic_param_slot_order_in", read_order.clone()),
                 (
                     "radix_block_histogram",
-                    resources["generic_param_key_radix_block_histogram"].clone(),
+                    slot_radix_block_histogram.as_entire_binding(),
                 ),
             ],
         )?);
@@ -395,15 +431,15 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ),
                 (
                     "radix_block_histogram",
-                    resources["generic_param_key_radix_block_histogram"].clone(),
+                    slot_radix_block_histogram.as_entire_binding(),
                 ),
                 (
                     "radix_block_bucket_prefix",
-                    resources["generic_param_key_radix_block_bucket_prefix"].clone(),
+                    slot_radix_block_bucket_prefix.as_entire_binding(),
                 ),
                 (
                     "radix_bucket_total",
-                    resources["generic_param_key_radix_bucket_total"].clone(),
+                    slot_radix_bucket_total.as_entire_binding(),
                 ),
             ],
         )?);
@@ -417,11 +453,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ("gParams", step_params.as_entire_binding()),
                 (
                     "radix_bucket_total",
-                    resources["generic_param_key_radix_bucket_total"].clone(),
+                    slot_radix_bucket_total.as_entire_binding(),
                 ),
                 (
                     "radix_bucket_base",
-                    resources["generic_param_key_radix_bucket_base"].clone(),
+                    slot_radix_bucket_base.as_entire_binding(),
                 ),
             ],
         )?);
@@ -452,11 +488,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ("generic_param_slot_order_in", read_order),
                 (
                     "radix_bucket_base",
-                    resources["generic_param_key_radix_bucket_base"].clone(),
+                    slot_radix_bucket_base.as_entire_binding(),
                 ),
                 (
                     "radix_block_bucket_prefix",
-                    resources["generic_param_key_radix_block_bucket_prefix"].clone(),
+                    slot_radix_block_bucket_prefix.as_entire_binding(),
                 ),
                 ("generic_param_slot_order_out", write_order),
             ],
@@ -658,163 +694,34 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         )?);
     }
 
-    let generic_param_scan_local = bind_group::create_bind_group_from_bindings(
+    let generic_param_scan = create_counted_u32_scan_bind_groups_with_passes(
+        passes,
         device,
-        Some("type_check.type_instances.generic_param_scan.counted_scan_local"),
-        &passes.counted_scan_local,
-        0,
-        &[
-            ("gScan", hir_scan_steps[0].params.as_entire_binding()),
-            ("scan_count", resources["hir_active_count"].clone()),
-            ("scan_input", resources["generic_param_flag"].clone()),
-            (
-                "scan_local_prefix",
-                resources["generic_param_scan_local_prefix"].clone(),
-            ),
-            (
-                "scan_block_sum",
-                resources["generic_param_scan_block_sum"].clone(),
-            ),
-        ],
-    )?;
-    let mut generic_param_scan_blocks = Vec::with_capacity(hir_scan_steps.len());
-    for step in hir_scan_steps {
-        let prefix_in = if step.read_from_a {
-            resources["generic_param_scan_prefix_a"].clone()
-        } else {
-            resources["generic_param_scan_prefix_b"].clone()
-        };
-        let prefix_out = if step.write_to_a {
-            resources["generic_param_scan_prefix_a"].clone()
-        } else {
-            resources["generic_param_scan_prefix_b"].clone()
-        };
-        generic_param_scan_blocks.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.type_instances.generic_param_scan.counted_scan_blocks"),
-            &passes.counted_scan_blocks,
-            0,
-            &[
-                ("gScan", step.params.as_entire_binding()),
-                ("scan_count", resources["hir_active_count"].clone()),
-                (
-                    "scan_block_sum",
-                    resources["generic_param_scan_block_sum"].clone(),
-                ),
-                ("scan_block_prefix_in", prefix_in),
-                ("scan_block_prefix_out", prefix_out),
-            ],
-        )?);
-    }
-    let final_prefix = if hir_scan_steps
-        .last()
-        .map(|step| step.write_to_a)
-        .unwrap_or(true)
-    {
-        resources["generic_param_scan_prefix_a"].clone()
-    } else {
-        resources["generic_param_scan_prefix_b"].clone()
-    };
-    let generic_param_scan_apply = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check.type_instances.generic_param_scan.counted_scan_apply"),
-        &passes.counted_scan_apply,
-        0,
-        &[
-            ("gScan", hir_scan_steps[0].params.as_entire_binding()),
-            ("scan_count", resources["hir_active_count"].clone()),
-            (
-                "scan_local_prefix",
-                resources["generic_param_scan_local_prefix"].clone(),
-            ),
-            ("scan_block_prefix", final_prefix),
-            (
-                "scan_output_prefix",
-                resources["generic_param_prefix"].clone(),
-            ),
-            ("scan_total", resources["generic_param_count_out"].clone()),
-        ],
+        "type_check.type_instances.generic_param_scan",
+        hir_scan_steps,
+        buffer_from_resources(resources, "hir_active_count")?,
+        buffer_from_resources(resources, "generic_param_flag")?,
+        buffer_from_resources(resources, "generic_param_prefix")?,
+        buffer_from_resources(resources, "generic_param_count_out")?,
+        buffer_from_resources(resources, "generic_param_scan_local_prefix")?,
+        buffer_from_resources(resources, "generic_param_scan_block_sum")?,
+        buffer_from_resources(resources, "generic_param_scan_prefix_a")?,
+        buffer_from_resources(resources, "generic_param_scan_prefix_b")?,
     )?;
 
-    let type_instance_arg_row_scan_local = bind_group::create_bind_group_from_bindings(
+    let type_instance_arg_row_scan = create_counted_u32_scan_bind_groups_with_passes(
+        passes,
         device,
-        Some("type_check.type_instances.arg_row_scan.counted_scan_local"),
-        &passes.counted_scan_local,
-        0,
-        &[
-            ("gScan", arg_row_scan_steps[0].params.as_entire_binding()),
-            ("scan_count", resources["token_count"].clone()),
-            ("scan_input", resources["type_instance_arg_count"].clone()),
-            (
-                "scan_local_prefix",
-                resources["type_instance_arg_row_scan_local_prefix"].clone(),
-            ),
-            (
-                "scan_block_sum",
-                resources["type_instance_arg_row_scan_block_sum"].clone(),
-            ),
-        ],
-    )?;
-    let mut type_instance_arg_row_scan_blocks = Vec::with_capacity(arg_row_scan_steps.len());
-    for step in &arg_row_scan_steps {
-        let prefix_in = if step.read_from_a {
-            resources["type_instance_arg_row_scan_prefix_a"].clone()
-        } else {
-            resources["type_instance_arg_row_scan_prefix_b"].clone()
-        };
-        let prefix_out = if step.write_to_a {
-            resources["type_instance_arg_row_scan_prefix_a"].clone()
-        } else {
-            resources["type_instance_arg_row_scan_prefix_b"].clone()
-        };
-        type_instance_arg_row_scan_blocks.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.type_instances.arg_row_scan.counted_scan_blocks"),
-            &passes.counted_scan_blocks,
-            0,
-            &[
-                ("gScan", step.params.as_entire_binding()),
-                ("scan_count", resources["token_count"].clone()),
-                (
-                    "scan_block_sum",
-                    resources["type_instance_arg_row_scan_block_sum"].clone(),
-                ),
-                ("scan_block_prefix_in", prefix_in),
-                ("scan_block_prefix_out", prefix_out),
-            ],
-        )?);
-    }
-    let arg_row_final_prefix = if arg_row_scan_steps
-        .last()
-        .map(|step| step.write_to_a)
-        .unwrap_or(true)
-    {
-        resources["type_instance_arg_row_scan_prefix_a"].clone()
-    } else {
-        resources["type_instance_arg_row_scan_prefix_b"].clone()
-    };
-    let type_instance_arg_row_scan_apply = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check.type_instances.arg_row_scan.counted_scan_apply"),
-        &passes.counted_scan_apply,
-        0,
-        &[
-            ("gScan", arg_row_scan_steps[0].params.as_entire_binding()),
-            ("scan_count", resources["token_count"].clone()),
-            (
-                "scan_local_prefix",
-                resources["type_instance_arg_row_scan_local_prefix"].clone(),
-            ),
-            ("scan_block_prefix", arg_row_final_prefix),
-            (
-                "scan_output_prefix",
-                resources["type_instance_arg_row_start"].clone(),
-            ),
-            (
-                "scan_total",
-                resources["type_instance_arg_row_count_out"].clone(),
-            ),
-        ],
+        "type_check.type_instances.arg_row_scan",
+        &arg_row_scan_steps,
+        buffer_from_resources(resources, "token_count")?,
+        buffer_from_resources(resources, "type_instance_arg_count")?,
+        buffer_from_resources(resources, "type_instance_arg_row_start")?,
+        buffer_from_resources(resources, "type_instance_arg_row_count_out")?,
+        buffer_from_resources(resources, "type_instance_arg_row_scan_local_prefix")?,
+        buffer_from_resources(resources, "type_instance_arg_row_scan_block_sum")?,
+        buffer_from_resources(resources, "type_instance_arg_row_scan_prefix_a")?,
+        buffer_from_resources(resources, "type_instance_arg_row_scan_prefix_b")?,
     )?;
 
     Ok(TypeInstanceBindGroups {
@@ -837,16 +744,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.type_instances_finalize_generic_param_flags,
             resources,
         )?,
-        generic_param_scan: U32ScanBindGroups {
-            local: generic_param_scan_local,
-            blocks: generic_param_scan_blocks,
-            apply: generic_param_scan_apply,
-        },
-        type_instance_arg_row_scan: U32ScanBindGroups {
-            local: type_instance_arg_row_scan_local,
-            blocks: type_instance_arg_row_scan_blocks,
-            apply: type_instance_arg_row_scan_apply,
-        },
+        generic_param_scan,
+        type_instance_arg_row_scan,
         type_instance_arg_row_scan_n_blocks: arg_row_scan_n_blocks,
         decl_generic_params: reflected_bind_group_from_resources(
             device,

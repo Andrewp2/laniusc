@@ -41,7 +41,7 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
 
 static const uint TY_UNKNOWN = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 
 uint linear_thread_id(uint3 dtid)
 {

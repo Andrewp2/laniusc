@@ -49,8 +49,44 @@ fn json_string_array_matches(value: &serde_json::Value, field: &str, expected: &
 }
 
 fn runtime_api_json_has_expected_status(api: &serde_json::Value) -> bool {
-    if api["api_name"] == "std::io::print_i32" {
-        api["extern_abi"] == "compiler_print_i32"
+    let api_name = api["api_name"].as_str();
+    if matches!(
+        api_name,
+        Some("std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len")
+    ) {
+        api["extern_abi"] == "lanius_stdlib"
+            && api["current_status"] == "executable-stdlib"
+            && api["executable"] == true
+    } else if let Some(extern_abi) = match api_name {
+        Some("std::io::print_i32") => Some("compiler_print_i32"),
+        Some("std::io::write_stdout" | "std::io::write_stderr" | "std::io::read_stdin") => {
+            Some("compiler_host_stdio")
+        }
+        Some(
+            "alloc::allocator::alloc"
+            | "alloc::allocator::realloc"
+            | "alloc::allocator::dealloc"
+            | "alloc::allocator::alloc_failed",
+        ) => Some("lanius_alloc"),
+        Some(name) if name.starts_with("std::fs::") => Some("compiler_host_filesystem"),
+        Some(
+            "std::time::unix_seconds"
+            | "std::time::monotonic_read"
+            | "std::time::system_read"
+            | "std::time::sleep_ms_i32",
+        ) => Some("compiler_host_clock"),
+        Some(name) if name.starts_with("std::env::") => Some("lanius_std"),
+        Some(
+            "std::random::secure_u32"
+            | "std::random::fill_secure_bytes"
+            | "std::process::argc"
+            | "std::process::arg_len"
+            | "std::process::arg_read"
+            | "std::process::exit",
+        ) => Some("lanius_std"),
+        _ => None,
+    } {
+        api["extern_abi"] == extern_abi
             && api["current_status"] == "executable-compiler-primitive"
             && api["executable"] == true
     } else {
@@ -444,13 +480,19 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && service["current_status"] == "executable"
+            && service["executable"] == true
     }));
     assert!(runtime_services.iter().all(|service| {
         service["diagnostic_code"] == "LNC0038"
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && if matches!(
+                service["service_id"].as_u64(),
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+            ) {
+                service["current_status"] == "executable" && service["executable"] == true
+            } else {
+                service["current_status"] == "known-unbound" && service["executable"] == false
+            }
     }));
     let runtime_apis = explanation["runtime_bound_apis"]
         .as_array()
@@ -468,8 +510,8 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
             && api["module_path"] == "std::io"
             && api["api_name"] == "std::io::write_stdout"
             && api["service_module_path"] == "std::io"
-            && api["service_current_status"] == "known-unbound"
-            && api["service_executable"] == false
+            && api["service_current_status"] == "executable"
+            && api["service_executable"] == true
             && api["binding_probe"]
                 .as_str()
                 .is_some_and(|probe| !probe.trim().is_empty())
@@ -478,8 +520,8 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && api["current_status"] == "executable-compiler-primitive"
+            && api["executable"] == true
     }));
     assert!(runtime_apis.iter().all(|api| {
         let service_id = api["service_id"]
@@ -3519,8 +3561,14 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && if matches!(
+                service["service_id"].as_u64(),
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+            ) {
+                service["current_status"] == "executable" && service["executable"] == true
+            } else {
+                service["current_status"] == "known-unbound" && service["executable"] == false
+            }
     }));
     let apis = explanation["runtime_bound_apis"]
         .as_array()
@@ -3536,8 +3584,8 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
                     laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
                 ))
             && api["service_module_path"] == "std::io"
-            && api["service_current_status"] == "known-unbound"
-            && api["service_executable"] == false
+            && api["service_current_status"] == "executable"
+            && api["service_executable"] == true
             && api["executable_probe"]
                 .as_str()
                 .is_some_and(|probe| !probe.trim().is_empty())
@@ -3549,7 +3597,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["executable"] == false
+            && api["executable"] == true
     }));
     assert!(apis.iter().all(|api| {
         let service_id = api["service_id"]
@@ -3638,19 +3686,19 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     );
     assert_eq!(
         document["runtime_bound_api"]["service_current_status"],
-        "known-unbound"
+        "executable"
     );
     assert!(json_string_array_matches(
         &document["runtime_bound_api"],
         "accepted_selector_kinds",
         laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
     ));
-    assert_eq!(document["runtime_bound_api"]["service_executable"], false);
+    assert_eq!(document["runtime_bound_api"]["service_executable"], true);
     assert_eq!(
         document["runtime_bound_api"]["current_status"],
-        "known-unbound"
+        "executable-compiler-primitive"
     );
-    assert_eq!(document["runtime_bound_api"]["executable"], false);
+    assert_eq!(document["runtime_bound_api"]["executable"], true);
     assert_eq!(
         document["runtime_service_boundary"]["service_name"],
         "stdio"
@@ -3661,14 +3709,14 @@ fn cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_s
     );
     assert_eq!(
         document["runtime_service_boundary"]["current_status"],
-        "known-unbound"
+        "executable"
     );
     assert!(json_string_array_matches(
         &document["runtime_service_boundary"],
         "accepted_selector_kinds",
         laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
-    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["runtime_service_boundary"]["executable"], true);
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
     assert_eq!(document["no_run_guards"]["stdlib_source_scanning"], false);
@@ -3727,9 +3775,9 @@ fn cli_diagnostics_runtime_api_reports_executable_stdio_print_i32_without_source
     ));
     assert_eq!(
         document["runtime_service_boundary"]["current_status"],
-        "known-unbound"
+        "executable"
     );
-    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["runtime_service_boundary"]["executable"], true);
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
     assert_eq!(document["no_run_guards"]["stdlib_source_scanning"], false);
@@ -3921,8 +3969,8 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["current_status"] == "known-unbound"
-            && api["executable"] == false
+            && api["current_status"] == "executable-compiler-primitive"
+            && api["executable"] == true
     }));
     assert!(apis.iter().any(|api| {
         api["api_name"] == "std::io::print_i32"
@@ -3937,8 +3985,15 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["service_current_status"] == "known-unbound"
-            && api["service_executable"] == false
+            && if matches!(
+                api["service_id"].as_u64(),
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+            ) {
+                api["service_current_status"] == "executable" && api["service_executable"] == true
+            } else {
+                api["service_current_status"] == "known-unbound"
+                    && api["service_executable"] == false
+            }
             && runtime_api_json_has_expected_status(api)
     }));
 
@@ -3963,8 +4018,8 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && service["current_status"] == "executable"
+            && service["executable"] == true
     }));
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
@@ -4047,8 +4102,8 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && service["current_status"] == "executable"
+            && service["executable"] == true
     }));
     assert!(services.iter().all(|service| {
         service["diagnostic_code"] == "LNC0038"
@@ -4057,8 +4112,14 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
             )
-            && service["current_status"] == "known-unbound"
-            && service["executable"] == false
+            && if matches!(
+                service["service_id"].as_u64(),
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+            ) {
+                service["current_status"] == "executable" && service["executable"] == true
+            } else {
+                service["current_status"] == "known-unbound" && service["executable"] == false
+            }
             && service["module_path"]
                 .as_str()
                 .is_some_and(|path| !path.trim().is_empty())
@@ -4159,14 +4220,14 @@ fn cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without
     );
     assert_eq!(
         document["runtime_service_boundary"]["current_status"],
-        "known-unbound"
+        "executable"
     );
     assert!(json_string_array_matches(
         &document["runtime_service_boundary"],
         "accepted_selector_kinds",
         laniusc_compiler::compiler::RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
     ));
-    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["runtime_service_boundary"]["executable"], true);
     assert_eq!(
         document["runtime_api_index_command"],
         "laniusc diagnostics runtime-apis"
@@ -4244,9 +4305,9 @@ fn cli_diagnostics_runtime_service_accepts_service_qualified_api_selector_withou
     );
     assert_eq!(
         document["runtime_service_boundary"]["current_status"],
-        "known-unbound"
+        "executable"
     );
-    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["runtime_service_boundary"]["executable"], true);
     assert!(
         document.get("runtime_bound_apis").is_none(),
         "single-service lookup should not require wrappers to parse API rows"
@@ -4311,7 +4372,7 @@ fn cli_diagnostics_runtime_service_accepts_copied_quoted_selector_without_source
         document["runtime_service_boundary"]["binding_probe"],
         "stdio_requires_runtime_binding()"
     );
-    assert_eq!(document["runtime_service_boundary"]["executable"], false);
+    assert_eq!(document["runtime_service_boundary"]["executable"], true);
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
     assert_eq!(document["no_run_guards"]["stdlib_source_scanning"], false);
@@ -4413,8 +4474,8 @@ fn cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_
                 "accepted_selector_kinds",
                 laniusc_compiler::compiler::RUNTIME_BOUND_API_SELECTOR_KINDS,
             )
-            && api["service_current_status"] == "known-unbound"
-            && api["service_executable"] == false
+            && api["service_current_status"] == "executable"
+            && api["service_executable"] == true
             && runtime_api_json_has_expected_status(api)
     }));
     assert!(apis.iter().any(|api| {
@@ -4584,8 +4645,8 @@ fn cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_s
             api["api_name"] == "std::io::write_stdout"
                 && api["service_module_path"] == "std::io"
                 && api["diagnostic_code"] == "LNC0038"
-                && api["service_current_status"] == "known-unbound"
-                && api["executable"] == false
+                && api["service_current_status"] == "executable"
+                && api["executable"] == true
         }),
         "qualified API selector should expose the selected API row"
     );
@@ -4670,8 +4731,8 @@ fn cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_w
                 && api["service_name"] == "stdio"
                 && api["service_module_path"] == "std::io"
                 && api["diagnostic_code"] == "LNC0038"
-                && api["current_status"] == "known-unbound"
-                && api["executable"] == false
+                && api["current_status"] == "executable-compiler-primitive"
+                && api["executable"] == true
         }),
         "service-qualified API selector should expose the selected API row"
     );

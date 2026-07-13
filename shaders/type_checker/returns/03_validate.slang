@@ -1,6 +1,5 @@
 // Validate that concrete non-void functions have parser-owned return evidence.
 
-import generated_parse_production_ids;
 import status;
 
 struct Params
@@ -13,10 +12,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> return_fn_flags;
 
@@ -58,7 +57,7 @@ bool function_with_body(uint node)
     return valid_node(node) &&
            hir_kind[node] == HIR_FN &&
            (hir_item_kind[node] == HIR_ITEM_KIND_FN ||
-            node_kind[node] == PROD_IMPL_FN);
+            valid_node(hir_method_impl_node[node]));
 }
 
 void record_error(uint token_i, uint code, uint detail)

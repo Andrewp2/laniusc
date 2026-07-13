@@ -45,6 +45,103 @@ fn assert_gpu_type_check_pack_accepts(sources: &[&str]) {
         .unwrap_or_else(|err| panic!("source pack should pass GPU type checking: {err:?}"));
 }
 
+fn semantic_interface_name<'a>(bytes: &'a [u8], start: u32, len: u32) -> &'a str {
+    let start = start as usize;
+    let end = start + len as usize;
+    std::str::from_utf8(&bytes[start..end]).expect("validated interface name should be UTF-8")
+}
+
+#[test]
+fn semantic_interface_identity_exports_public_checked_names_on_gpu() {
+    let artifact = common::semantic_interface_identity_with_timeout(
+        37,
+        &[
+            r#"module core::math;
+pub fn visible(value: i32) -> i32 { return value; }
+fn hidden() -> i32 { return 0; }
+pub const ANSWER: i32 = 42;
+pub enum Signal {
+    Stop,
+    Go(i32),
+}
+"#,
+            r#"module app::main;
+import core::math;
+fn main() -> i32 { return visible(ANSWER); }
+"#,
+        ],
+    )
+    .expect("GPU semantic-interface identity export should succeed");
+
+    assert_eq!(artifact.library_id, 37);
+    assert_eq!(artifact.modules.len(), 2);
+    let declaration_names = artifact
+        .declarations
+        .iter()
+        .map(|declaration| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                declaration.name_byte_start,
+                declaration.name_byte_len,
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(declaration_names.contains("visible"));
+    assert!(declaration_names.contains("ANSWER"));
+    assert!(declaration_names.contains("Signal"));
+    assert!(declaration_names.contains("Stop"));
+    assert!(declaration_names.contains("Go"));
+    assert!(!declaration_names.contains("hidden"));
+    assert!(!declaration_names.contains("main"));
+
+    let signal_index = artifact
+        .declarations
+        .iter()
+        .position(|declaration| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                declaration.name_byte_start,
+                declaration.name_byte_len,
+            ) == "Signal"
+        })
+        .expect("public enum should have a persisted declaration index");
+    for variant_name in ["Stop", "Go"] {
+        let variant = artifact
+            .declarations
+            .iter()
+            .find(|declaration| {
+                semantic_interface_name(
+                    &artifact.name_bytes,
+                    declaration.name_byte_start,
+                    declaration.name_byte_len,
+                ) == variant_name
+            })
+            .expect("public enum variant should be exported");
+        assert_eq!(variant.owner_declaration, signal_index as u32);
+    }
+
+    let module_paths = artifact
+        .modules
+        .iter()
+        .map(|module| {
+            let first = module.first_segment as usize;
+            let end = first + module.segment_count as usize;
+            artifact.module_segments[first..end]
+                .iter()
+                .map(|segment| {
+                    semantic_interface_name(
+                        &artifact.name_bytes,
+                        segment.name_byte_start,
+                        segment.name_byte_len,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert!(module_paths.iter().any(|path| path == &["core", "math"]));
+    assert!(module_paths.iter().any(|path| path == &["app", "main"]));
+}
+
 fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source: &'static str) {
     let mut sources = sources.to_vec();
     if !app_source.is_empty() {
@@ -2662,7 +2759,6 @@ fn main() {
     let slept: i32 = std::time::sleep_ms(sleep_zero);
     let tcp: i32 = std::net::tcp_connect(zero_ptr, zero_len, 80);
     let udp: i32 = std::net::udp_bind(zero_ptr, zero_len, 53);
-    std::process::set_exit_code(0);
     return args + first_arg_len + vars + first_var_len + file + bytes + slept + tcp + udp;
 }
 "#,

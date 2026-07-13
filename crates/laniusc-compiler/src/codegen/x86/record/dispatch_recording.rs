@@ -4,6 +4,7 @@ use super::{
         support::{
             UniformBindingArray,
             dispatch_compute_pass_indirect,
+            dispatch_compute_pass_indirect_bind_group_scheduled_steps,
             dispatch_compute_pass_indirect_bind_group_steps,
             dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets,
             dispatch_compute_pass_indirect_ping_pong_scan_steps,
@@ -25,6 +26,7 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) timer: &'a mut Option<&'timer mut crate::gpu::timer::GpuTimer>,
     pub(super) has_aggregate: bool,
     pub(super) active_hir_dispatch_args: &'a wgpu::Buffer,
+    pub(super) pointer_jump_dispatch_args: &'a wgpu::Buffer,
     pub(super) hir_plus_one: &'a wgpu::Buffer,
     pub(super) hir_scan_block: &'a wgpu::Buffer,
     pub(super) node_order_scan: &'a wgpu::Buffer,
@@ -51,8 +53,6 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) node_inst_locations: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_worklist_scatter: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_worklist_dispatch_args: &'a wgpu::BindGroup,
-    pub(super) enclosing_loop_init: &'a wgpu::BindGroup,
-    pub(super) enclosing_loop_step: &'a [wgpu::BindGroup],
     pub(super) short_circuit_rhs_init: &'a wgpu::BindGroup,
     pub(super) short_circuit_rhs_step: &'a [wgpu::BindGroup],
     pub(super) index_source_owner_init: &'a wgpu::BindGroup,
@@ -80,6 +80,7 @@ pub(super) fn record_instruction_dispatches(
         timer,
         has_aggregate,
         active_hir_dispatch_args,
+        pointer_jump_dispatch_args,
         hir_plus_one,
         hir_scan_block,
         node_order_scan,
@@ -106,8 +107,6 @@ pub(super) fn record_instruction_dispatches(
         node_inst_locations,
         node_inst_gen_worklist_scatter,
         node_inst_gen_worklist_dispatch_args,
-        enclosing_loop_init,
-        enclosing_loop_step,
         short_circuit_rhs_init,
         short_circuit_rhs_step,
         index_source_owner_init,
@@ -173,13 +172,13 @@ pub(super) fn record_instruction_dispatches(
         ],
         active_hir_dispatch_args,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "node_inst_same_end_rank_step",
         "codegen.x86.node_inst_same_end_rank_step",
         &generator.node_inst_same_end_rank_step_pass,
         node_inst_same_end_rank_step,
-        active_hir_dispatch_args,
+        pointer_jump_dispatch_args,
     );
     dispatch_x86_stage_indirect(
         encoder,
@@ -255,13 +254,13 @@ pub(super) fn record_instruction_dispatches(
         expr_semantic_type_init,
         active_hir_dispatch_args,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "expr_semantic_type_step",
         "codegen.x86.expr_semantic_type_step",
         &generator.expr_semantic_type_step_pass,
         expr_semantic_type_step,
-        active_hir_dispatch_args,
+        pointer_jump_dispatch_args,
     );
     dispatch_x86_stage_indirect(
         encoder,
@@ -303,33 +302,18 @@ pub(super) fn record_instruction_dispatches(
     stamp_timer(timer, encoder, "x86.inst_locations.done");
     dispatch_x86_stage_indirect(
         encoder,
-        "enclosing_loop_init",
-        &generator.enclosing_loop_init_pass,
-        enclosing_loop_init,
-        active_hir_dispatch_args,
-    );
-    dispatch_compute_pass_indirect_bind_group_steps(
-        encoder,
-        "enclosing_loop_step",
-        "codegen.x86.enclosing_loop_step",
-        &generator.enclosing_loop_step_pass,
-        enclosing_loop_step,
-        active_hir_dispatch_args,
-    );
-    dispatch_x86_stage_indirect(
-        encoder,
         "short_circuit_rhs_init",
         &generator.short_circuit_rhs_init_pass,
         short_circuit_rhs_init,
         active_hir_dispatch_args,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "short_circuit_rhs_step",
         "codegen.x86.short_circuit_rhs_step",
         &generator.short_circuit_rhs_step_pass,
         short_circuit_rhs_step,
-        active_hir_dispatch_args,
+        pointer_jump_dispatch_args,
     );
     dispatch_x86_stage_indirect(
         encoder,
@@ -338,13 +322,13 @@ pub(super) fn record_instruction_dispatches(
         index_source_owner_init,
         active_hir_dispatch_args,
     );
-    dispatch_compute_pass_indirect_bind_group_steps(
+    dispatch_compute_pass_indirect_bind_group_scheduled_steps(
         encoder,
         "index_source_owner_step",
         "codegen.x86.index_source_owner_step",
         &generator.index_source_owner_step_pass,
         index_source_owner_step,
-        active_hir_dispatch_args,
+        pointer_jump_dispatch_args,
     );
     dispatch_x86_stages(
         encoder,
@@ -461,7 +445,7 @@ pub(super) fn record_instruction_dispatches(
 }
 
 /// Bind groups, buffers, and scan parameters needed to emit selected virtual instructions.
-pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
+pub(super) struct VirtualObjectDispatchInputs<'a, 'timer> {
     pub(super) encoder: &'a mut wgpu::CommandEncoder,
     pub(super) timer: &'a mut Option<&'timer mut crate::gpu::timer::GpuTimer>,
     pub(super) virtual_dispatch_arg_groups: (u32, u32),
@@ -477,7 +461,6 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) virtual_regalloc: &'a wgpu::Buffer,
     pub(super) selected_inst: &'a wgpu::Buffer,
     pub(super) selected_scan_block: &'a wgpu::Buffer,
-    pub(super) elf_header_word: &'a wgpu::Buffer,
     pub(super) virtual_dispatch_args: &'a wgpu::BindGroup,
     pub(super) virtual_func_rows_init: &'a wgpu::BindGroup,
     pub(super) virtual_func_first_row: &'a wgpu::BindGroup,
@@ -506,21 +489,33 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) rodata_scan_block: &'a [wgpu::BindGroup],
     pub(super) rodata_offsets: &'a wgpu::BindGroup,
     pub(super) rodata_dispatch_args: &'a wgpu::BindGroup,
-    pub(super) rodata_write: &'a wgpu::BindGroup,
-    pub(super) string_dispatch_args: &'a wgpu::Buffer,
     pub(super) output_dispatch_args: &'a wgpu::BindGroup,
     pub(super) encode: &'a wgpu::BindGroup,
+}
+
+/// Bind groups and indirect arguments needed to resolve one object state into an ELF image.
+pub(super) struct ExecutableFinalizeDispatchInputs<'a, 'timer> {
+    pub(super) encoder: &'a mut wgpu::CommandEncoder,
+    pub(super) timer: &'a mut Option<&'timer mut crate::gpu::timer::GpuTimer>,
+    pub(super) selected_inst: &'a wgpu::Buffer,
+    pub(super) elf_header_word: &'a wgpu::Buffer,
+    pub(super) string_dispatch_args: &'a wgpu::Buffer,
     pub(super) reloc_patch: &'a wgpu::BindGroup,
     pub(super) elf_layout: &'a wgpu::BindGroup,
     pub(super) elf: &'a wgpu::BindGroup,
+    pub(super) rodata_write: &'a wgpu::BindGroup,
 }
 
-/// Records virtual instruction selection, layout, encoding, relocation, and ELF emission passes.
-pub(super) fn record_virtual_emit_dispatches(
+/// Records virtual instruction selection and produces encoded text, rodata metadata, and relocations.
+///
+/// The resulting GPU buffers are the backend's object boundary. Relocations
+/// are intentionally not patched and no target container has been written
+/// when this function returns.
+pub(super) fn record_virtual_object_dispatches(
     generator: &GpuX86CodeGenerator,
-    inputs: VirtualEmitDispatchInputs<'_, '_>,
+    inputs: VirtualObjectDispatchInputs<'_, '_>,
 ) {
-    let VirtualEmitDispatchInputs {
+    let VirtualObjectDispatchInputs {
         encoder,
         timer,
         virtual_dispatch_arg_groups,
@@ -536,7 +531,6 @@ pub(super) fn record_virtual_emit_dispatches(
         virtual_regalloc,
         selected_inst,
         selected_scan_block,
-        elf_header_word,
         virtual_dispatch_args,
         virtual_func_rows_init,
         virtual_func_first_row,
@@ -565,13 +559,8 @@ pub(super) fn record_virtual_emit_dispatches(
         rodata_scan_block,
         rodata_offsets,
         rodata_dispatch_args,
-        rodata_write,
-        string_dispatch_args,
         output_dispatch_args,
         encode,
-        reloc_patch,
-        elf_layout,
-        elf,
     } = inputs;
 
     dispatch_x86_stage(
@@ -817,6 +806,25 @@ pub(super) fn record_virtual_emit_dispatches(
         encode,
         selected_inst,
     );
+    stamp_timer(timer, encoder, "x86.object.done");
+}
+
+/// Resolves an encoded object state and writes the final ELF image.
+pub(super) fn record_executable_finalize_dispatches(
+    generator: &GpuX86CodeGenerator,
+    inputs: ExecutableFinalizeDispatchInputs<'_, '_>,
+) {
+    let ExecutableFinalizeDispatchInputs {
+        encoder,
+        timer,
+        selected_inst,
+        elf_header_word,
+        string_dispatch_args,
+        reloc_patch,
+        elf_layout,
+        elf,
+        rodata_write,
+    } = inputs;
     dispatch_compute_pass_indirect(
         encoder,
         "reloc_patch",

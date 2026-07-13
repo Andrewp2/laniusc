@@ -177,6 +177,9 @@ pub(in crate::type_checker) fn create_with_passes(
         decl_value_key_count_out,
         decl_type_key_to_decl_id,
         decl_value_key_to_decl_id,
+        interface_public_decl_count,
+        interface_public_decl_local_id,
+        interface_public_decl_index_by_local,
         import_visible_type_count,
         import_visible_value_count,
         import_visible_type_prefix,
@@ -416,17 +419,19 @@ pub(in crate::type_checker) fn create_with_passes(
         None
     };
 
-    let mut sort_decl_key_histogram = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
-    let mut sort_decl_key_bucket_prefix = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
-    let mut sort_decl_key_bucket_bases = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
-    let mut sort_decl_key_scatter = Vec::with_capacity(DECL_KEY_RADIX_STEPS as usize);
-    for key_step in 0..DECL_KEY_RADIX_STEPS {
+    let (decl_key_radix_widths, decl_key_radix_steps) =
+        decl_key_radix_layout(token_capacity, module_capacity_u32);
+    let mut sort_decl_key_histogram = Vec::with_capacity(decl_key_radix_steps as usize);
+    let mut sort_decl_key_bucket_prefix = Vec::with_capacity(decl_key_radix_steps as usize);
+    let mut sort_decl_key_bucket_bases = Vec::with_capacity(decl_key_radix_steps as usize);
+    let mut sort_decl_key_scatter = Vec::with_capacity(decl_key_radix_steps as usize);
+    for key_step in 0..decl_key_radix_steps {
         let step_params = uniform_from_val(
             device,
             &format!("type_check.modules.decl_key_radix.params.{key_step}"),
             &ModuleKeyRadixParams {
                 module_capacity: record_capacity_u32,
-                reserved: 0,
+                reserved: decl_key_radix_widths,
                 n_blocks: record_n_blocks,
                 key_step,
             },
@@ -564,6 +569,35 @@ pub(in crate::type_checker) fn create_with_passes(
         ],
     )?;
 
+    // Type and value namespace scans execute side-by-side at each scan level.
+    // Give the value scan its own scratch so the paired dispatches remain
+    // independent within one compute pass. This secondary scratch is reused by
+    // all later type/value scan pairs in the module pipeline.
+    let value_scan_local_prefix = typed_storage_u32_rw(
+        device,
+        "type_check.modules.value_scan_local_prefix",
+        record_capacity_u32 as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let value_scan_block_sum = typed_storage_u32_rw(
+        device,
+        "type_check.modules.value_scan_block_sum",
+        record_n_blocks as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let value_scan_prefix_a = typed_storage_u32_rw(
+        device,
+        "type_check.modules.value_scan_prefix_a",
+        record_n_blocks as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let value_scan_prefix_b = typed_storage_u32_rw(
+        device,
+        "type_check.modules.value_scan_prefix_b",
+        record_n_blocks as usize,
+        wgpu::BufferUsages::empty(),
+    );
+
     let decl_type_key_scan = create_counted_u32_scan_bind_groups_with_passes(
         passes,
         device,
@@ -587,10 +621,10 @@ pub(in crate::type_checker) fn create_with_passes(
         &decl_value_key_flag,
         &decl_value_key_prefix,
         &decl_value_key_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
+        &value_scan_local_prefix,
+        &value_scan_block_sum,
+        &value_scan_prefix_a,
+        &value_scan_prefix_b,
     )?;
 
     let scatter_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
@@ -695,10 +729,84 @@ pub(in crate::type_checker) fn create_with_passes(
         &decl_value_key_flag,
         &decl_value_public_prefix,
         &import_visible_value_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
+        &value_scan_local_prefix,
+        &value_scan_block_sum,
+        &value_scan_prefix_a,
+        &value_scan_prefix_b,
+    )?;
+    let clear_interface_public_decls = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_interface_public_decls_00_clear"),
+        &passes.interface_public_decls_clear,
+        0,
+        &[
+            ("gParams", validate_decl_params.as_entire_binding()),
+            (
+                "interface_public_decl_count",
+                interface_public_decl_count.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_local_id",
+                interface_public_decl_local_id.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_index_by_local",
+                interface_public_decl_index_by_local.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let map_interface_public_decls = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_interface_public_decls_01_map"),
+        &passes.interface_public_decls_map,
+        0,
+        &[
+            ("gParams", validate_decl_params.as_entire_binding()),
+            (
+                "decl_type_key_count_out",
+                decl_type_key_count_out.as_entire_binding(),
+            ),
+            (
+                "decl_value_key_count_out",
+                decl_value_key_count_out.as_entire_binding(),
+            ),
+            (
+                "decl_type_key_to_decl_id",
+                decl_type_key_to_decl_id.as_entire_binding(),
+            ),
+            (
+                "decl_value_key_to_decl_id",
+                decl_value_key_to_decl_id.as_entire_binding(),
+            ),
+            (
+                "decl_type_public_flag",
+                decl_type_key_flag.as_entire_binding(),
+            ),
+            (
+                "decl_value_public_flag",
+                decl_value_key_flag.as_entire_binding(),
+            ),
+            (
+                "decl_type_public_prefix",
+                decl_type_public_prefix.as_entire_binding(),
+            ),
+            (
+                "decl_value_public_prefix",
+                decl_value_public_prefix.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_count",
+                interface_public_decl_count.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_local_id",
+                interface_public_decl_local_id.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_index_by_local",
+                interface_public_decl_index_by_local.as_entire_binding(),
+            ),
+        ],
     )?;
 
     let import_visibility_params = uniform_from_val(
@@ -792,10 +900,10 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visible_value_count,
         &import_visible_value_prefix,
         &import_visible_value_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
+        &value_scan_local_prefix,
+        &value_scan_block_sum,
+        &value_scan_prefix_a,
+        &value_scan_prefix_b,
     )?;
 
     let scatter_import_visible_type = bind_group::create_bind_group_from_bindings(
@@ -1152,6 +1260,33 @@ pub(in crate::type_checker) fn create_with_passes(
         Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
     let mut sort_import_visible_value_key_scatter =
         Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
+    // Type and value visibility keys are sorted stage-by-stage in parallel.
+    // Keep one secondary radix scratch set for the value namespace so those
+    // dispatches have no write hazards inside their shared compute passes.
+    let import_visible_value_radix_block_histogram = typed_storage_u32_rw(
+        device,
+        "type_check.modules.import_visible_value_radix_block_histogram",
+        import_visible_key_radix_block_histogram.count,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_visible_value_radix_block_bucket_prefix = typed_storage_u32_rw(
+        device,
+        "type_check.modules.import_visible_value_radix_block_bucket_prefix",
+        import_visible_key_radix_block_bucket_prefix.count,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_visible_value_radix_bucket_total = typed_storage_u32_rw(
+        device,
+        "type_check.modules.import_visible_value_radix_bucket_total",
+        import_visible_key_radix_bucket_total.count,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_visible_value_radix_bucket_base = typed_storage_u32_rw(
+        device,
+        "type_check.modules.import_visible_value_radix_bucket_base",
+        import_visible_key_radix_bucket_base.count,
+        wgpu::BufferUsages::empty(),
+    );
     for key_step in 0..IMPORT_VISIBLE_KEY_RADIX_STEPS {
         let step_params = uniform_from_val(
             device,
@@ -1198,7 +1333,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 ),
                 (
                     "radix_block_histogram",
-                    import_visible_key_radix_block_histogram.as_entire_binding(),
+                    import_visible_value_radix_block_histogram.as_entire_binding(),
                 ),
             ],
         )?);
@@ -1208,17 +1343,17 @@ pub(in crate::type_checker) fn create_with_passes(
             "type_check_modules.import_visible_value_bucket_prefix",
             &step_params,
             &import_visible_value_count_out,
-            &import_visible_key_radix_block_histogram,
-            &import_visible_key_radix_block_bucket_prefix,
-            &import_visible_key_radix_bucket_total,
+            &import_visible_value_radix_block_histogram,
+            &import_visible_value_radix_block_bucket_prefix,
+            &import_visible_value_radix_bucket_total,
         )?);
         sort_import_visible_value_key_bucket_bases.push(create_radix_bucket_bases(
             device,
             &passes.names_radix_bucket_bases,
             "type_check_modules.import_visible_value_bucket_bases",
             &step_params,
-            &import_visible_key_radix_bucket_total,
-            &import_visible_key_radix_bucket_base,
+            &import_visible_value_radix_bucket_total,
+            &import_visible_value_radix_bucket_base,
         )?);
         sort_import_visible_value_key_scatter.push(bind_group::create_bind_group_from_bindings(
             device,
@@ -1245,11 +1380,11 @@ pub(in crate::type_checker) fn create_with_passes(
                 ),
                 (
                     "radix_bucket_base",
-                    import_visible_key_radix_bucket_base.as_entire_binding(),
+                    import_visible_value_radix_bucket_base.as_entire_binding(),
                 ),
                 (
                     "radix_block_bucket_prefix",
-                    import_visible_key_radix_block_bucket_prefix.as_entire_binding(),
+                    import_visible_value_radix_block_bucket_prefix.as_entire_binding(),
                 ),
                 (
                     "import_visible_key_order_out",
@@ -1917,6 +2052,9 @@ pub(in crate::type_checker) fn create_with_passes(
         decl_value_key_count_out,
         decl_type_key_to_decl_id,
         decl_value_key_to_decl_id,
+        interface_public_decl_count,
+        interface_public_decl_local_id,
+        interface_public_decl_index_by_local,
         import_visible_type_count,
         import_visible_value_count,
         import_visible_type_prefix,
@@ -2046,6 +2184,8 @@ pub(in crate::type_checker) fn create_with_passes(
             mark_public_decl_keys,
             decl_type_public_scan,
             decl_value_public_scan,
+            clear_interface_public_decls,
+            map_interface_public_decls,
             count_import_visibility,
             import_visible_type_scan,
             import_visible_value_scan,

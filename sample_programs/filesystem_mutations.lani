@@ -1,0 +1,48 @@
+module app::main;
+
+import alloc::allocator;
+import std::process;
+import std::fs;
+
+fn main() -> i32 {
+    let capacity: usize = 64;
+    let path_len: usize = 15;
+    let ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let arg_read_result: i32 = std::process::arg_read(1, ptr, capacity);
+    if (arg_read_result != 15) {
+        return 1;
+    }
+
+    let create_result: i32 = std::fs::create_dir(ptr, path_len);
+    if (create_result != 0) {
+        return 2;
+    }
+    let rename_dir_result: i32 = std::fs::rename(ptr, path_len, ptr, path_len);
+    if (rename_dir_result != 0) {
+        return 3;
+    }
+    let remove_dir_result: i32 = std::fs::remove_dir(ptr, path_len);
+    if (remove_dir_result != 0) {
+        return 4;
+    }
+
+    let handle: i32 = std::fs::open_write(ptr, path_len);
+    if (handle < 0) {
+        return 5;
+    }
+    let close_result: i32 = std::fs::close(handle);
+    if (close_result != 0) {
+        return 6;
+    }
+    let rename_file_result: i32 = std::fs::rename(ptr, path_len, ptr, path_len);
+    if (rename_file_result != 0) {
+        return 7;
+    }
+    let remove_file_result: i32 = std::fs::remove_file(ptr, path_len);
+    if (remove_file_result != 0) {
+        return 8;
+    }
+
+    alloc::allocator::dealloc(ptr, capacity, 4);
+    return 0;
+}

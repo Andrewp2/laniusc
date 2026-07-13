@@ -13,7 +13,11 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub semantic_parent_local_ancestor_span: u32,
 }
+
+/// Ancestors each GPU lane examines locally before global pointer jumping.
+pub const SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN: u32 = 32;
 
 /// Absence of a HIR node kind.
 pub const HIR_NODE_NONE: u32 = 0;

@@ -36,6 +36,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirPathSegmentRo
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
                 "hir_type_value_node".into(),

@@ -19,13 +19,12 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
@@ -283,17 +282,10 @@ bool member_expr_is_call_callee(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
         return false;
-
-    uint owner = parent[node];
-    if (valid_node(owner) &&
-        hir_kind[owner] == HIR_CALL_EXPR &&
-        hir_call_callee_node[owner] == node)
-        return true;
-
-    uint child = first_child[node];
-    return valid_node(child) &&
-           hir_kind[child] == HIR_CALL_EXPR &&
-           hir_call_callee_node[child] == node;
+    uint call_node = hir_call_parent_by_callee[node];
+    return valid_node(call_node) &&
+           hir_kind[call_node] == HIR_CALL_EXPR &&
+           hir_call_callee_node[call_node] == node;
 }
 
 void publish_member_field_ref_for_node(uint member_node)

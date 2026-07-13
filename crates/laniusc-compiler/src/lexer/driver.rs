@@ -51,6 +51,21 @@ pub struct GpuLexer {
     bg_cache: std::sync::Mutex<crate::gpu::passes_core::BindGroupCache>,
 }
 
+impl GpuLexer {
+    /// Releases reusable source/token buffers and bind groups while retaining
+    /// the lexer pipelines and immutable tables.
+    pub fn release_current_resident_buffers(&self) {
+        *self
+            .buffers
+            .lock()
+            .expect("GpuLexer.buffers mutex poisoned") = None;
+        self.bg_cache
+            .lock()
+            .expect("GpuLexer.bg_cache mutex poisoned")
+            .clear();
+    }
+}
+
 /// Cloned buffer handles needed by parser after the lexer guard is released.
 pub struct ResidentLexerParserInputs {
     /// Current source byte length.

@@ -35,6 +35,29 @@ pub(super) fn wasm_scan_params_bytes(params: &WasmScanParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+pub(super) fn create_wasm_scan_param_buffers(
+    device: &wgpu::Device,
+    label_prefix: &str,
+    step_count: usize,
+) -> Vec<LaniusBuffer<WasmScanParams>> {
+    (0..step_count)
+        .map(|step_i| {
+            LaniusBuffer::new(
+                (
+                    device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some(&format!("{label_prefix}.{step_i}")),
+                        size: 16,
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    }),
+                    16,
+                ),
+                1,
+            )
+        })
+        .collect()
+}
+
 /// Returns the initial four-word body status buffer contents.
 pub(super) fn body_status_init_bytes() -> [u8; 16] {
     let mut bytes = [0u8; 16];

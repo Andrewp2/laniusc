@@ -1,0 +1,38 @@
+{
+  "schema": "lanius.sample-program-commands.v1",
+  "variables": {
+    "source": "sample_programs/{sample}.lani",
+    "expected_stdout": "sample_programs/{sample}.stdout",
+    "expected_exit_code": "sample_programs/MANIFEST.tsv:exit_code",
+    "expected_files": "sample_programs/MANIFEST.tsv:output_files"
+  },
+  "targets": {
+    "x86_64": {
+      "build_run": [
+        "env",
+        "LANIUS_SAMPLE_FILTER={sample}",
+        "cargo",
+        "test",
+        "--test",
+        "sample_programs_x86",
+        "x86_sample_programs_compile_run_and_match_stdout",
+        "--",
+        "--exact"
+      ]
+    },
+    "wasm": {
+      "runtime": "Node.js WebAssembly runtime with the checked Lanius host ABI harness",
+      "build_run": [
+        "env",
+        "LANIUS_SAMPLE_FILTER={sample}",
+        "cargo",
+        "test",
+        "--test",
+        "sample_programs_wasm",
+        "wasm_sample_programs_compile_run_and_match_stdout",
+        "--",
+        "--exact"
+      ]
+    }
+  }
+}

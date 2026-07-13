@@ -10,11 +10,12 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_callee_path_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_segment_count;
@@ -33,7 +34,6 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
@@ -42,7 +42,7 @@ static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint TY_VOID = 1u;
 
 static const uint INTRINSIC_NONE = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 53u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -87,15 +87,13 @@ uint path_node_for_callee(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-    if (hir_kind[callee_node] == HIR_PATH_EXPR)
-        return callee_node;
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && hir_kind[child] == HIR_PATH_EXPR)
-            return child;
-    }
-    return INVALID;
+    uint call_node = hir_call_parent_by_callee[callee_node];
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+    uint path_node = hir_call_callee_path_node[call_node];
+    return valid_node(path_node) && hir_kind[path_node] == HIR_PATH_EXPR
+        ? path_node
+        : INVALID;
 }
 
 uint path_leaf_token_for_callee(uint callee_node)

@@ -1,0 +1,30 @@
+module app::main;
+
+import alloc::allocator;
+import std::time;
+
+fn main() -> i32 {
+    let ptr: u32 = alloc::allocator::alloc(16, 8);
+    let monotonic_status: i32 = std::time::monotonic_read(ptr, 16);
+    if (monotonic_status != 0) {
+        return 1;
+    }
+    let system_status: i32 = std::time::system_read(ptr, 16);
+    if (system_status != 0) {
+        return 2;
+    }
+    let short_status: i32 = std::time::system_read(ptr, 15);
+    if (short_status != -1) {
+        return 3;
+    }
+    let sleep_status: i32 = std::time::sleep_ms_i32(0);
+    if (sleep_status != 0) {
+        return 4;
+    }
+    let negative_status: i32 = std::time::sleep_ms_i32(-1);
+    if (negative_status != -1) {
+        return 5;
+    }
+    alloc::allocator::dealloc(ptr, 16, 8);
+    return 0;
+}

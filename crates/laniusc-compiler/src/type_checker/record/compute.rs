@@ -2,6 +2,22 @@
 
 use super::*;
 
+thread_local! {
+    static RECORDED_COMPUTE_PASS_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+pub(in crate::type_checker) fn reset_recorded_compute_pass_count() {
+    RECORDED_COMPUTE_PASS_COUNT.set(0);
+}
+
+pub(in crate::type_checker) fn recorded_compute_pass_count() -> u32 {
+    RECORDED_COMPUTE_PASS_COUNT.get()
+}
+
+pub(in crate::type_checker) fn count_recorded_compute_pass() {
+    RECORDED_COMPUTE_PASS_COUNT.set(RECORDED_COMPUTE_PASS_COUNT.get().saturating_add(1));
+}
+
 pub(in crate::type_checker) fn record_typecheck_clear_buffer(
     encoder: &mut wgpu::CommandEncoder,
     buffer: &wgpu::Buffer,
@@ -30,6 +46,12 @@ pub(in crate::type_checker) fn stamp_typecheck_timer(
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,
 ) {
+    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        eprintln!(
+            "[gpu_compile_host_timer] typecheck.pass_checkpoint: label={label} total_compute_passes={}",
+            recorded_compute_pass_count(),
+        );
+    }
     if let Some(timer) = timer.as_deref_mut() {
         timer.stamp(encoder, label);
     }
@@ -43,6 +65,7 @@ pub(in crate::type_checker) fn record_compute(
     label: &'static str,
     n_elements: u32,
 ) -> Result<()> {
+    count_recorded_compute_pass();
     let [tgsx, tgsy, _] = pass.thread_group_size;
     let (gx, gy, gz) = plan_workgroups(
         DispatchDim::D1,
@@ -70,6 +93,7 @@ pub(in crate::type_checker) fn record_compute_indirect(
     label: &'static str,
     dispatch_args: &wgpu::Buffer,
 ) -> Result<()> {
+    count_recorded_compute_pass();
     if crate::gpu::passes_core::defer_compute_indirect(pass, bind_group, dispatch_args, 0, &[]) {
         return Ok(());
     }

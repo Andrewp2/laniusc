@@ -6,6 +6,7 @@
 // than scanning condition token ranges.
 
 import generated_parse_production_ids;
+import hir_expr_semantics;
 import hir_records;
 import status;
 
@@ -38,11 +39,14 @@ StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> hir_nearest_stmt_node;
 StructuredBuffer<uint> hir_nearest_block_node;
 StructuredBuffer<uint> hir_nearest_fn_node;
+StructuredBuffer<uint> hir_match_arm_pattern_node;
+StructuredBuffer<uint> hir_match_pattern_owner_arm;
 StructuredBuffer<uint> hir_match_payload_owner_arm;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_has_array_arg;
 StructuredBuffer<uint> path_count_out;
@@ -862,28 +866,11 @@ uint call_node_for_expr_anchor(uint node)
         return INVALID;
     if (hir_kind[node] == HIR_CALL_EXPR)
         return node;
-
-    uint callee_anchor = node;
-    uint name_parent = parent[node];
-    if (valid_node(name_parent) && hir_kind[name_parent] == HIR_NAME_EXPR)
-    {
-        callee_anchor = name_parent;
-        name_parent = parent[name_parent];
-    }
-
-    if (valid_node(name_parent) &&
-        hir_kind[name_parent] == HIR_CALL_EXPR &&
-        hir_call_callee_node[name_parent] == callee_anchor)
-        return name_parent;
-
-    uint child = first_child[callee_anchor];
-    if (valid_node(child) &&
-        hir_kind[child] == HIR_CALL_EXPR &&
-        hir_call_callee_node[child] == callee_anchor)
-        return child;
-
-    uint sibling = next_sibling[callee_anchor];
-    return valid_node(sibling) && hir_kind[sibling] == HIR_CALL_EXPR ? sibling : INVALID;
+    uint call_node = hir_call_parent_by_callee[node];
+    return valid_node(call_node) &&
+           hir_kind[call_node] == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
 }
 
 uint call_node_for_expr(uint root)
@@ -1178,10 +1165,8 @@ bool parser_published_match_pattern(uint node)
     if (!valid_node(node))
         return false;
 
-    uint prod = node_kind[node];
-    return prod == PROD_PATTERN_IDENT ||
-           prod == PROD_PATTERN_PLAIN ||
-           prod == PROD_PATTERN_TUPLE;
+    uint arm = hir_match_pattern_owner_arm[node];
+    return valid_node(arm) && hir_match_arm_pattern_node[arm] == node;
 }
 
 bool token_inside_node_span(uint node, uint token_i)
@@ -1228,27 +1213,12 @@ bool parser_published_type_syntax(uint node, uint token_i)
            (valid_token(token_i) && type_expr_ref_tag[token_i] != TYPE_REF_INVALID);
 }
 
-uint scalar_type_for_literal_prod(uint prod)
-{
-    if (prod == PROD_INT)
-        return TY_INT;
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-        return TY_BOOL;
-    if (prod == PROD_FLOAT)
-        return TY_FLOAT;
-    if (prod == PROD_STRING)
-        return TY_STRING;
-    if (prod == PROD_CHAR)
-        return TY_CHAR;
-    return TY_UNKNOWN;
-}
-
 uint direct_node_type(uint node)
 {
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = scalar_type_for_literal_prod(node_kind[node]);
+    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -1270,7 +1240,7 @@ uint direct_node_type(uint node)
         return visible_type_for_token(member_token);
     }
 
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR || node_kind[node] == PROD_STRUCT_LIT)
+    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
     {
         uint head_node = hir_struct_lit_head_node[node];
         if (!valid_node(head_node))
@@ -1419,8 +1389,7 @@ bool expression_result_node(uint node)
            hir_kind[node] == HIR_MEMBER_EXPR ||
            hir_kind[node] == HIR_INDEX_EXPR ||
            hir_kind[node] == HIR_MATCH_EXPR ||
-           hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
-           node_kind[node] == PROD_STRUCT_LIT;
+           hir_kind[node] == HIR_STRUCT_LITERAL_EXPR;
 }
 
 uint expression_result_token(uint node)
@@ -1502,7 +1471,6 @@ bool struct_literal_node(uint node)
 {
     return valid_node(node) &&
            (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
-            node_kind[node] == PROD_STRUCT_LIT ||
             valid_node(hir_struct_lit_head_node[node]));
 }
 
@@ -2203,7 +2171,11 @@ bool method_name_followed_by_type_params(uint node)
 
 uint method_contract_status_from_rows(uint node)
 {
-    uint status_value = predicate_status[node];
+    uint status_value = parser_method_signature_status(node);
+    if (status_value != PREDICATE_STATUS_OK)
+        return status_value;
+
+    status_value = predicate_status[node];
     if (status_value != INVALID && status_value != PREDICATE_STATUS_OK)
         return status_value;
 
@@ -2211,7 +2183,7 @@ uint method_contract_status_from_rows(uint node)
     if (status_value != INVALID && status_value != PREDICATE_STATUS_OK)
         return status_value;
 
-    return parser_method_signature_status(node);
+    return PREDICATE_STATUS_OK;
 }
 
 void validate_unsupported_method_contract_node(uint node)
@@ -2223,7 +2195,12 @@ void validate_unsupported_method_contract_node(uint node)
     if (status_value == PREDICATE_STATUS_OK)
         return;
 
-    uint token_i = predicate_bound_first_arg_token[node];
+    bool parser_signature_error =
+        status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE;
+    uint token_i = parser_signature_error
+        ? hir_token_pos[node]
+        : predicate_bound_first_arg_token[node];
     if (!valid_token(token_i))
         token_i = method_contract_name_token_from_rows(node);
     if (!valid_token(token_i))

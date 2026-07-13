@@ -3,14 +3,8 @@ use super::*;
 /// Parameter buffer and ping-pong direction for one scan step.
 pub(in crate::type_checker) struct ScanStep<T> {
     pub(in crate::type_checker) params: LaniusBuffer<T>,
-    pub(in crate::type_checker) read_from_a: bool,
-    pub(in crate::type_checker) write_to_a: bool,
 }
 
-/// Scan step used while deriving loop nesting depth.
-pub(in crate::type_checker) type LoopDepthScanStep = ScanStep<LoopDepthParams>;
-/// Scan step used while deriving enclosing-function context.
-pub(in crate::type_checker) type FnContextScanStep = ScanStep<FnContextParams>;
 /// Scan step used by compacted name and run-head scans.
 pub(in crate::type_checker) type NameScanStep = ScanStep<NameScanParams>;
 
@@ -243,7 +237,8 @@ pub(in crate::type_checker) struct LoopDepthBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
     pub(in crate::type_checker) local: wgpu::BindGroup,
-    pub(in crate::type_checker) scan: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) hierarchy_up: Vec<ScanHierarchyStep>,
+    pub(in crate::type_checker) hierarchy_down: Vec<ScanHierarchyStep>,
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
@@ -252,7 +247,8 @@ pub(in crate::type_checker) struct FnContextBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
     pub(in crate::type_checker) local: wgpu::BindGroup,
-    pub(in crate::type_checker) scan: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) hierarchy_up: Vec<ScanHierarchyStep>,
+    pub(in crate::type_checker) hierarchy_down: Vec<ScanHierarchyStep>,
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
@@ -296,9 +292,7 @@ pub(in crate::type_checker) struct NameBindGroups {
     pub(in crate::type_checker) token_scan_n_blocks: u32,
     pub(in crate::type_checker) name_max_len: LaniusBuffer<u32>,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
-    pub(in crate::type_checker) scan_local: wgpu::BindGroup,
-    pub(in crate::type_checker) scan_blocks: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) scan_apply: wgpu::BindGroup,
+    pub(in crate::type_checker) scan: U32ScanBindGroups,
     pub(in crate::type_checker) scatter: wgpu::BindGroup,
     pub(in crate::type_checker) hash_work_items: u32,
     pub(in crate::type_checker) _hash_params: LaniusBuffer<NameRadixParams>,
@@ -315,9 +309,16 @@ pub(in crate::type_checker) struct LanguageNameBindGroups {
 }
 
 /// Bind groups for a generic counted `u32` prefix scan.
+pub(in crate::type_checker) struct ScanHierarchyStep {
+    pub(in crate::type_checker) bind_group: wgpu::BindGroup,
+    pub(in crate::type_checker) work_items: u32,
+}
+
+/// Bind groups for a generic counted `u32` prefix scan.
 pub(in crate::type_checker) struct U32ScanBindGroups {
     pub(in crate::type_checker) local: wgpu::BindGroup,
-    pub(in crate::type_checker) blocks: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) hierarchy_up: Vec<ScanHierarchyStep>,
+    pub(in crate::type_checker) hierarchy_down: Vec<ScanHierarchyStep>,
     pub(in crate::type_checker) apply: wgpu::BindGroup,
 }
 
@@ -483,6 +484,7 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) sort_method_param_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) build_method_contract_owner_ranges: wgpu::BindGroup,
     pub(in crate::type_checker) emit_method_validation_rows: wgpu::BindGroup,
+    pub(in crate::type_checker) validate_method_type_arg_rows: wgpu::BindGroup,
     pub(in crate::type_checker) reduce_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) apply_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) seed_owner_key_order: wgpu::BindGroup,

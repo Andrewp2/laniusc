@@ -1,12 +1,95 @@
 use super::super::*;
 
+#[allow(clippy::too_many_arguments)]
+fn create_fixed_scan_hierarchy_bind_groups(
+    device: &wgpu::Device,
+    label: &'static str,
+    hierarchy_up_pass: &PassData,
+    hierarchy_down_pass: &PassData,
+    n_items: u32,
+    n_blocks: u32,
+    block_sum: &wgpu::Buffer,
+    scan_prefix: &wgpu::Buffer,
+    scan_hierarchy: &wgpu::Buffer,
+    block_prefix: &wgpu::Buffer,
+) -> Result<(Vec<ScanHierarchyStep>, Vec<ScanHierarchyStep>)> {
+    let levels = crate::gpu::scan::hierarchical_scan_levels(n_blocks);
+    let mut hierarchy_up = Vec::with_capacity(levels.len());
+    for (index, level) in levels.iter().copied().enumerate() {
+        let parent = levels.get(index + 1).copied();
+        let params = uniform_from_val(
+            device,
+            &format!("{label}.hierarchy_up.{index}"),
+            &CountedScanHierarchyParams {
+                n_items,
+                n_blocks,
+                level_divisor: level.divisor,
+                level_offset: level.offset,
+                parent_divisor: parent.map_or(0, |parent| parent.divisor),
+                parent_offset: parent.map_or(0, |parent| parent.offset),
+            },
+        );
+        let bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some(&format!("{label}.hierarchy_up")),
+            hierarchy_up_pass,
+            0,
+            &[
+                ("gHierarchy", params.as_entire_binding()),
+                ("block_sum", block_sum.as_entire_binding()),
+                ("block_prefix", block_prefix.as_entire_binding()),
+                ("scan_prefix", scan_prefix.as_entire_binding()),
+                ("scan_hierarchy", scan_hierarchy.as_entire_binding()),
+            ],
+        )?;
+        hierarchy_up.push(ScanHierarchyStep {
+            bind_group,
+            work_items: level.count,
+        });
+    }
+
+    let mut hierarchy_down = Vec::with_capacity(levels.len().saturating_sub(1));
+    for child_index in (0..levels.len().saturating_sub(1)).rev() {
+        let child = levels[child_index];
+        let parent = levels[child_index + 1];
+        let params = uniform_from_val(
+            device,
+            &format!("{label}.hierarchy_down.{child_index}"),
+            &CountedScanHierarchyParams {
+                n_items,
+                n_blocks,
+                level_divisor: child.divisor,
+                level_offset: child.offset,
+                parent_divisor: parent.divisor,
+                parent_offset: parent.offset,
+            },
+        );
+        let bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some(&format!("{label}.hierarchy_down")),
+            hierarchy_down_pass,
+            0,
+            &[
+                ("gHierarchy", params.as_entire_binding()),
+                ("block_prefix", block_prefix.as_entire_binding()),
+                ("scan_prefix", scan_prefix.as_entire_binding()),
+                ("scan_hierarchy", scan_hierarchy.as_entire_binding()),
+            ],
+        )?;
+        hierarchy_down.push(ScanHierarchyStep {
+            bind_group,
+            work_items: child.count,
+        });
+    }
+    Ok((hierarchy_up, hierarchy_down))
+}
+
 /// Builds enclosing-function context bind groups from loaded type-check passes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     params: &LaniusBuffer<FnContextParams>,
-    scan_steps: &[FnContextScanStep],
     hir_kind_buf: &wgpu::Buffer,
     hir_token_pos_buf: &wgpu::Buffer,
     hir_token_end_buf: &wgpu::Buffer,
@@ -27,10 +110,10 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
         &passes.fn_context_clear,
         &passes.fn_context_mark,
         &passes.fn_context_local,
-        &passes.fn_context_scan,
+        &passes.fn_context_hierarchy_up,
+        &passes.fn_context_hierarchy_down,
         &passes.fn_context_apply,
         params,
-        scan_steps,
         hir_kind_buf,
         hir_token_pos_buf,
         hir_token_end_buf,
@@ -55,10 +138,10 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     clear_pass: &PassData,
     mark_pass: &PassData,
     local_pass: &PassData,
-    scan_pass: &PassData,
+    hierarchy_up_pass: &PassData,
+    hierarchy_down_pass: &PassData,
     apply_pass: &PassData,
     params: &LaniusBuffer<FnContextParams>,
-    scan_steps: &[FnContextScanStep],
     hir_kind_buf: &wgpu::Buffer,
     hir_token_pos_buf: &wgpu::Buffer,
     hir_token_end_buf: &wgpu::Buffer,
@@ -122,32 +205,20 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         ],
     )?;
 
-    let mut scan = Vec::with_capacity(scan_steps.len());
-    for step in scan_steps {
-        let prefix_in = if step.read_from_a {
-            fn_prefix_a
-        } else {
-            fn_prefix_b
-        };
-        let prefix_out = if step.write_to_a {
-            fn_prefix_a
-        } else {
-            fn_prefix_b
-        };
-        scan.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_fn_context_04_scan_blocks"),
-            scan_pass,
-            0,
-            &[
-                ("gParams", step.params.as_entire_binding()),
-                ("block_sum", fn_block_sum.as_entire_binding()),
-                ("prefix_in", prefix_in.as_entire_binding()),
-                ("prefix_out", prefix_out.as_entire_binding()),
-                ("block_prefix", fn_block_prefix.as_entire_binding()),
-            ],
-        )?);
-    }
+    let n_blocks = (fn_block_sum.size() / 4).min(u32::MAX as u64) as u32;
+    let n_items = n_blocks.saturating_mul(256);
+    let (hierarchy_up, hierarchy_down) = create_fixed_scan_hierarchy_bind_groups(
+        device,
+        "type_check.fn_context",
+        hierarchy_up_pass,
+        hierarchy_down_pass,
+        n_items,
+        n_blocks,
+        fn_block_sum,
+        fn_prefix_a,
+        fn_prefix_b,
+        fn_block_prefix,
+    )?;
 
     let apply = bind_group::create_bind_group_from_bindings(
         device,
@@ -169,7 +240,8 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         clear,
         mark,
         local,
-        scan,
+        hierarchy_up,
+        hierarchy_down,
         apply,
     })
 }
@@ -180,7 +252,6 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     params: &LaniusBuffer<LoopDepthParams>,
-    scan_steps: &[LoopDepthScanStep],
     token_buf: &wgpu::Buffer,
     token_count_buf: &wgpu::Buffer,
     hir_kind_buf: &wgpu::Buffer,
@@ -200,10 +271,10 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
         &passes.loop_depth_clear,
         &passes.loop_depth_mark,
         &passes.loop_depth_local,
-        &passes.loop_depth_scan,
+        &passes.loop_depth_hierarchy_up,
+        &passes.loop_depth_hierarchy_down,
         &passes.loop_depth_apply,
         params,
-        scan_steps,
         token_buf,
         token_count_buf,
         hir_kind_buf,
@@ -227,10 +298,10 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
     clear_pass: &PassData,
     mark_pass: &PassData,
     local_pass: &PassData,
-    scan_pass: &PassData,
+    hierarchy_up_pass: &PassData,
+    hierarchy_down_pass: &PassData,
     apply_pass: &PassData,
     params: &LaniusBuffer<LoopDepthParams>,
-    scan_steps: &[LoopDepthScanStep],
     token_buf: &wgpu::Buffer,
     token_count_buf: &wgpu::Buffer,
     hir_kind_buf: &wgpu::Buffer,
@@ -286,32 +357,20 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
         ],
     )?;
 
-    let mut scan = Vec::with_capacity(scan_steps.len());
-    for step in scan_steps {
-        let prefix_in = if step.read_from_a {
-            loop_prefix_a
-        } else {
-            loop_prefix_b
-        };
-        let prefix_out = if step.write_to_a {
-            loop_prefix_a
-        } else {
-            loop_prefix_b
-        };
-        scan.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_loop_depth_04_scan_blocks"),
-            scan_pass,
-            0,
-            &[
-                ("gParams", step.params.as_entire_binding()),
-                ("block_sum", loop_block_sum.as_entire_binding()),
-                ("prefix_in", prefix_in.as_entire_binding()),
-                ("prefix_out", prefix_out.as_entire_binding()),
-                ("block_prefix", loop_block_prefix.as_entire_binding()),
-            ],
-        )?);
-    }
+    let n_blocks = (loop_block_sum.size() / 4).min(u32::MAX as u64) as u32;
+    let n_items = n_blocks.saturating_mul(256);
+    let (hierarchy_up, hierarchy_down) = create_fixed_scan_hierarchy_bind_groups(
+        device,
+        "type_check.loop_depth",
+        hierarchy_up_pass,
+        hierarchy_down_pass,
+        n_items,
+        n_blocks,
+        loop_block_sum,
+        loop_prefix_a,
+        loop_prefix_b,
+        loop_block_prefix,
+    )?;
 
     let apply = bind_group::create_bind_group_from_bindings(
         device,
@@ -330,7 +389,8 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
         clear,
         mark,
         local,
-        scan,
+        hierarchy_up,
+        hierarchy_down,
         apply,
     })
 }

@@ -1031,6 +1031,20 @@ fn main(limit: i32) -> i32 {
 }
 
 #[test]
+fn type_checker_preserves_loop_and_function_context_across_scan_hierarchy_levels() {
+    let mut src = String::from(
+        "fn main(limit: i32) -> i32 {\n    let i: i32 = 0;\n    while (i < limit) {\n",
+    );
+    // Four tokens per assignment puts the trailing break beyond 256 blocks of
+    // 256 tokens while keeping one enclosing function and loop active.
+    for _ in 0..17_000 {
+        writeln!(src, "        i += 0;").expect("write hierarchy stress source");
+    }
+    src.push_str("        break;\n    }\n    return i;\n}\n");
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
 fn type_checker_rejects_loop_control_without_parser_owned_loop_context() {
     assert_gpu_type_check_diagnostic(
         r#"

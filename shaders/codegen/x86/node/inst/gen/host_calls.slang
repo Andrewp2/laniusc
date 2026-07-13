@@ -93,6 +93,16 @@ static const uint X86_CALL_TARGET_HOST_FS_OPEN_APPEND = 0xffffffe3u;
 static const uint X86_CALL_TARGET_HOST_STDIN_READ = 0xffffffe2u;
 static const uint X86_CALL_TARGET_HOST_STDOUT_WRITE = 0xffffffe1u;
 static const uint X86_CALL_TARGET_HOST_STDERR_WRITE = 0xffffffe0u;
+static const uint X86_CALL_TARGET_HOST_FILL_SECURE_BYTES = 0xffffffdfu;
+static const uint X86_CALL_TARGET_HOST_FS_REMOVE_FILE = 0xffffffdeu;
+static const uint X86_CALL_TARGET_HOST_FS_CREATE_DIR = 0xffffffddu;
+static const uint X86_CALL_TARGET_HOST_FS_REMOVE_DIR = 0xffffffdcu;
+static const uint X86_CALL_TARGET_HOST_FS_RENAME = 0xffffffdbu;
+static const uint X86_CALL_TARGET_HOST_TIME_MONOTONIC_READ = 0xffffffdau;
+static const uint X86_CALL_TARGET_HOST_TIME_SYSTEM_READ = 0xffffffd9u;
+static const uint X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32 = 0xffffffd8u;
+static const uint X86_CALL_TARGET_HOST_REALLOC = 0xffffffd7u;
+static const uint X86_CALL_TARGET_HOST_ALLOC_FAILED = 0xffffffd6u;
 static const uint X86_INTRINSIC_TAG_BITS = 4u;
 static const uint X86_INTRINSIC_TAG_MASK = 0xffu;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
@@ -148,6 +158,16 @@ static const uint X86_VINST_HOST_FS_OPEN_APPEND = 60u;
 static const uint X86_VINST_HOST_STDIN_READ = 61u;
 static const uint X86_VINST_HOST_STDOUT_WRITE = 62u;
 static const uint X86_VINST_HOST_STDERR_WRITE = 63u;
+static const uint X86_VINST_HOST_FILL_SECURE_BYTES = 64u;
+static const uint X86_VINST_HOST_FS_REMOVE_FILE = 65u;
+static const uint X86_VINST_HOST_FS_CREATE_DIR = 66u;
+static const uint X86_VINST_HOST_FS_REMOVE_DIR = 67u;
+static const uint X86_VINST_HOST_FS_RENAME = 68u;
+static const uint X86_VINST_HOST_TIME_MONOTONIC_READ = 69u;
+static const uint X86_VINST_HOST_TIME_SYSTEM_READ = 70u;
+static const uint X86_VINST_HOST_TIME_SLEEP_MS_I32 = 71u;
+static const uint X86_VINST_HOST_REALLOC = 72u;
+static const uint X86_VINST_HOST_ALLOC_FAILED = 73u;
 static const uint X86_OP_I32_TO_F32 = 4u;
 
 bool valid_node(uint node)
@@ -542,7 +562,7 @@ uint call_abi_return_width(uint2 abi)
 
 bool host_call_target(uint target)
 {
-    return target >= X86_CALL_TARGET_HOST_STDERR_WRITE &&
+    return target >= X86_CALL_TARGET_HOST_ALLOC_FAILED &&
            target <= X86_CALL_TARGET_HOST_TEXT_WRITE;
 }
 
@@ -1043,7 +1063,8 @@ bool emit_host_call(uint node, uint2 abi)
     }
     if (host_abi(abi, X86_CALL_TARGET_HOST_STDIN_READ, 2u) ||
         host_abi(abi, X86_CALL_TARGET_HOST_STDOUT_WRITE, 2u) ||
-        host_abi(abi, X86_CALL_TARGET_HOST_STDERR_WRITE, 2u))
+        host_abi(abi, X86_CALL_TARGET_HOST_STDERR_WRITE, 2u) ||
+        host_abi(abi, X86_CALL_TARGET_HOST_FILL_SECURE_BYTES, 2u))
     {
         uint arg0_node = INVALID;
         uint arg1_node = INVALID;
@@ -1061,8 +1082,121 @@ bool emit_host_call(uint node, uint2 abi)
                       ? X86_VINST_HOST_STDIN_READ
                       : abi.x == X86_CALL_TARGET_HOST_STDOUT_WRITE
                           ? X86_VINST_HOST_STDOUT_WRITE
-                          : X86_VINST_HOST_STDERR_WRITE;
+                          : abi.x == X86_CALL_TARGET_HOST_STDERR_WRITE
+                              ? X86_VINST_HOST_STDERR_WRITE
+                              : X86_VINST_HOST_FILL_SECURE_BYTES;
         write_inst(row, node, 0u, op, dst, uint4(ptr_vreg, len_vreg, 0u, 0u));
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_FS_REMOVE_FILE, 2u) ||
+        host_abi(abi, X86_CALL_TARGET_HOST_FS_CREATE_DIR, 2u) ||
+        host_abi(abi, X86_CALL_TARGET_HOST_FS_REMOVE_DIR, 2u))
+    {
+        uint arg0_node = INVALID;
+        uint arg1_node = INVALID;
+        uint ptr_vreg = INVALID;
+        uint len_vreg = INVALID;
+        if (!call_arg_node_for_call(node, 0u, arg0_node) ||
+            !call_arg_node_for_call(node, 1u, arg1_node) ||
+            !value_vreg_for_node(arg0_node, ptr_vreg) ||
+            !value_vreg_for_node(arg1_node, len_vreg))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG1_OPERAND);
+            return false;
+        }
+        uint op = abi.x == X86_CALL_TARGET_HOST_FS_REMOVE_FILE
+                      ? X86_VINST_HOST_FS_REMOVE_FILE
+                      : abi.x == X86_CALL_TARGET_HOST_FS_CREATE_DIR
+                          ? X86_VINST_HOST_FS_CREATE_DIR
+                          : X86_VINST_HOST_FS_REMOVE_DIR;
+        write_inst(row, node, 0u, op, dst, uint4(ptr_vreg, len_vreg, 0u, 0u));
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_FS_RENAME, 4u))
+    {
+        uint4 arg_node = uint4(INVALID, INVALID, INVALID, INVALID);
+        uint4 arg_vreg = uint4(INVALID, INVALID, INVALID, INVALID);
+        if (!call_arg_node_for_call(node, 0u, arg_node.x) ||
+            !call_arg_node_for_call(node, 1u, arg_node.y) ||
+            !call_arg_node_for_call(node, 2u, arg_node.z) ||
+            !call_arg_node_for_call(node, 3u, arg_node.w) ||
+            !value_vreg_for_node(arg_node.x, arg_vreg.x) ||
+            !value_vreg_for_node(arg_node.y, arg_vreg.y) ||
+            !value_vreg_for_node(arg_node.z, arg_vreg.z) ||
+            !value_vreg_for_node(arg_node.w, arg_vreg.w))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG3_OPERAND);
+            return false;
+        }
+        write_inst(row, node, 0u, X86_VINST_HOST_FS_RENAME, dst, arg_vreg);
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_TIME_MONOTONIC_READ, 2u) ||
+        host_abi(abi, X86_CALL_TARGET_HOST_TIME_SYSTEM_READ, 2u))
+    {
+        uint arg0_node = INVALID;
+        uint arg1_node = INVALID;
+        uint ptr_vreg = INVALID;
+        uint len_vreg = INVALID;
+        if (!call_arg_node_for_call(node, 0u, arg0_node) ||
+            !call_arg_node_for_call(node, 1u, arg1_node) ||
+            !value_vreg_for_node(arg0_node, ptr_vreg) ||
+            !value_vreg_for_node(arg1_node, len_vreg))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG1_OPERAND);
+            return false;
+        }
+        uint op = abi.x == X86_CALL_TARGET_HOST_TIME_MONOTONIC_READ
+                      ? X86_VINST_HOST_TIME_MONOTONIC_READ
+                      : X86_VINST_HOST_TIME_SYSTEM_READ;
+        write_inst(row, node, 0u, op, dst, uint4(ptr_vreg, len_vreg, 0u, 0u));
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32, 1u))
+    {
+        uint arg_node = INVALID;
+        uint milliseconds_vreg = INVALID;
+        if (!call_arg_node_for_call(node, 0u, arg_node) ||
+            !value_vreg_for_node(arg_node, milliseconds_vreg))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG0_OPERAND);
+            return false;
+        }
+        write_inst(row, node, 0u, X86_VINST_HOST_TIME_SLEEP_MS_I32, dst, uint4(milliseconds_vreg, 0u, 0u, 0u));
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_REALLOC, 4u))
+    {
+        uint4 arg_node = uint4(INVALID, INVALID, INVALID, INVALID);
+        uint4 arg_vreg = uint4(INVALID, INVALID, INVALID, INVALID);
+        if (!call_arg_node_for_call(node, 0u, arg_node.x) ||
+            !call_arg_node_for_call(node, 1u, arg_node.y) ||
+            !call_arg_node_for_call(node, 2u, arg_node.z) ||
+            !call_arg_node_for_call(node, 3u, arg_node.w) ||
+            !value_vreg_for_node(arg_node.x, arg_vreg.x) ||
+            !value_vreg_for_node(arg_node.y, arg_vreg.y) ||
+            !value_vreg_for_node(arg_node.z, arg_vreg.z) ||
+            !value_vreg_for_node(arg_node.w, arg_vreg.w))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG3_OPERAND);
+            return false;
+        }
+        write_inst(row, node, 0u, X86_VINST_HOST_REALLOC, dst, arg_vreg);
+        return true;
+    }
+    if (host_abi(abi, X86_CALL_TARGET_HOST_ALLOC_FAILED, 2u))
+    {
+        uint2 arg_node = uint2(INVALID, INVALID);
+        uint2 arg_vreg = uint2(INVALID, INVALID);
+        if (!call_arg_node_for_call(node, 0u, arg_node.x) ||
+            !call_arg_node_for_call(node, 1u, arg_node.y) ||
+            !value_vreg_for_node(arg_node.x, arg_vreg.x) ||
+            !value_vreg_for_node(arg_node.y, arg_vreg.y))
+        {
+            write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG1_OPERAND);
+            return false;
+        }
+        write_inst(row, node, 0u, X86_VINST_HOST_ALLOC_FAILED, dst, uint4(arg_vreg, 0u, 0u));
         return true;
     }
     if (host_text_write_abi(abi))

@@ -3,9 +3,9 @@ import atomics;
 
 // Direct x86_64 function discovery.
 //
-// This pass maps GPU HIR function nodes and owning-function records for the
-// native backend. x86_node_tree_info runs before this pass, so the function
-// discovery status can still fail fast on invalid parser tree records.
+// This pass maps GPU HIR function lookup keys and discovers the entrypoint for
+// the native backend. x86_node_tree_info runs before this pass, so function
+// discovery can still fail fast on invalid parser tree records.
 
 struct Params
 {
@@ -31,6 +31,7 @@ StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
+StructuredBuffer<uint> hir_nearest_fn_node;
 
 RWStructuredBuffer<uint> x86_func_meta;
 RWStructuredBuffer<uint> x86_node_func;
@@ -85,7 +86,8 @@ bool is_impl_method_function_node(uint node_i)
 
 bool is_function_record_node(uint node_i)
 {
-    return hir_kind[node_i] == HIR_FN &&
+    return valid_node(node_i) &&
+           hir_kind[node_i] == HIR_FN &&
            (hir_item_kind[node_i] == HIR_ITEM_KIND_FN ||
             is_impl_method_function_node(node_i));
 }
@@ -133,15 +135,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (node_i >= active_hir_node_count())
         return;
 
+    uint owner = hir_nearest_fn_node[node_i];
+    x86_node_func[node_i] = is_function_record_node(owner) ? owner : INVALID;
+
     if (!is_function_lookup_node(node_i))
         return;
 
     publish_function_lookup(node_i);
-    if (!is_function_record_node(node_i))
-        return;
-
-    x86_node_func[node_i] = node_i;
-
     if (!is_main_function_node(node_i))
         return;
 
