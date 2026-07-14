@@ -288,6 +288,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     "call_generic_claim_type",
                     resources["call_generic_claim_type"].clone(),
                 ),
+                (
+                    "call_generic_claim_ref_tag",
+                    resources["call_generic_claim_ref_tag"].clone(),
+                ),
                 ("call_generic_claim_order_in", read_order.clone()),
                 (
                     "radix_block_histogram",
@@ -362,6 +366,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 (
                     "call_generic_claim_type",
                     resources["call_generic_claim_type"].clone(),
+                ),
+                (
+                    "call_generic_claim_ref_tag",
+                    resources["call_generic_claim_ref_tag"].clone(),
                 ),
                 ("call_generic_claim_order_in", read_order),
                 (
@@ -459,6 +467,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     "call_generic_claim_type",
                     resources["call_const_claim_len"].clone(),
                 ),
+                (
+                    "call_generic_claim_ref_tag",
+                    resources["call_generic_claim_ref_tag"].clone(),
+                ),
                 ("call_generic_claim_order_in", read_order.clone()),
                 (
                     "radix_block_histogram",
@@ -530,6 +542,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 (
                     "call_generic_claim_type",
                     resources["call_const_claim_len"].clone(),
+                ),
+                (
+                    "call_generic_claim_ref_tag",
+                    resources["call_generic_claim_ref_tag"].clone(),
                 ),
                 ("call_generic_claim_order_in", read_order),
                 (
@@ -833,6 +849,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             device,
             "type_check_resident_calls_validate_generic_claims",
             &passes.calls_validate_generic_claims,
+            resources,
+        )?,
+        clear_generic_claim_type_args: reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_calls_clear_generic_claim_type_args",
+            &passes.calls_clear_generic_claim_type_args,
             resources,
         )?,
         mark_required_generics: reflected_bind_group_from_resources(

@@ -256,6 +256,26 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.attach_record_modules",
         hir_active_dispatch_args,
     )?;
+    if let (Some(dependencies), Some(clear_lookup), Some(build_lookup)) = (
+        state.dependency_interfaces.as_ref(),
+        state.bind_groups.clear_dependency_module_lookup.as_ref(),
+        state.bind_groups.build_dependency_module_lookup.as_ref(),
+    ) {
+        record_compute(
+            encoder,
+            &passes.dependencies.clear_module_lookup,
+            clear_lookup,
+            "type_check.dependencies.clear_module_lookup",
+            dependencies.module_lookup_capacity.max(1),
+        )?;
+        record_compute(
+            encoder,
+            &passes.dependencies.build_module_lookup,
+            build_lookup,
+            "type_check.dependencies.build_module_lookup",
+            dependencies.module_count.max(1),
+        )?;
+    }
     record_compute_indirect(
         encoder,
         &passes.modules_resolve_imports,
@@ -263,6 +283,15 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.resolve_imports",
         &state.import_dispatch_args,
     )?;
+    if let Some(resolve_dependencies) = &state.bind_groups.resolve_dependency_imports {
+        record_compute_indirect(
+            encoder,
+            &passes.dependencies.resolve_imports,
+            resolve_dependencies,
+            "type_check.dependencies.resolve_imports",
+            &state.import_dispatch_args,
+        )?;
+    }
     record_compute(
         encoder,
         &passes.names_radix_dispatch_args,
@@ -661,6 +690,44 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         encoder,
         "typecheck.modules.import_visible_tables.done",
     );
+    if let Some(dependency_visibility) = &state.dependency_visibility {
+        record_compute_indirect(
+            encoder,
+            &passes.dependencies.count_import_visibility,
+            &dependency_visibility.count_group,
+            "type_check.dependencies.count_import_visibility",
+            &state.import_dispatch_args,
+        )?;
+        record_counted_u32_scan_bind_groups_with_passes(
+            passes,
+            encoder,
+            record_n_blocks,
+            &state.import_dispatch_args,
+            &dependency_visibility.scan,
+            "type_check.dependencies.import_visibility_scan",
+        )?;
+        record_compute(
+            encoder,
+            &passes.dependencies.scatter_import_visibility,
+            &dependency_visibility.scatter_group,
+            "type_check.dependencies.scatter_import_visibility",
+            dependency_visibility.visible_capacity,
+        )?;
+        record_compute(
+            encoder,
+            &passes.dependencies.clear_visible_lookup,
+            &dependency_visibility.clear_lookup_group,
+            "type_check.dependencies.clear_visible_lookup",
+            dependency_visibility.lookup_capacity,
+        )?;
+        record_compute(
+            encoder,
+            &passes.dependencies.build_visible_lookup,
+            &dependency_visibility.build_lookup_group,
+            "type_check.dependencies.build_visible_lookup",
+            dependency_visibility.visible_capacity,
+        )?;
+    }
     record_compute_indirect(
         encoder,
         &passes.modules_resolve_local_paths,
@@ -682,6 +749,22 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.resolve_imported_type_paths",
         &state.path_dispatch_args,
     )?;
+    if let Some(dependency_visibility) = &state.dependency_visibility {
+        record_compute_indirect(
+            encoder,
+            &passes.dependencies.resolve_paths,
+            &dependency_visibility.resolve_type_group,
+            "type_check.dependencies.resolve_type_paths",
+            &state.path_dispatch_args,
+        )?;
+        record_compute_indirect(
+            encoder,
+            &passes.dependencies.resolve_paths,
+            &dependency_visibility.resolve_value_group,
+            "type_check.dependencies.resolve_value_paths",
+            &state.path_dispatch_args,
+        )?;
+    }
     record_compute_indirect(
         encoder,
         &passes.modules_resolve_imported_paths,
@@ -711,6 +794,93 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.clear_type_path_types",
         state.token_capacity.max(1),
     )?;
+    if let Some(dependency_visibility) = &state.dependency_visibility {
+        record_compute(
+            encoder,
+            &passes
+                .dependencies
+                .canonical_types
+                .init_canonical_type_roots,
+            &dependency_visibility.init_canonical_type_roots_group,
+            "type_check.dependencies.init_canonical_type_roots",
+            dependency_visibility.canonical_type_count.max(1),
+        )?;
+        for round in 0..dependency_visibility.canonical_type_jump_rounds {
+            let group = if round % 2 == 0 {
+                &dependency_visibility.jump_canonical_type_roots_a_to_b_group
+            } else {
+                &dependency_visibility.jump_canonical_type_roots_b_to_a_group
+            };
+            record_compute(
+                encoder,
+                &passes
+                    .dependencies
+                    .canonical_types
+                    .jump_canonical_type_roots,
+                group,
+                "type_check.dependencies.jump_canonical_type_roots",
+                dependency_visibility.canonical_type_count.max(1),
+            )?;
+        }
+        record_compute(
+            encoder,
+            &passes
+                .dependencies
+                .canonical_types
+                .init_canonical_type_subtree_start,
+            &dependency_visibility.canonical_type_subtree.init_group,
+            "type_check.dependencies.init_canonical_type_subtree_start",
+            dependency_visibility.canonical_type_count.max(1),
+        )?;
+        for round in 0..dependency_visibility.canonical_type_jump_rounds {
+            let subtree_group = if round % 2 == 0 {
+                &dependency_visibility
+                    .canonical_type_subtree
+                    .jump_a_to_b_group
+            } else {
+                &dependency_visibility
+                    .canonical_type_subtree
+                    .jump_b_to_a_group
+            };
+            record_compute(
+                encoder,
+                &passes
+                    .dependencies
+                    .canonical_types
+                    .jump_canonical_type_subtree_start,
+                subtree_group,
+                "type_check.dependencies.jump_canonical_type_subtree_start",
+                dependency_visibility.canonical_type_count.max(1),
+            )?;
+        }
+        record_compute(
+            encoder,
+            &passes
+                .dependencies
+                .canonical_types
+                .clear_declaration_generic_arity,
+            &dependency_visibility.clear_declaration_generic_arity_group,
+            "type_check.dependencies.clear_declaration_generic_arity",
+            dependency_visibility.canonical_declaration_count.max(1),
+        )?;
+        record_compute(
+            encoder,
+            &passes
+                .dependencies
+                .canonical_types
+                .count_declaration_generic_arity,
+            &dependency_visibility.count_declaration_generic_arity_group,
+            "type_check.dependencies.count_declaration_generic_arity",
+            dependency_visibility.canonical_member_count.max(1),
+        )?;
+        record_compute_indirect(
+            encoder,
+            &passes.dependencies.canonical_types.project_types,
+            &dependency_visibility.project_types_group,
+            "type_check.dependencies.project_types",
+            &state.path_dispatch_args,
+        )?;
+    }
     record_compute_indirect(
         encoder,
         &passes.modules_project_type_paths,

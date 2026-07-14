@@ -8,12 +8,32 @@ use crate::{
 
 enum RecordedSourcePackX86 {
     Fused {
-        check: x86::RecordedX86Codegen,
+        check: RecordedX86BackendArtifact,
         plan: SourcePackX86Plan,
     },
     Split {
         features: x86::RecordedX86FeatureMeasurement,
     },
+}
+
+#[derive(Clone, Copy)]
+enum X86BackendArtifactRequest {
+    Executable,
+    RelocatableObject { library_id: u32, unit_id: u32 },
+}
+
+enum RecordedX86BackendArtifact {
+    Executable(x86::RecordedX86Codegen),
+    RelocatableObject {
+        check: x86::RecordedX86ObjectCodegen,
+        library_id: u32,
+        unit_id: u32,
+    },
+}
+
+enum CompletedX86BackendArtifact {
+    Executable(Vec<u8>),
+    RelocatableObject(x86::GpuX86RelocatableObject),
 }
 
 struct CompletedSourcePackParserAttempt {
@@ -120,6 +140,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         parse_bufs: &OwnedTypecheckParserBuffers,
         active_tree_capacity: u32,
         parser_tree_capacity: u32,
+        dependency_interfaces: Option<&gpu_type_checker::GpuDependencyInterfaceState>,
         next_encoder_label: &'static str,
         diagnostic_files: &[DiagnosticSourceFile],
     ) -> Result<(gpu_type_checker::RecordedTypeCheck, wgpu::CommandBuffer), CompileError> {
@@ -134,6 +155,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs,
             active_tree_capacity,
             parser_tree_capacity,
+            dependency_interfaces,
             None,
             |err| type_check_execution_failed_for_source_pack(diagnostic_files, err),
         )?;
@@ -157,172 +179,187 @@ impl<'gpu> GpuCompiler<'gpu> {
         parse_bufs: &OwnedX86ParserBuffers,
         codegen: gpu_type_checker::GpuX86CodegenBuffers<'_>,
         feature_summary: x86::X86FeatureSummary,
+        dependency_declaration_count: u32,
         mut timer: Option<&mut GpuTimer>,
+        artifact_request: X86BackendArtifactRequest,
         map_backend_error: impl Fn(String) -> CompileError,
-    ) -> Result<x86::RecordedX86Codegen, CompileError> {
+    ) -> Result<RecordedX86BackendArtifact, CompileError> {
         let hir_status = &parse_bufs.ll1_status;
         let external_scratch = Self::x86_external_scratch_from_frontend_buffers(
             parse_bufs,
             token_capacity,
             feature_summary,
         );
-        self.x86_generator
+        let generator = self
+            .x86_generator
             .as_deref()
-            .map_err(|err| map_backend_error(format!("initialize x86 code generator: {err}")))?
-            .record_elf_from_hir(
-                device,
-                queue,
-                encoder,
-                x86::RecordElfInputs {
-                    source_len,
-                    token_capacity,
-                    n_hir_nodes: x86_hir_node_count,
-                    inst_hir_node_count: x86_inst_hir_node_count,
-                    pointer_jump_steps,
-                    hir_status_buf: hir_status,
-                    active_hir_dispatch_args_buf: &parse_bufs.tree_active_dispatch_args,
-                    pointer_jump_dispatch_args_buf: &parse_bufs.tree_pointer_jump_dispatch_args,
-                    hir_kind_buf: &parse_bufs.hir_kind,
-                    hir_item_kind_buf: &parse_bufs.hir_item_kind,
-                    parent_buf: &parse_bufs.parent,
-                    subtree_end_buf: &parse_bufs.subtree_end,
-                    function_metadata: x86::GpuX86FunctionMetadataBuffers {
-                        node_decl_token: &parse_bufs.hir_item_decl_token,
-                        node_name_token: &parse_bufs.hir_item_name_token,
-                        hir_token_pos: &parse_bufs.hir_token_pos,
-                        nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
-                        fn_return_type_node: &parse_bufs.hir_fn_return_type_node,
-                        param_record: &parse_bufs.hir_param_record,
-                        enclosing_fn: codegen.enclosing_fn,
-                        method_decl_param_offset: codegen.method_decl_param_offset,
-                        method_decl_receiver_mode: codegen.method_decl_receiver_mode,
-                        method_decl_receiver_ref_tag: codegen.method_decl_receiver_ref_tag,
-                        method_decl_receiver_ref_payload: codegen.method_decl_receiver_ref_payload,
-                    },
-                    expr_metadata: x86::GpuX86ExprMetadataBuffers {
-                        record: &parse_bufs.hir_expr_record,
-                        expr_result_root_node: &parse_bufs.hir_expr_result_root_node,
-                        int_value: &parse_bufs.hir_expr_int_value,
-                        float_bits: &parse_bufs.hir_expr_float_bits,
-                        string_start: &parse_bufs.hir_expr_string_start,
-                        string_len: &parse_bufs.hir_expr_string_len,
-                        string_data_offset: &parse_bufs.hir_string_data_offset,
-                        string_decoded_len: &parse_bufs.hir_string_decoded_len,
-                        string_data_words: &parse_bufs.hir_string_data_words,
-                        string_node: &parse_bufs.hir_string_node,
-                        string_count: &parse_bufs.hir_string_count,
-                        stmt_record: &parse_bufs.hir_stmt_record,
-                        nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
-                        type_form: &parse_bufs.hir_type_form,
-                        type_len_value: &parse_bufs.hir_type_len_value,
-                    },
-                    call_metadata: x86::GpuX86CallMetadataBuffers {
-                        name_id_by_token: codegen.name_id_by_token,
-                        language_name_id: codegen.language_name_id,
-                        path_count_out: codegen.path_count_out,
-                        path_id_by_owner_hir: codegen.path_id_by_owner_hir,
-                        resolved_value_decl: codegen.resolved_value_decl,
-                        resolved_value_status: codegen.resolved_value_status,
-                        decl_name_token: codegen.decl_name_token,
-                        callee_node: &parse_bufs.hir_call_callee_node,
-                        context_stmt_node: &parse_bufs.hir_call_context_stmt_node,
-                        arg_start: &parse_bufs.hir_call_arg_start,
-                        arg_end: &parse_bufs.hir_call_arg_end,
-                        arg_count: &parse_bufs.hir_call_arg_count,
-                        arg_parent_call: &parse_bufs.hir_call_arg_parent_call,
-                        arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                        arg_row_node: codegen.call_arg_row_node,
-                        arg_row_start: codegen.call_arg_row_start,
-                        arg_row_count: codegen.call_arg_row_count,
-                        member_receiver_node: &parse_bufs.hir_member_receiver_node,
-                        member_name_token: &parse_bufs.hir_member_name_token,
-                        call_fn_index: codegen.call_fn_index,
-                        call_intrinsic_tag: codegen.call_intrinsic_tag,
-                        call_return_type: codegen.call_return_type,
-                        call_return_type_token: codegen.call_return_type_token,
-                        call_param_type: codegen.call_param_type,
-                    },
-                    array_metadata: x86::GpuX86ArrayMetadataBuffers {
-                        lit_first_element: &parse_bufs.hir_array_lit_first_element,
-                        lit_element_count: &parse_bufs.hir_array_lit_element_count,
-                        element_parent_lit: &parse_bufs.hir_array_element_parent_lit,
-                        element_ordinal: &parse_bufs.hir_array_element_ordinal,
-                        element_next: &parse_bufs.hir_array_element_next,
-                        nearest_element: &parse_bufs.hir_nearest_array_element_node,
-                    },
-                    enum_metadata: x86::GpuX86EnumMetadataBuffers {
-                        item_decl_token: &parse_bufs.hir_item_decl_token,
-                        variant_parent_enum: &parse_bufs.hir_variant_parent_enum,
-                        variant_ordinal: &parse_bufs.hir_variant_ordinal,
-                        variant_payload_count: &parse_bufs.hir_variant_payload_count,
-                        match_scrutinee_node: &parse_bufs.hir_match_scrutinee_node,
-                        match_arm_start: &parse_bufs.hir_match_arm_start,
-                        match_arm_count: &parse_bufs.hir_match_arm_count,
-                        match_arm_next: &parse_bufs.hir_match_arm_next,
-                        match_arm_pattern_node: &parse_bufs.hir_match_arm_pattern_node,
-                        match_arm_payload_start: &parse_bufs.hir_match_arm_payload_start,
-                        match_arm_payload_count: &parse_bufs.hir_match_arm_payload_count,
-                        match_arm_result_node: &parse_bufs.hir_match_arm_result_node,
-                        hir_token_pos: &parse_bufs.hir_token_pos,
-                        path_count_out: codegen.path_count_out,
-                        path_id_by_owner_hir: codegen.path_id_by_owner_hir,
-                        resolved_value_decl: codegen.resolved_value_decl,
-                        resolved_value_status: codegen.resolved_value_status,
-                        decl_count_out: codegen.decl_count_out,
-                        decl_kind: codegen.decl_kind,
-                        decl_name_token: codegen.decl_name_token,
-                        decl_id_by_name_token: codegen.decl_id_by_name_token,
-                        decl_hir_node: codegen.decl_hir_node,
-                        decl_parent_type_decl: codegen.decl_parent_type_decl,
-                    },
-                    struct_metadata: x86::GpuX86StructMetadataBuffers {
-                        item_name_token: &parse_bufs.hir_item_name_token,
-                        decl_hir_node: codegen.decl_hir_node,
-                        struct_decl_field_count: &parse_bufs.hir_struct_decl_field_count,
-                        struct_lit_head_node: &parse_bufs.hir_struct_lit_head_node,
-                        struct_lit_context_stmt_node: &parse_bufs.hir_struct_lit_context_stmt_node,
-                        struct_field_parent_struct: &parse_bufs.hir_struct_field_parent_struct,
-                        struct_field_ordinal: &parse_bufs.hir_struct_field_ordinal,
-                        struct_field_type_node: &parse_bufs.hir_struct_field_type_node,
-                        struct_decl_field_start: &parse_bufs.hir_struct_decl_field_start,
-                        struct_lit_field_parent_lit: &parse_bufs.hir_struct_lit_field_parent_lit,
-                        struct_lit_field_start: &parse_bufs.hir_struct_lit_field_start,
-                        struct_lit_field_count: &parse_bufs.hir_struct_lit_field_count,
-                        struct_lit_field_value_node: &parse_bufs.hir_struct_lit_field_value_node,
-                        struct_lit_field_next: &parse_bufs.hir_struct_lit_field_next,
-                        member_result_field_ordinal: codegen.member_result_field_ordinal,
-                        member_result_field_node: codegen.member_result_field_node,
-                        struct_init_field_ordinal: codegen.struct_init_field_ordinal,
-                        struct_init_field_ordinal_by_node: codegen
-                            .struct_init_field_ordinal_by_node,
-                        struct_init_field_decl_node_by_node: codegen
-                            .struct_init_field_decl_node_by_node,
-                    },
-                    type_metadata: x86::GpuX86TypeMetadataBuffers {
-                        type_value_node: &parse_bufs.hir_type_value_node,
-                        type_path_leaf_node: &parse_bufs.hir_type_path_leaf_node,
-                        decl_type_ref_tag: codegen.decl_type_ref_tag,
-                        decl_type_ref_payload: codegen.decl_type_ref_payload,
-                        type_expr_ref_tag: codegen.type_expr_ref_tag,
-                        type_expr_ref_payload: codegen.type_expr_ref_payload,
-                        module_type_path_type: codegen.module_type_path_type,
-                        type_decl_hir_node_by_token: codegen.type_decl_hir_node_by_token,
-                        visible_type: codegen.visible_type,
-                        type_instance_kind: codegen.type_instance_kind,
-                        type_instance_decl_token: codegen.type_instance_decl_token,
-                        type_instance_elem_ref_tag: codegen.type_instance_elem_ref_tag,
-                        type_instance_elem_ref_payload: codegen.type_instance_elem_ref_payload,
-                        type_instance_len_kind: codegen.type_instance_len_kind,
-                        type_instance_len_payload: codegen.type_instance_len_payload,
-                    },
-                    visible_decl_buf: codegen.visible_decl,
-                    fn_entrypoint_tag_buf: codegen.fn_entrypoint_tag,
-                    feature_summary,
-                    external_scratch,
-                    timer: timer.as_deref_mut(),
-                },
-            )
-            .map_err(|err| map_backend_error(err.to_string()))
+            .map_err(|err| map_backend_error(format!("initialize x86 code generator: {err}")))?;
+        let inputs = x86::RecordElfInputs {
+            source_len,
+            token_capacity,
+            n_hir_nodes: x86_hir_node_count,
+            inst_hir_node_count: x86_inst_hir_node_count,
+            pointer_jump_steps,
+            hir_status_buf: hir_status,
+            active_hir_dispatch_args_buf: &parse_bufs.tree_active_dispatch_args,
+            pointer_jump_dispatch_args_buf: &parse_bufs.tree_pointer_jump_dispatch_args,
+            hir_kind_buf: &parse_bufs.hir_kind,
+            hir_item_kind_buf: &parse_bufs.hir_item_kind,
+            parent_buf: &parse_bufs.parent,
+            subtree_end_buf: &parse_bufs.subtree_end,
+            function_metadata: x86::GpuX86FunctionMetadataBuffers {
+                node_decl_token: &parse_bufs.hir_item_decl_token,
+                node_name_token: &parse_bufs.hir_item_name_token,
+                hir_token_pos: &parse_bufs.hir_token_pos,
+                nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
+                fn_return_type_node: &parse_bufs.hir_fn_return_type_node,
+                param_record: &parse_bufs.hir_param_record,
+                enclosing_fn: codegen.enclosing_fn,
+                method_decl_param_offset: codegen.method_decl_param_offset,
+                method_decl_receiver_mode: codegen.method_decl_receiver_mode,
+                method_decl_receiver_ref_tag: codegen.method_decl_receiver_ref_tag,
+                method_decl_receiver_ref_payload: codegen.method_decl_receiver_ref_payload,
+            },
+            expr_metadata: x86::GpuX86ExprMetadataBuffers {
+                record: &parse_bufs.hir_expr_record,
+                expr_result_root_node: &parse_bufs.hir_expr_result_root_node,
+                int_value: &parse_bufs.hir_expr_int_value,
+                float_bits: &parse_bufs.hir_expr_float_bits,
+                string_start: &parse_bufs.hir_expr_string_start,
+                string_len: &parse_bufs.hir_expr_string_len,
+                string_data_offset: &parse_bufs.hir_string_data_offset,
+                string_decoded_len: &parse_bufs.hir_string_decoded_len,
+                string_data_words: &parse_bufs.hir_string_data_words,
+                string_node: &parse_bufs.hir_string_node,
+                string_count: &parse_bufs.hir_string_count,
+                stmt_record: &parse_bufs.hir_stmt_record,
+                nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
+                type_form: &parse_bufs.hir_type_form,
+                type_len_value: &parse_bufs.hir_type_len_value,
+            },
+            call_metadata: x86::GpuX86CallMetadataBuffers {
+                name_id_by_token: codegen.name_id_by_token,
+                language_name_id: codegen.language_name_id,
+                path_count_out: codegen.path_count_out,
+                path_id_by_owner_hir: codegen.path_id_by_owner_hir,
+                resolved_value_decl: codegen.resolved_value_decl,
+                resolved_value_status: codegen.resolved_value_status,
+                decl_name_token: codegen.decl_name_token,
+                callee_node: &parse_bufs.hir_call_callee_node,
+                context_stmt_node: &parse_bufs.hir_call_context_stmt_node,
+                arg_start: &parse_bufs.hir_call_arg_start,
+                arg_end: &parse_bufs.hir_call_arg_end,
+                arg_count: &parse_bufs.hir_call_arg_count,
+                arg_parent_call: &parse_bufs.hir_call_arg_parent_call,
+                arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
+                arg_row_node: codegen.call_arg_row_node,
+                arg_row_start: codegen.call_arg_row_start,
+                arg_row_count: codegen.call_arg_row_count,
+                member_receiver_node: &parse_bufs.hir_member_receiver_node,
+                member_name_token: &parse_bufs.hir_member_name_token,
+                call_fn_index: codegen.call_fn_index,
+                call_dependency_decl: codegen.call_dependency_decl,
+                call_intrinsic_tag: codegen.call_intrinsic_tag,
+                call_return_type: codegen.call_return_type,
+                call_return_type_token: codegen.call_return_type_token,
+                call_param_type: codegen.call_param_type,
+            },
+            dependency_declaration_count,
+            array_metadata: x86::GpuX86ArrayMetadataBuffers {
+                lit_first_element: &parse_bufs.hir_array_lit_first_element,
+                lit_element_count: &parse_bufs.hir_array_lit_element_count,
+                element_parent_lit: &parse_bufs.hir_array_element_parent_lit,
+                element_ordinal: &parse_bufs.hir_array_element_ordinal,
+                element_next: &parse_bufs.hir_array_element_next,
+                nearest_element: &parse_bufs.hir_nearest_array_element_node,
+            },
+            enum_metadata: x86::GpuX86EnumMetadataBuffers {
+                item_decl_token: &parse_bufs.hir_item_decl_token,
+                variant_parent_enum: &parse_bufs.hir_variant_parent_enum,
+                variant_ordinal: &parse_bufs.hir_variant_ordinal,
+                variant_payload_count: &parse_bufs.hir_variant_payload_count,
+                match_scrutinee_node: &parse_bufs.hir_match_scrutinee_node,
+                match_arm_start: &parse_bufs.hir_match_arm_start,
+                match_arm_count: &parse_bufs.hir_match_arm_count,
+                match_arm_next: &parse_bufs.hir_match_arm_next,
+                match_arm_pattern_node: &parse_bufs.hir_match_arm_pattern_node,
+                match_arm_payload_start: &parse_bufs.hir_match_arm_payload_start,
+                match_arm_payload_count: &parse_bufs.hir_match_arm_payload_count,
+                match_arm_result_node: &parse_bufs.hir_match_arm_result_node,
+                hir_token_pos: &parse_bufs.hir_token_pos,
+                path_count_out: codegen.path_count_out,
+                path_id_by_owner_hir: codegen.path_id_by_owner_hir,
+                resolved_value_decl: codegen.resolved_value_decl,
+                resolved_value_status: codegen.resolved_value_status,
+                decl_count_out: codegen.decl_count_out,
+                decl_kind: codegen.decl_kind,
+                decl_name_token: codegen.decl_name_token,
+                decl_id_by_name_token: codegen.decl_id_by_name_token,
+                decl_hir_node: codegen.decl_hir_node,
+                decl_parent_type_decl: codegen.decl_parent_type_decl,
+            },
+            struct_metadata: x86::GpuX86StructMetadataBuffers {
+                item_name_token: &parse_bufs.hir_item_name_token,
+                decl_hir_node: codegen.decl_hir_node,
+                struct_decl_field_count: &parse_bufs.hir_struct_decl_field_count,
+                struct_lit_head_node: &parse_bufs.hir_struct_lit_head_node,
+                struct_lit_context_stmt_node: &parse_bufs.hir_struct_lit_context_stmt_node,
+                struct_field_parent_struct: &parse_bufs.hir_struct_field_parent_struct,
+                struct_field_ordinal: &parse_bufs.hir_struct_field_ordinal,
+                struct_field_type_node: &parse_bufs.hir_struct_field_type_node,
+                struct_decl_field_start: &parse_bufs.hir_struct_decl_field_start,
+                struct_lit_field_parent_lit: &parse_bufs.hir_struct_lit_field_parent_lit,
+                struct_lit_field_start: &parse_bufs.hir_struct_lit_field_start,
+                struct_lit_field_count: &parse_bufs.hir_struct_lit_field_count,
+                struct_lit_field_value_node: &parse_bufs.hir_struct_lit_field_value_node,
+                struct_lit_field_next: &parse_bufs.hir_struct_lit_field_next,
+                member_result_field_ordinal: codegen.member_result_field_ordinal,
+                member_result_field_node: codegen.member_result_field_node,
+                struct_init_field_ordinal: codegen.struct_init_field_ordinal,
+                struct_init_field_ordinal_by_node: codegen.struct_init_field_ordinal_by_node,
+                struct_init_field_decl_node_by_node: codegen.struct_init_field_decl_node_by_node,
+            },
+            type_metadata: x86::GpuX86TypeMetadataBuffers {
+                type_value_node: &parse_bufs.hir_type_value_node,
+                type_path_leaf_node: &parse_bufs.hir_type_path_leaf_node,
+                decl_type_ref_tag: codegen.decl_type_ref_tag,
+                decl_type_ref_payload: codegen.decl_type_ref_payload,
+                type_expr_ref_tag: codegen.type_expr_ref_tag,
+                type_expr_ref_payload: codegen.type_expr_ref_payload,
+                module_type_path_type: codegen.module_type_path_type,
+                type_decl_hir_node_by_token: codegen.type_decl_hir_node_by_token,
+                visible_type: codegen.visible_type,
+                type_instance_kind: codegen.type_instance_kind,
+                type_instance_decl_token: codegen.type_instance_decl_token,
+                type_instance_elem_ref_tag: codegen.type_instance_elem_ref_tag,
+                type_instance_elem_ref_payload: codegen.type_instance_elem_ref_payload,
+                type_instance_len_kind: codegen.type_instance_len_kind,
+                type_instance_len_payload: codegen.type_instance_len_payload,
+            },
+            visible_decl_buf: codegen.visible_decl,
+            public_decl_count_buf: codegen.public_decl_count,
+            public_decl_local_id_buf: codegen.public_decl_local_id,
+            fn_entrypoint_tag_buf: codegen.fn_entrypoint_tag,
+            feature_summary,
+            external_scratch,
+            timer: timer.as_deref_mut(),
+        };
+        match artifact_request {
+            X86BackendArtifactRequest::Executable => generator
+                .record_elf_from_hir(device, queue, encoder, inputs)
+                .map(RecordedX86BackendArtifact::Executable),
+            X86BackendArtifactRequest::RelocatableObject {
+                library_id,
+                unit_id,
+            } => generator
+                .record_object_from_hir(device, queue, encoder, inputs)
+                .map(|check| RecordedX86BackendArtifact::RelocatableObject {
+                    check,
+                    library_id,
+                    unit_id,
+                }),
+        }
+        .map_err(|err| map_backend_error(err.to_string()))
     }
     fn x86_external_scratch_from_frontend_buffers<'a>(
         parse_bufs: &'a OwnedX86ParserBuffers,
@@ -417,6 +454,62 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<Vec<u8>, CompileError> {
+        match self
+            .compile_source_pack_to_x86_artifact_with_paths(
+                sources,
+                source_paths,
+                &[],
+                X86BackendArtifactRequest::Executable,
+            )
+            .await?
+        {
+            CompletedX86BackendArtifact::Executable(bytes) => Ok(bytes),
+            CompletedX86BackendArtifact::RelocatableObject(_) => {
+                Err(x86_backend_execution_failed_for_source_pack(
+                    &source_pack_diagnostic_files(sources, source_paths),
+                    "internal x86 artifact mode mismatch",
+                ))
+            }
+        }
+    }
+
+    /// Compiles one bounded source-pack unit to a durable relocatable x86 object.
+    pub(in crate::compiler) async fn compile_source_pack_to_x86_object<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        library_id: u32,
+        unit_id: u32,
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+    ) -> Result<x86::GpuX86RelocatableObject, CompileError> {
+        match self
+            .compile_source_pack_to_x86_artifact_with_paths(
+                sources,
+                None,
+                dependency_interfaces,
+                X86BackendArtifactRequest::RelocatableObject {
+                    library_id,
+                    unit_id,
+                },
+            )
+            .await?
+        {
+            CompletedX86BackendArtifact::RelocatableObject(object) => Ok(object),
+            CompletedX86BackendArtifact::Executable(_) => {
+                Err(x86_backend_execution_failed_for_source_pack(
+                    &source_pack_diagnostic_files(sources, None),
+                    "internal x86 artifact mode mismatch",
+                ))
+            }
+        }
+    }
+
+    async fn compile_source_pack_to_x86_artifact_with_paths<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+        artifact_request: X86BackendArtifactRequest,
+    ) -> Result<CompletedX86BackendArtifact, CompileError> {
         if sources.is_empty() {
             return Err(x86_empty_source_pack_compile_error());
         }
@@ -426,6 +519,36 @@ impl<'gpu> GpuCompiler<'gpu> {
         )?;
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
+        let dependency_state = match artifact_request {
+            X86BackendArtifactRequest::RelocatableObject {
+                library_id,
+                unit_id,
+            } if !dependency_interfaces.is_empty() => Some(
+                gpu_type_checker::GpuDependencyInterfaceState::new(
+                    &self.gpu.device,
+                    library_id,
+                    unit_id,
+                    dependency_interfaces,
+                )
+                .map_err(|err| {
+                    x86_backend_execution_failed_for_source_pack(
+                        &diagnostic_files,
+                        format!("dependency semantic-interface preparation failed: {err}"),
+                    )
+                })?,
+            ),
+            X86BackendArtifactRequest::Executable if !dependency_interfaces.is_empty() => {
+                return Err(x86_backend_execution_failed_for_source_pack(
+                    &diagnostic_files,
+                    "dependency semantic interfaces require relocatable-object mode",
+                ));
+            }
+            _ => None,
+        };
+        let has_dependency_interfaces = dependency_state.is_some();
+        let dependency_declaration_count = dependency_state
+            .as_ref()
+            .map_or(0, |dependencies| dependencies.declaration_count);
         self.lexer
             .with_recorded_resident_source_pack_tokens_after_count(
                 sources,
@@ -695,7 +818,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         measured
                     };
                     host_timer.stamp("module_record_capacity_finished");
-                    let cached_x86_plan = self.cached_source_pack_x86_plan(sources);
+                    let cached_x86_plan = (!has_dependency_interfaces)
+                        .then(|| self.cached_source_pack_x86_plan(sources))
+                        .flatten();
                     let mut early_parser_metadata = if exact_typecheck_capacity_boundary_required(
                         parser_tree_capacity,
                     ) && cached_x86_plan.is_none()
@@ -777,6 +902,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         &typecheck_parse,
                         active_tree_capacity,
                         parser_tree_capacity,
+                        dependency_state.as_ref(),
                         timer.as_deref_mut(),
                         |err| type_check_execution_failed_for_source_pack(&diagnostic_files, err),
                     )?;
@@ -918,6 +1044,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     &typecheck_parse,
                                     active_tree_capacity,
                                     parser_tree_capacity,
+                                    dependency_state.as_ref(),
                                     "compiler.x86.source_pack.x86.parser-retry-overlap.encoder",
                                     &diagnostic_files,
                                 )?;
@@ -983,6 +1110,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         &typecheck_parse,
                                         active_tree_capacity,
                                         parser_tree_capacity,
+                                        dependency_state.as_ref(),
                                         "compiler.x86.source_pack.x86.parser-feature-retry.encoder",
                                         &diagnostic_files,
                                     )?;
@@ -1033,6 +1161,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     &typecheck_parse,
                                     active_tree_capacity,
                                     parser_tree_capacity,
+                                    dependency_state.as_ref(),
                                     "compiler.x86.source_pack.x86.retry-overlap.encoder",
                                     &diagnostic_files,
                                 )?;
@@ -1072,8 +1201,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             preflight_capacities.call_arg_rows,
                         );
                     }
-                    let x86_recorded = if let Some(plan) =
-                        self.cached_source_pack_x86_plan(sources)
+                    let x86_recorded = if let Some(plan) = (!has_dependency_interfaces)
+                        .then(|| self.cached_source_pack_x86_plan(sources))
+                        .flatten()
                     {
                         let codegen_buffers = self
                             .type_checker
@@ -1099,7 +1229,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &x86_parse,
                             codegen_buffers.as_ref(),
                             plan.feature_summary,
+                            dependency_declaration_count,
                             None,
+                            artifact_request,
                             |err| {
                                 x86_backend_execution_failed_for_source_pack(
                                     &diagnostic_files,
@@ -1276,7 +1408,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 semantic_hir_count,
                                 pointer_jump_steps,
                             };
-                            self.remember_source_pack_x86_plan(sources, plan);
+                            if !has_dependency_interfaces {
+                                self.remember_source_pack_x86_plan(sources, plan);
+                            }
                             let mut x86_encoder = device.create_command_encoder(
                                 &wgpu::CommandEncoderDescriptor {
                                     label: Some("compiler.x86.source_pack.backend.encoder"),
@@ -1298,7 +1432,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 &x86_parse,
                                 codegen_buffers.as_ref(),
                                 feature_summary,
+                                dependency_declaration_count,
                                 x86_timer.as_mut(),
+                                artifact_request,
                                 |err| {
                                     if crate::gpu::env::env_bool_truthy(
                                         "LANIUS_GPU_COMPILE_HOST_TIMING",
@@ -1328,16 +1464,51 @@ impl<'gpu> GpuCompiler<'gpu> {
                             check
                         }
                     };
-                    let result = x86_check.read_output(device, queue).map_err(|err| {
-                        x86_codegen_error_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &x86_diagnostics,
-                            &x86_parse,
-                            &diagnostic_files,
-                            &err,
-                        )
-                    });
+                    let result = match x86_check {
+                        RecordedX86BackendArtifact::Executable(check) => check
+                            .read_output(device, queue)
+                            .map(CompletedX86BackendArtifact::Executable)
+                            .map_err(|err| {
+                                x86_codegen_error_to_compile_error_for_source_pack(
+                                    device,
+                                    queue,
+                                    &x86_diagnostics,
+                                    &x86_parse,
+                                    &diagnostic_files,
+                                    &err,
+                                )
+                            }),
+                        RecordedX86BackendArtifact::RelocatableObject {
+                            check,
+                            library_id,
+                            unit_id,
+                        } => check
+                            .read_object(
+                                device,
+                                queue,
+                                library_id,
+                                unit_id,
+                                dependency_state.as_ref().map(|dependencies| {
+                                    x86::GpuX86DependencySymbolBuffers {
+                                        declaration_count: dependencies.declaration_count,
+                                        declaration_library_id: &dependencies.declaration_library_id,
+                                        declaration_unit_id: &dependencies.declaration_unit_id,
+                                        declaration_local_index: &dependencies.declaration_local_index,
+                                    }
+                                }),
+                            )
+                            .map(CompletedX86BackendArtifact::RelocatableObject)
+                            .map_err(|err| {
+                                x86_codegen_error_to_compile_error_for_source_pack(
+                                    device,
+                                    queue,
+                                    &x86_diagnostics,
+                                    &x86_parse,
+                                    &diagnostic_files,
+                                    &err,
+                                )
+                            }),
+                    };
                     host_timer.stamp("x86_output_read");
                     host_timer.stamp("x86_finish");
                     result
@@ -1559,6 +1730,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         &typecheck_parse,
                         active_tree_capacity,
                         parser_tree_capacity,
+                        None,
                         timer.as_deref_mut(),
                         |err| type_check_execution_failed_for_source(&diagnostic_path, src, err),
                     )?;
@@ -1680,7 +1852,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         &x86_parse,
                         codegen_buffers.as_ref(),
                         feature_summary,
+                        0,
                         x86_timer.as_mut(),
+                        X86BackendArtifactRequest::Executable,
                         |err| {
                             if crate::gpu::env::env_bool_truthy(
                                 "LANIUS_GPU_COMPILE_HOST_TIMING",
@@ -1704,17 +1878,28 @@ impl<'gpu> GpuCompiler<'gpu> {
                     );
                     host_timer.stamp("x86_submitted");
                     print_x86_gpu_timer(device, x86_timer.as_ref());
-                    let result = x86_check.read_output(device, queue).map_err(|err| {
-                        x86_codegen_error_to_compile_error_for_source(
-                            device,
-                            queue,
-                            &x86_diagnostics,
-                            &x86_parse,
-                            src,
-                            &diagnostic_path,
-                            &err,
-                        )
-                    });
+                    let result = match x86_check {
+                        RecordedX86BackendArtifact::Executable(check) => check
+                            .read_output(device, queue)
+                            .map_err(|err| {
+                                x86_codegen_error_to_compile_error_for_source(
+                                    device,
+                                    queue,
+                                    &x86_diagnostics,
+                                    &x86_parse,
+                                    src,
+                                    &diagnostic_path,
+                                    &err,
+                                )
+                            }),
+                        RecordedX86BackendArtifact::RelocatableObject { .. } => Err(
+                            x86_backend_execution_failed_for_source(
+                                &diagnostic_path,
+                                src,
+                                "internal x86 artifact mode mismatch",
+                            ),
+                        ),
+                    };
                     host_timer.stamp("x86_finish");
                     result
                 },

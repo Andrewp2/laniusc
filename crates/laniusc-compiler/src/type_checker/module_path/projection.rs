@@ -11,7 +11,7 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) clear_type_path_types: wgpu::BindGroup,
     pub(in crate::type_checker) project_type_paths: wgpu::BindGroup,
     pub(in crate::type_checker) validate_type_paths: wgpu::BindGroup,
-    pub(in crate::type_checker) project_type_aliases: wgpu::BindGroup,
+    pub(in crate::type_checker) type_aliases: Box<TypeAliasProjection>,
     pub(in crate::type_checker) project_type_instances: wgpu::BindGroup,
     pub(in crate::type_checker) mark_value_call_paths: wgpu::BindGroup,
     pub(in crate::type_checker) project_value_paths: wgpu::BindGroup,
@@ -25,6 +25,121 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) bind_match_patterns: wgpu::BindGroup,
     pub(in crate::type_checker) type_match_payloads: wgpu::BindGroup,
     pub(in crate::type_checker) type_match_exprs: wgpu::BindGroup,
+}
+
+/// Parallel root discovery and projection resources for local type aliases.
+///
+/// The ping-pong roots collapse declaration-only alias chains by pointer
+/// jumping. Keeping this family boxed avoids adding another large resident
+/// resource group to module-path construction's stack frame.
+pub(in crate::type_checker) struct TypeAliasProjection {
+    pub(in crate::type_checker) clear_forwarding: wgpu::BindGroup,
+    pub(in crate::type_checker) init_forwarding: wgpu::BindGroup,
+    pub(in crate::type_checker) validate_forwarding_args: wgpu::BindGroup,
+    pub(in crate::type_checker) init_roots: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_a_to_b: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_b_to_a: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_rounds: u32,
+    pub(in crate::type_checker) clear_equivalence: wgpu::BindGroup,
+    pub(in crate::type_checker) init_decl_edges: wgpu::BindGroup,
+    pub(in crate::type_checker) init_arg_edges: wgpu::BindGroup,
+    pub(in crate::type_checker) hook_equivalence_a: wgpu::BindGroup,
+    pub(in crate::type_checker) hook_equivalence_b: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_equivalence_a_to_b: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_equivalence_b_to_a: wgpu::BindGroup,
+    pub(in crate::type_checker) equivalence_rounds: u32,
+    pub(in crate::type_checker) select_generic_sources: wgpu::BindGroup,
+    pub(in crate::type_checker) select_concrete_sources: wgpu::BindGroup,
+    pub(in crate::type_checker) finalize_equivalence: wgpu::BindGroup,
+    pub(in crate::type_checker) project_instances: Box<wgpu::BindGroup>,
+    pub(in crate::type_checker) project: wgpu::BindGroup,
+    _root_a: LaniusBuffer<u32>,
+    _root_b: LaniusBuffer<u32>,
+    _forwarding: LaniusBuffer<u32>,
+    _forwarding_target_decl: LaniusBuffer<u32>,
+    _forwarding_valid_arg_count: LaniusBuffer<u32>,
+    _decl_by_target_hir: LaniusBuffer<u32>,
+    _equiv_parent_a: LaniusBuffer<u32>,
+    _equiv_parent_b: LaniusBuffer<u32>,
+    _equiv_edge_0: LaniusBuffer<u32>,
+    _equiv_edge_1: LaniusBuffer<u32>,
+    _equiv_component_source: LaniusBuffer<u32>,
+    _normalized_source: LaniusBuffer<u32>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_project_type_alias_instances_bind_group(
+    device: &wgpu::Device,
+    pass: &PassData,
+    params: &LaniusBuffer<TypeCheckParams>,
+    hir_status: &wgpu::Buffer,
+    hir: &GpuTypeCheckHirItemBuffers<'_>,
+    hir_token_pos: &wgpu::Buffer,
+    type_instance_decl_token: &wgpu::Buffer,
+    type_decl_hir_node_by_token: &wgpu::Buffer,
+    type_generic_param_slot_by_token: &wgpu::Buffer,
+    type_instance_arg_row_start: &wgpu::Buffer,
+    type_instance_arg_row_count_out: &wgpu::Buffer,
+    type_instance_arg_row_ref_tag: &wgpu::Buffer,
+    type_instance_arg_row_ref_payload: &wgpu::Buffer,
+    alias_normalized_source: &LaniusBuffer<u32>,
+    type_expr_ref_tag: &wgpu::Buffer,
+    type_expr_ref_payload: &wgpu::Buffer,
+) -> Result<Box<wgpu::BindGroup>> {
+    bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0k_project_type_alias_instances"),
+        pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_item_kind", hir.kind.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos.as_entire_binding()),
+            (
+                "hir_type_path_leaf_node",
+                hir.type_path_leaf_node.as_entire_binding(),
+            ),
+            (
+                "type_instance_decl_token",
+                type_instance_decl_token.as_entire_binding(),
+            ),
+            (
+                "type_decl_hir_node_by_token",
+                type_decl_hir_node_by_token.as_entire_binding(),
+            ),
+            (
+                "type_generic_param_slot_by_token",
+                type_generic_param_slot_by_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_row_start",
+                type_instance_arg_row_start.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_row_count_out",
+                type_instance_arg_row_count_out.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_row_ref_tag",
+                type_instance_arg_row_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_row_ref_payload",
+                type_instance_arg_row_ref_payload.as_entire_binding(),
+            ),
+            (
+                "alias_normalized_source",
+                alias_normalized_source.as_entire_binding(),
+            ),
+            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
+            (
+                "type_expr_ref_payload",
+                type_expr_ref_payload.as_entire_binding(),
+            ),
+        ],
+    )
+    .map(Box::new)
 }
 
 /// Creates bind groups for path projection and value/type path validation.
@@ -83,8 +198,19 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         type_instance_arg_count,
         type_instance_arg_ref_tag,
         type_instance_arg_ref_payload,
+        type_instance_arg_row_start,
+        type_instance_arg_row_count_out,
+        type_instance_arg_row_ref_tag,
+        type_instance_arg_row_ref_payload,
         type_decl_generic_param_count,
+        type_decl_generic_param_count_by_node,
         type_generic_param_slot_by_token,
+        type_decl_hir_node_by_token,
+        generic_param_count_out,
+        generic_param_owner_node,
+        generic_param_token,
+        generic_param_kind,
+        generic_param_slot_order,
         type_instance_state,
         decl_type_ref_tag,
         decl_type_ref_payload,
@@ -248,10 +374,551 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("status", status_buf.as_entire_binding()),
         ],
     )?;
+    let alias_root_capacity = inputs.hir_items.module_record_capacity.max(1);
+    let alias_root_a = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_root_a",
+        alias_root_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_root_b = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_root_b",
+        alias_root_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_forwarding = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_forwarding",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_forwarding_target_decl = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_forwarding_target_decl",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_forwarding_valid_arg_count = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_forwarding_valid_arg_count",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_decl_by_target_hir = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_decl_by_target_hir",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_equiv_capacity = inputs
+        .token_capacity
+        .saturating_add(inputs.hir_node_capacity)
+        .max(1);
+    let alias_equiv_parent_a = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_equiv_parent_a",
+        alias_equiv_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_equiv_parent_b = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_equiv_parent_b",
+        alias_equiv_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_equiv_edge_0 = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_equiv_edge_0",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_equiv_edge_1 = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_equiv_edge_1",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_equiv_component_source = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_equiv_component_source",
+        alias_equiv_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let alias_normalized_source = typed_storage_u32_rw(
+        device,
+        "type_check.modules.type_alias_normalized_source",
+        inputs.hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let clear_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0_clear_type_alias_forwarding"),
+        &passes.type_aliases.clear_forwarding,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("alias_forwarding", alias_forwarding.as_entire_binding()),
+            (
+                "alias_forwarding_target_decl",
+                alias_forwarding_target_decl.as_entire_binding(),
+            ),
+            (
+                "alias_forwarding_valid_arg_count",
+                alias_forwarding_valid_arg_count.as_entire_binding(),
+            ),
+            (
+                "alias_decl_by_target_hir",
+                alias_decl_by_target_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let init_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0a_init_type_alias_forwarding"),
+        &passes.type_aliases.init_forwarding,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            (
+                "hir_type_alias_target_node",
+                hir_items.type_alias_target_node.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_count",
+                hir_items.type_arg_count.as_entire_binding(),
+            ),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
+            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
+            (
+                "type_decl_generic_param_count_by_node",
+                type_decl_generic_param_count_by_node.as_entire_binding(),
+            ),
+            ("alias_forwarding", alias_forwarding.as_entire_binding()),
+            (
+                "alias_forwarding_target_decl",
+                alias_forwarding_target_decl.as_entire_binding(),
+            ),
+            (
+                "alias_decl_by_target_hir",
+                alias_decl_by_target_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let validate_type_alias_forwarding_args = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0b_validate_type_alias_forwarding_args"),
+        &passes.type_aliases.validate_forwarding_args,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            (
+                "hir_type_arg_owner",
+                hir_items.type_arg_owner.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_rank",
+                hir_items.type_arg_rank.as_entire_binding(),
+            ),
+            (
+                "type_generic_param_slot_by_token",
+                type_generic_param_slot_by_token.as_entire_binding(),
+            ),
+            ("alias_forwarding", alias_forwarding.as_entire_binding()),
+            (
+                "alias_forwarding_valid_arg_count",
+                alias_forwarding_valid_arg_count.as_entire_binding(),
+            ),
+            (
+                "alias_decl_by_target_hir",
+                alias_decl_by_target_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let init_type_alias_roots = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e1_init_type_alias_roots"),
+        &passes.type_aliases.init_roots,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            (
+                "hir_type_alias_target_node",
+                hir_items.type_alias_target_node.as_entire_binding(),
+            ),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
+            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
+            (
+                "type_decl_generic_param_count_by_node",
+                type_decl_generic_param_count_by_node.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_count",
+                hir_items.type_arg_count.as_entire_binding(),
+            ),
+            ("alias_forwarding", alias_forwarding.as_entire_binding()),
+            (
+                "alias_forwarding_target_decl",
+                alias_forwarding_target_decl.as_entire_binding(),
+            ),
+            (
+                "alias_forwarding_valid_arg_count",
+                alias_forwarding_valid_arg_count.as_entire_binding(),
+            ),
+            ("alias_root_decl", alias_root_a.as_entire_binding()),
+        ],
+    )?;
+    let jump_type_alias_roots_a_to_b = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e1a_jump_type_alias_roots_a_to_b"),
+        &passes.type_aliases.jump_roots,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("alias_root_decl_in", alias_root_a.as_entire_binding()),
+            ("alias_root_decl_out", alias_root_b.as_entire_binding()),
+        ],
+    )?;
+    let jump_type_alias_roots_b_to_a = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e1a_jump_type_alias_roots_b_to_a"),
+        &passes.type_aliases.jump_roots,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("alias_root_decl_in", alias_root_b.as_entire_binding()),
+            ("alias_root_decl_out", alias_root_a.as_entire_binding()),
+        ],
+    )?;
+    let alias_root_jump_rounds = u32::BITS - alias_root_capacity.saturating_sub(1).leading_zeros();
+    let final_alias_root = if alias_root_jump_rounds % 2 == 0 {
+        &alias_root_a
+    } else {
+        &alias_root_b
+    };
+    let clear_alias_equivalence = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0c_clear_type_alias_equivalence"),
+        &passes.type_aliases.clear_equivalence,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            (
+                "alias_equiv_parent_a",
+                alias_equiv_parent_a.as_entire_binding(),
+            ),
+            (
+                "alias_equiv_parent_b",
+                alias_equiv_parent_b.as_entire_binding(),
+            ),
+            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
+            ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
+            (
+                "alias_equiv_component_source",
+                alias_equiv_component_source.as_entire_binding(),
+            ),
+            (
+                "alias_normalized_source",
+                alias_normalized_source.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let init_alias_decl_edges = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0d_init_type_alias_decl_edges"),
+        &passes.type_aliases.init_decl_edges,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            (
+                "hir_type_alias_target_node",
+                hir_items.type_alias_target_node.as_entire_binding(),
+            ),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
+            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
+            (
+                "generic_param_count_out",
+                generic_param_count_out.as_entire_binding(),
+            ),
+            (
+                "generic_param_owner_node",
+                generic_param_owner_node.as_entire_binding(),
+            ),
+            (
+                "generic_param_token",
+                generic_param_token.as_entire_binding(),
+            ),
+            ("generic_param_kind", generic_param_kind.as_entire_binding()),
+            (
+                "generic_param_slot_order",
+                generic_param_slot_order.as_entire_binding(),
+            ),
+            (
+                "type_generic_param_slot_by_token",
+                type_generic_param_slot_by_token.as_entire_binding(),
+            ),
+            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
+            (
+                "alias_source_hir_by_target_hir",
+                alias_decl_by_target_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let init_alias_arg_edges = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0e_init_type_alias_arg_edges"),
+        &passes.type_aliases.init_arg_edges,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            (
+                "hir_type_arg_owner",
+                hir_items.type_arg_owner.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_rank",
+                hir_items.type_arg_rank.as_entire_binding(),
+            ),
+            (
+                "alias_source_hir_by_target_hir",
+                alias_decl_by_target_hir.as_entire_binding(),
+            ),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
+            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
+            (
+                "generic_param_count_out",
+                generic_param_count_out.as_entire_binding(),
+            ),
+            (
+                "generic_param_owner_node",
+                generic_param_owner_node.as_entire_binding(),
+            ),
+            (
+                "generic_param_token",
+                generic_param_token.as_entire_binding(),
+            ),
+            ("generic_param_kind", generic_param_kind.as_entire_binding()),
+            (
+                "generic_param_slot_order",
+                generic_param_slot_order.as_entire_binding(),
+            ),
+            (
+                "type_generic_param_slot_by_token",
+                type_generic_param_slot_by_token.as_entire_binding(),
+            ),
+            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
+            (
+                "type_expr_ref_payload",
+                type_expr_ref_payload.as_entire_binding(),
+            ),
+            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
+            ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
+        ],
+    )?;
+    let hook_alias_equivalence = |label: &'static str, parent: &LaniusBuffer<u32>| {
+        bind_group::create_bind_group_from_bindings(
+            device,
+            Some(label),
+            &passes.type_aliases.hook_equivalence,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
+                ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
+                ("alias_equiv_parent", parent.as_entire_binding()),
+            ],
+        )
+    };
+    let hook_alias_equivalence_a = hook_alias_equivalence(
+        "type_check_modules_10e0f_hook_type_alias_equivalence_a",
+        &alias_equiv_parent_a,
+    )?;
+    let hook_alias_equivalence_b = hook_alias_equivalence(
+        "type_check_modules_10e0f_hook_type_alias_equivalence_b",
+        &alias_equiv_parent_b,
+    )?;
+    let jump_alias_equivalence =
+        |label: &'static str, input: &LaniusBuffer<u32>, output: &LaniusBuffer<u32>| {
+            bind_group::create_bind_group_from_bindings(
+                device,
+                Some(label),
+                &passes.type_aliases.jump_equivalence,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    ("alias_equiv_parent_in", input.as_entire_binding()),
+                    ("alias_equiv_parent_out", output.as_entire_binding()),
+                ],
+            )
+        };
+    let jump_alias_equivalence_a_to_b = jump_alias_equivalence(
+        "type_check_modules_10e0g_jump_type_alias_equivalence_a_to_b",
+        &alias_equiv_parent_a,
+        &alias_equiv_parent_b,
+    )?;
+    let jump_alias_equivalence_b_to_a = jump_alias_equivalence(
+        "type_check_modules_10e0g_jump_type_alias_equivalence_b_to_a",
+        &alias_equiv_parent_b,
+        &alias_equiv_parent_a,
+    )?;
+    let alias_equivalence_rounds = (u32::BITS
+        - alias_equiv_capacity.saturating_sub(1).leading_zeros())
+    .saturating_mul(2)
+    .max(1);
+    let final_alias_equiv_parent = if alias_equivalence_rounds % 2 == 0 {
+        &alias_equiv_parent_a
+    } else {
+        &alias_equiv_parent_b
+    };
+    let select_alias_generic_sources = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0h_select_type_alias_generic_sources"),
+        &passes.type_aliases.select_generic_sources,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            (
+                "generic_param_count_out",
+                generic_param_count_out.as_entire_binding(),
+            ),
+            (
+                "generic_param_owner_node",
+                generic_param_owner_node.as_entire_binding(),
+            ),
+            (
+                "generic_param_token",
+                generic_param_token.as_entire_binding(),
+            ),
+            ("generic_param_kind", generic_param_kind.as_entire_binding()),
+            (
+                "alias_equiv_parent",
+                final_alias_equiv_parent.as_entire_binding(),
+            ),
+            (
+                "alias_normalized_source",
+                alias_normalized_source.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let select_alias_concrete_sources = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0i_select_type_alias_concrete_sources"),
+        &passes.type_aliases.select_concrete_sources,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
+            (
+                "alias_equiv_parent",
+                final_alias_equiv_parent.as_entire_binding(),
+            ),
+            (
+                "alias_equiv_component_source",
+                alias_equiv_component_source.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let finalize_alias_equivalence = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_10e0j_finalize_type_alias_equivalence"),
+        &passes.type_aliases.finalize_equivalence,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_name_token", decl_name_token.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "alias_equiv_parent",
+                final_alias_equiv_parent.as_entire_binding(),
+            ),
+            (
+                "alias_equiv_component_source",
+                alias_equiv_component_source.as_entire_binding(),
+            ),
+            (
+                "alias_normalized_source",
+                alias_normalized_source.as_entire_binding(),
+            ),
+            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
+            (
+                "type_expr_ref_payload",
+                type_expr_ref_payload.as_entire_binding(),
+            ),
+            (
+                "module_type_path_type",
+                module_type_path_type.as_entire_binding(),
+            ),
+            (
+                "module_type_path_status",
+                module_type_path_status.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let project_type_alias_instances = create_project_type_alias_instances_bind_group(
+        device,
+        &passes.type_aliases.project_instances,
+        params,
+        hir_status_buf,
+        hir_items,
+        hir_token_pos_buf,
+        type_instance_decl_token,
+        type_decl_hir_node_by_token,
+        type_generic_param_slot_by_token,
+        type_instance_arg_row_start,
+        type_instance_arg_row_count_out,
+        type_instance_arg_row_ref_tag,
+        type_instance_arg_row_ref_payload,
+        &alias_normalized_source,
+        type_expr_ref_tag,
+        type_expr_ref_payload,
+    )?;
     let project_type_aliases = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e2_project_type_aliases"),
-        &passes.modules_project_type_aliases,
+        &passes.type_aliases.project,
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -271,6 +938,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
                 path_id_by_owner_hir.as_entire_binding(),
             ),
             ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
+            ("alias_root_decl", final_alias_root.as_entire_binding()),
             ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
             (
                 "type_expr_ref_payload",
@@ -286,6 +954,40 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
         ],
     )?;
+    let type_aliases = Box::new(TypeAliasProjection {
+        clear_forwarding: clear_type_alias_forwarding,
+        init_forwarding: init_type_alias_forwarding,
+        validate_forwarding_args: validate_type_alias_forwarding_args,
+        init_roots: init_type_alias_roots,
+        jump_a_to_b: jump_type_alias_roots_a_to_b,
+        jump_b_to_a: jump_type_alias_roots_b_to_a,
+        jump_rounds: alias_root_jump_rounds,
+        clear_equivalence: clear_alias_equivalence,
+        init_decl_edges: init_alias_decl_edges,
+        init_arg_edges: init_alias_arg_edges,
+        hook_equivalence_a: hook_alias_equivalence_a,
+        hook_equivalence_b: hook_alias_equivalence_b,
+        jump_equivalence_a_to_b: jump_alias_equivalence_a_to_b,
+        jump_equivalence_b_to_a: jump_alias_equivalence_b_to_a,
+        equivalence_rounds: alias_equivalence_rounds,
+        select_generic_sources: select_alias_generic_sources,
+        select_concrete_sources: select_alias_concrete_sources,
+        finalize_equivalence: finalize_alias_equivalence,
+        project_instances: project_type_alias_instances,
+        project: project_type_aliases,
+        _root_a: alias_root_a,
+        _root_b: alias_root_b,
+        _forwarding: alias_forwarding,
+        _forwarding_target_decl: alias_forwarding_target_decl,
+        _forwarding_valid_arg_count: alias_forwarding_valid_arg_count,
+        _decl_by_target_hir: alias_decl_by_target_hir,
+        _equiv_parent_a: alias_equiv_parent_a,
+        _equiv_parent_b: alias_equiv_parent_b,
+        _equiv_edge_0: alias_equiv_edge_0,
+        _equiv_edge_1: alias_equiv_edge_1,
+        _equiv_component_source: alias_equiv_component_source,
+        _normalized_source: alias_normalized_source,
+    });
     let project_type_instances = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10k_project_type_instances"),
@@ -1077,7 +1779,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         clear_type_path_types,
         project_type_paths,
         validate_type_paths,
-        project_type_aliases,
+        type_aliases,
         project_type_instances,
         mark_value_call_paths,
         project_value_paths,

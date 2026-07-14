@@ -22,6 +22,11 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) sort_module_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
+    pub(in crate::type_checker) dependency_module_params:
+        Option<LaniusBuffer<DependencyInterfaceModuleParams>>,
+    pub(in crate::type_checker) clear_dependency_module_lookup: Option<wgpu::BindGroup>,
+    pub(in crate::type_checker) build_dependency_module_lookup: Option<wgpu::BindGroup>,
+    pub(in crate::type_checker) resolve_dependency_imports: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) scatter_import_records: wgpu::BindGroup,
     pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
     pub(in crate::type_checker) seed_import_edge_key_order: wgpu::BindGroup,
@@ -423,7 +428,7 @@ pub(in crate::type_checker) fn create_module_index(
             module_capacity: layout.import_record_capacity_u32,
             reserved: layout.module_capacity_u32,
             n_blocks: layout.n_blocks,
-            key_step: 0,
+            key_step: u32::from(inputs.dependency_interfaces.is_some()),
         },
     );
     let resolve_imports = bind_group::create_bind_group_from_bindings(
@@ -495,6 +500,131 @@ pub(in crate::type_checker) fn create_module_index(
             ("import_status", buffers.import_status.as_entire_binding()),
         ],
     )?;
+
+    let dependency_module_params = inputs.dependency_interfaces.map(|dependencies| {
+        uniform_from_val(
+            device,
+            "type_check.dependencies.module_params",
+            &DependencyInterfaceModuleParams {
+                module_count: dependencies.module_count,
+                lookup_capacity: dependencies.module_lookup_capacity,
+                import_capacity: layout.import_record_capacity_u32,
+                source_len: inputs.source_len,
+            },
+        )
+    });
+    let build_dependency_module_lookup = match (
+        inputs.dependency_interfaces,
+        dependency_module_params.as_ref(),
+    ) {
+        (Some(dependencies), Some(params)) => Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.dependencies.build_module_lookup"),
+            &passes.dependencies.build_module_lookup,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                (
+                    "dependency_module_words",
+                    dependencies.module_words.as_entire_binding(),
+                ),
+                (
+                    "dependency_module_segment_words",
+                    dependencies.module_segment_words.as_entire_binding(),
+                ),
+                (
+                    "dependency_module_lookup",
+                    dependencies.module_lookup.as_entire_binding(),
+                ),
+                ("status", inputs.status_buf.as_entire_binding()),
+            ],
+        )?),
+        _ => None,
+    };
+    let clear_dependency_module_lookup = match (
+        inputs.dependency_interfaces,
+        dependency_module_params.as_ref(),
+    ) {
+        (Some(dependencies), Some(params)) => Some(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.dependencies.clear_module_lookup"),
+            &passes.dependencies.clear_module_lookup,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                (
+                    "dependency_module_lookup",
+                    dependencies.module_lookup.as_entire_binding(),
+                ),
+            ],
+        )?),
+        _ => None,
+    };
+    let resolve_dependency_imports = match (
+        inputs.dependency_interfaces,
+        dependency_module_params.as_ref(),
+        buffers.import_target_dependency_module_id.as_ref(),
+    ) {
+        (Some(dependencies), Some(params), Some(target_dependency_module)) => {
+            Some(bind_group::create_bind_group_from_bindings(
+                device,
+                Some("type_check.dependencies.resolve_imports"),
+                &passes.dependencies.resolve_imports,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    (
+                        "import_count_out",
+                        buffers.import_count_out.as_entire_binding(),
+                    ),
+                    ("import_path_id", buffers.import_path_id.as_entire_binding()),
+                    (
+                        "path_segment_count",
+                        buffers.path_segment_count.as_entire_binding(),
+                    ),
+                    (
+                        "path_segment_base",
+                        buffers.path_segment_base.as_entire_binding(),
+                    ),
+                    (
+                        "path_segment_name_id",
+                        buffers.path_segment_name_id.as_entire_binding(),
+                    ),
+                    (
+                        "path_owner_token",
+                        buffers.path_owner_token.as_entire_binding(),
+                    ),
+                    ("name_hash_lo", inputs.name_hash_lo.as_entire_binding()),
+                    ("name_hash_hi", inputs.name_hash_hi.as_entire_binding()),
+                    ("name_spans", inputs.name_spans.as_entire_binding()),
+                    ("source_bytes", inputs.source_buf.as_entire_binding()),
+                    (
+                        "dependency_module_words",
+                        dependencies.module_words.as_entire_binding(),
+                    ),
+                    (
+                        "dependency_module_segment_words",
+                        dependencies.module_segment_words.as_entire_binding(),
+                    ),
+                    (
+                        "dependency_name_byte_words",
+                        dependencies.name_byte_words.as_entire_binding(),
+                    ),
+                    (
+                        "dependency_module_lookup",
+                        dependencies.module_lookup.as_entire_binding(),
+                    ),
+                    (
+                        "import_target_dependency_module_id",
+                        target_dependency_module.as_entire_binding(),
+                    ),
+                    ("import_status", buffers.import_status.as_entire_binding()),
+                    ("status", inputs.status_buf.as_entire_binding()),
+                ],
+            )?)
+        }
+        _ => None,
+    };
 
     let import_edge_key_radix_params = uniform_from_val(
         device,
@@ -743,6 +873,10 @@ pub(in crate::type_checker) fn create_module_index(
         sort_module_key_bucket_bases,
         sort_module_key_scatter,
         validate_modules,
+        dependency_module_params,
+        clear_dependency_module_lookup,
+        build_dependency_module_lookup,
+        resolve_dependency_imports,
         scatter_import_records,
         resolve_imports,
         seed_import_edge_key_order,

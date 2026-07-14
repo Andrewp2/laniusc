@@ -117,6 +117,7 @@ static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_LOAD = 69u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_LOAD_PARAM_INDEX_R32 = 72u;
 static const uint X86_INST_V_STORE_RET_PTR_R32 = 73u;
 static const uint X86_INST_V_COPY_AGG_RET = 74u;
@@ -194,7 +195,6 @@ static const uint X86_CMP_EQ = 5u;
 static const uint X86_CMP_NE = 6u;
 static const uint X86_CMP_UNSIGNED_FLAG = 0x80u;
 static const uint X86_CMP_FLOAT_FLAG = 0x40u;
-static const uint X86_TEXT_VADDR = 0x400078u;
 static const uint X86_OP_NEG_I32 = 1u;
 static const uint X86_OP_NOT_BOOL = 2u;
 static const uint X86_OP_NEG_F32 = 3u;
@@ -513,11 +513,6 @@ uint ptr_slot_mem_r32_size(uint reg, uint base, uint ordinal)
     return valid_reg(reg) && valid_reg(base)
                ? (disp <= 127u ? 3u : 6u) + (needs_rex_modrm(reg, base) ? 1u : 0u)
                : 0u;
-}
-
-uint rodata_vaddr_for_node(uint node)
-{
-    return X86_TEXT_VADDR + x86_text_len[0u] + x86_rodata_offset_by_node[node];
 }
 
 uint rodata_payload_len_for_node(uint node, uint fallback_len)
@@ -2980,7 +2975,8 @@ uint host_open_path_source_byte(uint path_payload, uint source_kind, uint save_s
             param_aggregate_payload_base(path_payload),
             param_aggregate_payload_ordinal(path_payload),
             byte_i);
-    return mov_r32_imm32_byte(X86_REG_EDI, rodata_vaddr_for_node(path_payload), byte_i);
+    // The GPU relocation pass materializes the final rodata address.
+    return mov_r32_imm32_byte(X86_REG_EDI, 0u, byte_i);
 }
 
 uint host_open_path_macro_byte(uint dst, uint path_payload, uint source_kind, uint flags, uint mode, uint byte_i)
@@ -5088,7 +5084,8 @@ uint host_text_write_macro_byte(uint packed, uint text_payload, uint text_len, u
     {
         uint ptr_move_size = mov_r32_imm32_size(X86_REG_ESI);
         if (byte_i < ptr_move_size)
-            return mov_r32_imm32_byte(X86_REG_ESI, rodata_vaddr_for_node(text_payload), byte_i);
+            // The GPU relocation pass materializes the final rodata address.
+            return mov_r32_imm32_byte(X86_REG_ESI, 0u, byte_i);
         byte_i -= ptr_move_size;
 
         uint len_move_size = mov_r32_imm32_size(X86_REG_EDX);
@@ -5227,9 +5224,8 @@ uint instruction_byte(uint inst_i, uint byte_i)
     if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
     {
         uint data_inst = x86_inst_arg0[inst_i];
-        uint data_addr = X86_TEXT_VADDR + x86_inst_byte_offset[data_inst];
         if (byte_i == 0u) return 0xbeu;
-        if (byte_i < 5u) return le32_byte(data_addr, byte_i - 1u);
+        if (byte_i < 5u) return 0u;
     }
     if (kind == X86_INST_DATA_I32_NL)
         return i32_text_byte(x86_inst_arg0[inst_i], byte_i);
@@ -5538,7 +5534,7 @@ uint instruction_byte(uint inst_i, uint byte_i)
     if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR)
         return store_local_imm32_byte(
             x86_inst_arg0[inst_i],
-            rodata_vaddr_for_node(x86_inst_arg1[inst_i]),
+            0u,
             byte_i);
     if (kind == X86_INST_V_STORE_RET_PTR_R32)
         return store_ptr_slot_r32_byte(X86_REG_EDI, x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
@@ -5599,6 +5595,14 @@ uint instruction_byte(uint inst_i, uint byte_i)
         return call_mixed_macro_byte(
             inst_i,
             x86_inst_arg0[inst_i],
+            x86_inst_arg1[inst_i],
+            x86_inst_arg2[inst_i],
+            inst_call_save_mask(inst_i),
+            byte_i);
+    if (kind == X86_INST_V_CALL_MIXED_EXTERNAL)
+        return call_mixed_macro_byte(
+            inst_i,
+            0u,
             x86_inst_arg1[inst_i],
             x86_inst_arg2[inst_i],
             inst_call_save_mask(inst_i),

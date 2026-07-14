@@ -47,6 +47,7 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -66,6 +67,8 @@ RWStructuredBuffer<uint> call_const_slot_len;
 RWStructuredBuffer<uint> call_generic_claim_callee;
 RWStructuredBuffer<uint> call_generic_claim_slot;
 RWStructuredBuffer<uint> call_generic_claim_type;
+RWStructuredBuffer<uint> call_generic_claim_ref_tag;
+RWStructuredBuffer<uint> call_generic_claim_ref_payload;
 RWStructuredBuffer<uint> call_generic_claim_order;
 RWStructuredBuffer<uint> call_const_claim_callee;
 RWStructuredBuffer<uint> call_const_claim_slot;
@@ -132,6 +135,8 @@ static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_ERROR = 4u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
@@ -426,6 +431,8 @@ uint expr_type_no_nested_call(uint result_node)
 
 uint generic_slot_for_type_ref(uint tag, uint payload)
 {
+    if (tag == TYPE_REF_EXTERNAL_GENERIC)
+        return payload;
     if (tag != TYPE_REF_GENERIC_PARAM || !valid_token(payload))
         return INVALID;
     return type_generic_param_slot_by_token[payload];
@@ -591,6 +598,15 @@ uint param_direct_generic_token_for_row(uint param_row)
     return valid_token(payload) ? payload : INVALID;
 }
 
+uint param_direct_generic_slot_for_row(uint param_row)
+{
+    if (param_row == INVALID)
+        return INVALID;
+    return generic_slot_for_type_ref(
+        call_param_row_ref_tag[param_row],
+        call_param_row_ref_payload[param_row]);
+}
+
 void claim_return_generic_token(
     uint callee_i,
     uint fn_i,
@@ -684,9 +700,11 @@ bool same_named_instance_decl(uint expected_instance, uint actual_instance)
 
     uint expected_decl = type_instance_decl_token[expected_instance];
     uint actual_decl = type_instance_decl_token[actual_instance];
-    return valid_token(expected_decl) &&
-           valid_token(actual_decl) &&
-           expected_decl == actual_decl;
+    if (valid_token(expected_decl) || valid_token(actual_decl))
+        return valid_token(expected_decl) && expected_decl == actual_decl;
+    uint expected_external = type_instance_external_canonical[expected_instance];
+    return expected_external != INVALID &&
+           expected_external == type_instance_external_canonical[actual_instance];
 }
 
 bool actual_arg_decl_instance_ref(uint arg_node, out uint actual_instance)
@@ -976,6 +994,8 @@ void clear_generic_claim(uint row)
     call_generic_claim_callee[row] = INVALID;
     call_generic_claim_slot[row] = INVALID;
     call_generic_claim_type[row] = TY_UNKNOWN;
+    call_generic_claim_ref_tag[row] = TYPE_REF_INVALID;
+    call_generic_claim_ref_payload[row] = INVALID;
     call_generic_claim_order[row] = row;
     call_const_claim_callee[row] = INVALID;
     call_const_claim_slot[row] = INVALID;
@@ -991,6 +1011,35 @@ void emit_generic_claim(uint row, uint callee_i, uint slot, uint arg_ty)
     call_generic_claim_callee[row] = callee_i;
     call_generic_claim_slot[row] = slot;
     call_generic_claim_type[row] = arg_ty;
+    uint arg_node = row < call_arg_row_count_out[0u] ? call_arg_row_node[row] : INVALID;
+    uint tag;
+    uint payload;
+    if (valid_node(arg_node) && arg_decl_type_ref(arg_node, tag, payload))
+    {
+        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+        {
+            uint external = type_instance_external_canonical[payload];
+            if (external != INVALID)
+            {
+                // Retain the local instance so return substitution preserves
+                // concrete arguments. The scalar claim column carries the
+                // stable external nominal identity.
+                call_generic_claim_type[row] = external + 1u;
+            }
+            else
+            {
+                tag = TYPE_REF_INVALID;
+                payload = INVALID;
+            }
+        }
+        call_generic_claim_ref_tag[row] = tag;
+        call_generic_claim_ref_payload[row] = payload;
+    }
+    else if (arg_ty != TY_UNKNOWN && arg_ty < TY_ARRAY_BASE)
+    {
+        call_generic_claim_ref_tag[row] = TYPE_REF_SCALAR;
+        call_generic_claim_ref_payload[row] = arg_ty;
+    }
 }
 
 void emit_const_claim(uint row, uint callee_i, uint slot, uint arg_len)
@@ -1017,7 +1066,7 @@ uint generic_claim_count_for_param_row(uint param_row, uint param_ty)
 
     if (is_generic_type(param_ty))
     {
-        if (valid_token(param_direct_generic_token_for_row(param_row)))
+        if (param_direct_generic_slot_for_row(param_row) != INVALID)
             count += 1u;
         if (array_or_slice_generic_slot(param_ty) != INVALID)
             count += 1u;
@@ -1025,6 +1074,13 @@ uint generic_claim_count_for_param_row(uint param_row, uint param_ty)
 
     if (param_array_or_slice_generic_slot_for_row(param_row) != INVALID)
         count += 1u;
+
+    // A named type expression may be a transparent alias whose checked
+    // semantic code is already scalar. Its source-level type arguments belong
+    // to alias substitution; they are not nominal children to infer or compare
+    // again at the call site.
+    if (param_ty != TY_UNKNOWN && param_ty < TY_ARRAY_BASE && !is_generic_type(param_ty))
+        return count;
 
     count += instance_generic_claim_upper_bound(param_row);
     return count;
@@ -1164,6 +1220,20 @@ void collect_row_argument(uint row)
     uint arg_token = call_arg_error_token(arg_node, callee_i);
     call_generic_claim_scan_input[row] = generic_claim_count_for_param_row(param_row, param_ty);
 
+    // Transparent aliases retain their source-level named-instance ref for
+    // diagnostics and interface projection, but their checked type is already
+    // the substituted scalar. Alias arguments are substitution inputs, not
+    // nominal children of the call parameter, so validate the scalar directly.
+    if (param_ty != TY_UNKNOWN &&
+        param_ty < TY_ARRAY_BASE &&
+        !is_generic_type(param_ty))
+    {
+        uint arg_ty = expr_type_no_nested_call(arg_node);
+        if (arg_ty != TY_UNKNOWN && !assignable(param_ty, arg_ty))
+            record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
+        return;
+    }
+
     if (param_ty != TY_UNKNOWN &&
         !is_generic_type(param_ty) &&
         !is_symbolic_array_type(param_ty))
@@ -1193,26 +1263,26 @@ void collect_row_argument(uint row)
     if (is_generic_type(param_ty))
     {
         uint direct_generic_token = param_direct_generic_token_for_row(param_row);
-        if (valid_token(direct_generic_token))
+        uint direct_slot = param_direct_generic_slot_for_row(param_row);
+        if (direct_slot != INVALID)
         {
             uint arg_ty = expr_type_no_nested_call(arg_node);
-            claim_return_generic_token(
-                callee_i,
-                fn_i,
-                direct_generic_token,
-                arg_ty,
-                arg_token);
-            uint direct_slot = generic_slot_for_type_ref(TYPE_REF_GENERIC_PARAM, direct_generic_token);
-            if (direct_slot != INVALID)
+            if (valid_token(direct_generic_token))
             {
-                emit_generic_claim(row, callee_i, direct_slot, arg_ty);
-                claim_generic_slot(
+                claim_return_generic_token(
                     callee_i,
-                    direct_slot,
+                    fn_i,
+                    direct_generic_token,
                     arg_ty,
-                    arg_token,
-                    param_ordinal);
+                    arg_token);
             }
+            emit_generic_claim(row, callee_i, direct_slot, arg_ty);
+            claim_generic_slot(
+                callee_i,
+                direct_slot,
+                arg_ty,
+                arg_token,
+                param_ordinal);
         }
 
         uint array_slot = array_or_slice_generic_slot(param_ty);

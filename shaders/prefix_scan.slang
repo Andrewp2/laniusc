@@ -545,6 +545,17 @@ public uint global_exclusive_prefix(
     return prior_blocks + local_prefix[item_i];
 }
 
+public uint2 global_exclusive_prefix_u32x2(
+    uint item_i,
+    uint workgroup_size,
+    StructuredBuffer<uint2> local_prefix,
+    StructuredBuffer<uint2> block_prefix)
+{
+    uint block_i = item_i / workgroup_size;
+    uint2 prior_blocks = block_i == 0u ? uint2(0u, 0u) : block_prefix[block_i - 1u];
+    return prior_blocks + local_prefix[item_i];
+}
+
 public uint inclusive_scan_total(uint n_blocks, StructuredBuffer<uint> block_prefix)
 {
     return n_blocks == 0u ? 0u : block_prefix[n_blocks - 1u];

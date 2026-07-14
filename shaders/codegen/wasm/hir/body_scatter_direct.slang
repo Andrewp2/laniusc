@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -1043,7 +1044,7 @@ uint direct_call_expr_byte_from_record(
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 bool direct_call_arg_expr_atom_is_f32(uint node)

@@ -183,7 +183,7 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
             artifact_ref_index,
         )?;
         progress.final_output_seen |= page.final_output;
-        store.store_hierarchical_link_execution_page(&page)?;
+        store.store_prepared_hierarchical_link_execution_page(&page)?;
         progress.next_group_index = progress.next_group_index.checked_add(1).ok_or_else(|| {
             library_partition_contract_error(
                 "hierarchical link execution chunk group index overflows",
@@ -3116,6 +3116,7 @@ pub(in crate::compiler) fn store_artifact_ref_pages_from_schedule_chunk(
     let final_output_page = build_artifact_ref_page(
         schedule_index.target,
         final_output_ref.clone(),
+        schedule_index.job_count,
         metadata_index.source_byte_count,
         metadata_index.source_file_count,
         metadata_index.source_line_count,
@@ -3292,6 +3293,7 @@ pub(in crate::compiler) fn store_artifact_ref_pages_for_schedule_partition(
             let frontend_page = build_artifact_ref_page(
                 schedule_index.target,
                 frontend_ref,
+                schedule_index.job_count,
                 frontend_job.source_bytes,
                 frontend_job.source_file_count,
                 frontend_job.source_lines,
@@ -3310,6 +3312,7 @@ pub(in crate::compiler) fn store_artifact_ref_pages_for_schedule_partition(
         let object_page = build_artifact_ref_page(
             schedule_index.target,
             object_ref,
+            schedule_index.job_count,
             job.source_bytes,
             job.source_file_count,
             job.source_lines,

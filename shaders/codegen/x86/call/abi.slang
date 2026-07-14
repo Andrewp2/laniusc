@@ -124,6 +124,7 @@ static const uint X86_CALL_TARGET_HOST_TIME_SYSTEM_READ = 0xffffffd9u;
 static const uint X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32 = 0xffffffd8u;
 static const uint X86_CALL_TARGET_HOST_REALLOC = 0xffffffd7u;
 static const uint X86_CALL_TARGET_HOST_ALLOC_FAILED = 0xffffffd6u;
+static const uint X86_CALL_TARGET_DEPENDENCY_TAG = 0x80000000u;
 static const uint CALL_PARAM_CACHE_STRIDE = 4u;
 static const uint LANGUAGE_SYMBOL_OPEN_READ_PATH = 20u;
 static const uint LANGUAGE_SYMBOL_OPEN_WRITE_PATH = 21u;
@@ -677,6 +678,8 @@ void project_call_record(uint call_node)
 
     uint4 call_record = x86_call_record[call_node];
     uint owner_fn = call_record.x;
+    bool dependency_call = (call_record.y & X86_CALL_TARGET_DEPENDENCY_TAG) != 0u &&
+                           call_record.y < X86_CALL_TARGET_HOST_ALLOC_FAILED;
     uint target_fn = function_node_for_resolver_target(call_record.y);
     uint callee_token = call_type_word(call_node, 2u);
     uint arg_count = call_record.w;
@@ -733,7 +736,7 @@ void project_call_record(uint call_node)
     bool host_time_sleep_ms_i32 = host_i32_i32_return_call(call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_SLEEP_MS_I32);
     bool host_realloc = host_u32_u32_u32_u32_u32_return_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_REALLOC);
     bool host_alloc_failed = host_u32_u32_void_call(call_node, call_record.y, callee_token, target_fn, arg_count, return_width, LANGUAGE_SYMBOL_ALLOC_FAILED);
-    bool host_call = host_text_write || host_i32_to_f32 ||
+    bool host_call = !dependency_call && (host_text_write || host_i32_to_f32 ||
                      host_open_read_path || host_open_write_path ||
                      host_read_i32 || host_write_i32 || host_write_byte ||
                      host_write_newline || host_close_file || host_close ||
@@ -748,8 +751,8 @@ void project_call_record(uint call_node)
                      host_fill_secure_bytes || host_fs_remove_file ||
                      host_fs_create_dir || host_fs_remove_dir || host_fs_rename ||
                      host_time_monotonic_read || host_time_system_read || host_time_sleep_ms_i32 ||
-                     host_realloc || host_alloc_failed;
-    if (!host_call && !valid_node(target_fn))
+                     host_realloc || host_alloc_failed);
+    if (!host_call && !dependency_call && !valid_node(target_fn))
     {
         mark_call_abi_error(slot != INVALID ? slot : call_node);
         supported = false;
@@ -820,6 +823,7 @@ void project_call_record(uint call_node)
           : host_time_sleep_ms_i32 ? X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32
           : host_realloc ? X86_CALL_TARGET_HOST_REALLOC
           : host_alloc_failed ? X86_CALL_TARGET_HOST_ALLOC_FAILED
+          : dependency_call ? call_record.y
           : target_fn,
             abi_info);
 }

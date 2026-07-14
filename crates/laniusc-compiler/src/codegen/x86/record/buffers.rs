@@ -60,6 +60,7 @@ pub(super) struct InitialRecordBuffers {
 pub(super) struct InitialRecordBufferInputs<'a, 'scratch> {
     pub(super) params: &'a X86Params,
     pub(super) feature_summary: X86FeatureSummary,
+    pub(super) dependency_declaration_count: u32,
     pub(super) hir_words: usize,
     pub(super) node_inst_scan_words: usize,
     pub(super) node_inst_scan_blocks: usize,
@@ -219,6 +220,7 @@ pub(super) fn create_initial_record_buffers(
     let InitialRecordBufferInputs {
         params,
         feature_summary,
+        dependency_declaration_count,
         hir_words,
         node_inst_scan_words,
         node_inst_scan_blocks,
@@ -230,7 +232,8 @@ pub(super) fn create_initial_record_buffers(
 
     let params_bytes = x86_params_bytes(params);
     let params_buf = uniform_u32_struct(device, "codegen.x86.params", &params_bytes);
-    let feature_record_words = feature_summary.record_words();
+    let mut feature_record_words = feature_summary.record_words();
+    feature_record_words[7] = dependency_declaration_count;
     let feature_params_buf =
         uniform_u32_words(device, "codegen.x86.feature_params", &feature_record_words);
     let func_meta_buf = pooled_storage_u32_copy(device, "codegen.x86.func_meta", 8);

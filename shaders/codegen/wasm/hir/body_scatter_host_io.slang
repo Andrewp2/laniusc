@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -724,7 +725,7 @@ uint host_i32_call_byte(uint call_node, uint wasm_func_index, uint arg_count, ui
     }
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_i)
@@ -734,7 +735,7 @@ uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_
         return string_value_expr_byte(string_node, byte_i);
     if (byte_i == string_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - string_len - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - string_len - 1u);
 }
 
 uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
@@ -752,7 +753,7 @@ uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
     uint call_start = string_start + string_len;
     if (byte_i == call_start)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_start - 1u);
 }
 
 uint host_string_call_byte(uint call_node, uint wasm_func_index, uint mode, uint byte_i)

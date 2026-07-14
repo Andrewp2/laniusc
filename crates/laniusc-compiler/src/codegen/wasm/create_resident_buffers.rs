@@ -13,6 +13,7 @@ impl GpuWasmCodeGenerator {
         let active_hir_dispatch_args_buf = inputs.active_hir_dispatch_args;
         let working_buffers =
             create_wasm_working_buffers(device, output_capacity, token_capacity, hir_node_capacity);
+        let object_inputs = WasmObjectInputBuffers::from_codegen_inputs(inputs);
         let WasmPreludeBindGroups {
             wasm_const_values_bind_group,
             agg_layout_clear_bind_group,
@@ -112,6 +113,8 @@ impl GpuWasmCodeGenerator {
             bind_group,
             pack_bind_group,
         } = self.create_wasm_module_bind_groups(device, inputs, &working_buffers)?;
+        let call_relocations =
+            self.create_wasm_call_relocations(device, output_capacity, &working_buffers.body_buf)?;
         let WasmWorkingBuffers {
             params_buf,
             body_scan_param_bufs,
@@ -260,6 +263,8 @@ impl GpuWasmCodeGenerator {
             _wasm_agg_scan_prefix_b_buf: wasm_agg_scan_prefix_b_buf,
             _hir_enum_match_record_buf: hir_enum_match_record_buf,
             wasm_const_value_record_buf,
+            call_relocations,
+            object_inputs,
             out_buf,
             packed_out_buf,
             status_buf,

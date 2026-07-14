@@ -88,11 +88,11 @@ pub(super) fn create_wasm_working_buffers(
         (
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("codegen.wasm.params"),
-                size: 16,
+                size: 32,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            16,
+            32,
         ),
         1,
     );

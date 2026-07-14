@@ -19,7 +19,9 @@ pub(super) fn create_wasm_readback_buffers(
 ) -> WasmReadbackBuffers {
     WasmReadbackBuffers {
         out: readback_u32s(device, "rb.codegen.wasm.out_words", packed_output_words),
-        status: readback_u32s(device, "rb.codegen.wasm.status", 4),
+        // The first four words are module status; phase two appends the four
+        // call-relocation compaction status words without another map/wait.
+        status: readback_u32s(device, "rb.codegen.wasm.status", 8),
         body_plan: readback_u32s(device, "rb.codegen.wasm.body_plan", WASM_BODY_PLAN_WORDS),
         body_fragment_len: readback_u32s(
             device,

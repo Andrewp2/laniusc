@@ -1226,6 +1226,158 @@ fn main() {
 }
 
 #[test]
+fn type_checker_resolves_generated_generic_type_alias_chains_without_a_fixed_hop_cap() {
+    let mut source = String::new();
+    writeln!(source, "type Alias0<A, B, C, D, E, F> = F;").unwrap();
+    for depth in 1..64 {
+        writeln!(
+            source,
+            "type Alias{depth}<A, B, C, D, E, F> = Alias{}<A, B, C, D, E, F>;",
+            depth - 1
+        )
+        .unwrap();
+    }
+    writeln!(
+        source,
+        "fn keep(value: Alias63<bool, u32, bool, i32, u32, i32>) -> Alias63<bool, u32, bool, i32, u32, i32> {{"
+    )
+    .unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    writeln!(source, "fn main() {{").unwrap();
+    writeln!(
+        source,
+        "    let value: Alias63<bool, u32, bool, i32, u32, i32> = keep(7);"
+    )
+    .unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    assert_gpu_type_check_ok(&source);
+
+    let rejected = source.replace("keep(7)", "keep(false)");
+    assert_gpu_type_check_rejects(&rejected);
+}
+
+#[test]
+fn type_checker_resolves_reordered_generic_type_alias_chains_without_a_fixed_hop_cap() {
+    let mut source = String::new();
+    writeln!(source, "type Alias0<A, B> = A;").unwrap();
+    for depth in 1..64 {
+        writeln!(
+            source,
+            "type Alias{depth}<A, B> = Alias{}<B, A>;",
+            depth - 1
+        )
+        .unwrap();
+    }
+    writeln!(
+        source,
+        "fn keep(value: Alias63<bool, i32>) -> Alias63<bool, i32> {{"
+    )
+    .unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    writeln!(source, "fn main() {{").unwrap();
+    writeln!(source, "    let value: Alias63<bool, i32> = keep(7);").unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    assert_gpu_type_check_ok(&source);
+
+    let rejected = source.replace("keep(7)", "keep(false)");
+    assert_gpu_type_check_rejects(&rejected);
+}
+
+#[test]
+fn type_checker_resolves_width_changing_generic_type_alias_chains_without_a_fixed_hop_cap() {
+    let mut source = String::new();
+    writeln!(source, "type Alias0<A, B, C> = B;").unwrap();
+    for depth in 1..64 {
+        if depth % 2 == 1 {
+            writeln!(
+                source,
+                "type Alias{depth}<A, B> = Alias{}<A, B, bool>;",
+                depth - 1
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                source,
+                "type Alias{depth}<A, B, C> = Alias{}<C, B>;",
+                depth - 1
+            )
+            .unwrap();
+        }
+    }
+    writeln!(
+        source,
+        "fn keep(value: Alias63<bool, i32>) -> Alias63<bool, i32> {{"
+    )
+    .unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    writeln!(source, "fn main() {{").unwrap();
+    writeln!(source, "    let value: Alias63<bool, i32> = keep(7);").unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    assert_gpu_type_check_ok(&source);
+
+    let rejected = source.replace("keep(7)", "keep(false)");
+    assert_gpu_type_check_rejects(&rejected);
+}
+
+#[test]
+fn type_checker_resolves_concrete_injection_through_deep_generic_type_alias_chains() {
+    let mut source = String::new();
+    writeln!(source, "type Alias0<A, B> = A;").unwrap();
+    for depth in 1..64 {
+        if depth == 32 {
+            // Alias31 selects its second argument, so this link changes the
+            // component from a declaration parameter to a concrete type.
+            writeln!(source, "type Alias32<A, B> = Alias31<A, i32>;").unwrap();
+        } else {
+            writeln!(
+                source,
+                "type Alias{depth}<A, B> = Alias{}<B, A>;",
+                depth - 1
+            )
+            .unwrap();
+        }
+    }
+    writeln!(
+        source,
+        "fn keep(value: Alias63<bool, bool>) -> Alias63<bool, bool> {{"
+    )
+    .unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    writeln!(source, "fn main() {{").unwrap();
+    writeln!(source, "    let value: Alias63<bool, bool> = keep(7);").unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    assert_gpu_type_check_ok(&source);
+
+    let rejected = source.replace("keep(7)", "keep(false)");
+    assert_gpu_type_check_rejects(&rejected);
+}
+
+#[test]
+fn type_checker_resolves_generated_type_alias_chains_without_a_fixed_hop_cap() {
+    let mut source = String::new();
+    writeln!(source, "type Alias0 = i32;").unwrap();
+    for depth in 1..64 {
+        writeln!(source, "type Alias{depth} = Alias{};", depth - 1).unwrap();
+    }
+    writeln!(source, "fn main() {{").unwrap();
+    writeln!(source, "    let value: Alias63 = 7;").unwrap();
+    writeln!(source, "    return value;").unwrap();
+    writeln!(source, "}}").unwrap();
+    assert_gpu_type_check_ok(&source);
+
+    let rejected = source.replace("let value: Alias63 = 7;", "let value: Alias63 = true;");
+    assert_gpu_type_check_rejects(&rejected);
+}
+
+#[test]
 fn type_checker_rejects_duplicate_struct_field_declarations_on_gpu() {
     assert_gpu_type_check_ok(
         r#"

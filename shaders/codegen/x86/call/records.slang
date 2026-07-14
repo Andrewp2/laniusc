@@ -17,7 +17,20 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+    uint scalar_inst_capacity;
+    uint call_count;
+    uint param_count;
+    uint dependency_declaration_count;
+};
+
 ConstantBuffer<Params> gParams;
+ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
@@ -38,6 +51,7 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> method_decl_receiver_mode;
@@ -60,6 +74,8 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
 static const uint METHOD_RECEIVER_EXPLICIT = 3u;
+static const uint X86_CALL_TARGET_DEPENDENCY_TAG = 0x80000000u;
+static const uint X86_CALL_TARGET_DEPENDENCY_PAYLOAD_MASK = 0x7fffffffu;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -260,6 +276,16 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint target_fn = valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
     if (!valid_token(target_fn) && valid_token(resolved_fn_token))
         target_fn = resolved_fn_token;
+    // Dependency resolution is keyed by the parser-owned callee node's token
+    // in the typechecker. Consume that exact semantic key; `callee_token` is
+    // an ABI/name projection and can refer to a different wrapper node.
+    uint dependency_callee_token = valid_node(raw_callee_node)
+                                       ? hir_token_pos[raw_callee_node]
+                                       : INVALID;
+    uint dependency_decl = valid_token(dependency_callee_token)
+                               ? call_dependency_decl[dependency_callee_token]
+                               : INVALID;
+    bool dependency_call = dependency_decl < gX86Features.dependency_declaration_count;
     uint target_fn_node = valid_token(target_fn) ? x86_decl_node_by_token[target_fn] : INVALID;
     uint target_name_token = valid_node(target_fn_node)
                                  ? hir_item_name_token[target_fn_node]
@@ -277,7 +303,10 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     x86_call_record[node_i] = uint4(
         owner_fn,
-        target_fn,
+        dependency_call
+            ? X86_CALL_TARGET_DEPENDENCY_TAG |
+                  (dependency_decl & X86_CALL_TARGET_DEPENDENCY_PAYLOAD_MASK)
+            : target_fn,
         valid_token(call_slot) ? call_slot : INVALID,
         arg_count);
     write_call_type_record(node_i, return_ty, return_ty_token, abi_name_token);

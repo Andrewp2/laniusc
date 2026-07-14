@@ -18,6 +18,7 @@ StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
+StructuredBuffer<uint> call_generic_claim_ref_tag;
 StructuredBuffer<uint> call_generic_claim_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
@@ -50,7 +51,7 @@ uint concrete_claim_key(uint row)
 {
     return call_generic_claim_callee[row] != INVALID &&
            call_generic_claim_slot[row] != INVALID &&
-           call_generic_claim_type[row] != 0u
+           (call_generic_claim_type[row] != 0u || call_generic_claim_ref_tag[row] != 0u)
         ? 1u
         : 0u;
 }

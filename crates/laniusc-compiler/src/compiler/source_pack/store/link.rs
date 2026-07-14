@@ -154,10 +154,37 @@ impl FilesystemArtifactStore {
         stored_page.input_group_indices.clear();
         stored_page.input_group_output_keys.clear();
         validate_link_execution_page(&stored_page, page.target, Some(page.group_index))?;
+        self.write_compact_hierarchical_link_execution_page(&stored_page)
+    }
+
+    /// Stores a compact execution page whose bounded sidecars were already
+    /// emitted by the schedule-to-execution streaming writers.
+    pub(in crate::compiler) fn store_prepared_hierarchical_link_execution_page(
+        &self,
+        page: &SourcePackHierarchicalLinkExecutionPage,
+    ) -> Result<PathBuf, CompileError> {
+        validate_link_execution_page(page, page.target, Some(page.group_index))?;
+        if !page.input_interfaces.is_empty()
+            || !page.input_objects.is_empty()
+            || !page.input_group_indices.is_empty()
+            || !page.input_group_output_keys.is_empty()
+        {
+            return Err(library_partition_contract_error(format!(
+                "prepared hierarchical link execution group {} still carries inline inputs",
+                page.group_index
+            )));
+        }
+        self.write_compact_hierarchical_link_execution_page(page)
+    }
+
+    fn write_compact_hierarchical_link_execution_page(
+        &self,
+        page: &SourcePackHierarchicalLinkExecutionPage,
+    ) -> Result<PathBuf, CompileError> {
         let path =
             self.hierarchical_link_execution_page_path_for_target(page.target, page.group_index);
         let bytes = serialize_store_json(
-            &stored_page,
+            page,
             format!(
                 "source-pack hierarchical link execution page {}",
                 page.group_index

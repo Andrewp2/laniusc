@@ -7,6 +7,7 @@ use super::{
         create_radix_dispatch,
     },
     buffers::Buffers,
+    dependency_visibility,
     inputs::CreateInputs,
     layout::Layout,
     module_index::{ModuleIndex, create_module_index},
@@ -40,6 +41,8 @@ pub(in crate::type_checker) fn create_with_passes(
         ..
     } = layout;
     let buffers = Buffers::new(device, layout, &inputs);
+    let dependency_visibility =
+        dependency_visibility::create(passes, device, layout, &inputs, &buffers)?;
     let RecordDiscovery {
         mark_records,
         extract_path_record_flag_params,
@@ -74,6 +77,10 @@ pub(in crate::type_checker) fn create_with_passes(
         sort_module_key_bucket_bases,
         sort_module_key_scatter,
         validate_modules,
+        dependency_module_params,
+        clear_dependency_module_lookup,
+        build_dependency_module_lookup,
+        resolve_dependency_imports,
         scatter_import_records,
         resolve_imports,
         seed_import_edge_key_order,
@@ -90,7 +97,7 @@ pub(in crate::type_checker) fn create_with_passes(
         clear_type_path_types,
         project_type_paths,
         validate_type_paths,
-        project_type_aliases,
+        type_aliases,
         project_type_instances,
         mark_value_call_paths,
         project_value_paths,
@@ -144,6 +151,7 @@ pub(in crate::type_checker) fn create_with_passes(
         import_owner_hir,
         import_module_id,
         import_target_module_id,
+        import_target_dependency_module_id,
         import_status,
         import_edge_key_order,
         import_edge_key_order_tmp,
@@ -180,6 +188,7 @@ pub(in crate::type_checker) fn create_with_passes(
         interface_public_decl_count,
         interface_public_decl_local_id,
         interface_public_decl_index_by_local,
+        interface_public_decl_index_by_hir,
         import_visible_type_count,
         import_visible_value_count,
         import_visible_type_prefix,
@@ -753,6 +762,10 @@ pub(in crate::type_checker) fn create_with_passes(
                 "interface_public_decl_index_by_local",
                 interface_public_decl_index_by_local.as_entire_binding(),
             ),
+            (
+                "interface_public_decl_index_by_hir",
+                interface_public_decl_index_by_hir.as_entire_binding(),
+            ),
         ],
     )?;
     let map_interface_public_decls = bind_group::create_bind_group_from_bindings(
@@ -794,6 +807,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 "decl_value_public_prefix",
                 decl_value_public_prefix.as_entire_binding(),
             ),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
             (
                 "interface_public_decl_count",
                 interface_public_decl_count.as_entire_binding(),
@@ -805,6 +819,10 @@ pub(in crate::type_checker) fn create_with_passes(
             (
                 "interface_public_decl_index_by_local",
                 interface_public_decl_index_by_local.as_entire_binding(),
+            ),
+            (
+                "interface_public_decl_index_by_hir",
+                interface_public_decl_index_by_hir.as_entire_binding(),
             ),
         ],
     )?;
@@ -2018,6 +2036,10 @@ pub(in crate::type_checker) fn create_with_passes(
         import_owner_hir,
         import_module_id,
         import_target_module_id,
+        import_target_dependency_module_id,
+        dependency_interfaces: inputs.dependency_interfaces.cloned(),
+        dependency_visibility,
+        dependency_module_params,
         import_status,
         import_edge_key_order,
         import_edge_key_order_tmp,
@@ -2055,6 +2077,7 @@ pub(in crate::type_checker) fn create_with_passes(
         interface_public_decl_count,
         interface_public_decl_local_id,
         interface_public_decl_index_by_local,
+        interface_public_decl_index_by_hir,
         import_visible_type_count,
         import_visible_value_count,
         import_visible_type_prefix,
@@ -2156,6 +2179,9 @@ pub(in crate::type_checker) fn create_with_passes(
             sort_module_key_bucket_bases,
             sort_module_key_scatter,
             validate_modules,
+            clear_dependency_module_lookup,
+            build_dependency_module_lookup,
+            resolve_dependency_imports,
             resolve_imports,
             seed_import_edge_key_order,
             import_edge_key_radix_dispatch,
@@ -2218,7 +2244,7 @@ pub(in crate::type_checker) fn create_with_passes(
             clear_type_path_types,
             project_type_paths,
             validate_type_paths,
-            project_type_aliases,
+            type_aliases,
             project_type_instances,
             mark_value_call_paths,
             project_value_paths,

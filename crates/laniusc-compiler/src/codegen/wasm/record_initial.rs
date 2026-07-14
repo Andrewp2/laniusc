@@ -10,6 +10,7 @@ impl GpuWasmCodeGenerator {
         source_len: u32,
         token_capacity: u32,
         hir_node_capacity: u32,
+        artifact_flags: u32,
         inputs: GpuWasmCodegenInputs<'_>,
     ) -> Result<RecordedWasmCodegen> {
         let GpuWasmCodegenInputs {
@@ -70,6 +71,8 @@ impl GpuWasmCodeGenerator {
             member_result_ref_payload: member_result_ref_payload_buf,
             struct_init_field_expected_ref_tag: struct_init_field_expected_ref_tag_buf,
             struct_init_field_expected_ref_payload: struct_init_field_expected_ref_payload_buf,
+            call_dependency_decl: _,
+            ..
         } = inputs;
         trace_wasm_codegen("record.start");
         let output_capacity = estimate_wasm_output_capacity(source_len as usize, token_capacity);
@@ -205,6 +208,7 @@ impl GpuWasmCodeGenerator {
             source_len,
             out_capacity: output_capacity as u32,
             n_hir_nodes: hir_node_capacity,
+            artifact_flags,
         };
         let token_groups = token_capacity.div_ceil(256).max(1);
         let (token_groups_x, token_groups_y) = workgroup_grid_1d(token_groups);

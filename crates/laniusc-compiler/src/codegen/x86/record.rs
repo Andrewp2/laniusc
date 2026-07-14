@@ -2,8 +2,19 @@ use anyhow::Result;
 
 use super::{
     GpuX86CodeGenerator,
+    RecordedX86ArtifactMode,
     RecordedX86Codegen,
-    support::{RetainedX86Buffer, copy_x86_buffer_to_buffer, zero_u32_words},
+    RecordedX86ObjectCodegen,
+    support::{
+        RetainedX86Buffer,
+        copy_x86_buffer_to_buffer,
+        dispatch_x86_stages,
+        pooled_readback_bytes,
+        reflected_bind_group,
+        uniform_u32_words,
+        workgroup_grid_1d,
+        zero_u32_words,
+    },
 };
 
 mod allocation;
@@ -101,6 +112,42 @@ impl GpuX86CodeGenerator {
         encoder: &mut wgpu::CommandEncoder,
         inputs: RecordElfInputs<'_, '_>,
     ) -> Result<RecordedX86Codegen> {
+        self.record_from_hir(
+            device,
+            queue,
+            encoder,
+            inputs,
+            RecordedX86ArtifactMode::Executable,
+        )
+    }
+
+    /// Records GPU passes through the unpatched, section-relative object boundary.
+    pub fn record_object_from_hir(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        inputs: RecordElfInputs<'_, '_>,
+    ) -> Result<RecordedX86ObjectCodegen> {
+        Ok(RecordedX86ObjectCodegen {
+            recorded: self.record_from_hir(
+                device,
+                queue,
+                encoder,
+                inputs,
+                RecordedX86ArtifactMode::RelocatableObject,
+            )?,
+        })
+    }
+
+    fn record_from_hir(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        inputs: RecordElfInputs<'_, '_>,
+        artifact_mode: RecordedX86ArtifactMode,
+    ) -> Result<RecordedX86Codegen> {
         let RecordElfInputs {
             source_len,
             token_capacity,
@@ -117,16 +164,24 @@ impl GpuX86CodeGenerator {
             function_metadata,
             expr_metadata,
             call_metadata,
+            dependency_declaration_count,
             array_metadata,
             enum_metadata,
             struct_metadata,
             type_metadata,
             visible_decl_buf,
+            public_decl_count_buf,
+            public_decl_local_id_buf,
             fn_entrypoint_tag_buf,
             feature_summary,
             external_scratch,
             mut timer,
         } = inputs;
+        if dependency_declaration_count > 0x7fff_ffff {
+            anyhow::bail!(
+                "x86 dependency declaration count {dependency_declaration_count} exceeds the tagged call-target payload"
+            );
+        }
         // Native lowering is a dependency graph of scans, pointer jumps,
         // instruction generation, liveness, selection, and encoding. A
         // single compute pass has no storage barriers between those stages.
@@ -166,6 +221,7 @@ impl GpuX86CodeGenerator {
             inst_hir_node_count as usize,
             pointer_jump_steps,
             feature_summary,
+            artifact_mode == RecordedX86ArtifactMode::RelocatableObject,
         );
         host_timer.stamp("capacity");
 
@@ -205,6 +261,7 @@ impl GpuX86CodeGenerator {
             InitialRecordBufferInputs {
                 params: &params,
                 feature_summary,
+                dependency_declaration_count,
                 hir_words,
                 node_inst_scan_words,
                 node_inst_scan_blocks,
@@ -541,6 +598,19 @@ impl GpuX86CodeGenerator {
         let reloc_kind_buf = &virtual_func_slot_buf;
         let reloc_site_inst_buf = &virtual_value_def_row_buf;
         let reloc_target_inst_buf = &virtual_call_live_reg_mask_buf;
+        // The relocation patch is the last consumer of value-def and regalloc
+        // scratch. Reuse those inst-sized rows for the durable, section-relative
+        // object relocation stream instead of allocating another pair of
+        // maximum-capacity buffers.
+        let object_reloc_site_offset_buf = &virtual_value_def_flag_buf;
+        let object_reloc_target_offset_buf = &virtual_regalloc_param_rank_mask_buf;
+        let reloc_finalize_params_buf = uniform_u32_words(
+            device,
+            "codegen.x86.reloc_finalize.params",
+            &[u32::from(
+                artifact_mode == RecordedX86ArtifactMode::Executable,
+            )],
+        );
         host_timer.stamp("scratch_buffers");
         let node_inst_scan_params_buf = scan_params(
             device,
@@ -1213,6 +1283,7 @@ impl GpuX86CodeGenerator {
             device,
             EmitBindGroupInputs {
                 params: &params_buf,
+                reloc_finalize_params: &reloc_finalize_params_buf,
                 text_scan_params: &text_scan_params_buf,
                 rodata_scan_params: &rodata_scan_params_buf,
                 hir_status: hir_status_buf,
@@ -1258,12 +1329,59 @@ impl GpuX86CodeGenerator {
                 reloc_site_inst: reloc_site_inst_buf,
                 reloc_target_inst: reloc_target_inst_buf,
                 reloc_status: &reloc_status_buf,
+                object_reloc_site_offset: object_reloc_site_offset_buf,
+                object_reloc_target_offset: object_reloc_target_offset_buf,
                 out: &out_buf,
                 encode_status: &encode_status_buf,
                 elf_layout: &elf_layout_buf,
                 layout_status: &layout_status_buf,
                 status: &status_buf,
             },
+        )?;
+        let object_symbols_bind_group = reflected_bind_group(
+            device,
+            Some("codegen.x86.object_symbols.bind_group"),
+            &self.object_symbols_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                (
+                    "interface_public_decl_count",
+                    public_decl_count_buf.as_entire_binding(),
+                ),
+                (
+                    "interface_public_decl_local_id",
+                    public_decl_local_id_buf.as_entire_binding(),
+                ),
+                (
+                    "decl_hir_node",
+                    enum_metadata.decl_hir_node.as_entire_binding(),
+                ),
+                (
+                    "x86_func_slot_by_node",
+                    func_slot_by_node_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_func_first_virtual_row",
+                    virtual_func_first_row_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_func_last_virtual_row",
+                    virtual_func_last_row_buf.as_entire_binding(),
+                ),
+                ("select_status", select_status_buf.as_entire_binding()),
+                ("size_status", size_status_buf.as_entire_binding()),
+                ("text_status", text_status_buf.as_entire_binding()),
+                ("x86_inst_size", inst_size_buf.as_entire_binding()),
+                (
+                    "x86_inst_byte_offset",
+                    inst_byte_offset_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_object_symbol_record",
+                    call_record_buf.as_entire_binding(),
+                ),
+            ],
         )?;
         host_timer.stamp("bind_groups");
 
@@ -1464,24 +1582,62 @@ impl GpuX86CodeGenerator {
                 elf_layout: &elf_layout_bind_group,
                 elf: &elf_bind_group,
                 rodata_write: &rodata_write_bind_group,
+                write_executable: artifact_mode == RecordedX86ArtifactMode::Executable,
             },
         );
-        copy_x86_buffer_to_buffer(
-            encoder,
-            &out_buf,
-            0,
-            &output_readback,
-            0,
-            output_readback_bytes,
-        );
-        copy_x86_buffer_to_buffer(
-            encoder,
-            &status_buf,
-            0,
-            &output_readback,
-            output_status_offset,
-            16,
-        );
+        if artifact_mode == RecordedX86ArtifactMode::RelocatableObject {
+            let groups = workgroup_grid_1d(token_capacity.max(1));
+            dispatch_x86_stages(
+                encoder,
+                &[(
+                    "object_symbols",
+                    &self.object_symbols_pass,
+                    &object_symbols_bind_group,
+                )],
+                groups,
+            );
+        }
+        if artifact_mode == RecordedX86ArtifactMode::Executable {
+            copy_x86_buffer_to_buffer(
+                encoder,
+                &out_buf,
+                0,
+                &output_readback,
+                0,
+                output_readback_bytes,
+            );
+            copy_x86_buffer_to_buffer(
+                encoder,
+                &status_buf,
+                0,
+                &output_readback,
+                output_status_offset,
+                16,
+            );
+        }
+        let object_metadata_readback =
+            pooled_readback_bytes(device, "rb.codegen.x86.object_metadata", 17 * 4);
+        let mut object_metadata_offset = 0u64;
+        for (buffer, source_offset, words) in [
+            (&*text_len_buf, 0u64, 1u64),
+            (&*rodata_len_buf, 0, 1),
+            (&*reloc_count_buf, 0, 1),
+            (&*encode_status_buf, 0, 4),
+            (&*reloc_status_buf, 0, 4),
+            (&*layout_status_buf, 0, 4),
+            (public_decl_count_buf, 0, 1),
+            (&*func_meta_buf, 4, 1),
+        ] {
+            copy_x86_buffer_to_buffer(
+                encoder,
+                buffer,
+                source_offset,
+                &object_metadata_readback,
+                object_metadata_offset,
+                words * 4,
+            );
+            object_metadata_offset += words * 4;
+        }
         let status_trace_readback = record_status_trace_readback(
             device,
             encoder,
@@ -1578,7 +1734,6 @@ impl GpuX86CodeGenerator {
             decl_layout_status_buf,
             decl_node_by_token_buf,
             func_slot_by_index_buf,
-            call_record_buf,
             call_type_record_buf,
             call_record_status_buf,
             const_value_record_buf,
@@ -1618,7 +1773,6 @@ impl GpuX86CodeGenerator {
             virtual_inst_status_buf,
             virtual_func_first_row_buf,
             virtual_func_first_row_status_buf,
-            virtual_func_slot_buf,
             virtual_live_start_buf,
             virtual_live_end_buf,
             virtual_liveness_status_buf,
@@ -1626,9 +1780,7 @@ impl GpuX86CodeGenerator {
             virtual_next_call_b_buf,
             virtual_next_call_status_buf,
             func_param_reg_mask_status_buf,
-            virtual_value_def_flag_buf,
             virtual_value_def_row_buf,
-            virtual_regalloc_param_rank_mask_buf,
             virtual_phys_reg_buf,
             virtual_call_live_reg_mask_buf,
             virtual_regalloc_status_buf,
@@ -1676,6 +1828,7 @@ impl GpuX86CodeGenerator {
         retained_buffers.push(RetainedX86Buffer::from(
             virtual_regalloc_params_buf.into_buffer(),
         ));
+        retained_buffers.push(RetainedX86Buffer::from(reloc_finalize_params_buf));
         host_timer.stamp("retained_buffers_collected");
 
         let mut retained_bind_groups = vec![
@@ -1756,6 +1909,7 @@ impl GpuX86CodeGenerator {
             reloc_patch_bind_group,
             elf_layout_bind_group,
             elf_bind_group,
+            object_symbols_bind_group,
         ];
         retained_bind_groups.extend(expr_resolve_step_bind_groups);
         retained_bind_groups.extend(enclosing_return_step_bind_groups);
@@ -1777,11 +1931,17 @@ impl GpuX86CodeGenerator {
 
         Ok(RetainedRecording::new(
             output_capacity,
+            artifact_mode,
             output_status_offset,
             retained_buffers,
             retained_bind_groups,
             out_buf,
             output_readback,
+            object_metadata_readback,
+            RetainedX86Buffer::from(virtual_func_slot_buf),
+            RetainedX86Buffer::from(virtual_value_def_flag_buf),
+            RetainedX86Buffer::from(virtual_regalloc_param_rank_mask_buf),
+            RetainedX86Buffer::from(call_record_buf),
             status_trace_readback,
         )
         .into_recorded(&mut host_timer))

@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -58,6 +59,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_arg_row_node;
@@ -943,13 +945,19 @@ uint semantic_callee_token_for_call(uint call_node)
 uint call_metadata_token(uint call_node, uint callee_token)
 {
     uint site_token = call_site_token(call_node);
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID)
+        return site_token;
+    if (valid_token(semantic_token) && call_dependency_decl[semantic_token] != INVALID)
+        return semantic_token;
+    if (valid_token(callee_token) && call_dependency_decl[callee_token] != INVALID)
+        return callee_token;
+
     if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
         return site_token;
-
-    uint semantic_token = semantic_callee_token_for_call(call_node);
     if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
         return semantic_token;
-
     if (valid_token(callee_token) && valid_token(call_fn_index[callee_token]))
         return callee_token;
 
@@ -960,8 +968,14 @@ uint call_fn_token_for_call(uint call_node)
 {
     uint callee_token = call_callee_token(call_node);
     uint metadata_token = call_metadata_token(call_node, callee_token);
-    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+    if (!valid_token(metadata_token)) return INVALID;
+    if (call_dependency_decl[metadata_token] != INVALID) return metadata_token;
+    uint local_fn = call_fn_index[metadata_token];
+    return valid_token(local_fn) ? local_fn : INVALID;
 }
+
+bool supported_call_target_token(uint token) { return supported_function_token(token) || (valid_token(token) && call_dependency_decl[token] != INVALID); }
+uint wasm_call_target_for_call(uint call_node, uint fn_token) { uint token = call_metadata_token(call_node, call_callee_token(call_node)); return valid_token(token) && call_dependency_decl[token] != INVALID ? 0x80000000u | (call_dependency_decl[token] & 0x7fffffffu) : wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT; }
 
 uint call_return_type_for_call(uint call_node, uint fn_token)
 {
@@ -1013,7 +1027,7 @@ bool direct_user_call_node(
         return false;
 
     fn_token = call_fn_token_for_call(call_node);
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint explicit_arg_count = hir_call_arg_count[call_node];
@@ -1036,7 +1050,7 @@ bool direct_user_call_node(
             return false;
     }
 
-    wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
     return true;
 }
 
@@ -1638,7 +1652,7 @@ uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_
     uint call_start = string_len;
     if (byte_i == call_start)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_start - 1u);
 }
 
 uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
@@ -1660,7 +1674,7 @@ uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
     uint call_start = string_start + string_len;
     if (byte_i == call_start)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_start - 1u);
 }
 
 uint direct_call_expr_byte_from_record(
@@ -1687,7 +1701,7 @@ uint direct_call_expr_byte_from_record(
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint direct_call_expr_scalar_byte_from_record(
@@ -1714,7 +1728,7 @@ uint direct_call_expr_scalar_byte_from_record(
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint direct_call_expr_len_from_record(
@@ -1727,7 +1741,7 @@ uint direct_call_expr_len_from_record(
     if (wasm_func_index == INVALID)
         return 0u;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_len = direct_call_arg_abi_len(

@@ -18,6 +18,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> hir_semantic_subtree_end;
 StructuredBuffer<uint> aggregate_compare_scan_input;
 StructuredBuffer<uint> aggregate_compare_prefix;
 StructuredBuffer<uint> aggregate_compare_count_out;
@@ -34,12 +36,22 @@ StructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> type_semantic_row_by_token;
+StructuredBuffer<uint> type_semantic_scan_input;
+StructuredBuffer<uint> type_semantic_prefix;
+StructuredBuffer<uint> type_semantic_count_out;
+RWStructuredBuffer<uint> type_subtree_compare_scan_input;
+RWStructuredBuffer<uint> type_subtree_compare_left_root;
+RWStructuredBuffer<uint> type_subtree_compare_right_root;
+RWStructuredBuffer<uint> type_subtree_compare_error_token;
+RWStructuredBuffer<uint> type_subtree_compare_error_detail;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -155,6 +167,49 @@ bool same_leaf_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_p
     return lhs_payload == rhs_payload;
 }
 
+uint semantic_type_subtree_count(uint root)
+{
+    uint semantic_count = min(hir_semantic_count[0u], gParams.n_hir_nodes);
+    if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
+        return INVALID;
+    uint end = hir_semantic_subtree_end[root];
+    if (end <= root || end > semantic_count)
+        return INVALID;
+    uint begin_ordinal = type_semantic_prefix[root];
+    uint end_ordinal = end == semantic_count
+        ? type_semantic_count_out[0u]
+        : type_semantic_prefix[end];
+    return end_ordinal > begin_ordinal ? end_ordinal - begin_ordinal : INVALID;
+}
+
+bool enqueue_type_subtree_compare(
+    uint request,
+    uint lhs_instance,
+    uint rhs_instance,
+    uint error_token,
+    uint error_detail)
+{
+    if (lhs_instance == rhs_instance)
+        return true;
+    if (!valid_token(lhs_instance) || !valid_token(rhs_instance))
+        return false;
+    uint lhs_root = type_semantic_row_by_token[lhs_instance];
+    uint rhs_root = type_semantic_row_by_token[rhs_instance];
+    if (lhs_root == INVALID || rhs_root == INVALID)
+        return false;
+    uint lhs_count = semantic_type_subtree_count(lhs_root);
+    uint rhs_count = semantic_type_subtree_count(rhs_root);
+    if (lhs_count == INVALID || rhs_count == INVALID || lhs_count != rhs_count)
+        return false;
+
+    type_subtree_compare_scan_input[request] = lhs_count;
+    type_subtree_compare_left_root[request] = lhs_root;
+    type_subtree_compare_right_root[request] = rhs_root;
+    type_subtree_compare_error_token[request] = error_token;
+    type_subtree_compare_error_detail[request] = error_detail;
+    return true;
+}
+
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
@@ -178,9 +233,28 @@ void validate_compare_row(uint row)
     uint expected_payload;
     uint actual_tag;
     uint actual_payload;
-    if (!instance_arg_ref(expected_instance, ordinal, expected_tag, expected_payload) ||
-        !instance_arg_ref(actual_instance, ordinal, actual_tag, actual_payload) ||
-        !same_leaf_type_ref(expected_tag, expected_payload, actual_tag, actual_payload))
+    bool have_refs =
+        instance_arg_ref(expected_instance, ordinal, expected_tag, expected_payload) &&
+        instance_arg_ref(actual_instance, ordinal, actual_tag, actual_payload);
+    bool matches = false;
+    if (have_refs && expected_tag == TYPE_REF_INSTANCE && actual_tag == TYPE_REF_INSTANCE)
+    {
+        matches = enqueue_type_subtree_compare(
+            row,
+            expected_payload,
+            actual_payload,
+            aggregate_compare_error_token[request_node],
+            aggregate_compare_error_detail[request_node]);
+    }
+    else if (have_refs)
+    {
+        matches = same_leaf_type_ref(
+            expected_tag,
+            expected_payload,
+            actual_tag,
+            actual_payload);
+    }
+    if (!matches)
     {
         record_error(
             aggregate_compare_error_token[request_node],

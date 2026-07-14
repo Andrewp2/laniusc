@@ -14,6 +14,7 @@ struct Params
     uint decl_capacity;
     uint module_segment_capacity;
     uint module_segment_row_width;
+    uint member_capacity;
 };
 
 struct NameSpan
@@ -34,6 +35,8 @@ StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> interface_member_total;
+StructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_name_ref_len;
 RWStructuredBuffer<uint> interface_status;
 
@@ -92,16 +95,20 @@ uint checked_name_len(uint name_id, uint ref_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
-    uint work_capacity = max(gParams.module_segment_capacity, gParams.decl_capacity);
+    uint work_capacity = max(gParams.member_capacity,
+                             max(gParams.module_segment_capacity, gParams.decl_capacity));
     if (row >= work_capacity)
         return;
 
     uint segment_ref = row;
     uint decl_ref = gParams.module_segment_capacity + row;
+    uint member_ref = gParams.module_segment_capacity + gParams.decl_capacity + row;
     if (row < gParams.module_segment_capacity)
         interface_name_ref_len[segment_ref] = 0u;
     if (row < gParams.decl_capacity)
         interface_name_ref_len[decl_ref] = 0u;
+    if (row < gParams.member_capacity)
+        interface_name_ref_len[member_ref] = 0u;
 
     if (active_module_segment_slot(row))
     {
@@ -123,4 +130,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             interface_name_ref_len[decl_ref] = checked_name_len(decl_name_id[decl], decl_ref);
         }
     }
+    uint member_count = min(interface_member_total[0u], gParams.member_capacity);
+    if (row < member_count)
+        interface_name_ref_len[member_ref] =
+            checked_name_len(interface_member_name_id[row], member_ref);
 }

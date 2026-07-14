@@ -35,6 +35,7 @@ pub(super) struct EmitBindGroups {
 /// Buffer inputs needed by final x86 emit passes.
 pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
+    pub(super) reloc_finalize_params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
     pub(super) rodata_scan_params: &'a UniformBindingArray,
     pub(super) hir_status: &'a wgpu::Buffer,
@@ -80,6 +81,8 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) reloc_site_inst: &'a wgpu::Buffer,
     pub(super) reloc_target_inst: &'a wgpu::Buffer,
     pub(super) reloc_status: &'a wgpu::Buffer,
+    pub(super) object_reloc_site_offset: &'a wgpu::Buffer,
+    pub(super) object_reloc_target_offset: &'a wgpu::Buffer,
     pub(super) out: &'a wgpu::Buffer,
     pub(super) encode_status: &'a wgpu::Buffer,
     pub(super) elf_layout: &'a wgpu::Buffer,
@@ -95,6 +98,7 @@ pub(super) fn create_emit_bind_groups(
 ) -> Result<EmitBindGroups> {
     let EmitBindGroupInputs {
         params,
+        reloc_finalize_params,
         text_scan_params,
         rodata_scan_params,
         hir_status,
@@ -140,6 +144,8 @@ pub(super) fn create_emit_bind_groups(
         reloc_site_inst,
         reloc_target_inst,
         reloc_status,
+        object_reloc_site_offset,
+        object_reloc_target_offset,
         out,
         encode_status,
         elf_layout,
@@ -506,6 +512,7 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
+            ("gRelocFinalize", reloc_finalize_params.as_entire_binding()),
             ("x86_inst_kind", inst_kind.as_entire_binding()),
             ("x86_inst_arg0", inst_arg0.as_entire_binding()),
             ("x86_inst_arg1", inst_arg1.as_entire_binding()),
@@ -517,7 +524,17 @@ pub(super) fn create_emit_bind_groups(
                 decl_layout_status.as_entire_binding(),
             ),
             ("x86_text_len", text_len.as_entire_binding()),
+            ("x86_rodata_len", rodata_len.as_entire_binding()),
+            (
+                "x86_rodata_size_by_node",
+                rodata_size_by_node.as_entire_binding(),
+            ),
+            (
+                "x86_rodata_offset_by_node",
+                rodata_offset_by_node.as_entire_binding(),
+            ),
             ("text_status", text_status.as_entire_binding()),
+            ("x86_rodata_status", rodata_status.as_entire_binding()),
             ("encode_status", encode_status.as_entire_binding()),
             ("x86_reloc_count", reloc_count.as_entire_binding()),
             ("x86_reloc_kind", reloc_kind.as_entire_binding()),
@@ -528,6 +545,14 @@ pub(super) fn create_emit_bind_groups(
             ),
             ("out_words", out.as_entire_binding()),
             ("reloc_status", reloc_status.as_entire_binding()),
+            (
+                "x86_object_reloc_site_offset",
+                object_reloc_site_offset.as_entire_binding(),
+            ),
+            (
+                "x86_object_reloc_target_offset",
+                object_reloc_target_offset.as_entire_binding(),
+            ),
         ],
     )?;
     let elf_layout_bind_group = reflected_bind_group(

@@ -105,6 +105,7 @@ static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_LOAD = 69u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_LOAD_PARAM_INDEX_R32 = 72u;
 static const uint X86_INST_V_STORE_RET_PTR_R32 = 73u;
 static const uint X86_INST_V_COPY_AGG_RET = 74u;
@@ -1852,6 +1853,7 @@ uint byte_size_for_inst(uint inst_i)
     if (kind == X86_INST_V_FOR_INTERVAL_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? for_interval_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]) : 0u;
     if (kind == X86_INST_V_COPY_LOCAL_R32) return copy_local_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_CALL_MIXED_DIRECT) return inst_target_valid(x86_inst_arg0[inst_i]) ? call_mixed_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], inst_call_save_mask(inst_i)) : 0u;
+    if (kind == X86_INST_V_CALL_MIXED_EXTERNAL) return call_mixed_size(0u, x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], inst_call_save_mask(inst_i));
     if (kind == X86_INST_V_LOAD_PARAM_INDEX_R32) return checked_param_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_STORE_RET_PTR_R32) return ptr_slot_mem_r32_size(x86_inst_arg0[inst_i], X86_REG_EDI, x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_COPY_AGG_RET) return copy_agg_ret_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);

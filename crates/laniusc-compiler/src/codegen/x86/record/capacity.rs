@@ -58,6 +58,7 @@ impl RecordCapacity {
         inst_hir_node_count: usize,
         pointer_jump_step_count: u32,
         feature_summary: X86FeatureSummary,
+        relocatable_object: bool,
     ) -> Self {
         let capacity = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
             n_hir_nodes as usize,
@@ -130,6 +131,7 @@ impl RecordCapacity {
             regalloc_rows_per_chunk: X86_REGALLOC_ROWS_PER_CHUNK as u32,
             regalloc_chunk_count: virtual_regalloc_chunk_count.min(u32::MAX as usize) as u32,
             function_slot_capacity: function_slot_capacity.min(u32::MAX as usize) as u32,
+            artifact_mode: u32::from(relocatable_object),
         };
         trace_capacity(
             &capacity,

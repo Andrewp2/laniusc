@@ -106,6 +106,16 @@ pub struct GpuWasmSemanticHirBuffers<'a> {
     pub child_index: &'a wgpu::Buffer,
 }
 
+/// Canonical exact identities for dependency declarations referenced by a
+/// relocatable Wasm object.
+#[derive(Clone, Copy)]
+pub struct GpuWasmDependencySymbolBuffers<'a> {
+    pub declaration_count: u32,
+    pub declaration_library_id: &'a wgpu::Buffer,
+    pub declaration_unit_id: &'a wgpu::Buffer,
+    pub declaration_local_index: &'a wgpu::Buffer,
+}
+
 #[derive(Clone, Copy)]
 /// Complete GPU-resident frontend and type-check input contract for WASM lowering.
 pub struct GpuWasmCodegenInputs<'a> {
@@ -124,6 +134,11 @@ pub struct GpuWasmCodegenInputs<'a> {
     pub parser_feature_flags: &'a wgpu::Buffer,
     pub visible_decl: &'a wgpu::Buffer,
     pub visible_type: &'a wgpu::Buffer,
+    pub public_decl_count: &'a wgpu::Buffer,
+    pub public_decl_local_id: &'a wgpu::Buffer,
+    pub public_decl_index_by_local: &'a wgpu::Buffer,
+    pub decl_id_by_name_token: &'a wgpu::Buffer,
+    pub decl_hir_node: &'a wgpu::Buffer,
     pub name_id_by_token: &'a wgpu::Buffer,
     pub language_name_id: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
@@ -142,6 +157,10 @@ pub struct GpuWasmCodegenInputs<'a> {
     pub module_value_path_const_head: &'a wgpu::Buffer,
     pub module_value_path_const_end: &'a wgpu::Buffer,
     pub call_fn_index: &'a wgpu::Buffer,
+    /// Flattened dependency declaration selected for each semantic callee token.
+    /// When dependency interfaces are absent this aliases `call_fn_index`, whose
+    /// non-dependency entries remain distinguishable by the local target lookup.
+    pub call_dependency_decl: &'a wgpu::Buffer,
     pub call_intrinsic_tag: &'a wgpu::Buffer,
     pub fn_entrypoint_tag: &'a wgpu::Buffer,
     pub call_return_type: &'a wgpu::Buffer,

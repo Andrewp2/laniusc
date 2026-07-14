@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -686,11 +687,11 @@ uint tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
     if (byte_i < arg_bytes)
         return 0u;
     uint tail_i = byte_i - arg_bytes;
-    uint call_tail_len = 1u + u32_leb_len(aux.x);
+    uint call_tail_len = 1u + wasm_call_index_len(aux.x);
     if (tail_i == 0u)
         return WASM_CALL;
     if (tail_i < call_tail_len)
-        return u32_leb_byte(aux.x, tail_i - 1u);
+        return wasm_call_index_byte(aux.x, tail_i - 1u);
     uint expr_i = tail_i - call_tail_len;
     uint expr_len = expr_side_len(meta.w);
     if (expr_i < expr_len)
@@ -703,7 +704,7 @@ uint tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
 uint return_tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
 {
     uint arg_bytes = arg_bytes_for_fragment(fragment_i);
-    uint call_tail_len = 1u + u32_leb_len(aux.x);
+    uint call_tail_len = 1u + wasm_call_index_len(aux.x);
     uint packed_op = meta.w;
     uint op = packed_op & 0xffu;
     uint call_side = packed_op >> 8u;
@@ -717,7 +718,7 @@ uint return_tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
         if (tail_i == 0u)
             return WASM_CALL;
         if (tail_i < call_tail_len)
-            return u32_leb_byte(aux.x, tail_i - 1u);
+            return wasm_call_index_byte(aux.x, tail_i - 1u);
         uint expr_i = tail_i - call_tail_len;
         if (expr_i < expr_len)
             return expr_side_byte(meta.z, expr_i);
@@ -735,7 +736,7 @@ uint return_tail_byte(uint fragment_i, uint4 meta, uint4 aux, uint byte_i)
     if (call_i == 0u)
         return WASM_CALL;
     if (call_i < call_tail_len)
-        return u32_leb_byte(aux.x, call_i - 1u);
+        return wasm_call_index_byte(aux.x, call_i - 1u);
     if (call_i == call_tail_len)
         return op;
     return WASM_RETURN;

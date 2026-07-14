@@ -14,6 +14,7 @@ struct Params
     uint module_segment_capacity;
     uint module_segment_row_width;
     uint decl_capacity;
+    uint member_capacity;
 };
 
 struct NameSpan
@@ -34,6 +35,8 @@ StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> interface_member_total;
+StructuredBuffer<uint> interface_member_name_id;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
 ByteAddressBuffer source_bytes;
@@ -55,10 +58,17 @@ uint name_id_for_ref(uint ref_i)
     if (ref_i < gParams.module_segment_capacity)
         return module_key_segment_name_id[ref_i];
     uint row = ref_i - gParams.module_segment_capacity;
-    if (row >= min(public_decl_count[0u], gParams.decl_capacity))
-        return 0xffffffffu;
-    uint decl = public_decl_local_id[row];
-    return decl < gParams.decl_capacity ? decl_name_id[decl] : 0xffffffffu;
+    if (row < gParams.decl_capacity)
+    {
+        if (row >= min(public_decl_count[0u], gParams.decl_capacity))
+            return 0xffffffffu;
+        uint decl = public_decl_local_id[row];
+        return decl < gParams.decl_capacity ? decl_name_id[decl] : 0xffffffffu;
+    }
+    uint member = row - gParams.decl_capacity;
+    return member < min(interface_member_total[0u], gParams.member_capacity)
+               ? interface_member_name_id[member]
+               : 0xffffffffu;
 }
 
 uint load_name_byte(NameSpan span, uint byte_i)

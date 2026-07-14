@@ -103,7 +103,9 @@ impl GpuDevice {
         let end = Instant::now();
         timer.span("get_data", start, end);
         timer.bytes("pipeline_cache.persist.bytes", end, data.len());
+        let start = Instant::now();
         let data_hash = stable_hash_u64(&data);
+        timer.span("hash", start, Instant::now());
         let force_persist =
             crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
         let already_persisted = self
@@ -113,7 +115,7 @@ impl GpuDevice {
             .and_then(|hash| *hash)
             == Some(data_hash);
         if !self.pipeline_cache_should_persist && !force_persist && already_persisted {
-            timer.span("skipped.unchanged", total_start, end);
+            timer.span("skipped.unchanged", total_start, Instant::now());
             return;
         }
         if let Some(parent) = path.parent() {
@@ -132,7 +134,9 @@ impl GpuDevice {
         }
         let tmp = pipeline_cache_tmp_path(path);
         let start = Instant::now();
-        if let Err(err) = write_pipeline_cache_tmp(&tmp, &data, identity_hash, &timer) {
+        if let Err(err) =
+            write_pipeline_cache_tmp(&tmp, &data, identity_hash, data_hash, &timer)
+        {
             let end = Instant::now();
             timer.span("write_tmp.failed", start, end);
             timer.span("total.failed", total_start, end);
@@ -188,10 +192,11 @@ fn write_pipeline_cache_tmp(
     path: &std::path::Path,
     data: &[u8],
     identity_hash: u64,
+    data_hash: u64,
     timer: &PipelineCachePersistTimer,
 ) -> std::io::Result<()> {
     let start = Instant::now();
-    let header = pipeline_cache_file_header(data, identity_hash);
+    let header = pipeline_cache_file_header(data.len(), identity_hash, data_hash);
     timer.span("write_tmp.encode_header", start, Instant::now());
 
     let start = Instant::now();
@@ -597,14 +602,18 @@ fn pipeline_cache_tmp_path(path: &std::path::Path) -> PathBuf {
     path.with_file_name(format!("{filename}.tmp"))
 }
 
-fn pipeline_cache_file_header(data: &[u8], identity_hash: u64) -> [u8; PIPELINE_CACHE_HEADER_LEN] {
+fn pipeline_cache_file_header(
+    data_len: usize,
+    identity_hash: u64,
+    data_hash: u64,
+) -> [u8; PIPELINE_CACHE_HEADER_LEN] {
     let mut header = [0u8; PIPELINE_CACHE_HEADER_LEN];
     header[0..8].copy_from_slice(&PIPELINE_CACHE_FILE_MAGIC);
     header[8..12].copy_from_slice(&PIPELINE_CACHE_FILE_VERSION.to_le_bytes());
     header[12..16].copy_from_slice(&(PIPELINE_CACHE_HEADER_LEN as u32).to_le_bytes());
     header[16..24].copy_from_slice(&identity_hash.to_le_bytes());
-    header[24..32].copy_from_slice(&(data.len() as u64).to_le_bytes());
-    header[32..40].copy_from_slice(&stable_hash_u64(data).to_le_bytes());
+    header[24..32].copy_from_slice(&(data_len as u64).to_le_bytes());
+    header[32..40].copy_from_slice(&data_hash.to_le_bytes());
     header
 }
 
@@ -823,7 +832,8 @@ mod tests {
     fn pipeline_cache_file_round_trips_opaque_blob() {
         let identity_hash = 0x1234_5678_9abc_def0;
         let blob = b"opaque wgpu cache data";
-        let mut file = pipeline_cache_file_header(blob, identity_hash).to_vec();
+        let mut file =
+            pipeline_cache_file_header(blob.len(), identity_hash, stable_hash_u64(blob)).to_vec();
         file.extend_from_slice(blob);
 
         let decoded = decode_pipeline_cache_file(&file, identity_hash).unwrap();
@@ -834,7 +844,8 @@ mod tests {
     #[test]
     fn pipeline_cache_file_rejects_wrong_identity() {
         let blob = b"opaque wgpu cache data";
-        let mut file = pipeline_cache_file_header(blob, 0x11).to_vec();
+        let mut file =
+            pipeline_cache_file_header(blob.len(), 0x11, stable_hash_u64(blob)).to_vec();
         file.extend_from_slice(blob);
 
         let err = decode_pipeline_cache_file(&file, 0x22).unwrap_err();
@@ -849,7 +860,8 @@ mod tests {
     fn pipeline_cache_file_rejects_partial_write() {
         let identity_hash = 0x1234_5678_9abc_def0;
         let blob = b"opaque wgpu cache data";
-        let mut file = pipeline_cache_file_header(blob, identity_hash).to_vec();
+        let mut file =
+            pipeline_cache_file_header(blob.len(), identity_hash, stable_hash_u64(blob)).to_vec();
         file.extend_from_slice(&blob[..blob.len() - 1]);
 
         let err = decode_pipeline_cache_file(&file, identity_hash).unwrap_err();

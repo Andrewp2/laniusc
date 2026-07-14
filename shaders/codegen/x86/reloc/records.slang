@@ -60,11 +60,23 @@ static const uint X86_INST_V_ENTRY_STACK_JMP = 64u;
 static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
+static const uint X86_INST_MOV_ESI_TEXT_ROW_ADDR = 49u;
+static const uint X86_INST_V_STORE_LOCAL_RODATA_PTR = 83u;
+static const uint X86_INST_V_HOST_TEXT_WRITE = 84u;
+static const uint X86_INST_V_HOST_OPEN_WRITE_PATH = 85u;
+static const uint X86_INST_V_HOST_OPEN_READ_PATH = 89u;
 
 static const uint X86_RELOC_REL32 = 1u;
 static const uint X86_RELOC_CALL_REL32 = 2u;
+static const uint X86_RELOC_ABS32_TEXT = 3u;
+static const uint X86_RELOC_ABS32_RODATA = 4u;
+static const uint X86_RELOC_CALL_REL32_SYMBOL = 5u;
+static const uint X86_AGG_SOURCE_LOCAL = 1u;
+static const uint X86_AGG_SOURCE_PARAM = 2u;
+static const uint PRINT_SAVE_RESTORE_SIZE = 13u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -105,6 +117,8 @@ uint reloc_kind_for_inst(uint inst_i)
     uint kind = inst_kind_tag(inst_i);
     if (kind == X86_INST_V_CALL_MIXED_DIRECT)
         return X86_RELOC_CALL_REL32;
+    if (kind == X86_INST_V_CALL_MIXED_EXTERNAL)
+        return X86_RELOC_CALL_REL32_SYMBOL;
     if (kind == X86_INST_V_BRANCH_ZERO ||
         kind == X86_INST_V_JMP ||
         kind == X86_INST_V_ENTRY_STACK_JMP ||
@@ -113,6 +127,13 @@ uint reloc_kind_for_inst(uint inst_i)
         kind == X86_INST_V_MATCH_TAG_BRANCH ||
         kind == X86_INST_V_FOR_INTERVAL_BRANCH)
         return X86_RELOC_REL32;
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
+        return X86_RELOC_ABS32_TEXT;
+    if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR ||
+        kind == X86_INST_V_HOST_TEXT_WRITE ||
+        kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+        return X86_RELOC_ABS32_RODATA;
     return 0u;
 }
 
@@ -124,7 +145,8 @@ uint reloc_target_for_inst(uint inst_i, uint inst_count)
         target = x86_inst_arg1[inst_i];
     if (kind == X86_INST_V_JMP ||
         kind == X86_INST_V_ENTRY_STACK_JMP ||
-        kind == X86_INST_V_CALL_MIXED_DIRECT)
+        kind == X86_INST_V_CALL_MIXED_DIRECT ||
+        kind == X86_INST_V_CALL_MIXED_EXTERNAL)
         target = x86_inst_arg0[inst_i];
     if (kind == X86_INST_V_FOR_ARRAY_BRANCH ||
         kind == X86_INST_V_FOR_INTERVAL_BRANCH ||
@@ -132,13 +154,76 @@ uint reloc_target_for_inst(uint inst_i, uint inst_count)
         target = x86_inst_arg2[inst_i];
     if (kind == X86_INST_V_FOR_ARRAY_INC_JMP)
         target = x86_inst_arg1[inst_i];
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
+        target = x86_inst_arg0[inst_i];
+    if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR ||
+        kind == X86_INST_V_HOST_TEXT_WRITE ||
+        kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+        target = x86_inst_arg1[inst_i];
     return target;
+}
+
+uint rex_for_modrm(uint reg_field, uint rm)
+{
+    return (reg_field >= 8u && reg_field < 16u) ||
+           (rm >= 8u && rm < 16u) ? 1u : 0u;
+}
+
+uint relocation_immediate_offset(uint inst_i)
+{
+    uint kind = inst_kind_tag(inst_i);
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
+        return 1u;
+    if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR)
+    {
+        uint disp = (x86_inst_arg0[inst_i] + 3u) * 4u;
+        return disp <= 127u ? 4u : 7u;
+    }
+    if (kind == X86_INST_V_HOST_TEXT_WRITE)
+    {
+        uint handle = x86_inst_arg0[inst_i] & 0xffu;
+        uint handle_move = handle == 7u ? 0u : 2u + rex_for_modrm(handle, 7u);
+        return PRINT_SAVE_RESTORE_SIZE + handle_move + 1u;
+    }
+    if (kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+        return PRINT_SAVE_RESTORE_SIZE + 1u;
+    return 0u;
+}
+
+bool address_reloc_target_valid(uint kind, uint target, uint inst_count)
+{
+    if (kind == X86_RELOC_CALL_REL32_SYMBOL)
+        return target != INVALID;
+    if (kind == X86_RELOC_ABS32_TEXT)
+        return target <= inst_count;
+    if (kind == X86_RELOC_ABS32_RODATA)
+        return target < gParams.n_hir_nodes;
+    return target <= inst_count;
+}
+
+bool address_reloc_kind(uint kind)
+{
+    return kind == X86_RELOC_ABS32_TEXT || kind == X86_RELOC_ABS32_RODATA;
 }
 
 uint reloc_flag_for_inst(uint inst_i, uint inst_count)
 {
     uint reloc_kind = reloc_kind_for_inst(inst_i);
     uint target = reloc_target_for_inst(inst_i, inst_count);
+    uint inst_kind = inst_kind_tag(inst_i);
+    if (inst_kind == X86_INST_V_HOST_TEXT_WRITE && x86_inst_arg2[inst_i] == INVALID)
+        return 0u;
+    if ((inst_kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+         inst_kind == X86_INST_V_HOST_OPEN_READ_PATH) &&
+        (x86_inst_arg2[inst_i] == X86_AGG_SOURCE_LOCAL ||
+         x86_inst_arg2[inst_i] == X86_AGG_SOURCE_PARAM))
+        return 0u;
+    if (address_reloc_kind(reloc_kind))
+        return 1u;
+    if (reloc_kind == X86_RELOC_CALL_REL32_SYMBOL)
+        return target != INVALID ? 1u : 0u;
     return reloc_kind != 0u && inst_target_valid(target, inst_count) ? 1u : 0u;
 }
 
@@ -212,7 +297,14 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    x86_reloc_kind[ordinal] = reloc_kind_for_inst(inst_i);
+    uint reloc_kind = reloc_kind_for_inst(inst_i);
+    uint target = reloc_target_for_inst(inst_i, inst_count);
+    if (!address_reloc_target_valid(reloc_kind, target, inst_count))
+    {
+        publish_stage_error_min_detail4(reloc_status, X86_ERR_RELOC, inst_i);
+        return;
+    }
+    x86_reloc_kind[ordinal] = reloc_kind | (relocation_immediate_offset(inst_i) << 8u);
     x86_reloc_site_inst[ordinal] = inst_i;
-    x86_reloc_target_inst[ordinal] = reloc_target_for_inst(inst_i, inst_count);
+    x86_reloc_target_inst[ordinal] = target;
 }

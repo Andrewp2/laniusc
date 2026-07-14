@@ -4,6 +4,7 @@ use super::super::*;
 pub(in crate::compiler) fn build_artifact_ref_page(
     target: SourcePackArtifactTarget,
     artifact_ref: SourcePackArtifactRef,
+    artifact_count: usize,
     source_bytes: usize,
     source_file_count: usize,
     source_lines: usize,
@@ -17,12 +18,7 @@ pub(in crate::compiler) fn build_artifact_ref_page(
         source_file_count,
         source_lines,
     };
-    validate_artifact_ref_page(
-        &page,
-        target,
-        page.artifact_index.saturating_add(1),
-        Some(page.artifact_index),
-    )?;
+    validate_artifact_ref_page(&page, target, artifact_count, Some(page.artifact_index))?;
     Ok(page)
 }
 

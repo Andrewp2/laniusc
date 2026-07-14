@@ -989,6 +989,11 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
     {
         return TK_TYPE_ARG_LT;
     }
+    if (prev_raw == TK_IDENT && parser_i > 0u &&
+        raw_statement_context_kind(parser_i - 1u) == STATEMENT_CONTEXT_TYPE_ALIAS_RHS)
+    {
+        return TK_TYPE_ARG_LT;
+    }
     if (prev_raw == TK_IDENT &&
         value_expression_context_before(parser_i) &&
         (prev2_raw == TK_COLON || prev2_raw == TK_PATH_COLON))

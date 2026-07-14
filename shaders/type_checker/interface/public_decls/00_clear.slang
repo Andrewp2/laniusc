@@ -15,6 +15,7 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> interface_public_decl_count;
 RWStructuredBuffer<uint> interface_public_decl_local_id;
 RWStructuredBuffer<uint> interface_public_decl_index_by_local;
+RWStructuredBuffer<uint> interface_public_decl_index_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -34,6 +35,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     interface_public_decl_local_id[row] = INVALID;
     interface_public_decl_index_by_local[row] = INVALID;
+    interface_public_decl_index_by_hir[row] = INVALID;
     if (row == 0u)
         interface_public_decl_count[0u] = 0u;
 }

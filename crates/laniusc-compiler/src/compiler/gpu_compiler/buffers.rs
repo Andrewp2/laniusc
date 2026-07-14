@@ -214,7 +214,9 @@ pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) hir_token_file_id: LaniusBuffer<u32>,
     pub(super) hir_semantic_count: LaniusBuffer<u32>,
     pub(super) hir_semantic_dense_node: LaniusBuffer<u32>,
+    pub(super) hir_semantic_subtree_end: Box<LaniusBuffer<u32>>,
     pub(super) hir_semantic_parent: LaniusBuffer<u32>,
+    pub(super) hir_semantic_depth: LaniusBuffer<u32>,
     pub(super) hir_semantic_prefix_before_node: LaniusBuffer<u32>,
     pub(super) hir_type_form: LaniusBuffer<u32>,
     pub(super) hir_type_value_node: LaniusBuffer<u32>,
@@ -307,6 +309,7 @@ pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) hir_array_element_next: LaniusBuffer<u32>,
     pub(super) hir_array_element_previous: LaniusBuffer<u32>,
     pub(super) hir_variant_parent_enum: LaniusBuffer<u32>,
+    pub(super) hir_variant_ordinal: LaniusBuffer<u32>,
     pub(super) hir_variant_payload_start: LaniusBuffer<u32>,
     pub(super) hir_variant_payload_count: LaniusBuffer<u32>,
     pub(super) hir_variant_payload_node: LaniusBuffer<u32>,
@@ -386,7 +389,9 @@ impl OwnedTypecheckParserBuffers {
             hir_token_file_id: bufs.hir_token_file_id.clone(),
             hir_semantic_count: bufs.hir_semantic_count.clone(),
             hir_semantic_dense_node: bufs.hir_semantic_dense_node.clone(),
+            hir_semantic_subtree_end: Box::new(bufs.hir_semantic_subtree_end.clone()),
             hir_semantic_parent: bufs.hir_semantic_parent.clone(),
+            hir_semantic_depth: bufs.hir_semantic_depth.clone(),
             hir_semantic_prefix_before_node: bufs.hir_semantic_prefix_before_node.clone(),
             hir_type_form: bufs.hir_type_form.clone(),
             hir_type_value_node: bufs.hir_type_value_node.clone(),
@@ -479,6 +484,7 @@ impl OwnedTypecheckParserBuffers {
             hir_array_element_next: bufs.hir_array_element_next.clone(),
             hir_array_element_previous: bufs.hir_array_element_previous.clone(),
             hir_variant_parent_enum: bufs.hir_variant_parent_enum.clone(),
+            hir_variant_ordinal: bufs.hir_variant_ordinal.clone(),
             hir_variant_payload_start: bufs.hir_variant_payload_start.clone(),
             hir_variant_payload_count: bufs.hir_variant_payload_count.clone(),
             hir_variant_payload_node: bufs.hir_variant_payload_node.clone(),
@@ -647,6 +653,38 @@ impl OwnedTypecheckParserBuffers {
             struct_lit_field_value_node: &self.hir_struct_lit_field_value_node,
             semantic_dense_node: &self.hir_semantic_dense_node,
             semantic_count: &self.hir_semantic_count,
+            semantic_subtree_end: &self.hir_semantic_subtree_end,
+        }
+    }
+
+    /// Builds the checked HIR view used by semantic-interface type discovery.
+    pub(super) fn semantic_interface_hir_buffers(
+        &self,
+    ) -> gpu_type_checker::GpuSemanticInterfaceHirBuffers<'_> {
+        gpu_type_checker::GpuSemanticInterfaceHirBuffers {
+            hir_status: &self.ll1_status,
+            hir_kind: &self.hir_kind,
+            hir_token_pos: &self.hir_token_pos,
+            hir_type_arg_owner: &self.hir_type_arg_owner_a,
+            hir_type_arg_rank: &self.hir_type_arg_rank_a,
+            hir_type_arg_count: &self.hir_type_arg_count,
+            hir_type_form: &self.hir_type_form,
+            hir_type_value_node: &self.hir_type_value_node,
+            hir_type_len_token: &self.hir_type_len_token,
+            hir_type_len_value: &self.hir_type_len_value,
+            hir_fn_return_type_node: &self.hir_fn_return_type_node,
+            hir_type_alias_target_node: &self.hir_type_alias_target_node,
+            hir_stmt_record: &self.hir_stmt_record,
+            hir_param_record: &self.hir_param_record,
+            hir_param_type_node: &self.hir_param_type_node,
+            hir_struct_field_parent_struct: &self.hir_struct_field_parent_struct,
+            hir_struct_field_type_node: &self.hir_struct_field_type_node,
+            hir_variant_payload_count: &self.hir_variant_payload_count,
+            hir_variant_payload_node: &self.hir_variant_payload_node,
+            hir_variant_parent_enum: &self.hir_variant_parent_enum,
+            hir_variant_ordinal: &self.hir_variant_ordinal,
+            hir_struct_field_ordinal: &self.hir_struct_field_ordinal,
+            hir_struct_decl_field_count: &self.hir_struct_decl_field_count,
         }
     }
 }

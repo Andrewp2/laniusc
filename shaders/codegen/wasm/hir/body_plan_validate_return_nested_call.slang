@@ -3,6 +3,7 @@
 import atomics;
 import body_common;
 import body_plan_validate_common;
+import call_relocation;
 
 bool return_nested_direct_call_arg_and_len(
     uint node,
@@ -22,7 +23,7 @@ bool return_nested_direct_call_arg_and_len(
     if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
@@ -60,7 +61,7 @@ bool return_direct_call_expr_and_len(
     if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     bool nested = false;
     for (uint i = 0u; i < arg_count; i += 1u)
     {
@@ -240,7 +241,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

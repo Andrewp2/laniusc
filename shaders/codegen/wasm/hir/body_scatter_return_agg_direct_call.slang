@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -861,9 +862,9 @@ uint return_agg_direct_call_i32_fragment_byte(uint call_node, uint4 aux, uint by
         return WASM_CALL;
     offset += 1u;
 
-    uint call_index_len = u32_leb_len(wasm_func_index);
+    uint call_index_len = wasm_call_index_len(wasm_func_index);
     if (byte_i < offset + call_index_len)
-        return u32_leb_byte(wasm_func_index, byte_i - offset);
+        return wasm_call_index_byte(wasm_func_index, byte_i - offset);
     return WASM_RETURN;
 }
 

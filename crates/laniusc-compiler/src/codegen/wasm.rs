@@ -18,7 +18,19 @@ use encase::ShaderType;
 
 mod support;
 use support::*;
+mod object;
+pub use object::{
+    GPU_WASM_OBJECT_VERSION,
+    GpuWasmFunctionRecord,
+    GpuWasmObjectSymbolRecord,
+    GpuWasmRelocatableObject,
+    GpuWasmRelocationRecord,
+    GpuWasmRelocationTargetKind,
+    GpuWasmSymbolKind,
+};
 mod error;
+pub(crate) mod link;
+pub(crate) use link::GpuWasmLinkInput;
 pub use error::WasmOutputError;
 use error::from_status as wasm_output_error_from_status;
 mod body_features;
@@ -32,6 +44,7 @@ pub use input_buffers::{
     GpuWasmArrayMetadataBuffers,
     GpuWasmCallMetadataBuffers,
     GpuWasmCodegenInputs,
+    GpuWasmDependencySymbolBuffers,
     GpuWasmEnumMatchMetadataBuffers,
     GpuWasmExprMetadataBuffers,
     GpuWasmPathMetadataBuffers,
@@ -64,6 +77,10 @@ mod module_bind_groups;
 use module_bind_groups::WasmModuleBindGroups;
 mod body_binding_context;
 use body_binding_context::WasmBodyBindingContext;
+mod call_relocations;
+use call_relocations::ResidentWasmCallRelocations;
+mod object_codegen;
+use object_codegen::WasmObjectInputBuffers;
 
 use crate::gpu::{buffers::LaniusBuffer, device};
 
@@ -120,7 +137,10 @@ struct WasmParams {
     source_len: u32,
     out_capacity: u32,
     n_hir_nodes: u32,
+    artifact_flags: u32,
 }
+
+pub(crate) const WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT: u32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -207,6 +227,8 @@ struct ResidentWasmBuffers {
     _wasm_agg_scan_prefix_b_buf: LaniusBuffer<u32>,
     _hir_enum_match_record_buf: LaniusBuffer<u32>,
     wasm_const_value_record_buf: LaniusBuffer<u32>,
+    call_relocations: ResidentWasmCallRelocations,
+    object_inputs: WasmObjectInputBuffers,
     out_buf: LaniusBuffer<u32>,
     packed_out_buf: LaniusBuffer<u32>,
     status_buf: LaniusBuffer<u32>,
@@ -388,6 +410,18 @@ pub struct GpuWasmCodeGenerator {
     module_status_pass: LazyWasmPass,
     pass: LazyWasmPass,
     pack_pass: LazyWasmPass,
+    call_reloc_scan_local_pass: LazyWasmPass,
+    call_reloc_scatter_pass: LazyWasmPass,
+    object_functions_pass: LazyWasmPass,
+    object_function_bodies_pass: LazyWasmPass,
+    object_symbols_pass: LazyWasmPass,
+    object_bytes_pass: LazyWasmPass,
+    object_metadata_pass: LazyWasmPass,
+    link_module_pass: LazyWasmPass,
+    link_symbol_clear_pass: LazyWasmPass,
+    link_symbol_insert_pass: LazyWasmPass,
+    link_symbol_define_pass: LazyWasmPass,
+    link_relocate_pass: LazyWasmPass,
     pipeline_cache_dirty: Arc<AtomicBool>,
     buffers: Mutex<Option<ResidentWasmBuffers>>,
 }
@@ -898,6 +932,78 @@ impl GpuWasmCodeGenerator {
             "codegen/pack_output.spv",
             "codegen/pack_output.reflect.json"
         );
+        let call_reloc_scan_local_pass = wasm_pass!(
+            "call_reloc_scan_local",
+            "codegen_wasm_call_reloc_scan_local",
+            "codegen/wasm/object/call_reloc_scan_local.spv",
+            "codegen/wasm/object/call_reloc_scan_local.reflect.json"
+        );
+        let call_reloc_scatter_pass = wasm_pass!(
+            "call_reloc_scatter",
+            "codegen_wasm_call_reloc_scatter",
+            "codegen/wasm/object/call_reloc_scatter.spv",
+            "codegen/wasm/object/call_reloc_scatter.reflect.json"
+        );
+        let object_functions_pass = wasm_pass!(
+            "object_functions",
+            "codegen_wasm_object_functions",
+            "codegen/wasm/object/functions.spv",
+            "codegen/wasm/object/functions.reflect.json"
+        );
+        let object_function_bodies_pass = wasm_pass!(
+            "object_function_bodies",
+            "codegen_wasm_object_function_bodies",
+            "codegen/wasm/object/function_bodies.spv",
+            "codegen/wasm/object/function_bodies.reflect.json"
+        );
+        let object_symbols_pass = wasm_pass!(
+            "object_symbols",
+            "codegen_wasm_object_symbols",
+            "codegen/wasm/object/symbols.spv",
+            "codegen/wasm/object/symbols.reflect.json"
+        );
+        let object_bytes_pass = wasm_pass!(
+            "object_bytes",
+            "codegen_wasm_object_bytes",
+            "codegen/wasm/object/bytes.spv",
+            "codegen/wasm/object/bytes.reflect.json"
+        );
+        let object_metadata_pass = wasm_pass!(
+            "object_metadata",
+            "codegen_wasm_object_metadata",
+            "codegen/wasm/object/metadata.spv",
+            "codegen/wasm/object/metadata.reflect.json"
+        );
+        let link_module_pass = wasm_pass!(
+            "link_module",
+            "codegen_wasm_link_module",
+            "codegen/wasm/link/module.spv",
+            "codegen/wasm/link/module.reflect.json"
+        );
+        let link_symbol_clear_pass = wasm_pass!(
+            "link_symbol_clear",
+            "codegen_wasm_link_symbol_clear",
+            "codegen/wasm/link/symbol_clear.spv",
+            "codegen/wasm/link/symbol_clear.reflect.json"
+        );
+        let link_symbol_insert_pass = wasm_pass!(
+            "link_symbol_insert",
+            "codegen_wasm_link_symbol_insert",
+            "codegen/wasm/link/symbol_insert.spv",
+            "codegen/wasm/link/symbol_insert.reflect.json"
+        );
+        let link_symbol_define_pass = wasm_pass!(
+            "link_symbol_define",
+            "codegen_wasm_link_symbol_define",
+            "codegen/wasm/link/symbol_define.spv",
+            "codegen/wasm/link/symbol_define.reflect.json"
+        );
+        let link_relocate_pass = wasm_pass!(
+            "link_relocate",
+            "codegen_wasm_link_relocate",
+            "codegen/wasm/link/relocate.spv",
+            "codegen/wasm/link/relocate.reflect.json"
+        );
         let generator = Self {
             agg_layout_clear_pass: join_wasm_pass!(agg_layout_clear_pass, "agg_layout_clear"),
             agg_layout_pass: join_wasm_pass!(agg_layout_pass, "agg_layout"),
@@ -1170,6 +1276,24 @@ impl GpuWasmCodeGenerator {
             module_status_pass: join_wasm_pass!(module_status_pass, "module_status"),
             pass: join_wasm_pass!(pass, "module"),
             pack_pass: join_wasm_pass!(pack_pass, "pack"),
+            call_reloc_scan_local_pass: join_wasm_pass!(
+                call_reloc_scan_local_pass,
+                "call_reloc_scan_local"
+            ),
+            call_reloc_scatter_pass: join_wasm_pass!(call_reloc_scatter_pass, "call_reloc_scatter"),
+            object_functions_pass: join_wasm_pass!(object_functions_pass, "object_functions"),
+            object_function_bodies_pass: join_wasm_pass!(
+                object_function_bodies_pass,
+                "object_function_bodies"
+            ),
+            object_symbols_pass: join_wasm_pass!(object_symbols_pass, "object_symbols"),
+            object_bytes_pass: join_wasm_pass!(object_bytes_pass, "object_bytes"),
+            object_metadata_pass: join_wasm_pass!(object_metadata_pass, "object_metadata"),
+            link_module_pass: join_wasm_pass!(link_module_pass, "link_module"),
+            link_symbol_clear_pass: join_wasm_pass!(link_symbol_clear_pass, "link_symbol_clear"),
+            link_symbol_insert_pass: join_wasm_pass!(link_symbol_insert_pass, "link_symbol_insert"),
+            link_symbol_define_pass: join_wasm_pass!(link_symbol_define_pass, "link_symbol_define"),
+            link_relocate_pass: join_wasm_pass!(link_relocate_pass, "link_relocate"),
             pipeline_cache_dirty,
             buffers: Mutex::new(None),
         };
@@ -1279,10 +1403,30 @@ impl GpuWasmCodeGenerator {
             &self.module_status_pass,
             &self.pass,
             &self.pack_pass,
+            &self.call_reloc_scan_local_pass,
+            &self.call_reloc_scatter_pass,
+            &self.object_functions_pass,
+            &self.object_function_bodies_pass,
+            &self.object_symbols_pass,
+            &self.object_bytes_pass,
+            &self.object_metadata_pass,
+            &self.link_module_pass,
+            &self.link_symbol_clear_pass,
+            &self.link_symbol_insert_pass,
+            &self.link_symbol_define_pass,
+            &self.link_relocate_pass,
         ];
         for pass in passes {
             pass.pipeline()?;
-            if crate::gpu::env::env_bool_truthy("LANIUS_WASM_PREWARM_PERSIST_INCREMENTAL", true) {
+            // Slow pipelines checkpoint themselves in `LazyWasmPass::pipeline`.
+            // Persisting after every cheap pass serializes and hashes the full
+            // driver cache repeatedly; the constructor performs one final
+            // persistence after this batch instead. Keep the per-pass mode as
+            // an explicit recovery/debugging opt-in.
+            if crate::gpu::env::env_bool_truthy(
+                "LANIUS_WASM_PREWARM_PERSIST_INCREMENTAL",
+                false,
+            ) {
                 self.persist_pipeline_cache_if_dirty(&gpu.device);
             }
         }

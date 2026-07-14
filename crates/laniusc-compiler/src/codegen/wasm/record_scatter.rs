@@ -7,6 +7,7 @@ impl GpuWasmCodeGenerator {
         bufs: &ResidentWasmBuffers,
         recorded: &RecordedWasmCodegen,
         features: WasmBodyFeatures,
+        body_len: u32,
     ) -> Result<()> {
         let output_capacity = recorded.output_capacity;
         let token_capacity = recorded.token_capacity;
@@ -470,7 +471,16 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.phase2.dispatch.hir_enum_match_records.done");
 
+        trace_wasm_codegen("record.phase2.dispatch.call_relocations.start");
+        self.record_wasm_call_relocations(encoder, &bufs.call_relocations, body_len)?;
+        trace_wasm_codegen("record.phase2.dispatch.call_relocations.done");
+
         trace_wasm_codegen("record.phase2.dispatch.module_type_lengths.start");
+        // This buffer held sparse token-indexed reachability flags in phase
+        // one and is reused below as a dense slot-indexed type-length array.
+        // The length pass dispatches only live function slots, so clear stale
+        // token rows before the subsequent full-capacity prefix scan.
+        encoder.clear_buffer(&bufs._wasm_func_flag_buf, 0, None);
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.module_type_dispatch_args"),
             timestamp_writes: None,
@@ -565,6 +575,13 @@ impl GpuWasmCodeGenerator {
 
         trace_wasm_codegen("record.phase2.copy_status.start");
         encoder.copy_buffer_to_buffer(&bufs.status_buf, 0, &bufs.status_readback, 0, 16);
+        encoder.copy_buffer_to_buffer(
+            &bufs.call_relocations.status_buf,
+            0,
+            &bufs.status_readback,
+            16,
+            16,
+        );
         if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
             encoder.copy_buffer_to_buffer(
                 &bufs.body_plan_buf,

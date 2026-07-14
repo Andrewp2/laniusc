@@ -134,6 +134,15 @@ a {
   gap: 2rem;
 }
 
+.logo-link {
+  display: block;
+  flex-shrink: 0;
+}
+
+.logo-link img {
+  display: block;
+}
+
 h1 {
   font-family:
     "Oxanium",

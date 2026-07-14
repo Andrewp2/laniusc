@@ -3,9 +3,9 @@
 // This pass runs after parser/HIR type metadata and type-expression refs have
 // been built. It projects each type alias declaration by consuming the parser's
 // explicit alias-target type record and the semantic type-ref record on that
-// node. Alias-chain propagation is handled by scheduling this single-hop pass
-// repeatedly, keeping alias work as separate GPU map passes instead of a
-// per-lane in-shader chain walk. It does not inspect source bytes, token
+// node. Declaration-only alias chains are collapsed by the preceding parallel
+// pointer-jump passes. Generic substitution remains a separate projection
+// concern. It does not inspect source bytes, token
 // spellings, token kinds, token neighborhoods, or parse-tree child/sibling
 // walks.
 
@@ -28,6 +28,7 @@ StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> alias_root_decl;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 
@@ -145,9 +146,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(name_token))
         return;
 
+    uint root_decl = alias_root_decl[decl_i];
+    uint root_node = root_decl < active_decl_count() &&
+        decl_kind[root_decl] == HIR_ITEM_KIND_TYPE_ALIAS &&
+        decl_namespace[root_decl] == HIR_ITEM_NAMESPACE_TYPE
+        ? decl_hir_node[root_decl]
+        : decl_hir_node[decl_i];
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
-    if (!alias_target_type_ref(decl_hir_node[decl_i], tag, payload))
+    if (!alias_target_type_ref(root_node, tag, payload))
     {
         module_type_path_status[name_token] = PATH_RESOLVE_STATUS_UNSUPPORTED_ALIAS;
         return;

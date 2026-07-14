@@ -1123,18 +1123,14 @@ impl ParserBuffers {
             tree_capacity as usize,
         );
 
-        let hir_type_path_leaf_node = if reuse_semantic_debug_buffers {
-            // `hir_semantic_subtree_end` is read only by `hir_semantic_nav`.
-            // HIR type metadata starts later, so production can reuse this
-            // debug navigation buffer for the durable type leaf record.
-            alias_storage_buffer::<u32, u32>(&hir_semantic_subtree_end, tree_capacity as usize)
-        } else {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_type_path_leaf_node",
-                tree_capacity as usize,
-            )
-        };
+        // Dense subtree bounds remain live through type checking, where they
+        // define flattened recursive type comparisons. Keep the later durable
+        // type-leaf relation in distinct storage even in production mode.
+        let hir_type_path_leaf_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_type_path_leaf_node",
+            tree_capacity as usize,
+        );
         let hir_bound_path_owner_by_leaf = storage_rw_for_array::<u32>(
             device,
             "parser.hir_bound_path_owner_by_leaf",

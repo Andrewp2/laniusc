@@ -1,4 +1,8 @@
-use super::super::*;
+use super::{
+    super::*,
+    dependency_visibility::DependencyVisibilityState,
+    projection::TypeAliasProjection,
+};
 
 /// All bind groups recorded by the module/path pass family.
 ///
@@ -31,6 +35,9 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) sort_module_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_dependency_module_lookup: Option<wgpu::BindGroup>,
+    pub(in crate::type_checker) build_dependency_module_lookup: Option<wgpu::BindGroup>,
+    pub(in crate::type_checker) resolve_dependency_imports: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
     pub(in crate::type_checker) seed_import_edge_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) import_edge_key_radix_dispatch: wgpu::BindGroup,
@@ -93,7 +100,7 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) clear_type_path_types: wgpu::BindGroup,
     pub(in crate::type_checker) project_type_paths: wgpu::BindGroup,
     pub(in crate::type_checker) validate_type_paths: wgpu::BindGroup,
-    pub(in crate::type_checker) project_type_aliases: wgpu::BindGroup,
+    pub(in crate::type_checker) type_aliases: Box<TypeAliasProjection>,
     pub(in crate::type_checker) project_type_instances: wgpu::BindGroup,
     pub(in crate::type_checker) mark_value_call_paths: wgpu::BindGroup,
     pub(in crate::type_checker) project_value_paths: wgpu::BindGroup,
@@ -158,6 +165,11 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) import_owner_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_module_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_target_module_id: LaniusBuffer<u32>,
+    pub(in crate::type_checker) import_target_dependency_module_id: Option<LaniusBuffer<u32>>,
+    pub(in crate::type_checker) dependency_interfaces: Option<GpuDependencyInterfaceState>,
+    pub(in crate::type_checker) dependency_visibility: Option<Box<DependencyVisibilityState>>,
+    pub(in crate::type_checker) dependency_module_params:
+        Option<LaniusBuffer<DependencyInterfaceModuleParams>>,
     pub(in crate::type_checker) import_status: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_edge_key_order: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_edge_key_order_tmp: LaniusBuffer<u32>,
@@ -195,6 +207,7 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) interface_public_decl_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) interface_public_decl_local_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) interface_public_decl_index_by_local: LaniusBuffer<u32>,
+    pub(in crate::type_checker) interface_public_decl_index_by_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_visible_type_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_visible_value_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) import_visible_type_prefix: LaniusBuffer<u32>,

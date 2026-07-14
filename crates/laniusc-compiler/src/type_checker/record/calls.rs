@@ -12,6 +12,14 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
     hir_active_dispatch_args: &wgpu::Buffer,
     _token_hir_active_dispatch_args: &wgpu::Buffer,
     groups: &CallBindGroups,
+    dependency_params: Option<(
+        &PassData,
+        &wgpu::BindGroup,
+        &PassData,
+        &wgpu::BindGroup,
+        &PassData,
+        &wgpu::BindGroup,
+    )>,
 ) -> Result<()> {
     let lookup_work = token_capacity
         .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
@@ -56,6 +64,24 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         "type_check.calls.param_types",
         n_work,
     )?;
+    if let Some((project_calls, project_calls_group, project_params, project_params_group, _, _)) =
+        dependency_params
+    {
+        record_compute_indirect(
+            encoder,
+            project_calls,
+            project_calls_group,
+            "type_check.dependencies.project_calls",
+            hir_active_dispatch_args,
+        )?;
+        record_compute_indirect(
+            encoder,
+            project_params,
+            project_params_group,
+            "type_check.dependencies.project_call_params",
+            hir_active_dispatch_args,
+        )?;
+    }
     record_counted_u32_scan_bind_groups_with_passes(
         passes,
         encoder,
@@ -71,6 +97,15 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         "type_check.calls.scatter_compact_hir_params",
         hir_active_dispatch_args,
     )?;
+    if let Some((_, _, _, _, scatter_params, scatter_group)) = dependency_params {
+        record_compute_indirect(
+            encoder,
+            scatter_params,
+            scatter_group,
+            "type_check.dependencies.scatter_call_params",
+            hir_active_dispatch_args,
+        )?;
+    }
     record_compute_indirect(
         encoder,
         &passes.calls_intrinsics,

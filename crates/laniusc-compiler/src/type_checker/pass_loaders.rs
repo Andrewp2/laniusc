@@ -17,7 +17,7 @@ impl TypeCheckPasses {
                 ))
             } else {
                 None
-        };
+            };
         Ok(Self {
             interface_public_decls_clear: pass!(
                 "type_check_interface_public_decls_00_clear",
@@ -26,6 +26,126 @@ impl TypeCheckPasses {
             interface_public_decls_map: pass!(
                 "type_check_interface_public_decls_01_map",
                 "type_checker/interface/public_decls/01_map"
+            ),
+            interface_type_topology_init: pass!(
+                "type_check_interface_type_topology_00_init",
+                "type_checker/interface/type_topology/00_init"
+            ),
+            interface_type_topology_attach_unary: pass!(
+                "type_check_interface_type_topology_01_attach_unary",
+                "type_checker/interface/type_topology/01_attach_unary"
+            ),
+            interface_type_topology_seed_declarations: pass!(
+                "type_check_interface_type_topology_02_seed_declarations",
+                "type_checker/interface/type_topology/02_seed_declarations"
+            ),
+            interface_type_topology_seed_params: pass!(
+                "type_check_interface_type_topology_02b_seed_params",
+                "type_checker/interface/type_topology/02b_seed_params"
+            ),
+            interface_type_topology_seed_fields: pass!(
+                "type_check_interface_type_topology_02c_seed_fields",
+                "type_checker/interface/type_topology/02c_seed_fields"
+            ),
+            interface_type_topology_seed_variants: pass!(
+                "type_check_interface_type_topology_02d_seed_variants",
+                "type_checker/interface/type_topology/02d_seed_variants"
+            ),
+            interface_type_topology_root_init: pass!(
+                "type_check_interface_type_topology_03_root_init",
+                "type_checker/interface/type_topology/03_root_init"
+            ),
+            interface_type_topology_root_step: pass!(
+                "type_check_interface_type_topology_04_root_step",
+                "type_checker/interface/type_topology/04_root_step"
+            ),
+            interface_type_topology_mark_reverse: pass!(
+                "type_check_interface_type_topology_05_mark_reverse",
+                "type_checker/interface/type_topology/05_mark_reverse"
+            ),
+            interface_type_topology_scatter: pass!(
+                "type_check_interface_type_topology_06_scatter",
+                "type_checker/interface/type_topology/06_scatter"
+            ),
+            interface_type_topology_validate: pass!(
+                "type_check_interface_type_topology_07_validate",
+                "type_checker/interface/type_topology/07_validate"
+            ),
+            interface_type_topology_edge_counts: pass!(
+                "type_check_interface_type_topology_08_edge_counts",
+                "type_checker/interface/type_topology/08_edge_counts"
+            ),
+            interface_type_topology_edge_scatter: pass!(
+                "type_check_interface_type_topology_09_edge_scatter",
+                "type_checker/interface/type_topology/09_edge_scatter"
+            ),
+            interface_type_topology_resolve_local_decl: pass!(
+                "type_check_interface_type_topology_10_resolve_local_decl",
+                "type_checker/interface/type_topology/10_resolve_local_decl"
+            ),
+            interface_type_topology_classify_path: pass!(
+                "type_check_interface_type_topology_11_classify_path",
+                "type_checker/interface/type_topology/11_classify_path"
+            ),
+            interface_type_topology_type_records: pass!(
+                "type_check_interface_type_topology_12_type_records",
+                "type_checker/interface/type_topology/12_type_records"
+            ),
+            interface_type_topology_array_lengths: pass!(
+                "type_check_interface_type_topology_13_array_lengths",
+                "type_checker/interface/type_topology/13_array_lengths"
+            ),
+            interface_signature_flags: pass!(
+                "type_check_interface_signature_00_flags",
+                "type_checker/interface/signature/00_flags"
+            ),
+            interface_signature_totals: pass!(
+                "type_check_interface_signature_01_totals",
+                "type_checker/interface/signature/01_totals"
+            ),
+            interface_signature_direct_types: pass!(
+                "type_check_interface_signature_01b_direct_types",
+                "type_checker/interface/signature/01b_direct_types"
+            ),
+            interface_signature_synthetic_types: pass!(
+                "type_check_interface_signature_01c_synthetic_types",
+                "type_checker/interface/signature/01c_synthetic_types"
+            ),
+            interface_signature_param_edges: pass!(
+                "type_check_interface_signature_02_param_edges",
+                "type_checker/interface/signature/02_param_edges"
+            ),
+            interface_signature_variant_payload_edges: pass!(
+                "type_check_interface_signature_02b_variant_payload_edges",
+                "type_checker/interface/signature/02b_variant_payload_edges"
+            ),
+            interface_signature_return_edges: pass!(
+                "type_check_interface_signature_03_return_edges",
+                "type_checker/interface/signature/03_return_edges"
+            ),
+            interface_members_variant_counts: pass!(
+                "type_check_interface_members_00_variant_counts",
+                "type_checker/interface/members/00_variant_counts"
+            ),
+            interface_members_generic_counts: pass!(
+                "type_check_interface_members_00b_generic_counts",
+                "type_checker/interface/members/00b_generic_counts"
+            ),
+            interface_members_counts: pass!(
+                "type_check_interface_members_01_counts",
+                "type_checker/interface/members/01_counts"
+            ),
+            interface_members_scatter_hir: pass!(
+                "type_check_interface_members_02_scatter_hir",
+                "type_checker/interface/members/02_scatter_hir"
+            ),
+            interface_members_scatter_generic: pass!(
+                "type_check_interface_members_03_scatter_generic",
+                "type_checker/interface/members/03_scatter_generic"
+            ),
+            interface_members_normalize_types: pass!(
+                "type_check_interface_members_04_normalize_types",
+                "type_checker/interface/members/04_normalize_types"
             ),
             interface_identity_sizes: pass!(
                 "type_check_interface_00_identity_sizes",
@@ -183,6 +303,98 @@ impl TypeCheckPasses {
                 "type_check_modules_04_validate_modules",
                 "type_checker/modules/04_validate_modules"
             ),
+            dependencies: Box::new(DependencyPasses {
+                clear_module_lookup: pass!(
+                    "type_check_dependencies_00a_clear_module_lookup",
+                    "type_checker/dependencies/00a_clear_module_lookup"
+                ),
+                build_module_lookup: pass!(
+                    "type_check_dependencies_00_build_module_lookup",
+                    "type_checker/dependencies/00_build_module_lookup"
+                ),
+                resolve_imports: pass!(
+                    "type_check_dependencies_01_resolve_imports",
+                    "type_checker/dependencies/01_resolve_imports"
+                ),
+                count_import_visibility: pass!(
+                    "type_check_dependencies_02_count_import_visibility",
+                    "type_checker/dependencies/02_count_import_visibility"
+                ),
+                scatter_import_visibility: pass!(
+                    "type_check_dependencies_03_scatter_import_visibility",
+                    "type_checker/dependencies/03_scatter_import_visibility"
+                ),
+                clear_visible_lookup: pass!(
+                    "type_check_dependencies_04_clear_visible_lookup",
+                    "type_checker/dependencies/04_clear_visible_lookup"
+                ),
+                build_visible_lookup: pass!(
+                    "type_check_dependencies_05_build_visible_lookup",
+                    "type_checker/dependencies/05_build_visible_lookup"
+                ),
+                resolve_paths: pass!(
+                    "type_check_dependencies_06_resolve_paths",
+                    "type_checker/dependencies/06_resolve_paths"
+                ),
+                project_calls: pass!(
+                    "type_check_dependencies_07_project_calls",
+                    "type_checker/dependencies/07_project_calls"
+                ),
+                project_call_params: pass!(
+                    "type_check_dependencies_07a_project_call_params",
+                    "type_checker/dependencies/07a_project_call_params"
+                ),
+                scatter_call_params: pass!(
+                    "type_check_dependencies_07b_scatter_call_params",
+                    "type_checker/dependencies/07b_scatter_call_params"
+                ),
+                validate_call_args: pass!(
+                    "type_check_dependencies_08_validate_call_args",
+                    "type_checker/dependencies/08_validate_call_args"
+                ),
+                validate_call_results: pass!(
+                    "type_check_dependencies_08a_validate_call_results",
+                    "type_checker/dependencies/08a_validate_call_results"
+                ),
+                validate_call_type_args: pass!(
+                    "type_check_dependencies_08b_validate_call_type_args",
+                    "type_checker/dependencies/08b_validate_call_type_args"
+                ),
+                canonical_types: Box::new(DependencyCanonicalTypePasses {
+                    init_canonical_type_roots: Box::new(pass!(
+                        "type_check_dependencies_09_init_canonical_type_roots",
+                        "type_checker/dependencies/09_init_canonical_type_roots"
+                    )),
+                    jump_canonical_type_roots: Box::new(pass!(
+                        "type_check_dependencies_10_jump_canonical_type_roots",
+                        "type_checker/dependencies/10_jump_canonical_type_roots"
+                    )),
+                    init_canonical_type_subtree_start: Box::new(pass!(
+                        "type_check_dependencies_09a_init_canonical_type_subtree_start",
+                        "type_checker/dependencies/09a_init_canonical_type_subtree_start"
+                    )),
+                    jump_canonical_type_subtree_start: Box::new(pass!(
+                        "type_check_dependencies_10a_jump_canonical_type_subtree_start",
+                        "type_checker/dependencies/10a_jump_canonical_type_subtree_start"
+                    )),
+                    project_types: Box::new(pass!(
+                        "type_check_dependencies_11_project_types",
+                        "type_checker/dependencies/11_project_types"
+                    )),
+                    clear_declaration_generic_arity: Box::new(pass!(
+                        "type_check_dependencies_12_clear_declaration_generic_arity",
+                        "type_checker/dependencies/12_clear_declaration_generic_arity"
+                    )),
+                    count_declaration_generic_arity: Box::new(pass!(
+                        "type_check_dependencies_13_count_declaration_generic_arity",
+                        "type_checker/dependencies/13_count_declaration_generic_arity"
+                    )),
+                    project_type_instances: Box::new(pass!(
+                        "type_check_dependencies_14_project_type_instances",
+                        "type_checker/dependencies/14_project_type_instances"
+                    )),
+                }),
+            }),
             modules_resolve_imports: pass!(
                 "type_check_modules_05_resolve_imports",
                 "type_checker/modules/05_resolve_imports"
@@ -303,10 +515,68 @@ impl TypeCheckPasses {
                 "type_check_modules_10e3_validate_type_paths",
                 "type_checker/modules/10e3_validate_type_paths"
             ),
-            modules_project_type_aliases: pass!(
-                "type_check_modules_10e2_project_type_aliases",
-                "type_checker/modules/10e2_project_type_aliases"
-            ),
+            type_aliases: Box::new(TypeAliasPasses {
+                clear_forwarding: pass!(
+                    "type_check_modules_10e0_clear_type_alias_forwarding",
+                    "type_checker/modules/10e0_clear_type_alias_forwarding"
+                ),
+                init_forwarding: pass!(
+                    "type_check_modules_10e0a_init_type_alias_forwarding",
+                    "type_checker/modules/10e0a_init_type_alias_forwarding"
+                ),
+                validate_forwarding_args: pass!(
+                    "type_check_modules_10e0b_validate_type_alias_forwarding_args",
+                    "type_checker/modules/10e0b_validate_type_alias_forwarding_args"
+                ),
+                init_roots: pass!(
+                    "type_check_modules_10e1_init_type_alias_roots",
+                    "type_checker/modules/10e1_init_type_alias_roots"
+                ),
+                jump_roots: pass!(
+                    "type_check_modules_10e1a_jump_type_alias_roots",
+                    "type_checker/modules/10e1a_jump_type_alias_roots"
+                ),
+                clear_equivalence: pass!(
+                    "type_check_modules_10e0c_clear_type_alias_equivalence",
+                    "type_checker/modules/10e0c_clear_type_alias_equivalence"
+                ),
+                init_decl_edges: pass!(
+                    "type_check_modules_10e0d_init_type_alias_decl_edges",
+                    "type_checker/modules/10e0d_init_type_alias_decl_edges"
+                ),
+                init_arg_edges: pass!(
+                    "type_check_modules_10e0e_init_type_alias_arg_edges",
+                    "type_checker/modules/10e0e_init_type_alias_arg_edges"
+                ),
+                hook_equivalence: pass!(
+                    "type_check_modules_10e0f_hook_type_alias_equivalence",
+                    "type_checker/modules/10e0f_hook_type_alias_equivalence"
+                ),
+                jump_equivalence: pass!(
+                    "type_check_modules_10e0g_jump_type_alias_equivalence",
+                    "type_checker/modules/10e0g_jump_type_alias_equivalence"
+                ),
+                select_generic_sources: pass!(
+                    "type_check_modules_10e0h_select_type_alias_generic_sources",
+                    "type_checker/modules/10e0h_select_type_alias_generic_sources"
+                ),
+                select_concrete_sources: pass!(
+                    "type_check_modules_10e0i_select_type_alias_concrete_sources",
+                    "type_checker/modules/10e0i_select_type_alias_concrete_sources"
+                ),
+                finalize_equivalence: pass!(
+                    "type_check_modules_10e0j_finalize_type_alias_equivalence",
+                    "type_checker/modules/10e0j_finalize_type_alias_equivalence"
+                ),
+                project_instances: pass!(
+                    "type_check_modules_10e0k_project_type_alias_instances",
+                    "type_checker/modules/10e0k_project_type_alias_instances"
+                ),
+                project: pass!(
+                    "type_check_modules_10e2_project_type_aliases",
+                    "type_checker/modules/10e2_project_type_aliases"
+                ),
+            }),
             modules_project_type_instances: pass!(
                 "type_check_modules_10k_project_type_instances",
                 "type_checker/modules/10k_project_type_instances"
@@ -439,6 +709,18 @@ impl TypeCheckPasses {
                 "type_check_type_instances_01g_hash_arg_rows",
                 "type_checker/type/instances/01g_hash_arg_rows"
             ),
+            type_instances_clear_semantic_type_rows: Box::new(pass!(
+                "type_check_type_instances_01h_clear_semantic_type_rows",
+                "type_checker/type/instances/01h_clear_semantic_type_rows"
+            )),
+            type_instances_mark_semantic_type_rows: Box::new(pass!(
+                "type_check_type_instances_01i_mark_semantic_type_rows",
+                "type_checker/type/instances/01i_mark_semantic_type_rows"
+            )),
+            type_instances_scatter_semantic_type_rows: Box::new(pass!(
+                "type_check_type_instances_01j_scatter_semantic_type_rows",
+                "type_checker/type/instances/01j_scatter_semantic_type_rows"
+            )),
             type_instances_decl_refs: pass!(
                 "type_check_type_instances_01f_decl_refs",
                 "type_checker/type/instances/01f_decl_refs"
@@ -570,6 +852,10 @@ impl TypeCheckPasses {
                 "type_check_conditions_aggregate_args",
                 "type_checker/conditions/aggregate_args"
             ),
+            conditions_type_subtree: Box::new(pass!(
+                "type_check_conditions_type_subtree",
+                "type_checker/conditions/type_subtree"
+            )),
             control_hir: pass!("type_check_control_hir", "type_checker/control/hir"),
             scope_hir: pass!("type_check_scope_hir", "type_checker/scope/hir"),
             calls_clear: pass!(
@@ -651,6 +937,10 @@ impl TypeCheckPasses {
             calls_validate_generic_claims: pass!(
                 "type_check_calls_03a4_validate_generic_claims",
                 "type_checker/calls/03a4_validate_generic_claims"
+            ),
+            calls_clear_generic_claim_type_args: pass!(
+                "type_check_calls_03a4a_clear_generic_claim_type_args",
+                "type_checker/calls/03a4a_clear_generic_claim_type_args"
             ),
             calls_mark_required_generics: pass!(
                 "type_check_calls_03a6_mark_required_generics",

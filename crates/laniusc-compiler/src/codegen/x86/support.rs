@@ -10,6 +10,15 @@ use log::warn;
 use wgpu::util::DeviceExt;
 
 use super::{
+    GPU_X86_OBJECT_VERSION,
+    GpuX86DependencySymbolBuffers,
+    GpuX86ObjectSection,
+    GpuX86ObjectSymbolRecord,
+    GpuX86RelocatableObject,
+    GpuX86RelocationKind,
+    GpuX86RelocationRecord,
+    GpuX86RelocationTargetKind,
+    RecordedX86ArtifactMode,
     RecordedX86Codegen,
     X86_ERR_HIR_TREE_SHAPE,
     X86_ERR_INTRINSIC_CALLS,
@@ -145,6 +154,15 @@ impl From<wgpu::Buffer> for RetainedX86Buffer {
 impl From<PooledStorageBuffer> for RetainedX86Buffer {
     fn from(buffer: PooledStorageBuffer) -> Self {
         Self::Pooled(buffer)
+    }
+}
+
+impl RetainedX86Buffer {
+    fn buffer(&self) -> &wgpu::Buffer {
+        match self {
+            Self::Plain(buffer) => buffer,
+            Self::Pooled(buffer) => buffer,
+        }
     }
 }
 
@@ -1000,6 +1018,9 @@ pub(super) fn read_x86_output(
     queue: &wgpu::Queue,
     recorded: &RecordedX86Codegen,
 ) -> Result<Vec<u8>> {
+    if recorded.artifact_mode != RecordedX86ArtifactMode::Executable {
+        bail!("recorded x86 artifact is relocatable object work, not an executable");
+    }
     let status_start = recorded.output_status_offset;
     let status_end = status_start.saturating_add(16);
     let total_readback_bytes = status_end;
@@ -1101,6 +1122,319 @@ pub(super) fn read_x86_output(
         return read_exact_x86_output_bytes(device, queue, recorded, len);
     }
     Err(anyhow::anyhow!("x86 emitter output bytes were unavailable"))
+}
+
+/// Reads normalized section-relative rows emitted by the GPU relocation pass.
+pub(super) fn read_x86_object(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    recorded: &RecordedX86Codegen,
+    library_id: u32,
+    unit_id: u32,
+    dependency_symbols: Option<GpuX86DependencySymbolBuffers<'_>>,
+) -> Result<GpuX86RelocatableObject> {
+    if recorded.artifact_mode != RecordedX86ArtifactMode::RelocatableObject {
+        bail!("recorded x86 artifact is executable work, not a relocatable object");
+    }
+    let metadata_slice = recorded.object_metadata_readback.slice(..68);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &metadata_slice,
+        "codegen.x86.object_metadata",
+        x86_readback_timeout(),
+    )?;
+    let metadata: [u32; 17] = {
+        let data = metadata_slice.get_mapped_range();
+        let words = crate::gpu::readback::read_u32_words(&data, "x86 object metadata");
+        drop(data);
+        recorded.object_metadata_readback.unmap();
+        words?
+    };
+    let text_len = metadata[0] as usize;
+    let rodata_len = metadata[1] as usize;
+    let relocation_count = metadata[2] as usize;
+    let encode_status = &metadata[3..7];
+    let reloc_status = &metadata[7..11];
+    let layout_status = &metadata[11..15];
+    let local_symbol_count = metadata[15] as usize;
+    let entry_offset = match metadata[16] {
+        0 => None,
+        1 => Some(0),
+        count => bail!("x86 object records {count} entrypoints"),
+    };
+    let section_len = text_len
+        .checked_add(rodata_len)
+        .ok_or_else(|| anyhow::anyhow!("x86 object section length overflows"))?;
+    let file_len = 0x78usize
+        .checked_add(section_len)
+        .ok_or_else(|| anyhow::anyhow!("x86 object file span overflows"))?;
+    let metadata_ok = encode_status == [1, 0, u32::MAX, text_len as u32]
+        && reloc_status == [1, 0, u32::MAX, relocation_count as u32]
+        && layout_status == [1, 0, u32::MAX, file_len as u32]
+        && file_len <= recorded.output_capacity;
+    if !metadata_ok {
+        if let Some(status_trace_readback) = &recorded.status_trace_readback {
+            if let Err(err) = dump_x86_status_trace(device, status_trace_readback) {
+                warn!("failed to read x86 object status trace: {err:#}");
+            }
+        }
+        bail!(
+            "x86 object GPU status is invalid: text={text_len} rodata={rodata_len} relocations={relocation_count} encode={encode_status:?} reloc={reloc_status:?} layout={layout_status:?}"
+        );
+    }
+
+    let section_copy_bytes = section_len.div_ceil(4).saturating_mul(4) as u64;
+    let section_readback = pooled_readback_bytes(
+        device,
+        "rb.codegen.x86.object_sections.exact",
+        section_copy_bytes.max(1),
+    );
+    let relocation_bytes = relocation_count
+        .checked_mul(3)
+        .and_then(|words| words.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("x86 object relocation readback length overflows"))?;
+    let dependency_symbol_count = dependency_symbols
+        .as_ref()
+        .map_or(0usize, |symbols| symbols.declaration_count as usize);
+    let dependency_symbol_bytes = dependency_symbol_count
+        .checked_mul(3)
+        .and_then(|words| words.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("x86 dependency symbol readback length overflows"))?;
+    let local_symbol_bytes = local_symbol_count
+        .checked_mul(4)
+        .and_then(|words| words.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("x86 local symbol readback length overflows"))?;
+    let relocation_and_symbol_bytes = relocation_bytes
+        .checked_add(dependency_symbol_bytes)
+        .and_then(|bytes| bytes.checked_add(local_symbol_bytes))
+        .ok_or_else(|| anyhow::anyhow!("x86 object metadata readback length overflows"))?;
+    let relocation_readback = pooled_readback_bytes(
+        device,
+        "rb.codegen.x86.object_relocations.exact",
+        (relocation_and_symbol_bytes as u64).max(1),
+    );
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("codegen.x86.object_readback.exact.encoder"),
+    });
+    if section_copy_bytes != 0 {
+        encoder.copy_buffer_to_buffer(
+            &recorded.out_buf,
+            0x78,
+            &section_readback,
+            0,
+            section_copy_bytes,
+        );
+    }
+    if relocation_count != 0 {
+        let one_array_bytes = (relocation_count * 4) as u64;
+        for (source, offset) in [
+            (&recorded.object_reloc_kind, 0u64),
+            (&recorded.object_reloc_site_offset, one_array_bytes),
+            (&recorded.object_reloc_target_offset, one_array_bytes * 2),
+        ] {
+            encoder.copy_buffer_to_buffer(
+                source.buffer(),
+                0,
+                &relocation_readback,
+                offset,
+                one_array_bytes,
+            );
+        }
+    }
+    if let Some(symbols) = &dependency_symbols {
+        if dependency_symbol_count != 0 {
+            let one_array_bytes = (dependency_symbol_count * 4) as u64;
+            let base = relocation_bytes as u64;
+            for (source, offset) in [
+                (symbols.declaration_library_id, base),
+                (symbols.declaration_unit_id, base + one_array_bytes),
+                (symbols.declaration_local_index, base + one_array_bytes * 2),
+            ] {
+                encoder.copy_buffer_to_buffer(
+                    source,
+                    0,
+                    &relocation_readback,
+                    offset,
+                    one_array_bytes,
+                );
+            }
+        }
+    }
+    if local_symbol_count != 0 {
+        encoder.copy_buffer_to_buffer(
+            recorded.object_symbol_record.buffer(),
+            0,
+            &relocation_readback,
+            (relocation_bytes + dependency_symbol_bytes) as u64,
+            local_symbol_bytes as u64,
+        );
+    }
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "codegen.x86.object-readback-exact",
+        encoder.finish(),
+    );
+
+    let section_bytes = if section_len == 0 {
+        Vec::new()
+    } else {
+        let slice = section_readback.slice(0..section_copy_bytes);
+        crate::gpu::passes_core::wait_for_readback_map(
+            device,
+            &slice,
+            "codegen.x86.object_sections.exact",
+            x86_readback_timeout(),
+        )?;
+        let data = slice.get_mapped_range();
+        let bytes = data[..section_len].to_vec();
+        drop(data);
+        section_readback.unmap();
+        bytes
+    };
+    let relocation_and_symbol_words = if relocation_and_symbol_bytes == 0 {
+        Vec::new()
+    } else {
+        let slice = relocation_readback.slice(0..relocation_and_symbol_bytes as u64);
+        crate::gpu::passes_core::wait_for_readback_map(
+            device,
+            &slice,
+            "codegen.x86.object_relocations.exact",
+            x86_readback_timeout(),
+        )?;
+        let data = slice.get_mapped_range();
+        let words = data
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+            .collect::<Vec<_>>();
+        drop(data);
+        relocation_readback.unmap();
+        words
+    };
+    let (relocation_words, all_symbol_words) =
+        relocation_and_symbol_words.split_at(relocation_count * 3);
+    let (dependency_symbol_words, local_symbol_words) =
+        all_symbol_words.split_at(dependency_symbol_count * 3);
+
+    let (text, rodata) = section_bytes.split_at(text_len);
+    let (kinds, remaining) = relocation_words.split_at(relocation_count);
+    let (sites, targets) = remaining.split_at(relocation_count);
+    let mut relocations = Vec::with_capacity(relocation_count);
+    for index in 0..relocation_count {
+        let kind = kinds[index] & 0xff;
+        let (kind, target_section, target_kind, addend) = match kind {
+            1 => (
+                GpuX86RelocationKind::Rel32,
+                GpuX86ObjectSection::Text,
+                GpuX86RelocationTargetKind::SectionOffset,
+                -4,
+            ),
+            2 => (
+                GpuX86RelocationKind::CallRel32,
+                GpuX86ObjectSection::Text,
+                GpuX86RelocationTargetKind::SectionOffset,
+                -4,
+            ),
+            3 => (
+                GpuX86RelocationKind::Abs32,
+                GpuX86ObjectSection::Text,
+                GpuX86RelocationTargetKind::SectionOffset,
+                0,
+            ),
+            4 => (
+                GpuX86RelocationKind::Abs32,
+                GpuX86ObjectSection::Rodata,
+                GpuX86RelocationTargetKind::SectionOffset,
+                0,
+            ),
+            5 => (
+                GpuX86RelocationKind::CallRel32,
+                GpuX86ObjectSection::Undefined,
+                GpuX86RelocationTargetKind::Symbol,
+                -4,
+            ),
+            other => bail!("x86 object relocation {index} has GPU kind {other}"),
+        };
+        let symbol_target = target_kind == GpuX86RelocationTargetKind::Symbol;
+        relocations.push(GpuX86RelocationRecord {
+            kind,
+            site_section: GpuX86ObjectSection::Text,
+            site_offset: sites[index],
+            target_kind,
+            target_index: if symbol_target {
+                targets[index]
+            } else {
+                target_section as u32
+            },
+            target_offset: if symbol_target { 0 } else { targets[index] },
+            addend,
+        });
+    }
+    let (dependency_library_ids, dependency_symbol_words) =
+        dependency_symbol_words.split_at(dependency_symbol_count);
+    let (dependency_unit_ids, dependency_local_indices) =
+        dependency_symbol_words.split_at(dependency_symbol_count);
+    let mut identity_bytes = Vec::with_capacity(dependency_symbol_count.saturating_mul(12));
+    let mut symbols = Vec::with_capacity(dependency_symbol_count);
+    for index in 0..dependency_symbol_count {
+        let identity_byte_start = identity_bytes.len() as u32;
+        for word in [
+            dependency_library_ids[index],
+            dependency_unit_ids[index],
+            dependency_local_indices[index],
+        ] {
+            identity_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let identity = &identity_bytes[identity_byte_start as usize..];
+        let (identity_hash_lo, identity_hash_hi) = crate::compiler::stable_name_hash(identity);
+        symbols.push(GpuX86ObjectSymbolRecord {
+            identity_hash_lo,
+            identity_hash_hi,
+            identity_byte_start,
+            identity_byte_len: 12,
+            section: GpuX86ObjectSection::Undefined,
+            offset: 0,
+            size: 0,
+            flags: 0,
+        });
+    }
+    for persisted_decl in 0..local_symbol_count {
+        let base = persisted_decl * 4;
+        let section = match local_symbol_words[base] {
+            0 => GpuX86ObjectSection::Undefined,
+            1 => GpuX86ObjectSection::Text,
+            2 => GpuX86ObjectSection::Rodata,
+            other => bail!("x86 local object symbol {persisted_decl} has GPU section tag {other}"),
+        };
+        let identity_byte_start = identity_bytes.len() as u32;
+        for word in [library_id, unit_id, persisted_decl as u32] {
+            identity_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let identity = &identity_bytes[identity_byte_start as usize..];
+        let (identity_hash_lo, identity_hash_hi) = crate::compiler::stable_name_hash(identity);
+        symbols.push(GpuX86ObjectSymbolRecord {
+            identity_hash_lo,
+            identity_hash_hi,
+            identity_byte_start,
+            identity_byte_len: 12,
+            section,
+            offset: local_symbol_words[base + 1],
+            size: local_symbol_words[base + 2],
+            flags: local_symbol_words[base + 3],
+        });
+    }
+    let object = GpuX86RelocatableObject {
+        version: GPU_X86_OBJECT_VERSION,
+        library_id,
+        unit_id,
+        entry_offset,
+        text: text.to_vec(),
+        rodata: rodata.to_vec(),
+        relocations,
+        symbols,
+        identity_bytes,
+    };
+    object.validate().map_err(anyhow::Error::msg)?;
+    Ok(object)
 }
 
 fn x86_error_name(error_code: usize, error_detail: usize) -> &'static str {

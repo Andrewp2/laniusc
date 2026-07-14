@@ -374,14 +374,42 @@ pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
         .await
 }
 
-/// Type-checks one bounded library source pack and returns its canonical
-/// public semantic identities from the process-global frontend compiler.
-pub async fn semantic_interface_identity_for_source_pack_with_gpu<S: AsRef<str>>(
+/// Type-checks one bounded library against complete dependency semantic
+/// interfaces using the process-global frontend compiler.
+pub async fn type_check_source_pack_with_dependency_interfaces_with_gpu<S: AsRef<str>>(
     library_id: u32,
     sources: &[S],
-) -> Result<GpuSemanticInterfaceIdentityArtifact, CompileError> {
+    dependency_interfaces: &[GpuSemanticInterfaceArtifact],
+) -> Result<(), CompileError> {
     global_frontend_gpu_compiler()?
-        .semantic_interface_identity_for_source_pack(library_id, sources)
+        .type_check_source_pack_with_dependencies(library_id, sources, dependency_interfaces)
+        .await
+}
+
+/// Type-checks one bounded library source pack and returns its complete
+/// canonical public semantic interface from the process-global frontend.
+pub async fn semantic_interface_for_source_pack_with_gpu<S: AsRef<str>>(
+    library_id: u32,
+    sources: &[S],
+) -> Result<GpuSemanticInterfaceArtifact, CompileError> {
+    global_frontend_gpu_compiler()?
+        .semantic_interface_for_source_pack(library_id, sources)
+        .await
+}
+
+/// Type-checks one bounded library against persisted dependency interfaces and
+/// returns its complete canonical public semantic interface.
+pub async fn semantic_interface_for_source_pack_with_dependencies_with_gpu<S: AsRef<str>>(
+    library_id: u32,
+    sources: &[S],
+    dependency_interfaces: &[GpuSemanticInterfaceArtifact],
+) -> Result<GpuSemanticInterfaceArtifact, CompileError> {
+    global_frontend_gpu_compiler()?
+        .semantic_interface_for_source_pack_with_dependencies(
+            library_id,
+            sources,
+            dependency_interfaces,
+        )
         .await
 }
 

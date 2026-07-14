@@ -7,6 +7,7 @@
 mod bind_helpers;
 mod buffers;
 mod create;
+mod dependency_visibility;
 mod inputs;
 mod layout;
 mod module_index;

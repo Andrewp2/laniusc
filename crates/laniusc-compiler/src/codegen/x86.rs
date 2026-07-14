@@ -16,11 +16,29 @@ use crate::gpu::{
 };
 
 mod finish;
+mod link;
+mod object;
 mod record;
 mod support;
 
+pub(crate) use link::GpuX86LinkInput;
+pub use object::{
+    GPU_X86_OBJECT_VERSION,
+    GpuX86ObjectSection,
+    GpuX86ObjectSymbolRecord,
+    GpuX86RelocatableObject,
+    GpuX86RelocationKind,
+    GpuX86RelocationRecord,
+    GpuX86RelocationTargetKind,
+};
 pub use record::{RecordElfInputs, RecordedX86FeatureMeasurement};
 use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RecordedX86ArtifactMode {
+    Executable,
+    RelocatableObject,
+}
 
 /// Target-level error reported by the GPU x86_64 emitter.
 #[derive(Debug)]
@@ -135,6 +153,7 @@ struct X86Params {
     regalloc_rows_per_chunk: u32,
     regalloc_chunk_count: u32,
     function_slot_capacity: u32,
+    artifact_mode: u32,
 }
 
 #[repr(C)]
@@ -329,10 +348,20 @@ pub struct GpuX86CallMetadataBuffers<'a> {
     pub member_receiver_node: &'a wgpu::Buffer,
     pub member_name_token: &'a wgpu::Buffer,
     pub call_fn_index: &'a wgpu::Buffer,
+    pub call_dependency_decl: &'a wgpu::Buffer,
     pub call_intrinsic_tag: &'a wgpu::Buffer,
     pub call_return_type: &'a wgpu::Buffer,
     pub call_return_type_token: &'a wgpu::Buffer,
     pub call_param_type: &'a wgpu::Buffer,
+}
+
+/// Canonical identity columns for dependency declarations referenced by an
+/// x86 relocatable object. Declaration indices are stable within this batch.
+pub struct GpuX86DependencySymbolBuffers<'a> {
+    pub declaration_count: u32,
+    pub declaration_library_id: &'a wgpu::Buffer,
+    pub declaration_unit_id: &'a wgpu::Buffer,
+    pub declaration_local_index: &'a wgpu::Buffer,
 }
 
 /// Array literal metadata buffers needed by x86 aggregate lowering.
@@ -907,13 +936,24 @@ pub fn regalloc_recorded_span_covers_inst_capacity(inst_capacity: usize) -> bool
 
 /// Recorded x86 backend work and retained buffers required for output readback.
 pub struct RecordedX86Codegen {
+    artifact_mode: RecordedX86ArtifactMode,
     output_capacity: usize,
     output_status_offset: u64,
     _retained_buffers: Vec<RetainedX86Buffer>,
     _retained_bind_groups: Vec<wgpu::BindGroup>,
     out_buf: PooledStorageBuffer,
     output_readback: PooledReadbackBuffer,
+    object_metadata_readback: PooledReadbackBuffer,
+    object_reloc_kind: RetainedX86Buffer,
+    object_reloc_site_offset: RetainedX86Buffer,
+    object_reloc_target_offset: RetainedX86Buffer,
+    object_symbol_record: RetainedX86Buffer,
     status_trace_readback: Option<wgpu::Buffer>,
+}
+
+/// Recorded GPU work for one relocatable x86 codegen unit.
+pub struct RecordedX86ObjectCodegen {
+    recorded: RecordedX86Codegen,
 }
 
 /// GPU x86_64 code generator with loaded compute passes.
@@ -1019,6 +1059,18 @@ pub struct GpuX86CodeGenerator {
     reloc_scan_local_pass: PassData,
     reloc_records_pass: PassData,
     reloc_patch_pass: PassData,
+    object_symbols_pass: PassData,
+    link_layout_scan_local_pass: PassData,
+    link_layout_scan_blocks_pass: PassData,
+    link_layout_pass: PassData,
+    link_copy_sections_pass: PassData,
+    link_symbol_seed_pass: PassData,
+    link_symbol_histogram_pass: PassData,
+    link_symbol_bucket_prefix_pass: PassData,
+    link_symbol_bucket_bases_pass: PassData,
+    link_symbol_scatter_pass: PassData,
+    link_symbol_resolve_pass: PassData,
+    link_relocate_pass: PassData,
     encode_pass: PassData,
     elf_layout_pass: PassData,
     elf_write_pass: PassData,
@@ -1550,6 +1602,66 @@ impl GpuX86CodeGenerator {
             "codegen/x86/reloc/patch.spv",
             "codegen/x86/reloc/patch.reflect.json"
         );
+        let object_symbols_pass = load_x86_pass!(
+            "object_symbols",
+            "codegen/x86/object/symbols.spv",
+            "codegen/x86/object/symbols.reflect.json"
+        );
+        let link_layout_scan_local_pass = load_x86_pass!(
+            "link_layout_scan_local",
+            "codegen/x86/link/layout_scan_local.spv",
+            "codegen/x86/link/layout_scan_local.reflect.json"
+        );
+        let link_layout_scan_blocks_pass = load_x86_pass!(
+            "link_layout_scan_blocks",
+            "codegen/x86/link/layout_scan_blocks.spv",
+            "codegen/x86/link/layout_scan_blocks.reflect.json"
+        );
+        let link_layout_pass = load_x86_pass!(
+            "link_layout",
+            "codegen/x86/link/layout.spv",
+            "codegen/x86/link/layout.reflect.json"
+        );
+        let link_copy_sections_pass = load_x86_pass!(
+            "link_copy_sections",
+            "codegen/x86/link/copy_sections.spv",
+            "codegen/x86/link/copy_sections.reflect.json"
+        );
+        let link_symbol_seed_pass = load_x86_pass!(
+            "link_symbol_seed",
+            "codegen/x86/link/symbol_seed.spv",
+            "codegen/x86/link/symbol_seed.reflect.json"
+        );
+        let link_symbol_histogram_pass = load_x86_pass!(
+            "link_symbol_histogram",
+            "codegen/x86/link/symbol_histogram.spv",
+            "codegen/x86/link/symbol_histogram.reflect.json"
+        );
+        let link_symbol_bucket_prefix_pass = load_x86_pass!(
+            "link_symbol_bucket_prefix",
+            "type_checker/names/radix/00b/bucket/prefix.spv",
+            "type_checker/names/radix/00b/bucket/prefix.reflect.json"
+        );
+        let link_symbol_bucket_bases_pass = load_x86_pass!(
+            "link_symbol_bucket_bases",
+            "type_checker/names/radix/00c/bucket/bases.spv",
+            "type_checker/names/radix/00c/bucket/bases.reflect.json"
+        );
+        let link_symbol_scatter_pass = load_x86_pass!(
+            "link_symbol_scatter",
+            "codegen/x86/link/symbol_scatter.spv",
+            "codegen/x86/link/symbol_scatter.reflect.json"
+        );
+        let link_symbol_resolve_pass = load_x86_pass!(
+            "link_symbol_resolve",
+            "codegen/x86/link/symbol_resolve.spv",
+            "codegen/x86/link/symbol_resolve.reflect.json"
+        );
+        let link_relocate_pass = load_x86_pass!(
+            "link_relocate",
+            "codegen/x86/link/relocate.spv",
+            "codegen/x86/link/relocate.reflect.json"
+        );
         let encode_pass = load_x86_pass!(
             "encode",
             "codegen/x86/encode.spv",
@@ -1667,6 +1779,18 @@ impl GpuX86CodeGenerator {
             reloc_scan_local_pass,
             reloc_records_pass,
             reloc_patch_pass,
+            object_symbols_pass,
+            link_layout_scan_local_pass,
+            link_layout_scan_blocks_pass,
+            link_layout_pass,
+            link_copy_sections_pass,
+            link_symbol_seed_pass,
+            link_symbol_histogram_pass,
+            link_symbol_bucket_prefix_pass,
+            link_symbol_bucket_bases_pass,
+            link_symbol_scatter_pass,
+            link_symbol_resolve_pass,
+            link_relocate_pass,
             encode_pass,
             elf_layout_pass,
             elf_write_pass,

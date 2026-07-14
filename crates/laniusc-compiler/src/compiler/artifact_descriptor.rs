@@ -120,6 +120,29 @@ pub enum GpuSourcePackArtifactStage {
     LinkedOutput,
 }
 
+/// Binary container referenced by a concrete codegen-object descriptor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GpuSourcePackCodegenObjectFormat {
+    /// Lanius' versioned relocatable x86-64 object container.
+    LaniusX86_64,
+    /// Lanius' versioned relocatable WebAssembly object container.
+    LaniusWasm,
+}
+
+/// One durable backend object payload. Logical object record arrays remain
+/// described separately because a single binary container owns all of them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuSourcePackCodegenObjectPayloadDescriptor {
+    /// Binary container format.
+    pub format: GpuSourcePackCodegenObjectFormat,
+    /// Version carried by the binary container header.
+    pub format_version: u32,
+    /// Artifact-store key for the complete binary container.
+    pub storage_key: String,
+    /// Exact serialized container length.
+    pub byte_len: usize,
+}
+
 impl GpuSourcePackArtifactStage {
     /// Returns the source-pack job phase that is valid for this artifact stage.
     pub fn expected_phase(self) -> SourcePackJobPhase {
@@ -300,6 +323,9 @@ pub struct GpuSourcePackArtifactDescriptor {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     /// Semantic records that describe important arrays.
     pub descriptor_records: Vec<GpuSourcePackDescriptorRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Concrete binary object payload, once a codegen job has completed.
+    pub codegen_object_payload: Option<GpuSourcePackCodegenObjectPayloadDescriptor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Runtime ABI version required by this artifact, if any.
     pub required_runtime_abi_version: Option<u32>,
@@ -511,10 +537,43 @@ impl GpuSourcePackArtifactDescriptor {
 
         self.validate_input_record_array_domains()?;
         self.validate_descriptor_records()?;
+        self.validate_codegen_object_payload()?;
         self.validate_required_runtime_services()?;
         self.validate_linked_output_target_byte_records()?;
 
         Ok(())
+    }
+
+    fn validate_codegen_object_payload(&self) -> Result<(), String> {
+        let Some(payload) = &self.codegen_object_payload else {
+            return Ok(());
+        };
+        if self.stage != GpuSourcePackArtifactStage::CodegenObject {
+            return Err(format!(
+                "descriptor stage {:?} must not reference a codegen-object payload",
+                self.stage
+            ));
+        }
+        if payload.storage_key.trim().is_empty() {
+            return Err("codegen-object payload has an empty storage key".into());
+        }
+        if payload.byte_len == 0 {
+            return Err("codegen-object payload has zero bytes".into());
+        }
+        if payload.format_version == 0 {
+            return Err("codegen-object payload has format version zero".into());
+        }
+        match (self.target, payload.format) {
+            (SourcePackArtifactTarget::X86_64, GpuSourcePackCodegenObjectFormat::LaniusX86_64) => {
+                Ok(())
+            }
+            (SourcePackArtifactTarget::Wasm, GpuSourcePackCodegenObjectFormat::LaniusWasm) => {
+                Ok(())
+            }
+            (target, format) => Err(format!(
+                "codegen-object payload format {format:?} is invalid for target {target:?}"
+            )),
+        }
     }
 
     /// Replaces runtime-service requirements with a sorted, deduplicated service id list.
@@ -1308,6 +1367,7 @@ impl GpuSourcePackArtifactDescriptor {
             output_record_arrays,
             record_arrays,
             descriptor_records,
+            codegen_object_payload: None,
             required_runtime_abi_version: None,
             required_runtime_service_ids: Vec::new(),
             required_runtime_services: Vec::new(),
@@ -1389,6 +1449,7 @@ impl GpuSourcePackArtifactDescriptor {
             output_record_arrays,
             record_arrays,
             descriptor_records,
+            codegen_object_payload: None,
             required_runtime_abi_version: None,
             required_runtime_service_ids: Vec::new(),
             required_runtime_services: Vec::new(),
@@ -1461,6 +1522,7 @@ impl GpuSourcePackArtifactDescriptor {
             output_record_arrays,
             record_arrays,
             descriptor_records,
+            codegen_object_payload: None,
             required_runtime_abi_version: None,
             required_runtime_service_ids: Vec::new(),
             required_runtime_services: Vec::new(),
@@ -1550,6 +1612,7 @@ impl GpuSourcePackArtifactDescriptor {
             output_record_arrays,
             record_arrays,
             descriptor_records,
+            codegen_object_payload: None,
             required_runtime_abi_version: None,
             required_runtime_service_ids: Vec::new(),
             required_runtime_services: Vec::new(),
@@ -1629,6 +1692,7 @@ impl GpuSourcePackArtifactDescriptor {
             output_record_arrays,
             record_arrays,
             descriptor_records,
+            codegen_object_payload: None,
             required_runtime_abi_version: None,
             required_runtime_service_ids: Vec::new(),
             required_runtime_services: Vec::new(),

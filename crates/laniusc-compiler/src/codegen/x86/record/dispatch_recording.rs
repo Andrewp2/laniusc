@@ -504,6 +504,7 @@ pub(super) struct ExecutableFinalizeDispatchInputs<'a, 'timer> {
     pub(super) elf_layout: &'a wgpu::BindGroup,
     pub(super) elf: &'a wgpu::BindGroup,
     pub(super) rodata_write: &'a wgpu::BindGroup,
+    pub(super) write_executable: bool,
 }
 
 /// Records virtual instruction selection and produces encoded text, rodata metadata, and relocations.
@@ -824,6 +825,7 @@ pub(super) fn record_executable_finalize_dispatches(
         elf_layout,
         elf,
         rodata_write,
+        write_executable,
     } = inputs;
     dispatch_compute_pass_indirect(
         encoder,
@@ -842,14 +844,16 @@ pub(super) fn record_executable_finalize_dispatches(
         (layout_groups_x, layout_groups_y),
     );
 
-    dispatch_compute_pass_indirect(
-        encoder,
-        "elf_write",
-        "codegen.x86.elf_write",
-        &generator.elf_write_pass,
-        elf,
-        elf_header_word,
-    );
+    if write_executable {
+        dispatch_compute_pass_indirect(
+            encoder,
+            "elf_write",
+            "codegen.x86.elf_write",
+            &generator.elf_write_pass,
+            elf,
+            elf_header_word,
+        );
+    }
     dispatch_x86_stage_indirect(
         encoder,
         "rodata_write",

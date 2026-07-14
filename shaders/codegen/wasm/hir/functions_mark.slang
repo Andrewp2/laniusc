@@ -9,6 +9,7 @@ struct Params
     uint source_len;
     uint out_capacity;
     uint n_hir_nodes;
+    uint artifact_flags;
 };
 
 ConstantBuffer<Params> gParams;
@@ -30,6 +31,7 @@ static const uint HIR_FN = 3u;
 static const uint HIR_PARAM = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint ENTRYPOINT_MAIN = 1u;
+static const uint WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT = 1u;
 static const uint HIR_PARAM_RECORD_FN = 0u;
 static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
 static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
@@ -86,9 +88,13 @@ void main(uint3 tid: SV_DispatchThreadID)
         }
 
         atomic_u32_or(wasm_func_decl_flag, token, 1u);
-        if (fn_entrypoint_tag[node] == ENTRYPOINT_MAIN)
-        {
+        bool is_main = fn_entrypoint_tag[node] == ENTRYPOINT_MAIN;
+        bool is_object_root =
+            (gParams.artifact_flags & WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT) != 0u;
+        if (is_main || is_object_root)
             atomic_u32_or(wasm_func_flag, token, 1u);
+        if (is_main)
+        {
             atomic_u32_add(body_plan, BODY_PLAN_MAIN_COUNT, 1u);
             atomic_u32_min(body_plan, BODY_PLAN_MAIN_TOKEN_MIN, token);
         }

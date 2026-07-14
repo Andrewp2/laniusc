@@ -19,13 +19,30 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
+StructuredBuffer<uint> call_generic_claim_ref_tag;
+StructuredBuffer<uint> call_generic_claim_ref_payload;
 StructuredBuffer<uint> call_generic_claim_arg_row;
 StructuredBuffer<uint> call_generic_claim_order;
+StructuredBuffer<uint> type_instance_external_canonical;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
+
+RWStructuredBuffer<uint> aggregate_compare_scan_input;
+RWStructuredBuffer<uint> aggregate_compare_expected_instance;
+RWStructuredBuffer<uint> aggregate_compare_actual_instance;
+RWStructuredBuffer<uint> aggregate_compare_error_token;
+RWStructuredBuffer<uint> aggregate_compare_error_detail;
 
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -85,7 +102,8 @@ bool concrete_claim(uint row)
 {
     return call_generic_claim_callee[row] != INVALID &&
            call_generic_claim_slot[row] != INVALID &&
-           call_generic_claim_type[row] != TY_UNKNOWN;
+           (call_generic_claim_type[row] != TY_UNKNOWN ||
+            call_generic_claim_ref_tag[row] != TYPE_REF_INVALID);
 }
 
 void validate_claim_at(uint order_i)
@@ -111,6 +129,50 @@ void validate_claim_at(uint order_i)
 
     uint ty = call_generic_claim_type[row];
     uint prev_ty = call_generic_claim_type[prev_row];
+    uint tag = call_generic_claim_ref_tag[row];
+    uint prev_tag = call_generic_claim_ref_tag[prev_row];
+    if (tag != TYPE_REF_INVALID && prev_tag != TYPE_REF_INVALID)
+    {
+        if (tag == TYPE_REF_INSTANCE && prev_tag == TYPE_REF_INSTANCE)
+        {
+            uint instance = call_generic_claim_ref_payload[row];
+            uint prev_instance = call_generic_claim_ref_payload[prev_row];
+            bool valid_instances = valid_token(instance) && valid_token(prev_instance);
+            uint kind = valid_instances ? type_instance_kind[instance] : 0u;
+            uint prev_kind = valid_instances ? type_instance_kind[prev_instance] : 0u;
+            uint nominal = valid_instances ? type_instance_external_canonical[instance] : INVALID;
+            uint prev_nominal = valid_instances
+                ? type_instance_external_canonical[prev_instance]
+                : INVALID;
+            uint child_count = valid_instances ? type_instance_arg_count[instance] : 0u;
+            bool matches = valid_instances && kind == prev_kind && child_count ==
+                type_instance_arg_count[prev_instance];
+            if (matches && kind == TYPE_INSTANCE_ARRAY)
+                matches = type_instance_len_kind[instance] == type_instance_len_kind[prev_instance] &&
+                    type_instance_len_payload[instance] == type_instance_len_payload[prev_instance];
+            if (matches && kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+                matches = nominal != INVALID && nominal == prev_nominal;
+            if (!matches)
+            {
+                record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, 0u);
+                return;
+            }
+            uint request = call_generic_claim_arg_row[row];
+            if (child_count != 0u && request < active_hir_node_count())
+            {
+                aggregate_compare_scan_input[request] = child_count;
+                aggregate_compare_expected_instance[request] = prev_instance;
+                aggregate_compare_actual_instance[request] = instance;
+                aggregate_compare_error_token[request] = claim_error_token(row, callee);
+                aggregate_compare_error_detail[request] = 0u;
+            }
+            return;
+        }
+        if (tag != prev_tag ||
+            call_generic_claim_ref_payload[row] != call_generic_claim_ref_payload[prev_row])
+            record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, 0u);
+        return;
+    }
     if (ty != prev_ty)
         record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, prev_ty * 256u + ty);
 }

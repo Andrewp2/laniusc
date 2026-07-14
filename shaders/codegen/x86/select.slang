@@ -20,6 +20,7 @@ struct Params
     uint regalloc_rows_per_chunk;
     uint regalloc_chunk_count;
     uint function_slot_capacity;
+    uint artifact_mode;
 };
 
 ConstantBuffer<Params> gParams;
@@ -55,6 +56,7 @@ static const uint X86_ERR_MISSING_MAIN = 2u;
 static const uint X86_ERR_SELECT = 17u;
 static const uint X86_ERR_ENTRYPOINT_BODY = 43u;
 static const uint X86_ERR_MULTIPLE_MAIN = 62u;
+static const uint X86_ARTIFACT_RELOCATABLE_OBJECT = 1u;
 
 static const uint X86_VINST_IMM_I32 = 1u;
 static const uint X86_VINST_PARAM = 2u;
@@ -75,6 +77,8 @@ static const uint X86_VINST_FOR_ARRAY_BRANCH = 17u;
 static const uint X86_VINST_FOR_ARRAY_LOAD = 18u;
 static const uint X86_VINST_FOR_ARRAY_INC_JMP = 19u;
 static const uint X86_VINST_CALL_MIXED = 20u;
+static const uint X86_CALL_TARGET_DEPENDENCY_TAG = 0x80000000u;
+static const uint X86_CALL_TARGET_DEPENDENCY_PAYLOAD_MASK = 0x7fffffffu;
 static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
 static const uint X86_VINST_COPY_AGG_RET = 23u;
@@ -154,6 +158,7 @@ static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_LOAD = 69u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_LOAD_PARAM_INDEX_R32 = 72u;
 static const uint X86_INST_V_STORE_RET_PTR_R32 = 73u;
 static const uint X86_INST_V_COPY_AGG_RET = 74u;
@@ -896,8 +901,9 @@ bool select_virtual_inst(uint row, uint inst_count)
 
     if (op == X86_VINST_CALL_MIXED)
     {
-        uint target_row = call_target_row_for_slot(args.x);
-        if (!call_target_valid(target_row, inst_count))
+        bool dependency_call = (args.x & X86_CALL_TARGET_DEPENDENCY_TAG) != 0u;
+        uint target_row = dependency_call ? INVALID : call_target_row_for_slot(args.x);
+        if (!dependency_call && !call_target_valid(target_row, inst_count))
             return false;
         uint info = args.w;
         uint arg_count = mixed_arg_count(info);
@@ -955,9 +961,13 @@ bool select_virtual_inst(uint row, uint inst_count)
                              arg5,
                              aggregate_return);
         x86_inst_kind[out_row] = pack_kind_with_call_save_mask(
-            X86_INST_V_CALL_MIXED_DIRECT,
+            dependency_call
+                ? X86_INST_V_CALL_MIXED_EXTERNAL
+                : X86_INST_V_CALL_MIXED_DIRECT,
             save_mask);
-        x86_inst_arg0[out_row] = selected_target(target_row, inst_count);
+        x86_inst_arg0[out_row] = dependency_call
+                                     ? args.x & X86_CALL_TARGET_DEPENDENCY_PAYLOAD_MASK
+                                     : selected_target(target_row, inst_count);
         x86_inst_arg1[out_row] = pack_u8x4(
                                      aggregate_return ? 1u : 0u,
                                      dest_payload,
@@ -1752,8 +1762,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint entry_target = INVALID;
         bool missing_main = ok && missing_main_entrypoint();
         bool multiple_main = ok && !missing_main && multiple_main_entrypoints();
-        bool entry_ok = ok && !missing_main && !multiple_main &&
-                        main_entry_target(inst_count, entry_target);
+        bool object_without_main = missing_main &&
+                                   gParams.artifact_mode == X86_ARTIFACT_RELOCATABLE_OBJECT;
+        bool entry_ok = ok && !multiple_main &&
+                        (object_without_main || main_entry_target(inst_count, entry_target));
         bool entry_body_error = ok && !missing_main && !multiple_main && !entry_ok &&
                                 main_entry_error_is_source_addressable();
         select_status[0u] = entry_ok ? X86_SELECT_OK : 0u;
@@ -1778,11 +1790,15 @@ void main(uint3 tid: SV_DispatchThreadID)
         select_status[3u] = entry_ok ? selected_count : 0u;
         if (entry_ok)
         {
-            x86_inst_kind[0u] = X86_INST_V_ENTRY_STACK_JMP;
-            x86_inst_arg0[0u] = entry_target;
-            x86_inst_arg1[0u] = entry_frame_size();
+            x86_inst_kind[0u] = object_without_main
+                                    ? X86_INST_RET
+                                    : X86_INST_V_ENTRY_STACK_JMP;
+            x86_inst_arg0[0u] = object_without_main ? 0u : entry_target;
+            x86_inst_arg1[0u] = object_without_main ? 0u : entry_frame_size();
             x86_inst_arg2[0u] = 0u;
-            x86_inst_kind[selected_count - 1u] = X86_INST_V_EXIT_ZERO;
+            x86_inst_kind[selected_count - 1u] = object_without_main
+                                                     ? X86_INST_RET
+                                                     : X86_INST_V_EXIT_ZERO;
             x86_inst_arg0[selected_count - 1u] = 0u;
             x86_inst_arg1[selected_count - 1u] = 0u;
             x86_inst_arg2[selected_count - 1u] = 0u;

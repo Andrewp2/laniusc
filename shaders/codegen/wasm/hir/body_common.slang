@@ -6,6 +6,7 @@
 // passes.
 
 import gpu_index;
+import call_relocation;
 
 struct Params
 {
@@ -13,6 +14,7 @@ struct Params
     uint source_len;
     uint out_capacity;
     uint n_hir_nodes;
+    uint artifact_flags;
 };
 
 ConstantBuffer<Params> gParams;
@@ -76,6 +78,7 @@ StructuredBuffer<uint> hir_nearest_block_node;
 StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> hir_nearest_loop_node;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_param_count;
@@ -101,6 +104,7 @@ RWStructuredBuffer<uint> wasm_func_detail_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT = 1u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
 static const uint TY_BOOL = 2u;
@@ -809,13 +813,21 @@ uint semantic_callee_token_for_call(uint call_node)
 uint call_metadata_token(uint call_node, uint callee_token)
 {
     uint site_token = call_site_token(call_node);
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+
+    // Dependency identity is authoritative even when a path/call-site token
+    // also carries the local call-pipeline's compatibility projection.
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID)
+        return site_token;
+    if (valid_token(semantic_token) && call_dependency_decl[semantic_token] != INVALID)
+        return semantic_token;
+    if (valid_token(callee_token) && call_dependency_decl[callee_token] != INVALID)
+        return callee_token;
+
     if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
         return site_token;
-
-    uint semantic_token = semantic_callee_token_for_call(call_node);
     if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
         return semantic_token;
-
     if (valid_token(callee_token) && valid_token(call_fn_index[callee_token]))
         return callee_token;
 
@@ -825,7 +837,32 @@ uint call_metadata_token(uint call_node, uint callee_token)
 uint call_fn_token_for_call(uint call_node, uint callee_token)
 {
     uint metadata_token = call_metadata_token(call_node, callee_token);
-    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+    if (!valid_token(metadata_token))
+        return INVALID;
+    if (call_dependency_decl[metadata_token] != INVALID)
+        return metadata_token;
+    uint local_fn = call_fn_index[metadata_token];
+    return valid_token(local_fn) ? local_fn : INVALID;
+}
+
+bool dependency_call_token(uint token)
+{
+    return valid_token(token) && call_dependency_decl[token] != INVALID;
+}
+
+bool supported_call_target_token(uint token)
+{
+    return supported_function_token(token) || dependency_call_token(token);
+}
+
+uint wasm_call_target_for_call(uint call_node, uint fn_token)
+{
+    uint metadata_token = call_metadata_token(call_node, call_callee_token(call_node));
+    if (valid_token(metadata_token) && call_dependency_decl[metadata_token] != INVALID)
+        return 0x80000000u | (call_dependency_decl[metadata_token] & 0x7fffffffu);
+    return valid_token(fn_token) && wasm_func_slot_by_token[fn_token] != INVALID
+               ? wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT
+               : INVALID;
 }
 
 uint call_return_type_for_call(uint call_node, uint callee_token, uint fn_token)
@@ -906,7 +943,7 @@ bool direct_user_call_node(
         return false;
 
     fn_token = call_fn_token_for_call(call_node, callee_token);
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint explicit_arg_count = hir_call_arg_count[call_node];
@@ -926,7 +963,7 @@ bool direct_user_call_node(
             return false;
     }
 
-    wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
     return true;
 }
 
@@ -1027,7 +1064,7 @@ bool host_no_arg_i32_expr_and_len(uint call_node, uint language_symbol, uint was
     if (!host_no_arg_i32_call_node(call_node, language_symbol))
         return false;
 
-    len = 1u + u32_leb_len(wasm_func_index);
+    len = 1u + wasm_call_index_len(wasm_func_index);
     return true;
 }
 
@@ -1068,7 +1105,7 @@ bool host_i32_call_expr_and_len(
     if (!host_i32_call_node(call_node, language_symbol, expected_arg_count))
         return false;
 
-    len = 1u + u32_leb_len(wasm_func_index);
+    len = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < expected_arg_count; i += 1u)
     {
         uint arg_len = 0u;
@@ -1125,7 +1162,7 @@ bool host_void_call_expr_and_len(
     if (!host_void_call_node(call_node, language_symbol, expected_arg_count))
         return false;
 
-    len = 1u + u32_leb_len(wasm_func_index);
+    len = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < expected_arg_count; i += 1u)
     {
         uint arg_len = 0u;
@@ -2727,7 +2764,7 @@ bool host_string_i32_call_expr_and_len(
         uint string_len = 0u;
         if (!host_string_value_expr_and_len(direct_call_arg_node(call_node, 0u), string_len))
             return false;
-        len = string_len + 1u + u32_leb_len(wasm_func_index);
+        len = string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -2742,7 +2779,7 @@ bool host_string_i32_call_expr_and_len(
         {
             return false;
         }
-        len = handle_len + string_len + 1u + u32_leb_len(wasm_func_index);
+        len = handle_len + string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -2783,7 +2820,7 @@ bool direct_call_expr_and_len(uint node, out uint len)
     if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
@@ -2807,7 +2844,7 @@ bool direct_call_simple_args_expr_and_len(uint node, out uint len)
     if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);

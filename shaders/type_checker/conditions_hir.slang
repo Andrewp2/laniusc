@@ -77,6 +77,8 @@ StructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_decl_generic_param_count_by_node;
@@ -84,6 +86,7 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -101,6 +104,11 @@ RWStructuredBuffer<uint> aggregate_compare_expected_instance;
 RWStructuredBuffer<uint> aggregate_compare_actual_instance;
 RWStructuredBuffer<uint> aggregate_compare_error_token;
 RWStructuredBuffer<uint> aggregate_compare_error_detail;
+RWStructuredBuffer<uint> type_subtree_compare_scan_input;
+RWStructuredBuffer<uint> type_subtree_compare_left_root;
+RWStructuredBuffer<uint> type_subtree_compare_right_root;
+RWStructuredBuffer<uint> type_subtree_compare_error_token;
+RWStructuredBuffer<uint> type_subtree_compare_error_detail;
 StructuredBuffer<uint> predicate_subject_token;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
@@ -523,6 +531,11 @@ bool read_decl_type_ref(uint token_i, out uint tag, out uint payload)
     uint return_token = call_return_type_token[token_i];
     if (valid_token(return_token))
     {
+        tag = type_expr_ref_tag[return_token];
+        payload = type_expr_ref_payload[return_token];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+
         tag = decl_type_ref_tag[return_token];
         payload = decl_type_ref_payload[return_token];
         if (tag != TYPE_REF_INVALID)
@@ -543,7 +556,12 @@ bool read_decl_type_ref(uint token_i, out uint tag, out uint payload)
     {
         tag = decl_type_ref_tag[token_i];
         payload = decl_type_ref_payload[token_i];
+        if (tag != TYPE_REF_INVALID)
+            return true;
     }
+
+    tag = type_expr_ref_tag[token_i];
+    payload = type_expr_ref_payload[token_i];
     return tag != TYPE_REF_INVALID;
 }
 
@@ -659,6 +677,13 @@ bool same_type_instance_ref(uint lhs, uint rhs)
         if (!valid_token(lhs_decl) || lhs_decl != rhs_decl)
             return false;
     }
+    else
+    {
+        uint lhs_external = type_instance_external_canonical[lhs];
+        uint rhs_external = type_instance_external_canonical[rhs];
+        if (lhs_external == INVALID || lhs_external != rhs_external)
+            return false;
+    }
 
     uint lhs_count = type_instance_arg_count[lhs];
     uint rhs_count = type_instance_arg_count[rhs];
@@ -712,6 +737,11 @@ void clear_aggregate_compare_request(uint node)
     aggregate_compare_actual_instance[node] = INVALID;
     aggregate_compare_error_token[node] = INVALID;
     aggregate_compare_error_detail[node] = 0u;
+    type_subtree_compare_scan_input[node] = 0u;
+    type_subtree_compare_left_root[node] = INVALID;
+    type_subtree_compare_right_root[node] = INVALID;
+    type_subtree_compare_error_token[node] = INVALID;
+    type_subtree_compare_error_detail[node] = 0u;
 }
 
 uint aggregate_compare_error_site(
@@ -782,6 +812,13 @@ bool aggregate_instance_ref_mismatch(
         if (!valid_token(expected_decl) || expected_decl != actual_decl)
             return true;
     }
+    else
+    {
+        uint expected_external = type_instance_external_canonical[expected_instance];
+        uint actual_external = type_instance_external_canonical[actual_instance];
+        if (expected_external == INVALID || expected_external != actual_external)
+            return true;
+    }
 
     uint expected_count = type_instance_arg_count[expected_instance];
     uint actual_count = type_instance_arg_count[actual_instance];
@@ -819,8 +856,11 @@ bool aggregate_type_ref_mismatch(
     uint expected_payload = INVALID;
     uint actual_tag = TYPE_REF_INVALID;
     uint actual_payload = INVALID;
-    if (!read_decl_type_ref(expected_token, expected_tag, expected_payload) ||
-        !read_decl_type_ref(actual_token, actual_tag, actual_payload))
+    bool has_expected_ref =
+        read_decl_type_ref(expected_token, expected_tag, expected_payload);
+    bool has_actual_ref =
+        read_decl_type_ref(actual_token, actual_tag, actual_payload);
+    if (!has_expected_ref || !has_actual_ref)
         return false;
     if (expected_tag != TYPE_REF_INSTANCE && actual_tag != TYPE_REF_INSTANCE)
         return false;
@@ -1726,22 +1766,51 @@ void validate_assignment_node(uint node)
 
 uint enclosing_function_return_type_for_token(uint token_i)
 {
-    if (!valid_token(token_i))
-        return TY_UNKNOWN;
-
-    uint encoded_fn = enclosing_fn[token_i];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_token = enclosing_function_token_for_token(token_i);
     return valid_token(fn_token) ? call_return_type[fn_token] : TY_UNKNOWN;
 }
 
-uint enclosing_function_return_type_token_for_token(uint token_i)
+uint enclosing_function_token_for_token(uint token_i)
 {
     if (!valid_token(token_i))
         return INVALID;
 
     uint encoded_fn = enclosing_fn[token_i];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+}
+
+uint enclosing_function_return_type_token_for_token(uint token_i)
+{
+    uint fn_token = enclosing_function_token_for_token(token_i);
     return valid_token(fn_token) ? call_return_type_token[fn_token] : INVALID;
+}
+
+bool enclosing_function_instance_return_mismatch(
+    uint node,
+    uint return_token,
+    uint actual_token,
+    uint error_token,
+    uint detail)
+{
+    uint fn_token = enclosing_function_token_for_token(return_token);
+    if (!valid_token(fn_token) || fn_return_ref_tag[fn_token] != TYPE_REF_INSTANCE)
+        return false;
+
+    uint actual_tag = TYPE_REF_INVALID;
+    uint actual_payload = INVALID;
+    if (!read_decl_type_ref(actual_token, actual_tag, actual_payload))
+        return false;
+    if (actual_tag != TYPE_REF_INSTANCE)
+        return true;
+
+    return aggregate_instance_ref_mismatch(
+        node,
+        fn_return_ref_payload[fn_token],
+        actual_payload,
+        call_return_type_token[fn_token],
+        actual_token,
+        error_token,
+        detail);
 }
 
 void validate_return_node(uint node)
@@ -1765,6 +1834,23 @@ void validate_return_node(uint node)
         }
         return;
     }
+
+    uint direct_actual_token = direct_name_expr_token(expr_node);
+    uint direct_error_token = valid_token(direct_actual_token) ? direct_actual_token : return_token;
+    if (enclosing_function_instance_return_mismatch(
+            node,
+            return_token,
+            direct_actual_token,
+            direct_error_token,
+            0u))
+    {
+        record_error(direct_error_token, ERR_ASSIGN_MISMATCH, 0u);
+        return;
+    }
+
+    if (expected == TY_UNKNOWN)
+        return;
+
     if (resolved_call_expr_has_unknown_result(expr_node))
         return;
 
@@ -1795,8 +1881,18 @@ void validate_return_node(uint node)
     if (direct_unsupported_symbolic_array_call(expr_node, actual))
         record_error(error_token, ERR_ASSIGN_MISMATCH, actual);
 
-    if (expected == TY_UNKNOWN)
+    if (actual == expected &&
+        aggregate_type_code_for_ref_check(expected) &&
+        aggregate_type_ref_mismatch(
+            node,
+            enclosing_function_return_type_token_for_token(return_token),
+            value_token,
+            error_token,
+            expected * 256u + actual))
+    {
+        record_error(error_token, ERR_ASSIGN_MISMATCH, expected * 256u + actual);
         return;
+    }
 
     if (!assignable(expected, actual))
     {

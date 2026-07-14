@@ -269,7 +269,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

@@ -4,6 +4,7 @@
 
 import atomics;
 import body_arg_byte_common;
+import call_relocation;
 
 StructuredBuffer<uint> status;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -83,7 +84,7 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
         return false;
 
     uint fn_token = call_fn_token_for_call(call_node, callee_token);
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint explicit_arg_count = hir_call_arg_count[call_node];
@@ -96,7 +97,7 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
     if (!type_is_i32_value(return_ty) && return_ty != TY_FLOAT)
         return false;
 
-    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    uint wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
     aux = uint4(wasm_func_index, arg_count, fn_token, 0u);
     return true;
 }
@@ -169,7 +170,7 @@ bool return_binary_direct_call_record(
         return false;
 
     uint atom_len = call_side == 0u ? right_expr_len : left_expr_len;
-    len_without_args = (1u + u32_leb_len(aux.x)) + atom_len + 2u;
+    len_without_args = (1u + wasm_call_index_len(aux.x)) + atom_len + 2u;
     return true;
 }
 
@@ -227,7 +228,7 @@ void validate_main_return_call(uint node, uint token)
     uint4 aux = uint4(INVALID, 0u, INVALID, 0u);
     if (direct_call_header_aux(return_expr_node, aux))
     {
-        uint provisional_len = 1u + u32_leb_len(aux.x) + 1u;
+        uint provisional_len = 1u + wasm_call_index_len(aux.x) + 1u;
         atomic_u32_add(body_plan, BODY_PLAN_RETURN_VALUE_OK_COUNT, 1u);
         add_func_body_len(owner_fn, provisional_len);
         publish_fragment(
@@ -278,7 +279,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

@@ -772,6 +772,32 @@ struct Holder {
 }
 
 #[test]
+fn parser_semantic_tokens_classify_generic_alias_targets_as_types() {
+    let source = r#"
+type Alias<T> = T;
+type Id<T> = Alias<T>;
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let expected = [
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgLt as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgGt as u32,
+        TokenKind::TypeAliasSemicolon as u32,
+    ];
+    assert!(
+        kinds
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "generic alias targets must stay in the type grammar: {:?}",
+        token_kind_names(&kinds)
+    );
+
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "generic alias target should parse");
+}
+
+#[test]
 fn parser_semantic_tokens_keep_const_generic_trait_method_terminators() {
     let source = r#"
 trait Contract {

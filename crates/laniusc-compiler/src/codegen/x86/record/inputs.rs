@@ -17,11 +17,16 @@ pub struct RecordElfInputs<'a, 'timer> {
     pub function_metadata: GpuX86FunctionMetadataBuffers<'a>,
     pub expr_metadata: GpuX86ExprMetadataBuffers<'a>,
     pub call_metadata: GpuX86CallMetadataBuffers<'a>,
+    /// Number of canonical declarations addressable through
+    /// `call_metadata.call_dependency_decl`.
+    pub dependency_declaration_count: u32,
     pub array_metadata: GpuX86ArrayMetadataBuffers<'a>,
     pub enum_metadata: GpuX86EnumMetadataBuffers<'a>,
     pub struct_metadata: GpuX86StructMetadataBuffers<'a>,
     pub type_metadata: GpuX86TypeMetadataBuffers<'a>,
     pub visible_decl_buf: &'a wgpu::Buffer,
+    pub public_decl_count_buf: &'a wgpu::Buffer,
+    pub public_decl_local_id_buf: &'a wgpu::Buffer,
     pub fn_entrypoint_tag_buf: &'a wgpu::Buffer,
     pub feature_summary: X86FeatureSummary,
     pub external_scratch: GpuX86ExternalScratchBuffers<'a>,

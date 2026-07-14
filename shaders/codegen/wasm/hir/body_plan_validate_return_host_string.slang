@@ -2,6 +2,7 @@
 
 import atomics;
 import gpu_index;
+import call_relocation;
 
 struct Params
 {
@@ -550,7 +551,7 @@ bool host_string_i32_call_expr_and_len(
         uint string_len = 0u;
         if (!string_value_expr_and_len(direct_call_arg_node(call_node, 0u), string_len))
             return false;
-        len = string_len + 1u + u32_leb_len(wasm_func_index);
+        len = string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -565,7 +566,7 @@ bool host_string_i32_call_expr_and_len(
         {
             return false;
         }
-        len = handle_len + string_len + 1u + u32_leb_len(wasm_func_index);
+        len = handle_len + string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -659,7 +660,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != 1u)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

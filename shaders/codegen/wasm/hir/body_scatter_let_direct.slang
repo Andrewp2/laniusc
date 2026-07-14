@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -772,13 +773,13 @@ uint let_direct_call_i32_fragment_byte(uint local_index, uint call_node, uint4 a
         return local_set_byte(local_index, byte_i - call_len);
 
     uint wasm_func_index = aux.x;
-    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
     uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
     if (byte_i < arg_len)
         return 0u;
     if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 uint assign_direct_call_i32_fragment_byte(uint local_index, uint call_node, uint4 aux, uint fragment_len, uint byte_i)
@@ -803,13 +804,13 @@ uint assign_compound_direct_call_i32_fragment_byte(uint local_index, uint call_n
     {
         uint call_byte_i = byte_i - call_start;
         uint wasm_func_index = aux.x;
-        uint tail_len = 1u + u32_leb_len(wasm_func_index);
+        uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
         uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
         if (call_byte_i < arg_len)
             return 0u;
         if (call_byte_i == arg_len)
             return WASM_CALL;
-        return u32_leb_byte(wasm_func_index, call_byte_i - arg_len - 1u);
+        return wasm_call_index_byte(wasm_func_index, call_byte_i - arg_len - 1u);
     }
 
     uint op_i = call_start + call_len;
@@ -826,13 +827,13 @@ uint return_direct_call_i32_fragment_byte(uint call_node, uint4 aux, uint fragme
         return WASM_RETURN;
 
     uint wasm_func_index = aux.x;
-    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
     uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
     if (byte_i < arg_len)
         return 0u;
     if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 uint print_direct_call_i64_fragment_byte(uint call_node, uint4 aux, uint fragment_len, uint byte_i)
@@ -850,25 +851,25 @@ uint print_direct_call_i64_fragment_byte(uint call_node, uint4 aux, uint fragmen
     }
 
     uint wasm_func_index = aux.x;
-    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
     uint arg_len = call_len > tail_len ? call_len - tail_len : 0u;
     if (byte_i < arg_len)
         return 0u;
     if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 uint direct_call_void_fragment_byte(uint4 aux, uint fragment_len, uint byte_i)
 {
     uint wasm_func_index = aux.x;
-    uint tail_len = 1u + u32_leb_len(wasm_func_index);
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
     uint arg_len = fragment_len > tail_len ? fragment_len - tail_len : 0u;
     if (byte_i < arg_len)
         return 0u;
     if (byte_i == arg_len)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - arg_len - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - arg_len - 1u);
 }
 
 [shader("compute")]

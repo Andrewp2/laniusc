@@ -2,6 +2,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -560,7 +561,7 @@ uint direct_call_expr_len_from_record(uint node, uint wasm_func_index, uint arg_
     if (wasm_func_index == INVALID)
         return 0u;
 
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, arg_count, i);
@@ -595,7 +596,7 @@ uint direct_call_expr_byte_from_record(
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint direct_call_expr_byte_with_nested_arg(
@@ -636,7 +637,7 @@ uint direct_call_expr_byte_with_nested_arg(
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)

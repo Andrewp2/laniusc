@@ -85,7 +85,10 @@ bool plan_aggregate_ok(
     out uint body_len)
 {
     body_len = 0u;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    bool allow_missing_entrypoint =
+        (gParams.artifact_flags & WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT) != 0u;
+    uint main_count = body_plan[BODY_PLAN_MAIN_COUNT];
+    if (main_count > 1u || (!allow_missing_entrypoint && main_count != 1u))
         return false;
     if (body_plan[BODY_PLAN_FUNCTION_COUNT] == 0u)
         return false;
@@ -93,7 +96,7 @@ bool plan_aggregate_ok(
         return false;
     if (body_plan[BODY_PLAN_COLLECT_INVALID_COUNT] != 0u)
         return false;
-    if (!valid_token(main_token))
+    if (!allow_missing_entrypoint && !valid_token(main_token))
         return false;
     if (body_plan[BODY_PLAN_STMT_INVALID_COUNT] != 0u)
         return false;

@@ -159,6 +159,7 @@ static const uint X86_CALL_TARGET_HOST_FS_RENAME = 0xffffffdbu;
 static const uint X86_CALL_TARGET_HOST_TIME_SLEEP_MS_I32 = 0xffffffd8u;
 static const uint X86_CALL_TARGET_HOST_REALLOC = 0xffffffd7u;
 static const uint X86_CALL_TARGET_HOST_ALLOC_FAILED = 0xffffffd6u;
+static const uint X86_CALL_TARGET_DEPENDENCY_TAG = 0x80000000u;
 static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 static const uint X86_VINST_ERROR_MATCH_ARMS = 2201u;
 static const uint X86_VINST_ERROR_MATCH_PATTERN = 2202u;
@@ -3184,7 +3185,10 @@ bool has_call_abi_record(uint2 abi)
 {
     bool host_call = abi.x >= X86_CALL_TARGET_HOST_ALLOC_FAILED &&
                      abi.x <= X86_CALL_TARGET_HOST_TEXT_WRITE;
-    if (abi.x == INVALID || abi.y == INVALID || (!host_call && !valid_node(abi.x)))
+    bool dependency_call = (abi.x & X86_CALL_TARGET_DEPENDENCY_TAG) != 0u &&
+                           abi.x < X86_CALL_TARGET_HOST_ALLOC_FAILED;
+    if (abi.x == INVALID || abi.y == INVALID ||
+        (!host_call && !dependency_call && !valid_node(abi.x)))
         return false;
 
     uint arg_count = call_abi_arg_count(abi);
@@ -3777,7 +3781,10 @@ bool emit_call(uint node, uint2 range)
         INVALID);
 
     uint target_slot = function_slot_for_node(abi.x);
-    if (target_slot == INVALID)
+    bool dependency_call = (abi.x & X86_CALL_TARGET_DEPENDENCY_TAG) != 0u &&
+                           abi.x < X86_CALL_TARGET_HOST_ALLOC_FAILED;
+    uint target = dependency_call ? abi.x : target_slot;
+    if (target == INVALID)
     {
         write_status_error_detail(node, X86_VINST_ERROR_CALL_TARGET);
         return false;
@@ -3908,7 +3915,7 @@ bool emit_call(uint node, uint2 range)
         0u,
         X86_VINST_CALL_MIXED,
         mixed_dst,
-        uint4(target_slot, dest_payload, payload_row, info));
+        uint4(target, dest_payload, payload_row, info));
     if (!aggregate_return)
     {
         write_node_value(node, X86_NODE_VALUE_VREG, dst, node, abi.x);

@@ -13,6 +13,7 @@ struct Params
     uint module_segment_capacity;
     uint module_segment_row_width;
     uint name_byte_capacity;
+    uint member_capacity;
 };
 
 struct NameSpan
@@ -51,16 +52,24 @@ StructuredBuffer<uint> module_segment_total;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_parent_type_decl;
+StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
+StructuredBuffer<uint> interface_signature_type_by_decl;
+StructuredBuffer<uint> interface_member_prefix;
+StructuredBuffer<uint> interface_member_count;
+StructuredBuffer<uint> interface_member_total;
+StructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<ModuleRecord> interface_modules;
 RWStructuredBuffer<ModuleSegmentRecord> interface_module_segments;
 RWStructuredBuffer<uint> interface_declaration_words;
+RWStructuredBuffer<uint> interface_member_words;
 RWStructuredBuffer<uint> interface_counts;
 RWStructuredBuffer<uint> interface_status;
 
@@ -104,6 +113,13 @@ void write_decl(uint dst, uint decl, uint name_ref)
         atomic_u32_min(interface_status, 1u, name_ref);
         return;
     }
+    uint hir = decl_hir_node[decl];
+    if (hir >= gParams.decl_capacity || public_decl_index_by_hir[hir] != dst)
+    {
+        atomic_u32_or(interface_status, 0u, 64u);
+        atomic_u32_min(interface_status, 1u, name_ref);
+        return;
+    }
     uint name_id = decl_name_id[decl];
     if (name_id >= active_name_count() || interface_name_ref_len[name_ref] == 0u)
     {
@@ -120,9 +136,15 @@ void write_decl(uint dst, uint decl, uint name_ref)
     interface_declaration_words[base + 4u] = interface_name_ref_len[name_ref];
     interface_declaration_words[base + 5u] = decl_namespace[decl];
     interface_declaration_words[base + 6u] = decl_kind[decl];
-    interface_declaration_words[base + 7u] = INVALID;
-    interface_declaration_words[base + 8u] = 0u;
-    interface_declaration_words[base + 9u] = 0u;
+    uint signature_type = interface_signature_type_by_decl[dst];
+    if (signature_type == INVALID)
+    {
+        atomic_u32_or(interface_status, 0u, 4096u);
+        atomic_u32_min(interface_status, 1u, dst);
+    }
+    interface_declaration_words[base + 7u] = signature_type;
+    interface_declaration_words[base + 8u] = interface_member_prefix[dst];
+    interface_declaration_words[base + 9u] = interface_member_count[dst];
     uint local_owner = decl_parent_type_decl[decl];
     uint persisted_owner =
         local_owner < gParams.decl_capacity
@@ -146,7 +168,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = linear_thread_id(dtid);
     uint work_capacity = max(
         gParams.module_segment_capacity,
-        max(gParams.module_capacity, gParams.decl_capacity));
+        max(gParams.module_capacity, max(gParams.decl_capacity, interface_member_total[0u])));
     if (row >= work_capacity)
         return;
 
@@ -156,7 +178,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (row == 0u)
     {
-        uint ref_count = gParams.module_segment_capacity + gParams.decl_capacity;
+        uint ref_count = gParams.module_segment_capacity + gParams.decl_capacity +
+                         gParams.member_capacity;
         uint name_byte_count = ref_count == 0u
                                    ? 0u
                                    : interface_name_ref_prefix[ref_count - 1u] +
@@ -204,4 +227,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
             row,
             public_decl_local_id[row],
             gParams.module_segment_capacity + row);
+    uint member_count = interface_member_total[0u];
+    if (row < member_count)
+    {
+        uint name_id = interface_member_name_id[row];
+        uint name_ref = gParams.module_segment_capacity + gParams.decl_capacity + row;
+        if (name_id >= active_name_count() || interface_name_ref_len[name_ref] == 0u)
+        {
+            atomic_u32_or(interface_status, 0u, 4u);
+            atomic_u32_min(interface_status, 1u, name_ref);
+        }
+        else
+        {
+            uint base = row * 10u;
+            interface_member_words[base + 3u] = name_hash_lo[name_id];
+            interface_member_words[base + 4u] = name_hash_hi[name_id];
+            interface_member_words[base + 5u] = interface_name_ref_prefix[name_ref];
+            interface_member_words[base + 6u] = interface_name_ref_len[name_ref];
+        }
+    }
 }

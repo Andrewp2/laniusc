@@ -44,6 +44,7 @@ pub(super) struct Buffers {
     pub(super) import_owner_hir: LaniusBuffer<u32>,
     pub(super) import_module_id: LaniusBuffer<u32>,
     pub(super) import_target_module_id: LaniusBuffer<u32>,
+    pub(super) import_target_dependency_module_id: Option<LaniusBuffer<u32>>,
     pub(super) import_status: LaniusBuffer<u32>,
     pub(super) import_edge_key_order: LaniusBuffer<u32>,
     pub(super) import_edge_key_order_tmp: LaniusBuffer<u32>,
@@ -80,6 +81,7 @@ pub(super) struct Buffers {
     pub(super) interface_public_decl_count: LaniusBuffer<u32>,
     pub(super) interface_public_decl_local_id: LaniusBuffer<u32>,
     pub(super) interface_public_decl_index_by_local: LaniusBuffer<u32>,
+    pub(super) interface_public_decl_index_by_hir: LaniusBuffer<u32>,
     pub(super) import_visible_type_count: LaniusBuffer<u32>,
     pub(super) import_visible_value_count: LaniusBuffer<u32>,
     pub(super) import_visible_type_prefix: LaniusBuffer<u32>,
@@ -391,6 +393,14 @@ impl Buffers {
             import_record_capacity,
             wgpu::BufferUsages::empty(),
         );
+        let import_target_dependency_module_id = inputs.dependency_interfaces.map(|_| {
+            typed_storage_u32_rw(
+                device,
+                "type_check.resident.import_target_dependency_module_id",
+                import_record_capacity,
+                wgpu::BufferUsages::empty(),
+            )
+        });
         let import_status = typed_storage_u32_rw(
             device,
             "type_check.resident.import_status",
@@ -470,17 +480,22 @@ impl Buffers {
             record_capacity,
             external.map(|scratch| scratch.decl_visibility),
         );
-        let decl_hir_node = typed_reuse_storage_u32(
+        // Canonical name hashes remain live through dependency resolution and
+        // semantic-interface export. These declaration rows therefore need
+        // independent retained storage; aliasing them onto the hash tables
+        // made exported identities depend on which declaration rows happened
+        // to overwrite which names.
+        let decl_hir_node = typed_storage_u32_rw(
             device,
             "type_check.resident.decl_hir_node",
             record_capacity,
-            Some(inputs.decl_hir_node_scratch),
+            wgpu::BufferUsages::empty(),
         );
-        let decl_parent_type_decl = typed_reuse_storage_u32(
+        let decl_parent_type_decl = typed_storage_u32_rw(
             device,
             "type_check.resident.decl_parent_type_decl",
             record_capacity,
-            Some(inputs.decl_parent_type_decl_scratch),
+            wgpu::BufferUsages::empty(),
         );
         let decl_token_start = typed_reuse_storage_u32(
             device,
@@ -606,6 +621,12 @@ impl Buffers {
         let interface_public_decl_index_by_local = typed_storage_u32_rw(
             device,
             "type_check.resident.interface_public_decl_index_by_local",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let interface_public_decl_index_by_hir = typed_storage_u32_rw(
+            device,
+            "type_check.resident.interface_public_decl_index_by_hir",
             record_capacity,
             wgpu::BufferUsages::empty(),
         );
@@ -960,6 +981,7 @@ impl Buffers {
             import_owner_hir,
             import_module_id,
             import_target_module_id,
+            import_target_dependency_module_id,
             import_status,
             import_edge_key_order,
             import_edge_key_order_tmp,
@@ -996,6 +1018,7 @@ impl Buffers {
             interface_public_decl_count,
             interface_public_decl_local_id,
             interface_public_decl_index_by_local,
+            interface_public_decl_index_by_hir,
             import_visible_type_count,
             import_visible_value_count,
             import_visible_type_prefix,

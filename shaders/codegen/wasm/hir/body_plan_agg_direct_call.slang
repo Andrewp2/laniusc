@@ -3,6 +3,7 @@
 import atomics;
 import body_common;
 import body_plan_validate_common;
+import call_relocation;
 
 bool aggregate_direct_call_info(
     uint node,
@@ -33,7 +34,7 @@ bool aggregate_direct_call_info(
     fn_token = call_fn_token_for_call(node, callee_token);
     if (valid_token(fn_token))
         detail = fn_token;
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint return_ty = call_return_type_for_call(node, callee_token, fn_token);
@@ -46,8 +47,8 @@ bool aggregate_direct_call_info(
     if (call_param_count[fn_token] != arg_count)
         return false;
 
-    wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
-    tail_len = 1u + u32_leb_len(wasm_func_index);
+    wasm_func_index = wasm_call_target_for_call(node, fn_token);
+    tail_len = 1u + wasm_call_index_len(wasm_func_index);
     detail = INVALID;
     return true;
 }
@@ -146,7 +147,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

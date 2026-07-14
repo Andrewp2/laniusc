@@ -3,6 +3,7 @@
 
 import gpu_index;
 import prefix_scan;
+import call_relocation;
 
 struct ScanParams
 {
@@ -45,6 +46,7 @@ StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
@@ -604,12 +606,13 @@ bool call_record(
     else
     {
         uint site_token = hir_token_pos[node];
-        uint fn_token = valid_token(site_token) ? call_fn_index[site_token] : INVALID;
-        if (!valid_token(fn_token) && valid_token(callee_token))
-            fn_token = call_fn_index[callee_token];
-        if (!valid_token(fn_token) || wasm_func_slot_by_token[fn_token] == INVALID)
-            return false;
-        wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+        uint metadata_token = valid_token(site_token) && (valid_token(call_fn_index[site_token]) || call_dependency_decl[site_token] != INVALID) ? site_token : callee_token;
+        uint fn_token = valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+        if (!valid_token(fn_token) && valid_token(metadata_token) && call_dependency_decl[metadata_token] != INVALID)
+            wasm_func_index = 0x80000000u | (call_dependency_decl[metadata_token] & 0x7fffffffu);
+        else if (valid_token(fn_token) && wasm_func_slot_by_token[fn_token] != INVALID)
+            wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+        else return false;
     }
     arg_count = hir_call_arg_count[node];
     return wasm_func_index != INVALID;
@@ -847,7 +850,7 @@ uint body_prefix_for_item(uint item_i)
 
 uint host_call_expr_len(uint call_node, uint wasm_func_index, uint arg_count)
 {
-    uint len = 1u + u32_leb_len(wasm_func_index);
+    uint len = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_len = expr_len(direct_call_arg_node(resolve_expr_node(call_node), i));
@@ -874,7 +877,7 @@ uint host_call_expr_byte(
         offset += arg_len;
     }
     if (byte_i == offset) return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 uint compound_assign_op_byte(uint op, bool f32)

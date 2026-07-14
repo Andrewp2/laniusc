@@ -4,6 +4,7 @@
 
 import atomics;
 import body_arg_byte_common;
+import call_relocation;
 
 StructuredBuffer<uint> status;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -111,7 +112,7 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
         return false;
 
     uint fn_token = call_fn_token_for_call(call_node, callee_token);
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint explicit_arg_count = hir_call_arg_count[call_node];
@@ -124,7 +125,7 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
     if (!type_is_i32_value(return_ty))
         return false;
 
-    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    uint wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
     aux = uint4(wasm_func_index, arg_count, fn_token, 0u);
     return true;
 }
@@ -143,7 +144,7 @@ bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
 
     uint fn_token = call_fn_token_for_call(call_node, callee_token);
     uint return_ty = call_return_type_for_call(call_node, callee_token, fn_token);
-    if (!supported_function_token(fn_token) ||
+    if (!supported_call_target_token(fn_token) ||
         (return_ty != TY_UNKNOWN && return_ty != TY_VOID))
         return false;
 
@@ -153,8 +154,8 @@ bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
     if (call_param_count[fn_token] != arg_count)
         return false;
 
-    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
-    uint total = 1u + u32_leb_len(wasm_func_index);
+    uint wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
+    uint total = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(call_node, fn_token, i);
@@ -175,7 +176,7 @@ bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
 
 uint print_direct_call_tail_len(uint4 aux)
 {
-    return 1u + u32_leb_len(aux.x) + 3u;
+    return 1u + wasm_call_index_len(aux.x) + 3u;
 }
 
 void publish_fragment(uint token_i, uint len, uint4 meta, uint4 aux)
@@ -271,7 +272,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

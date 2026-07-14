@@ -3,6 +3,7 @@
 import atomics;
 import body_common;
 import body_plan_validate_common;
+import call_relocation;
 
 bool host_io_i32_spec(uint call_node, out uint wasm_func_index, out uint arg_count)
 {
@@ -167,7 +168,7 @@ bool host_io_i32_spec(uint call_node, out uint wasm_func_index, out uint arg_cou
 
 bool host_io_i32_call_len(uint call_node, uint wasm_func_index, uint arg_count, out uint len)
 {
-    len = 1u + u32_leb_len(wasm_func_index);
+    len = 1u + wasm_call_index_len(wasm_func_index);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_len = 0u;
@@ -272,7 +273,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

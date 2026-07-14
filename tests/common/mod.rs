@@ -26,7 +26,9 @@ use laniusc_compiler::compiler::{
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
-    semantic_interface_identity_for_source_pack_with_gpu,
+    semantic_interface_for_source_pack_with_dependencies_with_gpu,
+    semantic_interface_for_source_pack_with_gpu,
+    type_check_source_pack_with_dependency_interfaces_with_gpu,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
@@ -145,17 +147,55 @@ pub fn type_check_source_pack_with_timeout(sources: &[&str]) -> Result<(), Compi
     })
 }
 
-pub fn semantic_interface_identity_with_timeout(
+pub fn semantic_interface_with_timeout(
     library_id: u32,
     sources: &[&str],
-) -> Result<laniusc_compiler::compiler::GpuSemanticInterfaceIdentityArtifact, CompileError> {
+) -> Result<laniusc_compiler::compiler::GpuSemanticInterfaceArtifact, CompileError> {
     let sources = sources
         .iter()
         .map(|source| (*source).to_owned())
         .collect::<Vec<_>>();
-    run_with_timeout("GPU semantic-interface identity export", move || {
-        pollster::block_on(semantic_interface_identity_for_source_pack_with_gpu(
+    run_with_timeout("GPU semantic-interface export", move || {
+        pollster::block_on(semantic_interface_for_source_pack_with_gpu(
             library_id, &sources,
+        ))
+    })
+}
+
+pub fn semantic_interface_with_dependencies_with_timeout(
+    library_id: u32,
+    sources: &[&str],
+    dependency_interfaces: Vec<laniusc_compiler::compiler::GpuSemanticInterfaceArtifact>,
+) -> Result<laniusc_compiler::compiler::GpuSemanticInterfaceArtifact, CompileError> {
+    let sources = sources
+        .iter()
+        .map(|source| (*source).to_owned())
+        .collect::<Vec<_>>();
+    run_with_timeout("GPU dependency semantic-interface export", move || {
+        pollster::block_on(
+            semantic_interface_for_source_pack_with_dependencies_with_gpu(
+                library_id,
+                &sources,
+                &dependency_interfaces,
+            ),
+        )
+    })
+}
+
+pub fn type_check_source_pack_with_dependencies_with_timeout(
+    library_id: u32,
+    sources: &[&str],
+    dependency_interfaces: Vec<laniusc_compiler::compiler::GpuSemanticInterfaceArtifact>,
+) -> Result<(), CompileError> {
+    let sources = sources
+        .iter()
+        .map(|source| (*source).to_owned())
+        .collect::<Vec<_>>();
+    run_with_timeout("GPU dependency-interface type check", move || {
+        pollster::block_on(type_check_source_pack_with_dependency_interfaces_with_gpu(
+            library_id,
+            &sources,
+            &dependency_interfaces,
         ))
     })
 }
@@ -328,12 +368,21 @@ where
 {
     let (_guard, gpu_lock_wait) = gpu_test_lock();
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        let result = f();
-        if let Err(err) = tx.send(result) {
-            warn!("failed to send test result from worker thread: {err}");
-        }
-    });
+    // GPU compiler construction reflects and validates hundreds of pipelines.
+    // Rust's 2 MiB default for spawned test threads is smaller than the
+    // production pipeline-initialization workers and can overflow before any
+    // GPU work is submitted.
+    const GPU_TEST_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+    let handle = thread::Builder::new()
+        .name("lanius-gpu-test-worker".into())
+        .stack_size(GPU_TEST_WORKER_STACK_BYTES)
+        .spawn(move || {
+            let result = f();
+            if let Err(err) = tx.send(result) {
+                warn!("failed to send test result from worker thread: {err}");
+            }
+        })
+        .expect("spawn GPU timeout worker");
 
     match rx.recv_timeout(timeout) {
         Ok(result) => {

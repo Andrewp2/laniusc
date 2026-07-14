@@ -70,6 +70,7 @@ impl WasmBodyBindingContext<'_> {
             arrays: array_metadata,
             paths: path_metadata,
             call_fn_index: call_fn_index_buf,
+            call_dependency_decl: call_dependency_decl_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
             fn_entrypoint_tag: fn_entrypoint_tag_buf,
             call_return_type: call_return_type_buf,
@@ -105,6 +106,10 @@ impl WasmBodyBindingContext<'_> {
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             ("hir_token_end", hir_token_end_buf.as_entire_binding()),
             ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+            (
+                "call_dependency_decl",
+                call_dependency_decl_buf.as_entire_binding(),
+            ),
             ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
             ("language_name_id", language_name_id_buf.as_entire_binding()),
             (

@@ -1,6 +1,7 @@
 // Scatter nested direct-call argument bytes from scanned argument records.
 
 import gpu_index;
+import call_relocation;
 
 struct Params
 {
@@ -43,6 +44,7 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_fn_token;
@@ -546,8 +548,8 @@ uint aggregate_name_address_byte(uint node, uint byte_i)
 uint call_fn_token_for_call(uint call_node)
 {
     uint site_token = valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
-    if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
-        return call_fn_index[site_token];
+    if (valid_token(site_token) && valid_token(call_fn_index[site_token])) return call_fn_index[site_token];
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID) return site_token;
 
     uint callee_node = valid_node(call_node) ? hir_call_callee_node[call_node] : INVALID;
     if (valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR)
@@ -555,9 +557,13 @@ uint call_fn_token_for_call(uint call_node)
         uint member_token = hir_member_name_token[callee_node];
         if (valid_token(member_token) && valid_token(call_fn_index[member_token]))
             return call_fn_index[member_token];
+        if (valid_token(member_token) && call_dependency_decl[member_token] != INVALID) return member_token;
     }
     return INVALID;
 }
+
+bool supported_call_target_token(uint token) { return supported_function_token(token) || (valid_token(token) && call_dependency_decl[token] != INVALID); }
+uint wasm_call_target_for_call(uint call_node, uint fn_token) { uint site = valid_node(call_node) ? hir_token_pos[call_node] : INVALID; uint callee = valid_node(call_node) ? hir_call_callee_node[call_node] : INVALID; uint member = valid_node(callee) && hir_kind[callee] == HIR_MEMBER_EXPR ? hir_member_name_token[callee] : INVALID; uint token = valid_token(site) && call_dependency_decl[site] != INVALID ? site : member; return valid_token(token) && call_dependency_decl[token] != INVALID ? 0x80000000u | (call_dependency_decl[token] & 0x7fffffffu) : wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT; }
 
 bool supported_function_token(uint fn_token)
 {
@@ -690,10 +696,10 @@ uint body_byte_for_arg_byte(uint record_i, uint arg_global_byte)
 uint nested_direct_call_byte(uint call_node, uint byte_i)
 {
     uint fn_token = call_fn_token_for_call(call_node);
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return 0u;
 
-    uint wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    uint wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
     uint arg_count = call_param_count[fn_token];
     uint offset = 0u;
     for (uint i = 0u; i < arg_count; i += 1u)
@@ -710,7 +716,7 @@ uint nested_direct_call_byte(uint call_node, uint byte_i)
 
     if (byte_i == offset)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
 }
 
 [shader("compute")]

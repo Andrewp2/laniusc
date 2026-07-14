@@ -106,6 +106,8 @@ pub use artifact_descriptor::{
     GPU_SOURCE_PACK_UNKNOWN_RUNTIME_ABI_VERSION,
     GpuSourcePackArtifactDescriptor,
     GpuSourcePackArtifactStage,
+    GpuSourcePackCodegenObjectFormat,
+    GpuSourcePackCodegenObjectPayloadDescriptor,
     GpuSourcePackDependencyInterfaceSummary,
     GpuSourcePackRecordArrayDescriptor,
 };
@@ -123,6 +125,10 @@ pub use semantic_interface::{
     GpuSemanticInterfaceTypeEdge,
     GpuSemanticInterfaceTypeKind,
     GpuSemanticInterfaceTypeRecord,
+};
+pub(crate) use semantic_interface::{
+    dependency_batch::GpuSemanticInterfaceDependencyBatch,
+    stable_name_hash,
 };
 
 mod source_pack;

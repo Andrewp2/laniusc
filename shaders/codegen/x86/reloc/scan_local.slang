@@ -32,6 +32,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint X86_SELECT_OK = 1u;
 static const uint X86_SIZE_OK = 1u;
 static const uint X86_TEXT_OK = 1u;
+static const uint INVALID = 0xffffffffu;
 
 static const uint X86_INST_V_BRANCH_ZERO = 56u;
 static const uint X86_INST_V_JMP = 57u;
@@ -39,8 +40,17 @@ static const uint X86_INST_V_ENTRY_STACK_JMP = 64u;
 static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
+static const uint X86_INST_MOV_ESI_TEXT_ROW_ADDR = 49u;
+static const uint X86_INST_V_STORE_LOCAL_RODATA_PTR = 83u;
+static const uint X86_INST_V_HOST_TEXT_WRITE = 84u;
+static const uint X86_INST_V_HOST_OPEN_WRITE_PATH = 85u;
+static const uint X86_INST_V_HOST_OPEN_READ_PATH = 89u;
+
+static const uint X86_AGG_SOURCE_LOCAL = 1u;
+static const uint X86_AGG_SOURCE_PARAM = 2u;
 
 uint linear_group_id(uint3 gid)
 {
@@ -96,6 +106,21 @@ uint reloc_target_for_inst(uint inst_i, uint inst_count)
 
 uint reloc_flag_for_inst(uint inst_i, uint inst_count)
 {
+    uint kind = inst_kind_tag(inst_i);
+    if (kind == X86_INST_V_CALL_MIXED_EXTERNAL)
+        return 1u;
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR ||
+        kind == X86_INST_V_STORE_LOCAL_RODATA_PTR)
+        return 1u;
+    if (kind == X86_INST_V_HOST_TEXT_WRITE)
+        return x86_inst_arg2[inst_i] != INVALID ? 1u : 0u;
+    if (kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+    {
+        uint source_kind = x86_inst_arg2[inst_i];
+        return source_kind != X86_AGG_SOURCE_LOCAL &&
+               source_kind != X86_AGG_SOURCE_PARAM ? 1u : 0u;
+    }
     uint target = reloc_target_for_inst(inst_i, inst_count);
     return inst_target_valid(target, inst_count) ? 1u : 0u;
 }

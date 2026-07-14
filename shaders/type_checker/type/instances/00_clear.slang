@@ -40,6 +40,8 @@ RWStructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint> type_instance_len_kind;
 RWStructuredBuffer<uint> type_instance_len_payload;
 RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_instance_decl_token;
+RWStructuredBuffer<uint> type_instance_external_canonical;
 RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
@@ -112,6 +114,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_instance_len_kind[i] = TYPE_LEN_NONE;
     type_instance_len_payload[i] = INVALID;
     type_instance_state[i] = TYPE_INSTANCE_EMPTY;
+    type_instance_decl_token[i] = INVALID;
+    type_instance_external_canonical[i] = INVALID;
     fn_return_ref_tag[i] = TYPE_REF_INVALID;
     fn_return_ref_payload[i] = INVALID;
     decl_type_ref_tag[i] = TYPE_REF_INVALID;

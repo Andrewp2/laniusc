@@ -1683,37 +1683,26 @@ fn source_pack_link_execution_pages_reject_malformed_source_summaries() {
         "rejected impossible source-byte link execution page must not be persisted"
     );
 
-    let empty_line_summary = leaf_page(2, 4, 2, 2, 0);
-    let err = store
-        .store_hierarchical_link_execution_page(&empty_line_summary)
-        .expect_err("link execution pages must carry source-line provenance");
-    let message = err.to_string();
+    let unknown_line_summary = leaf_page(2, 4, 2, 2, 0);
+    store
+        .store_hierarchical_link_execution_page(&unknown_line_summary)
+        .expect("path-stream link pages may carry unknown source-line provenance");
     assert!(
-        message.contains("empty source-line summary")
-            && message.contains("concrete source-line evidence"),
-        "expected empty source-line summary error, got {message}"
-    );
-    assert!(
-        !store
+        store
             .hierarchical_link_execution_page_path_for_target(target, 2)
             .exists(),
-        "rejected source-line link execution page must not be persisted"
+        "accepted unknown source-line summary should be persisted"
     );
 
-    let impossible_line_summary = leaf_page(3, 5, 2, 2, 1);
-    let err = store
-        .store_hierarchical_link_execution_page(&impossible_line_summary)
-        .expect_err("link execution pages must not report fewer lines than source files");
-    let message = err.to_string();
+    let partial_line_summary = leaf_page(3, 5, 2, 2, 1);
+    store
+        .store_hierarchical_link_execution_page(&partial_line_summary)
+        .expect("aggregates may mix known and unknown per-file line counts");
     assert!(
-        message.contains("source-line summary 1") && message.contains("source-file count 2"),
-        "expected impossible source-line summary error, got {message}"
-    );
-    assert!(
-        !store
+        store
             .hierarchical_link_execution_page_path_for_target(target, 3)
             .exists(),
-        "rejected impossible source-line link execution page must not be persisted"
+        "accepted partial source-line summary should be persisted"
     );
 
     std::fs::remove_dir_all(&root).expect("remove link execution source-byte temp root");

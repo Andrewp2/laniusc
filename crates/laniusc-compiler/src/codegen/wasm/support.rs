@@ -175,7 +175,16 @@ pub(super) fn read_wasm_output(
         let status_words = crate::gpu::readback::read_u32_words(&data, "WASM codegen status");
         drop(data);
         status_readback.unmap();
-        let [len, mode, error_code, error_detail] = status_words?;
+        let [
+            len,
+            mode,
+            error_code,
+            error_detail,
+            relocation_count,
+            relocation_error_count,
+            relocation_error_detail,
+            relocation_error_code,
+        ] = status_words?;
         if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
             eprintln!(
                 "[laniusc][wasm-codegen] readback.status len={len} mode={mode} error={error_code} detail={error_detail}"
@@ -192,6 +201,11 @@ pub(super) fn read_wasm_output(
         let ok = matches!(mode, 1 | 2 | 3 | 5);
         if error_code != 0 {
             return Err(super::wasm_output_error_from_status(error_code, error_detail).into());
+        }
+        if relocation_error_code != 0 || relocation_error_count != 0 {
+            return Err(anyhow::anyhow!(
+                "WASM call-relocation compaction failed: count={relocation_count} errors={relocation_error_count} code={relocation_error_code} detail={relocation_error_detail}"
+            ));
         }
         if !ok || len > output_capacity {
             return Err(anyhow::anyhow!(
@@ -460,7 +474,7 @@ pub(super) fn trace_func_invalid_readback(
     Ok(())
 }
 
-fn wasm_readback_timeout() -> Duration {
+pub(super) fn wasm_readback_timeout() -> Duration {
     let ms = crate::gpu::env::env_u64("LANIUS_WASM_READBACK_TIMEOUT_MS", 3_000);
     Duration::from_millis(ms)
 }

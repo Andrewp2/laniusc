@@ -54,6 +54,7 @@ impl GpuWasmCodeGenerator {
             paths: path_metadata,
             semantic_hir,
             call_fn_index: call_fn_index_buf,
+            call_dependency_decl: call_dependency_decl_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
             call_return_type: call_return_type_buf,
             call_param_count: call_param_count_buf,
@@ -473,6 +474,10 @@ impl GpuWasmCodeGenerator {
                     call_metadata.arg_row_count.as_entire_binding(),
                 ),
                 ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+                (
+                    "call_dependency_decl",
+                    call_dependency_decl_buf.as_entire_binding(),
+                ),
                 (
                     "call_intrinsic_tag",
                     call_intrinsic_tag_buf.as_entire_binding(),

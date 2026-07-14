@@ -1,17 +1,47 @@
 mod common;
 
-use laniusc_compiler::compiler::{
-    CompileError,
-    EntrySourceRoots,
-    load_entry_path_manifest_with_source_root,
-    load_entry_path_manifest_with_source_root_and_stdlib,
-    load_entry_path_manifest_with_stdlib,
-    load_entry_with_source_root,
-    load_entry_with_source_roots,
-    load_entry_with_stdlib,
-    type_check_entry_with_source_root,
-    type_check_entry_with_source_roots,
-    type_check_entry_with_stdlib,
+use laniusc_compiler::{
+    codegen::{
+        unit::{
+            CodegenUnitLimits,
+            SourcePackArtifactTarget,
+            SourcePackBuildShardLimits,
+            SourcePackJob,
+            SourcePackJobBatchLimits,
+            SourcePackJobPhase,
+            SourcePackLinkObjectBatch,
+        },
+        wasm::{
+            GpuWasmRelocatableObject,
+            GpuWasmRelocationTargetKind,
+        },
+        x86::{GpuX86ObjectSection, GpuX86RelocatableObject, GpuX86RelocationTargetKind},
+    },
+    compiler::{
+        AsyncPagedArtifactBuildExecutor,
+        CompileError,
+        EntrySourceRoots,
+        ExplicitSourceLibraryPathStream,
+        ExplicitSourcePathFile,
+        GpuCompiler,
+        GpuSemanticInterfaceArtifact,
+        GpuSemanticInterfaceMemberKind,
+        GpuSemanticInterfaceTypeKind,
+        GpuSourcePackArtifactDescriptor,
+        GpuSourcePackArtifactExecutor,
+        GpuSourcePackCodegenObjectFormat,
+        load_entry_path_manifest_with_source_root,
+        load_entry_path_manifest_with_source_root_and_stdlib,
+        load_entry_path_manifest_with_stdlib,
+        load_entry_with_source_root,
+        load_entry_with_source_roots,
+        load_entry_with_stdlib,
+        run_path_stream_worker_to_wasm,
+        run_path_stream_worker_to_x86_64,
+        type_check_entry_with_source_root,
+        type_check_entry_with_source_roots,
+        type_check_entry_with_stdlib,
+    },
 };
 
 fn assert_gpu_type_check_rejects(src: &str) {
@@ -52,13 +82,24 @@ fn semantic_interface_name<'a>(bytes: &'a [u8], start: u32, len: u32) -> &'a str
 }
 
 #[test]
-fn semantic_interface_identity_exports_public_checked_names_on_gpu() {
-    let artifact = common::semantic_interface_identity_with_timeout(
+fn semantic_interface_exports_public_checked_graph_on_gpu() {
+    let artifact = common::semantic_interface_with_timeout(
         37,
         &[
             r#"module core::math;
 pub fn visible(value: i32) -> i32 { return value; }
+pub fn transform(values: [i32; 4]) -> [i32; 4] { return values; }
+pub fn notify(value: i32) { return; }
+pub fn keep<T>(value: T) -> T { return value; }
+pub fn keep_array<T, const N: usize>(values: [T; N]) -> [T; N] { return values; }
+pub struct Boxed<T> {
+    value: T,
+}
 fn hidden() -> i32 { return 0; }
+fn hidden_array() -> i32 {
+    let local: [i32; 4] = [1, 2, 3, 4];
+    return local[0];
+}
 pub const ANSWER: i32 = 42;
 pub enum Signal {
     Stop,
@@ -71,7 +112,7 @@ fn main() -> i32 { return visible(ANSWER); }
 "#,
         ],
     )
-    .expect("GPU semantic-interface identity export should succeed");
+    .expect("GPU semantic-interface export should succeed");
 
     assert_eq!(artifact.library_id, 37);
     assert_eq!(artifact.modules.len(), 2);
@@ -87,12 +128,167 @@ fn main() -> i32 { return visible(ANSWER); }
         })
         .collect::<std::collections::BTreeSet<_>>();
     assert!(declaration_names.contains("visible"));
+    assert!(declaration_names.contains("transform"));
+    assert!(declaration_names.contains("notify"));
+    assert!(declaration_names.contains("keep"));
+    assert!(declaration_names.contains("keep_array"));
+    assert!(declaration_names.contains("Boxed"));
     assert!(declaration_names.contains("ANSWER"));
     assert!(declaration_names.contains("Signal"));
     assert!(declaration_names.contains("Stop"));
     assert!(declaration_names.contains("Go"));
     assert!(!declaration_names.contains("hidden"));
+    assert!(!declaration_names.contains("hidden_array"));
     assert!(!declaration_names.contains("main"));
+    assert!(
+        artifact
+            .declarations
+            .iter()
+            .all(|declaration| declaration.signature_type != u32::MAX),
+        "every exported declaration should reference its GPU-materialized signature type"
+    );
+    let member_count = |name: &str| {
+        artifact
+            .declarations
+            .iter()
+            .find(|declaration| {
+                semantic_interface_name(
+                    &artifact.name_bytes,
+                    declaration.name_byte_start,
+                    declaration.name_byte_len,
+                ) == name
+            })
+            .map(|declaration| declaration.member_count)
+            .unwrap_or(u32::MAX)
+    };
+    assert_eq!(
+        member_count("keep"),
+        2,
+        "generic parameter plus value parameter"
+    );
+    assert_eq!(
+        member_count("keep_array"),
+        3,
+        "type parameter, const parameter, and value parameter"
+    );
+    assert_eq!(member_count("Boxed"), 2, "generic parameter plus field");
+    assert_eq!(member_count("Signal"), 2, "two enum variants");
+
+    let declaration_index = |name: &str| {
+        artifact
+            .declarations
+            .iter()
+            .position(|declaration| {
+                semantic_interface_name(
+                    &artifact.name_bytes,
+                    declaration.name_byte_start,
+                    declaration.name_byte_len,
+                ) == name
+            })
+            .expect("expected exported declaration")
+    };
+    let keep_declaration = artifact.declarations[declaration_index("keep")];
+    let keep_signature = artifact.types[keep_declaration.signature_type as usize];
+    let keep_type_edges = &artifact.type_edges[keep_signature.first_edge as usize
+        ..(keep_signature.first_edge + keep_signature.edge_count) as usize];
+    assert_eq!(
+        keep_type_edges.len(),
+        2,
+        "parameter followed by return type"
+    );
+    for edge in keep_type_edges {
+        let ty = artifact.types[edge.type_index as usize];
+        assert_eq!(
+            ty.kind,
+            GpuSemanticInterfaceTypeKind::GenericParameter as u32
+        );
+        assert_eq!(
+            ty.payload_lo, keep_declaration.first_member,
+            "generic parameter uses must identify the owning declaration member"
+        );
+    }
+    let boxed_declaration = artifact.declarations[declaration_index("Boxed")];
+    let boxed_field = artifact.members[(boxed_declaration.first_member + 1) as usize];
+    let boxed_field_type = artifact.types[boxed_field.type_index as usize];
+    assert_eq!(
+        boxed_field_type.payload_lo, boxed_declaration.first_member,
+        "same-named generic parameters from different declarations must not alias"
+    );
+    assert!(artifact.types.iter().all(|ty| {
+        ty.kind != GpuSemanticInterfaceTypeKind::Declaration as u32
+            || ty.payload_lo != artifact.library_id
+            || ty.nominal_unit_id == artifact.unit_id
+    }));
+
+    let members_of = |declaration_name: &str| {
+        let declaration = artifact
+            .declarations
+            .iter()
+            .find(|declaration| {
+                semantic_interface_name(
+                    &artifact.name_bytes,
+                    declaration.name_byte_start,
+                    declaration.name_byte_len,
+                ) == declaration_name
+            })
+            .expect("expected exported declaration");
+        let first = declaration.first_member as usize;
+        let end = first + declaration.member_count as usize;
+        artifact.members[first..end]
+            .iter()
+            .map(|member| {
+                (
+                    semantic_interface_name(
+                        &artifact.name_bytes,
+                        member.name_byte_start,
+                        member.name_byte_len,
+                    ),
+                    member.kind,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        members_of("keep"),
+        vec![
+            (
+                "T",
+                GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+            ),
+            ("value", GpuSemanticInterfaceMemberKind::Parameter as u32),
+        ]
+    );
+    assert_eq!(
+        members_of("keep_array"),
+        vec![
+            (
+                "T",
+                GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+            ),
+            (
+                "N",
+                GpuSemanticInterfaceMemberKind::GenericConstParameter as u32
+            ),
+            ("values", GpuSemanticInterfaceMemberKind::Parameter as u32),
+        ]
+    );
+    assert_eq!(
+        members_of("Boxed"),
+        vec![
+            (
+                "T",
+                GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+            ),
+            ("value", GpuSemanticInterfaceMemberKind::Field as u32),
+        ]
+    );
+    assert_eq!(
+        members_of("Signal"),
+        vec![
+            ("Stop", GpuSemanticInterfaceMemberKind::EnumVariant as u32),
+            ("Go", GpuSemanticInterfaceMemberKind::EnumVariant as u32),
+        ]
+    );
 
     let signal_index = artifact
         .declarations
@@ -140,6 +336,1433 @@ fn main() -> i32 { return visible(ANSWER); }
         .collect::<Vec<_>>();
     assert!(module_paths.iter().any(|path| path == &["core", "math"]));
     assert!(module_paths.iter().any(|path| path == &["app", "main"]));
+
+    let encoded = artifact
+        .to_bytes()
+        .expect("complete GPU semantic interface should serialize");
+    let decoded = laniusc_compiler::compiler::GpuSemanticInterfaceArtifact::from_bytes(&encoded)
+        .expect("serialized GPU semantic interface should decode");
+    assert_eq!(decoded, artifact);
+}
+
+#[test]
+fn dependency_nominals_from_distinct_units_of_one_library_do_not_alias() {
+    let alpha = common::semantic_interface_with_timeout(
+        7,
+        &[r#"module alpha::api;
+pub struct AlphaToken { value: i32 }
+pub fn accept_alpha(value: AlphaToken) -> i32 { return 1; }
+"#],
+    )
+    .expect("first same-library unit should export");
+    let mut beta = common::semantic_interface_with_timeout(
+        7,
+        &[r#"module beta::api;
+pub struct BetaToken { value: i32 }
+pub fn accept_beta(value: BetaToken) -> i32 { return 2; }
+"#],
+    )
+    .expect("second same-library unit should export");
+    beta.unit_id = 1;
+    for ty in &mut beta.types {
+        if ty.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
+            && ty.payload_lo == beta.library_id
+        {
+            ty.nominal_unit_id = beta.unit_id;
+        }
+    }
+    beta.validate()
+        .expect("second unit should retain valid full nominal identities");
+
+    let accepted = r#"module app::main;
+import alpha::api;
+import beta::api;
+fn use_alpha(value: AlphaToken) -> i32 { return accept_alpha(value); }
+fn use_beta(value: BetaToken) -> i32 { return accept_beta(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[accepted],
+        vec![alpha.clone(), beta.clone()],
+    )
+    .expect("distinct same-library unit nominals should resolve independently");
+
+    let rejected = r#"module app::main;
+import alpha::api;
+import beta::api;
+fn wrong(value: BetaToken) -> i32 { return accept_alpha(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[rejected],
+        vec![alpha, beta],
+    )
+    .expect_err("same-library declarations from different units must not compare equal");
+}
+
+#[test]
+fn type_checker_resolves_dependency_interface_module_import_on_gpu() {
+    let dependency = common::semantic_interface_with_timeout(
+        7,
+        &[r#"module core::math;
+pub type CountBase = i32;
+pub type Count = CountBase;
+pub struct Token { value: i32 }
+pub struct Boxed<T> { value: T }
+pub struct Wrapped<T> { value: T }
+pub struct Wide<A, B, C, D, E, F> { a: A, b: B, c: C, d: D, e: E, f: F }
+pub fn identity(value: Count) -> Count { return value; }
+pub fn keep_token(value: Token) -> Token { return value; }
+pub fn keep_boxed(value: Boxed<i32>) -> Boxed<i32> { return value; }
+pub fn keep_four(values: [i32; 4]) -> [i32; 4] { return values; }
+pub fn keep_generic<T>(value: T) -> T { return value; }
+pub fn keep_pair<T>(left: T, right: T) -> T { return left; }
+"#],
+    )
+    .expect("dependency semantic interface should compile");
+    let dependency_decl = |name: &str| {
+        dependency
+            .declarations
+            .iter()
+            .find(|declaration| {
+                semantic_interface_name(
+                    &dependency.name_bytes,
+                    declaration.name_byte_start,
+                    declaration.name_byte_len,
+                ) == name
+            })
+            .expect("dependency declaration should be exported")
+    };
+    assert_ne!(
+        dependency_decl("Boxed").signature_type,
+        dependency_decl("Wrapped").signature_type,
+        "distinct nominal declarations need distinct canonical signature nodes"
+    );
+    let module_only_dependent = r#"module app::main;
+import core::math;
+fn main() -> i32 { return 0; }
+"#;
+
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[module_only_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("dependency module import should resolve from its semantic interface");
+
+    let declaration_dependent = r#"module app::main;
+import core::math;
+fn main() -> Count {
+    let value: Count = identity(37);
+    return value;
+}
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[declaration_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("public dependency declarations and signatures should resolve from the interface");
+
+    let nominal_dependent = r#"module app::main;
+import core::math;
+fn forward(value: Token) -> Token { return keep_token(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[nominal_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("canonical dependency nominal identities should survive local declarations and calls");
+
+    let generic_nominal_dependent = r#"module app::main;
+import core::math;
+fn forward(value: Boxed<i32>) -> Boxed<i32> { return value; }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[generic_nominal_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("instantiated dependency nominal identities should preserve their generic arguments");
+
+    let compound_call_dependent = r#"module app::main;
+import core::math;
+fn forward(value: Boxed<i32>) -> Boxed<i32> { return keep_boxed(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[compound_call_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("dependency calls should preserve concrete generic parameter and return graphs");
+
+    let wrong_compound_call_nominal = r#"module app::main;
+import core::math;
+fn wrong(value: Wrapped<i32>) -> Boxed<i32> { return keep_boxed(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_call_nominal],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency calls must compare the nominal identity of generic arguments");
+
+    let wrong_compound_call_argument = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<bool>) -> Boxed<i32> { return keep_boxed(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_call_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency calls must compare concrete generic argument types");
+
+    let wrong_compound_call_return_nominal = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Wrapped<i32> { return keep_boxed(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_call_return_nominal],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency call results must retain their generic nominal identity");
+
+    let wrong_compound_call_return_argument = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Boxed<bool> { return keep_boxed(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_call_return_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency call results must retain their concrete generic arguments");
+
+    let array_call_dependent = r#"module app::main;
+import core::math;
+fn forward(values: [i32; 4]) -> [i32; 4] { return keep_four(values); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[array_call_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("dependency calls should preserve concrete array element and length types");
+
+    let wrong_array_call_element = r#"module app::main;
+import core::math;
+fn wrong(values: [bool; 4]) -> [i32; 4] { return keep_four(values); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_array_call_element],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency calls must compare concrete array element types");
+
+    let wrong_array_call_length = r#"module app::main;
+import core::math;
+fn wrong(values: [i32; 8]) -> [i32; 4] { return keep_four(values); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_array_call_length],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency calls must compare concrete array lengths");
+
+    let generic_function_dependent = r#"module app::main;
+import core::math;
+fn forward(value: i32) -> i32 { return keep_generic(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[generic_function_dependent],
+        vec![dependency.clone()],
+    )
+    .expect("dependency function generics should be inferred from call arguments");
+
+    let inconsistent_generic_function_call = r#"module app::main;
+import core::math;
+fn wrong(left: i32, right: bool) -> i32 { return keep_pair(left, right); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[inconsistent_generic_function_call],
+        vec![dependency.clone()],
+    )
+    .expect_err("all claims for an imported function generic must agree");
+
+    let wrong_generic_function_return = r#"module app::main;
+import core::math;
+fn wrong(value: i32) -> bool { return keep_generic(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_generic_function_return],
+        vec![dependency.clone()],
+    )
+    .expect_err("an imported generic return must use the inferred argument type");
+
+    let compound_generic_function = r#"module app::main;
+import core::math;
+fn forward(left: Boxed<i32>, right: Boxed<i32>) -> Boxed<i32> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[compound_generic_function],
+        vec![dependency.clone()],
+    )
+    .expect("imported function generics should retain compound nominal identity");
+
+    let inconsistent_compound_generic_function = r#"module app::main;
+import core::math;
+fn wrong(left: Boxed<i32>, right: Wrapped<i32>) -> Boxed<i32> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[inconsistent_compound_generic_function],
+        vec![dependency.clone()],
+    )
+    .expect_err("compound claims for an imported function generic must agree exactly");
+
+    let inconsistent_compound_generic_argument = r#"module app::main;
+import core::math;
+fn wrong(left: Boxed<i32>, right: Boxed<bool>) -> Boxed<i32> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[inconsistent_compound_generic_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("compound generic claims must compare their concrete arguments in parallel");
+
+    let wide_compound_generic_function = r#"module app::main;
+import core::math;
+fn forward(
+    left: Wide<i32, bool, i32, bool, i32, bool>,
+    right: Wide<i32, bool, i32, bool, i32, bool>
+) -> Wide<i32, bool, i32, bool, i32, bool> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wide_compound_generic_function],
+        vec![dependency.clone()],
+    )
+    .expect("compound generic claim comparison must not have a four-argument limit");
+
+    let wrong_wide_compound_generic_function = r#"module app::main;
+import core::math;
+fn wrong(
+    left: Wide<i32, bool, i32, bool, i32, bool>,
+    right: Wide<i32, bool, i32, bool, bool, bool>
+) -> Wide<i32, bool, i32, bool, i32, bool> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_wide_compound_generic_function],
+        vec![dependency.clone()],
+    )
+    .expect_err("wide compound generic claims must compare every argument row");
+
+    let wrong_compound_generic_return = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Wrapped<i32> { return keep_generic(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_generic_return],
+        vec![dependency.clone()],
+    )
+    .expect_err("an imported compound generic return must retain exact nominal identity");
+
+    let wrong_compound_generic_return_argument = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Boxed<bool> { return keep_generic(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_compound_generic_return_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("an imported compound generic return must retain concrete arguments");
+
+    let wrong_generic_nominal = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Wrapped<i32> { return value; }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_generic_nominal],
+        vec![dependency.clone()],
+    )
+    .expect_err("distinct dependency generic nominal identities must not compare equal");
+
+    let wrong_generic_argument = r#"module app::main;
+import core::math;
+fn wrong(value: Boxed<i32>) -> Boxed<bool> { return value; }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_generic_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency generic arguments must participate in structural type equality");
+
+    let wrong_argument = r#"module app::main;
+import core::math;
+fn main() -> i32 { return identity(true); }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency parameter types must participate in call checking");
+
+    let wrong_nominal_argument = r#"module app::main;
+import core::math;
+fn main() -> i32 { keep_token(1); return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_nominal_argument],
+        vec![dependency],
+    )
+    .expect_err("dependency nominal parameter identities must reject scalar arguments");
+}
+
+#[test]
+fn semantic_interface_export_preserves_transitive_dependency_nominal_identity() {
+    let core = common::semantic_interface_with_timeout(
+        7,
+        &[r#"module core::types;
+pub struct Token { value: i32 }
+pub struct Other { value: i32 }
+"#],
+    )
+    .expect("core semantic interface should compile");
+
+    let middle = common::semantic_interface_with_dependencies_with_timeout(
+        8,
+        &[r#"module middle::api;
+import core::types;
+pub fn forward(value: Token) -> Token { return value; }
+"#],
+        vec![core.clone()],
+    )
+    .expect("middle interface should export signatures that reference a dependency nominal");
+
+    let accepted = r#"module app::main;
+import core::types;
+import middle::api;
+fn use_forward(value: Token) -> Token { return forward(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[accepted],
+        vec![core.clone(), middle.clone()],
+    )
+    .expect("a transitive dependency nominal should retain its originating library identity");
+
+    let rejected = r#"module app::main;
+import core::types;
+import middle::api;
+fn wrong(value: Other) -> Token { return forward(value); }
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[rejected],
+        vec![core, middle],
+    )
+    .expect_err("a distinct dependency nominal must not satisfy the transitive signature");
+}
+
+#[test]
+fn bounded_wasm_worker_persists_and_consumes_dependency_semantic_interfaces() {
+    let core_source =
+        common::TempArtifact::new("laniusc_bounded_interface", "core", Some("lanius"));
+    core_source.write_str(
+        r#"module core::types;
+pub struct Token { value: i32 }
+"#,
+    );
+    let middle_source =
+        common::TempArtifact::new("laniusc_bounded_interface", "middle", Some("lanius"));
+    middle_source.write_str(
+        r#"module middle::api;
+import core::types;
+pub fn forward(value: Token) -> Token { return value; }
+"#,
+    );
+    let artifact_root = common::temp_artifact_path("laniusc_bounded_interface", "artifacts", None);
+    let worker_root = artifact_root.clone();
+    let core_path = core_source.path().to_path_buf();
+    let middle_path = middle_source.path().to_path_buf();
+    let core_len = std::fs::metadata(&core_path)
+        .expect("stat core source")
+        .len() as usize;
+    let middle_len = std::fs::metadata(&middle_path)
+        .expect("stat middle source")
+        .len() as usize;
+
+    let result = common::run_with_timeout("bounded semantic-interface worker", move || {
+        pollster::block_on(async move {
+            let compiler = GpuCompiler::new().await?;
+            let mut executor = GpuSourcePackArtifactExecutor::new(
+                &compiler,
+                &worker_root,
+                SourcePackArtifactTarget::Wasm,
+            );
+            let core_job = SourcePackJob {
+                job_index: 0,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 0,
+                library_job_index: None,
+                library_id: 7,
+                first_source_index: 0,
+                source_file_count: 1,
+                source_bytes: core_len,
+                source_lines: 2,
+                oversized_source_file: false,
+                dependency_job_indices: Vec::new(),
+            };
+            let core_files = [ExplicitSourcePathFile {
+                library_id: 7,
+                path: core_path,
+                byte_len: core_len,
+                modified_unix_nanos: None,
+                line_count: Some(2),
+            }];
+            let core_handle = executor
+                .begin_library_interface(&core_job, &core_files)
+                .await?;
+            let core_artifact = executor
+                .finish_library_interface(&core_job, core_handle)
+                .await?;
+
+            let middle_job = SourcePackJob {
+                job_index: 1,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 1,
+                library_job_index: None,
+                library_id: 8,
+                first_source_index: 1,
+                source_file_count: 1,
+                source_bytes: middle_len,
+                source_lines: 3,
+                oversized_source_file: false,
+                dependency_job_indices: vec![0],
+            };
+            let middle_files = [ExplicitSourcePathFile {
+                library_id: 8,
+                path: middle_path,
+                byte_len: middle_len,
+                modified_unix_nanos: None,
+                line_count: Some(3),
+            }];
+            let mut middle_handle = executor
+                .begin_library_interface(&middle_job, &middle_files)
+                .await?;
+            executor
+                .add_library_interface_dependency_batch(
+                    &middle_job,
+                    &mut middle_handle,
+                    &[core_artifact],
+                )
+                .await?;
+            executor
+                .finish_library_interface(&middle_job, middle_handle)
+                .await?;
+            Ok::<_, CompileError>(worker_root)
+        })
+    })
+    .expect("bounded worker should compile dependency interfaces");
+    let artifact_root = result;
+
+    let core_interface_path =
+        artifact_root.join("gpu-source-pack/wasm/semantic-interface/job-0.lnsi");
+    let middle_interface_path =
+        artifact_root.join("gpu-source-pack/wasm/semantic-interface/job-1.lnsi");
+    let core = GpuSemanticInterfaceArtifact::from_bytes(
+        &std::fs::read(&core_interface_path).expect("read persisted core interface"),
+    )
+    .expect("parse persisted core interface");
+    let middle = GpuSemanticInterfaceArtifact::from_bytes(
+        &std::fs::read(&middle_interface_path).expect("read persisted middle interface"),
+    )
+    .expect("parse persisted middle interface");
+    assert_eq!(core.library_id, 7);
+    assert_eq!(core.unit_id, 0);
+    assert_eq!(middle.library_id, 8);
+    assert_eq!(middle.unit_id, 1);
+    assert!(middle.types.iter().any(|ty| {
+        ty.kind == GpuSemanticInterfaceTypeKind::Declaration as u32 && ty.payload_lo == 7
+    }));
+
+    if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_none() {
+        std::fs::remove_dir_all(&artifact_root).expect("remove bounded worker artifact root");
+    }
+}
+
+#[test]
+fn bounded_wasm_work_queue_reaches_concrete_interface_execution() {
+    let source = common::TempArtifact::new("laniusc_bounded_work_queue", "app", Some("lanius"));
+    source.write_str(
+        r#"module app::main;
+pub fn answer() -> i32 { return 42; }
+"#,
+    );
+    let artifact_root = common::temp_artifact_path("laniusc_bounded_work_queue", "artifacts", None);
+    let worker_root = artifact_root.clone();
+    let source_path = source.path().to_path_buf();
+
+    let result = common::run_with_timeout("bounded WASM work queue", move || {
+        for _ in 0..64 {
+            let execution = pollster::block_on(run_path_stream_worker_to_wasm(
+                vec![ExplicitSourceLibraryPathStream {
+                    library_id: 7,
+                    source_file_count: 1,
+                    paths: vec![source_path.clone()],
+                    dependency_library_ids: Vec::new(),
+                }],
+                &worker_root,
+                CodegenUnitLimits::default(),
+                SourcePackJobBatchLimits::default(),
+                SourcePackBuildShardLimits::default(),
+                "bounded-work-queue-test-worker",
+                32,
+                None,
+                32,
+            ));
+            match execution {
+                Ok(execution) => return Ok((execution, worker_root)),
+                Err(CompileError::Diagnostic(diagnostic)) if diagnostic.code == "LNC0064" => {}
+                Err(err) => return Err(err),
+            }
+        }
+        panic!("bounded work-queue preparation did not complete after 64 chunks");
+    })
+    .expect("bounded work queue should execute all prepared jobs");
+    let (execution, artifact_root) = result;
+    assert!(execution.executed_item_count >= 1);
+    let interface_path = artifact_root.join("gpu-source-pack/wasm/semantic-interface/job-0.lnsi");
+    let interface = GpuSemanticInterfaceArtifact::from_bytes(
+        &std::fs::read(&interface_path).expect("read work-queue semantic interface"),
+    )
+    .expect("parse work-queue semantic interface");
+    assert_eq!(interface.library_id, 7);
+
+    if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_none() {
+        std::fs::remove_dir_all(&artifact_root).expect("remove work-queue artifact root");
+    }
+}
+
+#[test]
+fn bounded_x86_executor_persists_a_parseable_relocatable_object() {
+    let dependency =
+        common::TempArtifact::new("laniusc_bounded_x86_object", "core", Some("lanius"));
+    dependency.write_str(
+        r#"module core::api;
+pub fn unused() -> i32 { return 7; }
+"#,
+    );
+    let source = common::TempArtifact::new("laniusc_bounded_x86_object", "app", Some("lanius"));
+    source.write_str(
+        r#"module app::main;
+import core::api;
+pub fn answer() -> i32 { return unused(); }
+fn main() -> i32 { return answer(); }
+"#,
+    );
+    let artifact_root = common::temp_artifact_path("laniusc_bounded_x86_object", "artifacts", None);
+    let executor_root = artifact_root.clone();
+    let dependency_path = dependency.path().to_path_buf();
+    let dependency_len = std::fs::metadata(&dependency_path)
+        .expect("stat x86 dependency source")
+        .len() as usize;
+    let source_path = source.path().to_path_buf();
+    let source_len = std::fs::metadata(&source_path)
+        .expect("stat x86 object source")
+        .len() as usize;
+
+    let result = common::run_with_timeout("bounded x86 object executor", move || {
+        pollster::block_on(async move {
+            let compiler = GpuCompiler::new().await?;
+            let mut executor = GpuSourcePackArtifactExecutor::new(
+                &compiler,
+                &executor_root,
+                SourcePackArtifactTarget::X86_64,
+            );
+            let dependency_files = [ExplicitSourcePathFile {
+                library_id: 6,
+                path: dependency_path,
+                byte_len: dependency_len,
+                modified_unix_nanos: None,
+                line_count: Some(2),
+            }];
+            let source_files = [ExplicitSourcePathFile {
+                library_id: 7,
+                path: source_path,
+                byte_len: source_len,
+                modified_unix_nanos: None,
+                line_count: Some(4),
+            }];
+            let dependency_job = SourcePackJob {
+                job_index: 0,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 0,
+                library_job_index: None,
+                library_id: 6,
+                first_source_index: 0,
+                source_file_count: 1,
+                source_bytes: dependency_len,
+                source_lines: 2,
+                oversized_source_file: false,
+                dependency_job_indices: Vec::new(),
+            };
+            let dependency_handle = executor
+                .begin_library_interface(&dependency_job, &dependency_files)
+                .await?;
+            let dependency_artifact = executor
+                .finish_library_interface(&dependency_job, dependency_handle)
+                .await?;
+            let interface_job = SourcePackJob {
+                job_index: 1,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 1,
+                library_job_index: None,
+                library_id: 7,
+                first_source_index: 1,
+                source_file_count: 1,
+                source_bytes: source_len,
+                source_lines: 4,
+                oversized_source_file: false,
+                dependency_job_indices: vec![0],
+            };
+            let mut interface_handle = executor
+                .begin_library_interface(&interface_job, &source_files)
+                .await?;
+            executor
+                .add_library_interface_dependency_batch(
+                    &interface_job,
+                    &mut interface_handle,
+                    std::slice::from_ref(&dependency_artifact),
+                )
+                .await?;
+            let interface_artifact = executor
+                .finish_library_interface(&interface_job, interface_handle)
+                .await?;
+            let dependency_codegen_job = SourcePackJob {
+                job_index: 3,
+                phase: SourcePackJobPhase::Codegen,
+                phase_unit_index: 0,
+                library_job_index: Some(0),
+                library_id: 6,
+                first_source_index: 0,
+                source_file_count: 1,
+                source_bytes: dependency_len,
+                source_lines: 2,
+                oversized_source_file: false,
+                dependency_job_indices: vec![0],
+            };
+            let dependency_codegen_handle = executor
+                .begin_codegen_object(
+                    &dependency_codegen_job,
+                    &dependency_files,
+                    &dependency_artifact,
+                )
+                .await?;
+            let dependency_object_artifact = executor
+                .finish_codegen_object(&dependency_codegen_job, dependency_codegen_handle)
+                .await?;
+            let codegen_job = SourcePackJob {
+                job_index: 2,
+                phase: SourcePackJobPhase::Codegen,
+                phase_unit_index: 1,
+                library_job_index: Some(1),
+                library_id: 7,
+                first_source_index: 1,
+                source_file_count: 1,
+                source_bytes: source_len,
+                source_lines: 4,
+                oversized_source_file: false,
+                dependency_job_indices: vec![1, 0],
+            };
+            let mut codegen_handle = executor
+                .begin_codegen_object(&codegen_job, &source_files, &interface_artifact)
+                .await?;
+            executor
+                .add_codegen_object_dependency_batch(
+                    &codegen_job,
+                    &mut codegen_handle,
+                    std::slice::from_ref(&dependency_artifact),
+                )
+                .await?;
+            let app_object_artifact = executor
+                .finish_codegen_object(&codegen_job, codegen_handle)
+                .await?;
+            let link_job = SourcePackJob {
+                job_index: 4,
+                phase: SourcePackJobPhase::Link,
+                phase_unit_index: 0,
+                library_job_index: None,
+                library_id: 7,
+                first_source_index: 0,
+                source_file_count: 2,
+                source_bytes: source_len + dependency_len,
+                source_lines: 6,
+                oversized_source_file: false,
+                dependency_job_indices: vec![2, 3],
+            };
+            let mut link_handle = executor.begin_link_codegen_objects(&link_job).await?;
+            executor
+                .link_codegen_object_batch(
+                    &link_job,
+                    &mut link_handle,
+                    &SourcePackLinkObjectBatch {
+                        batch_index: 0,
+                        input_object_artifact_indices: vec![0, 1],
+                        source_bytes: source_len + dependency_len,
+                        source_file_count: 2,
+                        source_lines: 6,
+                    },
+                    &[app_object_artifact, dependency_object_artifact],
+                )
+                .await?;
+            executor
+                .finish_link_codegen_objects(&link_job, link_handle)
+                .await?;
+            Ok::<_, CompileError>(executor_root)
+        })
+    })
+    .expect("bounded x86 executor should persist a codegen object");
+    let artifact_root = result;
+
+    let object_dir = artifact_root.join("gpu-source-pack/x86_64/codegen-object");
+    let mut object_paths = std::fs::read_dir(&object_dir)
+        .expect("read x86 codegen-object directory")
+        .map(|entry| entry.expect("read x86 object directory entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "lnxo")
+        })
+        .collect::<Vec<_>>();
+    object_paths.sort();
+    assert_eq!(object_paths.len(), 2);
+    let object_bytes = std::fs::read(&object_paths[0]).expect("read persisted x86 object");
+    let object = GpuX86RelocatableObject::from_bytes(&object_bytes)
+        .expect("persisted x86 object should parse and validate");
+    assert_eq!(object.library_id, 7);
+    assert_eq!(object.entry_offset, Some(0));
+    assert!(!object.text.is_empty());
+    assert_eq!(object.symbols.len(), 2);
+    assert_eq!(object.symbols[0].section, GpuX86ObjectSection::Undefined);
+    assert_eq!(object.symbols[1].section, GpuX86ObjectSection::Text);
+    assert!(object.symbols[1].size > 0);
+    assert!(object.relocations.iter().any(|relocation| {
+        relocation.target_kind == GpuX86RelocationTargetKind::Symbol && relocation.target_index == 0
+    }));
+    let dependency_object = GpuX86RelocatableObject::from_bytes(
+        &std::fs::read(&object_paths[1]).expect("read persisted dependency x86 object"),
+    )
+    .expect("persisted dependency x86 object should parse and validate");
+    assert_eq!(dependency_object.library_id, 6);
+    assert_eq!(dependency_object.entry_offset, None);
+    assert_eq!(dependency_object.symbols.len(), 1);
+    assert_eq!(
+        dependency_object.symbols[0].section,
+        GpuX86ObjectSection::Text
+    );
+
+    let descriptor_path = object_paths[0].with_extension("json");
+    let descriptor = serde_json::from_slice::<GpuSourcePackArtifactDescriptor>(
+        &std::fs::read(&descriptor_path).expect("read x86 codegen descriptor"),
+    )
+    .expect("parse x86 codegen descriptor");
+    descriptor
+        .validate_contract()
+        .expect("x86 codegen descriptor should validate");
+    let payload = descriptor
+        .codegen_object_payload
+        .expect("x86 codegen descriptor should reference its object payload");
+    assert_eq!(
+        payload.format,
+        GpuSourcePackCodegenObjectFormat::LaniusX86_64
+    );
+    assert_eq!(payload.byte_len, object_bytes.len());
+    assert_eq!(artifact_root.join(&payload.storage_key), object_paths[0]);
+
+    let linked_descriptor_path =
+        artifact_root.join("gpu-source-pack/x86_64/linked-output/job-4.json");
+    let linked_descriptor = serde_json::from_slice::<GpuSourcePackArtifactDescriptor>(
+        &std::fs::read(&linked_descriptor_path).expect("read x86 linked-output descriptor"),
+    )
+    .expect("parse x86 linked-output descriptor");
+    linked_descriptor
+        .validate_contract()
+        .expect("x86 linked-output descriptor should validate");
+    let emitted = linked_descriptor
+        .output_record_arrays
+        .iter()
+        .find(|array| array.name == "emitted_byte_records")
+        .expect("linked-output descriptor should contain emitted bytes");
+    let linked_path = artifact_root.join(
+        emitted
+            .storage_key
+            .as_deref()
+            .expect("emitted bytes should reference the persisted ELF"),
+    );
+    let linked_bytes = std::fs::read(&linked_path).expect("read linked x86 ELF");
+    assert_eq!(&linked_bytes[..4], b"\x7fELF");
+    assert_eq!(emitted.element_count, Some(linked_bytes.len()));
+    assert_eq!(emitted.byte_len, Some(linked_bytes.len()));
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = std::fs::metadata(&linked_path)
+            .expect("stat linked x86 ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&linked_path, permissions).expect("chmod linked x86 ELF");
+        let status = std::process::Command::new(&linked_path)
+            .status()
+            .expect("run linked x86 ELF");
+        assert_eq!(status.code(), Some(7));
+    }
+
+    if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_none() {
+        std::fs::remove_dir_all(&artifact_root).expect("remove bounded x86 artifact root");
+    }
+}
+
+#[test]
+fn bounded_wasm_executor_links_persisted_cross_unit_objects() {
+    let dependency =
+        common::TempArtifact::new("laniusc_bounded_wasm_object", "core", Some("lanius"));
+    dependency.write_str(
+        r#"module core::api;
+pub fn seven() -> i32 { return 7; }
+"#,
+    );
+    let source =
+        common::TempArtifact::new("laniusc_bounded_wasm_object", "app", Some("lanius"));
+    source.write_str(
+        r#"module app::main;
+import core::api;
+fn main() -> i32 { return seven(); }
+"#,
+    );
+    let artifact_root =
+        common::temp_artifact_path("laniusc_bounded_wasm_object", "artifacts", None);
+    let executor_root = artifact_root.clone();
+    let dependency_path = dependency.path().to_path_buf();
+    let dependency_len = std::fs::metadata(&dependency_path).unwrap().len() as usize;
+    let source_path = source.path().to_path_buf();
+    let source_len = std::fs::metadata(&source_path).unwrap().len() as usize;
+
+    let result = common::run_gpu_codegen_with_timeout("bounded Wasm object executor", move || {
+        pollster::block_on(async move {
+            let compiler = GpuCompiler::new().await?;
+            let mut executor = GpuSourcePackArtifactExecutor::new(
+                &compiler,
+                &executor_root,
+                SourcePackArtifactTarget::Wasm,
+            );
+            let dependency_files = [ExplicitSourcePathFile {
+                library_id: 6,
+                path: dependency_path,
+                byte_len: dependency_len,
+                modified_unix_nanos: None,
+                line_count: Some(2),
+            }];
+            let source_files = [ExplicitSourcePathFile {
+                library_id: 7,
+                path: source_path,
+                byte_len: source_len,
+                modified_unix_nanos: None,
+                line_count: Some(3),
+            }];
+            let dependency_job = SourcePackJob {
+                job_index: 0,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 0,
+                library_job_index: None,
+                library_id: 6,
+                first_source_index: 0,
+                source_file_count: 1,
+                source_bytes: dependency_len,
+                source_lines: 2,
+                oversized_source_file: false,
+                dependency_job_indices: Vec::new(),
+            };
+            let dependency_handle = executor
+                .begin_library_interface(&dependency_job, &dependency_files)
+                .await?;
+            let dependency_interface = executor
+                .finish_library_interface(&dependency_job, dependency_handle)
+                .await?;
+
+            let interface_job = SourcePackJob {
+                job_index: 1,
+                phase: SourcePackJobPhase::LibraryFrontend,
+                phase_unit_index: 1,
+                library_job_index: None,
+                library_id: 7,
+                first_source_index: 1,
+                source_file_count: 1,
+                source_bytes: source_len,
+                source_lines: 3,
+                oversized_source_file: false,
+                dependency_job_indices: vec![0],
+            };
+            let mut interface_handle = executor
+                .begin_library_interface(&interface_job, &source_files)
+                .await?;
+            executor
+                .add_library_interface_dependency_batch(
+                    &interface_job,
+                    &mut interface_handle,
+                    std::slice::from_ref(&dependency_interface),
+                )
+                .await?;
+            let app_interface = executor
+                .finish_library_interface(&interface_job, interface_handle)
+                .await?;
+
+            let dependency_codegen_job = SourcePackJob {
+                job_index: 3,
+                phase: SourcePackJobPhase::Codegen,
+                phase_unit_index: 0,
+                library_job_index: Some(0),
+                library_id: 6,
+                first_source_index: 0,
+                source_file_count: 1,
+                source_bytes: dependency_len,
+                source_lines: 2,
+                oversized_source_file: false,
+                dependency_job_indices: vec![0],
+            };
+            let dependency_codegen_handle = executor
+                .begin_codegen_object(
+                    &dependency_codegen_job,
+                    &dependency_files,
+                    &dependency_interface,
+                )
+                .await?;
+            let dependency_object = executor
+                .finish_codegen_object(&dependency_codegen_job, dependency_codegen_handle)
+                .await?;
+
+            let app_codegen_job = SourcePackJob {
+                job_index: 2,
+                phase: SourcePackJobPhase::Codegen,
+                phase_unit_index: 1,
+                library_job_index: Some(1),
+                library_id: 7,
+                first_source_index: 1,
+                source_file_count: 1,
+                source_bytes: source_len,
+                source_lines: 3,
+                oversized_source_file: false,
+                dependency_job_indices: vec![1, 0],
+            };
+            let mut app_codegen_handle = executor
+                .begin_codegen_object(&app_codegen_job, &source_files, &app_interface)
+                .await?;
+            executor
+                .add_codegen_object_dependency_batch(
+                    &app_codegen_job,
+                    &mut app_codegen_handle,
+                    std::slice::from_ref(&dependency_interface),
+                )
+                .await?;
+            let app_object = executor
+                .finish_codegen_object(&app_codegen_job, app_codegen_handle)
+                .await?;
+
+            let link_job = SourcePackJob {
+                job_index: 4,
+                phase: SourcePackJobPhase::Link,
+                phase_unit_index: 0,
+                library_job_index: None,
+                library_id: 7,
+                first_source_index: 0,
+                source_file_count: 2,
+                source_bytes: source_len + dependency_len,
+                source_lines: 5,
+                oversized_source_file: false,
+                dependency_job_indices: vec![2, 3],
+            };
+            let mut link_handle = executor.begin_link_codegen_objects(&link_job).await?;
+            executor
+                .link_codegen_object_batch(
+                    &link_job,
+                    &mut link_handle,
+                    &SourcePackLinkObjectBatch {
+                        batch_index: 0,
+                        input_object_artifact_indices: vec![0, 1],
+                        source_bytes: source_len + dependency_len,
+                        source_file_count: 2,
+                        source_lines: 5,
+                    },
+                    &[app_object, dependency_object],
+                )
+                .await?;
+            executor
+                .finish_link_codegen_objects(&link_job, link_handle)
+                .await?;
+            Ok::<_, CompileError>(executor_root)
+        })
+    })
+    .expect("bounded Wasm executor should link cross-unit objects");
+    let artifact_root = result;
+
+    let app_object_path =
+        artifact_root.join("gpu-source-pack/wasm/codegen-object/job-2.lnwo");
+    let app_object = GpuWasmRelocatableObject::from_bytes(
+        &std::fs::read(&app_object_path).expect("read persisted app Wasm object"),
+    )
+    .expect("parse persisted app Wasm object");
+    assert_eq!(app_object.library_id, 7);
+    assert_eq!(app_object.entry_function, Some(0));
+    assert!(app_object.relocations.iter().any(|relocation| {
+        relocation.target_kind == GpuWasmRelocationTargetKind::Symbol
+            && relocation.target_index == 0
+    }));
+
+    let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(
+        &std::fs::read(app_object_path.with_extension("json"))
+            .expect("read Wasm object descriptor"),
+    )
+    .expect("parse Wasm object descriptor");
+    descriptor
+        .validate_contract()
+        .expect("Wasm object descriptor should validate");
+    assert_eq!(
+        descriptor.codegen_object_payload.unwrap().format,
+        GpuSourcePackCodegenObjectFormat::LaniusWasm
+    );
+
+    let linked_path = artifact_root.join("gpu-source-pack/wasm/linked-output/job-4.wasm");
+    let linked = std::fs::read(&linked_path).expect("read linked Wasm module");
+    assert_eq!(&linked[..8], b"\0asm\x01\0\0\0");
+    if let Ok(node) = which::which("node") {
+        let output = std::process::Command::new(node)
+            .args([
+                "-e",
+                "const fs=require('fs'); WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(x=>process.stdout.write(String(x.instance.exports.main())))",
+                linked_path.to_str().unwrap(),
+            ])
+            .output()
+            .expect("run linked source-pack Wasm module");
+        assert!(
+            output.status.success(),
+            "Node rejected linked source-pack Wasm: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"7");
+    }
+
+    if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_none() {
+        std::fs::remove_dir_all(&artifact_root).expect("remove bounded Wasm artifact root");
+    }
+}
+
+#[test]
+fn bounded_x86_work_queue_reaches_concrete_object_execution() {
+    let source = common::TempArtifact::new("laniusc_bounded_x86_queue", "app", Some("lanius"));
+    source.write_str(
+        r#"module app::main;
+fn main() -> i32 { return 0; }
+"#,
+    );
+    let artifact_root = common::temp_artifact_path("laniusc_bounded_x86_queue", "artifacts", None);
+    let worker_root = artifact_root.clone();
+    let source_path = source.path().to_path_buf();
+
+    let result = common::run_with_timeout("bounded x86 work queue", move || {
+        for _ in 0..64 {
+            let execution = pollster::block_on(run_path_stream_worker_to_x86_64(
+                vec![ExplicitSourceLibraryPathStream {
+                    library_id: 7,
+                    source_file_count: 1,
+                    paths: vec![source_path.clone()],
+                    dependency_library_ids: Vec::new(),
+                }],
+                &worker_root,
+                CodegenUnitLimits::default(),
+                SourcePackJobBatchLimits::default(),
+                SourcePackBuildShardLimits::default(),
+                "bounded-x86-queue-test-worker",
+                32,
+                None,
+                32,
+            ));
+            match execution {
+                Ok(execution) => return Ok((execution, worker_root)),
+                Err(CompileError::Diagnostic(diagnostic)) if diagnostic.code == "LNC0064" => {}
+                Err(err) => return Err(err),
+            }
+        }
+        panic!("bounded x86 work-queue preparation did not complete after 64 chunks");
+    })
+    .expect("bounded x86 work queue should execute its object job");
+    let (execution, artifact_root) = result;
+    assert!(execution.executed_item_count >= 2);
+    let object_path = artifact_root.join("gpu-source-pack/x86_64/codegen-object/job-1.lnxo");
+    GpuX86RelocatableObject::from_bytes(
+        &std::fs::read(&object_path).expect("read work-queue x86 object"),
+    )
+    .expect("work-queue x86 object should parse and validate");
+
+    if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_none() {
+        std::fs::remove_dir_all(&artifact_root).expect("remove bounded x86 queue artifact root");
+    }
+}
+
+#[test]
+fn type_checker_compares_nested_imported_generic_trees_without_a_depth_cap() {
+    let deeply_nested_i32 = (0..32).fold("i32".to_string(), |inner, _| format!("Boxed<{inner}>"));
+    let deeply_nested_bool = (0..32).fold("bool".to_string(), |inner, _| format!("Boxed<{inner}>"));
+    let dependency_source = format!(
+        r#"module core::nested;
+pub struct Boxed<T> {{ value: T }}
+pub struct Wrapped<T> {{ value: T }}
+pub type Count = i32;
+pub fn keep_pair<T>(left: T, right: T) -> T {{ return left; }}
+pub fn accept_nested(value: Boxed<Boxed<Boxed<i32>>>) -> i32 {{ return 1; }}
+pub fn produce_nested(value: Boxed<Boxed<Boxed<i32>>>) -> Boxed<Boxed<Boxed<i32>>> {{
+    return value;
+}}
+pub fn accept_deep(value: {deeply_nested_i32}) -> i32 {{ return 1; }}
+pub fn accept_alias_leaf(value: Boxed<Boxed<Count>>) -> i32 {{ return 1; }}
+"#
+    );
+    let dependency = common::semantic_interface_with_timeout(7, &[dependency_source.as_str()])
+        .expect("nested generic dependency interface should compile");
+
+    let plain_nested_return = r#"module app::main;
+import core::nested;
+fn forward(value: Boxed<Boxed<Boxed<i32>>>) -> Boxed<Boxed<Boxed<i32>>> {
+    return value;
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[plain_nested_return],
+        vec![dependency.clone()],
+    )
+    .expect("equal nested imported type annotations should compare structurally");
+
+    let nested_dependency_parameter = r#"module app::main;
+import core::nested;
+fn main() -> i32 {
+    let value: Boxed<Boxed<Boxed<i32>>>;
+    return accept_nested(value);
+}
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[nested_dependency_parameter],
+        vec![dependency.clone()],
+    )
+    .expect("dependency canonical signatures should compare complete nested type trees");
+
+    let wrong_dependency_parameter_leaf = r#"module app::main;
+import core::nested;
+fn main() -> i32 {
+    let value: Boxed<Boxed<Boxed<bool>>>;
+    return accept_nested(value);
+}
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_dependency_parameter_leaf],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency canonical signatures must reject a different deepest scalar");
+
+    let wrong_dependency_parameter_nominal = r#"module app::main;
+import core::nested;
+fn main() -> i32 {
+    let value: Boxed<Boxed<Wrapped<i32>>>;
+    return accept_nested(value);
+}
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_dependency_parameter_nominal],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency canonical signatures must reject a different nested nominal type");
+
+    let nested_dependency_result = r#"module app::main;
+import core::nested;
+fn forward(value: Boxed<Boxed<Boxed<i32>>>) -> Boxed<Boxed<Boxed<i32>>> {
+    return produce_nested(value);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[nested_dependency_result],
+        vec![dependency.clone()],
+    )
+    .expect("dependency canonical results should compare complete nested type trees");
+
+    let wrong_nested_dependency_result = r#"module app::main;
+import core::nested;
+fn wrong(value: Boxed<Boxed<Boxed<i32>>>) -> Boxed<Boxed<Boxed<bool>>> {
+    return produce_nested(value);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_nested_dependency_result],
+        vec![dependency.clone()],
+    )
+    .expect_err("dependency canonical results must reject a different deepest scalar");
+
+    let deep_dependency_parameter = format!(
+        r#"module app::main;
+import core::nested;
+fn main() -> i32 {{
+    let value: {deeply_nested_i32};
+    return accept_deep(value);
+}}
+"#
+    );
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[deep_dependency_parameter.as_str()],
+        vec![dependency.clone()],
+    )
+    .expect("canonical/local comparison must not impose a nesting-depth cap");
+
+    let wrong_deep_dependency_parameter = format!(
+        r#"module app::main;
+import core::nested;
+fn main() -> i32 {{
+    let value: {deeply_nested_bool};
+    return accept_deep(value);
+}}
+"#
+    );
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_deep_dependency_parameter.as_str()],
+        vec![dependency.clone()],
+    )
+    .expect_err("deep canonical/local comparison must still inspect the final leaf");
+
+    let nested_dependency_aliases = r#"module app::main;
+import core::nested;
+fn main() -> i32 {
+    let expanded_leaf: Boxed<Boxed<i32>>;
+    return accept_alias_leaf(expanded_leaf);
+}
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[nested_dependency_aliases],
+        vec![dependency.clone()],
+    )
+    .expect("nested canonical scalar aliases should normalize inside compound trees");
+
+    let nested_compound_generic_function = r#"module app::main;
+import core::nested;
+fn forward(
+    left: Boxed<Boxed<Boxed<i32>>>,
+    right: Boxed<Boxed<Boxed<i32>>>
+) -> Boxed<Boxed<Boxed<i32>>> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[nested_compound_generic_function],
+        vec![dependency.clone()],
+    )
+    .expect("compound generic claims should compare nested type trees without a depth cap");
+
+    let wrong_nested_compound_generic_argument = r#"module app::main;
+import core::nested;
+fn wrong(
+    left: Boxed<Boxed<Boxed<i32>>>,
+    right: Boxed<Boxed<Boxed<bool>>>
+) -> Boxed<Boxed<Boxed<i32>>> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_nested_compound_generic_argument],
+        vec![dependency.clone()],
+    )
+    .expect_err("nested compound generic claims must compare their deepest concrete arguments");
+
+    let wrong_nested_compound_generic_nominal = r#"module app::main;
+import core::nested;
+fn wrong(
+    left: Boxed<Boxed<Boxed<i32>>>,
+    right: Boxed<Boxed<Wrapped<i32>>>
+) -> Boxed<Boxed<Boxed<i32>>> {
+    return keep_pair(left, right);
+}
+fn main() -> i32 { return 0; }
+"#;
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        9,
+        &[wrong_nested_compound_generic_nominal],
+        vec![dependency],
+    )
+    .expect_err("nested compound generic claims must retain deep nominal identity");
 }
 
 fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source: &'static str) {

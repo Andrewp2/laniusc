@@ -234,6 +234,7 @@ fn force_minimum_wasm_body_artifact_optimization(artifact_key: &str) -> bool {
         artifact_key,
         "codegen/wasm/module"
             | "codegen/wasm/hir/body_plan"
+            | "codegen/wasm/hir/body_plan_collect"
             | "codegen/wasm/hir/body_plan_validate"
             | "codegen/wasm/hir/body_plan_validate_return"
             | "codegen/wasm/hir/body_plan_validate_return_call"
@@ -267,6 +268,10 @@ fn force_minimum_wasm_body_artifact_optimization(artifact_key: &str) -> bool {
             | "codegen/wasm/hir/body_scatter_if_simple"
             | "codegen/wasm/hir/body_scatter_return_scalar"
             | "codegen/wasm/hir/body_scatter_return_expr"
+            | "codegen/wasm/hir/body_scatter_conversion_expr"
+            | "codegen/wasm/hir/body_scatter"
+            | "codegen/wasm/hir/body_scatter_direct_nested_call"
+            | "codegen/wasm/hir/body_scatter_array_lean"
             | "codegen/wasm/hir/body_scatter_let_const"
             | "codegen/wasm/hir/body_scatter_expr_control"
             | "codegen/wasm/hir/body_scatter_agg_range_control"

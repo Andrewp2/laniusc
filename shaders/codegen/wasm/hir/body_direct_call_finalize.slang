@@ -2,6 +2,7 @@
 
 import atomics;
 import gpu_index;
+import call_relocation;
 
 struct Params
 {
@@ -130,7 +131,7 @@ uint arg_bytes_for_fragment(uint fragment_i)
 
 uint direct_call_tail_len(uint kind, uint4 meta, uint4 aux)
 {
-    uint call_tail = 1u + u32_leb_len(aux.x);
+    uint call_tail = 1u + wasm_call_index_len(aux.x);
     if (kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32)
         return call_tail + local_index_len(meta.y);

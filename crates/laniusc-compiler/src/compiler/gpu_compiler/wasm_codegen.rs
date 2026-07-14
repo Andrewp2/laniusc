@@ -9,6 +9,17 @@ use super::{
 };
 use crate::gpu::buffers::LaniusBuffer;
 
+#[derive(Clone, Copy)]
+enum WasmBackendArtifactRequest {
+    Executable,
+    RelocatableObject { library_id: u32, unit_id: u32 },
+}
+
+enum CompletedWasmBackendArtifact {
+    Executable(Vec<u8>),
+    RelocatableObject(wasm::GpuWasmRelocatableObject),
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
     /// Compile one in-memory source string through the WASM backend using
     /// `<source>` as the diagnostic path.
@@ -34,12 +45,91 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<Vec<u8>, CompileError> {
+        match self
+            .compile_source_pack_to_wasm_artifact(
+                sources,
+                &[],
+                WasmBackendArtifactRequest::Executable,
+            )
+            .await?
+        {
+            CompletedWasmBackendArtifact::Executable(bytes) => Ok(bytes),
+            CompletedWasmBackendArtifact::RelocatableObject(_) => Err(
+                wasm_backend_execution_failed_for_source_pack(
+                    &source_pack_diagnostic_files(sources, None),
+                    "internal Wasm artifact mode mismatch",
+                ),
+            ),
+        }
+    }
+
+    /// Compiles one bounded source-pack unit to a durable relocatable Wasm object.
+    pub(in crate::compiler) async fn compile_source_pack_to_wasm_object<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        library_id: u32,
+        unit_id: u32,
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+    ) -> Result<wasm::GpuWasmRelocatableObject, CompileError> {
+        match self
+            .compile_source_pack_to_wasm_artifact(
+                sources,
+                dependency_interfaces,
+                WasmBackendArtifactRequest::RelocatableObject {
+                    library_id,
+                    unit_id,
+                },
+            )
+            .await?
+        {
+            CompletedWasmBackendArtifact::RelocatableObject(object) => Ok(object),
+            CompletedWasmBackendArtifact::Executable(_) => Err(
+                wasm_backend_execution_failed_for_source_pack(
+                    &source_pack_diagnostic_files(sources, None),
+                    "internal Wasm artifact mode mismatch",
+                ),
+            ),
+        }
+    }
+
+    async fn compile_source_pack_to_wasm_artifact<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+        artifact_request: WasmBackendArtifactRequest,
+    ) -> Result<CompletedWasmBackendArtifact, CompileError> {
         validate_in_memory_source_pack_fits_default_codegen_unit(
             "compile source pack to WASM",
             sources,
         )?;
         let diagnostic_files = source_pack_diagnostic_files(sources, None);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
+        let dependency_state = match artifact_request {
+            WasmBackendArtifactRequest::RelocatableObject {
+                library_id,
+                unit_id,
+            } if !dependency_interfaces.is_empty() => Some(
+                gpu_type_checker::GpuDependencyInterfaceState::new(
+                    &self.gpu.device,
+                    library_id,
+                    unit_id,
+                    dependency_interfaces,
+                )
+                .map_err(|err| {
+                    wasm_backend_execution_failed_for_source_pack(
+                        &diagnostic_files,
+                        format!("dependency semantic-interface preparation failed: {err}"),
+                    )
+                })?,
+            ),
+            WasmBackendArtifactRequest::Executable if !dependency_interfaces.is_empty() => {
+                return Err(wasm_backend_execution_failed_for_source_pack(
+                    &diagnostic_files,
+                    "dependency semantic interfaces require relocatable-object mode",
+                ));
+            }
+            _ => None,
+        };
         trace_wasm_compile("source_pack.compile.start");
         self.lexer
             .with_recorded_resident_source_pack_tokens_after_count(
@@ -90,7 +180,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 let hir_status = &parse_bufs.ll1_status;
                                 let recorded = self
                                     .type_checker
-                                    .record_resident_token_buffer_with_hir_items_on_gpu(
+                                    .record_resident_token_buffer_with_hir_items_and_dependencies_on_gpu(
                                         device,
                                         queue,
                                         encoder,
@@ -262,7 +352,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             semantic_dense_node: &parse_bufs
                                                 .hir_semantic_dense_node,
                                             semantic_count: &parse_bufs.hir_semantic_count,
+                                            semantic_subtree_end: &parse_bufs
+                                                .hir_semantic_subtree_end,
                                         },
+                                        dependency_state.as_ref(),
                                         timer.as_deref_mut(),
                                     )
                                     .map_err(|err| {
@@ -292,6 +385,11 @@ impl<'gpu> GpuCompiler<'gpu> {
     bufs.n,
     token_capacity,
     parse_bufs.tree_capacity,
+    match artifact_request {
+        WasmBackendArtifactRequest::Executable => 0,
+        WasmBackendArtifactRequest::RelocatableObject { .. } =>
+            wasm::WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT,
+    },
     wasm::GpuWasmCodegenInputs {
         token: &bufs.tokens_out,
         token_count: &bufs.token_count,
@@ -308,6 +406,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         parser_feature_flags: &parse_bufs.token_feature_flags,
         visible_decl: codegen.visible_decl,
         visible_type: codegen.visible_type,
+        public_decl_count: codegen.public_decl_count,
+        public_decl_local_id: codegen.public_decl_local_id,
+        public_decl_index_by_local: codegen.public_decl_index_by_local,
+        decl_id_by_name_token: codegen.decl_id_by_name_token,
+        decl_hir_node: codegen.decl_hir_node,
         name_id_by_token: codegen.name_id_by_token,
         language_name_id: codegen.language_name_id,
         enclosing_fn: codegen.enclosing_fn,
@@ -452,6 +555,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         module_value_path_const_head: codegen.module_value_path_const_head,
         module_value_path_const_end: codegen.module_value_path_const_end,
         call_fn_index: codegen.call_fn_index,
+        call_dependency_decl: codegen.call_dependency_decl,
         call_intrinsic_tag: codegen.call_intrinsic_tag,
         fn_entrypoint_tag: codegen.fn_entrypoint_tag,
         call_return_type: codegen.call_return_type,
@@ -559,12 +663,39 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                     trace_wasm_compile("source_pack.finish.wasm.start");
-                    self.wasm_generator()
+                    let generator = self.wasm_generator()
                         .map_err(|err| {
                             wasm_backend_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?
-                        .finish_recorded_wasm(device, queue, &wasm_check)
-                        .map_err(|err| {
+                        })?;
+                    let result = match artifact_request {
+                        WasmBackendArtifactRequest::Executable => generator
+                            .finish_recorded_wasm(device, queue, &wasm_check)
+                            .map(CompletedWasmBackendArtifact::Executable),
+                        WasmBackendArtifactRequest::RelocatableObject {
+                            library_id,
+                            unit_id,
+                        } => generator
+                            .finish_recorded_wasm_object(
+                                device,
+                                queue,
+                                &wasm_check,
+                                library_id,
+                                unit_id,
+                                dependency_state.as_ref().map(|dependencies| {
+                                    wasm::GpuWasmDependencySymbolBuffers {
+                                        declaration_count: dependencies.declaration_count,
+                                        declaration_library_id: &dependencies.declaration_library_id,
+                                        declaration_unit_id: &dependencies.declaration_unit_id,
+                                        declaration_local_index: &dependencies.declaration_local_index,
+                                    }
+                                }),
+                            )
+                            .map(CompletedWasmBackendArtifact::RelocatableObject),
+                    };
+                    result.map_err(|err| {
+                            if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+                                eprintln!("[laniusc][wasm-codegen] finish.error: {err:#}");
+                            }
                             wasm_codegen_error_to_compile_error_for_source_pack(
                                 device,
                                 queue,
@@ -824,6 +955,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             semantic_dense_node: &parse_bufs
                                                 .hir_semantic_dense_node,
                                             semantic_count: &parse_bufs.hir_semantic_count,
+                                            semantic_subtree_end: &parse_bufs
+                                                .hir_semantic_subtree_end,
                                         },
                                         timer.as_deref_mut(),
                                     )
@@ -856,6 +989,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     bufs.n,
     token_capacity,
     parse_bufs.tree_capacity,
+    0,
     wasm::GpuWasmCodegenInputs {
         token: &bufs.tokens_out,
         token_count: &bufs.token_count,
@@ -872,6 +1006,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         parser_feature_flags: &parse_bufs.token_feature_flags,
         visible_decl: codegen.visible_decl,
         visible_type: codegen.visible_type,
+        public_decl_count: codegen.public_decl_count,
+        public_decl_local_id: codegen.public_decl_local_id,
+        public_decl_index_by_local: codegen.public_decl_index_by_local,
+        decl_id_by_name_token: codegen.decl_id_by_name_token,
+        decl_hir_node: codegen.decl_hir_node,
         name_id_by_token: codegen.name_id_by_token,
         language_name_id: codegen.language_name_id,
         enclosing_fn: codegen.enclosing_fn,
@@ -1014,6 +1153,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         module_value_path_const_head: codegen.module_value_path_const_head,
         module_value_path_const_end: codegen.module_value_path_const_end,
         call_fn_index: codegen.call_fn_index,
+        call_dependency_decl: codegen.call_dependency_decl,
         call_intrinsic_tag: codegen.call_intrinsic_tag,
         fn_entrypoint_tag: codegen.fn_entrypoint_tag,
         call_return_type: codegen.call_return_type,
@@ -1283,6 +1423,71 @@ fn wasm_backend_execution_failure() -> StageExecutionFailure<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_projects_compiled_user_call_to_relocatable_wasm_object() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
+            &[r#"
+pub fn seven() -> i32 {
+    return 7;
+}
+
+fn main() -> i32 {
+    return seven();
+}
+"#],
+            11,
+            3,
+            &[],
+        ))
+        .expect("compile relocatable Wasm object");
+        assert_eq!(object.library_id, 11);
+        assert_eq!(object.unit_id, 3);
+        assert_eq!(object.functions.len(), 2);
+        assert_eq!(object.entry_function, Some(1));
+        assert_eq!(object.relocations.len(), 1);
+        assert_eq!(
+            object.relocations[0].target_kind,
+            wasm::GpuWasmRelocationTargetKind::LocalFunction
+        );
+        assert_eq!(object.relocations[0].target_index, 0);
+        let encoded = object.to_bytes().expect("serialize Wasm object");
+        assert_eq!(
+            wasm::GpuWasmRelocatableObject::from_bytes(&encoded).unwrap(),
+            object
+        );
+        let input = wasm::link::GpuWasmLinkInput::for_executable(&[object])
+            .expect("flatten projected Wasm object");
+        let generator = compiler.wasm_generator().expect("Wasm generator");
+        let linked = generator
+            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
+            .expect("link projected Wasm object");
+        let node = match which::which("node") {
+            Ok(node) => node,
+            Err(_) => return,
+        };
+        let path = std::env::temp_dir().join(format!(
+            "laniusc-projected-object-{}.wasm",
+            std::process::id()
+        ));
+        std::fs::write(&path, &linked).expect("write projected linked Wasm");
+        let output = std::process::Command::new(node)
+            .args([
+                "-e",
+                "const fs=require('fs'); WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(x=>process.stdout.write(String(x.instance.exports.main())))",
+                path.to_str().unwrap(),
+            ])
+            .output()
+            .expect("run projected linked Wasm");
+        let _ = std::fs::remove_file(path);
+        assert!(
+            output.status.success(),
+            "Node rejected projected linked Wasm: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"7");
+    }
 
     #[test]
     fn wasm_backend_execution_failure_for_source_is_structured_diagnostic() {

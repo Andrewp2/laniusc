@@ -248,6 +248,7 @@ pub(super) fn register_hir_item_resources<'a>(
     );
     resources.buffer("hir_semantic_dense_node", &hir_items.semantic_dense_node);
     resources.buffer("hir_semantic_count", &hir_items.semantic_count);
+    resources.buffer("hir_semantic_subtree_end", &hir_items.semantic_subtree_end);
 }
 
 /// Registers placeholder HIR resources for modes without parser item metadata.
@@ -343,4 +344,5 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_struct_lit_field_value_node", &empty_hir.parent);
     resources.buffer("hir_semantic_dense_node", &empty_hir.semantic_dense_node);
     resources.buffer("hir_semantic_count", hir_active_count);
+    resources.buffer("hir_semantic_subtree_end", &empty_hir.node_kind);
 }

@@ -1,6 +1,7 @@
 // Byte helpers for aggregate direct-call argument scatter.
 
 import gpu_index;
+import call_relocation;
 
 struct Params
 {
@@ -44,6 +45,7 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> call_param_count;
@@ -64,6 +66,7 @@ StructuredBuffer<uint> wasm_func_param_ordinal_by_decl_token;
 RWStructuredBuffer<uint> wasm_func_local_max_by_token;
 
 static const uint INVALID = 0xffffffffu;
+static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
@@ -330,13 +333,19 @@ uint semantic_callee_token_for_call(uint call_node)
 uint call_metadata_token(uint call_node, uint callee_token)
 {
     uint site_token = call_site_token(call_node);
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID)
+        return site_token;
+    if (valid_token(semantic_token) && call_dependency_decl[semantic_token] != INVALID)
+        return semantic_token;
+    if (valid_token(callee_token) && call_dependency_decl[callee_token] != INVALID)
+        return callee_token;
+
     if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
         return site_token;
-
-    uint semantic_token = semantic_callee_token_for_call(call_node);
     if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
         return semantic_token;
-
     if (valid_token(callee_token) && valid_token(call_fn_index[callee_token]))
         return callee_token;
 
@@ -346,7 +355,32 @@ uint call_metadata_token(uint call_node, uint callee_token)
 uint call_fn_token_for_call(uint call_node, uint callee_token)
 {
     uint metadata_token = call_metadata_token(call_node, callee_token);
-    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+    if (!valid_token(metadata_token))
+        return INVALID;
+    if (call_dependency_decl[metadata_token] != INVALID)
+        return metadata_token;
+    uint local_fn = call_fn_index[metadata_token];
+    return valid_token(local_fn) ? local_fn : INVALID;
+}
+
+bool dependency_call_token(uint token)
+{
+    return valid_token(token) && call_dependency_decl[token] != INVALID;
+}
+
+bool supported_call_target_token(uint token)
+{
+    return supported_function_token(token) || dependency_call_token(token);
+}
+
+uint wasm_call_target_for_call(uint call_node, uint fn_token)
+{
+    uint metadata_token = call_metadata_token(call_node, call_callee_token(call_node));
+    if (valid_token(metadata_token) && call_dependency_decl[metadata_token] != INVALID)
+        return 0x80000000u | (call_dependency_decl[metadata_token] & 0x7fffffffu);
+    return valid_token(fn_token) && wasm_func_slot_by_token[fn_token] != INVALID
+               ? wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT
+               : INVALID;
 }
 
 uint call_return_type_for_call(uint call_node, uint callee_token, uint fn_token)
@@ -1508,7 +1542,7 @@ bool host_string_i32_call_expr_and_len(
         uint string_len = 0u;
         if (!string_value_expr_and_len(direct_call_arg_node(call_node, 0u), string_len))
             return false;
-        len = string_len + 1u + u32_leb_len(wasm_func_index);
+        len = string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -1523,7 +1557,7 @@ bool host_string_i32_call_expr_and_len(
         {
             return false;
         }
-        len = handle_len + string_len + 1u + u32_leb_len(wasm_func_index);
+        len = handle_len + string_len + 1u + wasm_call_index_len(wasm_func_index);
         return true;
     }
 
@@ -1649,7 +1683,7 @@ uint string_ptr_len_call_byte(uint string_node, uint wasm_func_index, uint byte_
     uint call_start = len;
     if (byte_i == call_start)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_start - 1u);
 }
 
 uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
@@ -1673,7 +1707,7 @@ uint handle_string_call_byte(uint call_node, uint wasm_func_index, uint byte_i)
     uint call_start = string_start + len;
     if (byte_i == call_start)
         return WASM_CALL;
-    return u32_leb_byte(wasm_func_index, byte_i - call_start - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_start - 1u);
 }
 
 uint host_string_i32_expr_byte(uint node, uint byte_i)

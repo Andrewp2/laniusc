@@ -32,8 +32,8 @@ bool wasm_call_expr_record(uint node, out uint wasm_func_index, out uint arg_cou
     else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_WRITE_NEWLINE) ||
              token_has_language_name(fn_token, LANGUAGE_SYMBOL_WRITE_NEWLINE))
         wasm_func_index = WASM_STD_WRITE_NEWLINE_FUNC_INDEX;
-    else if (supported_function_token(fn_token))
-        wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    else if (supported_call_target_token(fn_token))
+        wasm_func_index = wasm_call_target_for_call(node, fn_token);
     else
         return false;
     arg_count = hir_call_arg_count[node];
@@ -497,7 +497,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

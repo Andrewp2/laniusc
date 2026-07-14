@@ -117,6 +117,15 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             scan_step: 0,
         },
     );
+    let semantic_type_scan_n_blocks = hir_node_capacity.div_ceil(256).max(1);
+    let semantic_type_scan_steps = make_name_scan_steps(
+        device,
+        NameScanParams {
+            n_items: hir_node_capacity.max(1),
+            n_blocks: semantic_type_scan_n_blocks,
+            scan_step: 0,
+        },
+    );
     let struct_field_radix_bytes =
         struct_field_key_radix_bytes(struct_field_capacity, token_capacity);
     let struct_field_radix_steps =
@@ -724,6 +733,24 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         buffer_from_resources(resources, "type_instance_arg_row_scan_prefix_b")?,
     )?;
 
+    // These scans are recorded before aggregate comparison begins, so the
+    // aggregate scan workspace can safely serve both relations without
+    // increasing resident scratch memory.
+    let semantic_type_scan = Box::new(create_counted_u32_scan_bind_groups_with_passes(
+        passes,
+        device,
+        "type_check.type_instances.semantic_type_scan",
+        &semantic_type_scan_steps,
+        buffer_from_resources(resources, "hir_semantic_count")?,
+        buffer_from_resources(resources, "type_semantic_scan_input")?,
+        buffer_from_resources(resources, "type_semantic_prefix")?,
+        buffer_from_resources(resources, "type_semantic_count_out")?,
+        buffer_from_resources(resources, "aggregate_compare_scan_local_prefix")?,
+        buffer_from_resources(resources, "aggregate_compare_scan_block_sum")?,
+        buffer_from_resources(resources, "aggregate_compare_scan_prefix_a")?,
+        buffer_from_resources(resources, "aggregate_compare_scan_prefix_b")?,
+    )?);
+
     Ok(TypeInstanceBindGroups {
         clear: reflected_bind_group_from_resources(
             device,
@@ -818,6 +845,26 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.type_instances_hash_arg_rows,
             resources,
         )?,
+        clear_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_type_instances_clear_semantic_type_rows",
+            &passes.type_instances_clear_semantic_type_rows,
+            resources,
+        )?),
+        mark_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_type_instances_mark_semantic_type_rows",
+            &passes.type_instances_mark_semantic_type_rows,
+            resources,
+        )?),
+        semantic_type_scan,
+        semantic_type_scan_n_blocks,
+        scatter_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_type_instances_scatter_semantic_type_rows",
+            &passes.type_instances_scatter_semantic_type_rows,
+            resources,
+        )?),
         decl_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_decl_refs",

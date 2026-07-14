@@ -18,7 +18,13 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct RelocFinalizeParams
+{
+    uint patch_output;
+};
+
 ConstantBuffer<Params> gParams;
+ConstantBuffer<RelocFinalizeParams> gRelocFinalize;
 
 StructuredBuffer<uint> x86_inst_kind;
 StructuredBuffer<uint> x86_inst_arg0;
@@ -28,7 +34,11 @@ StructuredBuffer<uint> x86_inst_size;
 StructuredBuffer<uint> x86_inst_byte_offset;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> x86_text_len;
+StructuredBuffer<uint> x86_rodata_len;
+StructuredBuffer<uint> x86_rodata_size_by_node;
+StructuredBuffer<uint> x86_rodata_offset_by_node;
 StructuredBuffer<uint> text_status;
+StructuredBuffer<uint> x86_rodata_status;
 StructuredBuffer<uint> x86_reloc_count;
 StructuredBuffer<uint> x86_reloc_kind;
 StructuredBuffer<uint> x86_reloc_site_inst;
@@ -37,11 +47,14 @@ StructuredBuffer<uint> x86_reloc_target_inst;
 RWStructuredBuffer<uint> out_words;
 RWStructuredBuffer<uint> encode_status;
 RWStructuredBuffer<uint> reloc_status;
+RWStructuredBuffer<uint> x86_object_reloc_site_offset;
+RWStructuredBuffer<uint> x86_object_reloc_target_offset;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_ENCODE_OK = 1u;
 static const uint X86_RELOC_OK = 1u;
+static const uint X86_RODATA_OK = 1u;
 static const uint X86_ERR_RELOC = 8u;
 static const uint ELF_TEXT_OFFSET = 0x78u;
 static const uint ELF_TEXT_WORD_OFFSET = 0x78u / 4u;
@@ -55,11 +68,20 @@ static const uint X86_INST_V_ENTRY_STACK_JMP = 64u;
 static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
 static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
 static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_CALL_MIXED_EXTERNAL = 124u;
 static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
+static const uint X86_INST_MOV_ESI_TEXT_ROW_ADDR = 49u;
+static const uint X86_INST_V_STORE_LOCAL_RODATA_PTR = 83u;
+static const uint X86_INST_V_HOST_TEXT_WRITE = 84u;
+static const uint X86_INST_V_HOST_OPEN_WRITE_PATH = 85u;
+static const uint X86_INST_V_HOST_OPEN_READ_PATH = 89u;
 
 static const uint X86_RELOC_REL32 = 1u;
 static const uint X86_RELOC_CALL_REL32 = 2u;
+static const uint X86_RELOC_ABS32_TEXT = 3u;
+static const uint X86_RELOC_ABS32_RODATA = 4u;
+static const uint X86_RELOC_CALL_REL32_SYMBOL = 5u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -78,6 +100,8 @@ static const uint X86_REG_R8D = 8u;
 static const uint X86_REG_R9D = 9u;
 static const uint X86_REG_R10D = 10u;
 static const uint X86_REG_R11D = 11u;
+static const uint X86_TEXT_VADDR = 0x400078u;
+static const uint PRINT_SAVE_RESTORE_SIZE = 13u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -427,6 +451,30 @@ uint inst_call_save_mask(uint inst_i)
     return (x86_inst_kind[inst_i] >> 8u) & 0xffu;
 }
 
+uint address_reloc_imm_offset_for_inst(uint inst_i)
+{
+    uint kind = inst_kind_tag(inst_i);
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
+        return 1u;
+    if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR)
+    {
+        uint disp = local_slot_disp(x86_inst_arg0[inst_i]);
+        return disp <= 127u ? 4u : 7u;
+    }
+    if (kind == X86_INST_V_HOST_TEXT_WRITE)
+    {
+        uint handle = x86_inst_arg0[inst_i] & 0xffu;
+        uint handle_move = handle == X86_REG_EDI
+                               ? 0u
+                               : mov_r32_r32_size(X86_REG_EDI, handle);
+        return PRINT_SAVE_RESTORE_SIZE + handle_move + 1u;
+    }
+    if (kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+        return PRINT_SAVE_RESTORE_SIZE + 1u;
+    return INVALID;
+}
+
 uint target_offset(uint target)
 {
     uint inst_count = text_status[3u];
@@ -476,6 +524,9 @@ bool reloc_site_ordered(uint reloc_i, uint site_inst)
 uint reloc_imm_offset_for_inst(uint inst_i)
 {
     uint kind = inst_kind_tag(inst_i);
+    uint address_offset = address_reloc_imm_offset_for_inst(inst_i);
+    if (address_offset != INVALID)
+        return address_offset;
     if (kind == X86_INST_JCC_FALSE_REL32)
         return 2u;
     if (kind == X86_INST_JMP_REL32 || kind == X86_INST_CALL_REL32)
@@ -498,7 +549,8 @@ uint reloc_imm_offset_for_inst(uint inst_i)
             return INVALID;
         return (local_slot_disp(index_slot) <= 127u ? 5u : 8u) + 1u;
     }
-    if (kind == X86_INST_V_CALL_MIXED_DIRECT)
+    if (kind == X86_INST_V_CALL_MIXED_DIRECT ||
+        kind == X86_INST_V_CALL_MIXED_EXTERNAL)
         return call_mixed_call_imm_offset(
             x86_inst_arg1[inst_i],
             x86_inst_arg2[inst_i],
@@ -534,7 +586,8 @@ uint reloc_target_for_inst(uint inst_i)
         kind == X86_INST_CALL_REL32 ||
         kind == X86_INST_V_JMP ||
         kind == X86_INST_V_ENTRY_STACK_JMP ||
-        kind == X86_INST_V_CALL_MIXED_DIRECT)
+        kind == X86_INST_V_CALL_MIXED_DIRECT ||
+        kind == X86_INST_V_CALL_MIXED_EXTERNAL)
         return x86_inst_arg0[inst_i];
     if (kind == X86_INST_V_BRANCH_ZERO ||
         kind == X86_INST_V_FOR_ARRAY_INC_JMP)
@@ -543,6 +596,13 @@ uint reloc_target_for_inst(uint inst_i)
         kind == X86_INST_V_MATCH_TAG_BRANCH ||
         kind == X86_INST_V_FOR_INTERVAL_BRANCH)
         return x86_inst_arg2[inst_i];
+    if (kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR)
+        return x86_inst_arg0[inst_i];
+    if (kind == X86_INST_V_STORE_LOCAL_RODATA_PTR ||
+        kind == X86_INST_V_HOST_TEXT_WRITE ||
+        kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+        kind == X86_INST_V_HOST_OPEN_READ_PATH)
+        return x86_inst_arg1[inst_i];
     return INVALID;
 }
 
@@ -561,26 +621,70 @@ bool reloc_kind_matches_inst(uint reloc_kind, uint inst_kind)
     if (reloc_kind == X86_RELOC_CALL_REL32)
         return inst_kind == X86_INST_CALL_REL32 ||
                inst_kind == X86_INST_V_CALL_MIXED_DIRECT;
+    if (reloc_kind == X86_RELOC_CALL_REL32_SYMBOL)
+        return inst_kind == X86_INST_V_CALL_MIXED_EXTERNAL;
+    if (reloc_kind == X86_RELOC_ABS32_TEXT)
+        return inst_kind == X86_INST_MOV_ESI_TEXT_ROW_ADDR;
+    if (reloc_kind == X86_RELOC_ABS32_RODATA)
+        return inst_kind == X86_INST_V_STORE_LOCAL_RODATA_PTR ||
+               inst_kind == X86_INST_V_HOST_TEXT_WRITE ||
+               inst_kind == X86_INST_V_HOST_OPEN_WRITE_PATH ||
+               inst_kind == X86_INST_V_HOST_OPEN_READ_PATH;
     return false;
 }
 
-bool valid_reloc_record(uint reloc_i, uint site_inst, uint inst_count)
+bool reloc_target_valid(uint reloc_kind, uint target, uint inst_count)
+{
+    if (reloc_kind == X86_RELOC_CALL_REL32_SYMBOL)
+        return target != INVALID;
+    if (reloc_kind == X86_RELOC_ABS32_RODATA)
+    {
+        if (target >= gParams.n_hir_nodes ||
+            x86_rodata_status[0u] != X86_RODATA_OK ||
+            x86_rodata_status[1u] != 0u)
+            return false;
+        uint size = x86_rodata_size_by_node[target];
+        uint offset = x86_rodata_offset_by_node[target];
+        return size > 0u && offset <= x86_rodata_len[0u] &&
+               size <= x86_rodata_len[0u] - offset;
+    }
+    return target <= inst_count;
+}
+
+uint reloc_record_error(uint reloc_i, uint site_inst, uint inst_count)
 {
     if (reloc_i >= x86_reloc_count[0u])
-        return false;
+        return 1u;
     uint target = x86_reloc_target_inst[reloc_i];
+    uint packed_kind = x86_reloc_kind[reloc_i];
+    uint reloc_kind = reloc_kind_base(packed_kind);
     if (x86_reloc_site_inst[reloc_i] != site_inst ||
-        target > inst_count ||
+        !reloc_target_valid(reloc_kind, target, inst_count) ||
         !reloc_site_ordered(reloc_i, site_inst))
-        return false;
+        return 2u;
 
     uint site_kind = inst_kind_tag(site_inst);
-    uint reloc_kind = reloc_kind_base(x86_reloc_kind[reloc_i]);
     if (!reloc_kind_matches_inst(reloc_kind, site_kind))
-        return false;
+        return 3u;
+
+    uint expected_imm_offset = reloc_imm_offset_for_inst(site_inst);
+    if ((reloc_kind == X86_RELOC_ABS32_TEXT || reloc_kind == X86_RELOC_ABS32_RODATA) &&
+        (packed_kind >> 8u) != expected_imm_offset)
+        return 4u;
 
     uint expected_target = reloc_target_for_inst(site_inst);
-    return expected_target == target;
+    return expected_target == target ? 0u : 5u;
+}
+
+uint relocation_value(uint reloc_kind, uint site_inst, uint target)
+{
+    if (reloc_kind == X86_RELOC_REL32 || reloc_kind == X86_RELOC_CALL_REL32)
+        return rel32_to_target(site_inst, target);
+    if (reloc_kind == X86_RELOC_ABS32_TEXT)
+        return X86_TEXT_VADDR + target_offset(target);
+    if (reloc_kind == X86_RELOC_ABS32_RODATA)
+        return X86_TEXT_VADDR + x86_text_len[0u] + x86_rodata_offset_by_node[target];
+    return 0u;
 }
 
 void publish_reloc_patch_error(uint detail)
@@ -618,9 +722,12 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint site_inst = x86_reloc_site_inst[reloc_i];
-    if (site_inst >= inst_count || !valid_reloc_record(reloc_i, site_inst, inst_count))
+    uint record_error = site_inst >= inst_count
+                            ? 6u
+                            : reloc_record_error(reloc_i, site_inst, inst_count);
+    if (record_error != 0u)
     {
-        publish_reloc_patch_error(reloc_i);
+        publish_reloc_patch_error(0x40000000u | (record_error << 24u) | reloc_i);
         return;
     }
 
@@ -632,14 +739,33 @@ void main(uint3 tid: SV_DispatchThreadID)
                      inst_offset + size <= x86_text_len[0u];
     if (!in_bounds)
     {
-        publish_reloc_patch_error(reloc_i);
+        publish_reloc_patch_error(0x80000000u | reloc_i);
         return;
     }
 
-    uint rel = rel32_to_target(site_inst, x86_reloc_target_inst[reloc_i]);
+    uint reloc_kind = reloc_kind_base(x86_reloc_kind[reloc_i]);
     uint imm_pos = inst_offset + imm_offset;
-    patch_text_byte(imm_pos + 0u, u32_le_byte(rel, 0u));
-    patch_text_byte(imm_pos + 1u, u32_le_byte(rel, 1u));
-    patch_text_byte(imm_pos + 2u, u32_le_byte(rel, 2u));
-    patch_text_byte(imm_pos + 3u, u32_le_byte(rel, 3u));
+    uint target = x86_reloc_target_inst[reloc_i];
+    uint normalized_target_offset = reloc_kind == X86_RELOC_ABS32_RODATA
+                                        ? x86_rodata_offset_by_node[target]
+                                        : target_offset(target);
+    if (reloc_kind == X86_RELOC_CALL_REL32_SYMBOL)
+        normalized_target_offset = target;
+    x86_object_reloc_site_offset[reloc_i] = imm_pos;
+    x86_object_reloc_target_offset[reloc_i] = normalized_target_offset;
+
+    if (gRelocFinalize.patch_output == 0u)
+        return;
+
+    if (reloc_kind == X86_RELOC_CALL_REL32_SYMBOL)
+    {
+        publish_reloc_patch_error(0xc0000000u | reloc_i);
+        return;
+    }
+
+    uint value = relocation_value(reloc_kind, site_inst, target);
+    patch_text_byte(imm_pos + 0u, u32_le_byte(value, 0u));
+    patch_text_byte(imm_pos + 1u, u32_le_byte(value, 1u));
+    patch_text_byte(imm_pos + 2u, u32_le_byte(value, 2u));
+    patch_text_byte(imm_pos + 3u, u32_le_byte(value, 3u));
 }

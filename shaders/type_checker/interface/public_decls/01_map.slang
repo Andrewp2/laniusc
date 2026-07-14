@@ -18,9 +18,11 @@ StructuredBuffer<uint> decl_type_public_flag;
 StructuredBuffer<uint> decl_value_public_flag;
 StructuredBuffer<uint> decl_type_public_prefix;
 StructuredBuffer<uint> decl_value_public_prefix;
+StructuredBuffer<uint> decl_hir_node;
 RWStructuredBuffer<uint> interface_public_decl_count;
 RWStructuredBuffer<uint> interface_public_decl_local_id;
 RWStructuredBuffer<uint> interface_public_decl_index_by_local;
+RWStructuredBuffer<uint> interface_public_decl_index_by_hir;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -45,6 +47,9 @@ void publish(uint local_decl, uint persisted_decl)
         return;
     interface_public_decl_local_id[persisted_decl] = local_decl;
     interface_public_decl_index_by_local[local_decl] = persisted_decl;
+    uint hir = decl_hir_node[local_decl];
+    if (hir < gParams.capacity)
+        interface_public_decl_index_by_hir[hir] = persisted_decl;
 }
 
 [shader("compute")]

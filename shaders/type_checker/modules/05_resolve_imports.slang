@@ -210,7 +210,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_id >= record_capacity())
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(import_i, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
+        if (gParams.key_step == 0u)
+            record_error(import_i, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
 
@@ -218,7 +219,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (count == 0u)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
+        if (gParams.key_step == 0u)
+            record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
     if (count > SORT_PATH_SEGMENTS)
@@ -235,7 +237,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module_i == INVALID)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
+        if (gParams.key_step == 0u)
+            record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
 

@@ -253,15 +253,13 @@ impl StoredJobBatchBuilder {
     }
 
     /// Returns whether the current batch should be flushed before adding `job`.
-    pub(in crate::compiler) fn should_flush_before(&self, job: &SourcePackJob) -> bool {
+    pub(in crate::compiler) fn should_flush_before(&self, _job: &SourcePackJob) -> bool {
+        // Persisted work-queue items are job-scoped and carry one artifact
+        // producer identity. Keep their execution batches singleton so claims,
+        // completion, and retries cannot accidentally execute sibling jobs or
+        // collapse a dependency edge inside one batch. Parallelism comes from
+        // claiming multiple ready work items, not from widening one item.
         !self.current_jobs.is_empty()
-            && (self.current_jobs.len() >= self.limits.max_jobs_per_batch
-                || self.current_source_bytes.saturating_add(job.source_bytes)
-                    > self.limits.max_source_bytes_per_batch
-                || self
-                    .current_source_file_count
-                    .saturating_add(job.source_file_count)
-                    > self.limits.max_source_files_per_batch)
     }
 
     /// Emits the current batch and resets the builder.

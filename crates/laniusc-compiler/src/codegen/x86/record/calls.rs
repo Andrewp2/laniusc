@@ -193,6 +193,10 @@ pub(super) fn create_call_record_bind_groups(
                 call_metadata.call_fn_index.as_entire_binding(),
             ),
             (
+                "call_dependency_decl",
+                call_metadata.call_dependency_decl.as_entire_binding(),
+            ),
+            (
                 "call_return_type",
                 call_metadata.call_return_type.as_entire_binding(),
             ),

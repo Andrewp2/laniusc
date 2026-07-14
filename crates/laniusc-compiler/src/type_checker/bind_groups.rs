@@ -38,6 +38,7 @@ impl GpuTypeChecker {
         uses_hir_items: bool,
         external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
         module_path_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
+        dependency_interfaces: Option<&GpuDependencyInterfaceState>,
     ) -> Result<ResidentTypeCheckState> {
         let allocation_timing =
             crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
@@ -737,6 +738,13 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
+        let call_dependency_decl = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_dependency_decl",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let call_intrinsic_tag = typed_storage_u32_rw(
             device,
             "type_check.resident.call_intrinsic_tag",
@@ -1057,12 +1065,12 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let call_generic_claim_count_out = typed_storage_u32_rw(
+        let call_generic_claim_count_out = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_count_out",
             1,
             wgpu::BufferUsages::empty(),
-        );
+        ));
         let call_generic_claim_capacity = generic_claim_capacity_for_features(
             token_capacity,
             hir_items
@@ -1070,57 +1078,70 @@ impl GpuTypeChecker {
                 .unwrap_or(u32::MAX),
         );
         let call_generic_claim_radix_n_blocks = call_generic_claim_capacity.div_ceil(256).max(1);
-        let call_generic_claim_scan_input = typed_storage_u32_rw(
+        let call_generic_claim_scan_input = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_scan_input",
             call_arg_row_capacity as usize,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_prefix = typed_storage_u32_rw(
+        ));
+        let call_generic_claim_prefix = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_prefix",
             call_arg_row_capacity as usize,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_callee = typed_storage_u32_fill_rw(
+        ));
+        let call_generic_claim_callee = Box::new(typed_storage_u32_fill_rw(
             device,
             "type_check.resident.call_generic_claim_callee",
             call_generic_claim_capacity as usize,
             u32::MAX,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_slot = typed_storage_u32_fill_rw(
+        ));
+        let call_generic_claim_slot = Box::new(typed_storage_u32_fill_rw(
             device,
             "type_check.resident.call_generic_claim_slot",
             call_generic_claim_capacity as usize,
             u32::MAX,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_type = typed_storage_u32_rw(
+        ));
+        let call_generic_claim_type = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_type",
             call_generic_claim_capacity as usize,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_arg_row = typed_storage_u32_fill_rw(
+        ));
+        let call_generic_claim_ref_tag = Box::new(typed_storage_u32_rw(
+            device,
+            "type_check.resident.call_generic_claim_ref_tag",
+            call_generic_claim_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        ));
+        let call_generic_claim_ref_payload = Box::new(typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_generic_claim_ref_payload",
+            call_generic_claim_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        ));
+        let call_generic_claim_arg_row = Box::new(typed_storage_u32_fill_rw(
             device,
             "type_check.resident.call_generic_claim_arg_row",
             call_generic_claim_capacity as usize,
             u32::MAX,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_order = typed_storage_u32_rw(
+        ));
+        let call_generic_claim_order = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_order",
             call_generic_claim_capacity as usize,
             wgpu::BufferUsages::empty(),
-        );
-        let call_generic_claim_order_tmp = typed_storage_u32_rw(
+        ));
+        let call_generic_claim_order_tmp = Box::new(typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_order_tmp",
             call_generic_claim_capacity as usize,
             wgpu::BufferUsages::empty(),
-        );
+        ));
         let call_generic_claim_radix_dispatch_args = typed_storage_u32_rw(
             device,
             "type_check.resident.call_generic_claim_radix_dispatch_args",
@@ -1545,8 +1566,24 @@ impl GpuTypeChecker {
             token_capacity as usize,
             external_scratch.map(|scratch| scratch.type_const_param_slot_by_token),
         );
-        let type_instance_decl_token =
-            typed_alias_storage_u32(&radix_block_histogram, token_capacity as usize);
+        // Local and imported named instances share this identity discriminator.
+        // It must survive name-radix scratch reuse and be reset independently:
+        // an imported canonical id and a stale local declaration token are
+        // mutually exclusive representations of the same instance.
+        let type_instance_decl_token = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.type_instance_decl_token",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_external_canonical = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.type_instance_external_canonical",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let type_instance_arg_start = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_arg_start",
@@ -1650,6 +1687,40 @@ impl GpuTypeChecker {
             type_instance_arg_row_scan_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
+        let type_semantic_buffers = Box::new(TypeSemanticBuffers {
+            row_by_token: typed_storage_u32_fill_rw(
+                device,
+                "type_check.resident.type_semantic_row_by_token",
+                token_capacity.max(1) as usize,
+                u32::MAX,
+                wgpu::BufferUsages::empty(),
+            ),
+            scan_input: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_semantic_scan_input",
+                hir_node_capacity.max(1) as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            prefix: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_semantic_prefix",
+                hir_node_capacity.max(1) as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            count_out: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_semantic_count_out",
+                1,
+                wgpu::BufferUsages::empty(),
+            ),
+            row_by_ordinal: typed_storage_u32_fill_rw(
+                device,
+                "type_check.resident.type_semantic_row_by_ordinal",
+                hir_node_capacity.max(1) as usize,
+                u32::MAX,
+                wgpu::BufferUsages::empty(),
+            ),
+        });
         let aggregate_compare_capacity = aggregate_compare_capacity_for_features(
             hir_node_capacity,
             hir_items
@@ -1750,6 +1821,69 @@ impl GpuTypeChecker {
                 reserved1: 0,
             },
         );
+        let type_subtree_compare_buffers = Box::new(TypeSubtreeCompareBuffers {
+            scan_input: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_subtree_compare_scan_input",
+                aggregate_compare_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            prefix: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_subtree_compare_prefix",
+                aggregate_compare_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            count_out: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_subtree_compare_count_out",
+                1,
+                wgpu::BufferUsages::empty(),
+            ),
+            left_root: typed_storage_u32_fill_rw(
+                device,
+                "type_check.resident.type_subtree_compare_left_root",
+                aggregate_compare_capacity as usize,
+                u32::MAX,
+                wgpu::BufferUsages::empty(),
+            ),
+            right_root: typed_storage_u32_fill_rw(
+                device,
+                "type_check.resident.type_subtree_compare_right_root",
+                aggregate_compare_capacity as usize,
+                u32::MAX,
+                wgpu::BufferUsages::empty(),
+            ),
+            error_token: typed_storage_u32_fill_rw(
+                device,
+                "type_check.resident.type_subtree_compare_error_token",
+                aggregate_compare_capacity as usize,
+                u32::MAX,
+                wgpu::BufferUsages::empty(),
+            ),
+            error_detail: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_subtree_compare_error_detail",
+                aggregate_compare_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            dispatch_args: typed_storage_u32_rw(
+                device,
+                "type_check.resident.type_subtree_compare_dispatch_args",
+                3,
+                wgpu::BufferUsages::INDIRECT,
+            ),
+            dispatch_params: uniform_from_val(
+                device,
+                "type_check.resident.type_subtree_compare_dispatch.params",
+                &CountDispatchParams {
+                    capacity: hir_node_capacity.max(1),
+                    multiplier: 1,
+                    reserved0: 0,
+                    reserved1: 0,
+                },
+            ),
+        });
         let type_instance_elem_ref_tag = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_elem_ref_tag",
@@ -2408,21 +2542,26 @@ impl GpuTypeChecker {
         resources.buffer("call_param_match_jump_b", &call_param_match_jump_b);
         resources.buffer(
             "call_generic_claim_count_out",
-            &call_generic_claim_count_out,
+            &*call_generic_claim_count_out,
         );
         resources.buffer(
             "call_generic_claim_scan_input",
-            &call_generic_claim_scan_input,
+            &*call_generic_claim_scan_input,
         );
-        resources.buffer("call_generic_claim_prefix", &call_generic_claim_prefix);
-        resources.buffer("call_generic_claim_callee", &call_generic_claim_callee);
-        resources.buffer("call_generic_claim_slot", &call_generic_claim_slot);
-        resources.buffer("call_generic_claim_type", &call_generic_claim_type);
-        resources.buffer("call_generic_claim_arg_row", &call_generic_claim_arg_row);
-        resources.buffer("call_generic_claim_order", &call_generic_claim_order);
+        resources.buffer("call_generic_claim_prefix", &*call_generic_claim_prefix);
+        resources.buffer("call_generic_claim_callee", &*call_generic_claim_callee);
+        resources.buffer("call_generic_claim_slot", &*call_generic_claim_slot);
+        resources.buffer("call_generic_claim_type", &*call_generic_claim_type);
+        resources.buffer("call_generic_claim_ref_tag", &*call_generic_claim_ref_tag);
+        resources.buffer(
+            "call_generic_claim_ref_payload",
+            &*call_generic_claim_ref_payload,
+        );
+        resources.buffer("call_generic_claim_arg_row", &*call_generic_claim_arg_row);
+        resources.buffer("call_generic_claim_order", &*call_generic_claim_order);
         resources.buffer(
             "call_generic_claim_order_tmp",
-            &call_generic_claim_order_tmp,
+            &*call_generic_claim_order_tmp,
         );
         resources.buffer(
             "call_generic_claim_radix_dispatch_args",
@@ -2607,6 +2746,10 @@ impl GpuTypeChecker {
             &type_const_param_slot_by_token,
         );
         resources.buffer("type_instance_decl_token", &type_instance_decl_token);
+        resources.buffer(
+            "type_instance_external_canonical",
+            &type_instance_external_canonical,
+        );
         resources.buffer("type_instance_arg_start", &type_instance_arg_start);
         resources.buffer("type_instance_arg_count", &type_instance_arg_count);
         resources.buffer("type_instance_arg_ref_tag", &type_instance_arg_ref_tag);
@@ -2645,6 +2788,20 @@ impl GpuTypeChecker {
             &type_instance_arg_row_scan_prefix_b,
         );
         resources.buffer(
+            "type_semantic_row_by_token",
+            &type_semantic_buffers.row_by_token,
+        );
+        resources.buffer(
+            "type_semantic_scan_input",
+            &type_semantic_buffers.scan_input,
+        );
+        resources.buffer("type_semantic_prefix", &type_semantic_buffers.prefix);
+        resources.buffer("type_semantic_count_out", &type_semantic_buffers.count_out);
+        resources.buffer(
+            "type_semantic_row_by_ordinal",
+            &type_semantic_buffers.row_by_ordinal,
+        );
+        resources.buffer(
             "aggregate_compare_scan_input",
             &aggregate_compare_scan_input,
         );
@@ -2681,6 +2838,34 @@ impl GpuTypeChecker {
         resources.buffer(
             "aggregate_compare_scan_prefix_b",
             &aggregate_compare_scan_prefix_b,
+        );
+        resources.buffer(
+            "type_subtree_compare_scan_input",
+            &type_subtree_compare_buffers.scan_input,
+        );
+        resources.buffer(
+            "type_subtree_compare_prefix",
+            &type_subtree_compare_buffers.prefix,
+        );
+        resources.buffer(
+            "type_subtree_compare_count_out",
+            &type_subtree_compare_buffers.count_out,
+        );
+        resources.buffer(
+            "type_subtree_compare_left_root",
+            &type_subtree_compare_buffers.left_root,
+        );
+        resources.buffer(
+            "type_subtree_compare_right_root",
+            &type_subtree_compare_buffers.right_root,
+        );
+        resources.buffer(
+            "type_subtree_compare_error_token",
+            &type_subtree_compare_buffers.error_token,
+        );
+        resources.buffer(
+            "type_subtree_compare_error_detail",
+            &type_subtree_compare_buffers.error_detail,
         );
         resources.buffer("type_instance_elem_ref_tag", &type_instance_elem_ref_tag);
         resources.buffer(
@@ -2922,12 +3107,15 @@ impl GpuTypeChecker {
                 device,
                 ModulePathCreateInputs {
                     params: &self.params_buf,
+                    source_len,
                     source_file_capacity,
                     token_capacity,
                     hir_node_capacity,
                     parser_hir_node_capacity,
                     token_buf,
                     token_count_buf,
+                    token_file_id_buf,
+                    source_buf,
                     hir_status_buf,
                     hir_kind_buf,
                     hir_token_pos_buf,
@@ -2936,12 +3124,14 @@ impl GpuTypeChecker {
                     hir_active_count_buf: &hir_active_count,
                     hir_items,
                     name_id_by_token: &name_id_by_token,
+                    name_spans: &name_spans,
+                    name_hash_lo: &name_order_in,
+                    name_hash_hi: &name_order_tmp,
+                    language_symbol_bytes: &language_symbol_bytes,
                     language_name_id: &language_name_id,
                     decl_name_token_scratch: &name_lexeme_flag,
                     decl_id_by_name_token_scratch: &name_lexeme_kind,
                     decl_kind_scratch: &name_lexeme_prefix,
-                    decl_hir_node_scratch: &name_order_in,
-                    decl_parent_type_decl_scratch: &name_order_tmp,
                     module_type_path_type: &module_type_path_type,
                     module_type_path_status: &module_type_path_status,
                     module_value_path_expr_head: &module_value_path_expr_head,
@@ -2961,12 +3151,38 @@ impl GpuTypeChecker {
                     visible_type: &visible_type,
                     enclosing_fn: &enclosing_fn,
                     call_fn_index: &call_fn_index,
+                    call_dependency_decl: &call_dependency_decl,
                     call_return_type: &call_return_type,
                     call_return_type_token: &call_return_type_token,
                     call_generic_slot_type: &call_generic_slot_type,
                     call_generic_slot_ordinal: &call_generic_slot_ordinal,
+                    call_generic_claim_count_out: &call_generic_claim_count_out,
+                    call_generic_claim_callee: &call_generic_claim_callee,
+                    call_generic_claim_slot: &call_generic_claim_slot,
+                    call_generic_claim_type: &call_generic_claim_type,
+                    call_generic_claim_ref_tag: &call_generic_claim_ref_tag,
+                    call_generic_claim_ref_payload: &call_generic_claim_ref_payload,
+                    call_generic_claim_order: &call_generic_claim_order,
                     method_call_name_id: &method_call_name_id,
                     call_param_count: &call_param_count,
+                    call_param_row_count_out: &call_param_row_count_out,
+                    call_param_row_flag: &call_param_row_flag,
+                    call_param_row_node_type: &call_param_row_node_type,
+                    call_param_row_node_ref_tag: &call_param_row_node_ref_tag,
+                    call_param_row_node_ref_payload: &call_param_row_node_ref_payload,
+                    call_param_row_node: &call_param_row_node,
+                    call_param_row_fn_token: &call_param_row_fn_token,
+                    call_param_row_ordinal: &call_param_row_ordinal,
+                    call_param_row_type: &call_param_row_type,
+                    call_param_row_ref_tag: &call_param_row_ref_tag,
+                    call_param_row_ref_payload: &call_param_row_ref_payload,
+                    call_param_row_start: &call_param_row_start,
+                    call_param_row_count: &call_param_row_count,
+                    aggregate_compare_scan_input: &aggregate_compare_scan_input,
+                    aggregate_compare_expected_instance: &aggregate_compare_expected_instance,
+                    aggregate_compare_actual_instance: &aggregate_compare_actual_instance,
+                    aggregate_compare_error_token: &aggregate_compare_error_token,
+                    aggregate_compare_error_detail: &aggregate_compare_error_detail,
                     call_arg_record: &call_arg_record,
                     call_arg_row_node: &call_arg_row_node,
                     call_arg_row_call_node: &call_arg_row_call_node,
@@ -2977,12 +3193,33 @@ impl GpuTypeChecker {
                     type_expr_ref_payload: &type_expr_ref_payload,
                     type_instance_kind: &type_instance_kind,
                     type_instance_decl_token: &type_instance_decl_token,
+                    type_instance_external_canonical: &type_instance_external_canonical,
                     type_instance_arg_start: &type_instance_arg_start,
                     type_instance_arg_count: &type_instance_arg_count,
                     type_instance_arg_ref_tag: &type_instance_arg_ref_tag,
                     type_instance_arg_ref_payload: &type_instance_arg_ref_payload,
+                    type_instance_arg_row_start: &type_instance_arg_row_start,
+                    type_instance_arg_row_count_out: &type_instance_arg_row_count_out,
+                    type_instance_arg_row_ref_tag: &type_instance_arg_row_ref_tag,
+                    type_instance_arg_row_ref_payload: &type_instance_arg_row_ref_payload,
+                    type_semantic_row_by_token: &type_semantic_buffers.row_by_token,
+                    type_semantic_scan_input: &type_semantic_buffers.scan_input,
+                    type_semantic_prefix: &type_semantic_buffers.prefix,
+                    type_semantic_count_out: &type_semantic_buffers.count_out,
+                    type_semantic_row_by_ordinal: &type_semantic_buffers.row_by_ordinal,
+                    type_instance_elem_ref_tag: &type_instance_elem_ref_tag,
+                    type_instance_elem_ref_payload: &type_instance_elem_ref_payload,
+                    type_instance_len_kind: &type_instance_len_kind,
+                    type_instance_len_payload: &type_instance_len_payload,
                     type_decl_generic_param_count: &type_decl_generic_param_count,
+                    type_decl_generic_param_count_by_node: &type_decl_generic_param_count_by_node,
                     type_generic_param_slot_by_token: &type_generic_param_slot_by_token,
+                    type_decl_hir_node_by_token: &type_decl_hir_node_by_token,
+                    generic_param_count_out: &generic_param_count_out,
+                    generic_param_owner_node: &generic_param_owner_node,
+                    generic_param_token: &generic_param_token,
+                    generic_param_kind: &generic_param_kind,
+                    generic_param_slot_order: &generic_param_slot_order,
                     type_instance_state: &type_instance_state,
                     decl_type_ref_tag: &decl_type_ref_tag,
                     decl_type_ref_payload: &decl_type_ref_payload,
@@ -2991,6 +3228,7 @@ impl GpuTypeChecker {
                     record_family_bits_scratch: &fn_entrypoint_tag,
                     record_family_flag_scratch: &struct_init_field_ordinal_by_node,
                     external_scratch: module_path_scratch,
+                    dependency_interfaces,
                 },
             )?)
         } else {
@@ -3055,6 +3293,50 @@ impl GpuTypeChecker {
             &passes.conditions_aggregate_args,
             &resources,
         )?;
+        let type_subtree_compare_scan = Box::new(create_counted_u32_scan_bind_groups_with_passes(
+            passes,
+            device,
+            "type_check.conditions.type_subtree_compare_scan",
+            &aggregate_compare_scan_steps,
+            &aggregate_compare_count_out,
+            &type_subtree_compare_buffers.scan_input,
+            &type_subtree_compare_buffers.prefix,
+            &type_subtree_compare_buffers.count_out,
+            &aggregate_compare_scan_local_prefix,
+            &aggregate_compare_scan_block_sum,
+            &aggregate_compare_scan_prefix_a,
+            &aggregate_compare_scan_prefix_b,
+        )?);
+        let type_subtree_compare_dispatch = Box::new(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.conditions.type_subtree_compare_dispatch"),
+            &passes.count_dispatch_args,
+            0,
+            &[
+                (
+                    "gParams",
+                    type_subtree_compare_buffers
+                        .dispatch_params
+                        .as_entire_binding(),
+                ),
+                (
+                    "count_in",
+                    type_subtree_compare_buffers.count_out.as_entire_binding(),
+                ),
+                (
+                    "dispatch_args",
+                    type_subtree_compare_buffers
+                        .dispatch_args
+                        .as_entire_binding(),
+                ),
+            ],
+        )?);
+        let conditions_type_subtree = Box::new(reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_conditions_type_subtree",
+            &passes.conditions_type_subtree,
+            &resources,
+        )?);
         let calls = create_call_bind_groups(
             device,
             passes,
@@ -3629,6 +3911,7 @@ impl GpuTypeChecker {
             fn_prefix_b,
             fn_block_prefix,
             call_fn_index,
+            call_dependency_decl,
             call_intrinsic_tag,
             fn_entrypoint_tag,
             call_return_type,
@@ -3680,6 +3963,8 @@ impl GpuTypeChecker {
             call_generic_claim_callee,
             call_generic_claim_slot,
             call_generic_claim_type,
+            call_generic_claim_ref_tag,
+            call_generic_claim_ref_payload,
             call_generic_claim_arg_row,
             call_generic_claim_order,
             call_generic_claim_order_tmp,
@@ -3758,6 +4043,7 @@ impl GpuTypeChecker {
             type_generic_param_slot_by_token,
             type_const_param_slot_by_token,
             type_instance_decl_token,
+            type_instance_external_canonical,
             type_instance_arg_start,
             type_instance_arg_count,
             type_instance_arg_ref_tag,
@@ -3771,6 +4057,7 @@ impl GpuTypeChecker {
             type_instance_arg_row_scan_block_sum,
             type_instance_arg_row_scan_prefix_a,
             type_instance_arg_row_scan_prefix_b,
+            type_semantic_buffers,
             aggregate_compare_scan_input,
             aggregate_compare_prefix,
             aggregate_compare_count_out,
@@ -3784,6 +4071,7 @@ impl GpuTypeChecker {
             aggregate_compare_scan_prefix_b,
             aggregate_compare_dispatch_args,
             aggregate_compare_dispatch_params,
+            type_subtree_compare_buffers,
             type_instance_elem_ref_tag,
             type_instance_elem_ref_payload,
             type_instance_len_kind,
@@ -3874,6 +4162,10 @@ impl GpuTypeChecker {
             aggregate_compare_scan_n_blocks,
             aggregate_compare_dispatch,
             conditions_aggregate_args,
+            type_subtree_compare_scan,
+            type_subtree_compare_scan_n_blocks: aggregate_compare_scan_n_blocks,
+            type_subtree_compare_dispatch,
+            conditions_type_subtree,
             control,
             scope_hir,
         })

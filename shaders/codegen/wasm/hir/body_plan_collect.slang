@@ -54,6 +54,7 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_arg_ordinal;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
@@ -381,10 +382,18 @@ uint semantic_callee_token_for_call(uint call_node)
 uint call_metadata_token(uint call_node, uint callee_token)
 {
     uint site_token = call_site_token(call_node);
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID)
+        return site_token;
+    if (valid_token(semantic_token) && call_dependency_decl[semantic_token] != INVALID)
+        return semantic_token;
+    if (valid_token(callee_token) && call_dependency_decl[callee_token] != INVALID)
+        return callee_token;
+
     if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
         return site_token;
 
-    uint semantic_token = semantic_callee_token_for_call(call_node);
     if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
         return semantic_token;
 
@@ -397,7 +406,17 @@ uint call_metadata_token(uint call_node, uint callee_token)
 uint call_fn_token_for_call(uint call_node, uint callee_token)
 {
     uint metadata_token = call_metadata_token(call_node, callee_token);
-    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+    if (!valid_token(metadata_token))
+        return INVALID;
+    if (call_dependency_decl[metadata_token] != INVALID)
+        return metadata_token;
+    uint local_fn = call_fn_index[metadata_token];
+    return valid_token(local_fn) ? local_fn : INVALID;
+}
+
+bool dependency_call_token(uint token)
+{
+    return valid_token(token) && call_dependency_decl[token] != INVALID;
 }
 
 bool statement_position_call(uint call_node)
@@ -775,7 +794,7 @@ bool potential_user_call_node(uint call_node)
         return false;
 
     uint fn_token = call_fn_token_for_call(call_node, callee_token);
-    return supported_function_token(fn_token);
+    return supported_function_token(fn_token) || dependency_call_token(fn_token);
 }
 
 bool call_is_left_operand_of_let_binary_expr(uint call_node, uint context)

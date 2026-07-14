@@ -59,6 +59,19 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentitySizeParams {
     pub(in crate::type_checker) decl_capacity: u32,
     pub(in crate::type_checker) module_segment_capacity: u32,
     pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) member_capacity: u32,
+}
+
+/// Capacity packet for public-signature type reachability and ordering.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct SemanticInterfaceTypeTopologyParams {
+    pub(in crate::type_checker) hir_capacity: u32,
+    pub(in crate::type_checker) decl_capacity: u32,
+    pub(in crate::type_checker) token_capacity: u32,
+    pub(in crate::type_checker) library_id: u32,
+    pub(in crate::type_checker) unit_id: u32,
+    pub(in crate::type_checker) dependency_type_count: u32,
 }
 
 /// Capacity and producer identity packet for interface record scatter.
@@ -72,6 +85,7 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityRecordParams {
     pub(in crate::type_checker) module_segment_capacity: u32,
     pub(in crate::type_checker) module_segment_row_width: u32,
     pub(in crate::type_checker) name_byte_capacity: u32,
+    pub(in crate::type_checker) member_capacity: u32,
 }
 
 /// Capacity packet for canonical interface-name byte scatter.
@@ -84,6 +98,43 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityByteParams {
     pub(in crate::type_checker) module_segment_capacity: u32,
     pub(in crate::type_checker) module_segment_row_width: u32,
     pub(in crate::type_checker) decl_capacity: u32,
+    pub(in crate::type_checker) member_capacity: u32,
+}
+
+/// Capacities for dependency semantic-interface module indexing.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct DependencyInterfaceModuleParams {
+    pub(in crate::type_checker) module_count: u32,
+    pub(in crate::type_checker) lookup_capacity: u32,
+    pub(in crate::type_checker) import_capacity: u32,
+    pub(in crate::type_checker) source_len: u32,
+}
+
+/// Capacities for projecting dependency declarations into one unit's import
+/// visibility relation and resolving local paths against that relation.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct DependencyInterfaceVisibilityParams {
+    pub(in crate::type_checker) declaration_count: u32,
+    pub(in crate::type_checker) import_capacity: u32,
+    pub(in crate::type_checker) visible_capacity: u32,
+    pub(in crate::type_checker) lookup_capacity: u32,
+    pub(in crate::type_checker) source_len: u32,
+    pub(in crate::type_checker) path_capacity: u32,
+    pub(in crate::type_checker) namespace: u32,
+    pub(in crate::type_checker) hir_capacity: u32,
+}
+
+/// Capacity packet for parallel canonical dependency-type normalization.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct DependencyCanonicalTypeParams {
+    pub(in crate::type_checker) type_count: u32,
+    pub(in crate::type_checker) declaration_count: u32,
+    pub(in crate::type_checker) member_count: u32,
+    pub(in crate::type_checker) path_capacity: u32,
+    pub(in crate::type_checker) token_capacity: u32,
 }
 
 /// Uniform for one level of the 256-way counted-scan hierarchy.

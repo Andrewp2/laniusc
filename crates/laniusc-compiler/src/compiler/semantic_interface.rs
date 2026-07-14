@@ -5,17 +5,19 @@
 //! be translated into these records before a unit can be released.
 
 /// Current binary schema version for GPU semantic-interface artifacts.
-pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 1;
+pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 4;
 const GPU_SEMANTIC_INTERFACE_MAGIC: [u8; 8] = *b"LNSIFACE";
 const HEADER_U32S: usize = 16;
 const MODULE_U32S: usize = 2;
 const MODULE_SEGMENT_U32S: usize = 4;
 const DECLARATION_U32S: usize = 14;
-const TYPE_U32S: usize = 8;
+const TYPE_U32S: usize = 9;
 const TYPE_EDGE_U32S: usize = 1;
 const MEMBER_U32S: usize = 10;
 const INVALID: u32 = u32::MAX;
 const MAX_CANONICAL_NAME_BYTES: usize = 64;
+
+pub(crate) mod dependency_batch;
 
 /// Stable kind tag for a typed interface node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,17 +114,26 @@ pub struct GpuSemanticInterfaceDeclarationRecord {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuSemanticInterfaceTypeRecord {
     pub kind: u32,
+    /// Kind-specific low payload. Declaration nodes store the defining
+    /// library id here; scalar nodes store the language scalar code.
     pub payload_lo: u32,
+    /// Kind-specific high payload. Declaration nodes store the persisted
+    /// declaration index within the defining unit here.
     pub payload_hi: u32,
     pub first_edge: u32,
     pub edge_count: u32,
     pub length_kind: u32,
     pub length_lo: u32,
     pub length_hi: u32,
+    /// Defining frontend unit for declaration nodes. Together with
+    /// `payload_lo` and `payload_hi`, this forms the stable nominal identity
+    /// `(library_id, unit_id, declaration_index)`. Other kinds store zero.
+    pub nominal_unit_id: u32,
 }
 
-/// Index of a child type node. Edges encode parameters, generic arguments,
-/// aggregate elements, and function return types without recursive records.
+/// Index of a child type node. Edges encode generic arguments, aggregate
+/// elements, and function parameters followed by the return type, without
+/// recursive records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuSemanticInterfaceTypeEdge {
     pub type_index: u32,
@@ -149,6 +160,8 @@ pub struct GpuSemanticInterfaceMemberRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GpuSemanticInterfaceIdentityArtifact {
     pub library_id: u32,
+    /// Globally unique bounded frontend-unit id within the source-pack build.
+    pub unit_id: u32,
     pub modules: Vec<GpuSemanticInterfaceModuleRecord>,
     pub module_segments: Vec<GpuSemanticInterfaceModuleSegmentRecord>,
     pub declarations: Vec<GpuSemanticInterfaceDeclarationRecord>,
@@ -166,6 +179,7 @@ impl GpuSemanticInterfaceIdentityArtifact {
         let partial = GpuSemanticInterfaceArtifact {
             version: GPU_SEMANTIC_INTERFACE_VERSION,
             library_id: self.library_id,
+            unit_id: self.unit_id,
             modules: self.modules.clone(),
             module_segments: self.module_segments.clone(),
             declarations: self.declarations.clone(),
@@ -183,6 +197,8 @@ impl GpuSemanticInterfaceIdentityArtifact {
 pub struct GpuSemanticInterfaceArtifact {
     pub version: u32,
     pub library_id: u32,
+    /// Globally unique bounded frontend-unit id within the source-pack build.
+    pub unit_id: u32,
     pub modules: Vec<GpuSemanticInterfaceModuleRecord>,
     pub module_segments: Vec<GpuSemanticInterfaceModuleSegmentRecord>,
     pub declarations: Vec<GpuSemanticInterfaceDeclarationRecord>,
@@ -210,6 +226,16 @@ impl GpuSemanticInterfaceArtifact {
         checked_u32_len("name byte", self.name_bytes.len())?;
 
         self.validate_identities()?;
+        if self
+            .declarations
+            .windows(2)
+            .any(|pair| pair[0].module > pair[1].module)
+        {
+            return Err(
+                "semantic-interface declarations are not grouped in canonical module order"
+                    .to_string(),
+            );
+        }
         for (index, declaration) in self.declarations.iter().enumerate() {
             validate_optional_index(
                 "declaration signature type",
@@ -245,6 +271,7 @@ impl GpuSemanticInterfaceArtifact {
                 ));
             }
         }
+        let mut type_subtree_starts = Vec::with_capacity(self.types.len());
         for (index, ty) in self.types.iter().enumerate() {
             let Some(kind) = GpuSemanticInterfaceTypeKind::from_u32(ty.kind) else {
                 return Err(format!(
@@ -266,7 +293,7 @@ impl GpuSemanticInterfaceArtifact {
                 ty.edge_count,
                 self.type_edges.len(),
             )?;
-            for (edge_offset, edge) in self.type_edges[edge_range].iter().enumerate() {
+            for (edge_offset, edge) in self.type_edges[edge_range.clone()].iter().enumerate() {
                 validate_index(
                     "type edge target",
                     ty.first_edge as usize + edge_offset,
@@ -280,10 +307,27 @@ impl GpuSemanticInterfaceArtifact {
                     ));
                 }
             }
+            let mut subtree_start = index;
+            if kind != GpuSemanticInterfaceTypeKind::Function {
+                for edge in self.type_edges[edge_range.clone()].iter() {
+                    let expected_child = subtree_start.checked_sub(1).ok_or_else(|| {
+                        format!(
+                            "semantic-interface type record {index} has a child before the start of its reverse-preorder subtree"
+                        )
+                    })?;
+                    if edge.type_index as usize != expected_child {
+                        return Err(format!(
+                            "semantic-interface type record {index} child {} is not contiguous reverse preorder; expected {expected_child}",
+                            edge.type_index
+                        ));
+                    }
+                    subtree_start = type_subtree_starts[expected_child];
+                }
+            }
+            type_subtree_starts.push(subtree_start);
             match kind {
                 GpuSemanticInterfaceTypeKind::Scalar
                 | GpuSemanticInterfaceTypeKind::GenericParameter
-                | GpuSemanticInterfaceTypeKind::Declaration
                 | GpuSemanticInterfaceTypeKind::ConstParameter
                     if ty.edge_count != 0 =>
                 {
@@ -310,12 +354,16 @@ impl GpuSemanticInterfaceArtifact {
                 _ => {}
             }
             match kind {
-                GpuSemanticInterfaceTypeKind::Declaration => validate_index(
-                    "nominal type declaration",
-                    index,
-                    ty.payload_lo,
-                    self.declarations.len(),
-                )?,
+                GpuSemanticInterfaceTypeKind::Declaration
+                    if ty.payload_lo == self.library_id && ty.nominal_unit_id == self.unit_id =>
+                {
+                    validate_index(
+                        "nominal type declaration",
+                        index,
+                        ty.payload_hi,
+                        self.declarations.len(),
+                    )?
+                }
                 GpuSemanticInterfaceTypeKind::GenericParameter
                 | GpuSemanticInterfaceTypeKind::ConstParameter => validate_index(
                     "generic type member",
@@ -351,7 +399,12 @@ impl GpuSemanticInterfaceArtifact {
             let kind = GpuSemanticInterfaceMemberKind::from_u32(member.kind)
                 .expect("member kind was validated above");
             if member.type_index == INVALID
-                && !matches!(kind, GpuSemanticInterfaceMemberKind::EnumVariant)
+                && !matches!(
+                    kind,
+                    GpuSemanticInterfaceMemberKind::EnumVariant
+                        | GpuSemanticInterfaceMemberKind::GenericTypeParameter
+                        | GpuSemanticInterfaceMemberKind::GenericConstParameter
+                )
             {
                 return Err(format!(
                     "semantic-interface member record {index} has no typed signature"
@@ -421,7 +474,8 @@ impl GpuSemanticInterfaceArtifact {
         push_u32_len(&mut bytes, "type edge", self.type_edges.len())?;
         push_u32_len(&mut bytes, "member", self.members.len())?;
         push_u32_len(&mut bytes, "name byte", self.name_bytes.len())?;
-        for _ in 9..HEADER_U32S {
+        push_u32(&mut bytes, self.unit_id);
+        for _ in 10..HEADER_U32S {
             push_u32(&mut bytes, 0);
         }
         for row in &self.modules {
@@ -459,6 +513,7 @@ impl GpuSemanticInterfaceArtifact {
             push_u32(&mut bytes, row.length_kind);
             push_u32(&mut bytes, row.length_lo);
             push_u32(&mut bytes, row.length_hi);
+            push_u32(&mut bytes, row.nominal_unit_id);
         }
         for row in &self.type_edges {
             push_u32(&mut bytes, row.type_index);
@@ -498,6 +553,7 @@ impl GpuSemanticInterfaceArtifact {
         let type_edge_count = read_count(bytes, &mut cursor, "type edge")?;
         let member_count = read_count(bytes, &mut cursor, "member")?;
         let name_byte_count = read_count(bytes, &mut cursor, "name byte")?;
+        let unit_id = read_u32(bytes, &mut cursor)?;
         cursor = header_bytes;
 
         let expected = encoded_byte_len_from_counts(
@@ -563,6 +619,7 @@ impl GpuSemanticInterfaceArtifact {
                 length_kind: read_u32(bytes, &mut cursor)?,
                 length_lo: read_u32(bytes, &mut cursor)?,
                 length_hi: read_u32(bytes, &mut cursor)?,
+                nominal_unit_id: read_u32(bytes, &mut cursor)?,
             });
         }
         let mut type_edges = Vec::with_capacity(type_edge_count);
@@ -590,6 +647,7 @@ impl GpuSemanticInterfaceArtifact {
         let artifact = Self {
             version,
             library_id,
+            unit_id,
             modules,
             module_segments,
             declarations,
@@ -796,6 +854,7 @@ mod tests {
         GpuSemanticInterfaceArtifact {
             version: GPU_SEMANTIC_INTERFACE_VERSION,
             library_id: 7,
+            unit_id: 11,
             modules: vec![GpuSemanticInterfaceModuleRecord {
                 first_segment: 0,
                 segment_count: 2,
@@ -840,6 +899,7 @@ mod tests {
                     length_kind: 0,
                     length_lo: 0,
                     length_hi: 0,
+                    nominal_unit_id: 0,
                 },
                 GpuSemanticInterfaceTypeRecord {
                     kind: GpuSemanticInterfaceTypeKind::Function as u32,
@@ -850,6 +910,7 @@ mod tests {
                     length_kind: 0,
                     length_lo: 0,
                     length_hi: 0,
+                    nominal_unit_id: 0,
                 },
             ],
             type_edges: vec![GpuSemanticInterfaceTypeEdge { type_index: 0 }],
@@ -887,6 +948,32 @@ mod tests {
         let mut interface = representative_interface();
         interface.declarations[0].module = 1;
         assert!(interface.validate().unwrap_err().contains("module"));
+
+        let mut interface = representative_interface();
+        interface.version = 1;
+        assert!(interface.validate().unwrap_err().contains("version"));
+
+        let mut interface = representative_interface();
+        interface.types.push(GpuSemanticInterfaceTypeRecord {
+            kind: GpuSemanticInterfaceTypeKind::Declaration as u32,
+            payload_lo: interface.library_id,
+            payload_hi: 0,
+            first_edge: interface.type_edges.len() as u32,
+            edge_count: 1,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: interface.unit_id,
+        });
+        interface
+            .type_edges
+            .push(GpuSemanticInterfaceTypeEdge { type_index: 0 });
+        assert!(
+            interface
+                .validate()
+                .unwrap_err()
+                .contains("reverse preorder")
+        );
     }
 
     #[test]
@@ -898,5 +985,58 @@ mod tests {
         trailing.push(0);
         assert!(GpuSemanticInterfaceArtifact::from_bytes(&trailing).is_err());
         assert!(GpuSemanticInterfaceArtifact::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn semantic_interface_nominal_types_carry_library_identity_and_generic_edges() {
+        let mut interface = representative_interface();
+        interface.types.push(GpuSemanticInterfaceTypeRecord {
+            kind: GpuSemanticInterfaceTypeKind::Scalar as u32,
+            payload_lo: 3,
+            payload_hi: 0,
+            first_edge: interface.type_edges.len() as u32,
+            edge_count: 0,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: 0,
+        });
+        let argument = (interface.types.len() - 1) as u32;
+        interface.types.push(GpuSemanticInterfaceTypeRecord {
+            kind: GpuSemanticInterfaceTypeKind::Declaration as u32,
+            payload_lo: interface.library_id,
+            payload_hi: 0,
+            first_edge: interface.type_edges.len() as u32,
+            edge_count: 1,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: interface.unit_id,
+        });
+        interface.type_edges.push(GpuSemanticInterfaceTypeEdge {
+            type_index: argument,
+        });
+        interface
+            .validate()
+            .expect("local nominal types should accept generic argument edges");
+
+        let nominal = interface.types.last_mut().expect("nominal type row");
+        nominal.payload_lo = 91;
+        nominal.payload_hi = 1234;
+        nominal.nominal_unit_id = 17;
+        interface
+            .validate()
+            .expect("dependency nominal identities are resolved by library plus declaration");
+
+        let nominal = interface.types.last_mut().expect("nominal type row");
+        nominal.payload_lo = interface.library_id;
+        nominal.payload_hi = 99;
+        nominal.nominal_unit_id = interface.unit_id;
+        assert!(
+            interface
+                .validate()
+                .unwrap_err()
+                .contains("nominal type declaration")
+        );
     }
 }

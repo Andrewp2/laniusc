@@ -60,6 +60,7 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_param_type;
@@ -385,13 +386,19 @@ uint semantic_callee_token_for_call(uint call_node)
 uint call_metadata_token(uint call_node, uint callee_token)
 {
     uint site_token = call_site_token(call_node);
+    uint semantic_token = semantic_callee_token_for_call(call_node);
+
+    if (valid_token(site_token) && call_dependency_decl[site_token] != INVALID)
+        return site_token;
+    if (valid_token(semantic_token) && call_dependency_decl[semantic_token] != INVALID)
+        return semantic_token;
+    if (valid_token(callee_token) && call_dependency_decl[callee_token] != INVALID)
+        return callee_token;
+
     if (valid_token(site_token) && valid_token(call_fn_index[site_token]))
         return site_token;
-
-    uint semantic_token = semantic_callee_token_for_call(call_node);
     if (valid_token(semantic_token) && valid_token(call_fn_index[semantic_token]))
         return semantic_token;
-
     if (valid_token(callee_token) && valid_token(call_fn_index[callee_token]))
         return callee_token;
 
@@ -401,8 +408,14 @@ uint call_metadata_token(uint call_node, uint callee_token)
 uint call_fn_token_for_call(uint call_node, uint callee_token)
 {
     uint metadata_token = call_metadata_token(call_node, callee_token);
-    return valid_token(metadata_token) ? call_fn_index[metadata_token] : INVALID;
+    if (!valid_token(metadata_token)) return INVALID;
+    if (call_dependency_decl[metadata_token] != INVALID) return metadata_token;
+    uint local_fn = call_fn_index[metadata_token];
+    return valid_token(local_fn) ? local_fn : INVALID;
 }
+
+bool supported_call_target_token(uint token) { return supported_function_token(token) || (valid_token(token) && call_dependency_decl[token] != INVALID); }
+uint wasm_call_target_for_call(uint call_node, uint fn_token) { uint token = call_metadata_token(call_node, call_callee_token(call_node)); return valid_token(token) && call_dependency_decl[token] != INVALID ? 0x80000000u | (call_dependency_decl[token] & 0x7fffffffu) : wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT; }
 
 uint call_return_type_for_call(uint call_node, uint callee_token, uint fn_token)
 {
@@ -954,7 +967,7 @@ bool aggregate_direct_call_expr_len(
     fn_token = call_fn_token_for_call(node, callee_token);
     if (valid_token(fn_token))
         detail = fn_token;
-    if (!supported_function_token(fn_token))
+    if (!supported_call_target_token(fn_token))
         return false;
 
     uint return_ty = call_return_type_for_call(node, callee_token, fn_token);
@@ -967,7 +980,8 @@ bool aggregate_direct_call_expr_len(
     if (call_param_count[fn_token] != arg_count)
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT);
+    uint target = wasm_call_target_for_call(node, fn_token);
+    uint total = 1u + u32_leb_len(target);
     for (uint i = 0u; i < arg_count; i += 1u)
     {
         uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
@@ -983,7 +997,7 @@ bool aggregate_direct_call_expr_len(
         total += arg_len;
     }
 
-    wasm_func_index = wasm_func_slot_by_token[fn_token] + WASM_IMPORT_FUNCTION_COUNT;
+    wasm_func_index = target;
     len = total;
     detail = INVALID;
     return true;
@@ -1351,7 +1365,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (body_plan[BODY_PLAN_MAIN_COUNT] != 1u)
+    if (body_plan[BODY_PLAN_MAIN_COUNT] > 1u)
         return;
 
     uint node = linear_dispatch_id(tid);

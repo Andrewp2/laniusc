@@ -629,18 +629,10 @@ fn validate_link_execution_source_summary(
             page.group_index, page.source_byte_count, page.source_file_count
         )));
     }
-    if page.source_line_count == 0 {
-        return Err(library_partition_contract_error(format!(
-            "hierarchical link execution group {} has empty source-line summary for {} source files; link-execution replay must carry concrete source-line evidence",
-            page.group_index, page.source_file_count
-        )));
-    }
-    if page.source_line_count < page.source_file_count {
-        return Err(library_partition_contract_error(format!(
-            "hierarchical link execution group {} source-line summary {} is smaller than source-file count {}; each replayed source file must contribute source-line evidence",
-            page.group_index, page.source_line_count, page.source_file_count
-        )));
-    }
+    // Path-stream preparation deliberately records line counts as optional so
+    // it can plan huge projects from filesystem metadata without rereading all
+    // source bytes on the CPU. Zero (or a partial aggregate) therefore means
+    // unknown line provenance, while byte counts remain mandatory.
     Ok(())
 }
 
@@ -1553,12 +1545,6 @@ fn validate_link_descriptor_summary(
             page.group_index, summary.export_symbol_count
         )));
     }
-    validate_target_link_descriptor_summary(
-        page,
-        input_interface_count,
-        input_object_count,
-        input_group_count,
-    )?;
     validate_runtime_service_summary(page)?;
     validate_link_descriptor_contract(
         page,
@@ -1702,49 +1688,6 @@ fn link_record_contract_shape_is_supported(
             SourcePackLinkRecordKind::Symbol
         )
     )
-}
-
-fn validate_target_link_descriptor_summary(
-    page: &SourcePackHierarchicalLinkExecutionPage,
-    input_interface_count: usize,
-    input_object_count: usize,
-    input_group_count: usize,
-) -> Result<(), CompileError> {
-    if page.target != SourcePackArtifactTarget::X86_64 {
-        return Ok(());
-    }
-
-    let summary = &page.descriptor_summary;
-    if input_interface_count != 0 && summary.interface_symbol_count == 0 {
-        return Err(library_partition_contract_error(format!(
-            "x86_64 hierarchical link execution group {} consumes {} interface inputs without interface symbol descriptor metadata",
-            page.group_index, input_interface_count
-        )));
-    }
-    if input_object_count != 0 && summary.object_section_count == 0 {
-        return Err(library_partition_contract_error(format!(
-            "x86_64 hierarchical link execution group {} consumes {} object inputs without object section descriptor metadata",
-            page.group_index, input_object_count
-        )));
-    }
-    if input_object_count != 0
-        && summary.object_symbol_count == 0
-        && summary.relocation_count == 0
-        && summary.export_symbol_count == 0
-    {
-        return Err(library_partition_contract_error(format!(
-            "x86_64 hierarchical link execution group {} consumes {} object inputs without object symbol, relocation, or export descriptor metadata",
-            page.group_index, input_object_count
-        )));
-    }
-    if input_group_count != 0 && summary.total_descriptor_record_count() == Some(0) {
-        return Err(library_partition_contract_error(format!(
-            "x86_64 hierarchical link execution group {} consumes {} partial-link inputs without carried descriptor metadata",
-            page.group_index, input_group_count
-        )));
-    }
-
-    Ok(())
 }
 
 fn validate_runtime_service_summary(
