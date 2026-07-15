@@ -257,12 +257,6 @@ impl GpuTypeChecker {
             1,
             "module key segment names",
         )?;
-        if module_capacity == 0 || module_segment_capacity % module_capacity != 0 {
-            return Err(anyhow::anyhow!(
-                "module segment capacity {module_segment_capacity} is not a fixed-width multiple of module capacity {module_capacity}"
-            ));
-        }
-        let module_segment_row_width = module_segment_capacity / module_capacity;
         let member_capacity = u32_capacity(hir.hir_kind, 1, "semantic-interface member HIR")?
             .checked_add(u32_capacity(
                 inputs.type_expr_ref_tag,
@@ -491,7 +485,7 @@ impl GpuTypeChecker {
                 module_capacity,
                 decl_capacity,
                 module_segment_capacity,
-                module_segment_row_width,
+                module_index_capacity: module_capacity,
                 member_capacity,
             },
         );
@@ -519,6 +513,14 @@ impl GpuTypeChecker {
                 (
                     "module_key_segment_name_id",
                     inputs.module_key_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "module_segment_prefix",
+                    module_segment_prefix.as_entire_binding(),
+                ),
+                (
+                    "module_segment_total",
+                    module_segment_total.as_entire_binding(),
                 ),
                 (
                     "public_decl_count",
@@ -551,7 +553,7 @@ impl GpuTypeChecker {
                 module_capacity,
                 decl_capacity,
                 module_segment_capacity,
-                module_segment_row_width,
+                module_index_capacity: module_capacity,
                 name_byte_capacity,
                 member_capacity,
             },
@@ -667,7 +669,7 @@ impl GpuTypeChecker {
                 source_len,
                 name_ref_count,
                 module_segment_capacity,
-                module_segment_row_width,
+                module_index_capacity: module_capacity,
                 decl_capacity,
                 member_capacity,
             },
@@ -696,6 +698,14 @@ impl GpuTypeChecker {
                 (
                     "module_key_segment_name_id",
                     inputs.module_key_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "module_segment_prefix",
+                    module_segment_prefix.as_entire_binding(),
+                ),
+                (
+                    "module_segment_total",
+                    module_segment_total.as_entire_binding(),
                 ),
                 (
                     "public_decl_count",
@@ -734,6 +744,14 @@ impl GpuTypeChecker {
         record_typecheck_clear_buffer(encoder, &name_ref_len, 0, None);
         record_typecheck_clear_buffer(encoder, &name_byte_words, 0, None);
         record_typecheck_clear_buffer(encoder, &counts, 0, None);
+        record_counted_u32_scan_bind_groups_with_passes(
+            &self.passes,
+            encoder,
+            module_scan_n_blocks,
+            &module_scan_dispatch_args,
+            &module_scan,
+            "type_check.interface.module_segment_scan",
+        )?;
         record_compute(
             encoder,
             &self.passes.interface_identity_sizes,
@@ -748,14 +766,6 @@ impl GpuTypeChecker {
             &scan_dispatch_args,
             &scan,
             "type_check.interface.name_scan",
-        )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            module_scan_n_blocks,
-            &module_scan_dispatch_args,
-            &module_scan,
-            "type_check.interface.module_segment_scan",
         )?;
         record_compute(
             encoder,
@@ -3141,7 +3151,7 @@ fn initialized_u32_buffer(
             | wgpu::BufferUsages::COPY_DST
             | extra_usage,
     });
-    LaniusBuffer::new((raw, bytes.len() as u64), words.len())
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), words.len(), label)
 }
 
 fn readback_words(device: &wgpu::Device, buffer: &wgpu::Buffer, label: &str) -> Result<Vec<u32>> {

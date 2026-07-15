@@ -29,6 +29,7 @@ static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint BODY_FEATURE_BINARY_DIRECT = 1u << 5u;
 static const uint BODY_FEATURE_RETURN_DIRECT = 1u << 8u;
+static const uint BODY_FEATURE_MEMBER_EXPR_SCATTER = 1u << 30u;
 static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
 
@@ -140,14 +141,14 @@ bool return_binary_direct_call_record(
 
     uint left = expr_record_slot(expr, EXPR_RECORD_LEFT);
     uint right = expr_record_slot(expr, EXPR_RECORD_RIGHT);
-    uint left_expr_len = 0u;
-    uint right_expr_len = 0u;
     uint left_call = resolve_expr_node(left);
     uint right_call = resolve_expr_node(right);
     bool left_is_call = valid_node(left_call) && hir_kind[left_call] == HIR_CALL_EXPR;
     bool right_is_call = valid_node(right_call) && hir_kind[right_call] == HIR_CALL_EXPR;
-    bool left_expr = direct_call_arg_expr_and_len(left, left_expr_len);
-    bool right_expr = direct_call_arg_expr_and_len(right, right_expr_len);
+    uint2 left_total = valid_node(left_call) ? expr_subtree_total[left_call] : uint2(0u, 1u);
+    uint2 right_total = valid_node(right_call) ? expr_subtree_total[right_call] : uint2(0u, 1u);
+    bool left_expr = !left_is_call && left_total.y == 0u && left_total.x != 0u;
+    bool right_expr = !right_is_call && right_total.y == 0u && right_total.x != 0u;
 
     if (left_is_call && right_expr)
     {
@@ -169,7 +170,7 @@ bool return_binary_direct_call_record(
     if (!direct_call_header_aux(call_node, aux))
         return false;
 
-    uint atom_len = call_side == 0u ? right_expr_len : left_expr_len;
+    uint atom_len = call_side == 0u ? right_total.x : left_total.x;
     len_without_args = (1u + wasm_call_index_len(aux.x)) + atom_len + 2u;
     return true;
 }
@@ -269,7 +270,10 @@ void validate_main_return_call(uint node, uint token)
                 atom_node,
                 op | (call_side << 8u)),
             aux);
-        atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_BINARY_DIRECT);
+        atomic_u32_or(
+            body_plan,
+            BODY_PLAN_FEATURE_MASK,
+            BODY_FEATURE_BINARY_DIRECT | BODY_FEATURE_MEMBER_EXPR_SCATTER);
     }
 }
 

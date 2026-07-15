@@ -28,12 +28,6 @@ bool return_call_candidate(uint stmt_node)
            (valid_node(right) && hir_kind[right] == HIR_CALL_EXPR);
 }
 
-bool direct_member_expr(uint node)
-{
-    node = resolve_expr_node(node);
-    return valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR;
-}
-
 void validate_main_return(uint node, uint token)
 {
     uint owner_fn = node_enclosing_fn_token(node);
@@ -66,7 +60,6 @@ void validate_main_return(uint node, uint token)
         return;
 
     uint return_expr_node = INVALID;
-    uint return_value = 0u;
     uint return_len = 0u;
     if (return_expr_local_and_len(node, return_expr_node, return_len))
     {
@@ -78,24 +71,10 @@ void validate_main_return(uint node, uint token)
             uint4(BODY_FRAGMENT_RETURN_LOCAL_I32, return_expr_node, return_len, token),
             uint4(INVALID, 0u, 0u, 0u));
     }
-    else if (return_expr_value_and_len(node, return_value, return_len))
-    {
-        publish_return_value(return_value);
-        add_func_body_len(owner_fn, return_len);
-        if (expr_mentions_local_let(stmt_record_slot(node, 1u)))
-            atomic_u32_add(body_plan, BODY_PLAN_LOCAL_CONST_EXPR_COUNT, 1u);
-        publish_fragment(
-            token,
-            return_len,
-            uint4(BODY_FRAGMENT_RETURN_I32, return_value, return_len, token),
-            uint4(INVALID, 0u, 0u, 0u));
-    }
     else if (return_expr_fragment_and_len(node, return_expr_node, return_len))
     {
         atomic_u32_add(body_plan, BODY_PLAN_RETURN_VALUE_OK_COUNT, 1u);
         add_func_body_len(owner_fn, return_len);
-        if (direct_member_expr(return_expr_node))
-            publish_body_features(BODY_FEATURE_RETURN_MEMBER_EXPR);
         publish_fragment(
             token,
             return_len,

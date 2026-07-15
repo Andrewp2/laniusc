@@ -3,8 +3,8 @@
 // Scheduling contract:
 // - Dispatch after module keys and declaration namespace lookup tables are
 //   sorted and materialized.
-// - Multi-segment HIR path expressions resolve by looking up the prefix as a
-//   module path and then looking up the leaf in that module's declaration
+// - Multi-segment HIR path expressions resolve by looking up the prefix's exact
+//   canonical id and then looking up the leaf in that module's declaration
 //   table. Private declarations are visible only from the owning module.
 //   Public cross-module declarations are visible only through an explicit
 //   resolved import edge from the consuming module to the prefix module.
@@ -32,12 +32,11 @@ StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
+StructuredBuffer<uint> path_prefix_id;
 StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
-StructuredBuffer<uint> module_key_segment_count;
-StructuredBuffer<uint> module_key_segment_base;
-StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_status;
 StructuredBuffer<uint> import_module_id;
@@ -55,9 +54,6 @@ RWStructuredBuffer<uint> resolved_status;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint SORT_PATH_SEGMENTS = 8u;
-static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
-static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 
@@ -65,7 +61,6 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_MODULE = 5u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
-static const uint PATH_RESOLVE_STATUS_PATH_TOO_DEEP = 7u;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 static const uint IMPORT_STATUS_OK = 0u;
 
@@ -107,42 +102,9 @@ bool valid_import_edge(uint import_i)
            import_target_module_id[import_i] != INVALID;
 }
 
-uint path_segment_value(uint path_i, uint segment_i)
-{
-    uint count = min(path_segment_count[path_i], PATH_SEGMENT_ROW_WIDTH);
-    if (segment_i >= count)
-        return 0u;
-    uint name_id = path_segment_name_id[path_segment_base[path_i] + segment_i];
-    return encode_nullable_id(name_id, INVALID);
-}
-
-uint module_segment_value(uint module_i, uint segment_i)
-{
-    if (module_i >= active_module_count())
-        return 0u;
-    if (segment_i >= min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH))
-        return 0u;
-    uint name_id = module_key_segment_name_id[module_key_segment_base[module_i] + segment_i];
-    return encode_nullable_id(name_id, INVALID);
-}
-
 public struct ModulePrefixLookupKey
 {
-    uint path_i;
-    uint prefix_count;
-}
-
-public struct ModulePrefixFixedKey : IFixedU32RowKey<ModulePrefixLookupKey>
-{
-    public static uint row_lane(uint module_i, uint lane)
-    {
-        return module_segment_value(module_i, lane);
-    }
-
-    public static uint key_lane(ModulePrefixLookupKey key, uint lane)
-    {
-        return lane < key.prefix_count ? path_segment_value(key.path_i, lane) : 0u;
-    }
+    uint canonical_id;
 }
 
 public struct ModulePrefixCompare : IRowQueryCompare<ModulePrefixLookupKey>
@@ -150,10 +112,8 @@ public struct ModulePrefixCompare : IRowQueryCompare<ModulePrefixLookupKey>
     public static int compare(uint row, ModulePrefixLookupKey key)
     {
         uint module_i = sorted_module_key_order[row];
-        return fixed_u32_row_key_compare<ModulePrefixLookupKey, ModulePrefixFixedKey>(
-            module_i,
-            key,
-            SORT_PATH_SEGMENTS);
+        uint row_id = module_key_canonical_id[module_i];
+        return row_id < key.canonical_id ? -1 : (row_id > key.canonical_id ? 1 : 0);
     }
 }
 
@@ -173,8 +133,8 @@ public struct ModulePrefixValue : ISortedJoinValue<uint>
 uint find_module_for_path_prefix(uint path_i, uint prefix_count)
 {
     ModulePrefixLookupKey key;
-    key.path_i = path_i;
-    key.prefix_count = prefix_count;
+    key.canonical_id = path_prefix_id[
+        path_segment_base[path_i] + prefix_count - 1u];
     return sorted_join_project_key_or_invalid<
         ModulePrefixLookupKey,
         uint,
@@ -334,12 +294,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = path_segment_count[path_i];
     if (count <= 1u)
         return;
-    if (count - 1u > SORT_PATH_SEGMENTS)
-    {
-        resolved_status[path_i] = PATH_RESOLVE_STATUS_PATH_TOO_DEEP;
-        return;
-    }
-
     uint module_i = find_module_for_path_prefix(path_i, count - 1u);
     if (module_i == INVALID)
     {

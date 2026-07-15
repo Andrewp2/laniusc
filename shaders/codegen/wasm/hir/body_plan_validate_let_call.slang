@@ -27,6 +27,7 @@ static const uint BODY_PLAN_STMT_INVALID_COUNT = 11u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint BODY_FEATURE_BINARY_DIRECT = 1u << 5u;
+static const uint BODY_FEATURE_MEMBER_EXPR_SCATTER = 1u << 30u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 
 bool type_is_i32_value(uint ty)
@@ -152,8 +153,12 @@ bool let_binary_direct_call_record(
 
     uint left = expr_record_slot(node, EXPR_RECORD_LEFT);
     uint right = expr_record_slot(node, EXPR_RECORD_RIGHT);
-    uint right_expr_len = 0u;
-    bool right_expr = direct_call_arg_expr_and_len(right, right_expr_len);
+    uint resolved_right = resolve_expr_node(right);
+    uint2 right_total = valid_node(resolved_right)
+                            ? expr_subtree_total[resolved_right]
+                            : uint2(0u, 1u);
+    uint right_expr_len = right_total.x;
+    bool right_expr = right_total.y == 0u && right_expr_len != 0u;
     call_node = resolve_expr_node(left);
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR || !right_expr)
         return false;
@@ -172,7 +177,10 @@ void publish_fragment(uint token_i, uint len, uint4 meta, uint4 aux)
     body_fragment_len[slot] = len;
     body_fragment_meta[slot] = meta;
     body_fragment_aux[slot] = aux;
-    atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, BODY_FEATURE_BINARY_DIRECT);
+    atomic_u32_or(
+        body_plan,
+        BODY_PLAN_FEATURE_MASK,
+        BODY_FEATURE_BINARY_DIRECT | BODY_FEATURE_MEMBER_EXPR_SCATTER);
 }
 
 void publish_detail(uint detail)

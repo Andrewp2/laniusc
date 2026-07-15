@@ -557,8 +557,12 @@ fn parser_floor_removes_only_absent_optional_family_rows() {
     let no_optional_families =
         super::capacity::parser_tree_floor_bytes_for_features(tree_capacity, 0);
 
-    // Six array scalars, fifteen enum/match scalars, one u32x4 enum payload
-    // record, and eleven struct scalars are reduced to one binding-safe row.
-    let expected_saved = 36usize.saturating_mul(tree_capacity - 1).saturating_mul(4);
+    // Full families use 53 scalar-word equivalents per tree row. With all of
+    // them absent, two shared full-address sentinels remain and the array,
+    // struct, enum-payload, and compact string families retain 24 fixed words.
+    let expected_saved = 51usize
+        .saturating_mul(tree_capacity)
+        .saturating_sub(24)
+        .saturating_mul(4);
     assert_eq!(full - no_optional_families, expected_saved);
 }

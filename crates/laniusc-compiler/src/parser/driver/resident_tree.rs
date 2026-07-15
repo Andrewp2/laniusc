@@ -137,6 +137,9 @@ struct ResidentTreeReadbacks {
     hir_array_element_next: U32Readback,
     hir_expr_name_role: U32Readback,
     hir_expr_result_root_node: U32Readback,
+    hir_expr_parent_node: U32Readback,
+    hir_expr_forest_root_node: U32Readback,
+    hir_expr_forest_status: U32Readback,
     hir_member_receiver_node: U32Readback,
     hir_member_receiver_token: U32Readback,
     hir_member_name_token: U32Readback,
@@ -547,6 +550,21 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_expr_result_root_node",
                 bufs.hir_expr_result_root_node.byte_size,
+            ),
+            hir_expr_parent_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_expr_parent_node",
+                bufs.hir_expr_parent_node.byte_size,
+            ),
+            hir_expr_forest_root_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_expr_forest_root_node",
+                bufs.hir_expr_forest_root_node.byte_size,
+            ),
+            hir_expr_forest_status: rb(
+                device,
+                "rb.parser.resident_tree.hir_expr_forest_status",
+                bufs.hir_expr_forest_status.byte_size,
             ),
             hir_member_receiver_node: rb(
                 device,
@@ -1027,6 +1045,21 @@ impl ResidentTreeReadbacks {
             &bufs.hir_expr_result_root_node,
             bufs.hir_expr_result_root_node.byte_size as u64,
         );
+        self.hir_expr_parent_node.copy_from(
+            encoder,
+            &bufs.hir_expr_parent_node,
+            bufs.hir_expr_parent_node.byte_size as u64,
+        );
+        self.hir_expr_forest_root_node.copy_from(
+            encoder,
+            &bufs.hir_expr_forest_root_node,
+            bufs.hir_expr_forest_root_node.byte_size as u64,
+        );
+        self.hir_expr_forest_status.copy_from(
+            encoder,
+            &bufs.hir_expr_forest_status,
+            bufs.hir_expr_forest_status.byte_size as u64,
+        );
         self.hir_member_receiver_node.copy_from(
             encoder,
             &bufs.hir_member_receiver_node,
@@ -1212,6 +1245,9 @@ impl ResidentTreeReadbacks {
         self.hir_array_element_next.map();
         self.hir_expr_name_role.map();
         self.hir_expr_result_root_node.map();
+        self.hir_expr_parent_node.map();
+        self.hir_expr_forest_root_node.map();
+        self.hir_expr_forest_status.map();
         self.hir_member_receiver_node.map();
         self.hir_member_receiver_token.map();
         self.hir_member_name_token.map();
@@ -1396,6 +1432,14 @@ impl ResidentTreeReadbacks {
                 .read_words_padded(tree_len, u32::MAX)?,
             hir_expr_name_role: self.hir_expr_name_role.read_words(tree_len)?,
             hir_expr_result_root_node: self.hir_expr_result_root_node.read_words(tree_len)?,
+            hir_expr_parent_node: self.hir_expr_parent_node.read_words(tree_len)?,
+            hir_expr_forest_root_node: self.hir_expr_forest_root_node.read_words(tree_len)?,
+            hir_expr_forest_status: self
+                .hir_expr_forest_status
+                .read_words(1)?
+                .first()
+                .copied()
+                .unwrap_or(u32::MAX),
             hir_member_receiver_node: self.hir_member_receiver_node.read_words(tree_len)?,
             hir_member_receiver_token: self.hir_member_receiver_token.read_words(tree_len)?,
             hir_member_name_token: self.hir_member_name_token.read_words(tree_len)?,

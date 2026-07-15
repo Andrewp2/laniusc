@@ -7,7 +7,8 @@ Usage: tools/nvidia_gpu_guard.sh [--log PATH] -- COMMAND [ARG...]
 
 Runs one NVIDIA GPU workload with conservative desktop-safety guardrails:
 - refuses to start after NVIDIA mapping/Xid errors in the current boot;
-- refuses overlapping guarded runs and, by default, existing compute clients;
+- refuses overlapping guarded runs;
+- allows unrelated desktop and compute clients to keep using the GPU;
 - records framebuffer use and temperature while the command runs;
 - terminates the command on a new kernel GPU error, timeout, or threshold breach.
 
@@ -18,7 +19,6 @@ Environment:
   LANIUS_GPU_GUARD_MAX_INITIAL_MEMORY_PERCENT   default 30
   LANIUS_GPU_GUARD_MAX_MEMORY_PERCENT           default 80
   LANIUS_GPU_GUARD_MAX_TEMPERATURE_C            default 83
-  LANIUS_GPU_GUARD_ALLOW_EXISTING_COMPUTE       default 0
   LANIUS_GPU_GUARD_ALLOW_DIRTY_BOOT             default 0
   LANIUS_GPU_GUARD_LOCK_PATH                     default under XDG_RUNTIME_DIR
   LANIUS_GPU_GUARD_NVIDIA_SMI                    default nvidia-smi
@@ -110,7 +110,6 @@ timeout_seconds="${LANIUS_GPU_GUARD_TIMEOUT_SECONDS:-300}"
 max_initial_memory_percent="${LANIUS_GPU_GUARD_MAX_INITIAL_MEMORY_PERCENT:-30}"
 max_memory_percent="${LANIUS_GPU_GUARD_MAX_MEMORY_PERCENT:-80}"
 max_temperature_c="${LANIUS_GPU_GUARD_MAX_TEMPERATURE_C:-83}"
-allow_existing_compute="${LANIUS_GPU_GUARD_ALLOW_EXISTING_COMPUTE:-0}"
 allow_dirty_boot="${LANIUS_GPU_GUARD_ALLOW_DIRTY_BOOT:-0}"
 nvidia_smi="${LANIUS_GPU_GUARD_NVIDIA_SMI:-nvidia-smi}"
 journalctl="${LANIUS_GPU_GUARD_JOURNALCTL:-journalctl}"
@@ -147,12 +146,6 @@ if (( initial_used * 100 >= max_initial_memory_percent * initial_total )); then
 fi
 if (( initial_temperature >= max_temperature_c )); then
   die "initial GPU temperature ${initial_temperature} C is at or above ${max_temperature_c} C"
-fi
-
-existing_compute="$($nvidia_smi --id="$gpu_index" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits 2>/dev/null || true)"
-if [[ -n "$existing_compute" ]] && ! is_enabled "$allow_existing_compute"; then
-  printf '%s\n' "$existing_compute" >&2
-  die 'an existing NVIDIA compute client is active; do not overlap GPU workloads'
 fi
 
 if [[ -z "$log_path" ]]; then

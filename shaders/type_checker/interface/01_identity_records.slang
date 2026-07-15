@@ -11,7 +11,7 @@ struct Params
     uint module_capacity;
     uint decl_capacity;
     uint module_segment_capacity;
-    uint module_segment_row_width;
+    uint module_index_capacity;
     uint name_byte_capacity;
     uint member_capacity;
 };
@@ -97,12 +97,27 @@ bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i
 {
     module_i = 0u;
     segment_i = 0u;
-    if (slot >= gParams.module_segment_capacity || gParams.module_segment_row_width == 0u)
+    uint module_count = active_module_count();
+    uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+    if (slot >= segment_count || module_count == 0u)
         return false;
-    module_i = slot / gParams.module_segment_row_width;
-    segment_i = slot - module_i * gParams.module_segment_row_width;
-    return module_i < active_module_count() &&
-           segment_i < min(module_key_segment_count[module_i], gParams.module_segment_row_width);
+
+    uint lo = 0u;
+    uint hi = module_count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        uint end = module_segment_prefix[mid] + module_key_segment_count[mid];
+        if (end <= slot)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    if (lo >= module_count)
+        return false;
+    module_i = lo;
+    segment_i = slot - module_segment_prefix[lo];
+    return segment_i < module_key_segment_count[lo];
 }
 
 void write_decl(uint dst, uint decl, uint name_ref)
@@ -199,16 +214,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         ModuleRecord record;
         record.first_segment = module_segment_prefix[row];
-        record.segment_count = min(
-            module_key_segment_count[row],
-            gParams.module_segment_row_width);
+        record.segment_count = module_key_segment_count[row];
         interface_modules[row] = record;
     }
     uint segment_module;
     uint segment_ordinal;
     if (active_module_segment_slot(row, segment_module, segment_ordinal))
     {
-        uint name_id = module_key_segment_name_id[row];
+        uint source_slot = module_key_segment_base[segment_module] + segment_ordinal;
+        uint name_id = module_key_segment_name_id[source_slot];
         uint name_ref = row;
         if (name_id < active_name_count() && interface_name_ref_len[name_ref] != 0u)
         {

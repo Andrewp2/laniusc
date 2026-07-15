@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct WasmBodyBindingContext<'a> {
     pub inputs: GpuWasmCodegenInputs<'a>,
+    expr_order: Option<&'a ResidentWasmExprOrder>,
     pub params_buf: &'a LaniusBuffer<WasmParams>,
     pub wasm_const_value_record_buf: &'a LaniusBuffer<u32>,
     pub body_let_init_expr_by_decl_token_buf: &'a LaniusBuffer<u32>,
@@ -18,6 +19,8 @@ pub(super) struct WasmBodyBindingContext<'a> {
     pub wasm_func_invalid_count_by_token_buf: &'a LaniusBuffer<u32>,
     pub wasm_func_return_token_by_token_buf: &'a LaniusBuffer<u32>,
     pub wasm_func_detail_by_token_buf: &'a LaniusBuffer<u32>,
+    pub expr_subtree_total_buf: &'a LaniusBuffer<u32>,
+    pub expr_subtree_features_buf: &'a LaniusBuffer<u32>,
 }
 
 impl WasmBodyBindingContext<'_> {
@@ -27,6 +30,7 @@ impl WasmBodyBindingContext<'_> {
     ) -> WasmBodyBindingContext<'a> {
         WasmBodyBindingContext {
             inputs,
+            expr_order: None,
             params_buf: &working.params_buf,
             wasm_const_value_record_buf: &working.wasm_const_value_record_buf,
             body_let_init_expr_by_decl_token_buf: &working.body_let_init_expr_by_decl_token_buf,
@@ -44,7 +48,19 @@ impl WasmBodyBindingContext<'_> {
             wasm_func_invalid_count_by_token_buf: &working.wasm_func_invalid_count_by_token_buf,
             wasm_func_return_token_by_token_buf: &working.wasm_func_return_token_by_token_buf,
             wasm_func_detail_by_token_buf: &working.wasm_func_detail_by_token_buf,
+            expr_subtree_total_buf: &working.expr_subtree_total_buf,
+            expr_subtree_features_buf: &working.expr_subtree_features_buf,
         }
+    }
+
+    pub(super) fn new_with_expr_order<'a>(
+        inputs: GpuWasmCodegenInputs<'a>,
+        working: &'a WasmWorkingBuffers,
+        expr_order: &'a ResidentWasmExprOrder,
+    ) -> WasmBodyBindingContext<'a> {
+        let mut context = Self::new(inputs, working);
+        context.expr_order = Some(expr_order);
+        context
     }
 
     pub(super) fn extend<'a>(
@@ -97,8 +113,18 @@ impl WasmBodyBindingContext<'_> {
         let wasm_func_invalid_count_by_token_buf = self.wasm_func_invalid_count_by_token_buf;
         let wasm_func_return_token_by_token_buf = self.wasm_func_return_token_by_token_buf;
         let wasm_func_detail_by_token_buf = self.wasm_func_detail_by_token_buf;
+        let expr_subtree_total_buf = self.expr_subtree_total_buf;
+        let expr_subtree_features_buf = self.expr_subtree_features_buf;
         bindings.extend([
             ("gParams", params_buf.as_entire_binding()),
+            (
+                "expr_subtree_total",
+                expr_subtree_total_buf.as_entire_binding(),
+            ),
+            (
+                "expr_subtree_features",
+                expr_subtree_features_buf.as_entire_binding(),
+            ),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("parent", parent_buf.as_entire_binding()),
             ("first_child", first_child_buf.as_entire_binding()),
@@ -279,16 +305,6 @@ impl WasmBodyBindingContext<'_> {
                 expr_metadata.nearest_block_node.as_entire_binding(),
             ),
             (
-                "hir_nearest_enclosing_control_node",
-                expr_metadata
-                    .nearest_enclosing_control_node
-                    .as_entire_binding(),
-            ),
-            (
-                "hir_nearest_loop_node",
-                expr_metadata.nearest_loop_node.as_entire_binding(),
-            ),
-            (
                 "hir_call_arg_start",
                 call_metadata.arg_start.as_entire_binding(),
             ),
@@ -381,5 +397,23 @@ impl WasmBodyBindingContext<'_> {
                 wasm_func_detail_by_token_buf.as_entire_binding(),
             ),
         ]);
+        if let Some(expr_order) = self.expr_order {
+            bindings.extend([
+                (
+                    "hir_expr_forest_root_node",
+                    expr_metadata.forest_root_node.as_entire_binding(),
+                ),
+                ("expr_order", expr_order.order_a.as_entire_binding()),
+                (
+                    "expr_root_order_range",
+                    expr_order.root_order_range.as_entire_binding(),
+                ),
+                ("expr_node_span", expr_order.node_span.as_entire_binding()),
+                (
+                    "expr_node_emission",
+                    expr_order.node_emission.as_entire_binding(),
+                ),
+            ]);
+        }
     }
 }

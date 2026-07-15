@@ -9724,7 +9724,7 @@ fn main() {
 }
 
 #[test]
-fn package_manifest_rejects_entry_paths_deeper_than_documented_path_depth_limit() {
+fn package_manifest_accepts_deep_entry_module_paths() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "module_path_limit", None);
     let source_root = root.join("src");
     let parent_dir = source_root
@@ -9764,28 +9764,30 @@ fn main() {{
 "#,
     )
     .expect("parse package manifest JSON");
-    let err = manifest.resolve_from_dir(&root).expect_err(
-        "package manifests should reject entry paths beyond the documented path-depth limit",
-    );
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("package entry source-root relative path")
-            && message.contains("more than 8 segments")
-            && message.contains("at most 8 path segments"),
-        "expected package manifest entry depth-limit error, got {message}"
-    );
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("deep package entry paths should resolve without a segment cap");
+    assert_eq!(resolved.entry, std::fs::canonicalize(&entry_path).unwrap());
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
 
 #[test]
-fn package_lockfile_reports_source_span_for_overdeep_import_path() {
+fn package_lockfile_accepts_deep_import_paths() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "deep_import_path", None);
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
     let deep_import_path = "a::b::c::d::e::f::g::h::i";
     let entry_path = app_root.join("main.lani");
+    let imported_path = root.join("src/a/b/c/d/e/f/g/h/i.lani");
+    std::fs::create_dir_all(imported_path.parent().unwrap())
+        .expect("create deep imported module directory");
+    std::fs::write(
+        &imported_path,
+        format!("module {deep_import_path};\npub const VALUE: i32 = 1;\n"),
+    )
+    .expect("write deep imported module");
     std::fs::write(
         &entry_path,
         format!(
@@ -9817,23 +9819,24 @@ fn main() {{
         .expect("resolve package manifest paths");
     let lockfile =
         PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
-    let expected_source_line = format!("import {deep_import_path};");
-
-    let err = lockfile.load_path_manifest().expect_err(
-        "package replay should reject overdeep import metadata before returning a path manifest",
+    let path_manifest = lockfile
+        .load_path_manifest()
+        .expect("package replay should preserve deep import metadata");
+    assert!(
+        path_manifest
+            .files
+            .iter()
+            .any(|file| { file.path == std::fs::canonicalize(&imported_path).unwrap() })
     );
-    assert_source_spanned_import_path_too_deep_error(&err, &entry_path, &expected_source_line);
-
-    let err = lockfile
+    lockfile
         .to_json_pretty()
-        .expect_err("package lockfile generation should reject overdeep import graph metadata");
-    assert_source_spanned_import_path_too_deep_error(&err, &entry_path, &expected_source_line);
+        .expect("deep import graph metadata should serialize");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
 
 #[test]
-fn package_lockfile_reports_stable_diagnostic_for_overdeep_imported_module_declaration() {
+fn package_lockfile_accepts_deep_imported_module_declarations() {
     let root = common::temp_artifact_path(
         "laniusc_package_manifest",
         "deep_imported_module_path",
@@ -9843,8 +9846,10 @@ fn package_lockfile_reports_stable_diagnostic_for_overdeep_imported_module_decla
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
     let deep_module_path = "a::b::c::d::e::f::g::h::i";
+    let helper_path = root.join("src/a/b/c/d/e/f/g/h/i.lani");
+    std::fs::create_dir_all(helper_path.parent().unwrap()).expect("create deep helper directory");
     std::fs::write(
-        app_root.join("helper.lani"),
+        &helper_path,
         format!(
             r#"
 module {deep_module_path};
@@ -9859,7 +9864,7 @@ pub const VALUE: i32 = 1;
         r#"
 module app::main;
 
-import app::helper;
+import a::b::c::d::e::f::g::h::i;
 
 fn main() {
     return 0;
@@ -9883,35 +9888,9 @@ fn main() {
         .expect("resolve package manifest paths");
     let lockfile =
         PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
-    let err = lockfile
+    lockfile
         .to_json_pretty()
-        .expect_err("package replay should report resolver-depth module metadata as a diagnostic");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0014");
-            assert_eq!(diagnostic.message, "module path too deep");
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("overdeep module diagnostic should carry a source label");
-            assert_eq!(
-                label.source_line.as_deref(),
-                Some("module a::b::c::d::e::f::g::h::i;")
-            );
-            assert!(
-                label.message.contains("module path") && label.message.contains("depth"),
-                "overdeep module diagnostic label should describe the path-depth failure, got {:?}",
-                label.message
-            );
-            assert!(
-                !diagnostic.notes.is_empty(),
-                "expected package replay diagnostic to include recovery notes, got {:?}",
-                diagnostic.notes
-            );
-        }
-        other => panic!("expected stable overdeep module diagnostic, got {other:?}"),
-    }
+        .expect("package replay should serialize arbitrary-depth module metadata");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -10722,39 +10701,6 @@ fn assert_source_spanned_import_glob_error(err: &CompileError, source_path: &Pat
             );
         }
         other => panic!("expected source-spanned glob import diagnostic, got {other:?}"),
-    }
-}
-
-fn assert_source_spanned_import_path_too_deep_error(
-    err: &CompileError,
-    source_path: &Path,
-    expected_source_line: &str,
-) {
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0012");
-            assert_eq!(diagnostic.message, "import path too deep");
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("overdeep import diagnostic should carry a source label");
-            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
-            assert_eq!(label.source_line.as_deref(), Some(expected_source_line));
-            assert!(
-                label.message.contains("import path") && label.message.contains("depth"),
-                "overdeep import diagnostic label should describe the path-depth failure, got {:?}",
-                label.message
-            );
-            assert!(
-                diagnostic.notes.iter().any(|note| {
-                    note.contains("before persisting import graph metadata")
-                        && note.contains("resolver import keys")
-                }),
-                "expected import graph boundary note, got {:?}",
-                diagnostic.notes
-            );
-        }
-        other => panic!("expected source-spanned overdeep import diagnostic, got {other:?}"),
     }
 }
 

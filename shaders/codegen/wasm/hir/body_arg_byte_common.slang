@@ -2,6 +2,8 @@
 
 import gpu_index;
 import call_relocation;
+import expr_span_lookup;
+import expr_emission_common;
 
 struct Params
 {
@@ -30,6 +32,8 @@ StructuredBuffer<uint> wasm_agg_local_block_prefix;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint2> expr_node_emission;
+StructuredBuffer<uint2> expr_subtree_total;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> hir_expr_string_start;
@@ -47,7 +51,6 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_return_type;
-StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_fn_token;
@@ -161,8 +164,6 @@ static const uint WASM_F32_ADD = 0x92u;
 static const uint WASM_F32_SUB = 0x93u;
 static const uint WASM_F32_MUL = 0x94u;
 static const uint WASM_F32_DIV = 0x95u;
-static const uint MAX_AGG_MEMBER_ADDRESS_DEPTH = 16u;
-static const uint MAX_CONTROL_BRANCH_DEPTH = 16u;
 static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -832,22 +833,14 @@ bool local_decl_token_for_name_expr(uint node, out uint decl_token)
         return true;
     }
 
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
+    uint encoded_fn = enclosing_fn[decl_token];
+    if (encoded_fn == 0u || encoded_fn - 1u != owner_fn ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
     {
-        if (!valid_node(control))
-            return false;
-        if (stmt_record_slot(control, 0u) == STMT_RECORD_KIND_FOR &&
-            stmt_record_slot(control, 1u) == decl_token)
-        {
-            if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-                return false;
-            decl_token = local_index;
-            return true;
-        }
-        control = hir_nearest_enclosing_control_node[control];
+        return false;
     }
-    return false;
+    decl_token = local_index;
+    return true;
 }
 
 bool name_const_record_value(uint name_node, out uint value)
@@ -1073,8 +1066,14 @@ uint expr_binary_op_byte_for_node(uint node)
     return expr_binary_op_byte(form);
 }
 
-bool aggregate_name_address_expr_and_len(uint node, out uint len)
+bool aggregate_name_address_expr_plan(
+    uint node,
+    out uint opcode,
+    out uint operand,
+    out uint len)
 {
+    opcode = 0u;
+    operand = 0u;
     len = 0u;
     node = resolve_expr_node(node);
     if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
@@ -1109,6 +1108,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
         {
             return false;
         }
+        opcode = WASM_LOCAL_GET;
+        operand = local_index;
         len = local_get_len(local_index);
         return true;
     }
@@ -1116,6 +1117,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     if (wasm_agg_local_width_by_token[decl_token] != 0u)
     {
         uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
+        opcode = WASM_I32_CONST;
+        operand = base_address;
         len = 1u + i32_sleb_len(base_address);
         return true;
     }
@@ -1124,6 +1127,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     {
         if (!function_non_param_local_index_for_type(decl_token, owner_fn, TY_INT, local_index))
             return false;
+        opcode = WASM_LOCAL_GET;
+        operand = local_index;
         len = local_get_len(local_index);
         return true;
     }
@@ -1131,184 +1136,117 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     return false;
 }
 
-uint aggregate_name_address_expr_byte(uint node, uint byte_i)
+bool aggregate_name_address_expr_and_len(uint node, out uint len)
 {
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
-        return 0u;
-
-    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
-    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
-    if (!valid_token(decl_token))
-        return 0u;
-
-    uint owner_fn = node_enclosing_fn_token(node);
-    uint local_index = INVALID;
-    if (function_param_local_index(decl_token, owner_fn, local_index))
-        return local_get_byte(local_index, byte_i);
-
-    if (valid_token(owner_fn))
-    {
-        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
-        if (ordinal != INVALID)
-            return local_get_byte(ordinal, byte_i);
-    }
-
-    if (wasm_agg_local_width_by_token[decl_token] != 0u)
-    {
-        uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
-        return i32_const_byte(base_address, byte_i);
-    }
-
-    if (visible_type_for_token(decl_token) >= TY_ARRAY_BASE &&
-        function_non_param_local_index_for_type(decl_token, owner_fn, TY_INT, local_index))
-    {
-        return local_get_byte(local_index, byte_i);
-    }
-
-    return 0u;
+    uint opcode = 0u;
+    uint operand = 0u;
+    return aggregate_name_address_expr_plan(node, opcode, operand, len);
 }
 
-bool aggregate_member_address_base_and_offset(uint node, out uint base_node, out uint offset)
+uint aggregate_name_address_expr_byte(uint node, uint byte_i)
 {
-    base_node = INVALID;
-    offset = 0u;
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
-        return false;
-
-    uint top_member_name = hir_member_name_token[node];
-    if (!valid_token(top_member_name) || visible_type_for_token(top_member_name) < TY_ARRAY_BASE)
-        return false;
-
-    uint current = node;
-    for (uint step = 0u; step < MAX_AGG_MEMBER_ADDRESS_DEPTH; step++)
-    {
-        current = resolve_expr_node(current);
-        if (!valid_node(current))
-            return false;
-
-        if (hir_kind[current] != HIR_MEMBER_EXPR)
-        {
-            uint base_len = 0u;
-            if (!aggregate_name_address_expr_and_len(current, base_len))
-                return false;
-            base_node = current;
-            return true;
-        }
-
-        uint member_name = hir_member_name_token[current];
-        if (!valid_token(member_name))
-            return false;
-
-        uint field_index = member_result_field_index[member_name];
-        if (field_index == INVALID)
-            return false;
-
-        offset += field_index * 4u;
-        current = hir_member_receiver_node[current];
-    }
-
-    return false;
+    uint opcode = 0u;
+    uint operand = 0u;
+    uint len = 0u;
+    if (!aggregate_name_address_expr_plan(node, opcode, operand, len))
+        return 0u;
+    return opcode == WASM_LOCAL_GET
+               ? local_get_byte(operand, byte_i)
+               : i32_const_byte(operand, byte_i);
 }
 
 bool aggregate_address_expr_and_len(uint node, out uint len)
 {
     len = 0u;
-    uint name_len = 0u;
-    if (aggregate_name_address_expr_and_len(node, name_len))
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_MEMBER_EXPR && expr_form(node) != HIR_EXPR_NAME))
     {
-        len = name_len;
-        return true;
+        node = resolve_expr_node(node);
     }
-
-    node = resolve_expr_node(node);
-    uint depth = 0u;
-    uint load_len = 0u;
-    for (uint step = 0u; step < MAX_AGG_MEMBER_ADDRESS_DEPTH; step += 1u)
+    if (!valid_node(node))
+        return false;
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
     {
-        if (!valid_node(node)) return false;
-        if (hir_kind[node] != HIR_MEMBER_EXPR)
-        {
-            uint base_len = 0u;
-            if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len))
-                return false;
-            len = base_len + load_len;
-            return true;
-        }
         uint member_name = hir_member_name_token[node];
-        uint field_index = valid_token(member_name)
-                               ? member_result_field_index[member_name]
-                               : INVALID;
-        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
+        if (!valid_token(member_name) || visible_type_for_token(member_name) < TY_ARRAY_BASE)
             return false;
-        load_len += 2u + u32_leb_len(field_index * 4u);
-        depth += 1u;
-        node = resolve_expr_node(hir_member_receiver_node[node]);
     }
-    return false;
+    else
+    {
+        uint name_len = 0u;
+        if (!aggregate_name_address_expr_and_len(node, name_len))
+            return false;
+    }
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x == 0u)
+        return false;
+    len = total.x;
+    return true;
+}
+
+uint aggregate_expr_span_byte(uint node, uint byte_i)
+{
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_MEMBER_EXPR && expr_form(node) != HIR_EXPR_NAME))
+    {
+        node = resolve_expr_node(node);
+    }
+    if (!valid_node(node))
+        return 0u;
+    uint2 total = expr_subtree_total[node];
+    uint span_start = 0u;
+    uint span_len = 0u;
+    if (total.y != 0u || total.x == 0u || byte_i >= total.x ||
+        !wasm_expr_node_span(node, gParams.n_hir_nodes, span_start, span_len))
+    {
+        return 0u;
+    }
+    uint subtree_end = span_start + span_len;
+    if (subtree_end < total.x)
+        return 0u;
+    uint owner = INVALID;
+    uint owner_byte = 0u;
+    if (!wasm_expr_span_byte_owner(
+            node,
+            gParams.n_hir_nodes,
+            subtree_end - total.x + byte_i,
+            owner,
+            owner_byte))
+    {
+        return 0u;
+    }
+    uint byte = 0u;
+    return wasm_expr_emission_byte(expr_node_emission[owner], owner_byte, byte)
+               ? byte
+               : 0u;
 }
 
 uint aggregate_address_expr_byte(uint node, uint byte_i)
 {
-    uint name_len = 0u;
-    if (aggregate_name_address_expr_and_len(node, name_len))
-        return aggregate_name_address_expr_byte(node, byte_i);
+    uint len = 0u;
+    if (!aggregate_address_expr_and_len(node, len) || byte_i >= len)
+        return 0u;
 
-    uint fields[MAX_AGG_MEMBER_ADDRESS_DEPTH];
-    uint depth = 0u;
-    node = resolve_expr_node(node);
-    for (uint step = 0u; step < MAX_AGG_MEMBER_ADDRESS_DEPTH; step += 1u)
-    {
-        if (!valid_node(node)) return 0u;
-        if (hir_kind[node] != HIR_MEMBER_EXPR) break;
-        uint member_name = hir_member_name_token[node];
-        uint field_index = valid_token(member_name)
-                               ? member_result_field_index[member_name]
-                               : INVALID;
-        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
-            return 0u;
-        fields[depth++] = field_index;
-        node = resolve_expr_node(hir_member_receiver_node[node]);
-    }
-    uint base_len = 0u;
-    if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len)) return 0u;
-    if (byte_i < base_len) return aggregate_name_address_expr_byte(node, byte_i);
-    uint offset = base_len;
-    for (uint i = 0u; i < depth; i += 1u)
-    {
-        uint field_offset = fields[depth - i - 1u] * 4u;
-        uint load_len = 2u + u32_leb_len(field_offset);
-        if (byte_i < offset + load_len)
-            return memarg_load_byte(WASM_I32_LOAD, field_offset, byte_i - offset);
-        offset += load_len;
-    }
-    return 0u;
+    uint resolved = resolve_expr_node(node);
+    if (valid_node(resolved) && expr_form(resolved) == HIR_EXPR_NAME)
+        return aggregate_name_address_expr_byte(resolved, byte_i);
+    return aggregate_expr_span_byte(node, byte_i);
 }
 
 uint member_expr_node_from_expr(uint node)
 {
-    for (uint depth = 0u; depth < MAX_AGG_MEMBER_ADDRESS_DEPTH; depth += 1u)
+    if (valid_node(node) &&
+        hir_kind[node] == HIR_MEMBER_EXPR &&
+        valid_token(hir_member_name_token[node]))
     {
-        if (!valid_node(node))
-            return INVALID;
-        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
-            return node;
-        if (expr_form(node) == HIR_EXPR_FORWARD)
-        {
-            uint forwarded = expr_record_slot(node, EXPR_RECORD_LEFT);
-            if (valid_node(forwarded) && forwarded != node)
-            {
-                node = forwarded;
-                continue;
-            }
-        }
-        uint root = hir_expr_result_root_node[node];
-        if (!valid_node(root) || root == node)
-            return INVALID;
-        node = root;
+        return node;
     }
-    return INVALID;
+    node = resolve_expr_node(node);
+    return valid_node(node) &&
+           hir_kind[node] == HIR_MEMBER_EXPR &&
+           valid_token(hir_member_name_token[node])
+               ? node
+               : INVALID;
 }
 
 bool aggregate_member_address_and_len(uint node, out uint len)
@@ -1322,15 +1260,12 @@ bool aggregate_member_address_and_len(uint node, out uint len)
     if (!valid_token(member_name))
         return false;
 
-    uint field_index = member_result_field_index[member_name];
-    if (field_index == INVALID)
+    if (member_result_field_index[member_name] == INVALID)
         return false;
-
-    uint receiver_len = 0u;
-    if (!aggregate_address_expr_and_len(hir_member_receiver_node[node], receiver_len))
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x == 0u)
         return false;
-
-    len = receiver_len + 3u;
+    len = total.x;
     return true;
 }
 
@@ -1344,19 +1279,12 @@ uint aggregate_member_address_byte(uint node, uint byte_i)
     if (!valid_token(member_name))
         return 0u;
 
-    uint field_index = member_result_field_index[member_name];
-    if (field_index == INVALID)
+    if (member_result_field_index[member_name] == INVALID)
         return 0u;
-
-    uint receiver = hir_member_receiver_node[node];
-    uint receiver_len = 0u;
-    if (!aggregate_address_expr_and_len(receiver, receiver_len))
-        return 0u;
-    if (byte_i < receiver_len)
-        return aggregate_address_expr_byte(receiver, byte_i);
-
-    uint op = visible_type_for_token(member_name) == TY_FLOAT ? WASM_F32_LOAD : WASM_I32_LOAD;
-    return memarg_load_byte(op, field_index * 4u, byte_i - receiver_len);
+    uint2 total = expr_subtree_total[node];
+    return total.y == 0u && byte_i < total.x
+               ? aggregate_expr_span_byte(node, byte_i)
+               : 0u;
 }
 
 bool expr_non_call_atom_and_len(uint node, out uint len)
@@ -1827,4 +1755,17 @@ bool direct_call_arg_abi_expr_and_len(uint node, uint param_ty, out uint len)
 uint direct_call_abi_arg_byte(uint node, uint fn_token, uint ordinal, uint byte_i)
 {
     return direct_call_abi_arg_non_call_byte(node, fn_token, ordinal, byte_i);
+}
+
+// Non-scalar ABI records are scattered separately from scalar expression
+// forests. Keeping this entry point independent of function/ordinal lookup
+// prevents the non-scalar byte shader from retaining the entire scalar
+// expression helper graph.
+uint direct_call_abi_non_scalar_arg_byte(uint node, uint param_ty, uint byte_i)
+{
+    if (param_ty == TY_STRING)
+        return string_value_expr_byte(node, byte_i);
+    if (param_ty >= TY_ARRAY_BASE)
+        return aggregate_address_expr_byte(node, byte_i);
+    return 0u;
 }

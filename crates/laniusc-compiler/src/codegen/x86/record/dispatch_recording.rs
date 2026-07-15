@@ -61,6 +61,9 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) virtual_inst_clear_dispatch_args: &'a wgpu::BindGroup,
     pub(super) virtual_inst_clear: &'a wgpu::BindGroup,
     pub(super) node_inst_gen: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_calls: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_statements: &'a wgpu::BindGroup,
+    pub(super) node_inst_gen_matches: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_function_params: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_host_calls: &'a wgpu::BindGroup,
     pub(super) node_inst_gen_for_stmt: &'a wgpu::BindGroup,
@@ -115,6 +118,9 @@ pub(super) fn record_instruction_dispatches(
         virtual_inst_clear_dispatch_args,
         virtual_inst_clear,
         node_inst_gen,
+        node_inst_gen_calls,
+        node_inst_gen_statements,
+        node_inst_gen_matches,
         node_inst_gen_function_params,
         node_inst_gen_host_calls,
         node_inst_gen_for_stmt,
@@ -362,6 +368,27 @@ pub(super) fn record_instruction_dispatches(
     );
     dispatch_x86_stage_indirect(
         encoder,
+        "node_inst_gen_calls",
+        &generator.node_inst_gen_calls_pass,
+        node_inst_gen_calls,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "node_inst_gen_statements",
+        &generator.node_inst_gen_statements_pass,
+        node_inst_gen_statements,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "node_inst_gen_matches",
+        &generator.node_inst_gen_matches_pass,
+        node_inst_gen_matches,
+        node_order_scan,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
         "node_inst_gen_function_params",
         &generator.node_inst_gen_function_params_pass,
         node_inst_gen_function_params,
@@ -388,14 +415,14 @@ pub(super) fn record_instruction_dispatches(
         node_inst_gen_control_stmt,
         node_order_scan,
     );
-    dispatch_x86_stage_indirect(
-        encoder,
-        "node_inst_gen_aggregate_copy",
-        &generator.node_inst_gen_aggregate_copy_pass,
-        node_inst_gen_aggregate_copy,
-        node_order_scan_block,
-    );
     if has_aggregate {
+        dispatch_x86_stage_indirect(
+            encoder,
+            "node_inst_gen_aggregate_copy",
+            &generator.node_inst_gen_aggregate_copy_pass,
+            node_inst_gen_aggregate_copy,
+            virtual_inst,
+        );
         dispatch_x86_stage_indirect(
             encoder,
             "aggregate_literal_return_copy_flags",

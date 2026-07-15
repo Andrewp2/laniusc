@@ -103,6 +103,8 @@ use status_trace::{StatusTraceSources, record_status_trace_readback};
 use timing::HostTimer;
 use virtual_bind_groups::{VirtualBindGroupInputs, VirtualBindGroups, create_virtual_bind_groups};
 
+const ELF_HEADER_AND_PROGRAM_HEADER_BYTES: u32 = 0x78;
+
 impl GpuX86CodeGenerator {
     /// Records GPU passes that lower parser HIR and type-check metadata to ELF output.
     pub fn record_elf_from_hir(
@@ -611,6 +613,20 @@ impl GpuX86CodeGenerator {
                 artifact_mode == RecordedX86ArtifactMode::Executable,
             )],
         );
+        // ELF writing is shared with the paged linker, whose parameter
+        // contract describes the current output page. Resident compilation
+        // emits only the header into its resident output; text and rodata are
+        // written by their dedicated parallel passes.
+        let elf_params_buf = uniform_u32_words(
+            device,
+            "codegen.x86.elf_write.params",
+            &[
+                0,
+                ELF_HEADER_AND_PROGRAM_HEADER_BYTES,
+                params.out_capacity,
+                0,
+            ],
+        );
         host_timer.stamp("scratch_buffers");
         let node_inst_scan_params_buf = scan_params(
             device,
@@ -1108,7 +1124,6 @@ impl GpuX86CodeGenerator {
                 node_inst_gen_node_record: &node_inst_gen_node_record_buf,
                 node_inst_gen_input_status: &node_inst_gen_input_status_buf,
                 active_node_inst_gen_dispatch_args: &node_order_scan,
-                active_node_inst_gen_aggregate_copy_dispatch_args: &node_order_scan_block,
                 short_circuit_rhs_node_a: &short_circuit_rhs_node_a_buf,
                 short_circuit_rhs_node_b: &short_circuit_rhs_node_b_buf,
                 short_circuit_rhs_link_a: &short_circuit_rhs_link_a_buf,
@@ -1126,6 +1141,9 @@ impl GpuX86CodeGenerator {
             clear_dispatch_args: virtual_inst_clear_dispatch_args_bind_group,
             clear_virtual_insts: virtual_inst_clear_bind_group,
             generate: node_inst_gen_bind_group,
+            calls: node_inst_gen_calls_bind_group,
+            statements: node_inst_gen_statements_bind_group,
+            matches: node_inst_gen_matches_bind_group,
             function_params: node_inst_gen_function_params_bind_group,
             host_calls: node_inst_gen_host_calls_bind_group,
             for_stmt: node_inst_gen_for_stmt_bind_group,
@@ -1180,6 +1198,7 @@ impl GpuX86CodeGenerator {
                 aggregate_source_node: aggregate_source_node_a_buf,
                 aggregate_source_offset: aggregate_source_offset_a_buf,
                 struct_record_status: &struct_record_status_buf,
+                node_inst_range_start: &node_inst_range_start_buf,
                 node_inst_range_info: &node_inst_range_info_buf,
                 node_inst_location_record: node_inst_location_record_buf,
                 node_inst_location_status: &node_inst_location_status_buf,
@@ -1189,6 +1208,7 @@ impl GpuX86CodeGenerator {
                 node_inst_scan_input: &node_inst_scan_input_buf,
                 node_inst_gen_input_status: &node_inst_gen_input_status_buf,
                 node_inst_gen_node_record: &node_inst_gen_node_record_buf,
+                node_inst_order_record: &node_inst_order_record_buf,
                 active_virtual_inst_dispatch_args: &virtual_inst,
                 enclosing_return_step_final: enclosing_return_step_final_buf,
                 enclosing_let_step_final: enclosing_let_step_final_buf,
@@ -1283,6 +1303,7 @@ impl GpuX86CodeGenerator {
             device,
             EmitBindGroupInputs {
                 params: &params_buf,
+                elf_params: &elf_params_buf,
                 reloc_finalize_params: &reloc_finalize_params_buf,
                 text_scan_params: &text_scan_params_buf,
                 rodata_scan_params: &rodata_scan_params_buf,
@@ -1510,6 +1531,9 @@ impl GpuX86CodeGenerator {
                 virtual_inst_clear_dispatch_args: &virtual_inst_clear_dispatch_args_bind_group,
                 virtual_inst_clear: &virtual_inst_clear_bind_group,
                 node_inst_gen: &node_inst_gen_bind_group,
+                node_inst_gen_calls: &node_inst_gen_calls_bind_group,
+                node_inst_gen_statements: &node_inst_gen_statements_bind_group,
+                node_inst_gen_matches: &node_inst_gen_matches_bind_group,
                 node_inst_gen_function_params: &node_inst_gen_function_params_bind_group,
                 node_inst_gen_host_calls: &node_inst_gen_host_calls_bind_group,
                 node_inst_gen_for_stmt: &node_inst_gen_for_stmt_bind_group,
@@ -1879,6 +1903,9 @@ impl GpuX86CodeGenerator {
             virtual_inst_clear_dispatch_args_bind_group,
             virtual_inst_clear_bind_group,
             node_inst_gen_bind_group,
+            node_inst_gen_calls_bind_group,
+            node_inst_gen_statements_bind_group,
+            node_inst_gen_matches_bind_group,
             node_inst_gen_function_params_bind_group,
             node_inst_gen_host_calls_bind_group,
             node_inst_gen_for_stmt_bind_group,

@@ -29,8 +29,11 @@ StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint2> expr_subtree_total;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
+StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> member_result_field_index;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
@@ -42,7 +45,6 @@ StructuredBuffer<uint> hir_call_arg_start;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_arg_ordinal;
-StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
@@ -79,6 +81,7 @@ static const uint HIR_IF_STMT = 10u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
@@ -128,11 +131,6 @@ static const uint BODY_FRAGMENT_PRINT_EXPR_I64 = 12u;
 static const uint BODY_FRAGMENT_IF_OPEN_I32 = 16u;
 static const uint BODY_FRAGMENT_IF_ELSE = 17u;
 static const uint BODY_FRAGMENT_IF_END = 18u;
-static const uint MAX_CONST_EVAL_STACK = 16u;
-static const uint MAX_CONST_EVAL_STEPS = 48u;
-static const uint MAX_EXPR_EMIT_STACK = 16u;
-static const uint MAX_EXPR_EMIT_STEPS = 48u;
-static const uint MAX_CONTROL_BRANCH_DEPTH = 16u;
 static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -140,7 +138,6 @@ static const uint BODY_PLAN_MAIN_COUNT = 8u;
 static const uint BODY_PLAN_PRINT_COUNT_AGG = 17u;
 static const uint BODY_PLAN_PRINT_MAX_TOKEN = 19u;
 static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
-static const uint BODY_PLAN_LOCAL_CONST_EXPR_COUNT = 29u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint BODY_FEATURE_EXPR_CONTROL = 1u << 0u;
 
@@ -520,23 +517,14 @@ bool local_decl_token_for_name_expr(uint node, out uint decl_token)
         return true;
     }
 
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
+    uint encoded_fn = enclosing_fn[decl_token];
+    if (encoded_fn == 0u || encoded_fn - 1u != owner_fn ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
     {
-        if (!valid_node(control))
-            return false;
-        if ((hir_kind[control] == HIR_FOR_STMT || hir_kind[control] == HIR_STMT) &&
-            stmt_record_slot(control, 0u) == STMT_RECORD_KIND_FOR &&
-            stmt_record_slot(control, 1u) == decl_token)
-        {
-            if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-                return false;
-            decl_token = local_index;
-            return true;
-        }
-        control = hir_nearest_enclosing_control_node[control];
+        return false;
     }
-    return false;
+    decl_token = local_index;
+    return true;
 }
 
 bool name_const_record_value(uint name_node, out uint value)
@@ -562,266 +550,24 @@ bool name_let_initializer_expr(uint name_node, out uint init_expr)
     return let_initializer_for_decl_token(decl_token, init_expr);
 }
 
-bool const_atom_value(uint node, out uint value)
-{
-    value = 0u;
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_INT)
-    {
-        value = hir_expr_int_value[node];
-        return true;
-    }
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
-    {
-        value = form == HIR_EXPR_TRUE ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_NAME)
-        return name_const_record_value(node, value);
-    return false;
-}
-
-bool unary_const_value(uint form, uint inner, out uint value)
-{
-    if (form == HIR_EXPR_NEG)
-    {
-        value = 0u - inner;
-        return true;
-    }
-    if (form == HIR_EXPR_NOT)
-    {
-        value = inner == 0u ? 1u : 0u;
-        return true;
-    }
-    value = 0u;
-    return false;
-}
-
-bool binary_const_value(uint form, uint left, uint right, out uint value)
-{
-    value = 0u;
-    if (form == HIR_EXPR_EQ) { value = left == right ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_NE) { value = left != right ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_LT) { value = int(left) < int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_GT) { value = int(left) > int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_LE) { value = int(left) <= int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_GE) { value = int(left) >= int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_ADD) { value = left + right; return true; }
-    if (form == HIR_EXPR_SUB) { value = left - right; return true; }
-    if (form == HIR_EXPR_MUL) { value = left * right; return true; }
-    if (form == HIR_EXPR_AND) { value = left != 0u && right != 0u ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_OR) { value = left != 0u || right != 0u ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_BIT_OR) { value = left | right; return true; }
-    if (form == HIR_EXPR_BIT_XOR) { value = left ^ right; return true; }
-    if (form == HIR_EXPR_BIT_AND) { value = left & right; return true; }
-    if (form == HIR_EXPR_SHL) { value = left << min(right, 31u); return true; }
-    if (form == HIR_EXPR_SHR) { value = uint(int(left) >> min(right, 31u)); return true; }
-    if (right == 0u)
-        return false;
-    if (form == HIR_EXPR_DIV) { value = uint(int(left) / int(right)); return true; }
-    if (form == HIR_EXPR_MOD) { value = uint(int(left) % int(right)); return true; }
-    return false;
-}
-
-bool push_eval_node(
-    inout uint nodes[MAX_CONST_EVAL_STACK],
-    inout uint states[MAX_CONST_EVAL_STACK],
-    inout uint sp,
-    uint node)
-{
-    if (sp >= MAX_CONST_EVAL_STACK)
-        return false;
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-    nodes[sp] = node;
-    states[sp] = 0u;
-    sp += 1u;
-    return true;
-}
-
-bool expr_binary_form(uint form)
-{
-    return form == HIR_EXPR_EQ || form == HIR_EXPR_NE ||
-           form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
-           form == HIR_EXPR_LE || form == HIR_EXPR_GE ||
-           form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
-           form == HIR_EXPR_MUL || form == HIR_EXPR_AND ||
-           form == HIR_EXPR_OR || form == HIR_EXPR_MOD ||
-           form == HIR_EXPR_DIV || form == HIR_EXPR_BIT_OR ||
-           form == HIR_EXPR_BIT_XOR || form == HIR_EXPR_BIT_AND ||
-           form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
-}
-
-bool expr_atom_is_f32(uint node)
-{
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_FLOAT)
-        return true;
-    if (form == HIR_EXPR_NAME)
-    {
-        uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
-        return visible_type_for_token(name_token) == TY_FLOAT;
-    }
-    return false;
-}
-
-bool expr_neg_is_f32(uint node)
-{
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-    return expr_form(node) == HIR_EXPR_NEG && expr_atom_is_f32(expr_record_slot(node, EXPR_RECORD_LEFT));
-}
-
-bool const_expr_value(uint root_node, out uint value)
-{
-    value = 0u;
-    uint nodes[MAX_CONST_EVAL_STACK];
-    uint states[MAX_CONST_EVAL_STACK];
-    uint values[MAX_CONST_EVAL_STACK];
-    uint sp = 0u;
-    uint vsp = 0u;
-    if (!push_eval_node(nodes, states, sp, root_node))
-        return false;
-
-    for (uint step = 0u; step < MAX_CONST_EVAL_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            break;
-
-        uint node = nodes[sp - 1u];
-        uint state = states[sp - 1u];
-        uint form = expr_form(node);
-        uint atom = 0u;
-        if (state == 0u && const_atom_value(node, atom))
-        {
-            if (vsp >= MAX_CONST_EVAL_STACK)
-                return false;
-            values[vsp] = atom;
-            vsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-        if (state == 0u && form == HIR_EXPR_NAME)
-        {
-            uint init_expr = INVALID;
-            if (!name_let_initializer_expr(node, init_expr))
-                return false;
-            nodes[sp - 1u] = resolve_expr_node(init_expr);
-            states[sp - 1u] = 0u;
-            continue;
-        }
-        if (form == HIR_EXPR_NEG || form == HIR_EXPR_NOT)
-        {
-            if (state == 0u)
-            {
-                states[sp - 1u] = 1u;
-                if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                    return false;
-                continue;
-            }
-            if (vsp < 1u)
-                return false;
-            uint inner = values[vsp - 1u];
-            vsp -= 1u;
-            uint result = 0u;
-            if (!unary_const_value(form, inner, result))
-                return false;
-            values[vsp] = result;
-            vsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-        if (!expr_binary_form(form))
-            return false;
-
-        if (state == 0u)
-        {
-            states[sp - 1u] = 1u;
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                return false;
-            continue;
-        }
-        if (state == 1u)
-        {
-            states[sp - 1u] = 2u;
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_RIGHT)))
-                return false;
-            continue;
-        }
-        if (vsp < 2u)
-            return false;
-        uint right = values[vsp - 1u];
-        uint left = values[vsp - 2u];
-        vsp -= 2u;
-        uint result = 0u;
-        if (!binary_const_value(form, left, right, result))
-            return false;
-        values[vsp] = result;
-        vsp += 1u;
-        sp -= 1u;
-    }
-
-    if (sp != 0u || vsp != 1u)
-        return false;
-    value = values[0u];
-    return true;
-}
-
-bool expr_mentions_local_let(uint root_node)
-{
-    uint nodes[MAX_CONST_EVAL_STACK];
-    uint states[MAX_CONST_EVAL_STACK];
-    uint sp = 0u;
-    if (!push_eval_node(nodes, states, sp, root_node))
-        return false;
-
-    for (uint step = 0u; step < MAX_CONST_EVAL_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            return false;
-
-        uint node = resolve_expr_node(nodes[sp - 1u]);
-        sp -= 1u;
-        if (!valid_node(node))
-            return false;
-
-        uint decl_token = INVALID;
-        if (local_decl_token_for_name_expr(node, decl_token))
-            return true;
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NEG || form == HIR_EXPR_NOT)
-        {
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                return false;
-            continue;
-        }
-
-        if (expr_binary_form(form))
-        {
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)) ||
-                !push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_RIGHT)))
-            {
-                return false;
-            }
-        }
-    }
-    return false;
-}
-
 bool expr_non_call_atom_and_len(uint node, out uint len)
 {
     len = 0u;
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        node = resolve_expr_node(node);
+    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR)
+    {
+        uint member_name = hir_member_name_token[node];
+        uint2 total = expr_subtree_total[node];
+        if (valid_token(member_name) &&
+            member_result_field_index[member_name] != INVALID &&
+            total.y == 0u && total.x != 0u)
+        {
+            len = total.x;
+            return true;
+        }
+        return false;
+    }
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
@@ -855,126 +601,15 @@ bool expr_non_call_atom_and_len(uint node, out uint len)
     return false;
 }
 
-bool push_expr_len_node(
-    inout uint nodes[MAX_EXPR_EMIT_STACK],
-    inout uint states[MAX_EXPR_EMIT_STACK],
-    inout uint sp,
-    uint node)
-{
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || sp >= MAX_EXPR_EMIT_STACK)
-        return false;
-    nodes[sp] = node;
-    states[sp] = 0u;
-    sp += 1u;
-    return true;
-}
-
 bool expr_tree_and_len(uint root_node, out uint len)
 {
     len = 0u;
-    uint nodes[MAX_EXPR_EMIT_STACK];
-    uint states[MAX_EXPR_EMIT_STACK];
-    uint lens[MAX_EXPR_EMIT_STACK];
-    uint sp = 0u;
-    uint lsp = 0u;
-    if (!push_expr_len_node(nodes, states, sp, root_node))
+    uint node = resolve_expr_node(root_node);
+    if (!valid_node(node))
         return false;
-
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            break;
-
-        uint node = nodes[sp - 1u];
-        uint state = states[sp - 1u];
-        uint atom_len = 0u;
-        if (state == 0u && expr_non_call_atom_and_len(node, atom_len))
-        {
-            if (lsp >= MAX_EXPR_EMIT_STACK)
-                return false;
-            lens[lsp] = atom_len;
-            lsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (state == 0u)
-            {
-                states[sp - 1u] = 1u;
-                if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                    return false;
-                continue;
-            }
-            if (lsp < 1u)
-                return false;
-            uint inner_len = lens[lsp - 1u];
-            lens[lsp - 1u] = inner_len + (form == HIR_EXPR_NOT ? 1u : (expr_neg_is_f32(node) ? 1u : 3u));
-            sp -= 1u;
-            continue;
-        }
-
-        if (!expr_binary_form(form))
-            return false;
-
-        if (state == 0u)
-        {
-            states[sp - 1u] = 1u;
-            if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                return false;
-            continue;
-        }
-        if (state == 1u)
-        {
-            states[sp - 1u] = 2u;
-            if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_RIGHT)))
-                return false;
-            continue;
-        }
-        if (lsp < 2u)
-            return false;
-        uint right_len = lens[lsp - 1u];
-        uint left_len = lens[lsp - 2u];
-        lsp -= 1u;
-        lens[lsp - 1u] = left_len + right_len + 1u;
-        sp -= 1u;
-    }
-
-    if (sp != 0u || lsp != 1u)
-        return false;
-    len = lens[0u];
-    return len != 0u;
-}
-
-bool print_call_local_and_len(uint call_node, out uint decl_token, out uint len)
-{
-    decl_token = INVALID;
-    len = 0u;
-    uint arg_node = call_arg0_node(call_node);
-    if (!valid_node(arg_node) || !local_decl_token_for_name_expr(arg_node, decl_token))
-        return false;
-
-    len = local_get_len(decl_token) + 1u + 2u;
-    return true;
-}
-
-bool print_call_value_and_len(uint call_node, out uint value, out uint len)
-{
-    value = 0u;
-    len = 0u;
-    uint arg_node = call_arg0_node(call_node);
-    if (!valid_node(arg_node) ||
-        expr_mentions_local_let(arg_node) ||
-        !const_expr_value(arg_node, value))
-    {
-        return false;
-    }
-
-    len = 1u + i32_sleb_len(value) + 2u;
-    return true;
+    uint2 total = expr_subtree_total[node];
+    len = total.x;
+    return total.y == 0u && len != 0u;
 }
 
 bool print_call_expr_and_len(uint call_node, out uint expr_node, out uint len)
@@ -1116,32 +751,12 @@ void validate_main_print_simple(uint node, uint token)
         return;
 
     uint len = 0u;
-    uint decl_token = INVALID;
     uint expr_node = INVALID;
-    uint value = 0u;
-    uint kind = BODY_FRAGMENT_PRINT_I64;
-    if (print_call_local_and_len(node, decl_token, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_LOCAL_I64;
-        expr_node = decl_token;
-    }
-    else if (print_call_value_and_len(node, value, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_I64;
-        expr_node = value;
-    }
-    else if (print_call_expr_and_len(node, expr_node, len))
-    {
-        kind = BODY_FRAGMENT_PRINT_EXPR_I64;
-    }
-    else
+    if (!print_call_expr_and_len(node, expr_node, len))
     {
         publish_func_invalid(owner_fn, token);
         return;
     }
-
-    if (expr_mentions_local_let(call_arg0_node(node)))
-        atomic_u32_add(body_plan, BODY_PLAN_LOCAL_CONST_EXPR_COUNT, 1u);
 
     atomic_u32_add(body_plan, BODY_PLAN_PRINT_COUNT_AGG, 1u);
     add_func_body_len(owner_fn, len);
@@ -1149,7 +764,7 @@ void validate_main_print_simple(uint node, uint token)
     publish_fragment(
         token,
         len,
-        uint4(kind, expr_node, len, token),
+        uint4(BODY_FRAGMENT_PRINT_EXPR_I64, expr_node, len, token),
         uint4(INVALID, 0u, 0u, 0u));
 }
 

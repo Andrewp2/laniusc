@@ -320,7 +320,10 @@ void validate_main_return_host_io(uint node, uint token)
     atomic_u32_add(body_plan, BODY_PLAN_RETURN_VALUE_OK_COUNT, 1u);
     add_func_body_len(owner_fn, len);
     publish_fragment(token, len, uint4(kind, expr_node, wasm_func_index, token), aux);
-    publish_body_features(BODY_FEATURE_HOST | BODY_FEATURE_HOST_IO);
+    uint features = BODY_FEATURE_HOST | BODY_FEATURE_HOST_IO;
+    if (kind == BODY_FRAGMENT_RETURN_HOST_CALL_I32)
+        features |= BODY_FEATURE_MEMBER_EXPR_SCATTER;
+    publish_body_features(features);
 }
 
 [shader("compute")]

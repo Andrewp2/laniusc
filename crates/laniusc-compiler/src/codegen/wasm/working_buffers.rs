@@ -35,6 +35,8 @@ pub(super) struct WasmWorkingBuffers {
     pub body_scan_block_sum_buf: LaniusBuffer<u32>,
     pub body_scan_prefix_a_buf: LaniusBuffer<u32>,
     pub body_scan_prefix_b_buf: LaniusBuffer<u32>,
+    pub expr_subtree_total_buf: LaniusBuffer<u32>,
+    pub expr_subtree_features_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_by_fragment_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_local_prefix_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_block_sum_buf: LaniusBuffer<u32>,
@@ -84,7 +86,7 @@ pub(super) fn create_wasm_working_buffers(
     token_capacity: u32,
     hir_node_capacity: u32,
 ) -> WasmWorkingBuffers {
-    let params_buf = LaniusBuffer::new(
+    let params_buf = LaniusBuffer::new_labeled(
         (
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("codegen.wasm.params"),
@@ -95,6 +97,7 @@ pub(super) fn create_wasm_working_buffers(
             32,
         ),
         1,
+        "codegen.wasm.params",
     );
     let WasmBufferCapacities {
         body_item_capacity,
@@ -149,7 +152,7 @@ pub(super) fn create_wasm_working_buffers(
         device,
         "codegen.wasm.body_words",
         output_capacity,
-        wgpu::BufferUsages::empty(),
+        wgpu::BufferUsages::COPY_SRC,
     );
     let body_plan_buf = storage_u32_rw(
         device,
@@ -293,6 +296,20 @@ pub(super) fn create_wasm_working_buffers(
         device,
         "codegen.wasm.body_scan_prefix_b",
         body_scan_blocks as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    // uint2(byte_len, unsupported_row_count) per HIR call node.
+    let expr_subtree_total_buf = storage_u32_rw(
+        device,
+        "codegen.wasm.expr_subtree_total",
+        hir_node_capacity.max(1) as usize * 2,
+        wgpu::BufferUsages::empty(),
+    );
+    // uint2(generic-incompatible-row count, member-row count) per subtree.
+    let expr_subtree_features_buf = storage_u32_rw(
+        device,
+        "codegen.wasm.expr_subtree_features",
+        hir_node_capacity.max(1) as usize * 2,
         wgpu::BufferUsages::empty(),
     );
     let wasm_agg_call_arg_count_by_fragment_buf = storage_u32_rw(
@@ -531,6 +548,8 @@ pub(super) fn create_wasm_working_buffers(
         body_scan_block_sum_buf,
         body_scan_prefix_a_buf,
         body_scan_prefix_b_buf,
+        expr_subtree_total_buf,
+        expr_subtree_features_buf,
         wasm_agg_call_arg_count_by_fragment_buf,
         wasm_agg_call_arg_count_local_prefix_buf,
         wasm_agg_call_arg_count_block_sum_buf,

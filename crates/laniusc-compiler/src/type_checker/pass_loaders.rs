@@ -263,6 +263,30 @@ impl TypeCheckPasses {
                 "type_check_modules_01b_scatter_path_segments",
                 "type_checker/modules/01b/scatter_path_segments"
             ),
+            modules_clear_path_prefix_max: pass!(
+                "type_check_modules_01c_clear_path_prefix_max",
+                "type_checker/modules/01c_clear_path_prefix_max"
+            ),
+            modules_path_prefix_dispatch_args: pass!(
+                "type_check_modules_01c_path_prefix_dispatch_args",
+                "type_checker/modules/01c_path_prefix_dispatch_args"
+            ),
+            modules_path_prefix_table_clear: pass!(
+                "type_check_modules_01c_path_prefix_table_clear",
+                "type_checker/modules/01c_path_prefix_table_clear"
+            ),
+            modules_path_prefix_table_insert: pass!(
+                "type_check_modules_01c_path_prefix_table_insert",
+                "type_checker/modules/01c_path_prefix_table_insert"
+            ),
+            modules_path_prefix_table_lookup: pass!(
+                "type_check_modules_01c_path_prefix_table_lookup",
+                "type_checker/modules/01c_path_prefix_table_lookup"
+            ),
+            modules_path_prefix_finalize: pass!(
+                "type_check_modules_01c_path_prefix_finalize",
+                "type_checker/modules/01c_path_prefix_finalize"
+            ),
             modules_scatter_module_records: pass!(
                 "type_check_modules_02_scatter_module_records",
                 "type_checker/modules/02_scatter_module_records"
@@ -789,6 +813,10 @@ impl TypeCheckPasses {
                 "type_check_predicates_01_collect",
                 "type_checker/predicates/01_collect"
             ),
+            predicates_validate_bound_args: pass!(
+                "type_check_predicates_01a_validate_bound_args",
+                "type_checker/predicates/01a_validate_bound_args"
+            ),
             predicates_collect_impls: pass!(
                 "type_check_predicates_01_collect_impls",
                 "type_checker/predicates/01_collect_impls"
@@ -1090,28 +1118,28 @@ impl TypeCheckPasses {
                 "type_check_fn_context_05_apply",
                 "type_checker/fn/context/05_apply"
             ),
-            loop_depth_clear: pass!(
-                "type_check_loop_depth_01_clear",
+            if_depth_clear: pass!(
+                "type_check_if_depth_01_clear",
                 "type_checker/loop/depth/01_clear"
             ),
-            loop_depth_mark: pass!(
-                "type_check_loop_depth_02_mark",
+            if_depth_mark: pass!(
+                "type_check_if_depth_02_mark",
                 "type_checker/loop/depth/02_mark"
             ),
-            loop_depth_local: pass!(
-                "type_check_loop_depth_03_local",
+            if_depth_local: pass!(
+                "type_check_if_depth_03_local",
                 "type_checker/loop/depth/03_local"
             ),
-            loop_depth_hierarchy_up: pass!(
-                "type_check_loop_depth_04_hierarchy_up",
+            if_depth_hierarchy_up: pass!(
+                "type_check_if_depth_04_hierarchy_up",
                 "type_checker/loop/depth/04_hierarchy_up"
             ),
-            loop_depth_hierarchy_down: pass!(
-                "type_check_loop_depth_04_hierarchy_down",
+            if_depth_hierarchy_down: pass!(
+                "type_check_if_depth_04_hierarchy_down",
                 "type_checker/loop/depth/04_hierarchy_down"
             ),
-            loop_depth_apply: pass!(
-                "type_check_loop_depth_05_apply",
+            if_depth_apply: pass!(
+                "type_check_if_depth_05_apply",
                 "type_checker/loop/depth/05_apply"
             ),
         })

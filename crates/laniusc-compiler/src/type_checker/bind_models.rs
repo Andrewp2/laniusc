@@ -232,8 +232,8 @@ pub(in crate::type_checker) struct PredicateInput<'a> {
     pub(in crate::type_checker) obligation_rows: PredicateObligationRows<'a>,
 }
 
-/// Bind groups for the loop-depth clear/mark/scan/apply pipeline.
-pub(in crate::type_checker) struct LoopDepthBindGroups {
+/// Bind groups for the enclosing-`if` depth clear/mark/scan/apply pipeline.
+pub(in crate::type_checker) struct IfDepthBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark: wgpu::BindGroup,
     pub(in crate::type_checker) local: wgpu::BindGroup,
@@ -474,6 +474,7 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) collect_bound_arg_facts: wgpu::BindGroup,
     pub(in crate::type_checker) collect_method_contracts: wgpu::BindGroup,
     pub(in crate::type_checker) collect: wgpu::BindGroup,
+    pub(in crate::type_checker) validate_bound_args: wgpu::BindGroup,
     pub(in crate::type_checker) collect_impls: wgpu::BindGroup,
     pub(in crate::type_checker) collect_methods: wgpu::BindGroup,
     pub(in crate::type_checker) seed_method_contract_key_order: wgpu::BindGroup,

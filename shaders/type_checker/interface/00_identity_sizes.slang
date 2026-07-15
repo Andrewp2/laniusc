@@ -13,7 +13,7 @@ struct Params
     uint module_capacity;
     uint decl_capacity;
     uint module_segment_capacity;
-    uint module_segment_row_width;
+    uint module_index_capacity;
     uint member_capacity;
 };
 
@@ -32,6 +32,8 @@ StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_segment_prefix;
+StructuredBuffer<uint> module_segment_total;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_name_id;
@@ -59,14 +61,31 @@ uint active_module_count()
     return min(module_count_out[0u], gParams.module_capacity);
 }
 
-bool active_module_segment_slot(uint slot)
+bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i)
 {
-    if (slot >= gParams.module_segment_capacity || gParams.module_segment_row_width == 0u)
+    module_i = 0u;
+    segment_i = 0u;
+    uint module_count = active_module_count();
+    uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+    if (slot >= segment_count || module_count == 0u)
         return false;
-    uint module_i = slot / gParams.module_segment_row_width;
-    uint segment_i = slot - module_i * gParams.module_segment_row_width;
-    return module_i < active_module_count() &&
-           segment_i < min(module_key_segment_count[module_i], gParams.module_segment_row_width);
+
+    uint lo = 0u;
+    uint hi = module_count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        uint end = module_segment_prefix[mid] + module_key_segment_count[mid];
+        if (end <= slot)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    if (lo >= module_count)
+        return false;
+    module_i = lo;
+    segment_i = slot - module_segment_prefix[lo];
+    return segment_i < module_key_segment_count[lo];
 }
 
 uint checked_name_len(uint name_id, uint ref_i)
@@ -110,10 +129,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < gParams.member_capacity)
         interface_name_ref_len[member_ref] = 0u;
 
-    if (active_module_segment_slot(row))
+    uint segment_module;
+    uint segment_ordinal;
+    if (active_module_segment_slot(row, segment_module, segment_ordinal))
     {
+        uint source_slot = module_key_segment_base[segment_module] + segment_ordinal;
         interface_name_ref_len[segment_ref] =
-            checked_name_len(module_key_segment_name_id[row], segment_ref);
+            checked_name_len(module_key_segment_name_id[source_slot], segment_ref);
     }
 
     uint decl_count = min(public_decl_count[0u], gParams.decl_capacity);

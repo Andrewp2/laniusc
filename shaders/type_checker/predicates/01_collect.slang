@@ -1,5 +1,6 @@
-// Collect generic-bound predicate rows.
+// Collect generic-bound predicate rows from the bounds/impl shared module.
 
+#define PREDICATE_BOUND_ARGUMENT_VALIDATION 0
 #include "collect_common.slang"
 
 [shader("compute")]
@@ -70,8 +71,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint subject_slot = generic_param_slot_for_name(owner_decl, subject_token);
-    if (subject_slot == INVALID)
+    if (!generic_type_param_declared_on(owner_decl, subject_token))
     {
         predicate_status[node] = direct_type_param_bound_list(list_node)
             ? PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION
@@ -81,15 +81,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (!bound_path_shape_supported(node))
     {
-        uint overflow_token = bound_path_prefix_overflow_token(node);
-        if (valid_token(overflow_token))
-        {
-            predicate_bound_first_arg_token[node] = overflow_token;
-            predicate_status[node] = PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
-            return;
-        }
-
-        uint arg_token = first_direct_bound_arg_diagnostic_token(node);
+        uint arg_token = bound_path_leaf_token(node);
         if (valid_token(arg_token))
         {
             predicate_bound_first_arg_token[node] = arg_token;
@@ -103,7 +95,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (bound_path_segment_count(node) == 0u)
     {
-        uint arg_token = first_direct_bound_arg_diagnostic_token(node);
+        uint arg_token = bound_path_leaf_token(node);
         if (valid_token(arg_token))
             predicate_bound_first_arg_token[node] = arg_token;
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
@@ -120,27 +112,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     predicate_bound_decl_id[node] = trait_decl_i;
-
-    uint arg_count;
-    uint first_arg_token;
-    uint second_arg_token;
-    uint arg_status = validate_bound_type_args(
-        owner_decl,
-        node,
-        arg_count,
-        first_arg_token,
-        second_arg_token);
-    predicate_bound_arg_count[node] = arg_count;
-    predicate_bound_first_arg_token[node] = first_arg_token;
-    predicate_bound_second_arg_token[node] = second_arg_token;
-    if (arg_status != PREDICATE_STATUS_OK)
-    {
-        predicate_status[node] = arg_status;
-        return;
-    }
-
-    uint trait_param_count = trait_decl_generic_param_count(trait_decl_i);
-    predicate_status[node] = trait_param_count != INVALID && arg_count == trait_param_count
-        ? PREDICATE_STATUS_OK
-        : PREDICATE_STATUS_BOUND_ARITY_MISMATCH;
 }

@@ -63,6 +63,7 @@ StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
+StructuredBuffer<uint2> expr_subtree_features;
 StructuredBuffer<uint> method_decl_receiver_mode;
 RWStructuredBuffer<uint> body_plan;
 RWStructuredBuffer<uint> wasm_func_flag;
@@ -107,7 +108,6 @@ static const uint BODY_FEATURE_HOST_VOID = 1u << 19u;
 static const uint BODY_FEATURE_STMT_PRINT = 1u << 20u;
 static const uint BODY_FEATURE_STMT_HOST_VOID = 1u << 21u;
 static const uint BODY_FEATURE_STMT_PRINT_DIRECT = 1u << 22u;
-static const uint BODY_FEATURE_CONTROL_IF_SIMPLE = 1u << 23u;
 static const uint BODY_FEATURE_HOST_IO_I32 = 1u << 24u;
 static const uint BODY_FEATURE_HOST_IO_STRING = 1u << 25u;
 static const uint BODY_FEATURE_HOST_IO_RETURN = 1u << 26u;
@@ -207,8 +207,6 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
-static const uint MAX_EXPR_FEATURE_STACK = 16u;
-static const uint MAX_EXPR_FEATURE_STEPS = 48u;
 static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -508,91 +506,12 @@ bool expr_binary_form(uint form)
 
 bool expr_contains_member(uint node)
 {
-    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR &&
-        valid_token(hir_member_name_token[node]))
-        return true;
+    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR)
+        return valid_token(hir_member_name_token[node]);
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
-
-    uint nodes[MAX_EXPR_FEATURE_STACK];
-    uint sp = 1u;
-    nodes[0u] = node;
-    for (uint step = 0u; step < MAX_EXPR_FEATURE_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            return false;
-        node = nodes[sp - 1u];
-        sp -= 1u;
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
-            return true;
-        node = resolve_expr_node(node);
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
-            return true;
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (sp >= MAX_EXPR_FEATURE_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            sp += 1u;
-            continue;
-        }
-        if (expr_binary_form(form))
-        {
-            if (sp + 2u > MAX_EXPR_FEATURE_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            nodes[sp + 1u] = expr_record_slot(node, EXPR_RECORD_RIGHT);
-            sp += 2u;
-        }
-    }
-    return false;
-}
-
-bool expr_contains_call(uint node)
-{
-    uint nodes[MAX_EXPR_FEATURE_STACK];
-    uint sp = 1u;
-    nodes[0u] = node;
-    for (uint step = 0u; step < MAX_EXPR_FEATURE_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            return false;
-        node = nodes[sp - 1u];
-        sp -= 1u;
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_CALL_EXPR)
-            return true;
-        node = resolve_expr_node(node);
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_CALL_EXPR)
-            return true;
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (sp >= MAX_EXPR_FEATURE_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            sp += 1u;
-            continue;
-        }
-        if (expr_binary_form(form))
-        {
-            if (sp + 2u > MAX_EXPR_FEATURE_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            nodes[sp + 1u] = expr_record_slot(node, EXPR_RECORD_RIGHT);
-            sp += 2u;
-        }
-    }
-    return false;
+    return expr_subtree_features[node].y != 0u;
 }
 
 uint active_semantic_hir_count()
@@ -827,20 +746,11 @@ uint collect_feature_mask(uint node)
     if (kind == HIR_MEMBER_EXPR)
         return BODY_FEATURE_MEMBER_EXPR;
     if (kind == HIR_IF_STMT)
-    {
-        uint condition_node = resolve_expr_node(stmt_record_slot(node, 1u));
-        if (valid_node(condition_node) && !expr_contains_call(condition_node))
-        {
-            uint mask = BODY_FEATURE_CONTROL_IF_SIMPLE;
-            if (expr_contains_member(condition_node))
-                mask |= BODY_FEATURE_MEMBER_EXPR;
-            return mask;
-        }
-        return BODY_FEATURE_EXPR_CONTROL |
-               BODY_FEATURE_CONTROL |
-               BODY_FEATURE_MEMBER_EXPR |
-               BODY_FEATURE_MEMBER_EXPR_SCATTER;
-    }
+        // The always-dispatched scalar validator sizes every IF condition from
+        // the parallel expression forest. It publishes the expression-scatter
+        // feature after validation, so feature collection does not need to
+        // walk the condition or classify it as simple/call-containing here.
+        return 0u;
     if (kind == HIR_WHILE_STMT || kind == HIR_FOR_STMT)
         return BODY_FEATURE_EXPR_CONTROL | BODY_FEATURE_CONTROL;
     if (kind == HIR_STMT && stmt_record_slot(node, 0u) == STMT_RECORD_KIND_ASSIGN)
@@ -993,32 +903,6 @@ void collect_function_param_row(uint row)
     }
 }
 
-void collect_local_decl(uint node)
-{
-    if (!valid_node(node) ||
-        hir_kind[node] != HIR_LET_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
-    {
-        return;
-    }
-
-    uint owner_fn = node_enclosing_fn_token(node);
-    if (!valid_token(owner_fn))
-        return;
-
-    uint decl_token = stmt_record_slot(node, 1u);
-    if (!valid_token(decl_token))
-        return;
-
-    uint prior = atomic_u32_compare_exchange(
-        wasm_func_local_max_by_token,
-        owner_fn,
-        INVALID,
-        decl_token);
-    if (prior != INVALID)
-        atomic_u32_max(wasm_func_local_max_by_token, owner_fn, decl_token);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -1029,7 +913,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (node >= active_hir_node_count())
         return;
 
-    collect_local_decl(node);
     collect_semantic_hir_shape(node);
     collect_body_features(node);
     collect_function_param_row(node);

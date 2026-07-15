@@ -2,6 +2,7 @@
 
 import atomics;
 import body_common;
+import call_relocation;
 
 struct ScanParams
 {
@@ -91,12 +92,15 @@ bool direct_call_record_arg_expr_and_len(uint arg_node, uint param_ty, out uint 
 {
     len = 0u;
     uint resolved = resolve_expr_node(arg_node);
-    if (valid_node(resolved) &&
-        hir_kind[resolved] == HIR_CALL_EXPR &&
-        param_ty != TY_STRING &&
-        param_ty < TY_ARRAY_BASE)
+    if (param_ty != TY_STRING && param_ty < TY_ARRAY_BASE)
     {
-        return direct_call_expr_and_len(resolved, len);
+        if (!valid_node(resolved))
+            return false;
+        uint2 total = expr_subtree_total[resolved];
+        if (total.y != 0u || total.x == 0u)
+            return false;
+        len = total.x;
+        return true;
     }
     return direct_call_arg_abi_expr_and_len(arg_node, param_ty, len);
 }

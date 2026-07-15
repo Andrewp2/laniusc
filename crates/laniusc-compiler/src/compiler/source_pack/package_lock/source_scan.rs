@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, path::Path};
 
 use super::super::package_manifest::{
-    PACKAGE_MODULE_PATH_SEGMENT_LIMIT,
     is_package_module_reserved_segment,
     valid_package_module_ident_segment,
     valid_package_module_path_segment,
@@ -214,11 +213,10 @@ pub(super) fn valid_module_path(path: &str) -> bool {
 /// Converts a dotted package name into a module path, if every segment is valid.
 ///
 /// Package names use `.` separators, while source modules use `::` separators.
-/// Invalid, reserved, or over-long module segments return `None`.
+/// Invalid or reserved module segments return `None`.
 pub(super) fn package_name_module_path(package: &str) -> Option<String> {
     let segments = package.split('.').collect::<Vec<_>>();
     if segments.is_empty()
-        || segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT
         || !segments
             .iter()
             .all(|segment| valid_package_module_path_segment(segment))
@@ -379,7 +377,6 @@ fn parse_path(
 ) -> Result<(String, usize), CompileError> {
     let bytes = source.as_bytes();
     let mut offset = skip_ws_and_comments(source, offset, source_path)?;
-    let path_start = offset;
     let mut segments = Vec::new();
 
     loop {
@@ -431,15 +428,6 @@ fn parse_path(
             ));
         }
         segments.push(segment);
-        if segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT {
-            return Err(path_too_deep_diagnostic(
-                source,
-                source_path,
-                path_start,
-                offset.saturating_sub(path_start),
-                kind,
-            ));
-        }
         let segment_end = offset;
         let separator_offset = skip_ws_and_comments(source, offset, source_path)?;
         if invalid_path_separator(bytes, separator_offset) {
@@ -524,43 +512,6 @@ fn path_separator_diagnostic(
                 )
                 .with_note(
                     "filesystem path separators and package-name separators cannot be normalized into semantic module identity during package replay",
-                ),
-        ),
-    }
-}
-
-fn path_too_deep_diagnostic(
-    source: &str,
-    source_path: &Path,
-    start: usize,
-    len: usize,
-    kind: PathKind,
-) -> CompileError {
-    match kind {
-        PathKind::Module => CompileError::Diagnostic(
-            Diagnostic::error("LNC0014", "module path too deep")
-                .with_primary_label(diagnostic_label_from_source_span(
-                    source_path,
-                    source,
-                    start,
-                    len,
-                    "module path exceeds the current resolver depth limit",
-                ))
-                .with_note(
-                    "package replay supports at most eight module path segments per source file because resolver module keys currently have that bound",
-                ),
-        ),
-        PathKind::Import => CompileError::Diagnostic(
-            Diagnostic::error("LNC0012", "import path too deep")
-                .with_primary_label(diagnostic_label_from_source_span(
-                    source_path,
-                    source,
-                    start,
-                    len,
-                    "import path exceeds the current resolver depth limit",
-                ))
-                .with_note(
-                    "package replay rejects import paths with more than eight module path segments before persisting import graph metadata because resolver import keys currently have that bound",
                 ),
         ),
     }
@@ -1245,8 +1196,7 @@ fn valid_module_like_path(path: &str) -> bool {
     let mut count = 0usize;
     for segment in path.split("::") {
         count += 1;
-        if count > PACKAGE_MODULE_PATH_SEGMENT_LIMIT || !valid_package_module_path_segment(segment)
-        {
+        if !valid_package_module_path_segment(segment) {
             return false;
         }
     }

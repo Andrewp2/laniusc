@@ -13,6 +13,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> type_semantic_row_by_token;
 RWStructuredBuffer<uint> type_semantic_scan_input;
+RWStructuredBuffer<uint> member_next_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -26,5 +27,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < gParams.n_tokens)
         type_semantic_row_by_token[i] = INVALID;
     if (i < gParams.n_hir_nodes)
+    {
         type_semantic_scan_input[i] = 0u;
+        member_next_node[i] = INVALID;
+    }
 }

@@ -7,10 +7,10 @@ import gpu_index;
 import byte_packing;
 struct Params
 {
-    uint n_tokens;
-    uint source_len;
+    uint output_page_base;
+    uint output_page_len;
     uint out_capacity;
-    uint n_hir_nodes;
+    uint reserved;
 };
 
 ConstantBuffer<Params> gParams;
@@ -135,11 +135,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint word_i = linear_dispatch_id(tid);
-    uint word_count = (text_offset + 3u) / 4u;
+    uint word_count = (gParams.output_page_len + 3u) / 4u;
     if (word_i >= word_count)
         return;
 
-    uint pos = word_i * 4u;
+    uint pos = gParams.output_page_base + word_i * 4u;
     uint b0 = file_byte(pos + 0u, file_len);
     uint b1 = file_byte(pos + 1u, file_len);
     uint b2 = file_byte(pos + 2u, file_len);

@@ -8,6 +8,7 @@ ConstantBuffer<Params> gHirPath;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_item_path_node;
@@ -53,6 +54,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         root = node;
     else if (kind == HIR_TYPE)
         root = hir_type_value_node[node];
+    else if (node_kind[node] == PROD_BOUND_TYPE_IDENT)
+    {
+        uint child = first_child[node];
+        root = valid_node(child) && node_kind[child] == PROD_BOUND_TYPE_PATH
+            ? child
+            : INVALID;
+    }
     else if (kind == HIR_MODULE_ITEM || kind == HIR_IMPORT_ITEM)
         root = hir_item_path_node[node];
 

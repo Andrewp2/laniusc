@@ -15,6 +15,25 @@ bool struct_metadata_enabled()
     return (parser_feature_flags[0u] & PARSER_FEATURE_STRUCTS) != 0u;
 }
 
+bool aggregate_member_scanned_len(uint node, out uint len)
+{
+    len = 0u;
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        node = resolve_expr_node(node);
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+        return false;
+
+    uint member_name = hir_member_name_token[node];
+    if (!valid_token(member_name) || member_result_field_index[member_name] == INVALID)
+        return false;
+
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x == 0u)
+        return false;
+    len = total.x;
+    return true;
+}
+
 uint aggregate_value_source_type(uint node)
 {
     node = resolve_expr_node(node);
@@ -59,14 +78,10 @@ void account_let_aggregate_value_copy(uint node, uint owner_fn, uint token)
 
     uint width = wasm_agg_local_width_by_token[decl_token];
     uint source_len = 0u;
-    uint source_address = 0u;
     uint local_index = INVALID;
     bool source_is_member = hir_kind[init_expr] == HIR_MEMBER_EXPR;
     bool source_ok = source_is_member
-                         ? aggregate_member_address_and_len(
-                               init_expr,
-                               source_address,
-                               source_len)
+                         ? aggregate_member_scanned_len(init_expr, source_len)
                          : aggregate_address_expr_and_len(init_expr, source_len);
     if (width == 0u ||
         !source_ok ||

@@ -47,7 +47,6 @@ StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> wasm_agg_local_width_by_token;
 StructuredBuffer<uint> wasm_agg_local_base_by_token;
 StructuredBuffer<uint> wasm_agg_local_block_prefix;
-StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_member_receiver_node;
@@ -233,9 +232,6 @@ static const uint ASSIGN_OP_DIV = 5u;
 static const uint ASSIGN_OP_MOD = 6u;
 static const uint WG_SIZE = 256u;
 static const uint BODY_FRAGMENT_MAX_BYTES = 32u;
-static const uint MAX_EXPR_EMIT_STACK = 16u;
-static const uint MAX_EXPR_EMIT_STEPS = 48u;
-static const uint MAX_CONTROL_BRANCH_DEPTH = 16u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -749,23 +745,14 @@ bool local_decl_token_for_name_expr(uint node, out uint decl_token)
         return true;
     }
 
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
+    uint encoded_fn = enclosing_fn[decl_token];
+    if (encoded_fn == 0u || encoded_fn - 1u != owner_fn ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
     {
-        if (control == INVALID)
-            return false;
-        if ((hir_kind[control] == HIR_FOR_STMT || hir_kind[control] == HIR_STMT) &&
-            stmt_record_slot(control, 0u) == STMT_RECORD_KIND_FOR &&
-            stmt_record_slot(control, 1u) == decl_token)
-        {
-            if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-                return false;
-            decl_token = local_index;
-            return true;
-        }
-        control = hir_nearest_enclosing_control_node[control];
+        return false;
     }
-    return false;
+    decl_token = local_index;
+    return true;
 }
 
 bool name_const_record_value(uint node, out uint value)
@@ -1021,30 +1008,24 @@ uint direct_call_arg_abi_byte(uint node, uint param_ty, uint byte_i)
 }
 
 uint direct_call_expr_byte_from_record(
-    uint node,
     uint wasm_func_index,
-    uint arg_count,
-    uint fn_token,
+    uint call_expr_len,
     uint byte_i)
 {
-    node = resolve_expr_node(node);
     if (wasm_func_index == INVALID)
         return 0u;
 
-    uint offset = 0u;
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(node, fn_token, arg_count, i);
-        uint param_ty = call_param_type_value(fn_token, i);
-        uint arg_len = direct_call_arg_abi_len(arg_node, param_ty);
-        if (byte_i < offset + arg_len)
-            return direct_call_arg_abi_byte(arg_node, param_ty, byte_i - offset);
-        offset += arg_len;
-    }
-
-    if (byte_i == offset)
+    // Argument records are compacted independently and scattered by the
+    // argument passes. Position the call tail from the finalized fragment
+    // length so nested/aggregate argument compaction cannot leave it at the
+    // old conservative offset.
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
+    uint call_i = call_expr_len >= tail_len ? call_expr_len - tail_len : 0u;
+    if (byte_i < call_i)
+        return 0u;
+    if (byte_i == call_i)
         return WASM_CALL;
-    return wasm_call_index_byte(wasm_func_index, byte_i - offset - 1u);
+    return wasm_call_index_byte(wasm_func_index, byte_i - call_i - 1u);
 }
 
 bool direct_call_arg_expr_atom_is_f32(uint node)
@@ -1207,7 +1188,7 @@ uint let_direct_call_i32_fragment_byte(
     uint set_len = 1u + u32_leb_len(local_index);
     uint call_len = fragment_len > set_len ? fragment_len - set_len : 0u;
     if (byte_i < call_len)
-        return direct_call_expr_byte_from_record(call_node, aux.x, aux.y, aux.z, byte_i);
+        return direct_call_expr_byte_from_record(aux.x, call_len, byte_i);
     return local_set_byte(local_index, byte_i - call_len);
 }
 
@@ -1219,7 +1200,7 @@ uint print_direct_call_i64_fragment_byte(
 {
     uint call_len = fragment_len > 3u ? fragment_len - 3u : 0u;
     if (byte_i < call_len)
-        return direct_call_expr_byte_from_record(call_node, aux.x, aux.y, aux.z, byte_i);
+        return direct_call_expr_byte_from_record(aux.x, call_len, byte_i);
     if (byte_i == call_len)
         return WASM_I64_EXTEND_I32_S;
     if (byte_i == call_len + 1u)
@@ -1237,7 +1218,7 @@ uint return_direct_call_i32_fragment_byte(
 {
     uint call_len = fragment_len > 0u ? fragment_len - 1u : 0u;
     if (byte_i < call_len)
-        return direct_call_expr_byte_from_record(call_node, aux.x, aux.y, aux.z, byte_i);
+        return direct_call_expr_byte_from_record(aux.x, call_len, byte_i);
     return WASM_RETURN;
 }
 
@@ -1270,7 +1251,7 @@ uint assign_compound_direct_call_i32_fragment_byte(
                         ? fragment_len - call_start - suffix_len
                         : 0u;
     if (byte_i < call_start + call_len)
-        return direct_call_expr_byte_from_record(call_node, aux.x, aux.y, aux.z, byte_i - call_start);
+        return direct_call_expr_byte_from_record(aux.x, call_len, byte_i - call_start);
 
     uint op_i = call_start + call_len;
     if (byte_i == op_i)

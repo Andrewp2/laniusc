@@ -11,6 +11,7 @@ mod dependency_visibility;
 mod inputs;
 mod layout;
 mod module_index;
+mod path_sequences;
 mod projection;
 mod record_discovery;
 mod state;

@@ -366,18 +366,23 @@ impl<'gpu> GpuCompiler<'gpu> {
         token_capacity: u32,
         feature_summary: x86::X86FeatureSummary,
     ) -> x86::GpuX86ExternalScratchBuffers<'a> {
-        // x86 backend recording starts only after typecheck has finished and
-        // taken ownership of its codegen metadata. These parser HIR/type
-        // workspace rows are not read by the backend input surface; borrowing
-        // them here is the explicit arena-lifetime boundary between frontend
-        // and backend.
+        // x86 backend recording starts only after typecheck has finished. Borrow
+        // only parser workspaces whose values are absent from both the retained
+        // semantic interface and the later x86 input surface. Parser tables that
+        // merely look scratch-like can still back retained typecheck metadata
+        // through aliases, so each borrowed row below needs a phase-lifetime
+        // justification rather than a blanket frontend/backend boundary.
         let token_words = token_capacity.max(1) as usize;
         x86::GpuX86ExternalScratchBuffers {
-            expr_resolved_final: Some(&parse_bufs.hir_type_len_value),
-            node_func: Some(&parse_bufs.hir_type_value_node),
+            // These x86 tables are written across every active HIR row and stay
+            // live for most of backend lowering. The similarly-sized parser
+            // type tables are still read by later decl/call/struct layout passes,
+            // so they cannot back this scratch.
+            expr_resolved_final: None,
+            node_func: None,
             node_inst_scan_input: None,
             func_slot_by_node: Some(&parse_bufs.hir_type_len_token),
-            match_pattern_owner: Some(&parse_bufs.hir_type_path_leaf_node),
+            match_pattern_owner: None,
             match_pattern_node_owner: Some(&parse_bufs.hir_type_arg_start),
             match_pattern_node_variant: Some(&parse_bufs.hir_type_arg_count),
             match_pattern_node_payload_decl: Some(&parse_bufs.hir_type_arg_next),
@@ -399,7 +404,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             node_inst_count_info: None,
             node_inst_count_payload: Some(&parse_bufs.hir_type_arg_rank_a),
             node_inst_range_start: Some(&parse_bufs.hir_type_path_leaf_link_a),
-            node_inst_range_info: Some(&parse_bufs.hir_type_path_leaf_link_b),
+            // `hir_type_path_leaf_link_b` aliases the parser allocation retained
+            // by typecheck as `path_id_by_owner_hir`. Enum construction and
+            // other path-backed x86 lowering still consume that semantic table,
+            // so it is not backend scratch yet.
+            node_inst_range_info: None,
             node_inst_subtree_bound_start: Some(&parse_bufs.hir_type_arg_rank_a),
             node_inst_subtree_bound_end: Some(&parse_bufs.hir_array_element_previous),
             node_inst_gen_node_record: None,

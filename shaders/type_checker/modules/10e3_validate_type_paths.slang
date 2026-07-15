@@ -44,12 +44,10 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
-static const uint PATH_RESOLVE_STATUS_PATH_TOO_DEEP = 7u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
-static const uint TYPECHECK_DETAIL_PATH_TOO_DEEP = 0xffffff05u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -144,11 +142,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint resolved_status = resolved_type_status[path_i];
         if (resolved_status != PATH_RESOLVE_STATUS_OK)
         {
-            uint detail =
-                resolved_status == PATH_RESOLVE_STATUS_PATH_TOO_DEEP
-                    ? TYPECHECK_DETAIL_PATH_TOO_DEEP
-                    : resolved_status;
-            record_error(error_token, ERR_UNKNOWN_TYPE, detail);
+            record_error(error_token, ERR_UNKNOWN_TYPE, resolved_status);
         }
         return;
     }

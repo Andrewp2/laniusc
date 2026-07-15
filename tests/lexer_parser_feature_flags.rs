@@ -4,10 +4,14 @@ use laniusc_compiler::{
     lexer::{
         GpuLexer,
         features::{
-            LEXICALLY_PROVEN_PARSER_FEATURES,
             PARSER_FEATURE_ARRAYS,
             PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_IMPORTS,
             PARSER_FEATURE_MATCHES,
+            PARSER_FEATURE_MEMBERS,
+            PARSER_FEATURE_PREDICATES,
+            PARSER_FEATURE_STRING_EXPRS,
+            PARSER_FEATURE_TYPE_ALIASES,
         },
     },
     parser::{driver::GpuParser, tables::PrecomputedParseTables},
@@ -32,8 +36,39 @@ fn gpu_lexer_publishes_conservative_parser_family_flags() {
                 PARSER_FEATURE_MATCHES,
             ),
             (
-                "enum Choice { A } fn main() -> i32 { let xs: [i32; 1] = [1]; return match xs[0] { _ => 0 }; }",
-                LEXICALLY_PROVEN_PARSER_FEATURES,
+                "type Value = i32; enum Choice { A } fn main() -> i32 { let xs: [Value; 1] = [1]; return match xs[0] { _ => 0 }; }",
+                PARSER_FEATURE_ARRAYS
+                    | PARSER_FEATURE_ENUMS
+                    | PARSER_FEATURE_MATCHES
+                    | PARSER_FEATURE_TYPE_ALIASES,
+            ),
+            (
+                "type Value = i32; fn main() -> Value { return 0; }",
+                PARSER_FEATURE_TYPE_ALIASES,
+            ),
+            (
+                "module app::main; import core::math; fn main() -> i32 { return 0; }",
+                PARSER_FEATURE_IMPORTS,
+            ),
+            (
+                "struct Point { x: i32 } fn main(p: Point) -> i32 { return p.x; }",
+                PARSER_FEATURE_MEMBERS,
+            ),
+            (
+                "trait Value { fn get(self) -> i32; } impl Value for i32 { fn get(self) -> i32 { return self; } }",
+                PARSER_FEATURE_PREDICATES,
+            ),
+            (
+                "extern \"host_abi\" fn host(); fn main() -> i32 { return 0; }",
+                0,
+            ),
+            (
+                "import \"core/math.lani\"; fn main() -> i32 { return 0; }",
+                PARSER_FEATURE_IMPORTS,
+            ),
+            (
+                "fn main() -> i32 { print(\"hello\"); return 0; }",
+                PARSER_FEATURE_STRING_EXPRS,
             ),
         ] {
             let actual = lexer
@@ -68,6 +103,23 @@ fn gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics() {
             (
                 "module app::main; import core::math; fn main() -> i32 { return 0; }",
                 laniusc_compiler::lexer::features::PARSER_FEATURE_IMPORTS,
+            ),
+            (
+                "type Value = i32; fn main() -> Value { return 0; }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ALIASES,
+            ),
+            (
+                "extern \"host_abi\" fn host(); fn main() -> i32 { return 0; }",
+                0,
+            ),
+            (
+                "fn main() -> i32 { print(\"hello\"); return 0; }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_STRING_EXPRS,
+            ),
+            (
+                "trait Eq<T> { fn check(value: T) -> bool; } impl Eq<i32> for i32 { fn check(value: i32) -> bool { return true; } }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ARGS
+                    | laniusc_compiler::lexer::features::PARSER_FEATURE_PREDICATES,
             ),
         ] {
             let actual = lexer

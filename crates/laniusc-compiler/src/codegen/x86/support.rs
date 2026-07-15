@@ -382,7 +382,7 @@ pub(super) fn uniform_u32_struct(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
     let count = contents.len().div_ceil(4).max(1);
-    LaniusBuffer::new((buffer, contents.len() as u64), count)
+    LaniusBuffer::new_labeled((buffer, contents.len() as u64), count, label)
 }
 
 /// Creates a uniform buffer from little-endian `u32` words.
@@ -445,7 +445,7 @@ pub(super) fn storage_u32_rw(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((buffer, (count * 4) as u64), count)
+    LaniusBuffer::new_labeled((buffer, (count * 4) as u64), count, label)
 }
 
 /// Allocates writable x86 `u32` storage that can also be copied from.
@@ -467,7 +467,7 @@ pub(super) fn external_or_storage_u32_copy(
     let count = count.max(1);
     external
         .cloned()
-        .map(|buffer| LaniusBuffer::new((buffer, (count * 4) as u64), count))
+        .map(|buffer| LaniusBuffer::untracked_alias((buffer, (count * 4) as u64), count))
         .unwrap_or_else(|| storage_u32_copy(device, label, count))
 }
 

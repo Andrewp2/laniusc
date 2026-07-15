@@ -12,7 +12,7 @@ struct Params
     uint source_len;
     uint name_ref_count;
     uint module_segment_capacity;
-    uint module_segment_row_width;
+    uint module_index_capacity;
     uint decl_capacity;
     uint member_capacity;
 };
@@ -32,6 +32,8 @@ StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_segment_prefix;
+StructuredBuffer<uint> module_segment_total;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_name_id;
@@ -56,7 +58,29 @@ uint linear_thread_id(uint3 dtid)
 uint name_id_for_ref(uint ref_i)
 {
     if (ref_i < gParams.module_segment_capacity)
-        return module_key_segment_name_id[ref_i];
+    {
+        uint module_count = min(module_count_out[0u], gParams.module_index_capacity);
+        uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+        if (ref_i >= segment_count || module_count == 0u)
+            return 0xffffffffu;
+        uint lo = 0u;
+        uint hi = module_count;
+        while (lo < hi)
+        {
+            uint mid = lo + (hi - lo) / 2u;
+            uint end = module_segment_prefix[mid] + module_key_segment_count[mid];
+            if (end <= ref_i)
+                lo = mid + 1u;
+            else
+                hi = mid;
+        }
+        if (lo >= module_count)
+            return 0xffffffffu;
+        uint ordinal = ref_i - module_segment_prefix[lo];
+        return ordinal < module_key_segment_count[lo]
+                   ? module_key_segment_name_id[module_key_segment_base[lo] + ordinal]
+                   : 0xffffffffu;
+    }
     uint row = ref_i - gParams.module_segment_capacity;
     if (row < gParams.decl_capacity)
     {

@@ -9,6 +9,10 @@ struct Params
     uint object_block_count;
     uint entry_object_index;
     uint out_capacity;
+    uint text_base;
+    uint rodata_base;
+    uint prior_entry_text_offset;
+    uint finalize;
 };
 
 ConstantBuffer<Params> gLink;
@@ -44,19 +48,31 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (object_i >= gLink.object_count)
         return;
 
-    uint2 prefix = object_prefix(object_i);
+    uint2 local_prefix = object_prefix(object_i);
+    uint2 prefix = local_prefix + uint2(gLink.text_base, gLink.rodata_base);
     link_object_section_base[object_i] = prefix;
 
     if (object_i != 0u)
         return;
 
     uint last = gLink.object_count - 1u;
-    uint2 totals = object_prefix(last) + link_object_sections[last].yw;
+    uint2 local_totals = object_prefix(last) + link_object_sections[last].yw;
+    uint2 totals = local_totals + uint2(gLink.text_base, gLink.rodata_base);
     uint rodata_offset = ELF_TEXT_OFFSET + totals.x;
     uint file_len = rodata_offset + totals.y;
-    uint entry_offset = object_prefix(gLink.entry_object_index).x +
-                        link_object_entry_offset[gLink.entry_object_index];
-    bool ok = file_len >= rodata_offset &&
+    uint entry_offset = gLink.prior_entry_text_offset;
+    bool entry_ok = entry_offset != 0xffffffffu;
+    if (gLink.entry_object_index < gLink.object_count)
+    {
+        uint entry_base = gLink.text_base + object_prefix(gLink.entry_object_index).x;
+        entry_offset = entry_base + link_object_entry_offset[gLink.entry_object_index];
+        entry_ok = entry_base >= gLink.text_base && entry_offset >= entry_base;
+    }
+    bool totals_ok = totals.x >= gLink.text_base && totals.y >= gLink.rodata_base;
+    bool ok = gLink.finalize != 0u &&
+              totals_ok &&
+              entry_ok &&
+              file_len >= rodata_offset &&
               rodata_offset >= ELF_TEXT_OFFSET &&
               file_len <= gLink.out_capacity;
 

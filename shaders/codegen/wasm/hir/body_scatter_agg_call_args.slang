@@ -39,7 +39,7 @@ static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
-static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint ARG_WG_SIZE = 256u;
 
 uint body_prefix_for_fragment(uint fragment_i)
@@ -113,9 +113,9 @@ uint arg_byte_base_for_fragment(uint4 fragment_meta)
     if (fragment_meta.x == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 &&
         (fragment_meta.w >> 8u) != 0u)
     {
-        uint side_len = 0u;
-        if (direct_call_arg_expr_and_len(fragment_meta.z, side_len))
-            return side_len;
+        uint side = resolve_expr_node(fragment_meta.z);
+        uint2 total = valid_node(side) ? expr_subtree_total[side] : uint2(0u, 1u);
+        return total.y == 0u ? total.x : 0u;
     }
     if (fragment_meta.x == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
         return local_get_len(fragment_meta.y);
@@ -197,11 +197,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint record_start = arg_byte_prefix_for_record(record_i);
     uint4 arg_meta = wasm_agg_call_arg_meta[record_i];
     uint4 arg_aux = wasm_agg_call_arg_aux[record_i];
+    if (arg_aux.y != TY_STRING)
+        return;
     uint local_byte_i = arg_global_byte - record_start;
-    body_words[body_byte_i] =
-        direct_call_abi_arg_byte(
-            arg_meta.z,
-            arg_aux.x,
-            arg_meta.w,
-            local_byte_i);
+    body_words[body_byte_i] = string_value_expr_byte(arg_meta.z, local_byte_i);
 }

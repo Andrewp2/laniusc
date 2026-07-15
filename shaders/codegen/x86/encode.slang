@@ -181,7 +181,6 @@ static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
 static const uint X86_AGG_SOURCE_REG = 3u;
-static const uint X86_AGG_COPY_SEPARATE_ORDINALS = 0x80000000u;
 static const uint X86_AGG_RETURN_DEST_RET_PTR = 0xffu;
 // Keep local-slot displacements within x86 signed disp32 while allowing large
 // generated functions to exceed the old 16-bit-era guard.
@@ -2659,33 +2658,27 @@ uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uin
 
 uint copy_agg_ret_byte(uint source_kind, uint payload, uint ordinal, uint byte_i)
 {
-    uint source_ordinal = (ordinal & X86_AGG_COPY_SEPARATE_ORDINALS) != 0u
-                              ? ((ordinal >> 16u) & 0x7fffu)
-                              : ordinal;
-    uint dest_ordinal = (ordinal & X86_AGG_COPY_SEPARATE_ORDINALS) != 0u
-                            ? (ordinal & 0xffffu)
-                            : ordinal;
     uint load_size = 0u;
     if (source_kind == X86_AGG_SOURCE_LOCAL)
     {
-        load_size = local_mem_r32_size(X86_REG_R11D, payload + source_ordinal);
+        load_size = local_mem_r32_size(X86_REG_R11D, payload);
         if (byte_i < load_size)
-            return load_local_r32_byte(X86_REG_R11D, payload + source_ordinal, byte_i);
+            return load_local_r32_byte(X86_REG_R11D, payload, byte_i);
         byte_i -= load_size;
-        return store_ptr_slot_r32_byte(X86_REG_EDI, X86_REG_R11D, dest_ordinal, byte_i);
+        return store_ptr_slot_r32_byte(X86_REG_EDI, X86_REG_R11D, ordinal, byte_i);
     }
     if (source_kind == X86_AGG_SOURCE_PARAM)
     {
-        uint payload_base = param_aggregate_payload_base(payload);
-        uint payload_ordinal = param_aggregate_payload_ordinal(payload) + source_ordinal;
+        uint payload_base = payload & 0x0fu;
+        uint payload_ordinal = payload >> 4u;
         load_size = ptr_slot_mem_r32_size(X86_REG_R11D, payload_base, payload_ordinal);
         if (byte_i < load_size)
             return load_ptr_slot_r32_byte(X86_REG_R11D, payload_base, payload_ordinal, byte_i);
         byte_i -= load_size;
-        return store_ptr_slot_r32_byte(X86_REG_EDI, X86_REG_R11D, dest_ordinal, byte_i);
+        return store_ptr_slot_r32_byte(X86_REG_EDI, X86_REG_R11D, ordinal, byte_i);
     }
     if (source_kind == X86_AGG_SOURCE_REG)
-        return store_ptr_slot_r32_byte(X86_REG_EDI, payload, dest_ordinal, byte_i);
+        return store_ptr_slot_r32_byte(X86_REG_EDI, payload, ordinal, byte_i);
     return 0u;
 }
 

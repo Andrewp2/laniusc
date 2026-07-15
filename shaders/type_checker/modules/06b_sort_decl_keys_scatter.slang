@@ -11,6 +11,7 @@
 import gpu_index;
 import radix;
 import scatter;
+import stable_radix_scatter;
 
 struct Params
 {
@@ -37,7 +38,6 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
 
-groupshared uint local_radix_keys[256];
 
 uint linear_group_id(uint3 gid)
 {
@@ -108,13 +108,12 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
     uint lane = ltid.x;
-    stable_radix_scatter_block<uint, DeclKeyScatterSource, DeclKeyOrderOutSink, 256>(
+    stable_radix_scatter_block<DeclKeyScatterSource, DeclKeyOrderOutSink, 256>(
         block_idx,
         lane,
         gParams.n_blocks,
         gParams.key_step,
         RADIX_BUCKETS,
         radix_bucket_base,
-        radix_block_bucket_prefix,
-        local_radix_keys);
+        radix_block_bucket_prefix);
 }

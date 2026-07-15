@@ -374,7 +374,17 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("status", status_buf.as_entire_binding()),
         ],
     )?;
-    let alias_root_capacity = inputs.hir_items.module_record_capacity.max(1);
+    let aliases_required = type_alias_passes_required(inputs.hir_items.parser_feature_flags);
+    let alias_root_capacity = if aliases_required {
+        inputs.hir_items.module_record_capacity.max(1)
+    } else {
+        1
+    };
+    let alias_hir_capacity = if aliases_required {
+        inputs.hir_node_capacity.max(1)
+    } else {
+        1
+    };
     let alias_root_a = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_root_a",
@@ -390,31 +400,35 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let alias_forwarding = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_forwarding",
-        inputs.hir_node_capacity.max(1) as usize,
+        alias_hir_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
     let alias_forwarding_target_decl = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_forwarding_target_decl",
-        inputs.hir_node_capacity.max(1) as usize,
+        alias_hir_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
     let alias_forwarding_valid_arg_count = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_forwarding_valid_arg_count",
-        inputs.hir_node_capacity.max(1) as usize,
+        alias_hir_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
     let alias_decl_by_target_hir = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_decl_by_target_hir",
-        inputs.hir_node_capacity.max(1) as usize,
+        alias_hir_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
-    let alias_equiv_capacity = inputs
-        .token_capacity
-        .saturating_add(inputs.hir_node_capacity)
-        .max(1);
+    let alias_equiv_capacity = if aliases_required {
+        inputs
+            .token_capacity
+            .saturating_add(inputs.hir_node_capacity)
+            .max(1)
+    } else {
+        1
+    };
     let alias_equiv_parent_a = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_equiv_parent_a",
@@ -427,29 +441,22 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         alias_equiv_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
-    let alias_equiv_edge_0 = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_equiv_edge_0",
-        inputs.hir_node_capacity.max(1) as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_equiv_edge_1 = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_equiv_edge_1",
-        inputs.hir_node_capacity.max(1) as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    // Forwarding is consumed by root initialization before equivalence graph
+    // construction begins. Rebuild those same HIR-wide rows as the two graph
+    // edges and the durable normalized source table.
+    let alias_equiv_edge_0 =
+        typed_alias_storage_u32(&alias_forwarding, alias_hir_capacity as usize);
+    let alias_equiv_edge_1 =
+        typed_alias_storage_u32(&alias_forwarding_target_decl, alias_hir_capacity as usize);
     let alias_equiv_component_source = typed_storage_u32_rw(
         device,
         "type_check.modules.type_alias_equiv_component_source",
         alias_equiv_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
-    let alias_normalized_source = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_normalized_source",
-        inputs.hir_node_capacity.max(1) as usize,
-        wgpu::BufferUsages::empty(),
+    let alias_normalized_source = typed_alias_storage_u32(
+        &alias_forwarding_valid_arg_count,
+        alias_hir_capacity as usize,
     );
     let clear_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
         device,
@@ -1047,6 +1054,10 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             (
                 "hir_type_path_leaf_node",
                 hir_items.type_path_leaf_node.as_entire_binding(),
+            ),
+            (
+                "hir_path_segment_owner",
+                hir_items.path_segment_owner.as_entire_binding(),
             ),
             (
                 "hir_call_callee_node",

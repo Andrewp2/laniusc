@@ -37,6 +37,9 @@ RWStructuredBuffer<uint> hir_expr_name_role;
 RWStructuredBuffer<uint> hir_expr_result_node;
 RWStructuredBuffer<uint> hir_expr_result_root_node;
 RWStructuredBuffer<uint> hir_expr_result_root_scratch_node;
+RWStructuredBuffer<uint> hir_expr_parent_node;
+RWStructuredBuffer<uint> hir_expr_forest_root_node;
+RWStructuredBuffer<uint> hir_expr_forest_status;
 RWStructuredBuffer<uint> hir_stmt_record;
 RWStructuredBuffer<uint> hir_stmt_scope_end;
 RWStructuredBuffer<uint> hir_nearest_stmt_node;
@@ -118,6 +121,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_expr_result_node[node] = INVALID;
     hir_expr_result_root_node[node] = INVALID;
     hir_expr_result_root_scratch_node[node] = INVALID;
+    hir_expr_parent_node[node] = INVALID;
+    hir_expr_forest_root_node[node] = INVALID;
+    if (node == 0u)
+        hir_expr_forest_status[0u] = 0u;
 
     hir_stmt_record[slot(node, 0u)] = STMT_RECORD_KIND_NONE;
     hir_stmt_record[slot(node, 1u)] = INVALID;

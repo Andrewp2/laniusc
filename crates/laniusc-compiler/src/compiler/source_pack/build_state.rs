@@ -111,8 +111,6 @@ pub const SOURCE_PACK_ARTIFACT_MANIFEST_FULL_BUILD_DEFAULT_BATCH_LIMIT: usize = 
 pub const SOURCE_PACK_WORK_QUEUE_WORKER_RUN_DEFAULT_ITEM_LIMIT: usize = 64;
 /// Default bounded chunk limit for library metadata preparation.
 pub const SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_CHUNK_LIMIT: usize = 64;
-/// Default library limit for full library metadata preparation.
-pub const SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT: usize = 64;
 /// Default source-file limit for one library metadata preparation chunk.
 pub const SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT: usize =
     SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_CHUNK_LIMIT

@@ -59,7 +59,10 @@ void validate_main_host_void_call(uint node, uint token)
             len,
             uint4(BODY_FRAGMENT_HOST_CALL_VOID, expr_node, wasm_func_index, token),
             uint4(INVALID, arg_count, 0u, 0u));
-        publish_body_features(BODY_FEATURE_HOST | BODY_FEATURE_HOST_VOID);
+        publish_body_features(
+            BODY_FEATURE_HOST |
+            BODY_FEATURE_HOST_VOID |
+            BODY_FEATURE_MEMBER_EXPR_SCATTER);
         return;
     }
 

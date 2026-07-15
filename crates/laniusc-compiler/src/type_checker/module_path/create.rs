@@ -11,6 +11,7 @@ use super::{
     inputs::CreateInputs,
     layout::Layout,
     module_index::{ModuleIndex, create_module_index},
+    path_sequences::{PathSequences, create_path_sequences},
     projection::{ProjectionBindGroups, create_projection_bind_groups},
     record_discovery::{RecordDiscovery, create_record_discovery},
     state::{BindGroups, State},
@@ -41,6 +42,13 @@ pub(in crate::type_checker) fn create_with_passes(
         ..
     } = layout;
     let buffers = Buffers::new(device, layout, &inputs);
+    let PathSequences {
+        clear_max: clear_path_prefix_max,
+        dispatch_params: path_prefix_dispatch_params,
+        dispatch_args: path_prefix_dispatch_args,
+        rounds: path_prefix_rounds,
+        finalize: path_prefix_finalize,
+    } = create_path_sequences(passes, device, &inputs, &buffers)?;
     let dependency_visibility =
         dependency_visibility::create(passes, device, layout, &inputs, &buffers)?;
     let RecordDiscovery {
@@ -134,6 +142,7 @@ pub(in crate::type_checker) fn create_with_passes(
         module_path_id,
         module_owner_hir,
         module_status,
+        module_key_canonical_id,
         module_key_segment_count,
         module_key_segment_base,
         module_key_segment_name_id,
@@ -238,6 +247,15 @@ pub(in crate::type_checker) fn create_with_passes(
         path_segment_name_id,
         path_segment_token,
         path_segment_count_out,
+        path_max_segment_count,
+        path_prefix_base,
+        path_prefix_id_a,
+        path_prefix_id_b,
+        path_prefix_table_state,
+        path_prefix_table_left,
+        path_prefix_table_right,
+        path_prefix_row_dispatch_args,
+        path_prefix_round_dispatch_args,
         path_owner_hir,
         path_owner_token,
         path_id_by_owner_hir,
@@ -1772,6 +1790,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 "path_segment_name_id",
                 path_segment_name_id.as_entire_binding(),
             ),
+            ("path_prefix_id", path_prefix_id_a.as_entire_binding()),
             (
                 "path_owner_module_id",
                 path_owner_module_id.as_entire_binding(),
@@ -1785,16 +1804,8 @@ pub(in crate::type_checker) fn create_with_passes(
                 module_key_to_module_id.as_entire_binding(),
             ),
             (
-                "module_key_segment_count",
-                module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                module_key_segment_name_id.as_entire_binding(),
+                "module_key_canonical_id",
+                module_key_canonical_id.as_entire_binding(),
             ),
             ("import_count_out", import_count_out.as_entire_binding()),
             ("import_status", import_status.as_entire_binding()),
@@ -1838,6 +1849,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 "path_segment_name_id",
                 path_segment_name_id.as_entire_binding(),
             ),
+            ("path_prefix_id", path_prefix_id_a.as_entire_binding()),
             (
                 "path_owner_module_id",
                 path_owner_module_id.as_entire_binding(),
@@ -1851,16 +1863,8 @@ pub(in crate::type_checker) fn create_with_passes(
                 module_key_to_module_id.as_entire_binding(),
             ),
             (
-                "module_key_segment_count",
-                module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                module_key_segment_name_id.as_entire_binding(),
+                "module_key_canonical_id",
+                module_key_canonical_id.as_entire_binding(),
             ),
             ("import_count_out", import_count_out.as_entire_binding()),
             ("import_status", import_status.as_entire_binding()),
@@ -2019,6 +2023,7 @@ pub(in crate::type_checker) fn create_with_passes(
         module_path_id,
         module_owner_hir,
         module_status,
+        module_key_canonical_id,
         module_key_segment_count,
         module_key_segment_base,
         module_key_segment_name_id,
@@ -2128,6 +2133,15 @@ pub(in crate::type_checker) fn create_with_passes(
         path_segment_name_id,
         path_segment_token,
         path_segment_count_out,
+        path_max_segment_count,
+        path_prefix_base,
+        path_prefix_id_a,
+        path_prefix_id_b,
+        path_prefix_table_state,
+        path_prefix_table_left,
+        path_prefix_table_right,
+        path_prefix_row_dispatch_args,
+        path_prefix_round_dispatch_args,
         path_owner_hir,
         path_owner_token,
         path_id_by_owner_hir,
@@ -2143,6 +2157,7 @@ pub(in crate::type_checker) fn create_with_passes(
         _extract_import_record_flag_params: extract_import_record_flag_params,
         _extract_decl_record_flag_params: extract_decl_record_flag_params,
         _path_dispatch_params: path_dispatch_params,
+        _path_prefix_dispatch_params: path_prefix_dispatch_params,
         _import_dispatch_params: import_dispatch_params,
         _import_visible_validate_dispatch_params: import_visible_validate_dispatch_params,
         _module_key_radix_dispatch_params: module_key_radix_dispatch_params,
@@ -2160,6 +2175,10 @@ pub(in crate::type_checker) fn create_with_passes(
             count_path_segments,
             path_segment_scan,
             scatter_path_segments,
+            clear_path_prefix_max,
+            path_prefix_dispatch_args,
+            path_prefix_rounds,
+            path_prefix_finalize,
             extract_module_record_flag,
             module_scan,
             extract_import_record_flag,

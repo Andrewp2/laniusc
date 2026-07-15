@@ -35,7 +35,7 @@ pub(super) fn zeroed_type_check_params_buffer(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_len as u64), 1)
+    LaniusBuffer::new_labeled((raw, byte_len as u64), 1, label)
 }
 
 /// Decodes the four-word type-check status readback buffer.
@@ -66,12 +66,12 @@ pub(super) fn typed_storage_u32_rw(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size), count)
+    LaniusBuffer::new_labeled((raw, byte_size), count, label)
 }
 
 /// Wraps an existing `wgpu::Buffer` as typed `u32` storage without allocating.
 pub(super) fn typed_alias_storage_u32(source: &wgpu::Buffer, count: usize) -> LaniusBuffer<u32> {
-    LaniusBuffer::new((source.clone(), source.size()), count)
+    LaniusBuffer::untracked_alias((source.clone(), source.size()), count)
 }
 
 /// Reuses a candidate `u32` storage buffer only when it is large enough.
@@ -124,7 +124,7 @@ pub(super) fn typed_storage_u32_fill_rw(
         contents: &bytes,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
     });
-    LaniusBuffer::new((raw, bytes.len() as u64), count)
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), count, label)
 }
 
 /// Allocates a writable typed `i32` storage buffer with at least one element.
@@ -141,7 +141,7 @@ pub(super) fn typed_storage_i32_rw(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size), count)
+    LaniusBuffer::new_labeled((raw, byte_size), count, label)
 }
 
 /// Allocates a host-readable `u32` readback buffer sized for `count` words.

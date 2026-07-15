@@ -211,51 +211,40 @@ pub(super) fn read_explicit_source_path_files(
 
 /// Initializes or returns a process-global GPU compiler for one backend set.
 pub(super) fn global_gpu_compiler_for(
-    compiler: &'static OnceLock<Result<GpuCompiler<'static>, String>>,
+    compiler: &'static OnceLock<Result<GpuCompiler<'static>, CompileError>>,
     backends: GpuCompilerBackends,
-    label: &'static str,
 ) -> Result<&'static GpuCompiler<'static>, CompileError> {
     compiler
         .get_or_init(|| {
-            let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
-                device::global(),
-                backends,
-            ))
-            .map_err(|err| err.to_string());
-            device::persist_pipeline_cache();
+            let compiler = pollster::block_on(GpuCompiler::new_with_backends(backends));
+            if compiler.is_ok() {
+                device::persist_pipeline_cache();
+            }
             compiler
         })
         .as_ref()
-        .map_err(|err| {
-            compiler_execution_failed_error(
-                "the compiler stopped while initializing the process-global GPU compiler",
-                format!("initialize {label} compiler"),
-                err,
-            )
-        })
+        .map_err(Clone::clone)
 }
 
 /// Returns the process-global frontend-only GPU compiler.
 pub(super) fn global_frontend_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError>
 {
-    static GPU_FRONTEND_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
-    global_gpu_compiler_for(
-        &GPU_FRONTEND_COMPILER,
-        GpuCompilerBackends::frontend_only(),
-        "frontend",
-    )
+    static GPU_FRONTEND_COMPILER: OnceLock<Result<GpuCompiler<'static>, CompileError>> =
+        OnceLock::new();
+    global_gpu_compiler_for(&GPU_FRONTEND_COMPILER, GpuCompilerBackends::frontend_only())
 }
 
 /// Returns the process-global WASM GPU compiler.
 pub(super) fn global_wasm_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
-    static GPU_WASM_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
-    global_gpu_compiler_for(&GPU_WASM_COMPILER, GpuCompilerBackends::wasm_only(), "WASM")
+    static GPU_WASM_COMPILER: OnceLock<Result<GpuCompiler<'static>, CompileError>> =
+        OnceLock::new();
+    global_gpu_compiler_for(&GPU_WASM_COMPILER, GpuCompilerBackends::wasm_only())
 }
 
 /// Returns the process-global x86 GPU compiler.
 pub(super) fn global_x86_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
-    static GPU_X86_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
-    global_gpu_compiler_for(&GPU_X86_COMPILER, GpuCompilerBackends::x86_only(), "x86")
+    static GPU_X86_COMPILER: OnceLock<Result<GpuCompiler<'static>, CompileError>> = OnceLock::new();
+    global_gpu_compiler_for(&GPU_X86_COMPILER, GpuCompilerBackends::x86_only())
 }
 
 /// Validates that an in-memory source pack fits the default bounded codegen unit.
@@ -500,6 +489,16 @@ pub async fn compile_source_pack_manifest_to_wasm_with_gpu_codegen(
         .await
 }
 
+/// Compile a path-backed source-pack manifest to Wasm, automatically using
+/// bounded persisted units when one resident job would exceed unit limits.
+pub async fn compile_source_pack_path_manifest_to_wasm_with_gpu_codegen(
+    source_pack: &ExplicitSourcePackPathManifest,
+) -> Result<Vec<u8>, CompileError> {
+    global_wasm_gpu_compiler()?
+        .compile_path_manifest_to_wasm(source_pack)
+        .await
+}
+
 /// Load an entry file plus standard-library root into a source pack and compile
 /// it to WASM.
 pub async fn compile_entry_to_wasm_with_stdlib<EP, RP>(
@@ -510,10 +509,8 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
-    global_wasm_gpu_compiler()?
-        .compile_source_pack_manifest_to_wasm(&source_pack)
-        .await
+    let source_pack = load_entry_path_manifest_with_stdlib(entry_path, stdlib_root)?;
+    compile_path_manifest_to_wasm(&source_pack).await
 }
 
 /// Load an entry file plus one user source root into a source pack and compile
@@ -526,10 +523,8 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
-    global_wasm_gpu_compiler()?
-        .compile_source_pack_manifest_to_wasm(&source_pack)
-        .await
+    let source_pack = load_entry_path_manifest_with_source_root(entry_path, source_root)?;
+    compile_path_manifest_to_wasm(&source_pack).await
 }
 
 /// Load an entry file plus explicit source roots into a source pack and compile
@@ -541,10 +536,8 @@ pub async fn compile_entry_to_wasm_with_source_roots<EP>(
 where
     EP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
-    global_wasm_gpu_compiler()?
-        .compile_source_pack_manifest_to_wasm(&source_pack)
-        .await
+    let source_pack = load_entry_path_manifest_with_source_roots(entry_path, roots)?;
+    compile_path_manifest_to_wasm(&source_pack).await
 }
 
 /// Read one source file from disk and compile it to WASM with path-labeled
@@ -596,6 +589,16 @@ pub async fn compile_source_pack_manifest_to_x86_64_with_gpu_codegen(
         .await
 }
 
+/// Compile a path-backed source-pack manifest to x86_64, automatically using
+/// bounded persisted units when one resident job would exceed unit limits.
+pub async fn compile_source_pack_path_manifest_to_x86_64_with_gpu_codegen(
+    source_pack: &ExplicitSourcePackPathManifest,
+) -> Result<Vec<u8>, CompileError> {
+    global_x86_gpu_compiler()?
+        .compile_path_manifest_to_x86_64(source_pack)
+        .await
+}
+
 /// Load an entry file plus standard-library root into a source pack and compile
 /// it to x86_64 output.
 pub async fn compile_entry_to_x86_64_with_stdlib<EP, RP>(
@@ -606,10 +609,8 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
-    global_x86_gpu_compiler()?
-        .compile_source_pack_manifest_to_x86_64(&source_pack)
-        .await
+    let source_pack = load_entry_path_manifest_with_stdlib(entry_path, stdlib_root)?;
+    compile_path_manifest_to_x86_64(&source_pack).await
 }
 
 /// Load an entry file plus one user source root into a source pack and compile
@@ -622,10 +623,8 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
-    global_x86_gpu_compiler()?
-        .compile_source_pack_manifest_to_x86_64(&source_pack)
-        .await
+    let source_pack = load_entry_path_manifest_with_source_root(entry_path, source_root)?;
+    compile_path_manifest_to_x86_64(&source_pack).await
 }
 
 /// Load an entry file plus explicit source roots into a source pack and compile
@@ -637,9 +636,23 @@ pub async fn compile_entry_to_x86_64_with_source_roots<EP>(
 where
     EP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
+    let source_pack = load_entry_path_manifest_with_source_roots(entry_path, roots)?;
+    compile_path_manifest_to_x86_64(&source_pack).await
+}
+
+async fn compile_path_manifest_to_wasm(
+    source_pack: &ExplicitSourcePackPathManifest,
+) -> Result<Vec<u8>, CompileError> {
+    global_wasm_gpu_compiler()?
+        .compile_path_manifest_to_wasm(source_pack)
+        .await
+}
+
+async fn compile_path_manifest_to_x86_64(
+    source_pack: &ExplicitSourcePackPathManifest,
+) -> Result<Vec<u8>, CompileError> {
     global_x86_gpu_compiler()?
-        .compile_source_pack_manifest_to_x86_64(&source_pack)
+        .compile_path_manifest_to_x86_64(source_pack)
         .await
 }
 

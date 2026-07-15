@@ -802,20 +802,14 @@ uint return_host_string_call_i32_fragment_byte(uint call_node, uint wasm_func_in
 
 bool scatter_handles_kind(uint kind)
 {
-    return kind == BODY_FRAGMENT_LET_HOST_CALL_I32 ||
-           kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32 ||
-           kind == BODY_FRAGMENT_RETURN_HOST_CALL_I32 ||
+    return kind == BODY_FRAGMENT_LET_HOST_STR_CALL_I32 ||
            kind == BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32;
 }
 
 uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)
 {
-    if (meta.x == BODY_FRAGMENT_LET_HOST_CALL_I32)
-        return let_host_call_i32_fragment_byte(meta.y, meta.z, meta.w, aux.y, fragment_len, byte_i);
     if (meta.x == BODY_FRAGMENT_LET_HOST_STR_CALL_I32)
         return let_host_string_call_i32_fragment_byte(meta.y, meta.z, meta.w, aux.y, fragment_len, byte_i);
-    if (meta.x == BODY_FRAGMENT_RETURN_HOST_CALL_I32)
-        return return_host_call_i32_fragment_byte(meta.y, meta.z, aux.y, fragment_len, byte_i);
     if (meta.x == BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32)
         return return_host_string_call_i32_fragment_byte(meta.y, meta.z, aux.z, fragment_len, byte_i);
     return 0u;

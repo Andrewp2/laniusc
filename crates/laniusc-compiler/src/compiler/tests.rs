@@ -120,6 +120,74 @@ fn compiler_execution_failed_error_reports_operation_without_raw_detail() {
     assert!(!rendered.contains("readback failed"));
 }
 
+#[test]
+fn compiler_initialization_error_preserves_typed_gpu_pass_limit() {
+    let error = compiler_initialization_failed_error(
+        "the compiler stopped while initializing GPU type-check pipelines",
+        "initialize type checker",
+        anyhow::Error::new(crate::gpu::passes_core::GpuPassResourceLimitError {
+            pass_label: "type_check_conditions_hir".into(),
+            required_storage_buffers: 94,
+            adapter_storage_buffer_limit: 48,
+        }),
+    );
+
+    let diagnostic = error.into_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0057");
+    assert_eq!(
+        diagnostic.message,
+        "selected GPU cannot initialize the compiler"
+    );
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "GPU pass: type_check_conditions_hir")
+    );
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "required compute-stage storage buffers: 94")
+    );
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "selected adapter compute-stage storage-buffer limit: 48")
+    );
+}
+
+#[test]
+fn compiler_initialization_error_rejects_cpu_software_adapter() {
+    let error = compiler_initialization_failed_error(
+        "the compiler stopped while selecting a GPU adapter",
+        "initialize GPU device",
+        anyhow::Error::new(
+            crate::gpu::device::GpuDeviceInitializationError::SoftwareAdapter {
+                name: "llvmpipe".to_owned(),
+                backend: wgpu::Backend::Vulkan,
+            },
+        ),
+    );
+
+    let diagnostic = error.into_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0057");
+    assert_eq!(diagnostic.message, "Lanius requires a hardware GPU adapter");
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "selected adapter: llvmpipe")
+    );
+    assert!(
+        diagnostic
+            .notes
+            .iter()
+            .any(|note| note == "selected backend: Vulkan")
+    );
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct WorkQueueProgressPageModel {
     ready: std::collections::BTreeSet<usize>,
@@ -2827,14 +2895,15 @@ fn bounded_source_pack_preparation_errors_are_structured() {
 }
 
 #[test]
-fn full_metadata_prepare_continuation_errors_are_structured() {
-    let root = unique_compiler_test_root("metadata-prepare-incomplete-diagnostics");
+fn full_metadata_prepare_consumes_more_than_one_bounded_library_chunk() {
+    let root = unique_compiler_test_root("metadata-prepare-many-libraries");
     let source_dir = root.join("src");
-    std::fs::create_dir_all(&source_dir).expect("create metadata diagnostic source dir");
+    std::fs::create_dir_all(&source_dir).expect("create metadata source dir");
     let source_path = source_dir.join("lib.lanius");
-    std::fs::write(&source_path, "x").expect("write metadata diagnostic source");
+    std::fs::write(&source_path, "x").expect("write metadata source");
     let store = FilesystemArtifactStore::new(root.join("artifacts"));
-    let libraries = (0..=SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT)
+    let library_count = SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_CHUNK_LIMIT + 1;
+    let libraries = (0..library_count)
         .map(|library_id| ExplicitSourceLibraryPathDependencyStream {
             library_id: library_id as u32,
             source_file_count: 1,
@@ -2844,11 +2913,39 @@ fn full_metadata_prepare_continuation_errors_are_structured() {
         })
         .collect::<Vec<_>>();
 
-    let err = prepare_metadata(libraries, &store, SourcePackArtifactTarget::Generic)
-        .expect_err("full metadata prepare should report resumable bounded continuation");
-    assert_source_pack_preparation_incomplete(err, "source-pack metadata prepare did not complete");
+    let result = prepare_metadata(libraries, &store, SourcePackArtifactTarget::Generic)
+        .expect("full metadata prepare should consume every library");
+    assert_eq!(result.library_count, library_count);
+    assert_eq!(result.source_file_count, library_count);
+    assert_eq!(result.source_byte_count, library_count);
 
-    std::fs::remove_dir_all(&root).expect("remove metadata prepare diagnostics dir");
+    std::fs::remove_dir_all(&root).expect("remove many-library metadata dir");
+}
+
+#[test]
+fn full_metadata_prepare_streams_a_library_larger_than_the_bounded_file_cap() {
+    let root = unique_compiler_test_root("metadata-prepare-many-files");
+    let source_dir = root.join("src");
+    std::fs::create_dir_all(&source_dir).expect("create metadata source dir");
+    let source_path = source_dir.join("lib.lanius");
+    std::fs::write(&source_path, "x").expect("write metadata source");
+    let store = FilesystemArtifactStore::new(root.join("artifacts"));
+    let source_file_count = SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT + 1;
+    let libraries = [ExplicitSourceLibraryPathDependencyStream {
+        library_id: 0,
+        source_file_count,
+        paths: std::iter::repeat_n(&source_path, source_file_count),
+        dependency_library_count: 0,
+        dependency_library_ids: std::iter::empty::<u32>(),
+    }];
+
+    let result = prepare_metadata(libraries, &store, SourcePackArtifactTarget::Generic)
+        .expect("full metadata prepare should stream every source record");
+    assert_eq!(result.library_count, 1);
+    assert_eq!(result.source_file_count, source_file_count);
+    assert_eq!(result.source_byte_count, source_file_count);
+
+    std::fs::remove_dir_all(&root).expect("remove many-file metadata dir");
 }
 
 #[test]

@@ -12,14 +12,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
-StructuredBuffer<uint> x86_node_inst_count_status;
 
 RWStructuredBuffer<uint> active_node_inst_gen_dispatch_args;
-RWStructuredBuffer<uint> active_node_inst_gen_aggregate_copy_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_GROUPS_Z = 65535u;
 
 void write_dispatch_args(RWStructuredBuffer<uint> args, uint active_records, uint z_groups)
 {
@@ -37,10 +34,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint count = min(x86_node_inst_gen_input_status[4u], min(gParams.n_hir_nodes, gParams.inst_capacity));
-    uint aggregate_copy_width = min(x86_node_inst_count_status[4u], MAX_GROUPS_Z);
     write_dispatch_args(active_node_inst_gen_dispatch_args, count, 1u);
-    write_dispatch_args(
-        active_node_inst_gen_aggregate_copy_dispatch_args,
-        count,
-        aggregate_copy_width);
 }

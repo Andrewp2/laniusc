@@ -75,8 +75,6 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> hir_nearest_block_node;
-StructuredBuffer<uint> hir_nearest_enclosing_control_node;
-StructuredBuffer<uint> hir_nearest_loop_node;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -89,6 +87,8 @@ StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
+StructuredBuffer<uint2> expr_subtree_total;
+StructuredBuffer<uint2> expr_subtree_features;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_mode;
 
@@ -370,12 +370,7 @@ static const uint BODY_FRAGMENT_IF_OPEN_LOCAL_I32 = 42u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 static const uint BODY_FRAGMENT_RETURN_HOST_CALL_I32 = 47u;
 static const uint BODY_FRAGMENT_RETURN_HOST_STR_CALL_I32 = 48u;
-static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
-static const uint MAX_CONST_EVAL_STACK = 16u;
-static const uint MAX_CONST_EVAL_STEPS = 48u;
-static const uint MAX_EXPR_EMIT_STACK = 16u;
-static const uint MAX_EXPR_EMIT_STEPS = 48u;
-static const uint MAX_CONTROL_BRANCH_DEPTH = 16u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -1376,200 +1371,6 @@ bool name_let_initializer_expr(uint name_node, out uint init_expr)
     return let_initializer_for_decl_token(decl_token, init_expr);
 }
 
-bool const_atom_value(uint node, out uint value)
-{
-    value = 0u;
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_INT)
-    {
-        value = hir_expr_int_value[node];
-        return true;
-    }
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
-    {
-        value = form == HIR_EXPR_TRUE ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_NAME)
-    {
-        return name_const_record_value(node, value);
-    }
-    return false;
-}
-
-bool unary_const_value(uint form, uint inner, out uint value)
-{
-    if (form == HIR_EXPR_NEG)
-    {
-        value = 0u - inner;
-        return true;
-    }
-    if (form == HIR_EXPR_NOT)
-    {
-        value = inner == 0u ? 1u : 0u;
-        return true;
-    }
-    value = 0u;
-    return false;
-}
-
-bool binary_const_value(uint form, uint left, uint right, out uint value)
-{
-    value = 0u;
-    if (form == HIR_EXPR_EQ) { value = left == right ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_NE) { value = left != right ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_LT) { value = int(left) < int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_GT) { value = int(left) > int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_LE) { value = int(left) <= int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_GE) { value = int(left) >= int(right) ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_ADD) { value = left + right; return true; }
-    if (form == HIR_EXPR_SUB) { value = left - right; return true; }
-    if (form == HIR_EXPR_MUL) { value = left * right; return true; }
-    if (form == HIR_EXPR_AND) { value = left != 0u && right != 0u ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_OR) { value = left != 0u || right != 0u ? 1u : 0u; return true; }
-    if (form == HIR_EXPR_BIT_OR) { value = left | right; return true; }
-    if (form == HIR_EXPR_BIT_XOR) { value = left ^ right; return true; }
-    if (form == HIR_EXPR_BIT_AND) { value = left & right; return true; }
-    if (form == HIR_EXPR_SHL) { value = left << min(right, 31u); return true; }
-    if (form == HIR_EXPR_SHR) { value = uint(int(left) >> min(right, 31u)); return true; }
-    if (right == 0u)
-        return false;
-    if (form == HIR_EXPR_DIV) { value = uint(int(left) / int(right)); return true; }
-    if (form == HIR_EXPR_MOD) { value = uint(int(left) % int(right)); return true; }
-    return false;
-}
-
-bool push_eval_node(
-    inout uint nodes[MAX_CONST_EVAL_STACK],
-    inout uint states[MAX_CONST_EVAL_STACK],
-    inout uint sp,
-    uint node)
-{
-    if (sp >= MAX_CONST_EVAL_STACK)
-        return false;
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-    nodes[sp] = node;
-    states[sp] = 0u;
-    sp += 1u;
-    return true;
-}
-
-bool const_expr_value(uint root_node, out uint value)
-{
-    value = 0u;
-
-    uint nodes[MAX_CONST_EVAL_STACK];
-    uint states[MAX_CONST_EVAL_STACK];
-    uint values[MAX_CONST_EVAL_STACK];
-    uint sp = 0u;
-    uint vsp = 0u;
-    if (!push_eval_node(nodes, states, sp, root_node))
-        return false;
-
-    for (uint step = 0u; step < MAX_CONST_EVAL_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            break;
-
-        uint node = nodes[sp - 1u];
-        uint state = states[sp - 1u];
-        uint form = expr_form(node);
-        uint atom = 0u;
-        if (state == 0u && const_atom_value(node, atom))
-        {
-            if (vsp >= MAX_CONST_EVAL_STACK)
-                return false;
-            values[vsp] = atom;
-            vsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-        if (state == 0u && form == HIR_EXPR_NAME)
-        {
-            uint init_expr = INVALID;
-            if (!name_let_initializer_expr(node, init_expr))
-                return false;
-            nodes[sp - 1u] = resolve_expr_node(init_expr);
-            states[sp - 1u] = 0u;
-            continue;
-        }
-
-        if (form == HIR_EXPR_NEG || form == HIR_EXPR_NOT)
-        {
-            if (state == 0u)
-            {
-                states[sp - 1u] = 1u;
-                if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                    return false;
-                continue;
-            }
-            if (vsp < 1u)
-                return false;
-            uint inner = values[vsp - 1u];
-            vsp -= 1u;
-            uint result = 0u;
-            if (!unary_const_value(form, inner, result))
-                return false;
-            values[vsp] = result;
-            vsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-
-        bool binary =
-            form == HIR_EXPR_EQ || form == HIR_EXPR_NE ||
-            form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
-            form == HIR_EXPR_LE || form == HIR_EXPR_GE ||
-            form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
-            form == HIR_EXPR_MUL || form == HIR_EXPR_AND ||
-            form == HIR_EXPR_OR || form == HIR_EXPR_MOD ||
-            form == HIR_EXPR_DIV || form == HIR_EXPR_BIT_OR ||
-            form == HIR_EXPR_BIT_XOR || form == HIR_EXPR_BIT_AND ||
-            form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
-        if (!binary)
-            return false;
-
-        uint left_node = expr_record_slot(node, EXPR_RECORD_LEFT);
-        uint right_node = expr_record_slot(node, EXPR_RECORD_RIGHT);
-        if (state == 0u)
-        {
-            states[sp - 1u] = 1u;
-            if (!push_eval_node(nodes, states, sp, left_node))
-                return false;
-            continue;
-        }
-        if (state == 1u)
-        {
-            states[sp - 1u] = 2u;
-            if (!push_eval_node(nodes, states, sp, right_node))
-                return false;
-            continue;
-        }
-        if (vsp < 2u)
-            return false;
-        uint right = values[vsp - 1u];
-        uint left = values[vsp - 2u];
-        vsp -= 2u;
-        uint result = 0u;
-        if (!binary_const_value(form, left, right, result))
-            return false;
-        values[vsp] = result;
-        vsp += 1u;
-        sp -= 1u;
-    }
-
-    if (sp != 0u || vsp != 1u)
-        return false;
-    value = values[0u];
-    return true;
-}
-
 uint i32_sleb_len(uint value)
 {
     int current = int(value);
@@ -1702,75 +1503,14 @@ bool local_decl_token_for_name_expr(uint node, out uint decl_token)
         return true;
     }
 
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
+    uint encoded_fn = enclosing_fn[decl_token];
+    if (encoded_fn == 0u || encoded_fn - 1u != owner_fn ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
     {
-        if (!valid_node(control))
-            return false;
-        if ((hir_kind[control] == HIR_FOR_STMT || hir_kind[control] == HIR_STMT) &&
-            stmt_record_slot(control, 0u) == STMT_RECORD_KIND_FOR &&
-            stmt_record_slot(control, 1u) == decl_token)
-        {
-            if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-                return false;
-            decl_token = local_index;
-            return true;
-        }
-        control = hir_nearest_enclosing_control_node[control];
-    }
-    return false;
-}
-
-bool expr_mentions_local_let(uint root_node)
-{
-    uint nodes[MAX_CONST_EVAL_STACK];
-    uint states[MAX_CONST_EVAL_STACK];
-    uint sp = 0u;
-    if (!push_eval_node(nodes, states, sp, root_node))
         return false;
-
-    for (uint step = 0u; step < MAX_CONST_EVAL_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            return false;
-
-        uint node = resolve_expr_node(nodes[sp - 1u]);
-        sp -= 1u;
-        if (!valid_node(node))
-            return false;
-
-        uint decl_token = INVALID;
-        if (local_decl_token_for_name_expr(node, decl_token))
-            return true;
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NEG || form == HIR_EXPR_NOT)
-        {
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                return false;
-            continue;
-        }
-
-        bool binary =
-            form == HIR_EXPR_EQ || form == HIR_EXPR_NE ||
-            form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
-            form == HIR_EXPR_LE || form == HIR_EXPR_GE ||
-            form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
-            form == HIR_EXPR_MUL || form == HIR_EXPR_AND ||
-            form == HIR_EXPR_OR || form == HIR_EXPR_MOD ||
-            form == HIR_EXPR_DIV || form == HIR_EXPR_BIT_OR ||
-            form == HIR_EXPR_BIT_XOR || form == HIR_EXPR_BIT_AND ||
-            form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
-        if (binary)
-        {
-            if (!push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)) ||
-                !push_eval_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_RIGHT)))
-            {
-                return false;
-            }
-        }
     }
-    return false;
+    decl_token = local_index;
+    return true;
 }
 
 uint local_decl_fragment_len(uint let_count, uint let_max_token)
@@ -1835,50 +1575,12 @@ uint expr_binary_op_byte(uint form)
 
 bool expr_contains_member(uint node)
 {
-    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR &&
-        valid_token(hir_member_name_token[node]))
-        return true;
+    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR)
+        return valid_token(hir_member_name_token[node]);
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
-
-    uint nodes[MAX_EXPR_EMIT_STACK];
-    uint sp = 1u;
-    nodes[0u] = node;
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            return false;
-        node = nodes[sp - 1u];
-        sp -= 1u;
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
-            return true;
-        node = resolve_expr_node(node);
-        if (!valid_node(node))
-            continue;
-        if (hir_kind[node] == HIR_MEMBER_EXPR && valid_token(hir_member_name_token[node]))
-            return true;
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (sp >= MAX_EXPR_EMIT_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            sp += 1u;
-            continue;
-        }
-        if (expr_binary_op_byte(form) != 0u)
-        {
-            if (sp + 2u > MAX_EXPR_EMIT_STACK)
-                return false;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            nodes[sp + 1u] = expr_record_slot(node, EXPR_RECORD_RIGHT);
-            sp += 2u;
-        }
-    }
-    return false;
+    return expr_subtree_features[node].y != 0u;
 }
 
 bool expr_atom_is_f32(uint node)
@@ -1996,8 +1698,14 @@ bool aggregate_decl_for_name_expr(uint node, out uint decl_token)
     return aggregate_lit_for_decl_token(decl_token, lit_node);
 }
 
-bool aggregate_name_address_expr_and_len(uint node, out uint len)
+bool aggregate_name_address_expr_plan(
+    uint node,
+    out uint opcode,
+    out uint operand,
+    out uint len)
 {
+    opcode = 0u;
+    operand = 0u;
     len = 0u;
     node = resolve_expr_node(node);
     if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
@@ -2032,6 +1740,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
         {
             return false;
         }
+        opcode = WASM_LOCAL_GET;
+        operand = local_index;
         len = local_get_len(local_index);
         return true;
     }
@@ -2039,6 +1749,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     if (wasm_agg_local_width_by_token[decl_token] != 0u)
     {
         uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
+        opcode = WASM_I32_CONST;
+        operand = base_address;
         len = 1u + i32_sleb_len(base_address);
         return true;
     }
@@ -2047,6 +1759,8 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     {
         if (!function_non_param_local_index_for_type(decl_token, owner_fn, TY_INT, local_index))
             return false;
+        opcode = WASM_LOCAL_GET;
+        operand = local_index;
         len = local_get_len(local_index);
         return true;
     }
@@ -2054,159 +1768,52 @@ bool aggregate_name_address_expr_and_len(uint node, out uint len)
     return false;
 }
 
-uint aggregate_name_address_expr_byte(uint node, uint byte_i)
+bool aggregate_name_address_expr_and_len(uint node, out uint len)
 {
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || expr_form(node) != HIR_EXPR_NAME)
-        return 0u;
-
-    uint name_token = expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN);
-    uint decl_token = valid_token(name_token) ? visible_decl[name_token] : INVALID;
-    if (!valid_token(decl_token))
-        return 0u;
-
-    uint owner_fn = node_enclosing_fn_token(node);
-    uint local_index = INVALID;
-    if (function_param_local_index(decl_token, owner_fn, local_index))
-        return local_get_byte(local_index, byte_i);
-
-    if (valid_token(owner_fn))
-    {
-        uint ordinal = wasm_func_param_ordinal_by_decl_token[decl_token];
-        if (ordinal != INVALID)
-            return local_get_byte(ordinal, byte_i);
-    }
-
-    if (wasm_agg_local_width_by_token[decl_token] != 0u)
-    {
-        uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
-        return i32_const_byte(base_address, byte_i);
-    }
-
-    if (visible_type_for_token(decl_token) >= TY_ARRAY_BASE &&
-        function_non_param_local_index_for_type(decl_token, owner_fn, TY_INT, local_index))
-    {
-        return local_get_byte(local_index, byte_i);
-    }
-
-    return 0u;
+    uint opcode = 0u;
+    uint operand = 0u;
+    return aggregate_name_address_expr_plan(node, opcode, operand, len);
 }
 
-bool aggregate_member_address_base_and_offset(uint node, out uint base_node, out uint offset)
+uint aggregate_name_address_expr_byte(uint node, uint byte_i)
 {
-    base_node = INVALID;
-    offset = 0u;
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
-        return false;
-
-    uint top_member_name = hir_member_name_token[node];
-    if (!valid_token(top_member_name) || visible_type_for_token(top_member_name) < TY_ARRAY_BASE)
-        return false;
-
-    uint current = node;
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step++)
-    {
-        current = resolve_expr_node(current);
-        if (!valid_node(current))
-            return false;
-
-        if (hir_kind[current] != HIR_MEMBER_EXPR)
-        {
-            uint base_len = 0u;
-            if (!aggregate_name_address_expr_and_len(current, base_len))
-                return false;
-            base_node = current;
-            return true;
-        }
-
-        uint member_name = hir_member_name_token[current];
-        if (!valid_token(member_name))
-            return false;
-
-        uint field_index = member_result_field_index[member_name];
-        if (field_index == INVALID)
-            return false;
-
-        offset += field_index * 4u;
-        current = hir_member_receiver_node[current];
-    }
-
-    return false;
+    uint opcode = 0u;
+    uint operand = 0u;
+    uint len = 0u;
+    if (!aggregate_name_address_expr_plan(node, opcode, operand, len))
+        return 0u;
+    return opcode == WASM_LOCAL_GET
+               ? local_get_byte(operand, byte_i)
+               : i32_const_byte(operand, byte_i);
 }
 
 bool aggregate_address_expr_and_len(uint node, out uint len)
 {
     len = 0u;
-    uint name_len = 0u;
-    if (aggregate_name_address_expr_and_len(node, name_len))
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_MEMBER_EXPR && expr_form(node) != HIR_EXPR_NAME))
     {
-        len = name_len;
-        return true;
+        node = resolve_expr_node(node);
     }
-
-    node = resolve_expr_node(node);
-    uint depth = 0u;
-    uint load_len = 0u;
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step += 1u)
+    if (!valid_node(node))
+        return false;
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
     {
-        if (!valid_node(node)) return false;
-        if (hir_kind[node] != HIR_MEMBER_EXPR)
-        {
-            uint base_len = 0u;
-            if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len))
-                return false;
-            len = base_len + load_len;
-            return true;
-        }
         uint member_name = hir_member_name_token[node];
-        uint field_index = valid_token(member_name)
-                               ? member_result_field_index[member_name]
-                               : INVALID;
-        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
+        if (!valid_token(member_name) || visible_type_for_token(member_name) < TY_ARRAY_BASE)
             return false;
-        load_len += memarg_len(field_index * 4u);
-        depth += 1u;
-        node = resolve_expr_node(hir_member_receiver_node[node]);
     }
-    return false;
-}
-
-uint aggregate_address_expr_byte(uint node, uint byte_i)
-{
-    uint name_len = 0u;
-    if (aggregate_name_address_expr_and_len(node, name_len))
-        return aggregate_name_address_expr_byte(node, byte_i);
-
-    uint fields[MAX_EXPR_EMIT_STACK];
-    uint depth = 0u;
-    node = resolve_expr_node(node);
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STACK; step += 1u)
+    else
     {
-        if (!valid_node(node)) return 0u;
-        if (hir_kind[node] != HIR_MEMBER_EXPR) break;
-        uint member_name = hir_member_name_token[node];
-        uint field_index = valid_token(member_name)
-                               ? member_result_field_index[member_name]
-                               : INVALID;
-        if (field_index == INVALID || visible_type_for_token(member_name) < TY_ARRAY_BASE)
-            return 0u;
-        fields[depth++] = field_index;
-        node = resolve_expr_node(hir_member_receiver_node[node]);
+        uint name_len = 0u;
+        if (!aggregate_name_address_expr_and_len(node, name_len))
+            return false;
     }
-    uint base_len = 0u;
-    if (depth == 0u || !aggregate_name_address_expr_and_len(node, base_len)) return 0u;
-    if (byte_i < base_len) return aggregate_name_address_expr_byte(node, byte_i);
-    uint offset = base_len;
-    for (uint i = 0u; i < depth; i += 1u)
-    {
-        uint field_offset = fields[depth - i - 1u] * 4u;
-        uint load_len = memarg_len(field_offset);
-        if (byte_i < offset + load_len)
-            return memarg_load_byte(WASM_I32_LOAD, field_offset, byte_i - offset);
-        offset += load_len;
-    }
-    return 0u;
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x == 0u)
+        return false;
+    len = total.x;
+    return true;
 }
 
 bool aggregate_member_address_and_len(uint node, out uint address, out uint len)
@@ -2225,38 +1832,13 @@ bool aggregate_member_address_and_len(uint node, out uint address, out uint len)
     if (field_index == INVALID)
         return false;
 
-    uint receiver_len = 0u;
-    if (!aggregate_address_expr_and_len(hir_member_receiver_node[node], receiver_len))
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x == 0u)
         return false;
 
     address = 0u;
-    len = receiver_len + 3u;
+    len = total.x;
     return true;
-}
-
-uint aggregate_member_address_byte(uint node, uint byte_i)
-{
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
-        return 0u;
-
-    uint member_name = hir_member_name_token[node];
-    if (!valid_token(member_name))
-        return 0u;
-
-    uint field_index = member_result_field_index[member_name];
-    if (field_index == INVALID)
-        return 0u;
-
-    uint receiver = hir_member_receiver_node[node];
-    uint receiver_len = 0u;
-    if (!aggregate_address_expr_and_len(receiver, receiver_len))
-        return 0u;
-    if (byte_i < receiver_len)
-        return aggregate_address_expr_byte(receiver, byte_i);
-
-    uint op = visible_type_for_token(member_name) == TY_FLOAT ? WASM_F32_LOAD : WASM_I32_LOAD;
-    return memarg_load_byte(op, field_index * 4u, byte_i - receiver_len);
 }
 
 bool expr_non_call_atom_and_len(uint node, out uint len)
@@ -2298,37 +1880,41 @@ bool expr_non_call_atom_and_len(uint node, out uint len)
     return false;
 }
 
-uint expr_non_call_atom_byte(uint node, uint byte_i)
+bool const_atom_value(uint node, out uint value)
 {
+    value = 0u;
     node = resolve_expr_node(node);
     if (!valid_node(node))
-        return 0u;
+        return false;
 
     uint form = expr_form(node);
-    uint local_index = INVALID;
-    if (form == HIR_EXPR_NAME && local_decl_token_for_name_expr(node, local_index))
-        return local_get_byte(local_index, byte_i);
-
-    uint address = 0u;
-    uint member_len = 0u;
-    if (aggregate_member_address_and_len(node, address, member_len))
-        return aggregate_member_address_byte(node, byte_i);
-
-    uint value = 0u;
-    if (form == HIR_EXPR_INT ||
-        form == HIR_EXPR_TRUE ||
-        form == HIR_EXPR_FALSE ||
-        (form == HIR_EXPR_NAME && name_const_record_value(node, value)))
+    if (form == HIR_EXPR_INT)
     {
-        if (form == HIR_EXPR_INT)
-            value = hir_expr_int_value[node];
-        else if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
-            value = form == HIR_EXPR_TRUE ? 1u : 0u;
-        return i32_const_byte(value, byte_i);
+        value = hir_expr_int_value[node];
+        return true;
     }
-    if (form == HIR_EXPR_FLOAT)
-        return f32_const_byte(hir_expr_float_bits[node], byte_i);
-    return 0u;
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+    {
+        value = form == HIR_EXPR_TRUE ? 1u : 0u;
+        return true;
+    }
+    return form == HIR_EXPR_NAME && name_const_record_value(node, value);
+}
+
+bool unary_const_value(uint form, uint inner, out uint value)
+{
+    if (form == HIR_EXPR_NEG)
+    {
+        value = 0u - inner;
+        return true;
+    }
+    if (form == HIR_EXPR_NOT)
+    {
+        value = inner == 0u ? 1u : 0u;
+        return true;
+    }
+    value = 0u;
+    return false;
 }
 
 bool direct_call_arg_const_value(uint node, out uint value)
@@ -2369,100 +1955,16 @@ bool direct_call_arg_const_value(uint node, out uint value)
     return false;
 }
 
-bool push_expr_len_node(
-    inout uint nodes[MAX_EXPR_EMIT_STACK],
-    inout uint states[MAX_EXPR_EMIT_STACK],
-    inout uint sp,
-    uint node)
-{
-    node = resolve_expr_node(node);
-    if (!valid_node(node) || sp >= MAX_EXPR_EMIT_STACK)
-        return false;
-    nodes[sp] = node;
-    states[sp] = 0u;
-    sp += 1u;
-    return true;
-}
-
 bool expr_tree_and_len(uint root_node, out uint len)
 {
     len = 0u;
-
-    uint nodes[MAX_EXPR_EMIT_STACK];
-    uint states[MAX_EXPR_EMIT_STACK];
-    uint lens[MAX_EXPR_EMIT_STACK];
-    uint sp = 0u;
-    uint lsp = 0u;
-    if (!push_expr_len_node(nodes, states, sp, root_node))
+    uint root = resolve_expr_node(root_node);
+    if (!valid_node(root))
         return false;
-
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            break;
-
-        uint node = nodes[sp - 1u];
-        uint state = states[sp - 1u];
-        uint atom_len = 0u;
-        if (state == 0u && expr_non_call_atom_and_len(node, atom_len))
-        {
-            if (lsp >= MAX_EXPR_EMIT_STACK)
-                return false;
-            lens[lsp] = atom_len;
-            lsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (state == 0u)
-            {
-                states[sp - 1u] = 1u;
-                if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                    return false;
-                continue;
-            }
-            if (lsp < 1u)
-                return false;
-            uint inner_len = lens[lsp - 1u];
-            uint unary_len = form == HIR_EXPR_NOT ? 1u : (expr_neg_is_f32(node) ? 1u : 3u);
-            lens[lsp - 1u] = inner_len + unary_len;
-            sp -= 1u;
-            continue;
-        }
-
-        if (!expr_binary_op_supported(form) || expr_binary_op_byte(form) == 0u)
-            return false;
-
-        if (state == 0u)
-        {
-            states[sp - 1u] = 1u;
-            if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_LEFT)))
-                return false;
-            continue;
-        }
-        if (state == 1u)
-        {
-            states[sp - 1u] = 2u;
-            if (!push_expr_len_node(nodes, states, sp, expr_record_slot(node, EXPR_RECORD_RIGHT)))
-                return false;
-            continue;
-        }
-        if (lsp < 2u)
-            return false;
-        uint right_len = lens[lsp - 1u];
-        uint left_len = lens[lsp - 2u];
-        lsp -= 1u;
-        lens[lsp - 1u] = left_len + right_len + 1u;
-        sp -= 1u;
-    }
-
-    if (sp != 0u || lsp != 1u)
-        return false;
-    len = lens[0u];
-    return len != 0u;
+    uint2 total = expr_subtree_total[root];
+    uint2 features = expr_subtree_features[root];
+    len = total.x;
+    return total.y == 0u && features.x == 0u && len != 0u;
 }
 
 bool direct_call_arg_expr_and_len(uint node, out uint len)
@@ -2471,100 +1973,9 @@ bool direct_call_arg_expr_and_len(uint node, out uint len)
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
-
-    uint atom_len = 0u;
-    if (expr_non_call_atom_and_len(node, atom_len))
-    {
-        len = atom_len;
-        return true;
-    }
-
-    if (host_string_i32_expr_and_len(node, len))
-        return true;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-    {
-        uint inner_len = 0u;
-        if (!expr_non_call_atom_and_len(expr_record_slot(node, EXPR_RECORD_LEFT), inner_len))
-            return false;
-        len = inner_len + (form == HIR_EXPR_NOT ? 1u : (expr_neg_is_f32(node) ? 1u : 3u));
-        return true;
-    }
-
-    if (!expr_binary_op_supported(form) || expr_binary_op_byte(form) == 0u)
-        return false;
-
-    uint left_len = 0u;
-    uint right_len = 0u;
-    if (!expr_non_call_atom_and_len(expr_record_slot(node, EXPR_RECORD_LEFT), left_len) ||
-        !expr_non_call_atom_and_len(expr_record_slot(node, EXPR_RECORD_RIGHT), right_len))
-    {
-        return false;
-    }
-
-    len = left_len + right_len + 1u;
-    return true;
-}
-
-uint direct_call_arg_expr_byte(uint node, uint byte_i)
-{
-    node = resolve_expr_node(node);
-
-    uint atom_len = 0u;
-    if (expr_non_call_atom_and_len(node, atom_len))
-        return expr_non_call_atom_byte(node, byte_i);
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-    {
-        uint inner = expr_record_slot(node, EXPR_RECORD_LEFT);
-        uint inner_len = 0u;
-        if (!expr_non_call_atom_and_len(inner, inner_len))
-            return 0u;
-        if (form == HIR_EXPR_NOT)
-        {
-            if (byte_i < inner_len)
-                return expr_non_call_atom_byte(inner, byte_i);
-            return WASM_I32_EQZ;
-        }
-        if (expr_neg_is_f32(node))
-        {
-            if (byte_i < inner_len)
-                return expr_non_call_atom_byte(inner, byte_i);
-            return WASM_F32_NEG;
-        }
-        if (byte_i < 2u)
-            return i32_const_byte(0u, byte_i);
-        if (byte_i < 2u + inner_len)
-            return expr_non_call_atom_byte(inner, byte_i - 2u);
-        return WASM_I32_SUB;
-    }
-
-    uint left = expr_record_slot(node, EXPR_RECORD_LEFT);
-    uint right = expr_record_slot(node, EXPR_RECORD_RIGHT);
-    uint left_len = 0u;
-    uint right_len = 0u;
-    if (!expr_non_call_atom_and_len(left, left_len) ||
-        !expr_non_call_atom_and_len(right, right_len))
-    {
-        return 0u;
-    }
-    if (byte_i < left_len)
-        return expr_non_call_atom_byte(left, byte_i);
-    if (byte_i < left_len + right_len)
-        return expr_non_call_atom_byte(right, byte_i - left_len);
-    return expr_binary_op_byte_for_node(node);
-}
-
-uint direct_call_abi_arg_byte(uint node, uint fn_token, uint ordinal, uint byte_i)
-{
-    uint param_ty = call_param_type_value(fn_token, ordinal);
-    if (param_ty == TY_STRING)
-        return string_value_expr_byte(node, byte_i);
-    if (param_ty >= TY_ARRAY_BASE)
-        return aggregate_address_expr_byte(node, byte_i);
-    return direct_call_arg_expr_byte(node, byte_i);
+    uint2 total = expr_subtree_total[node];
+    len = total.x;
+    return total.y == 0u && len != 0u;
 }
 
 bool direct_call_arg_abi_expr_and_len(uint node, uint param_ty, out uint len)
@@ -2578,17 +1989,7 @@ bool direct_call_arg_abi_expr_and_len(uint node, uint param_ty, out uint len)
 
 bool direct_call_arg_scalar_and_len(uint node, out uint len)
 {
-    len = 0u;
-    if (expr_non_call_atom_and_len(node, len))
-        return true;
-
-    uint value = 0u;
-    if (direct_call_arg_const_value(node, value))
-    {
-        len = 1u + i32_sleb_len(value);
-        return true;
-    }
-    return false;
+    return direct_call_arg_expr_and_len(node, len);
 }
 
 uint source_data_base()
@@ -2820,42 +2221,17 @@ bool direct_call_expr_and_len(uint node, out uint len)
     if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
         return false;
 
-    uint total = 1u + wasm_call_index_len(wasm_func_index);
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
-        uint arg_len = 0u;
-        uint param_ty = call_param_type_value(fn_token, i);
-        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
-            return false;
-        total += arg_len;
-    }
-    len = total;
+    uint2 total = expr_subtree_total[node];
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_index);
+    if (total.y != 0u || total.x < tail_len)
+        return false;
+    len = total.x;
     return true;
 }
 
 bool direct_call_simple_args_expr_and_len(uint node, out uint len)
 {
-    len = 0u;
-    node = resolve_expr_node(node);
-    uint fn_token = INVALID;
-    uint wasm_func_index = INVALID;
-    uint arg_count = 0u;
-    if (!direct_user_call_node(node, fn_token, wasm_func_index, arg_count))
-        return false;
-
-    uint total = 1u + wasm_call_index_len(wasm_func_index);
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
-        uint arg_len = 0u;
-        uint param_ty = call_param_type_value(fn_token, i);
-        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
-            return false;
-        total += arg_len;
-    }
-    len = total;
-    return true;
+    return direct_call_expr_and_len(node, len);
 }
 
 bool expr_atom_and_len(uint node, out uint len)
@@ -2945,72 +2321,6 @@ uint assign_op_byte(uint op)
     if (op == ASSIGN_OP_DIV) return WASM_I32_DIV_S;
     if (op == ASSIGN_OP_MOD) return WASM_I32_REM_S;
     return 0u;
-}
-
-bool supported_let_const_fragment(uint node, out uint decl_token, out uint value, out uint len)
-{
-    decl_token = INVALID;
-    value = 0u;
-    len = 0u;
-    if (!valid_node(node) ||
-        hir_kind[node] != HIR_LET_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
-    {
-        return false;
-    }
-
-    decl_token = stmt_record_slot(node, 1u);
-    uint init_expr = stmt_record_slot(node, 2u);
-    if (!valid_token(decl_token) ||
-        !valid_node(init_expr) ||
-        expr_mentions_local_let(init_expr) ||
-        !const_expr_value(init_expr, value))
-        return false;
-
-    uint local_index = INVALID;
-    if (!function_non_param_local_index(decl_token, node_enclosing_fn_token(node), local_index))
-        return false;
-    decl_token = local_index;
-    len = 1u + i32_sleb_len(value) + local_set_len(local_index);
-    return true;
-}
-
-bool supported_assign_const_fragment(
-    uint node,
-    out uint target_decl,
-    out uint rhs_value,
-    out uint op,
-    out uint len)
-{
-    target_decl = INVALID;
-    rhs_value = 0u;
-    op = 0u;
-    len = 0u;
-    if (!valid_node(node) ||
-        hir_kind[node] != HIR_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_ASSIGN)
-    {
-        return false;
-    }
-
-    uint target = stmt_record_slot(node, 1u);
-    uint rhs = stmt_record_slot(node, 2u);
-    op = stmt_record_slot(node, 3u);
-    if (!assign_op_supported(op) ||
-        expr_mentions_local_let(rhs) ||
-        !local_decl_token_for_name_expr(target, target_decl) ||
-        !const_expr_value(rhs, rhs_value))
-    {
-        return false;
-    }
-    if ((op == ASSIGN_OP_DIV || op == ASSIGN_OP_MOD) && rhs_value == 0u)
-        return false;
-
-    uint rhs_len = 1u + i32_sleb_len(rhs_value);
-    len = op == ASSIGN_OP_SET
-              ? rhs_len + local_set_len(target_decl)
-              : local_get_len(target_decl) + rhs_len + 1u + local_set_len(target_decl);
-    return true;
 }
 
 bool supported_let_expr_fragment(
@@ -3934,20 +3244,6 @@ bool print_call_direct_call_and_len(uint call_node, out uint expr_node, out uint
     return true;
 }
 
-bool print_call_value_and_len(uint call_node, out uint value, out uint len)
-{
-    value = 0u;
-    len = 0u;
-    uint arg_node = call_arg0_node(call_node);
-    if (!valid_node(arg_node) ||
-        expr_mentions_local_let(arg_node) ||
-        !const_expr_value(arg_node, value))
-        return false;
-
-    len = 1u + i32_sleb_len(value) + 2u;
-    return true;
-}
-
 bool print_call_local_and_len(uint call_node, out uint decl_token, out uint len)
 {
     decl_token = INVALID;
@@ -3957,20 +3253,6 @@ bool print_call_local_and_len(uint call_node, out uint decl_token, out uint len)
         return false;
 
     len = local_get_len(decl_token) + 1u + 2u;
-    return true;
-}
-
-bool return_expr_value_and_len(uint return_node, out uint value, out uint len)
-{
-    value = 0u;
-    len = 0u;
-    uint expr = stmt_record_slot(return_node, 1u);
-    if (!valid_node(expr) ||
-        expr_mentions_local_let(expr) ||
-        !const_expr_value(expr, value))
-        return false;
-
-    len = 1u + i32_sleb_len(value) + 1u;
     return true;
 }
 
@@ -3990,13 +3272,16 @@ bool return_expr_fragment_and_len(uint return_node, out uint expr_node, out uint
 {
     expr_node = INVALID;
     len = 0u;
-    uint expr = stmt_record_slot(return_node, 1u);
-    uint expr_len = 0u;
-    if (!valid_node(expr) || !expr_simple_and_len(expr, expr_len))
+    uint expr = resolve_expr_node(stmt_record_slot(return_node, 1u));
+    if (!valid_node(expr))
+        return false;
+
+    uint2 total = expr_subtree_total[expr];
+    if (total.y != 0u || total.x == 0u)
         return false;
 
     expr_node = expr;
-    len = expr_len + 1u;
+    len = total.x + 1u;
     return true;
 }
 
@@ -4423,70 +3708,5 @@ bool for_close_fragment_for_node(
         binding_local,
         fragment_len,
         close_token);
-    return true;
-}
-
-bool nearest_while_loop_for_node(uint node, out uint loop_node)
-{
-    loop_node = valid_node(node) ? hir_nearest_loop_node[node] : INVALID;
-    if (!valid_node(loop_node))
-        return false;
-    uint stmt_kind = stmt_record_slot(loop_node, 0u);
-    return (hir_kind[loop_node] == HIR_WHILE_STMT && stmt_kind == STMT_RECORD_KIND_WHILE) ||
-           (hir_kind[loop_node] == HIR_FOR_STMT && stmt_kind == STMT_RECORD_KIND_FOR);
-}
-
-bool loop_control_branch_depth(uint node, out uint depth)
-{
-    depth = 0u;
-    if (!valid_node(node) ||
-        (hir_kind[node] != HIR_BREAK_STMT && hir_kind[node] != HIR_CONTINUE_STMT))
-    {
-        return false;
-    }
-
-    uint loop_node = INVALID;
-    if (!nearest_while_loop_for_node(node, loop_node))
-        return false;
-
-    uint loop_kind = hir_kind[loop_node];
-    depth = hir_kind[node] == HIR_BREAK_STMT
-                ? (loop_kind == HIR_FOR_STMT ? 2u : 1u)
-                : 0u;
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
-    {
-        if (!valid_node(control))
-            return false;
-        if (control == loop_node)
-            return true;
-
-        uint kind = hir_kind[control];
-        if (kind == HIR_IF_STMT)
-        {
-            depth += 1u;
-            control = hir_nearest_enclosing_control_node[control];
-            continue;
-        }
-
-        return false;
-    }
-    return false;
-}
-
-bool loop_control_fragment_and_len(uint node, out uint depth, out uint len)
-{
-    depth = 0u;
-    len = 0u;
-    uint stmt_kind = stmt_record_slot(node, 0u);
-    if ((hir_kind[node] == HIR_BREAK_STMT && stmt_kind != STMT_RECORD_KIND_BREAK) ||
-        (hir_kind[node] == HIR_CONTINUE_STMT && stmt_kind != STMT_RECORD_KIND_CONTINUE))
-    {
-        return false;
-    }
-    if (!loop_control_branch_depth(node, depth))
-        return false;
-
-    len = 1u + u32_leb_len(depth);
     return true;
 }

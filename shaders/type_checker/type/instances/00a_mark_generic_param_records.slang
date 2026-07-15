@@ -26,6 +26,7 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_method_signature_flags;
 
 RWStructuredBuffer<uint> generic_param_flag;
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
@@ -43,6 +44,7 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -108,6 +110,8 @@ bool generic_decl_node(uint node)
     if (!valid_node(node))
         return false;
     uint prod = node_kind[node];
+    if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
+        return (hir_method_signature_flags[node] & METHOD_SIGNATURE_HAS_GENERICS) != 0u;
     return generic_decl_item_kind(hir_item_kind[node]) ||
            prod == PROD_IMPL_INHERENT ||
            prod == PROD_IMPL_TRAIT;

@@ -123,6 +123,9 @@ impl GpuWasmCodeGenerator {
             call_metadata.arg_row_count,
             expr_metadata.record,
             expr_metadata.result_root_node,
+            expr_metadata.parent_node,
+            expr_metadata.forest_root_node,
+            expr_metadata.forest_status,
             expr_metadata.int_value,
             expr_metadata.float_bits,
             expr_metadata.string_start,
@@ -448,6 +451,14 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_body_let_init.done");
+
+        trace_wasm_codegen("record.dispatch.hir_expr_order.start");
+        self.record_wasm_expr_order(encoder, &bufs.expr_order)?;
+        trace_wasm_codegen("record.dispatch.hir_expr_order.done");
+
+        trace_wasm_codegen("record.dispatch.hir_expr_contributions.start");
+        self.record_wasm_expr_contributions(encoder, &bufs.expr_order)?;
+        trace_wasm_codegen("record.dispatch.hir_expr_contributions.done");
 
         trace_wasm_codegen("record.dispatch.hir_body_plan_collect.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

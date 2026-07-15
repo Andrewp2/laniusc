@@ -24,8 +24,13 @@ use laniusc_compiler::{
             LEXICALLY_PROVEN_PARSER_FEATURES,
             PARSER_FEATURE_ARRAYS,
             PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_IMPORTS,
             PARSER_FEATURE_MATCHES,
+            PARSER_FEATURE_MEMBERS,
+            PARSER_FEATURE_PREDICATES,
+            PARSER_FEATURE_STRING_EXPRS,
             PARSER_FEATURE_STRUCTS,
+            PARSER_FEATURE_TYPE_ALIASES,
         },
         tables::tokens::TokenKind,
         test_cpu::lex_on_test_cpu,
@@ -1136,10 +1141,14 @@ pub(super) fn parser_tree_floor_bytes_for_features(
     // list scratch. This counts actual allocations, not alias views. Optional
     // families retain one binding-safe row when absent; that fixed tail is
     // included instead of charging them at tree capacity.
-    const ALWAYS_TREE_SCALAR_U32_BUFFERS: usize = 46;
+    const ALWAYS_TREE_SCALAR_U32_BUFFERS: usize = 30;
     const ALWAYS_TREE_U32X4_RECORD_BUFFERS: usize = 2;
     const ARRAY_SCALAR_U32_BUFFERS: usize = 6;
-    const ENUM_MATCH_SCALAR_U32_BUFFERS: usize = 15;
+    const METHOD_SCALAR_U32_BUFFERS: usize = 8;
+    const MEMBER_SCALAR_U32_BUFFERS: usize = 3;
+    const STRING_SCALAR_U32_BUFFERS: usize = 5;
+    const ABSENT_STRING_SCALAR_U32_WORDS: usize = 3;
+    const ENUM_MATCH_SCALAR_U32_BUFFERS: usize = 16;
     const ENUM_MATCH_U32X4_RECORD_BUFFERS: usize = 1;
     const STRUCT_SCALAR_U32_BUFFERS: usize = 11;
     let array_capacity =
@@ -1151,10 +1160,44 @@ pub(super) fn parser_tree_floor_bytes_for_features(
     );
     let struct_capacity =
         feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_STRUCTS);
+    let method_required = parser_feature_flags & PARSER_FEATURE_PREDICATES != 0;
+    let member_required = parser_feature_flags & PARSER_FEATURE_MEMBERS != 0;
+    let enum_match_required =
+        parser_feature_flags & (PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES) != 0;
+    let string_expr_required = parser_feature_flags & PARSER_FEATURE_STRING_EXPRS != 0;
+    let optional_invalid_sentinels = usize::from(
+        !(method_required && member_required && enum_match_required && string_expr_required),
+    );
+    let optional_zero_sentinels =
+        usize::from(!(method_required && enum_match_required && string_expr_required));
     let parser_tree_scalar_floor_bytes = ALWAYS_TREE_SCALAR_U32_BUFFERS
         .saturating_mul(tree_capacity)
         .saturating_add(ARRAY_SCALAR_U32_BUFFERS.saturating_mul(array_capacity))
-        .saturating_add(ENUM_MATCH_SCALAR_U32_BUFFERS.saturating_mul(enum_match_capacity))
+        .saturating_add(
+            METHOD_SCALAR_U32_BUFFERS
+                .saturating_mul(tree_capacity)
+                .saturating_mul(usize::from(method_required)),
+        )
+        .saturating_add(
+            MEMBER_SCALAR_U32_BUFFERS
+                .saturating_mul(tree_capacity)
+                .saturating_mul(usize::from(member_required)),
+        )
+        .saturating_add(
+            ENUM_MATCH_SCALAR_U32_BUFFERS
+                .saturating_mul(tree_capacity)
+                .saturating_mul(usize::from(enum_match_required)),
+        )
+        .saturating_add(if string_expr_required {
+            STRING_SCALAR_U32_BUFFERS.saturating_mul(tree_capacity)
+        } else {
+            ABSENT_STRING_SCALAR_U32_WORDS
+        })
+        .saturating_add(
+            optional_invalid_sentinels
+                .saturating_add(optional_zero_sentinels)
+                .saturating_mul(tree_capacity),
+        )
         .saturating_add(STRUCT_SCALAR_U32_BUFFERS.saturating_mul(struct_capacity))
         .saturating_mul(4);
     let parser_tree_wide_floor_bytes = ALWAYS_TREE_U32X4_RECORD_BUFFERS
@@ -1180,12 +1223,25 @@ fn parser_feature_flags_for_source(src: &str) -> u32 {
     // from a typed function signature. Keep structs conservative in CPU-only
     // projections; live estimates and compilation use the exact GPU semantic mask.
     let mut flags = PARSER_FEATURE_STRUCTS;
-    for token in &tokens {
+    for (index, token) in tokens.iter().enumerate() {
+        let previous_kind = index
+            .checked_sub(1)
+            .and_then(|previous| tokens.get(previous))
+            .map(|previous| previous.kind);
         flags |= match token.kind {
             TokenKind::LBracket | TokenKind::RBracket => PARSER_FEATURE_ARRAYS,
             TokenKind::Enum => PARSER_FEATURE_ENUMS,
             TokenKind::Match => PARSER_FEATURE_MATCHES,
+            TokenKind::Impl | TokenKind::Trait | TokenKind::Where => PARSER_FEATURE_PREDICATES,
+            TokenKind::Dot => PARSER_FEATURE_MEMBERS,
+            TokenKind::Import => PARSER_FEATURE_IMPORTS,
+            TokenKind::String
+                if !matches!(previous_kind, Some(TokenKind::Extern | TokenKind::Import)) =>
+            {
+                PARSER_FEATURE_STRING_EXPRS
+            }
             TokenKind::Struct => PARSER_FEATURE_STRUCTS,
+            TokenKind::Type => PARSER_FEATURE_TYPE_ALIASES,
             _ => 0,
         };
     }

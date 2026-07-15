@@ -41,7 +41,6 @@ RWStructuredBuffer<uint> type_instance_state;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint TYPE_INSTANCE_NAMED = 1u;
@@ -60,10 +59,11 @@ bool valid_token(uint token)
 
 uint leaf_token_for_path(uint path_i)
 {
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
-    return path_segment_token[path_segment_base[path_i] + count - 1u];
+    uint slot = path_segment_base[path_i] + count - 1u;
+    return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
 bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_token)

@@ -106,3 +106,26 @@ pub(in crate::type_checker) fn record_compute_indirect(
     compute.dispatch_workgroups_indirect(dispatch_args, 0);
     Ok(())
 }
+
+/// Records an indirect compute dispatch at a byte offset in a packed argument
+/// buffer. This is used when the GPU activates a source-dependent subset of a
+/// fully pre-recorded pass family.
+pub(in crate::type_checker) fn record_compute_indirect_offset(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &'static str,
+    dispatch_args: &wgpu::Buffer,
+    dispatch_offset: u64,
+) -> Result<()> {
+    count_recorded_compute_pass();
+    crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+        encoder,
+        pass,
+        bind_group,
+        label,
+        dispatch_args,
+        dispatch_offset,
+    );
+    Ok(())
+}

@@ -1,7 +1,11 @@
 use std::{
     collections::HashMap,
     env,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 
@@ -17,6 +21,16 @@ use crate::reflection::{
     parse_reflection_from_bytes,
     slang_category_and_type_to_wgpu,
 };
+
+static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Returns the number of compute pipelines created by this process.
+///
+/// The daemon uses this monotonic count to enforce that compilation jobs do
+/// not perform pipeline initialization after it has reported readiness.
+pub(crate) fn pipeline_creation_count() -> u64 {
+    PIPELINE_CREATION_COUNT.load(Ordering::Relaxed)
+}
 
 /// Returns whether selected GPU operations should use wgpu validation scopes.
 pub fn validation_scopes_enabled() -> bool {
@@ -346,6 +360,25 @@ pub struct PassData {
     pub reflection: Arc<SlangReflection>,
 }
 
+#[derive(Debug)]
+pub(crate) struct GpuPassResourceLimitError {
+    pub(crate) pass_label: String,
+    pub(crate) required_storage_buffers: usize,
+    pub(crate) adapter_storage_buffer_limit: usize,
+}
+
+impl std::fmt::Display for GpuPassResourceLimitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "GPU pass {} requires {} storage buffers in the compute stage, but the selected adapter supports {}; this pass must use packed records or be split before it can run on this adapter",
+            self.pass_label, self.required_storage_buffers, self.adapter_storage_buffer_limit
+        )
+    }
+}
+
+impl std::error::Error for GpuPassResourceLimitError {}
+
 #[derive(Copy, Clone, Debug)]
 /// Dispatch dimensionality expected by a pass wrapper.
 pub enum DispatchDim {
@@ -425,6 +458,131 @@ pub fn bgls_from_reflection(
     )])
 }
 
+/// Counts storage-buffer descriptors visible to the reflected compute stage.
+///
+/// WGPU applies `max_storage_buffers_per_shader_stage` across every bind group,
+/// so program-layout descriptor sets must be summed rather than checked one at
+/// a time. Flat Slang reflection uses the top-level parameter list instead.
+fn reflected_compute_storage_buffer_count(reflection: &SlangReflection) -> Result<usize> {
+    let entry = reflection
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage.as_deref() == Some("compute"))
+        .ok_or_else(|| anyhow!("no compute entry point found in reflection"))?;
+    let parameters = if let Some(layout) = entry.program_layout.as_ref() {
+        layout
+            .parameters
+            .iter()
+            .flat_map(|set| set.parameters.iter())
+            .collect::<Vec<_>>()
+    } else {
+        reflection.parameters.iter().collect::<Vec<_>>()
+    };
+    Ok(parameters
+        .into_iter()
+        .filter(|parameter| {
+            matches!(
+                slang_category_and_type_to_wgpu(parameter, &parameter.ty),
+                Some(wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { .. },
+                    ..
+                })
+            )
+        })
+        .count())
+}
+
+fn validate_reflected_compute_limits(
+    reflection: &SlangReflection,
+    label: &str,
+    limits: &wgpu::Limits,
+) -> Result<()> {
+    let storage_buffer_count = reflected_compute_storage_buffer_count(reflection)?;
+    let storage_buffer_limit = limits.max_storage_buffers_per_shader_stage as usize;
+    if storage_buffer_count > storage_buffer_limit {
+        return Err(GpuPassResourceLimitError {
+            pass_label: label.to_owned(),
+            required_storage_buffers: storage_buffer_count,
+            adapter_storage_buffer_limit: storage_buffer_limit,
+        }
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod reflected_limit_tests {
+    use super::*;
+
+    fn storage_parameter(name: &str, index: u32) -> ParameterReflection {
+        ParameterReflection {
+            name: name.to_owned(),
+            binding: crate::reflection::BindingInfo {
+                kind: "descriptorTableSlot".to_owned(),
+                index: Some(index),
+                offset: None,
+                size: None,
+            },
+            ty: crate::reflection::TypeLayout {
+                kind: Some("resource".to_owned()),
+                base_shape: Some("structuredBuffer".to_owned()),
+                access: Some("Read".to_owned()),
+                ..Default::default()
+            },
+            user_attribs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn storage_buffer_count_uses_flat_compute_parameters() {
+        let reflection = SlangReflection {
+            parameters: vec![storage_parameter("left", 0), storage_parameter("right", 1)],
+            entry_points: vec![EntryPointReflection {
+                stage: Some("compute".to_owned()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            reflected_compute_storage_buffer_count(&reflection).unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn storage_buffer_limit_sums_program_layout_sets_and_names_pass() {
+        let reflection = SlangReflection {
+            entry_points: vec![EntryPointReflection {
+                stage: Some("compute".to_owned()),
+                program_layout: Some(crate::reflection::ProgramLayoutReflection {
+                    parameters: vec![
+                        crate::reflection::ParameterSetReflection {
+                            parameters: vec![storage_parameter("left", 0)],
+                            space: 0,
+                        },
+                        crate::reflection::ParameterSetReflection {
+                            parameters: vec![storage_parameter("right", 0)],
+                            space: 1,
+                        },
+                    ],
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut limits = wgpu::Limits::defaults();
+        limits.max_storage_buffers_per_shader_stage = 1;
+
+        let error = validate_reflected_compute_limits(&reflection, "type_check.example", &limits)
+            .expect_err("two storage buffers must exceed a one-buffer adapter limit");
+        let message = error.to_string();
+        assert!(message.contains("type_check.example"));
+        assert!(message.contains("requires 2 storage buffers"));
+        assert!(message.contains("supports 1"));
+    }
+}
+
 /// Creates a compute pipeline from SPIR-V and reflected bind group layouts.
 pub fn pipeline_from_spirv_and_bgls(
     device: &wgpu::Device,
@@ -433,6 +591,8 @@ pub fn pipeline_from_spirv_and_bgls(
     spirv: &[u8],
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
+    let total_start = Instant::now();
+    let shader_module_start = total_start;
     trace_pipeline(label, "shader_module.start");
     // SAFETY: Slang produced this SPIR-V module for the selected backend;
     // Lanius intentionally bypasses Naga translation for shader modules.
@@ -443,7 +603,9 @@ pub fn pipeline_from_spirv_and_bgls(
             ..Default::default()
         })
     };
+    let shader_module_end = Instant::now();
     trace_pipeline(label, "shader_module.done");
+    let pipeline_layout_start = shader_module_end;
     trace_pipeline(label, "pipeline_layout.start");
     // let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
     //     label: Some(label),
@@ -455,7 +617,9 @@ pub fn pipeline_from_spirv_and_bgls(
         bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     });
+    let pipeline_layout_end = Instant::now();
     trace_pipeline(label, "pipeline_layout.done");
+    let compute_pipeline_start = pipeline_layout_end;
     trace_pipeline(label, "compute_pipeline.start");
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
@@ -465,7 +629,17 @@ pub fn pipeline_from_spirv_and_bgls(
         compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
     });
+    PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    crate::gpu::device::mark_pipeline_cache_dirty(device);
+    let compute_pipeline_end = Instant::now();
     trace_pipeline(label, "compute_pipeline.done");
+    trace_pipeline_timing(
+        label,
+        shader_module_end.duration_since(shader_module_start),
+        pipeline_layout_end.duration_since(pipeline_layout_start),
+        compute_pipeline_end.duration_since(compute_pipeline_start),
+        compute_pipeline_end.duration_since(total_start),
+    );
     pipeline
 }
 
@@ -473,6 +647,32 @@ fn trace_pipeline(label: &str, stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_TRACE", false) {
         eprintln!("[laniusc][pipeline][{label}] {stage}");
     }
+}
+
+fn trace_pipeline_timing(
+    label: &str,
+    shader_module: Duration,
+    pipeline_layout: Duration,
+    compute_pipeline: Duration,
+    total: Duration,
+) {
+    if !crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_TIMING", false) {
+        return;
+    }
+    let minimum_ms = env::var("LANIUS_PIPELINE_TIMING_MIN_MS")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(100.0);
+    let total_ms = total.as_secs_f64() * 1000.0;
+    if total_ms < minimum_ms {
+        return;
+    }
+    eprintln!(
+        "[laniusc][pipeline-timing] label={label} total_ms={total_ms:.3} shader_module_ms={:.3} pipeline_layout_ms={:.3} compute_pipeline_ms={:.3}",
+        shader_module.as_secs_f64() * 1000.0,
+        pipeline_layout.as_secs_f64() * 1000.0,
+        compute_pipeline.as_secs_f64() * 1000.0,
+    );
 }
 
 fn gpu_pipeline_progress_enabled() -> bool {
@@ -658,6 +858,7 @@ pub fn make_pass_data(
 ) -> Result<PassData> {
     let reflection: SlangReflection =
         parse_reflection_from_bytes(reflection_json).map_err(anyhow::Error::msg)?;
+    validate_reflected_compute_limits(&reflection, label, &device.limits())?;
     let init_scope = validation_scope(device, validation_scopes_enabled());
     let init_result = (|| {
         let owned_bgls = bgls_from_reflection(device, &reflection)?;

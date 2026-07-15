@@ -14,11 +14,10 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_status;
 
-RWStructuredBuffer<int> loop_delta;
+RWStructuredBuffer<int> if_delta;
 
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_WHILE_STMT = 11u;
-static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_IF_STMT = 10u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -40,8 +39,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= active_hir_node_count())
         return;
 
-    uint kind = hir_kind[i];
-    if (kind != HIR_WHILE_STMT && kind != HIR_FOR_STMT)
+    if (hir_kind[i] != HIR_IF_STMT)
         return;
 
     uint start = hir_token_pos[i];
@@ -53,6 +51,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint bounded_end = min(end, gParams.n_tokens);
-    atomic_i32_add(loop_delta, start, 1);
-    atomic_i32_add(loop_delta, bounded_end, -1);
+    atomic_i32_add(if_delta, start, 1);
+    atomic_i32_add(if_delta, bounded_end, -1);
 }

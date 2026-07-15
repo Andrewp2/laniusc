@@ -517,6 +517,29 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_generic_array_call_result_length_mismatch() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn copy_wide<T, const N: usize>(
+    values: [T; N],
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32
+) -> [T; N] {
+    return values;
+}
+
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let copied: [i32; 3] = copy_wide(values, 1, 2, 3, 4);
+    return copied[0];
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_rejects_repeated_array_const_generic_mismatch_beyond_cached_argument_width() {
     assert_gpu_type_check_rejects(
         r#"
@@ -2595,6 +2618,33 @@ impl Boxed<i32> {
 
 fn read_holder(holder: Holder) -> i32 {
     return holder.item.read();
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_substitutes_generic_fields_inside_member_chains() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Leaf {
+    value: i32,
+}
+
+struct Boxed<T> {
+    value: T,
+}
+
+struct Holder {
+    item: Boxed<Leaf>,
+}
+
+fn read(holder: Holder) -> i32 {
+    return holder.item.value.value;
 }
 
 fn main() {

@@ -14,6 +14,8 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> name_id_by_token;
 RWStructuredBuffer<uint> path_segment_name_id;
 RWStructuredBuffer<uint> path_segment_token;
+RWStructuredBuffer<uint> path_prefix_base;
+RWStructuredBuffer<uint> path_prefix_id_a;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -48,4 +50,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     path_segment_name_id[dst] = name_id_by_token[token];
     path_segment_token[dst] = token;
+    path_prefix_base[dst] = path_segment_base[path_slot];
+    path_prefix_id_a[dst] = name_id_by_token[token];
 }

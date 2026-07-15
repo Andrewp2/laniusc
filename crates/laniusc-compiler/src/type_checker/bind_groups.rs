@@ -44,6 +44,41 @@ impl GpuTypeChecker {
             crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let allocation_start = std::time::Instant::now();
         let mut allocation_last = allocation_start;
+        // The compiler currently routes its dead frontend workspace through
+        // `module_path_scratch`, while standalone callers may provide the same
+        // contract through `external_scratch`. Radix histogram/prefix storage
+        // is phase-local on both paths, so it may use either source.
+        let shared_radix_scratch = external_scratch.or(module_path_scratch);
+        // The compiler also routes parser scratch through `module_path_scratch`.
+        // Its declaration-key sort has finished before function lookup is built,
+        // and the two lookup rows are consumed before method-key sorting reuses
+        // them. Keep this contract deliberately limited to the lookup rows: other
+        // fields in the larger scratch bundle have overlapping durable lifetimes.
+        let shared_function_lookup_scratch = external_scratch.or(module_path_scratch);
+        // The compiler maps this field to dedicated expression-root scratch
+        // whose parser lifetime has ended and which is not retained by module
+        // path bind groups.
+        let shared_generic_count_scratch = external_scratch.or(module_path_scratch);
+        let shared_call_scratch = external_scratch.or(module_path_scratch);
+        // Module declaration namespace flags consume these parser list rows
+        // before type-instance clear rebuilds them as argument tag/payload
+        // tables. Neither parser view is part of the x86 HIR input surface.
+        let shared_type_instance_arg_scratch = external_scratch.or(module_path_scratch);
+        // Lexer DFA prefix workspaces are dead after tokenization. The compiler
+        // exposes them through `module_path_scratch`, so accept either scratch
+        // route when rebuilding the token-indexed array element references.
+        let shared_type_instance_elem_scratch = external_scratch.or(module_path_scratch);
+        // Lexer path-span compaction rows are likewise dead before typecheck
+        // publishes the durable semantic type-reference tables.
+        let shared_type_expr_scratch = external_scratch.or(module_path_scratch);
+        // Parser semantic-token classification and lexer DFA chunk summaries
+        // are no longer consumed after HIR construction. Rebuild them as the
+        // durable type-instance length kind/payload rows.
+        let shared_type_instance_len_scratch = external_scratch.or(module_path_scratch);
+        // The remaining token-indexed type-instance construction rows replace
+        // parser classification/default-file workspaces that are dead at the
+        // parser/typecheck boundary and absent from the x86 parser surface.
+        let shared_type_instance_core_scratch = external_scratch.or(module_path_scratch);
         macro_rules! allocation_stamp {
             ($stage:literal) => {
                 if allocation_timing {
@@ -229,17 +264,21 @@ impl GpuTypeChecker {
         );
         let hir_visible_decl_key_radix_histogram_len =
             (hir_decl_record_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
-        let hir_visible_decl_key_radix_block_histogram = typed_storage_u32_rw(
+        // Name, generic-parameter, visible-declaration, method, and struct-field
+        // key sorts execute sequentially. Reuse the caller-provided method
+        // radix workspace across those phases; the helper falls back to an
+        // exact allocation when the earlier parser allocation is too small.
+        let hir_visible_decl_key_radix_block_histogram = typed_reuse_storage_u32(
             device,
             "type_check.resident.hir_visible_decl_key_radix_block_histogram",
             hir_visible_decl_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
         );
-        let hir_visible_decl_key_radix_block_bucket_prefix = typed_storage_u32_rw(
+        let hir_visible_decl_key_radix_block_bucket_prefix = typed_reuse_storage_u32(
             device,
             "type_check.resident.hir_visible_decl_key_radix_block_bucket_prefix",
             hir_visible_decl_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_bucket_prefix),
         );
         let hir_visible_decl_key_radix_bucket_total = typed_storage_u32_rw(
             device,
@@ -334,17 +373,17 @@ impl GpuTypeChecker {
         );
         let struct_field_key_radix_histogram_len =
             (hir_decl_scan_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
-        let struct_field_key_radix_block_histogram = typed_storage_u32_rw(
+        let struct_field_key_radix_block_histogram = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_field_key_radix_block_histogram",
             struct_field_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
         );
-        let struct_field_key_radix_block_bucket_prefix = typed_storage_u32_rw(
+        let struct_field_key_radix_block_bucket_prefix = typed_reuse_storage_u32(
             device,
             "type_check.resident.struct_field_key_radix_block_bucket_prefix",
             struct_field_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_bucket_prefix),
         );
         let struct_field_key_radix_bucket_total = typed_storage_u32_rw(
             device,
@@ -546,11 +585,11 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::empty(),
         );
         let radix_histogram_len = (name_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
-        let radix_block_histogram = typed_storage_u32_rw(
+        let radix_block_histogram = typed_reuse_storage_u32(
             device,
             "type_check.resident.radix_block_histogram",
             radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
         );
         let radix_block_bucket_prefix = typed_storage_u32_rw(
             device,
@@ -606,12 +645,12 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
-        let loop_n_blocks = token_capacity.div_ceil(256).max(1);
+        let if_depth_n_blocks = token_capacity.div_ceil(256).max(1);
         let fn_n_blocks = token_capacity.div_ceil(256).max(1);
-        let loop_params_value = LoopDepthParams {
+        let if_depth_params_value = IfDepthParams {
             n_tokens: token_capacity,
             n_hir_nodes: hir_node_capacity,
-            n_blocks: loop_n_blocks,
+            n_blocks: if_depth_n_blocks,
             scan_step: 0,
         };
         let fn_params_value = FnContextParams {
@@ -620,55 +659,55 @@ impl GpuTypeChecker {
             n_blocks: fn_n_blocks,
             scan_step: 0,
         };
-        let loop_params = uniform_from_val(
+        let if_depth_params = uniform_from_val(
             device,
-            "type_check.resident.loop_depth.params",
-            &loop_params_value,
+            "type_check.resident.if_depth.params",
+            &if_depth_params_value,
         );
         let fn_params = uniform_from_val(
             device,
             "type_check.resident.fn_context.params",
             &fn_params_value,
         );
-        let loop_delta = typed_storage_i32_rw(
+        let if_delta = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_delta",
+            "type_check.resident.if_delta",
             token_capacity as usize + 1,
             wgpu::BufferUsages::empty(),
         );
-        let loop_depth_inblock = typed_storage_i32_rw(
+        let if_depth_inblock = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_depth_inblock",
+            "type_check.resident.if_depth_inblock",
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
-        let loop_block_sum = typed_storage_i32_rw(
+        let if_block_sum = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_block_sum",
-            loop_n_blocks as usize,
+            "type_check.resident.if_block_sum",
+            if_depth_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
-        let loop_prefix_a = typed_storage_i32_rw(
+        let if_prefix_a = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_prefix_a",
-            loop_n_blocks as usize,
+            "type_check.resident.if_prefix_a",
+            if_depth_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
-        let loop_prefix_b = typed_storage_i32_rw(
+        let if_prefix_b = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_prefix_b",
-            loop_n_blocks as usize,
+            "type_check.resident.if_prefix_b",
+            if_depth_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
-        let loop_block_prefix = typed_storage_i32_rw(
+        let if_block_prefix = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_block_prefix",
-            loop_n_blocks as usize,
+            "type_check.resident.if_block_prefix",
+            if_depth_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
-        let loop_depth = typed_storage_i32_rw(
+        let if_depth = typed_storage_i32_rw(
             device,
-            "type_check.resident.loop_depth",
+            "type_check.resident.if_depth",
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
@@ -792,7 +831,7 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.call_param_type",
             (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
-            external_scratch.map(|scratch| scratch.call_param_type),
+            shared_call_scratch.map(|scratch| scratch.call_param_type),
         );
         let call_param_ref_tag = typed_storage_u32_rw(
             device,
@@ -955,7 +994,7 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.call_arg_record",
             (token_capacity as usize).max(1) * 4,
-            external_scratch.map(|scratch| scratch.call_arg_record),
+            shared_call_scratch.map(|scratch| scratch.call_arg_record),
         );
         let call_arg_row_capacity = hir_items
             .map(|items| items.call_arg_row_capacity)
@@ -986,6 +1025,12 @@ impl GpuTypeChecker {
         let call_arg_row_prefix = typed_storage_u32_rw(
             device,
             "type_check.resident.call_arg_row_prefix",
+            call_arg_hir_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_scan_local_prefix = typed_storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_scan_local_prefix",
             call_arg_hir_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
@@ -1243,23 +1288,20 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
-        let call_required_generic_scan_input = typed_storage_u32_rw(
-            device,
-            "type_check.resident.call_required_generic_scan_input",
+        // Required-generic marking starts only after the final argument-row
+        // match/collect pass. Reuse that completed compaction scan's three
+        // HIR-wide rows instead of retaining a second scan workspace.
+        let call_required_generic_scan_input = typed_alias_storage_u32(
+            &call_arg_row_scan_input,
             hir_node_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
         );
-        let call_required_generic_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.resident.call_required_generic_prefix",
+        let call_required_generic_prefix = typed_alias_storage_u32(
+            &call_arg_row_prefix,
             hir_node_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
         );
-        let call_required_generic_scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.resident.call_required_generic_scan_local_prefix",
+        let call_required_generic_scan_local_prefix = typed_alias_storage_u32(
+            &call_arg_row_scan_local_prefix,
             hir_node_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
         );
         let call_required_generic_scan_block_sum = typed_storage_u32_rw(
             device,
@@ -1296,12 +1338,6 @@ impl GpuTypeChecker {
             "type_check.resident.call_array_return_arg_instance",
             hir_node_capacity.max(1) as usize,
             u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let call_arg_row_scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.resident.call_arg_row_scan_local_prefix",
-            call_arg_hir_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
         let call_arg_row_scan_block_sum = typed_storage_u32_rw(
@@ -1351,13 +1387,13 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.function_lookup_key",
             function_lookup_capacity,
-            external_scratch.map(|scratch| scratch.function_lookup_key),
+            shared_function_lookup_scratch.map(|scratch| scratch.function_lookup_key),
         );
         let function_lookup_fn = typed_reuse_storage_u32(
             device,
             "type_check.resident.function_lookup_fn",
             function_lookup_capacity,
-            external_scratch.map(|scratch| scratch.function_lookup_fn),
+            shared_function_lookup_scratch.map(|scratch| scratch.function_lookup_fn),
         );
         let method_decl_receiver_ref_tag = typed_storage_u32_rw(
             device,
@@ -1452,13 +1488,13 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.method_key_radix_block_histogram",
             method_key_radix_histogram_len,
-            external_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
         );
         let method_key_radix_block_bucket_prefix = typed_reuse_storage_u32(
             device,
             "type_check.resident.method_key_radix_block_bucket_prefix",
             method_key_radix_histogram_len,
-            external_scratch.map(|scratch| scratch.method_key_radix_block_bucket_prefix),
+            shared_radix_scratch.map(|scratch| scratch.method_key_radix_block_bucket_prefix),
         );
         let method_key_radix_bucket_total = typed_storage_u32_rw(
             device,
@@ -1500,13 +1536,13 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.type_expr_ref_tag",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_expr_ref_tag),
+            shared_type_expr_scratch.map(|scratch| scratch.type_expr_ref_tag),
         );
         let type_expr_ref_payload = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_expr_ref_payload",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_expr_ref_payload),
+            shared_type_expr_scratch.map(|scratch| scratch.type_expr_ref_payload),
         );
         // Type-instance rows are populated after the name-radix pipeline and
         // remain live for later typecheck/codegen consumers. Reuse name scratch
@@ -1517,7 +1553,7 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.type_instance_head_token",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_head_token),
+            shared_type_instance_core_scratch.map(|scratch| scratch.type_instance_head_token),
         );
         let type_decl_generic_param_count = typed_reuse_storage_u32(
             device,
@@ -1525,7 +1561,8 @@ impl GpuTypeChecker {
             token_capacity as usize,
             external_scratch.map(|scratch| scratch.type_decl_generic_param_count),
         );
-        let type_decl_generic_param_count_by_node = if let Some(scratch) = external_scratch {
+        let type_decl_generic_param_count_by_node =
+            if let Some(scratch) = shared_generic_count_scratch {
             // Type-instance generic-param counts are HIR-keyed scratch. Parser
             // HIR type workspaces are dead after parser HIR construction and
             // are not part of the typecheck input surface consumed here.
@@ -1588,15 +1625,15 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.type_instance_arg_start",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_arg_start),
+            shared_type_instance_core_scratch.map(|scratch| scratch.type_instance_arg_start),
         );
         let type_instance_arg_count = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_arg_count",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_arg_count),
+            shared_type_instance_core_scratch.map(|scratch| scratch.type_instance_arg_count),
         );
-        let type_instance_arg_ref_tag = if let Some(scratch) = external_scratch {
+        let type_instance_arg_ref_tag = if let Some(scratch) = shared_type_instance_arg_scratch {
             // Token-strided type-instance argument tags are rebuilt by
             // typecheck. Parser list-rank scratch is dead after HIR list
             // construction and has resident tree capacity.
@@ -1612,7 +1649,8 @@ impl GpuTypeChecker {
                 wgpu::BufferUsages::empty(),
             )
         };
-        let type_instance_arg_ref_payload = if let Some(scratch) = external_scratch {
+        let type_instance_arg_ref_payload = if let Some(scratch) = shared_type_instance_arg_scratch
+        {
             // The parser list1 workspace is dead after HIR list construction.
             // Reuse that tree-capacity row for token-keyed type-instance
             // argument payloads; resident projected tree capacity is larger
@@ -1888,31 +1926,32 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.type_instance_elem_ref_tag",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_elem_ref_tag),
+            shared_type_instance_elem_scratch.map(|scratch| scratch.type_instance_elem_ref_tag),
         );
         let type_instance_elem_ref_payload = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_elem_ref_payload",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_elem_ref_payload),
+            shared_type_instance_elem_scratch
+                .map(|scratch| scratch.type_instance_elem_ref_payload),
         );
         let type_instance_len_kind = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_len_kind",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_len_kind),
+            shared_type_instance_len_scratch.map(|scratch| scratch.type_instance_len_kind),
         );
         let type_instance_len_payload = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_len_payload",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_len_payload),
+            shared_type_instance_len_scratch.map(|scratch| scratch.type_instance_len_payload),
         );
         let type_instance_state = typed_reuse_storage_u32(
             device,
             "type_check.resident.type_instance_state",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.type_instance_state),
+            shared_type_instance_core_scratch.map(|scratch| scratch.type_instance_state),
         );
         let predicate_capacity_u32 = predicate_capacity_for_features(
             hir_node_capacity,
@@ -2261,6 +2300,13 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
+        let member_next_node = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.member_next_node",
+            hir_node_capacity.max(1) as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let structs_enabled = hir_items
             .map(|items| {
                 items.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRUCTS != 0
@@ -2470,7 +2516,7 @@ impl GpuTypeChecker {
         resources.buffer("module_type_path_type", &module_type_path_type);
         resources.buffer("module_type_path_status", &module_type_path_status);
         resources.buffer("module_value_path_status", &module_value_path_status);
-        resources.buffer("loop_depth", &loop_depth);
+        resources.buffer("if_depth", &if_depth);
         resources.buffer("enclosing_fn", &enclosing_fn);
         resources.buffer("enclosing_fn_end", &enclosing_fn_end);
         resources.buffer("fn_event_value", &fn_event_value);
@@ -2992,6 +3038,7 @@ impl GpuTypeChecker {
         resources.buffer("member_result_ref_payload", &member_result_ref_payload);
         resources.buffer("member_result_field_ordinal", &member_result_field_ordinal);
         resources.buffer("member_result_field_node", &member_result_field_node);
+        resources.buffer("member_next_node", &member_next_node);
         resources.buffer(
             "struct_init_field_expected_ref_tag",
             &struct_init_field_expected_ref_tag,
@@ -3690,23 +3737,23 @@ impl GpuTypeChecker {
             &passes.scope_hir,
             &resources,
         )?;
-        let loop_bind_groups = create_loop_depth_bind_groups_with_passes(
+        let if_depth_bind_groups = create_if_depth_bind_groups_with_passes(
             passes,
             device,
-            &loop_params,
+            &if_depth_params,
             token_buf,
             token_count_buf,
             hir_kind_buf,
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_status_buf,
-            &loop_delta,
-            &loop_depth_inblock,
-            &loop_block_sum,
-            &loop_prefix_a,
-            &loop_prefix_b,
-            &loop_block_prefix,
-            &loop_depth,
+            &if_delta,
+            &if_depth_inblock,
+            &if_block_sum,
+            &if_prefix_a,
+            &if_prefix_b,
+            &if_block_prefix,
+            &if_depth,
         )?;
         let fn_context_bind_groups = create_fn_context_bind_groups_with_passes(
             passes,
@@ -3788,7 +3835,7 @@ impl GpuTypeChecker {
             },
             name_capacity,
             name_n_blocks,
-            loop_n_blocks,
+            if_depth_n_blocks,
             fn_n_blocks,
             name_lexeme_flag,
             name_lexeme_kind,
@@ -3893,13 +3940,13 @@ impl GpuTypeChecker {
             match_hir_dispatch_args,
             semantic_features_collect,
             semantic_features_dispatch_args,
-            loop_delta,
-            loop_depth_inblock,
-            loop_block_sum,
-            loop_prefix_a,
-            loop_prefix_b,
-            loop_block_prefix,
-            loop_depth,
+            if_delta,
+            if_depth_inblock,
+            if_block_sum,
+            if_prefix_a,
+            if_prefix_b,
+            if_block_prefix,
+            if_depth,
             enclosing_fn,
             enclosing_fn_end,
             fn_event_value,
@@ -4132,6 +4179,7 @@ impl GpuTypeChecker {
             member_result_ref_payload,
             member_result_field_ordinal,
             member_result_field_node,
+            member_next_node,
             struct_init_field_expected_ref_tag,
             struct_init_field_expected_ref_payload,
             struct_init_field_context_instance,
@@ -4144,9 +4192,9 @@ impl GpuTypeChecker {
             name_scan_steps,
             name_bind_groups,
             language_name_bind_groups,
-            loop_params,
+            if_depth_params,
             fn_params,
-            loop_bind_groups,
+            if_depth_bind_groups,
             fn_context_bind_groups,
             visible_bind_groups,
             calls,

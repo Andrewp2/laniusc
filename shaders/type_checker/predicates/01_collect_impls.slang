@@ -1,5 +1,8 @@
-// Validate trait and inherent impl header predicate rows.
+// Validate trait and inherent impl-header rows from the bounds/impl shared module.
 
+#define PREDICATE_COLLECT_IMPL_RECORDS 1
+#define PREDICATE_BOUND_DECL_RESOLUTION 0
+#define PREDICATE_BOUND_ARGUMENT_VALIDATION 0
 #include "collect_common.slang"
 
 [shader("compute")]

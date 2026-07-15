@@ -25,7 +25,6 @@ pub(super) const WASM_BODY_FEATURE_HOST_VOID: u32 = 1 << 19;
 pub(super) const WASM_BODY_FEATURE_STMT_PRINT: u32 = 1 << 20;
 pub(super) const WASM_BODY_FEATURE_STMT_HOST_VOID: u32 = 1 << 21;
 pub(super) const WASM_BODY_FEATURE_STMT_PRINT_DIRECT: u32 = 1 << 22;
-pub(super) const WASM_BODY_FEATURE_CONTROL_IF_SIMPLE: u32 = 1 << 23;
 pub(super) const WASM_BODY_FEATURE_HOST_IO_I32: u32 = 1 << 24;
 pub(super) const WASM_BODY_FEATURE_HOST_IO_STRING: u32 = 1 << 25;
 pub(super) const WASM_BODY_FEATURE_HOST_IO_RETURN: u32 = 1 << 26;

@@ -1,4 +1,18 @@
-struct LinkParams { uint function_count; uint type_len; uint body_len; uint entry_function; uint symbol_count; uint relocation_count; uint hash_capacity; uint output_len; };
+struct LinkParams
+{
+    uint function_count;
+    uint type_len;
+    uint body_len;
+    uint entry_function;
+    uint symbol_count;
+    uint relocation_count;
+    uint hash_capacity;
+    uint output_len;
+    uint output_page_base;
+    uint output_page_len;
+    uint type_input_base;
+    uint body_input_base;
+};
 ConstantBuffer<LinkParams> gLink;
 RWStructuredBuffer<uint> link_hash_table;
 RWStructuredBuffer<uint> link_symbol_definition;

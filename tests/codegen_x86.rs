@@ -54,6 +54,32 @@ fn main() -> i32 {
     return pair.left + pair.right;
 }
 "#])
+                    .await?;
+                compiler
+                    .compile_source_pack_to_x86_64(&[r#"
+struct Marker {
+    value: i32,
+}
+
+impl Marker {
+    fn answer(self) -> i32 {
+        return self.value;
+    }
+}
+
+fn main() -> i32 {
+    let marker: Marker = Marker { value: 13 };
+    return marker.answer();
+}
+"#])
+                    .await?;
+                compiler
+                    .compile_source_pack_to_x86_64(&[r#"
+fn main() -> i32 {
+    let message: str = "feature growth";
+    return 13;
+}
+"#])
                     .await
             })
         },
@@ -66,7 +92,7 @@ fn main() -> i32 {
         "x86 speculative frontend capacity and feature growth",
         "x86_speculative_frontend_capacity_and_feature_growth",
         &bytes,
-        12,
+        13,
     );
 }
 
@@ -3595,6 +3621,51 @@ fn main() {
 }
 
 #[test]
+fn x86_preserves_type_metadata_across_match_and_aggregate_lowering() {
+    assert_source_exit(
+        "type_metadata_across_match_and_aggregate_lowering",
+        r#"
+enum Choice {
+    Add(i32),
+    Skip,
+}
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn adjustment(choice: Choice) -> i32 {
+    return match (choice) {
+        Add(value) -> value,
+        Skip -> 0,
+    };
+}
+
+fn sum(values: [Pair; 2]) -> i32 {
+    let total: i32 = 0;
+    for pair in values {
+        total += pair.left * 10 + pair.right;
+    }
+    return total;
+}
+
+fn main() {
+    let values: [Pair; 2] = [
+        Pair { left: 4, right: 1 },
+        Pair { left: 2, right: 7 },
+    ];
+    let total: i32 = sum(values);
+    let choice: Choice = Add(5);
+    let extra: i32 = adjustment(choice);
+    return total + extra;
+}
+"#,
+        73,
+    );
+}
+
+#[test]
 fn x86_executes_source_pack_imported_enum_return_match_helper() {
     let sources = [
         r#"
@@ -5186,6 +5257,41 @@ fn main() {
 }
 
 #[test]
+fn x86_resolves_member_chain_through_conflicting_field_layouts() {
+    assert_source_exit(
+        "conflicting_field_layout_member_chain",
+        r#"
+struct Leaf {
+    padding: i32,
+    value: i32,
+}
+
+struct Inner {
+    child: Leaf,
+    padding: i32,
+}
+
+struct Outer {
+    padding: i32,
+    child: Inner,
+}
+
+fn read(value: Outer) -> i32 {
+    return value.child.child.value;
+}
+
+fn main() {
+    let leaf: Leaf = Leaf { padding: 7, value: 42 };
+    let inner: Inner = Inner { child: leaf, padding: 11 };
+    let outer: Outer = Outer { padding: 13, child: inner };
+    return read(outer);
+}
+"#,
+        42,
+    );
+}
+
+#[test]
 fn x86_executes_single_field_struct_parameter_member_reads() {
     assert_source_exit(
         "single_field_struct_parameter_member_reads",
@@ -5905,50 +6011,36 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_aggregate_copy_above_bounded_gpu_row_width() {
-    let elements = (0..33)
-        .map(|value| value.to_string())
+fn x86_executes_aggregate_copy_beyond_legacy_gpu_row_width() {
+    const WIDTH: usize = 257;
+    let elements = (0..WIDTH)
+        .map(|value| (value % 97).to_string())
         .collect::<Vec<_>>()
         .join(", ");
     let source = format!(
         r#"
 fn main() {{
-    let a: [i32; 33] = [{elements}];
-    let b: [i32; 33] = a;
-    return b[0];
+    let a: [i32; {WIDTH}] = [{elements}];
+    let b: [i32; {WIDTH}] = a;
+    return b[{}];
 }}
-"#
+"#,
+        WIDTH - 1
     );
 
-    let err = common::run_gpu_codegen_with_timeout("x86 oversized aggregate copy", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("x86 wide aggregate copy", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err("oversized aggregate copies should fail before virtual row generation");
+    .expect("aggregate copies beyond the legacy 32-row path should compile");
 
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "x86 rejection should use the stable backend diagnostic: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 aggregate copy width")
-                    && message.contains("native x86 backend"),
-                "diagnostic should name the aggregate row-width boundary: {message}"
-            );
-            assert!(
-                message.contains("let b: [i32; 33] = a;"),
-                "diagnostic should point at the oversized aggregate copy: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 wide aggregate copy",
+        "x86_wide_aggregate_copy",
+        &bytes,
+        ((WIDTH - 1) % 97) as i32,
+    );
 }
 
 #[test]

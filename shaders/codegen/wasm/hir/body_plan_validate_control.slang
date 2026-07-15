@@ -4,6 +4,53 @@ import atomics;
 import body_common;
 import body_plan_validate_common;
 
+StructuredBuffer<uint> hir_nearest_loop_node;
+StructuredBuffer<int> if_depth;
+
+bool loop_control_fragment_and_len(uint node, out uint depth, out uint len)
+{
+    depth = 0u;
+    len = 0u;
+    if (!valid_node(node) ||
+        (hir_kind[node] != HIR_BREAK_STMT && hir_kind[node] != HIR_CONTINUE_STMT))
+    {
+        return false;
+    }
+
+    uint stmt_kind = stmt_record_slot(node, 0u);
+    if ((hir_kind[node] == HIR_BREAK_STMT && stmt_kind != STMT_RECORD_KIND_BREAK) ||
+        (hir_kind[node] == HIR_CONTINUE_STMT && stmt_kind != STMT_RECORD_KIND_CONTINUE))
+    {
+        return false;
+    }
+
+    uint loop_node = hir_nearest_loop_node[node];
+    if (!valid_node(loop_node))
+        return false;
+    uint loop_kind = hir_kind[loop_node];
+    uint loop_stmt_kind = stmt_record_slot(loop_node, 0u);
+    if ((loop_kind != HIR_WHILE_STMT || loop_stmt_kind != STMT_RECORD_KIND_WHILE) &&
+        (loop_kind != HIR_FOR_STMT || loop_stmt_kind != STMT_RECORD_KIND_FOR))
+    {
+        return false;
+    }
+
+    uint token = hir_token_pos[node];
+    uint loop_token = hir_token_pos[loop_node];
+    if (!valid_token(token) || !valid_token(loop_token))
+        return false;
+    int branch_if_depth = if_depth[token];
+    int loop_if_depth = if_depth[loop_token];
+    if (branch_if_depth < loop_if_depth)
+        return false;
+
+    depth = uint(branch_if_depth - loop_if_depth);
+    if (hir_kind[node] == HIR_BREAK_STMT)
+        depth += loop_kind == HIR_FOR_STMT ? 2u : 1u;
+    len = 1u + u32_leb_len(depth);
+    return true;
+}
+
 void validate_main_control(uint node, uint token)
 {
     uint owner_fn = node_enclosing_fn_token(node);
@@ -24,153 +71,27 @@ void validate_main_control(uint node, uint token)
 
     if (stmt_kind == STMT_RECORD_KIND_IF && hir_kind[node] == HIR_IF_STMT)
     {
-        uint condition_record_node = stmt_record_slot(node, 1u);
-        if (expr_contains_member(condition_record_node))
-            return;
-        uint raw_condition_node = resolve_expr_node(condition_record_node);
-        if (valid_node(raw_condition_node) && expr_contains_member(raw_condition_node))
-            return;
-        if (valid_node(raw_condition_node) && !expr_contains_member(raw_condition_node))
-            return;
-
-        uint condition_node = INVALID;
-        uint open_len = 0u;
-        uint else_token = INVALID;
-        uint else_len = 0u;
-        uint end_token = INVALID;
-        uint end_len = 0u;
-        if (valid_node(raw_condition_node) && expr_contains_member(raw_condition_node))
-        {
-            condition_node = raw_condition_node;
-            if (!if_end_token_and_len(node, end_token, end_len))
-            {
-                publish_func_invalid(owner_fn, token);
-                return;
-            }
-
-            if (valid_node(stmt_record_slot(node, 3u)) &&
-                !if_else_token_and_len(node, else_token, else_len))
-            {
-                publish_func_invalid(owner_fn, token);
-                return;
-            }
-
-            uint condition_len = 0u;
-            if (!expr_simple_and_len(condition_node, condition_len))
-            {
-                publish_func_invalid(owner_fn, token);
-                return;
-            }
-            uint temp_len = condition_len + local_set_len(token);
-            uint local_open_len = local_get_len(token) + 2u;
-            add_func_local_token(owner_fn, token);
-            add_func_body_len(owner_fn, temp_len + local_open_len + else_len + end_len);
-            publish_fragment_slot(
-                token * 2u,
-                temp_len,
-                uint4(BODY_FRAGMENT_LET_EXPR_I32, token, condition_node, token),
-                uint4(INVALID, 0u, 0u, 0u));
-            publish_fragment_slot(
-                token * 2u + 1u,
-                local_open_len,
-                uint4(BODY_FRAGMENT_IF_OPEN_LOCAL_I32, token, local_open_len, token),
-                uint4(INVALID, 0u, 0u, 0u));
-            if (else_len != 0u)
-            {
-                publish_fragment(
-                    else_token,
-                    else_len,
-                    uint4(BODY_FRAGMENT_IF_ELSE, 0u, 0u, else_token),
-                    uint4(INVALID, 0u, 0u, 0u));
-            }
-            publish_fragment(
-                end_token,
-                end_len,
-                uint4(BODY_FRAGMENT_IF_END, 0u, 0u, end_token),
-                uint4(INVALID, 0u, 0u, 0u));
-            atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, end_token);
-            return;
-        }
-
-        if (!if_open_fragment_and_len(node, condition_node, open_len) ||
-            !if_end_token_and_len(node, end_token, end_len))
-        {
-            publish_func_invalid(owner_fn, token);
-            return;
-        }
-
-        if (valid_node(stmt_record_slot(node, 3u)) &&
-            !if_else_token_and_len(node, else_token, else_len))
-        {
-            publish_func_invalid(owner_fn, token);
-            return;
-        }
-
-        add_func_body_len(owner_fn, open_len + else_len + end_len);
-        publish_fragment(
-            token,
-            open_len,
-            uint4(BODY_FRAGMENT_IF_OPEN_I32, condition_node, open_len, token),
-            uint4(INVALID, 0u, 0u, 0u));
-        if (else_len != 0u)
-        {
-            publish_fragment(
-                else_token,
-                else_len,
-                uint4(BODY_FRAGMENT_IF_ELSE, 0u, 0u, else_token),
-                uint4(INVALID, 0u, 0u, 0u));
-        }
-        publish_fragment(
-            end_token,
-            end_len,
-            uint4(BODY_FRAGMENT_IF_END, 0u, 0u, end_token),
-            uint4(INVALID, 0u, 0u, 0u));
-        atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, end_token);
+        // Scalar IF planning is owned by body_plan_validate, which sizes the
+        // condition from the parallel expression forest. This pass owns only
+        // loop control and must not classify the same statement a second time.
         return;
     }
 
     if (stmt_kind == STMT_RECORD_KIND_WHILE && hir_kind[node] == HIR_WHILE_STMT)
     {
-        uint condition_node = INVALID;
-        uint open_len = 0u;
+        uint condition_node = resolve_expr_node(stmt_record_slot(node, 1u));
+        uint2 condition_total = valid_node(condition_node)
+                                    ? expr_subtree_total[condition_node]
+                                    : uint2(0u, 1u);
         uint close_token = INVALID;
         uint close_len = 0u;
-        if (!while_open_fragment_and_len(node, condition_node, open_len) ||
+        if (condition_total.y != 0u || condition_total.x == 0u ||
             !while_close_token_and_len(node, close_token, close_len))
         {
             publish_func_invalid(owner_fn, token);
             return;
         }
-        if (expr_contains_member(condition_node))
-        {
-            uint condition_len = 0u;
-            if (!expr_simple_and_len(condition_node, condition_len))
-            {
-                publish_func_invalid(owner_fn, token);
-                return;
-            }
-            uint temp_len = condition_len + local_set_len(token);
-            uint local_open_len = local_get_len(token) + 7u;
-            add_func_local_token(owner_fn, token);
-            add_func_body_len(owner_fn, temp_len + local_open_len + close_len);
-            publish_fragment_slot(
-                token * 2u,
-                temp_len,
-                uint4(BODY_FRAGMENT_LET_EXPR_I32, token, condition_node, token),
-                uint4(INVALID, 0u, 0u, 0u));
-            publish_fragment_slot(
-                token * 2u + 1u,
-                local_open_len,
-                uint4(BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32, token, local_open_len, token),
-                uint4(INVALID, 0u, 0u, 0u));
-            publish_fragment(
-                close_token,
-                close_len,
-                uint4(BODY_FRAGMENT_WHILE_CLOSE, 0u, 0u, close_token),
-                uint4(INVALID, 0u, 0u, 0u));
-            atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, close_token);
-            return;
-        }
+        uint open_len = condition_total.x + 7u;
         add_func_body_len(owner_fn, open_len + close_len);
         publish_fragment(
             token,
@@ -183,6 +104,10 @@ void validate_main_control(uint node, uint token)
             uint4(BODY_FRAGMENT_WHILE_CLOSE, 0u, 0u, close_token),
             uint4(INVALID, 0u, 0u, 0u));
         atomic_u32_min(body_plan, BODY_PLAN_ERROR_DETAIL_MIN, close_token);
+        atomic_u32_or(
+            body_plan,
+            BODY_PLAN_FEATURE_MASK,
+            BODY_FEATURE_MEMBER_EXPR_SCATTER);
         return;
     }
 

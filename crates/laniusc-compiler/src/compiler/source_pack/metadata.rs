@@ -2,9 +2,9 @@ use super::*;
 
 /// Prepares complete source-library metadata for a source-pack target.
 ///
-/// This eager wrapper runs the chunked metadata path with the full-prepare
-/// library limit and requires completion in one call. The result identifies the
-/// compact partition index and the source-file summary pages written to disk.
+/// This wrapper consumes the complete library stream while writing each source
+/// record directly to the artifact store. Bounded callers should use
+/// [`prepare_metadata_chunk`] or [`resume_metadata_chunk`] instead.
 pub(in crate::compiler) fn prepare_metadata<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
@@ -16,16 +16,11 @@ where
     DI: IntoIterator<Item = u32>,
     P: AsRef<Path>,
 {
-    let step = prepare_metadata_chunk(
-        libraries,
-        store,
-        target,
-        Some(SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT),
-    )?;
+    let step = prepare_metadata_chunk(libraries, store, target, None)?;
     if !step.complete {
-        return Err(source_pack_preparation_incomplete_error(format!(
-            "source-pack metadata prepare did not complete within {SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT} bounded library records; use prepare_metadata_chunk_for_target or the progress-based metadata chunk API to continue persisted preparation"
-        )));
+        return Err(source_pack_preparation_incomplete_error(
+            "complete source-pack metadata preparation stopped before consuming its input",
+        ));
     }
     let library_partition_index_path = step.library_partition_index_path.ok_or_else(|| {
         library_partition_contract_error(

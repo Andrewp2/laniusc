@@ -1,5 +1,7 @@
 // Project parser-owned path segment counts onto compact typechecker path rows.
 
+import atomics;
+
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 
@@ -8,6 +10,7 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> hir_path_segment_count;
 RWStructuredBuffer<uint> path_segment_count;
+RWStructuredBuffer<uint> path_max_segment_count;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -23,6 +26,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_slot >= active_path_count())
         return;
     uint owner = path_owner_hir[path_slot];
-    path_segment_count[path_slot] = owner < active_hir_node_count()
+    uint count = owner < active_hir_node_count()
         ? hir_path_segment_count[owner] : 0u;
+    path_segment_count[path_slot] = count;
+    atomic_u32_max(path_max_segment_count, 0u, count);
 }

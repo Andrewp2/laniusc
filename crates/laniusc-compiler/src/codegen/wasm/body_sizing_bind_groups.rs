@@ -23,6 +23,7 @@ impl GpuWasmCodeGenerator {
         device: &wgpu::Device,
         inputs: GpuWasmCodegenInputs<'_>,
         working: &WasmWorkingBuffers,
+        expr_order: &ResidentWasmExprOrder,
     ) -> Result<WasmBodySizingBindGroups> {
         let GpuWasmCodegenInputs {
             call_return_type: call_return_type_buf,
@@ -60,7 +61,8 @@ impl GpuWasmCodeGenerator {
             wasm_agg_scan_prefix_b_buf,
             ..
         } = working;
-        let body_binding_context = WasmBodyBindingContext::new(inputs, working);
+        let body_binding_context =
+            WasmBodyBindingContext::new_with_expr_order(inputs, working, expr_order);
         let final_agg_scan_block_prefix = if (func_scan_param_bufs.len() - 1) % 2 == 0 {
             wasm_agg_scan_prefix_a_buf
         } else {

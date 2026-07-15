@@ -149,7 +149,7 @@ pub use diagnostics::*;
 /// stable diagnostic code and source labels. The phase-specific string variants
 /// are used when the compiler cannot yet map a failure into a structured
 /// diagnostic at the owning boundary.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CompileError {
     /// Structured diagnostic with code, message, and labels.
     Diagnostic(Diagnostic),
@@ -223,6 +223,52 @@ pub(in crate::compiler) fn compiler_execution_failed_error(
         compiler_execution_failed_diagnostic("compiler execution failed", phase_note)
             .with_note(format!("operation: {operation}")),
     )
+}
+
+pub(in crate::compiler) fn compiler_initialization_failed_error(
+    phase_note: &'static str,
+    operation: impl Into<String>,
+    detail: anyhow::Error,
+) -> CompileError {
+    let operation = operation.into();
+    if let Some(limit) = detail.downcast_ref::<crate::gpu::passes_core::GpuPassResourceLimitError>()
+    {
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0057", "selected GPU cannot initialize the compiler")
+                .with_note(phase_note)
+                .with_note(format!("operation: {operation}"))
+                .with_note(format!("GPU pass: {}", limit.pass_label))
+                .with_note(format!(
+                    "required compute-stage storage buffers: {}",
+                    limit.required_storage_buffers
+                ))
+                .with_note(format!(
+                    "selected adapter compute-stage storage-buffer limit: {}",
+                    limit.adapter_storage_buffer_limit
+                ))
+                .with_help(
+                    "use an adapter with a sufficient storage-buffer limit; this compiler pass still needs packed records or splitting for lower-limit adapters",
+                ),
+        );
+    }
+    if let Some(device) = detail.downcast_ref::<crate::gpu::device::GpuDeviceInitializationError>()
+    {
+        if let crate::gpu::device::GpuDeviceInitializationError::SoftwareAdapter { name, backend } =
+            device
+        {
+            return CompileError::Diagnostic(
+                Diagnostic::error("LNC0057", "Lanius requires a hardware GPU adapter")
+                    .with_note(phase_note)
+                    .with_note(format!("operation: {operation}"))
+                    .with_note(format!("selected adapter: {name}"))
+                    .with_note(format!("selected backend: {backend:?}"))
+                    .with_help(
+                        "select a physical or hardware-virtualized GPU; CPU software adapters are only supported for explicit compiler diagnostics",
+                    ),
+            );
+        }
+    }
+    compiler_execution_failed_error(phase_note, operation, detail)
 }
 
 impl std::fmt::Display for CompileError {

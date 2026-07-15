@@ -3,7 +3,13 @@ use std::{
     fs::{self, File},
     io::Write,
     path::PathBuf,
-    sync::{Arc, Mutex, OnceLock, Weak},
+    sync::{
+        Arc,
+        Mutex,
+        OnceLock,
+        Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant, SystemTime},
 };
 
@@ -12,6 +18,7 @@ use log::warn;
 const PIPELINE_CACHE_FILE_MAGIC: [u8; 8] = *b"LANIUSPC";
 const PIPELINE_CACHE_FILE_VERSION: u32 = 1;
 const PIPELINE_CACHE_HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 8;
+const MAX_COMPILER_BUFFER_BYTES: u64 = 2_147_483_644;
 
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
@@ -26,9 +33,40 @@ pub struct GpuDevice {
     pipeline_cache: Mutex<Option<Arc<wgpu::PipelineCache>>>,
     pipeline_cache_path: Option<PathBuf>,
     pipeline_cache_identity_hash: Option<u64>,
-    pipeline_cache_should_persist: bool,
+    pipeline_cache_dirty: Arc<AtomicBool>,
     pipeline_cache_persisted_hash: Mutex<Option<u64>>,
 }
+
+/// Failure to select and initialize a GPU-backed wgpu device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GpuDeviceInitializationError {
+    /// wgpu could not find any adapter for the selected backend.
+    NoAdapter,
+    /// Adapter discovery selected a CPU software implementation.
+    SoftwareAdapter {
+        /// Adapter name reported by wgpu.
+        name: String,
+        /// Backend used by the software adapter.
+        backend: wgpu::Backend,
+    },
+    /// The selected hardware adapter could not create a logical device.
+    RequestDevice(String),
+}
+
+impl std::fmt::Display for GpuDeviceInitializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoAdapter => write!(f, "no suitable GPU adapter was found"),
+            Self::SoftwareAdapter { name, backend } => write!(
+                f,
+                "adapter {name:?} on {backend:?} is a CPU software adapter, not a GPU"
+            ),
+            Self::RequestDevice(detail) => write!(f, "failed to create wgpu device: {detail}"),
+        }
+    }
+}
+
+impl std::error::Error for GpuDeviceInitializationError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WgpuRegistryStats {
@@ -49,6 +87,11 @@ pub struct WgpuResourceStats {
 impl GpuDevice {
     /// Creates a GPU device/queue resource that can be shared across compiler subsystems.
     pub fn new() -> Self {
+        Self::try_new().unwrap_or_else(|err| panic!("failed to initialize GPU device: {err}"))
+    }
+
+    /// Tries to create a GPU device without accepting a CPU software adapter by default.
+    pub fn try_new() -> Result<Self, GpuDeviceInitializationError> {
         create_context()
     }
 
@@ -78,18 +121,28 @@ impl GpuDevice {
     /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
         let timer = PipelineCachePersistTimer::new();
+        let force_persist =
+            crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
+        if !take_pipeline_cache_dirty(&self.pipeline_cache_dirty, force_persist) {
+            let now = Instant::now();
+            timer.span("skipped.clean", now, now);
+            return;
+        }
         let Some(cache) = self
             .pipeline_cache
             .lock()
             .ok()
             .and_then(|cache| cache.clone())
         else {
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         };
         let Some(path) = self.pipeline_cache_path.as_ref() else {
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         };
         let Some(identity_hash) = self.pipeline_cache_identity_hash else {
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         };
         let total_start = Instant::now();
@@ -98,6 +151,7 @@ impl GpuDevice {
             let end = Instant::now();
             timer.span("get_data.empty", start, end);
             timer.span("total.empty", total_start, end);
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         };
         let end = Instant::now();
@@ -106,15 +160,13 @@ impl GpuDevice {
         let start = Instant::now();
         let data_hash = stable_hash_u64(&data);
         timer.span("hash", start, Instant::now());
-        let force_persist =
-            crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
         let already_persisted = self
             .pipeline_cache_persisted_hash
             .lock()
             .ok()
             .and_then(|hash| *hash)
             == Some(data_hash);
-        if !self.pipeline_cache_should_persist && !force_persist && already_persisted {
+        if !force_persist && already_persisted {
             timer.span("skipped.unchanged", total_start, Instant::now());
             return;
         }
@@ -128,15 +180,14 @@ impl GpuDevice {
                     "failed to create pipeline cache directory {}: {err}",
                     parent.display()
                 );
+                self.pipeline_cache_dirty.store(true, Ordering::Release);
                 return;
             }
             timer.span("create_dir_all", start, Instant::now());
         }
         let tmp = pipeline_cache_tmp_path(path);
         let start = Instant::now();
-        if let Err(err) =
-            write_pipeline_cache_tmp(&tmp, &data, identity_hash, data_hash, &timer)
-        {
+        if let Err(err) = write_pipeline_cache_tmp(&tmp, &data, identity_hash, data_hash, &timer) {
             let end = Instant::now();
             timer.span("write_tmp.failed", start, end);
             timer.span("total.failed", total_start, end);
@@ -144,6 +195,7 @@ impl GpuDevice {
                 "failed to write pipeline cache tmp file {}: {err}",
                 tmp.display()
             );
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         }
         timer.span("write_tmp", start, Instant::now());
@@ -157,6 +209,7 @@ impl GpuDevice {
                 tmp.display(),
                 path.display()
             );
+            self.pipeline_cache_dirty.store(true, Ordering::Release);
             return;
         }
         let end = Instant::now();
@@ -186,6 +239,10 @@ impl GpuDevice {
         }
         let _ = self.device.poll(wgpu::PollType::Poll);
     }
+}
+
+fn take_pipeline_cache_dirty(dirty: &AtomicBool, force: bool) -> bool {
+    dirty.swap(false, Ordering::AcqRel) || force
 }
 
 fn write_pipeline_cache_tmp(
@@ -281,7 +338,7 @@ impl PipelineCachePersistTimer {
     }
 }
 
-fn create_context() -> GpuDevice {
+fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
     let backends = crate::gpu::env::env_string("LANIUS_BACKEND", "auto").to_ascii_lowercase();
     let backends = match backends.as_str() {
         "vulkan" | "vk" => wgpu::Backends::VULKAN,
@@ -309,25 +366,17 @@ fn create_context() -> GpuDevice {
         compatible_surface: None,
         force_fallback_adapter: false,
     }))
-    .expect("no suitable GPU adapter");
+    .map_err(|_| GpuDeviceInitializationError::NoAdapter)?;
     let adapter_info = adapter.get_info();
+    require_hardware_adapter(
+        adapter_info.device_type,
+        &adapter_info.name,
+        adapter_info.backend,
+        crate::gpu::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    )?;
 
     let adapter_limits = adapter.limits();
-    let mut limits = wgpu::Limits::defaults();
-    // Native compiler stages use wide GPU record tables; request the adapter's
-    // native storage-buffer limit so reflected pass layouts fail only when the
-    // selected device genuinely cannot support the compiler's record tables.
-    limits.max_storage_buffers_per_shader_stage =
-        adapter_limits.max_storage_buffers_per_shader_stage;
-    // The fast byte-wide radix scatter uses eight 256-bin virtual-warp
-    // histograms (plus one digit row), matching the proven renderer sorter in
-    // ~/code/game. Request up to 48 KiB when available; adapters below the
-    // exact 33 KiB requirement select the prefix-scan fallback pipeline.
-    limits.max_compute_workgroup_storage_size = adapter_limits
-        .max_compute_workgroup_storage_size
-        .min(48 * 1024);
-    limits.max_storage_buffer_binding_size = 2_147_483_644;
-    limits.max_buffer_size = 2_147_483_644;
+    let limits = compiler_device_limits(&adapter_limits);
 
     let adapter_features = adapter.features();
 
@@ -357,7 +406,7 @@ fn create_context() -> GpuDevice {
         memory_hints: wgpu::MemoryHints::default(),
         trace: wgpu::Trace::default(),
     }))
-    .expect("failed to create wgpu device");
+    .map_err(|err| GpuDeviceInitializationError::RequestDevice(err.to_string()))?;
 
     device.on_uncaptured_error(Arc::new(|e| {
         eprintln!("[wgpu uncaptured] {e:?}");
@@ -377,9 +426,10 @@ fn create_context() -> GpuDevice {
     };
     let device = Arc::new(device);
     let pipeline_cache = pipeline_cache.map(Arc::new);
-    register_pipeline_cache(&device, pipeline_cache.as_ref());
+    let pipeline_cache_dirty = Arc::new(AtomicBool::new(pipeline_cache_should_persist));
+    register_pipeline_cache(&device, pipeline_cache.as_ref(), &pipeline_cache_dirty);
 
-    GpuDevice {
+    Ok(GpuDevice {
         instance,
         device,
         queue: Arc::new(queue),
@@ -387,9 +437,94 @@ fn create_context() -> GpuDevice {
         pipeline_cache: Mutex::new(pipeline_cache),
         pipeline_cache_path,
         pipeline_cache_identity_hash,
-        pipeline_cache_should_persist,
+        pipeline_cache_dirty,
         pipeline_cache_persisted_hash: Mutex::new(pipeline_cache_persisted_hash),
+    })
+}
+
+fn require_hardware_adapter(
+    device_type: wgpu::DeviceType,
+    name: &str,
+    backend: wgpu::Backend,
+    allow_software_adapter: bool,
+) -> Result<(), GpuDeviceInitializationError> {
+    if device_type != wgpu::DeviceType::Cpu || allow_software_adapter {
+        return Ok(());
     }
+    Err(GpuDeviceInitializationError::SoftwareAdapter {
+        name: name.to_owned(),
+        backend,
+    })
+}
+
+#[cfg(test)]
+mod adapter_policy_tests {
+    use super::*;
+
+    #[test]
+    fn physical_and_hardware_virtualized_adapters_are_accepted() {
+        for device_type in [
+            wgpu::DeviceType::IntegratedGpu,
+            wgpu::DeviceType::DiscreteGpu,
+            wgpu::DeviceType::VirtualGpu,
+        ] {
+            assert!(
+                require_hardware_adapter(device_type, "hardware", wgpu::Backend::Vulkan, false)
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn cpu_software_adapter_requires_explicit_opt_in() {
+        let error = require_hardware_adapter(
+            wgpu::DeviceType::Cpu,
+            "llvmpipe",
+            wgpu::Backend::Vulkan,
+            false,
+        )
+        .expect_err("CPU adapters must not satisfy the production GPU contract");
+        assert_eq!(
+            error,
+            GpuDeviceInitializationError::SoftwareAdapter {
+                name: "llvmpipe".to_owned(),
+                backend: wgpu::Backend::Vulkan,
+            }
+        );
+
+        assert!(
+            require_hardware_adapter(
+                wgpu::DeviceType::Cpu,
+                "llvmpipe",
+                wgpu::Backend::Vulkan,
+                true,
+            )
+            .is_ok()
+        );
+    }
+}
+
+fn compiler_device_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
+    let mut limits = wgpu::Limits::defaults();
+    // Native compiler stages use wide GPU record tables; request the adapter's
+    // native storage-buffer limit so reflected pass layouts fail only when the
+    // selected device genuinely cannot support the compiler's record tables.
+    limits.max_storage_buffers_per_shader_stage =
+        adapter_limits.max_storage_buffers_per_shader_stage;
+    // The fast byte-wide radix scatter uses eight 256-bin virtual-warp
+    // histograms (plus one digit row), matching the proven renderer sorter in
+    // ~/code/game. Request up to 48 KiB when available; adapters below the
+    // exact 33 KiB requirement select the prefix-scan fallback pipeline.
+    limits.max_compute_workgroup_storage_size = adapter_limits
+        .max_compute_workgroup_storage_size
+        .min(48 * 1024);
+    limits.max_storage_buffer_binding_size = adapter_limits
+        .max_storage_buffer_binding_size
+        .min(MAX_COMPILER_BUFFER_BYTES);
+    limits.max_buffer_size = adapter_limits
+        .max_buffer_size
+        .min(MAX_COMPILER_BUFFER_BYTES);
+    limits
 }
 
 fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
@@ -400,8 +535,16 @@ fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
 
 /// Returns a reference to the global GPU context (created on first use).
 pub fn global() -> &'static GpuDevice {
-    static CTX: OnceLock<GpuDevice> = OnceLock::new();
-    CTX.get_or_init(GpuDevice::new)
+    global_result().unwrap_or_else(|err| panic!("failed to initialize GPU device: {err}"))
+}
+
+/// Returns the process-global GPU context or its retained initialization error.
+pub fn global_result() -> Result<&'static GpuDevice, &'static GpuDeviceInitializationError> {
+    static CTX: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
+    match CTX.get_or_init(GpuDevice::try_new) {
+        Ok(device) => Ok(device),
+        Err(err) => Err(err),
+    }
 }
 
 /// Persists the process-global device's pipeline cache.
@@ -421,7 +564,7 @@ pub fn persist_pipeline_cache_for_device(device: &wgpu::Device) {
 pub fn pipeline_cache_for(device: &wgpu::Device) -> Option<Arc<wgpu::PipelineCache>> {
     let key = device as *const wgpu::Device as usize;
     match pipeline_cache_registry().lock() {
-        Ok(caches) => caches.get(&key).cloned().and_then(|cache| cache.upgrade()),
+        Ok(caches) => caches.get(&key).and_then(|entry| entry.cache.upgrade()),
         Err(err) => {
             warn!(
                 "failed to lock pipeline cache registry: {err}; proceeding without pipeline cache"
@@ -431,14 +574,34 @@ pub fn pipeline_cache_for(device: &wgpu::Device) -> Option<Arc<wgpu::PipelineCac
     }
 }
 
-fn register_pipeline_cache(device: &Arc<wgpu::Device>, cache: Option<&Arc<wgpu::PipelineCache>>) {
+/// Marks the registered driver cache dirty after creating a compute pipeline.
+pub fn mark_pipeline_cache_dirty(device: &wgpu::Device) {
+    let key = device as *const wgpu::Device as usize;
+    if let Ok(caches) = pipeline_cache_registry().lock()
+        && let Some(dirty) = caches.get(&key).and_then(|entry| entry.dirty.upgrade())
+    {
+        dirty.store(true, Ordering::Release);
+    }
+}
+
+fn register_pipeline_cache(
+    device: &Arc<wgpu::Device>,
+    cache: Option<&Arc<wgpu::PipelineCache>>,
+    dirty: &Arc<AtomicBool>,
+) {
     let Some(cache) = cache else {
         return;
     };
     let key = Arc::as_ptr(device) as usize;
     match pipeline_cache_registry().lock() {
         Ok(mut caches) => {
-            caches.insert(key, Arc::downgrade(cache));
+            caches.insert(
+                key,
+                RegisteredPipelineCache {
+                    cache: Arc::downgrade(cache),
+                    dirty: Arc::downgrade(dirty),
+                },
+            );
         }
         Err(err) => {
             warn!("failed to register pipeline cache due poisoned lock: {err}");
@@ -453,8 +616,13 @@ fn unregister_pipeline_cache(device: &Arc<wgpu::Device>) {
     }
 }
 
-fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, Weak<wgpu::PipelineCache>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<usize, Weak<wgpu::PipelineCache>>>> = OnceLock::new();
+struct RegisteredPipelineCache {
+    cache: Weak<wgpu::PipelineCache>,
+    dirty: Weak<AtomicBool>,
+}
+
+fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, RegisteredPipelineCache>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<usize, RegisteredPipelineCache>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -829,6 +997,36 @@ mod tests {
     }
 
     #[test]
+    fn compiler_buffer_limits_never_exceed_adapter_limits() {
+        let mut adapter = wgpu::Limits::defaults();
+        adapter.max_storage_buffer_binding_size = 512 * 1024 * 1024;
+        adapter.max_buffer_size = 768 * 1024 * 1024;
+
+        let requested = compiler_device_limits(&adapter);
+
+        assert_eq!(
+            requested.max_storage_buffer_binding_size,
+            adapter.max_storage_buffer_binding_size
+        );
+        assert_eq!(requested.max_buffer_size, adapter.max_buffer_size);
+    }
+
+    #[test]
+    fn compiler_buffer_limits_cap_large_adapters_without_demanding_all_vram() {
+        let mut adapter = wgpu::Limits::defaults();
+        adapter.max_storage_buffer_binding_size = u64::MAX;
+        adapter.max_buffer_size = u64::MAX;
+
+        let requested = compiler_device_limits(&adapter);
+
+        assert_eq!(
+            requested.max_storage_buffer_binding_size,
+            MAX_COMPILER_BUFFER_BYTES
+        );
+        assert_eq!(requested.max_buffer_size, MAX_COMPILER_BUFFER_BYTES);
+    }
+
+    #[test]
     fn pipeline_cache_file_round_trips_opaque_blob() {
         let identity_hash = 0x1234_5678_9abc_def0;
         let blob = b"opaque wgpu cache data";
@@ -844,8 +1042,7 @@ mod tests {
     #[test]
     fn pipeline_cache_file_rejects_wrong_identity() {
         let blob = b"opaque wgpu cache data";
-        let mut file =
-            pipeline_cache_file_header(blob.len(), 0x11, stable_hash_u64(blob)).to_vec();
+        let mut file = pipeline_cache_file_header(blob.len(), 0x11, stable_hash_u64(blob)).to_vec();
         file.extend_from_slice(blob);
 
         let err = decode_pipeline_cache_file(&file, 0x22).unwrap_err();
@@ -867,5 +1064,24 @@ mod tests {
         let err = decode_pipeline_cache_file(&file, identity_hash).unwrap_err();
 
         assert!(matches!(err, PipelineCacheFileError::LengthMismatch { .. }));
+    }
+
+    #[test]
+    fn clean_pipeline_cache_skips_serialization_until_marked_dirty() {
+        let dirty = AtomicBool::new(false);
+
+        assert!(!take_pipeline_cache_dirty(&dirty, false));
+        dirty.store(true, Ordering::Release);
+        assert!(take_pipeline_cache_dirty(&dirty, false));
+        assert!(!take_pipeline_cache_dirty(&dirty, false));
+    }
+
+    #[test]
+    fn forced_pipeline_cache_persistence_consumes_any_dirty_mark() {
+        let dirty = AtomicBool::new(true);
+
+        assert!(take_pipeline_cache_dirty(&dirty, true));
+        assert!(!dirty.load(Ordering::Acquire));
+        assert!(take_pipeline_cache_dirty(&dirty, true));
     }
 }

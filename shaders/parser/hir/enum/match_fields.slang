@@ -8,6 +8,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint has_family;
 };
 
 ConstantBuffer<Params> gHirEnumMatch;
@@ -52,10 +53,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_variant_ordinal[node] = INVALID;
     hir_variant_payload_start[node] = INVALID;
     hir_variant_payload_count[node] = 0u;
-    hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 0u] = INVALID;
-    hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 1u] = INVALID;
-    hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 2u] = INVALID;
-    hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 3u] = INVALID;
+    if (gHirEnumMatch.has_family != 0u)
+    {
+        hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 0u] = INVALID;
+        hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 1u] = INVALID;
+        hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 2u] = INVALID;
+        hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 3u] = INVALID;
+    }
     hir_match_scrutinee_node[node] = INVALID;
     hir_match_arm_start[node] = INVALID;
     hir_match_arm_count[node] = 0u;

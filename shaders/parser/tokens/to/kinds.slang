@@ -1,5 +1,4 @@
 import atomics;
-import prefix_scan;
 import segment_tree;
 import token_features;
 
@@ -52,19 +51,6 @@ StructuredBuffer<uint> token_impl_context_event;
 StructuredBuffer<uint> token_where_context_event;
 StructuredBuffer<uint> token_match_pattern_context_event;
 groupshared uint group_feature_flags[256];
-
-public struct PrefixScanU32Or : IPrefixScanOp<uint>
-{
-    public static uint identity()
-    {
-        return 0u;
-    }
-
-    public static uint combine(uint left, uint right)
-    {
-        return left | right;
-    }
-}
 
 static const uint WG_SIZE = 256u;
 static const uint INVALID = 0xffffffffu;
@@ -1491,12 +1477,16 @@ void main(uint3 tid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
         semantic_token_kinds[i] = 0u;
     }
 
-    uint group_flags = prefix_scan_inclusive<uint, PrefixScanU32Or, 256>(
-        lane,
-        feature_flags,
-        group_feature_flags);
-    if (lane == WG_SIZE - 1u && group_flags != 0u)
-        atomic_u32_or(token_feature_flags, 0u, group_flags);
+    group_feature_flags[lane] = feature_flags;
+    GroupMemoryBarrierWithGroupSync();
+    for (uint width = WG_SIZE / 2u; width > 0u; width >>= 1u)
+    {
+        if (lane < width)
+            group_feature_flags[lane] |= group_feature_flags[lane + width];
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (lane == 0u && group_feature_flags[0u] != 0u)
+        atomic_u32_or(token_feature_flags, 0u, group_feature_flags[0u]);
 
     if (i == 0u)
         parser_token_count[0] = count;

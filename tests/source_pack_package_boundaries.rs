@@ -6799,45 +6799,76 @@ fn main() { return 0; }
 }
 
 #[test]
-fn source_root_loader_reports_deep_import_path_as_stable_diagnostic() {
+fn source_root_loader_discovers_more_than_one_thousand_imports_iteratively() {
+    const IMPORTED_FILE_COUNT: usize = 1_025;
+
+    let root = common::temp_artifact_path("laniusc_package_boundaries", "large_import_graph", None);
+    let source_root = root.join("src");
+    std::fs::create_dir_all(&source_root).expect("create large import source root");
+
+    for index in 0..IMPORTED_FILE_COUNT {
+        let module = format!("m{index:04}");
+        let next_import = (index + 1 < IMPORTED_FILE_COUNT)
+            .then(|| format!("import m{:04};\n", index + 1))
+            .unwrap_or_default();
+        std::fs::write(
+            source_root.join(format!("{module}.lani")),
+            format!("module {module};\n{next_import}pub const VALUE: i32 = {index};\n"),
+        )
+        .expect("write large import graph source");
+    }
+    let entry_path = root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        "module app::main;\nimport m0000;\nfn main() { return 0; }\n",
+    )
+    .expect("write large import graph entry");
+
+    let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
+        .expect("large import graph should load without a fixed file-count cap");
+    assert_eq!(manifest.files.len(), IMPORTED_FILE_COUNT + 1);
+    assert!(manifest.requires_bounded_compilation());
+
+    std::fs::remove_dir_all(root).expect("remove large import source root");
+}
+
+#[test]
+fn source_root_loader_resolves_deep_import_paths() {
     let root = common::temp_artifact_path("laniusc_package_boundaries", "deep_import", None);
     let source_root = root.join("src");
     std::fs::create_dir_all(&source_root).expect("create source root");
     let entry =
         common::TempArtifact::new("laniusc_package_boundaries", "deep_import", Some("lani"));
+    let segments = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let imported_path = source_root_module_file_path(&source_root, &segments);
+    std::fs::create_dir_all(imported_path.parent().unwrap())
+        .expect("create deep source-root module directory");
+    std::fs::write(
+        &imported_path,
+        "module a::b::c::d::e::f::g::h::i;\npub const VALUE: i32 = 1;\n",
+    )
+    .expect("write deep source-root module");
     entry.write_str(
         "module app::main;\nimport a::b::c::d::e::f::g::h::i;\nfn main() { return 0; }\n",
     );
 
-    let err = load_entry_with_source_root(entry.path(), &source_root)
-        .expect_err("source-root discovery should report over-deep path imports before lookup");
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0012");
-            let message = diagnostic.render();
-            assert!(message.contains("error[LNC0012]: import path too deep"));
-            assert!(message.contains(&entry.path().display().to_string()));
-            assert!(message.contains("import a::b::c::d::e::f::g::h::i;"));
-            assert!(message.contains("import path exceeds the current resolver depth limit"));
-            assert!(message.contains("source-root discovery supports at most eight"));
-            assert!(
-                !message.contains("GPU frontend error"),
-                "source-root path-depth failures should be structured diagnostics: {message}"
-            );
-        }
-        other => panic!("expected source-root import-depth diagnostic, got {other:?}"),
-    }
+    let source_pack = load_entry_with_source_root(entry.path(), &source_root)
+        .expect("source-root discovery should load arbitrary-depth imports");
+    assert_eq!(source_pack.sources.len(), 2);
 
     std::fs::remove_dir_all(&root).expect("remove deep import source root");
 }
 
 #[test]
-fn source_root_loader_resolves_import_paths_through_documented_depth_boundary() {
+fn source_root_loader_resolves_import_paths_without_a_depth_boundary() {
     let root = common::temp_artifact_path("laniusc_package_boundaries", "depth_boundary", None);
     let source_root = root.join("src");
     std::fs::create_dir_all(&source_root).expect("create source root");
 
-    for segment_count in 1..=8 {
+    for segment_count in 1..=16 {
         let segments = (0..segment_count)
             .map(|index| format!("m{index}"))
             .collect::<Vec<_>>();
@@ -6878,57 +6909,6 @@ fn source_root_loader_resolves_import_paths_through_documented_depth_boundary() 
             "manifest should include {segment_count}-segment imported source {}",
             canonical_imported_path.display()
         );
-    }
-
-    let too_deep_segments = (0..9)
-        .map(|index| format!("deep{index}"))
-        .collect::<Vec<_>>();
-    let too_deep_module_path = too_deep_segments.join("::");
-    let too_deep_imported_path = source_root_module_file_path(&source_root, &too_deep_segments);
-    std::fs::create_dir_all(
-        too_deep_imported_path
-            .parent()
-            .expect("deep imported source path should have a parent directory"),
-    )
-    .expect("create deep imported source directory");
-    std::fs::write(
-        &too_deep_imported_path,
-        format!("module {too_deep_module_path};\npub const VALUE: i32 = 9;\n"),
-    )
-    .expect("write too-deep imported source-root module");
-
-    let entry = common::TempArtifact::new(
-        "laniusc_package_boundaries",
-        "depth_boundary_too_deep",
-        Some("lani"),
-    );
-    let too_deep_import_line = format!("import {too_deep_module_path};");
-    entry.write_str(&format!(
-        "module app::main;\n{too_deep_import_line}\nfn main() {{ return 0; }}\n"
-    ));
-
-    let err = load_entry_path_manifest_with_source_root(entry.path(), &source_root)
-        .expect_err("source-root imports beyond the documented depth should fail before lookup");
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0012");
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("depth diagnostic should carry a primary label");
-            assert_eq!(
-                label.source_line.as_deref(),
-                Some(too_deep_import_line.as_str())
-            );
-            assert_eq!(label.line, 2);
-            assert_eq!(label.column, 8);
-            let rendered = diagnostic.render();
-            assert!(
-                !rendered.contains("missing source-root module"),
-                "over-deep imports should fail as a depth violation, not as a missing file: {rendered}"
-            );
-        }
-        other => panic!("expected source-root import-depth diagnostic, got {other:?}"),
     }
 
     std::fs::remove_dir_all(&root).expect("remove depth-boundary source root");

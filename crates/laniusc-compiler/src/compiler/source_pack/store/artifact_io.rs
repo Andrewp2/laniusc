@@ -545,6 +545,25 @@ pub(in crate::compiler) fn write_file_atomic_with_error(
     label: &str,
     error: impl Fn(String) -> CompileError,
 ) -> Result<(), CompileError> {
+    write_file_atomic_with_writer(path, label, error, |file, error| {
+        use std::io::Write;
+
+        file.write_all(bytes)
+            .map_err(|err| error(format!("write temporary {label}: {err}")))
+    })
+}
+
+/// Atomically replaces a file with content produced incrementally by `write`.
+///
+/// The callback writes to a same-directory temporary file. The final path is
+/// replaced only after the callback succeeds, so page-at-a-time producers do
+/// not expose partial artifacts.
+pub(in crate::compiler) fn write_file_atomic_with_writer<T>(
+    path: &Path,
+    label: &str,
+    error: impl Fn(String) -> CompileError,
+    write: impl FnOnce(&mut fs::File, &dyn Fn(String) -> CompileError) -> Result<T, CompileError>,
+) -> Result<T, CompileError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             error(format!(
@@ -564,12 +583,21 @@ pub(in crate::compiler) fn write_file_atomic_with_error(
     ));
     let tmp_path = path.with_file_name(tmp_file_name);
 
-    fs::write(&tmp_path, bytes).map_err(|err| {
+    let mut tmp_file = fs::File::create(&tmp_path).map_err(|err| {
         error(format!(
-            "write temporary {label} {}: {err}",
+            "create temporary {label} {}: {err}",
             tmp_path.display()
         ))
     })?;
+    let result = match write(&mut tmp_file, &error) {
+        Ok(result) => result,
+        Err(err) => {
+            drop(tmp_file);
+            let _ = fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+    };
+    drop(tmp_file);
     fs::rename(&tmp_path, path).map_err(|err| {
         let _ = fs::remove_file(&tmp_path);
         error(format!(
@@ -578,7 +606,7 @@ pub(in crate::compiler) fn write_file_atomic_with_error(
             tmp_path.display()
         ))
     })?;
-    Ok(())
+    Ok(result)
 }
 
 pub(in crate::compiler) fn serialize_store_json<T: serde::Serialize>(
@@ -737,5 +765,55 @@ pub(in crate::compiler) fn remove_artifact(
             "release source-pack {artifact_label} artifact {key:?} at {}: {err}",
             path.display()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod atomic_writer_tests {
+    use std::io::Write;
+
+    use super::*;
+
+    #[test]
+    fn incremental_atomic_writer_replaces_only_after_success() {
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-atomic-writer-{}-{}",
+            std::process::id(),
+            current_unix_nanos().expect("clock")
+        ));
+        fs::create_dir_all(&root).expect("temporary directory");
+        let path = root.join("artifact.bin");
+        fs::write(&path, b"old").expect("old artifact");
+
+        let failed: Result<(), CompileError> = write_file_atomic_with_writer(
+            &path,
+            "test artifact",
+            source_pack_artifact_store_error,
+            |file, _error| {
+                file.write_all(b"partial").expect("temporary write");
+                Err(source_pack_artifact_store_error("injected failure"))
+            },
+        );
+        assert!(failed.is_err());
+        assert_eq!(fs::read(&path).expect("preserved artifact"), b"old");
+
+        let written = write_file_atomic_with_writer(
+            &path,
+            "test artifact",
+            source_pack_artifact_store_error,
+            |file, error| {
+                file.write_all(b"page-1")
+                    .map_err(|err| error(err.to_string()))?;
+                file.write_all(b"page-2")
+                    .map_err(|err| error(err.to_string()))?;
+                Ok(12usize)
+            },
+        )
+        .expect("successful atomic write");
+        assert_eq!(written, 12);
+        assert_eq!(fs::read(&path).expect("new artifact"), b"page-1page-2");
+        assert_eq!(fs::read_dir(&root).expect("directory").count(), 1);
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
     }
 }

@@ -1,5 +1,8 @@
-// Publish token-indexed let-initializer records from HIR statement rows.
+// Publish token-indexed let-initializer records and per-function local bounds
+// from HIR statement rows. Expression contribution metadata consumes the
+// completed local bounds, so both facts are owned by this prepass.
 
+import atomics;
 import gpu_index;
 
 struct Params
@@ -15,15 +18,22 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> enclosing_fn;
 
 RWStructuredBuffer<uint> body_let_init_expr_by_decl_token;
+RWStructuredBuffer<uint> wasm_func_local_max_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_LET_STMT = 8u;
+static const uint HIR_STMT = 7u;
 static const uint HIR_EXPR = 14u;
+static const uint HIR_FOR_STMT = 30u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
+static const uint STMT_RECORD_KIND_FOR = 6u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -55,19 +65,50 @@ uint stmt_record_slot(uint node, uint slot)
         INVALID);
 }
 
+void publish_function_local(uint decl_token)
+{
+    if (!valid_token(decl_token))
+        return;
+    uint encoded_fn = enclosing_fn[decl_token];
+    uint owner_fn = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    if (!valid_token(owner_fn))
+        return;
+    uint prior = atomic_u32_compare_exchange(
+        wasm_func_local_max_by_token,
+        owner_fn,
+        INVALID,
+        decl_token);
+    if (prior != INVALID)
+        atomic_u32_max(wasm_func_local_max_by_token, owner_fn, decl_token);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
-    if (!valid_node(node) ||
-        hir_kind[node] != HIR_LET_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
+    if (!valid_node(node))
+        return;
+
+    uint stmt_kind = stmt_record_slot(node, 0u);
+    bool is_let = hir_kind[node] == HIR_LET_STMT && stmt_kind == STMT_RECORD_KIND_LET;
+    bool is_for =
+        (hir_kind[node] == HIR_FOR_STMT || hir_kind[node] == HIR_STMT) &&
+        stmt_kind == STMT_RECORD_KIND_FOR;
+    if (!is_let && !is_for)
+        return;
+    uint decl_token = stmt_record_slot(node, 1u);
+    publish_function_local(decl_token);
+    if (!is_let)
     {
+        uint iterable = stmt_record_slot(node, 2u);
+        uint resolved = valid_node(iterable) ? hir_expr_result_root_node[iterable] : INVALID;
+        if (valid_node(resolved))
+            iterable = resolved;
+        publish_function_local(valid_node(iterable) ? hir_token_end[iterable] : INVALID);
         return;
     }
 
-    uint decl_token = stmt_record_slot(node, 1u);
     uint init_expr = stmt_record_slot(node, 2u);
     if (valid_token(decl_token) &&
         valid_node(init_expr) &&

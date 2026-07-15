@@ -53,6 +53,13 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.path_dispatch_args",
         1,
     )?;
+    record_compute(
+        encoder,
+        &passes.modules_clear_path_prefix_max,
+        &state.bind_groups.clear_path_prefix_max,
+        "type_check.modules.clear_path_prefix_max",
+        1,
+    )?;
     record_compute_indirect(
         encoder,
         &passes.modules_count_path_segments,
@@ -74,6 +81,47 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &state.bind_groups.scatter_path_segments,
         "type_check.modules.scatter_path_segments",
         hir_active_dispatch_args,
+    )?;
+    record_compute(
+        encoder,
+        &passes.modules_path_prefix_dispatch_args,
+        &state.bind_groups.path_prefix_dispatch_args,
+        "type_check.modules.path_prefix_dispatch_args",
+        32,
+    )?;
+    for (round_i, round) in state.bind_groups.path_prefix_rounds.iter().enumerate() {
+        let offset = round_i as u64 * 3 * std::mem::size_of::<u32>() as u64;
+        record_compute_indirect_offset(
+            encoder,
+            &passes.modules_path_prefix_table_clear,
+            &round.clear,
+            "type_check.modules.path_prefix_table_clear",
+            &state.path_prefix_round_dispatch_args,
+            offset,
+        )?;
+        record_compute_indirect_offset(
+            encoder,
+            &passes.modules_path_prefix_table_insert,
+            &round.insert,
+            "type_check.modules.path_prefix_table_insert",
+            &state.path_prefix_round_dispatch_args,
+            offset,
+        )?;
+        record_compute_indirect_offset(
+            encoder,
+            &passes.modules_path_prefix_table_lookup,
+            &round.lookup,
+            "type_check.modules.path_prefix_table_lookup",
+            &state.path_prefix_round_dispatch_args,
+            offset,
+        )?;
+    }
+    record_compute_indirect(
+        encoder,
+        &passes.modules_path_prefix_finalize,
+        &state.bind_groups.path_prefix_finalize,
+        "type_check.modules.path_prefix_finalize",
+        &state.path_prefix_row_dispatch_args,
     )?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.paths.done");
     record_compute_indirect(
@@ -98,11 +146,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.scatter_module_records",
         hir_work.max(module_work),
     )?;
-    let module_key_work = state
-        .module_n_blocks
-        .saturating_mul(256)
-        .saturating_mul(MODULE_KEY_SEGMENT_ROW_WIDTH as u32)
-        .max(1);
+    let module_key_work = state.module_n_blocks.saturating_mul(256).max(1);
     record_compute(
         encoder,
         &passes.modules_build_module_keys,

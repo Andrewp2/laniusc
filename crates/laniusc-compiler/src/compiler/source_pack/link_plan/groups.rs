@@ -451,7 +451,7 @@ pub(in crate::compiler) fn reduce_link_group(
                 "stored hierarchical link group {group_index} job index overflows"
             ))
         })?;
-    let mut input_partition_count = 0usize;
+    let mut input_partition_span = None::<(usize, usize)>;
     let mut source_byte_count = 0usize;
     let mut source_file_count = 0usize;
     let mut source_line_count = 0usize;
@@ -472,13 +472,13 @@ pub(in crate::compiler) fn reduce_link_group(
                 input_group.level
             )));
         }
-        input_partition_count = input_partition_count
-            .checked_add(hierarchical_link_group_input_partition_count(&input_group))
-            .ok_or_else(|| {
-                library_partition_contract_error(format!(
-                    "stored hierarchical link group {group_index} partition count overflows"
-                ))
-            })?;
+        let child_span =
+            hierarchical_link_group_partition_span(store, schedule_index.target, &input_group)?;
+        extend_hierarchical_link_partition_span(
+            &mut input_partition_span,
+            child_span,
+            &format!("stored hierarchical link group {group_index}"),
+        )?;
         source_byte_count = source_byte_count
             .checked_add(input_group.source_byte_count)
             .ok_or_else(|| {
@@ -504,6 +504,19 @@ pub(in crate::compiler) fn reduce_link_group(
     }
     let input_link_group_indices =
         (first_input_group_index..input_group_end_index).collect::<Vec<_>>();
+    let (first_input_partition, last_input_partition) = input_partition_span.ok_or_else(|| {
+        library_partition_contract_error(format!(
+            "stored hierarchical link reduce group {group_index} has no partition span"
+        ))
+    })?;
+    let input_partition_count = last_input_partition
+        .checked_sub(first_input_partition)
+        .and_then(|distance| distance.checked_add(1))
+        .ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "stored hierarchical link group {group_index} partition count overflows"
+            ))
+        })?;
     let group = SourcePackHierarchicalLinkGroupPage {
         version: SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION,
         target: schedule_index.target,
@@ -611,6 +624,109 @@ pub(in crate::compiler) fn hierarchical_link_group_input_partition_count(
         .max(group.input_partition_indices.len())
 }
 
+/// Recovers the inclusive source-partition span represented by one link group.
+///
+/// Leaf groups retain exact partition indices. Compact reduce groups retain
+/// only a count, so their boundaries are recovered through the first and last
+/// child paths. This keeps persisted metadata bounded while distinguishing
+/// multiple leaf batches for one partition from distinct partitions.
+pub(in crate::compiler) fn hierarchical_link_group_partition_span(
+    store: &FilesystemArtifactStore,
+    target: SourcePackArtifactTarget,
+    group: &SourcePackHierarchicalLinkGroupPage,
+) -> Result<(usize, usize), CompileError> {
+    match group.kind {
+        SourcePackHierarchicalLinkGroupKind::Leaf => {
+            let first = *group.input_partition_indices.first().ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link leaf group {} has no partition boundary",
+                    group.group_index
+                ))
+            })?;
+            let last = *group.input_partition_indices.last().unwrap();
+            let expected_count = last
+                .checked_sub(first)
+                .and_then(|distance| distance.checked_add(1))
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "hierarchical link leaf group {} partition span overflows",
+                        group.group_index
+                    ))
+                })?;
+            if expected_count != hierarchical_link_group_input_partition_count(group) {
+                return Err(library_partition_contract_error(format!(
+                    "hierarchical link leaf group {} has a non-contiguous partition span",
+                    group.group_index
+                )));
+            }
+            Ok((first, last))
+        }
+        SourcePackHierarchicalLinkGroupKind::Reduce => {
+            let first_group_index = *group.input_link_group_indices.first().ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} has no first child",
+                    group.group_index
+                ))
+            })?;
+            let last_group_index = *group.input_link_group_indices.last().unwrap();
+            let first_group =
+                store.load_hierarchical_link_group_page_for_target(target, first_group_index)?;
+            let last_group = if last_group_index == first_group_index {
+                first_group.clone()
+            } else {
+                store.load_hierarchical_link_group_page_for_target(target, last_group_index)?
+            };
+            let first = hierarchical_link_group_partition_span(store, target, &first_group)?.0;
+            let last = hierarchical_link_group_partition_span(store, target, &last_group)?.1;
+            let expected_count = last
+                .checked_sub(first)
+                .and_then(|distance| distance.checked_add(1))
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "hierarchical link reduce group {} partition span overflows",
+                        group.group_index
+                    ))
+                })?;
+            if expected_count != hierarchical_link_group_input_partition_count(group) {
+                return Err(library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} records {} partitions but boundary descendants cover {}",
+                    group.group_index,
+                    hierarchical_link_group_input_partition_count(group),
+                    expected_count
+                )));
+            }
+            Ok((first, last))
+        }
+    }
+}
+
+/// Extends an ordered inclusive partition span with one contiguous child span.
+///
+/// Adjacent spans cover distinct partitions. Equal boundaries represent the
+/// valid case where batching split one partition across multiple link groups.
+pub(in crate::compiler) fn extend_hierarchical_link_partition_span(
+    span: &mut Option<(usize, usize)>,
+    child_span: (usize, usize),
+    context: &str,
+) -> Result<(), CompileError> {
+    *span = Some(match *span {
+        None => child_span,
+        Some((first, last)) => {
+            let adjacent = last.checked_add(1).ok_or_else(|| {
+                library_partition_contract_error(format!("{context} partition span overflows"))
+            })?;
+            if child_span.0 != last && child_span.0 != adjacent {
+                return Err(library_partition_contract_error(format!(
+                    "{context} has non-contiguous child partition spans ending at {last} and starting at {}",
+                    child_span.0
+                )));
+            }
+            (first, last.max(child_span.1))
+        }
+    });
+    Ok(())
+}
+
 /// Returns the effective frontend-input count for a hierarchical link group.
 ///
 /// The scalar count and explicit frontend job index list are both considered so
@@ -702,6 +818,31 @@ mod tests {
         );
 
         assert!(result.is_err());
+        std::fs::remove_dir_all(root).expect("remove link-plan group test store");
+    }
+
+    #[test]
+    fn reduce_link_group_counts_duplicate_leaf_partition_once() {
+        let (root, store) = temp_store("duplicate_leaf_partition");
+        store
+            .store_hierarchical_link_group_page(&leaf_group(0, 4, 0, 8))
+            .expect("store first leaf batch");
+        store
+            .store_hierarchical_link_group_page(&leaf_group(1, 5, 0, 8))
+            .expect("store second leaf batch");
+
+        let group = reduce_link_group(
+            &store,
+            &schedule_index(),
+            SourcePackJobBatchLimits::default().normalized(),
+            2,
+            1,
+            0,
+            2,
+        )
+        .expect("reduce duplicate partition leaves");
+
+        assert_eq!(group.input_partition_count, 1);
         std::fs::remove_dir_all(root).expect("remove link-plan group test store");
     }
 

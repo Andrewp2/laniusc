@@ -43,6 +43,7 @@ static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint ARG_WG_SIZE = 256u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -139,6 +140,8 @@ uint direct_call_tail_len(uint kind, uint4 meta, uint4 aux)
         return call_tail + 1u;
     if (kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64)
         return call_tail + 3u;
+    if (kind == BODY_FRAGMENT_DIRECT_CALL_VOID)
+        return call_tail;
     if (kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
         return local_index_len(meta.y) + call_tail + 1u + local_index_len(meta.y);
     return 0u;
@@ -147,7 +150,8 @@ uint direct_call_tail_len(uint kind, uint4 meta, uint4 aux)
 uint direct_fragment_owner_fn(uint kind, uint4 meta)
 {
     return kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
-           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID
                ? node_enclosing_fn_token(meta.y)
                : node_enclosing_fn_token(meta.z);
 }
@@ -166,7 +170,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         kind != BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 &&
         kind != BODY_FRAGMENT_LET_DIRECT_CALL_I32 &&
         kind != BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 &&
-        kind != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
+        kind != BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 &&
+        kind != BODY_FRAGMENT_DIRECT_CALL_VOID)
     {
         return;
     }

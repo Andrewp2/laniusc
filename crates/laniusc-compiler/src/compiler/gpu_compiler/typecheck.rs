@@ -189,7 +189,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
                     let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags = parser_capacity.parser_feature_flags;
+                    let parser_feature_flags =
+                        parser_capacity.parser_feature_flags | bufs.parser_feature_flags_value;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.parser-boundary.encoder"),
@@ -373,7 +374,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
                     let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags = parser_capacity.parser_feature_flags;
+                    let parser_feature_flags =
+                        parser_capacity.parser_feature_flags | bufs.parser_feature_flags_value;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),
@@ -607,7 +609,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             // status scratch is consumed and before method-name token scratch
             // is cleared/filled.
             type_decl_generic_param_count: &parse_bufs.out_headers,
-            type_decl_generic_param_count_by_node: &parse_bufs.hir_type_path_leaf_value_a,
+            // Expression-root pointer jumping has finished at the parser/typecheck
+            // boundary. Unlike the parser list workspaces, this allocation is not
+            // also exposed as retained module-path state.
+            type_decl_generic_param_count_by_node: &parse_bufs.hir_expr_result_root_scratch_node,
             type_instance_head_token: &parse_bufs.default_token_file_id,
             // Module declaration file/end rows are consumed by the upfront
             // module-path pipeline before type-instance argument spans are
@@ -833,13 +838,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
         GpuTypeCheckCode::UnsupportedImport => {
             unsupported_import_diagnostic(path, source, start, len)
         }
-        GpuTypeCheckCode::ImportPathTooDeep => {
-            import_path_too_deep_diagnostic(path, source, start, len)
-        }
         GpuTypeCheckCode::DuplicateModule => duplicate_module_diagnostic(path, source, start, len),
-        GpuTypeCheckCode::ModulePathTooDeep => {
-            module_path_too_deep_diagnostic(path, source, start, len)
-        }
         GpuTypeCheckCode::InvalidModulePath => {
             invalid_module_path_diagnostic(path, source, start, len)
         }
@@ -1118,27 +1117,6 @@ fn unsupported_import_diagnostic(
     )
 }
 
-fn import_path_too_deep_diagnostic(
-    path: &Path,
-    source: &str,
-    start: usize,
-    len: usize,
-) -> CompileError {
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0012", "import path too deep")
-            .with_primary_label(diagnostic_label_from_source_span(
-                path,
-                source,
-                start,
-                len,
-                "import path exceeds the current resolver depth limit",
-            ))
-            .with_note(
-                "this compiler currently supports at most eight module path segments in an import",
-            ),
-    )
-}
-
 fn duplicate_module_diagnostic(
     path: &Path,
     source: &str,
@@ -1156,27 +1134,6 @@ fn duplicate_module_diagnostic(
             ))
             .with_note(
                 "module identity comes from parsed module declarations; each loaded source pack must declare every module path at most once",
-            ),
-    )
-}
-
-fn module_path_too_deep_diagnostic(
-    path: &Path,
-    source: &str,
-    start: usize,
-    len: usize,
-) -> CompileError {
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0014", "module path too deep")
-            .with_primary_label(diagnostic_label_from_source_span(
-                path,
-                source,
-                start,
-                len,
-                "module path exceeds the current resolver depth limit",
-            ))
-            .with_note(
-                "this compiler currently supports at most eight module path segments in a module declaration",
             ),
     )
 }
@@ -1205,27 +1162,18 @@ fn unresolved_identifier_diagnostic(
     source: &str,
     start: usize,
     len: usize,
-    detail: u32,
+    _detail: u32,
 ) -> CompileError {
-    const TYPECHECK_DETAIL_PATH_TOO_DEEP: u32 = 0xffffff05;
-    let (label, note) = if detail == TYPECHECK_DETAIL_PATH_TOO_DEEP {
-        (
-            "value path exceeds the current resolver depth limit",
-            "this compiler currently supports at most eight module path segments before the leaf value",
-        )
-    } else {
-        (
-            "not found in this scope",
-            "declare the value before using it or import its defining module",
-        )
-    };
-
     CompileError::Diagnostic(
         Diagnostic::error("LNC0005", "unresolved identifier")
             .with_primary_label(diagnostic_label_from_source_span(
-                path, source, start, len, label,
+                path,
+                source,
+                start,
+                len,
+                "not found in this scope",
             ))
-            .with_note(note),
+            .with_note("declare the value before using it or import its defining module"),
     )
 }
 
@@ -1234,27 +1182,18 @@ fn unknown_type_diagnostic(
     source: &str,
     start: usize,
     len: usize,
-    detail: u32,
+    _detail: u32,
 ) -> CompileError {
-    const TYPECHECK_DETAIL_PATH_TOO_DEEP: u32 = 0xffffff05;
-    let (label, note) = if detail == TYPECHECK_DETAIL_PATH_TOO_DEEP {
-        (
-            "type path exceeds the current resolver depth limit",
-            "this compiler currently supports at most eight module path segments before the leaf type",
-        )
-    } else {
-        (
-            "type not found",
-            "declare the type before using it or import its defining module",
-        )
-    };
-
     CompileError::Diagnostic(
         Diagnostic::error("LNC0007", "unknown type")
             .with_primary_label(diagnostic_label_from_source_span(
-                path, source, start, len, label,
+                path,
+                source,
+                start,
+                len,
+                "type not found",
             ))
-            .with_note(note),
+            .with_note("declare the type before using it or import its defining module"),
     )
 }
 
@@ -1274,7 +1213,6 @@ fn trait_bound_diagnostic(
     const PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND: u32 = 18;
     const PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW: u32 = 21;
     const PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION: u32 = 22;
-    const PREDICATE_STATUS_BOUND_PATH_TOO_DEEP: u32 = 29;
 
     let (diagnostic_code, message, label, note) = match code {
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
@@ -1347,16 +1285,6 @@ fn trait_bound_diagnostic(
                 "unsatisfied trait bound",
                 "trait bound relation is not supported here",
                 "this generic type pattern is not supported in this position yet; the compiler rejects it rather than matching only the visible top-level type",
-            )
-        }
-        GpuTypeCheckCode::TraitBoundUnsatisfied
-            if detail == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP =>
-        {
-            (
-                "LNC0008",
-                "unsatisfied trait bound",
-                "trait bound path exceeds the current trait path limit",
-                "this compiler currently resolves at most eight module path segments before the trait or bound-argument leaf",
             )
         }
         GpuTypeCheckCode::TraitBoundUnsatisfied => (
@@ -1470,10 +1398,6 @@ fn trait_impl_diagnostic(
         28 => (
             "trait impl header uses generic trait arguments that are not supported here",
             "use concrete non-nested trait arguments in impl headers for now",
-        ),
-        29 => (
-            "trait impl header path exceeds the current trait path limit",
-            "this compiler currently resolves at most eight module path segments before the trait or argument leaf",
         ),
         _ => return None,
     };

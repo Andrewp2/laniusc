@@ -134,7 +134,6 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) node_inst_gen_node_record: &'a wgpu::Buffer,
     pub(super) node_inst_gen_input_status: &'a wgpu::Buffer,
     pub(super) active_node_inst_gen_dispatch_args: &'a wgpu::Buffer,
-    pub(super) active_node_inst_gen_aggregate_copy_dispatch_args: &'a wgpu::Buffer,
     pub(super) short_circuit_rhs_node_a: &'a wgpu::Buffer,
     pub(super) short_circuit_rhs_node_b: &'a wgpu::Buffer,
     pub(super) short_circuit_rhs_link_a: &'a wgpu::Buffer,
@@ -237,7 +236,6 @@ pub(super) fn create_inst_plan_bind_groups(
         node_inst_gen_node_record,
         node_inst_gen_input_status,
         active_node_inst_gen_dispatch_args,
-        active_node_inst_gen_aggregate_copy_dispatch_args,
         short_circuit_rhs_node_a,
         short_circuit_rhs_node_b,
         short_circuit_rhs_link_a,
@@ -973,16 +971,8 @@ pub(super) fn create_inst_plan_bind_groups(
                 node_inst_gen_input_status.as_entire_binding(),
             ),
             (
-                "x86_node_inst_count_status",
-                node_inst_count_status.as_entire_binding(),
-            ),
-            (
                 "active_node_inst_gen_dispatch_args",
                 active_node_inst_gen_dispatch_args.as_entire_binding(),
-            ),
-            (
-                "active_node_inst_gen_aggregate_copy_dispatch_args",
-                active_node_inst_gen_aggregate_copy_dispatch_args.as_entire_binding(),
             ),
         ],
     )?;

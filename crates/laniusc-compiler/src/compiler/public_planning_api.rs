@@ -14,6 +14,7 @@ pub use inputs::{
     load_entry_with_source_roots,
     load_entry_with_stdlib,
     load_explicit_source_libraries_from_paths,
+    load_explicit_source_pack_from_path_manifest,
     load_explicit_source_pack_manifest_from_paths,
     load_explicit_source_pack_path_manifest_from_paths,
 };

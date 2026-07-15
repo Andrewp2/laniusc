@@ -12,6 +12,94 @@ const HEADER_U32S: usize = 10;
 const FUNCTION_U32S: usize = 6;
 const RELOCATION_U32S: usize = 4;
 const SYMBOL_U32S: usize = 8;
+pub(crate) const GPU_WASM_OBJECT_HEADER_BYTES: usize = 8 + HEADER_U32S * 4;
+
+/// Fixed-size object layout available without loading function payloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuWasmRelocatableObjectLayout {
+    pub version: u32,
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub entry_function: Option<u32>,
+    pub function_count: u32,
+    pub type_byte_len: u32,
+    pub body_byte_len: u32,
+    pub relocation_count: u32,
+    pub symbol_count: u32,
+    pub identity_byte_len: u32,
+    pub serialized_byte_len: u64,
+}
+
+impl GpuWasmRelocatableObjectLayout {
+    pub(crate) fn from_header_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < GPU_WASM_OBJECT_HEADER_BYTES || bytes[..8] != GPU_WASM_OBJECT_MAGIC {
+            return Err("Wasm object header is missing or invalid".to_string());
+        }
+        let mut cursor = 8;
+        let version = read_u32(bytes, &mut cursor)?;
+        if version != GPU_WASM_OBJECT_VERSION {
+            return Err(format!(
+                "Wasm object version {version} is unsupported; expected {GPU_WASM_OBJECT_VERSION}"
+            ));
+        }
+        let library_id = read_u32(bytes, &mut cursor)?;
+        let unit_id = read_u32(bytes, &mut cursor)?;
+        let entry_function = match read_u32(bytes, &mut cursor)? {
+            u32::MAX => None,
+            index => Some(index),
+        };
+        let function_count = read_u32(bytes, &mut cursor)?;
+        let type_byte_len = read_u32(bytes, &mut cursor)?;
+        let body_byte_len = read_u32(bytes, &mut cursor)?;
+        let relocation_count = read_u32(bytes, &mut cursor)?;
+        let symbol_count = read_u32(bytes, &mut cursor)?;
+        let identity_byte_len = read_u32(bytes, &mut cursor)?;
+        if entry_function.is_some_and(|index| index >= function_count) {
+            return Err(format!(
+                "Wasm object entry function {} is out of range for {function_count} functions",
+                entry_function.expect("checked as present")
+            ));
+        }
+        let serialized_byte_len = (GPU_WASM_OBJECT_HEADER_BYTES as u64)
+            .checked_add(function_count as u64 * FUNCTION_U32S as u64 * 4)
+            .and_then(|len| len.checked_add(type_byte_len as u64))
+            .and_then(|len| len.checked_add(body_byte_len as u64))
+            .and_then(|len| len.checked_add(relocation_count as u64 * RELOCATION_U32S as u64 * 4))
+            .and_then(|len| len.checked_add(symbol_count as u64 * SYMBOL_U32S as u64 * 4))
+            .and_then(|len| len.checked_add(identity_byte_len as u64))
+            .ok_or_else(|| "Wasm object serialized length overflows u64".to_string())?;
+        Ok(Self {
+            version,
+            library_id,
+            unit_id,
+            entry_function,
+            function_count,
+            type_byte_len,
+            body_byte_len,
+            relocation_count,
+            symbol_count,
+            identity_byte_len,
+            serialized_byte_len,
+        })
+    }
+
+    /// Byte ranges of the variable-sized type and body payload columns.
+    pub(crate) fn payload_byte_ranges(
+        &self,
+    ) -> Result<(std::ops::Range<u64>, std::ops::Range<u64>), String> {
+        let function_bytes = self.function_count as u64 * FUNCTION_U32S as u64 * 4;
+        let type_start = (GPU_WASM_OBJECT_HEADER_BYTES as u64)
+            .checked_add(function_bytes)
+            .ok_or_else(|| "Wasm object type payload offset overflows u64".to_string())?;
+        let type_end = type_start
+            .checked_add(self.type_byte_len as u64)
+            .ok_or_else(|| "Wasm object type payload end overflows u64".to_string())?;
+        let body_end = type_end
+            .checked_add(self.body_byte_len as u64)
+            .ok_or_else(|| "Wasm object body payload end overflows u64".to_string())?;
+        Ok((type_start..type_end, type_end..body_end))
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -511,6 +599,20 @@ mod tests {
     fn object_round_trips() {
         let object = fixture();
         let bytes = object.to_bytes().unwrap();
+        let layout = GpuWasmRelocatableObjectLayout::from_header_bytes(
+            &bytes[..GPU_WASM_OBJECT_HEADER_BYTES],
+        )
+        .expect("parse layout");
+        assert_eq!(layout.function_count as usize, object.functions.len());
+        assert_eq!(layout.type_byte_len as usize, object.type_bytes.len());
+        assert_eq!(layout.body_byte_len as usize, object.body_bytes.len());
+        assert_eq!(layout.relocation_count as usize, object.relocations.len());
+        assert_eq!(layout.symbol_count as usize, object.symbols.len());
+        assert_eq!(
+            layout.identity_byte_len as usize,
+            object.identity_bytes.len()
+        );
+        assert_eq!(layout.serialized_byte_len as usize, bytes.len());
         assert_eq!(
             GpuWasmRelocatableObject::from_bytes(&bytes).unwrap(),
             object

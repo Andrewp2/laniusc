@@ -1,10 +1,11 @@
 // Shared semantic classification for compact module/import/declaration/path rows.
 
+import generated_parse_production_ids;
+
 static const uint MODULE_RECORD_INVALID = 0xffffffffu;
 
 static const uint MODULE_HIR_TYPE = 5u;
 static const uint MODULE_HIR_PATH_EXPR = 33u;
-static const uint MODULE_PROD_PATH = 47u;
 
 static const uint MODULE_ITEM_MODULE = 1u;
 static const uint MODULE_ITEM_IMPORT = 2u;
@@ -27,6 +28,7 @@ static const uint MODULE_PATH_MODULE_DECL = 1u;
 static const uint MODULE_PATH_IMPORT = 2u;
 static const uint MODULE_PATH_VALUE = 3u;
 static const uint MODULE_PATH_TYPE = 4u;
+static const uint MODULE_PATH_BOUND_TYPE = 5u;
 
 public static const uint MODULE_RECORD_FLAG_MODULE = 1u << 0u;
 public static const uint MODULE_RECORD_FLAG_IMPORT = 1u << 1u;
@@ -77,12 +79,15 @@ uint module_candidate_path_kind(ModuleRecordCandidate row, uint n_tokens)
         module_valid_span(row.candidate_item_path_start, row.candidate_item_path_end, n_tokens))
         return MODULE_PATH_IMPORT;
     if (row.candidate_hir_kind == MODULE_HIR_PATH_EXPR &&
-        row.candidate_node_kind == MODULE_PROD_PATH &&
+        row.candidate_node_kind == PROD_PATH &&
         module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
         return MODULE_PATH_VALUE;
     if (row.candidate_hir_kind == MODULE_HIR_TYPE &&
         module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
         return MODULE_PATH_TYPE;
+    if (row.candidate_node_kind == PROD_BOUND_TYPE_IDENT &&
+        module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
+        return MODULE_PATH_BOUND_TYPE;
     return MODULE_PATH_NONE;
 }
 

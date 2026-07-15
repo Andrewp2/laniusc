@@ -14,7 +14,10 @@ void publish_let_host_call(uint node, uint token, uint owner_fn, uint len, uint4
 void publish_let_basic_host_call(uint node, uint token, uint owner_fn, uint len, uint4 meta, uint4 aux)
 {
     publish_let_host_call(node, token, owner_fn, len, meta, aux);
-    publish_body_features(BODY_FEATURE_HOST | BODY_FEATURE_HOST_BASIC);
+    publish_body_features(
+        BODY_FEATURE_HOST |
+        BODY_FEATURE_HOST_BASIC |
+        BODY_FEATURE_MEMBER_EXPR_SCATTER);
 }
 
 void validate_main_let_host(uint node, uint token)

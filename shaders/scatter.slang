@@ -153,67 +153,6 @@ public bool reserve_active_counter_slot(
     return reserve_counter_slot(counters, counter_i, capacity, slot);
 }
 
-public uint local_same_key_rank<
-    T,
-    TEquality: IScatterKeyEquality<T>,
-    let GSIZE: int>(
-    uint lane,
-    T key,
-    inout T local_keys[GSIZE])
-{
-    local_keys[lane] = key;
-    GroupMemoryBarrierWithGroupSync();
-
-    uint rank = 0u;
-    for (uint j = 0u; j < uint(GSIZE); j += 1u)
-    {
-        if (j < lane && TEquality.equal(local_keys[j], key))
-            rank += 1u;
-    }
-    GroupMemoryBarrierWithGroupSync();
-    return rank;
-}
-
-public void stable_radix_scatter_block<
-    T,
-    TSource: IStableRadixScatterSource<T>,
-    TSink: IScatterSink<T>,
-    let GSIZE: int>(
-    uint block_idx,
-    uint lane,
-    uint n_blocks,
-    uint key_step,
-    uint bucket_count,
-    StructuredBuffer<uint> radix_bucket_base,
-    StructuredBuffer<uint> radix_block_bucket_prefix,
-    inout uint local_radix_keys[GSIZE])
-{
-    if (block_idx >= n_blocks)
-        return;
-
-    uint active_count = TSource.active_count();
-    uint order_i = block_idx * uint(GSIZE) + lane;
-    T value = TSource.inactive_value();
-    uint key = SCATTER_INACTIVE_KEY;
-    if (order_i < active_count)
-    {
-        value = TSource.ordered_value(order_i);
-        key = TSource.radix_key(value, key_step);
-    }
-
-    uint rank = local_same_key_rank<uint, ScatterU32KeyEquality, GSIZE>(
-        lane,
-        key,
-        local_radix_keys);
-    if (order_i >= active_count)
-        return;
-
-    uint prefix_slot = radix_block_bucket_slot(block_idx, key, bucket_count);
-    uint block_prefix = radix_block_bucket_prefix[prefix_slot];
-    uint dst = stable_radix_dst(radix_bucket_base[key], block_prefix, rank);
-    scatter_emit<T, TSink>(dst, active_count, value);
-}
-
 public bool first_reservation(uint prior_count)
 {
     return prior_count == 0u;

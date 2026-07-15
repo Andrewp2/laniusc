@@ -144,6 +144,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_expr_result_root_scratch_node.as_entire_binding(),
             ),
             (
+                "hir_expr_parent_node".into(),
+                b.hir_expr_parent_node.as_entire_binding(),
+            ),
+            (
+                "hir_expr_forest_root_node".into(),
+                b.hir_expr_forest_root_node.as_entire_binding(),
+            ),
+            (
+                "hir_expr_forest_status".into(),
+                b.hir_expr_forest_status.as_entire_binding(),
+            ),
+            (
                 "hir_stmt_record".into(),
                 b.hir_stmt_record.as_entire_binding(),
             ),

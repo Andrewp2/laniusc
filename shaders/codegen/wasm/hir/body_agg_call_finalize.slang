@@ -47,6 +47,7 @@ static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint ARG_WG_SIZE = 256u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -149,6 +150,8 @@ uint direct_call_tail_len(uint kind, uint4 meta, uint4 aux, uint old_len)
     }
     if (kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64)
         return call_tail + 3u;
+    if (kind == BODY_FRAGMENT_DIRECT_CALL_VOID)
+        return call_tail;
     if (kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32)
         return local_index_len(meta.y) + call_tail + 1u + local_index_len(meta.y);
     if (kind == BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 ||
@@ -169,7 +172,8 @@ bool direct_call_fragment_kind(uint kind)
            kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 ||
-           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32;
+           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID;
 }
 
 uint direct_fragment_owner_fn(uint kind, uint4 meta)
@@ -177,7 +181,8 @@ uint direct_fragment_owner_fn(uint kind, uint4 meta)
     return kind == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
-           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID
                ? node_enclosing_fn_token(meta.y)
                : node_enclosing_fn_token(meta.z);
 }

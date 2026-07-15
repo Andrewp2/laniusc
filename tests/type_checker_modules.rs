@@ -11,10 +11,7 @@ use laniusc_compiler::{
             SourcePackJobPhase,
             SourcePackLinkObjectBatch,
         },
-        wasm::{
-            GpuWasmRelocatableObject,
-            GpuWasmRelocationTargetKind,
-        },
+        wasm::{GpuWasmRelocatableObject, GpuWasmRelocationTargetKind},
         x86::{GpuX86ObjectSection, GpuX86RelocatableObject, GpuX86RelocationTargetKind},
     },
     compiler::{
@@ -1286,8 +1283,7 @@ fn bounded_wasm_executor_links_persisted_cross_unit_objects() {
 pub fn seven() -> i32 { return 7; }
 "#,
     );
-    let source =
-        common::TempArtifact::new("laniusc_bounded_wasm_object", "app", Some("lanius"));
+    let source = common::TempArtifact::new("laniusc_bounded_wasm_object", "app", Some("lanius"));
     source.write_str(
         r#"module app::main;
 import core::api;
@@ -1459,8 +1455,7 @@ fn main() -> i32 { return seven(); }
     .expect("bounded Wasm executor should link cross-unit objects");
     let artifact_root = result;
 
-    let app_object_path =
-        artifact_root.join("gpu-source-pack/wasm/codegen-object/job-2.lnwo");
+    let app_object_path = artifact_root.join("gpu-source-pack/wasm/codegen-object/job-2.lnwo");
     let app_object = GpuWasmRelocatableObject::from_bytes(
         &std::fs::read(&app_object_path).expect("read persisted app Wasm object"),
     )
@@ -1997,36 +1992,24 @@ fn main() { return 0; }
 }
 
 #[test]
-fn type_checker_deep_import_path_reports_stable_diagnostic() {
-    let source = r#"module app::main;
+fn type_checker_resolves_imports_beyond_the_legacy_path_depth() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"module a::b::c::d::e::f::g::h::i;
+pub fn answer() -> i32 { return 42; }
+"#,
+        r#"module app::main;
 import a::b::c::d::e::f::g::h::i;
-fn main() { return 0; }
-"#;
-
-    match common::type_check_source_pack_with_timeout(&[source]) {
-        Ok(()) => panic!("over-deep import should fail GPU type checking"),
-        Err(CompileError::Diagnostic(diagnostic)) => {
-            assert_eq!(diagnostic.code, "LNC0012");
-            let rendered = diagnostic.render();
-            assert!(rendered.contains("error[LNC0012]: import path too deep"));
-            assert!(rendered.contains("<source pack file 0>:2:8"));
-            assert!(rendered.contains("import a::b::c::d::e::f::g::h::i;"));
-            assert!(rendered.contains("exceeds the current resolver depth limit"));
-            assert!(!rendered.contains("GPU type check rejected"));
-        }
-        Err(CompileError::GpuTypeCheck(message)) => {
-            panic!("over-deep import should report LNC0012, got raw GPU error: {message}");
-        }
-        Err(other) => panic!("expected import-depth diagnostic, got {other:?}"),
-    }
+fn main() -> i32 { return answer(); }
+"#,
+    ]);
 }
 
 #[test]
 fn type_checker_duplicate_source_pack_module_reports_stable_diagnostic() {
-    let first = r#"module core::math;
+    let first = r#"module a::b::c::d::e::f::g::h::i;
 pub fn one() -> i32 { return 1; }
 "#;
-    let duplicate = r#"module core::math;
+    let duplicate = r#"module a::b::c::d::e::f::g::h::i;
 pub fn two() -> i32 { return 2; }
 "#;
 
@@ -2037,7 +2020,7 @@ pub fn two() -> i32 { return 2; }
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0013]: duplicate module declaration"));
             assert!(rendered.contains("<source pack file 1>:1:8"));
-            assert!(rendered.contains("module core::math;"));
+            assert!(rendered.contains("module a::b::c::d::e::f::g::h::i;"));
             assert!(rendered.contains("already declared in the source pack"));
             assert!(!rendered.contains("GPU type check rejected"));
         }
@@ -2049,90 +2032,95 @@ pub fn two() -> i32 { return 2; }
 }
 
 #[test]
-fn type_checker_deep_module_path_reports_stable_diagnostic() {
-    let source = r#"module a::b::c::d::e::f::g::h::i;
-fn main() { return 0; }
-"#;
-
-    match common::type_check_source_pack_with_timeout(&[source]) {
-        Ok(()) => panic!("over-deep module path should fail GPU type checking"),
-        Err(CompileError::Diagnostic(diagnostic)) => {
-            assert_eq!(diagnostic.code, "LNC0014");
-            let rendered = diagnostic.render();
-            assert!(rendered.contains("error[LNC0014]: module path too deep"));
-            assert!(rendered.contains("<source pack file 0>:1:8"));
-            assert!(rendered.contains("module a::b::c::d::e::f::g::h::i;"));
-            assert!(rendered.contains("exceeds the current resolver depth limit"));
-            assert!(!rendered.contains("GPU type check rejected"));
-        }
-        Err(CompileError::GpuTypeCheck(message)) => {
-            panic!("over-deep module path should report LNC0014, got raw GPU error: {message}");
-        }
-        Err(other) => panic!("expected module-depth diagnostic, got {other:?}"),
-    }
+fn type_checker_distinguishes_deep_paths_with_a_long_common_prefix() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"module a::b::c::d::e::f::g::h::i::left;
+pub fn from_left() -> i32 { return 1; }
+"#,
+        r#"module a::b::c::d::e::f::g::h::i::right;
+pub fn from_right() -> i32 { return 2; }
+"#,
+        r#"module app::main;
+import a::b::c::d::e::f::g::h::i::left;
+import a::b::c::d::e::f::g::h::i::right;
+fn main() -> i32 { return from_left() + from_right(); }
+"#,
+    ]);
 }
 
 #[test]
-fn type_checker_deep_qualified_type_path_reports_stable_diagnostic() {
+fn type_checker_accepts_modules_beyond_the_legacy_path_depth() {
+    let source = r#"module a::b::c::d::e::f::g::h::i;
+fn main() { return 0; }
+"#;
+    assert_gpu_type_check_pack_accepts(&[source]);
+}
+
+#[test]
+fn semantic_interface_exports_arbitrary_depth_module_segments() {
+    let artifact = common::semantic_interface_with_timeout(
+        41,
+        &[r#"module a::b::c::d::e::f::g::h::i;
+pub fn answer() -> i32 { return 42; }
+"#],
+    )
+    .expect("deep module interface should be materialized on the GPU");
+    assert_eq!(artifact.modules.len(), 1);
+    let module = artifact.modules[0];
+    let first = module.first_segment as usize;
+    let end = first + module.segment_count as usize;
+    let path = artifact.module_segments[first..end]
+        .iter()
+        .map(|segment| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                segment.name_byte_start,
+                segment.name_byte_len,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(path, ["a", "b", "c", "d", "e", "f", "g", "h", "i"]);
+}
+
+#[test]
+fn type_checker_resolves_qualified_types_beyond_the_legacy_path_depth() {
+    let declaration = r#"module a::b::c::d::e::f::g::h::i;
+pub type Thing = i32;
+"#;
     let source = r#"module app::main;
+import a::b::c::d::e::f::g::h::i;
 fn main() {
     let value: a::b::c::d::e::f::g::h::i::Thing = 0;
     return 0;
 }
 "#;
-
-    match common::type_check_source_pack_with_timeout(&[source]) {
-        Ok(()) => panic!("over-deep qualified type path should fail GPU type checking"),
-        Err(CompileError::Diagnostic(diagnostic)) => {
-            assert_eq!(diagnostic.code, "LNC0007");
-            let rendered = diagnostic.render();
-            assert!(rendered.contains("error[LNC0007]: unknown type"));
-            assert!(rendered.contains("let value: a::b::c::d::e::f::g::h::i::Thing = 0;"));
-            assert!(rendered.contains("type path exceeds the current resolver depth limit"));
-            assert!(
-                rendered.contains("before the leaf type"),
-                "diagnostic should explain the qualified-type path width:\n{rendered}"
-            );
-            assert!(!rendered.contains("GPU type check rejected"));
-        }
-        Err(CompileError::GpuTypeCheck(message)) => {
-            panic!(
-                "over-deep qualified type path should report LNC0007, got raw GPU error: {message}"
-            );
-        }
-        Err(other) => panic!("expected qualified type-path depth diagnostic, got {other:?}"),
-    }
+    assert_gpu_type_check_pack_accepts(&[declaration, source]);
 }
 
 #[test]
-fn type_checker_deep_qualified_value_path_reports_stable_diagnostic() {
+fn type_checker_resolves_qualified_values_beyond_the_legacy_path_depth() {
+    let declaration = r#"module a::b::c::d::e::f::g::h::i;
+pub fn value() -> i32 { return 7; }
+"#;
     let source = r#"module app::main;
+import a::b::c::d::e::f::g::h::i;
 fn main() {
-    return a::b::c::d::e::f::g::h::i::value;
+    return a::b::c::d::e::f::g::h::i::value();
 }
 "#;
+    assert_gpu_type_check_pack_accepts(&[declaration, source]);
+}
 
-    match common::type_check_source_pack_with_timeout(&[source]) {
-        Ok(()) => panic!("over-deep qualified value path should fail GPU type checking"),
-        Err(CompileError::Diagnostic(diagnostic)) => {
-            assert_eq!(diagnostic.code, "LNC0005");
-            let rendered = diagnostic.render();
-            assert!(rendered.contains("error[LNC0005]: unresolved identifier"));
-            assert!(rendered.contains("return a::b::c::d::e::f::g::h::i::value;"));
-            assert!(rendered.contains("value path exceeds the current resolver depth limit"));
-            assert!(
-                rendered.contains("before the leaf value"),
-                "diagnostic should explain the qualified-value path width:\n{rendered}"
-            );
-            assert!(!rendered.contains("GPU type check rejected"));
-        }
-        Err(CompileError::GpuTypeCheck(message)) => {
-            panic!(
-                "over-deep qualified value path should report LNC0005, got raw GPU error: {message}"
-            );
-        }
-        Err(other) => panic!("expected qualified value-path depth diagnostic, got {other:?}"),
-    }
+#[test]
+fn type_checker_resolves_path_prefixes_across_workgroups() {
+    let path = (0..300)
+        .map(|i| format!("segment_{i}"))
+        .collect::<Vec<_>>()
+        .join("::");
+    let declaration = format!("module {path};\npub fn answer() -> i32 {{ return 42; }}\n");
+    let consumer =
+        format!("module app::main;\nimport {path};\nfn main() -> i32 {{ return answer(); }}\n");
+    assert_gpu_type_check_pack_accepts(&[&declaration, &consumer]);
 }
 
 #[test]
@@ -4585,6 +4573,63 @@ fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
 
 fn main() {
     return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_resolves_trait_bounds_beyond_the_legacy_path_depth() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module root::one::two::three::four::five::six::seven::eight::nine;
+
+pub trait Marker {
+}
+
+pub impl Marker for i32 {
+}
+"#,
+        r#"
+module app;
+
+import root::one::two::three::four::five::six::seven::eight::nine;
+
+fn keep<T>(value: T) -> T where T: root::one::two::three::four::five::six::seven::eight::nine::Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_resolves_associated_calls_beyond_the_legacy_path_depth() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module root::one::two::three::four::five::six::seven::eight::nine;
+
+pub struct Counter {
+    value: i32,
+}
+
+pub impl Counter {
+    pub fn answer() -> i32 {
+        return 42;
+    }
+}
+"#,
+        r#"
+module app;
+
+import root::one::two::three::four::five::six::seven::eight::nine;
+
+fn main() {
+    return root::one::two::three::four::five::six::seven::eight::nine::Counter::answer();
 }
 "#,
     ]);

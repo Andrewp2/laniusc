@@ -928,6 +928,23 @@ impl GpuParser {
                     "parser.hir_call_arg_ordinal_scatter",
                 );
                 self.passes
+                    .hir_expr_forest_edges
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_edges");
+                self.passes
+                    .hir_expr_forest_root_init
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_root_init");
+                self.passes
+                    .hir_expr_forest_root_step
+                    .record_steps_indirect(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.tree_pointer_jump_dispatch_args,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_root_step");
+                self.passes
                     .hir_array_fields
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_fields");

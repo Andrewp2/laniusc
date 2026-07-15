@@ -1,10 +1,10 @@
-// Compact row-parallel aggregate copy emission.
+// Exact-row-parallel aggregate copy emission.
 //
 // x86_node_inst_gen validates aggregate copy sites and reserves their virtual
-// instruction ranges. This pass walks the compact generation worklist and emits
-// one aggregate element per invocation, using DispatchThreadID.z as the element
-// ordinal instead of making one HIR-node invocation loop over the aggregate
-// width.
+// instruction ranges. This pass dispatches once per reserved virtual row and
+// finds the owning execution-order interval with a parallel binary search. It
+// therefore has neither a Cartesian node-by-maximum-width workload nor a GPU
+// dispatch-dimension limit on aggregate width.
 
 import gpu_index;
 import status;
@@ -33,10 +33,11 @@ StructuredBuffer<uint> x86_aggregate_source_offset;
 StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
+StructuredBuffer<uint> x86_node_inst_range_start;
 StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
-StructuredBuffer<uint2> x86_node_inst_gen_node_record;
+StructuredBuffer<uint> x86_node_inst_order_record;
 StructuredBuffer<uint> x86_node_func;
 
 RWStructuredBuffer<uint4> x86_virtual_inst_record;
@@ -48,10 +49,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_INST_GEN_INPUTS_OK = 1u;
 static const uint X86_ERR_NODE_VIRTUAL_INST = 11u;
 static const uint X86_VINST_ERROR_AGG_COPY_LOCATION = 3012u;
-static const uint X86_VINST_ERROR_AGG_COPY_WIDTH = 3011u;
 static const uint X86_VINST_ERROR_AGG_RET_SOURCE_LOCATION = 2622u;
-static const uint X86_VINST_ERROR_AGG_RET_COPY_WIDTH = 2623u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
@@ -71,6 +69,7 @@ static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
 static const uint X86_PARAM_REG_STRIDE = 6u;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
+static const uint X86_NODE_INST_ORDER_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
@@ -81,22 +80,30 @@ static const uint X86_VINST_COPY_AGG_RET = 23u;
 static const uint X86_VINST_LOAD_PARAM_SLOT = 26u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
+static const uint X86_AGG_PARAM_BASE_MASK = 0x0fu;
+
+uint pack_aggregate_param_payload(uint base, uint ordinal)
+{
+    return (ordinal << 4u) | (base & X86_AGG_PARAM_BASE_MASK);
+}
 
 uint aggregate_source_payload_offset(uint source_kind, uint payload, uint offset)
 {
     if (source_kind == X86_AGG_SOURCE_PARAM)
-        return pack_u16_pair(unpack_u16_pair_low(payload), unpack_u16_pair_high(payload) + offset);
+        return pack_aggregate_param_payload(
+            payload & X86_AGG_PARAM_BASE_MASK,
+            (payload >> 4u) + offset);
     return payload + offset;
 }
 
 uint param_aggregate_payload_base(uint payload)
 {
-    return unpack_u16_pair_low(payload);
+    return payload & X86_AGG_PARAM_BASE_MASK;
 }
 
 uint param_aggregate_payload_ordinal(uint payload)
 {
-    return unpack_u16_pair_high(payload);
+    return payload >> 4u;
 }
 
 uint linear_dispatch_id(uint3 tid)
@@ -104,26 +111,49 @@ uint linear_dispatch_id(uint3 tid)
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
-uint aggregate_ordinal(uint3 tid)
+uint order_record_word(uint slot, uint field)
 {
-    return tid.z;
+    return row_major_load<uint>(
+        x86_node_inst_order_record,
+        slot,
+        X86_NODE_INST_ORDER_STRIDE,
+        field,
+        INVALID);
 }
 
-uint gen_worklist_base()
+uint order_slot_count()
 {
-    return 0u;
+    return min(x86_node_inst_gen_input_status[4u], gParams.n_hir_nodes);
 }
 
-uint gen_worklist_count()
+bool owner_for_virtual_row(uint row, out uint node, out uint local_i)
 {
-    return min(
-        x86_node_inst_gen_input_status[4u],
-        min(gParams.n_hir_nodes, gParams.inst_capacity));
-}
-
-uint gen_worklist_node(uint order_row)
-{
-    return x86_node_inst_gen_node_record[gen_worklist_base() + order_row].x;
+    node = INVALID;
+    local_i = INVALID;
+    uint low = 0u;
+    uint high = order_slot_count();
+    while (low < high)
+    {
+        uint mid = low + (high - low) / 2u;
+        uint candidate = order_record_word(mid, 0u);
+        if (!valid_node(candidate))
+            return false;
+        uint start = x86_node_inst_range_start[candidate];
+        uint info = x86_node_inst_range_info[candidate];
+        uint count = info == INVALID ? 0u : info & X86_NODE_INST_RANGE_COUNT_MASK;
+        uint end = start + count;
+        if (row < start)
+            high = mid;
+        else if (row >= end)
+            low = mid + 1u;
+        else
+        {
+            node = candidate;
+            local_i = row - start;
+            return valid_node(node);
+        }
+    }
+    return false;
 }
 
 bool valid_node(uint node)
@@ -379,7 +409,7 @@ bool aggregate_source_for_decl(
     if (param.x == owner_fn && param.z != INVALID && param.w > 1u)
     {
         source_kind = X86_AGG_SOURCE_PARAM;
-        payload = pack_u16_pair(param.z, 0u);
+        payload = pack_aggregate_param_payload(param.z, 0u);
         width = param.w;
         return true;
     }
@@ -608,12 +638,6 @@ void emit_aggregate_return_source_copy(uint node, uint ordinal)
     if (!aggregate_return_source_copy_info(node, width, source_kind, source_payload))
         return;
 
-    if (width > X86_AGG_COPY_MAX_WIDTH)
-    {
-        if (ordinal == 0u)
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_COPY_WIDTH);
-        return;
-    }
     if (ordinal >= width)
         return;
 
@@ -630,7 +654,11 @@ void emit_aggregate_return_source_copy(uint node, uint ordinal)
         ordinal,
         X86_VINST_COPY_AGG_RET,
         INVALID,
-        uint4(source_kind, source_payload, ordinal, 0u));
+        uint4(
+            source_kind,
+            aggregate_source_payload_offset(source_kind, source_payload, ordinal),
+            ordinal,
+            0u));
 }
 
 void emit_aggregate_struct_field_copy(uint node, uint ordinal)
@@ -649,12 +677,6 @@ void emit_aggregate_struct_field_copy(uint node, uint ordinal)
             source_payload))
         return;
 
-    if (copy_width > X86_AGG_COPY_MAX_WIDTH)
-    {
-        if (ordinal == 0u)
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_WIDTH);
-        return;
-    }
     if (ordinal >= copy_width)
         return;
 
@@ -708,18 +730,19 @@ void emit_aggregate_struct_field_copy(uint node, uint ordinal)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint order_row = linear_dispatch_id(tid);
-    uint ordinal = aggregate_ordinal(tid);
-    if (!upstream_ok() ||
-        order_row >= gen_worklist_count() ||
-        ordinal >= X86_AGG_COPY_MAX_WIDTH)
+    uint virtual_row = linear_dispatch_id(tid);
+    if (!upstream_ok() || virtual_row >= x86_node_inst_gen_input_status[3u])
+        return;
+    uint node = INVALID;
+    uint local_i = INVALID;
+    if (!owner_for_virtual_row(virtual_row, node, local_i))
         return;
 
-    uint node = gen_worklist_node(order_row);
-    if (!valid_node(node))
+    emit_aggregate_return_source_copy(node, local_i);
+    if ((local_i & 1u) != 0u)
         return;
 
-    emit_aggregate_return_source_copy(node, ordinal);
+    uint ordinal = local_i / 2u;
     emit_aggregate_struct_field_copy(node, ordinal);
 
     uint dest_slot = INVALID;
@@ -728,13 +751,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint source_payload = INVALID;
     if (!aggregate_let_copy_info(node, dest_slot, dest_width, source_kind, source_payload))
         return;
-
-    if (dest_width > X86_AGG_COPY_MAX_WIDTH)
-    {
-        if (ordinal == 0u)
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_WIDTH);
-        return;
-    }
     if (ordinal >= dest_width)
         return;
 

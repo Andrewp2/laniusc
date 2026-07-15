@@ -1,6 +1,6 @@
 // Validate trait and impl method contract predicate rows.
 
-#include "collect_common.slang"
+#include "collect_methods_common.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

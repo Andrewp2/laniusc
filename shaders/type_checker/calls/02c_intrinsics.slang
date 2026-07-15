@@ -37,7 +37,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint TY_VOID = 1u;
 
@@ -106,12 +105,12 @@ uint path_leaf_token_for_callee(uint callee_node)
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
 
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
 
     uint slot = path_segment_base[path_i] + count - 1u;
-    uint max_slots = gParams.n_tokens * MAX_PATH_SEGMENTS;
+    uint max_slots = gParams.n_tokens;
     if (slot >= max_slots)
         return INVALID;
 

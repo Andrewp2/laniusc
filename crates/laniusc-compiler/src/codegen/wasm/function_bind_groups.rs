@@ -26,6 +26,7 @@ impl GpuWasmCodeGenerator {
             hir_kind: hir_kind_buf,
             hir_item_kind: hir_item_kind_buf,
             hir_token_pos: hir_token_pos_buf,
+            hir_token_end: hir_token_end_buf,
             hir_status: hir_status_buf,
             name_id_by_token: name_id_by_token_buf,
             language_name_id: language_name_id_buf,
@@ -94,9 +95,19 @@ impl GpuWasmCodeGenerator {
                     "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
+                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+                (
+                    "hir_expr_result_root_node",
+                    expr_metadata.result_root_node.as_entire_binding(),
+                ),
+                ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
                 (
                     "body_let_init_expr_by_decl_token",
                     body_let_init_expr_by_decl_token_buf.as_entire_binding(),
+                ),
+                (
+                    "wasm_func_local_max_by_token",
+                    wasm_func_local_max_by_token_buf.as_entire_binding(),
                 ),
             ],
         )?;

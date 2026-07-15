@@ -2,12 +2,10 @@
 //
 // Scheduling contract:
 // - Dispatch after the module key radix sort has produced sorted_module_key_order.
-// - Adjacent equal module path keys are duplicates; equality compares full
-//   segment-name-id rows, not hashes.
+// - Adjacent equal exact canonical path ids are duplicates.
 // - This pass only validates module declarations. It does not resolve imports,
 //   perform declaration lookup, produce visibility, or use CPU path lookup.
 
-import fixed.key;
 import sorted.runs;
 import status;
 
@@ -23,9 +21,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
-StructuredBuffer<uint> module_key_segment_count;
-StructuredBuffer<uint> module_key_segment_base;
-StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> module_path_id;
 StructuredBuffer<uint> path_owner_token;
 
@@ -34,7 +30,6 @@ RWStructuredBuffer<uint> module_status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = 8u;
 static const uint INVALID = 0xffffffffu;
 
 static const uint MODULE_STATUS_OK = 0u;
@@ -62,41 +57,10 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-uint module_key_lane(uint module_i, uint lane)
-{
-    uint count = min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
-    if (lane >= count)
-        return 0u;
-    uint base = module_key_segment_base[module_i];
-    return fixed_key_encode_nullable_u32(
-        module_key_segment_name_id[base + lane],
-        INVALID);
-}
-
-public struct ModuleValidationFixedKey : IFixedU32RowKey<uint>
-{
-    public static uint row_lane(uint module_i, uint lane)
-    {
-        return module_key_lane(module_i, lane);
-    }
-
-    public static uint key_lane(uint module_i, uint lane)
-    {
-        return module_key_lane(module_i, lane);
-    }
-}
-
 bool module_keys_equal(uint left_module_i, uint right_module_i)
 {
-    uint left_count = min(module_key_segment_count[left_module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
-    uint right_count = min(module_key_segment_count[right_module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
-    if (left_count != right_count)
-        return false;
-
-    return fixed_u32_row_key_equal<uint, ModuleValidationFixedKey>(
-        left_module_i,
-        right_module_i,
-        left_count);
+    return module_key_canonical_id[left_module_i] ==
+           module_key_canonical_id[right_module_i];
 }
 
 public struct ModuleKeyEquality : ISortedRunEquality

@@ -10,7 +10,6 @@ pub(super) struct WasmBodyPlanBindGroups {
     pub hir_body_plan_validate_assign_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_control_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_agg_range_control_bind_group: wgpu::BindGroup,
-    pub hir_body_plan_validate_if_simple_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_print_simple_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_call_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_host_void_call_bind_group: wgpu::BindGroup,
@@ -36,6 +35,7 @@ impl GpuWasmCodeGenerator {
         device: &wgpu::Device,
         inputs: GpuWasmCodegenInputs<'_>,
         working: &WasmWorkingBuffers,
+        expr_order: &ResidentWasmExprOrder,
     ) -> Result<WasmBodyPlanBindGroups> {
         let GpuWasmCodegenInputs {
             parent: parent_buf,
@@ -47,6 +47,7 @@ impl GpuWasmCodeGenerator {
             visible_decl: visible_decl_buf,
             visible_type: visible_type_buf,
             enclosing_fn: enclosing_fn_buf,
+            if_depth: if_depth_buf,
             structs: struct_metadata,
             calls: call_metadata,
             expressions: expr_metadata,
@@ -88,7 +89,8 @@ impl GpuWasmCodeGenerator {
             wasm_agg_scan_prefix_b_buf,
             ..
         } = working;
-        let body_binding_context = WasmBodyBindingContext::new(inputs, working);
+        let body_binding_context =
+            WasmBodyBindingContext::new_with_expr_order(inputs, working, expr_order);
         let final_agg_scan_block_prefix = if (func_scan_param_bufs.len() - 1) % 2 == 0 {
             wasm_agg_scan_prefix_a_buf
         } else {
@@ -147,6 +149,7 @@ impl GpuWasmCodeGenerator {
             final_agg_scan_block_prefix,
         );
         hir_body_plan_validate_bindings.extend([
+            ("expr_root_total", expr_order.root_total.as_entire_binding()),
             (
                 "parser_feature_flags",
                 parser_feature_flags_buf.as_entire_binding(),
@@ -218,6 +221,14 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
+        let shared_validate_binding_count = hir_body_plan_validate_bindings.len();
+        hir_body_plan_validate_bindings.extend([
+            (
+                "hir_nearest_loop_node",
+                expr_metadata.nearest_loop_node.as_entire_binding(),
+            ),
+            ("if_depth", if_depth_buf.as_entire_binding()),
+        ]);
         let hir_body_plan_validate_control_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_control"),
@@ -225,17 +236,11 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
+        hir_body_plan_validate_bindings.truncate(shared_validate_binding_count);
         let hir_body_plan_validate_agg_range_control_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_agg_range_control"),
             &self.hir_body_plan_validate_agg_range_control_pass,
-            0,
-            &hir_body_plan_validate_bindings,
-        )?;
-        let hir_body_plan_validate_if_simple_bind_group = create_wasm_bind_group(
-            device,
-            Some("codegen_wasm_hir_body_plan_validate_if_simple"),
-            &self.hir_body_plan_validate_if_simple_pass,
             0,
             &hir_body_plan_validate_bindings,
         )?;
@@ -604,7 +609,6 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_validate_assign_bind_group,
             hir_body_plan_validate_control_bind_group,
             hir_body_plan_validate_agg_range_control_bind_group,
-            hir_body_plan_validate_if_simple_bind_group,
             hir_body_plan_validate_print_simple_bind_group,
             hir_body_plan_validate_call_bind_group,
             hir_body_plan_validate_host_void_call_bind_group,

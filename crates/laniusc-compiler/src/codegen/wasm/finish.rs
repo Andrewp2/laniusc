@@ -30,6 +30,7 @@ impl GpuWasmCodeGenerator {
         }
         let early_features = WasmBodyFeatures::from_body_plan(&early_prefix.body_plan);
         if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+            trace_expr_root_total_readback(device, &bufs.expr_order.root_total_readback)?;
             eprintln!(
                 "[laniusc][wasm-codegen] body_plan.features mask=0x{:08x}",
                 early_features.mask()
@@ -48,8 +49,6 @@ impl GpuWasmCodeGenerator {
         host_timer.stamp("body_plan.create_encoder");
         self.record_wasm_body_plan_and_status(&mut encoder, bufs, recorded, early_features)?;
         host_timer.stamp("body_plan.record");
-        self.persist_pipeline_cache_if_dirty(device);
-        host_timer.stamp("body_plan.persist_pipeline_cache");
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.wasm.body_plan",
@@ -92,6 +91,11 @@ impl GpuWasmCodeGenerator {
                 "[laniusc][wasm-codegen] phase2.features mask=0x{:08x}",
                 features.mask()
             );
+            trace_body_fragment_len_readback(
+                device,
+                &bufs.body_fragment_len_readback,
+                recorded.token_capacity,
+            )?;
             trace_body_fragment_aux_readback(
                 device,
                 &bufs.body_fragment_aux_readback,
@@ -110,10 +114,6 @@ impl GpuWasmCodeGenerator {
         self.prepare_wasm_call_relocations(queue, &bufs.call_relocations, body_len)?;
         self.record_wasm_scatter_and_pack(&mut encoder, bufs, recorded, features, body_len)?;
         host_timer.stamp("phase2.record");
-        // Generator initialization persists too early to capture demand-created
-        // pipelines. Persist here only when phase-2 recording created one.
-        self.persist_pipeline_cache_if_dirty(device);
-        host_timer.stamp("phase2.persist_pipeline_cache");
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.wasm.phase2",
@@ -142,6 +142,7 @@ impl GpuWasmCodeGenerator {
         let output = read_wasm_output(
             device,
             queue,
+            &bufs._body_buf,
             &bufs.out_buf,
             &bufs.packed_out_buf,
             &bufs.status_readback,

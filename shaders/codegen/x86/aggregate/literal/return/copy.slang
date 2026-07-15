@@ -52,10 +52,8 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_INST_GEN_INPUTS_OK = 1u;
 static const uint X86_ERR_NODE_VIRTUAL_INST = 11u;
-static const uint X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH = 2601u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_VALUE = 2603u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION = 2604u;
-static const uint X86_VINST_ERROR_AGG_RET_ARRAY_WIDTH = 2611u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_VALUE = 2613u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_LOCATION = 2614u;
 
@@ -78,10 +76,8 @@ static const uint X86_VINST_STORE_RET_PTR = 22u;
 static const uint X86_VINST_COPY_AGG_RET = 23u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_REG = 3u;
-static const uint X86_AGG_COPY_SEPARATE_ORDINALS = 0x80000000u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
 static const uint METHOD_RECEIVER_EXPLICIT = 3u;
 static const uint X86_REG_ESI = 6u;
 
@@ -233,13 +229,6 @@ bool explicit_receiver_reg_source_for_expr(uint value_node, uint owner_fn, out u
 
     payload = X86_REG_ESI;
     return true;
-}
-
-uint pack_copy_agg_ret_ordinals(uint source_ordinal, uint dest_ordinal)
-{
-    return X86_AGG_COPY_SEPARATE_ORDINALS |
-           ((source_ordinal & 0x7fffu) << 16u) |
-           (dest_ordinal & 0xffffu);
 }
 
 uint expr_result_root(uint node)
@@ -431,12 +420,6 @@ void emit_array_element_return_copy(uint node)
     if (!valid_node(return_node) ||
         !return_expr_is_array_literal(return_node, literal_node))
         return;
-    if (ordinal >= X86_AGG_COPY_MAX_WIDTH)
-    {
-        write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_ARRAY_WIDTH);
-        return;
-    }
-
     uint src = INVALID;
     if (!value_vreg_for_node(node, src))
     {
@@ -463,12 +446,6 @@ void emit_struct_field_return_copy(uint node)
         !valid_node(value_node) ||
         !return_expr_is_struct_literal(return_node, literal_node))
         return;
-    if (ordinal >= X86_AGG_COPY_MAX_WIDTH)
-    {
-        write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH);
-        return;
-    }
-
     uint scalar_payload = INVALID;
     if (explicit_receiver_reg_source_for_expr(value_node, x86_node_func[return_node], scalar_payload))
     {
@@ -484,7 +461,7 @@ void emit_struct_field_return_copy(uint node)
             ordinal,
             X86_VINST_COPY_AGG_RET,
             INVALID,
-            uint4(X86_AGG_SOURCE_REG, scalar_payload, pack_copy_agg_ret_ordinals(0u, ordinal), 0u));
+            uint4(X86_AGG_SOURCE_REG, scalar_payload, ordinal, 0u));
         return;
     }
 
@@ -502,7 +479,7 @@ void emit_struct_field_return_copy(uint node)
             ordinal,
             X86_VINST_COPY_AGG_RET,
             INVALID,
-            uint4(X86_AGG_SOURCE_LOCAL, scalar_payload, pack_copy_agg_ret_ordinals(0u, ordinal), 0u));
+            uint4(X86_AGG_SOURCE_LOCAL, scalar_payload, ordinal, 0u));
         return;
     }
 

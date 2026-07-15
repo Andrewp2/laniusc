@@ -50,7 +50,6 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 
@@ -133,10 +132,9 @@ uint path_leaf_token(uint path_i, uint owner_token)
     uint count = path_i < active_path_count() ? path_segment_count[path_i] : 0u;
     if (count <= 1u)
         return owner_token;
-    count = min(count, MAX_PATH_SEGMENTS);
     uint leaf_i = path_segment_base[path_i] + count - 1u;
     uint leaf_token =
-        leaf_i < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[leaf_i] : INVALID;
+        leaf_i < gParams.n_tokens ? path_segment_token[leaf_i] : INVALID;
     return valid_token(leaf_token) ? leaf_token : owner_token;
 }
 

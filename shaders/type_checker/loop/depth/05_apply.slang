@@ -7,10 +7,10 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<int> loop_depth_inblock;
+StructuredBuffer<int> if_depth_inblock;
 StructuredBuffer<int> block_prefix;
 
-RWStructuredBuffer<int> loop_depth;
+RWStructuredBuffer<int> if_depth;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -28,5 +28,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gParams.n_tokens)
         return;
 
-    loop_depth[i] = block_prefix[i / WG_SIZE] + loop_depth_inblock[i];
+    if_depth[i] = block_prefix[i / WG_SIZE] + if_depth_inblock[i];
 }

@@ -1,8 +1,9 @@
 // HIR member receiver type-reference projection.
 //
-// This pass records the receiver type ref for each HIR member expression and,
-// for generic receiver instances, the receiver instance token needed by the
-// later generic substitution pass.
+// This pass records the receiver type ref for each HIR member-chain root and,
+// for generic receiver instances, the receiver instance token needed by field
+// substitution. Consecutive member nodes also publish their parser-owned chain
+// edge for receiver-typed projection in the following pass.
 
 struct Params
 {
@@ -40,6 +41,7 @@ RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> member_result_field_node;
+RWStructuredBuffer<uint> member_next_node;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -284,5 +286,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (!valid_node(node))
         return;
+    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    {
+        uint receiver = hir_member_receiver_node[node];
+        if (valid_node(receiver) && hir_kind[receiver] == HIR_MEMBER_EXPR)
+        {
+            uint previous = INVALID;
+            InterlockedCompareExchange(member_next_node[receiver], INVALID, node, previous);
+        }
+    }
     publish_receiver_ref_for_node(node);
 }

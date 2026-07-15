@@ -1,13 +1,18 @@
 use std::{
+    collections::HashMap,
     ops::Deref,
     sync::{
         Arc,
+        LazyLock,
+        Mutex,
         atomic::{AtomicU64, Ordering},
     },
 };
 
 static LIVE_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
+static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Process-wide logical allocation totals for live buffers created through
 /// Lanius's typed GPU-buffer helpers. Cloning a buffer handle does not count as
@@ -25,15 +30,52 @@ pub fn tracked_buffer_allocation_stats() -> TrackedBufferAllocationStats {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackedBufferLabelStats {
+    pub label: Arc<str>,
+    pub allocations: u64,
+    pub bytes: u64,
+}
+
+pub fn tracked_buffer_allocation_stats_by_label() -> Vec<TrackedBufferLabelStats> {
+    let labels = LIVE_BUFFER_BYTES_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut rows = labels
+        .iter()
+        .map(|(label, &(allocations, bytes))| TrackedBufferLabelStats {
+            label: label.clone(),
+            allocations,
+            bytes,
+        })
+        .collect::<Vec<_>>();
+    rows.sort_unstable_by(|left, right| {
+        right
+            .bytes
+            .cmp(&left.bytes)
+            .then_with(|| left.label.cmp(&right.label))
+    });
+    rows
+}
+
 struct BufferAllocationLedger {
     bytes: u64,
+    label: Arc<str>,
 }
 
 impl BufferAllocationLedger {
-    fn new(bytes: u64) -> Arc<Self> {
+    fn new(bytes: u64, label: impl Into<Arc<str>>) -> Arc<Self> {
+        let label = label.into();
         LIVE_BUFFER_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
         LIVE_BUFFER_BYTES.fetch_add(bytes, Ordering::Relaxed);
-        Arc::new(Self { bytes })
+        let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = labels.entry(label.clone()).or_default();
+        entry.0 += 1;
+        entry.1 += bytes;
+        drop(labels);
+        Arc::new(Self { bytes, label })
     }
 }
 
@@ -41,6 +83,18 @@ impl Drop for BufferAllocationLedger {
     fn drop(&mut self) {
         LIVE_BUFFER_ALLOCATIONS.fetch_sub(1, Ordering::Relaxed);
         LIVE_BUFFER_BYTES.fetch_sub(self.bytes, Ordering::Relaxed);
+        let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut remove = false;
+        if let Some(entry) = labels.get_mut(&self.label) {
+            entry.0 = entry.0.saturating_sub(1);
+            entry.1 = entry.1.saturating_sub(self.bytes);
+            remove = entry.0 == 0;
+        }
+        if remove {
+            labels.remove(&self.label);
+        }
     }
 }
 
@@ -53,18 +107,64 @@ pub struct LaniusBuffer<T> {
     pub byte_size: usize,
     /// number of logical T elements
     pub count: usize,
-    _allocation: Arc<BufferAllocationLedger>,
+    _allocation: Option<Arc<BufferAllocationLedger>>,
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> LaniusBuffer<T> {
     /// Wraps a raw `wgpu::Buffer` plus byte size and logical element count.
     pub fn new((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
+        Self::new_labeled((buffer, byte_size), count, "<unlabeled>")
+    }
+
+    /// Wraps a raw buffer and associates its allocation identity with a
+    /// diagnostic label. Aliases retain this one label and allocation entry.
+    pub fn new_labeled(
+        (buffer, byte_size): (wgpu::Buffer, u64),
+        count: usize,
+        label: impl Into<Arc<str>>,
+    ) -> Self {
         Self {
             buffer,
             byte_size: byte_size as usize,
             count,
-            _allocation: BufferAllocationLedger::new(byte_size),
+            _allocation: Some(BufferAllocationLedger::new(byte_size, label)),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Reinterprets this allocation as another element type without changing
+    /// its allocation identity.
+    pub fn reinterpret<U>(self, count: usize) -> LaniusBuffer<U> {
+        LaniusBuffer {
+            buffer: self.buffer,
+            byte_size: self.byte_size,
+            count,
+            _allocation: self._allocation,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates another typed view of the same allocation. The live-allocation
+    /// ledger remains shared, so aliases do not inflate byte or buffer totals.
+    pub fn alias<U>(&self, count: usize) -> LaniusBuffer<U> {
+        LaniusBuffer {
+            buffer: self.buffer.clone(),
+            byte_size: self.byte_size,
+            count,
+            _allocation: self._allocation.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Wraps a raw buffer whose allocation is owned and accounted elsewhere.
+    /// Wgpu registry metrics expose these handles as untracked live buffers.
+    pub fn untracked_alias((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
+        Self {
+            buffer,
+            byte_size: byte_size as usize,
+            count,
+            _allocation: None,
             _marker: std::marker::PhantomData,
         }
     }
@@ -92,7 +192,7 @@ where
         bytes,
         wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     );
-    LaniusBuffer::new((raw, bytes.len() as u64), 1)
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
 
 /// Creates a uniform buffer and uploads the encoded value through `queue.write_buffer`.
@@ -116,7 +216,7 @@ where
         mapped_at_creation: false,
     });
     queue.write_buffer(&raw, 0, bytes);
-    LaniusBuffer::new((raw, bytes.len() as u64), 1)
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
 
 /// Create a STORAGE (read-only) buffer from a raw byte slice.
@@ -132,7 +232,7 @@ pub fn storage_ro_from_bytes<T>(
         bytes,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
     );
-    LaniusBuffer::new((raw, bytes.len() as u64), count)
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), count, label)
 }
 
 fn create_buffer_init_checked(
@@ -226,7 +326,7 @@ pub fn storage_ro_from_u32s_with_queue(
     if !bytes.is_empty() {
         queue.write_buffer(&raw, 0, &bytes);
     }
-    LaniusBuffer::new((raw, byte_size as u64), values.len())
+    LaniusBuffer::new_labeled((raw, byte_size as u64), values.len(), label)
 }
 
 /// Creates a map-readable byte readback buffer.
@@ -242,7 +342,7 @@ pub fn readback_bytes(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size as u64), count)
+    LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
 }
 
 /// Create a STORAGE buffer (read/write) sized for an array of `T` using WGSL/std430 size/stride.
@@ -271,7 +371,7 @@ where
             | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, total as u64), count)
+    LaniusBuffer::new_labeled((raw, total as u64), count, label)
 }
 
 /// Create a STORAGE buffer (read/write) with an explicit byte size. Element type is `u8`.
@@ -290,5 +390,42 @@ pub fn storage_rw_uninit_bytes(
             | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size as u64), count)
+    LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allocation_label_breakdown_tracks_shared_ledger_lifetime() {
+        const LABEL: &str = "test.buffer-ledger.unique-label";
+        assert!(
+            tracked_buffer_allocation_stats_by_label()
+                .iter()
+                .all(|row| row.label.as_ref() != LABEL)
+        );
+
+        let ledger = BufferAllocationLedger::new(123, LABEL);
+        let alias = ledger.clone();
+        let row = tracked_buffer_allocation_stats_by_label()
+            .into_iter()
+            .find(|row| row.label.as_ref() == LABEL)
+            .expect("labeled allocation should appear in the breakdown");
+        assert_eq!((row.allocations, row.bytes), (1, 123));
+
+        drop(ledger);
+        assert!(
+            tracked_buffer_allocation_stats_by_label()
+                .iter()
+                .any(|row| row.label.as_ref() == LABEL),
+            "an alias must keep the allocation ledger live"
+        );
+        drop(alias);
+        assert!(
+            tracked_buffer_allocation_stats_by_label()
+                .iter()
+                .all(|row| row.label.as_ref() != LABEL)
+        );
+    }
 }

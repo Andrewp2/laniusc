@@ -43,7 +43,6 @@ impl GpuWasmCodeGenerator {
             has_scalar_return_direct || features.has(WASM_BODY_FEATURE_BINARY_DIRECT);
         let has_assign = features.has(WASM_BODY_FEATURE_ASSIGN);
         let has_control = features.has(WASM_BODY_FEATURE_CONTROL);
-        let has_control_if_simple = features.has(WASM_BODY_FEATURE_CONTROL_IF_SIMPLE);
         let has_stmt_print = features.has(WASM_BODY_FEATURE_STMT_PRINT);
         let has_stmt_host_void = features.has(WASM_BODY_FEATURE_STMT_HOST_VOID)
             || (features.has(WASM_BODY_FEATURE_STMT_CALL)
@@ -110,31 +109,6 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_return.done");
-
-        if has_scalar_return_direct {
-            trace_wasm_codegen(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.start",
-            );
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_plan_validate_return_nested_call"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(
-                self.hir_body_plan_validate_return_nested_call_pass
-                    .pipeline()?
-                    .as_ref(),
-            );
-            compute.set_bind_group(
-                0,
-                Some(&bufs.hir_body_plan_validate_return_nested_call_bind_group),
-                &[],
-            );
-            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
-            drop(compute);
-            trace_wasm_codegen(
-                "record.body_plan.dispatch.hir_body_plan_validate_return_nested_call.done",
-            );
-        }
 
         if has_return_call_planning {
             trace_wasm_codegen(
@@ -264,27 +238,6 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_plan_validate_print_simple.done",
             );
-        }
-
-        if has_control_if_simple {
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_if_simple.start");
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_plan_validate_if_simple"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(
-                self.hir_body_plan_validate_if_simple_pass
-                    .pipeline()?
-                    .as_ref(),
-            );
-            compute.set_bind_group(
-                0,
-                Some(&bufs.hir_body_plan_validate_if_simple_bind_group),
-                &[],
-            );
-            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
-            drop(compute);
-            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_if_simple.done");
         }
 
         if has_stmt_print_direct || features.has(WASM_BODY_FEATURE_DIRECT) {

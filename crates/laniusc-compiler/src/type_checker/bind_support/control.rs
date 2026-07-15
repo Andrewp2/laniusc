@@ -246,34 +246,34 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     })
 }
 
-/// Builds loop-depth bind groups from loaded type-check passes.
+/// Builds enclosing-`if` depth bind groups from loaded type-check passes.
 #[allow(clippy::too_many_arguments)]
-pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
+pub(in crate::type_checker) fn create_if_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
-    params: &LaniusBuffer<LoopDepthParams>,
+    params: &LaniusBuffer<IfDepthParams>,
     token_buf: &wgpu::Buffer,
     token_count_buf: &wgpu::Buffer,
     hir_kind_buf: &wgpu::Buffer,
     hir_token_pos_buf: &wgpu::Buffer,
     hir_token_end_buf: &wgpu::Buffer,
     hir_status_buf: &wgpu::Buffer,
-    loop_delta: &wgpu::Buffer,
-    loop_depth_inblock: &wgpu::Buffer,
-    loop_block_sum: &wgpu::Buffer,
-    loop_prefix_a: &wgpu::Buffer,
-    loop_prefix_b: &wgpu::Buffer,
-    loop_block_prefix: &wgpu::Buffer,
-    loop_depth: &wgpu::Buffer,
-) -> Result<LoopDepthBindGroups> {
-    create_loop_depth_bind_groups_from_passes(
+    if_delta: &wgpu::Buffer,
+    if_depth_inblock: &wgpu::Buffer,
+    if_block_sum: &wgpu::Buffer,
+    if_prefix_a: &wgpu::Buffer,
+    if_prefix_b: &wgpu::Buffer,
+    if_block_prefix: &wgpu::Buffer,
+    if_depth: &wgpu::Buffer,
+) -> Result<IfDepthBindGroups> {
+    create_if_depth_bind_groups_from_passes(
         device,
-        &passes.loop_depth_clear,
-        &passes.loop_depth_mark,
-        &passes.loop_depth_local,
-        &passes.loop_depth_hierarchy_up,
-        &passes.loop_depth_hierarchy_down,
-        &passes.loop_depth_apply,
+        &passes.if_depth_clear,
+        &passes.if_depth_mark,
+        &passes.if_depth_local,
+        &passes.if_depth_hierarchy_up,
+        &passes.if_depth_hierarchy_down,
+        &passes.if_depth_apply,
         params,
         token_buf,
         token_count_buf,
@@ -281,19 +281,19 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
         hir_token_pos_buf,
         hir_token_end_buf,
         hir_status_buf,
-        loop_delta,
-        loop_depth_inblock,
-        loop_block_sum,
-        loop_prefix_a,
-        loop_prefix_b,
-        loop_block_prefix,
-        loop_depth,
+        if_delta,
+        if_depth_inblock,
+        if_block_sum,
+        if_prefix_a,
+        if_prefix_b,
+        if_block_prefix,
+        if_depth,
     )
 }
 
-/// Builds loop-depth bind groups from explicit pass handles.
+/// Builds enclosing-`if` depth bind groups from explicit pass handles.
 #[allow(clippy::too_many_arguments)]
-pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
+pub(in crate::type_checker) fn create_if_depth_bind_groups_from_passes(
     device: &wgpu::Device,
     clear_pass: &PassData,
     mark_pass: &PassData,
@@ -301,35 +301,35 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
     hierarchy_up_pass: &PassData,
     hierarchy_down_pass: &PassData,
     apply_pass: &PassData,
-    params: &LaniusBuffer<LoopDepthParams>,
+    params: &LaniusBuffer<IfDepthParams>,
     token_buf: &wgpu::Buffer,
     token_count_buf: &wgpu::Buffer,
     hir_kind_buf: &wgpu::Buffer,
     hir_token_pos_buf: &wgpu::Buffer,
     hir_token_end_buf: &wgpu::Buffer,
     hir_status_buf: &wgpu::Buffer,
-    loop_delta: &wgpu::Buffer,
-    loop_depth_inblock: &wgpu::Buffer,
-    loop_block_sum: &wgpu::Buffer,
-    loop_prefix_a: &wgpu::Buffer,
-    loop_prefix_b: &wgpu::Buffer,
-    loop_block_prefix: &wgpu::Buffer,
-    loop_depth: &wgpu::Buffer,
-) -> Result<LoopDepthBindGroups> {
+    if_delta: &wgpu::Buffer,
+    if_depth_inblock: &wgpu::Buffer,
+    if_block_sum: &wgpu::Buffer,
+    if_prefix_a: &wgpu::Buffer,
+    if_prefix_b: &wgpu::Buffer,
+    if_block_prefix: &wgpu::Buffer,
+    if_depth: &wgpu::Buffer,
+) -> Result<IfDepthBindGroups> {
     let clear = bind_group::create_bind_group_from_bindings(
         device,
-        Some("type_check_loop_depth_01_clear"),
+        Some("type_check_if_depth_01_clear"),
         clear_pass,
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("loop_delta", loop_delta.as_entire_binding()),
+            ("if_delta", if_delta.as_entire_binding()),
         ],
     )?;
 
     let mark = bind_group::create_bind_group_from_bindings(
         device,
-        Some("type_check_loop_depth_02_mark"),
+        Some("type_check_if_depth_02_mark"),
         mark_pass,
         0,
         &[
@@ -340,52 +340,52 @@ pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("token_words", token_buf.as_entire_binding()),
             ("token_count", token_count_buf.as_entire_binding()),
-            ("loop_delta", loop_delta.as_entire_binding()),
+            ("if_delta", if_delta.as_entire_binding()),
         ],
     )?;
 
     let local = bind_group::create_bind_group_from_bindings(
         device,
-        Some("type_check_loop_depth_03_local"),
+        Some("type_check_if_depth_03_local"),
         local_pass,
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("loop_delta", loop_delta.as_entire_binding()),
-            ("loop_depth_inblock", loop_depth_inblock.as_entire_binding()),
-            ("block_sum", loop_block_sum.as_entire_binding()),
+            ("if_delta", if_delta.as_entire_binding()),
+            ("if_depth_inblock", if_depth_inblock.as_entire_binding()),
+            ("block_sum", if_block_sum.as_entire_binding()),
         ],
     )?;
 
-    let n_blocks = (loop_block_sum.size() / 4).min(u32::MAX as u64) as u32;
+    let n_blocks = (if_block_sum.size() / 4).min(u32::MAX as u64) as u32;
     let n_items = n_blocks.saturating_mul(256);
     let (hierarchy_up, hierarchy_down) = create_fixed_scan_hierarchy_bind_groups(
         device,
-        "type_check.loop_depth",
+        "type_check.if_depth",
         hierarchy_up_pass,
         hierarchy_down_pass,
         n_items,
         n_blocks,
-        loop_block_sum,
-        loop_prefix_a,
-        loop_prefix_b,
-        loop_block_prefix,
+        if_block_sum,
+        if_prefix_a,
+        if_prefix_b,
+        if_block_prefix,
     )?;
 
     let apply = bind_group::create_bind_group_from_bindings(
         device,
-        Some("type_check_loop_depth_05_apply"),
+        Some("type_check_if_depth_05_apply"),
         apply_pass,
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("loop_depth_inblock", loop_depth_inblock.as_entire_binding()),
-            ("block_prefix", loop_block_prefix.as_entire_binding()),
-            ("loop_depth", loop_depth.as_entire_binding()),
+            ("if_depth_inblock", if_depth_inblock.as_entire_binding()),
+            ("block_prefix", if_block_prefix.as_entire_binding()),
+            ("if_depth", if_depth.as_entire_binding()),
         ],
     )?;
 
-    Ok(LoopDepthBindGroups {
+    Ok(IfDepthBindGroups {
         clear,
         mark,
         local,

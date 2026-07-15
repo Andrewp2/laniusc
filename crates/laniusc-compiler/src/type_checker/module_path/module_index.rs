@@ -125,8 +125,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.path_segment_base.as_entire_binding(),
             ),
             (
-                "path_segment_name_id",
-                buffers.path_segment_name_id.as_entire_binding(),
+                "path_prefix_id",
+                buffers.path_prefix_id_a.as_entire_binding(),
             ),
             (
                 "path_owner_token",
@@ -135,16 +135,16 @@ pub(in crate::type_checker) fn create_module_index(
             ("status", inputs.status_buf.as_entire_binding()),
             ("module_status", buffers.module_status.as_entire_binding()),
             (
+                "module_key_canonical_id",
+                buffers.module_key_canonical_id.as_entire_binding(),
+            ),
+            (
                 "module_key_segment_count",
                 buffers.module_key_segment_count.as_entire_binding(),
             ),
             (
                 "module_key_segment_base",
                 buffers.module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                buffers.module_key_segment_name_id.as_entire_binding(),
             ),
             (
                 "module_key_to_module_id",
@@ -188,16 +188,8 @@ pub(in crate::type_checker) fn create_module_index(
                     buffers.module_table_count_out.as_entire_binding(),
                 ),
                 (
-                    "module_key_segment_count",
-                    buffers.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    buffers.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    buffers.module_key_segment_name_id.as_entire_binding(),
+                    "module_key_canonical_id",
+                    buffers.module_key_canonical_id.as_entire_binding(),
                 ),
                 (
                     "module_key_order",
@@ -248,16 +240,8 @@ pub(in crate::type_checker) fn create_module_index(
                     buffers.module_table_count_out.as_entire_binding(),
                 ),
                 (
-                    "module_key_segment_count",
-                    buffers.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    buffers.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    buffers.module_key_segment_name_id.as_entire_binding(),
+                    "module_key_canonical_id",
+                    buffers.module_key_canonical_id.as_entire_binding(),
                 ),
                 ("module_key_order_in", read_order.as_entire_binding()),
                 (
@@ -299,16 +283,8 @@ pub(in crate::type_checker) fn create_module_index(
                     buffers.module_table_count_out.as_entire_binding(),
                 ),
                 (
-                    "module_key_segment_count",
-                    buffers.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    buffers.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    buffers.module_key_segment_name_id.as_entire_binding(),
+                    "module_key_canonical_id",
+                    buffers.module_key_canonical_id.as_entire_binding(),
                 ),
                 ("module_key_order_in", read_order.as_entire_binding()),
                 (
@@ -356,16 +332,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.module_key_to_module_id.as_entire_binding(),
             ),
             (
-                "module_key_segment_count",
-                buffers.module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                buffers.module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                buffers.module_key_segment_name_id.as_entire_binding(),
+                "module_key_canonical_id",
+                buffers.module_key_canonical_id.as_entire_binding(),
             ),
             ("module_path_id", buffers.module_path_id.as_entire_binding()),
             (
@@ -427,7 +395,9 @@ pub(in crate::type_checker) fn create_module_index(
         &ModuleKeyRadixParams {
             module_capacity: layout.import_record_capacity_u32,
             reserved: layout.module_capacity_u32,
-            n_blocks: layout.n_blocks,
+            // This field is the path-record capacity for the import resolver;
+            // import rows and path rows occupy different compact domains.
+            n_blocks: layout.record_capacity_u32,
             key_step: u32::from(inputs.dependency_interfaces.is_some()),
         },
     );
@@ -465,8 +435,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.path_segment_base.as_entire_binding(),
             ),
             (
-                "path_segment_name_id",
-                buffers.path_segment_name_id.as_entire_binding(),
+                "path_prefix_id",
+                buffers.path_prefix_id_a.as_entire_binding(),
             ),
             (
                 "path_owner_token",
@@ -481,16 +451,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.module_key_to_module_id.as_entire_binding(),
             ),
             (
-                "module_key_segment_count",
-                buffers.module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                buffers.module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_name_id",
-                buffers.module_key_segment_name_id.as_entire_binding(),
+                "module_key_canonical_id",
+                buffers.module_key_canonical_id.as_entire_binding(),
             ),
             ("status", inputs.status_buf.as_entire_binding()),
             (

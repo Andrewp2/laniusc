@@ -363,16 +363,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     path.module_key_to_module_id.as_entire_binding(),
                 ),
                 (
-                    "module_key_segment_count",
-                    path.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    path.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    path.module_key_segment_name_id.as_entire_binding(),
+                    "module_key_canonical_id",
+                    path.module_key_canonical_id.as_entire_binding(),
                 ),
                 (
                     "decl_type_key_count_out",
@@ -404,9 +396,14 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     "path_segment_token",
                     path.path_segment_token.as_entire_binding(),
                 ),
+                ("path_prefix_id", path.path_prefix_id_a.as_entire_binding()),
                 (
                     "path_id_by_owner_hir",
                     path.path_id_by_owner_hir.as_entire_binding(),
+                ),
+                (
+                    "path_id_by_owner_token",
+                    path.path_id_by_owner_token.as_entire_binding(),
                 ),
                 (
                     "path_owner_module_id",
@@ -415,6 +412,14 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 (
                     "module_id_by_file_id",
                     path.module_id_by_file_id.as_entire_binding(),
+                ),
+                (
+                    "resolved_type_decl",
+                    path.resolved_type_decl.as_entire_binding(),
+                ),
+                (
+                    "resolved_type_status",
+                    path.resolved_type_status.as_entire_binding(),
                 ),
                 (
                     "import_visible_type_count_out",
@@ -524,6 +529,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
     let collect = create_collect_bind_group(
         "type_check_resident_predicates_collect",
         &passes.predicates_collect,
+    )?;
+    let validate_bound_args = create_collect_bind_group(
+        "type_check_resident_predicates_validate_bound_args",
+        &passes.predicates_validate_bound_args,
     )?;
     let collect_impls = create_collect_bind_group(
         "type_check_resident_predicates_collect_impls",
@@ -931,6 +940,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         collect_bound_arg_facts,
         collect_method_contracts,
         collect,
+        validate_bound_args,
         collect_impls,
         collect_methods,
         _method_contract_key_radix_steps: method_contract_keys.steps,

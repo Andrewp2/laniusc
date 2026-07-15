@@ -138,22 +138,6 @@ impl GpuWasmCodeGenerator {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_range_control.done");
         }
 
-        // The generic expression-control pass also recognizes IF fragments.
-        // Run the specialized simple-IF pass afterward so its richer fragment
-        // metadata wins instead of being overwritten by the generic emitter.
-        if features.has(WASM_BODY_FEATURE_CONTROL_IF_SIMPLE) {
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_if_simple.start");
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_scatter_if_simple"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(self.hir_body_scatter_if_simple_pass.pipeline()?.as_ref());
-            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_if_simple_bind_group), &[]);
-            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
-            drop(compute);
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_if_simple.done");
-        }
-
         // The generic expression-control pass also recognizes return-expression
         // fragments, but it does not implement the full aggregate-member atom
         // surface. Let the dedicated return-expression emitter own those bytes.
@@ -202,7 +186,6 @@ impl GpuWasmCodeGenerator {
 
         if features.has(WASM_BODY_FEATURE_HOST_BASIC)
             || features.has(WASM_BODY_FEATURE_HOST_ENV)
-            || features.has(WASM_BODY_FEATURE_HOST_IO)
             || features.has(WASM_BODY_FEATURE_HOST_VOID)
         {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_host.start");
@@ -218,16 +201,16 @@ impl GpuWasmCodeGenerator {
         }
 
         if features.has(WASM_BODY_FEATURE_ARRAYS) {
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_arrays.start");
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_stored_expr.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_scatter_arrays"),
+                label: Some("codegen.wasm.hir_body_scatter_stored_expr"),
                 timestamp_writes: None,
             });
-            compute.set_pipeline(self.hir_body_scatter_arrays_pass.pipeline()?.as_ref());
-            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_arrays_bind_group), &[]);
+            compute.set_pipeline(self.hir_body_scatter_stored_expr_pass.pipeline()?.as_ref());
+            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_stored_expr_bind_group), &[]);
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_arrays.done");
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_stored_expr.done");
         }
 
         if features.has(WASM_BODY_FEATURE_ARRAY_ALLOC) {
@@ -254,6 +237,25 @@ impl GpuWasmCodeGenerator {
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_agg_copy.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_member_assign.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_member_assign"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_member_assign_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_member_assign_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_member_assign.done");
         }
 
         // Specialized expression bytes must win over generic, host, and array
@@ -407,25 +409,6 @@ impl GpuWasmCodeGenerator {
             compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_member.done");
-        }
-
-        // Keep the retired monolithic scatter available as a diagnostic
-        // fallback while specialized member-expression passes replace it.
-        // It is opt-in because its driver pipeline can take longer than the
-        // complete compile timeout to initialize.
-        if features.has(WASM_BODY_FEATURE_MEMBER_EXPR_SCATTER)
-            && crate::gpu::env::env_bool_strict("LANIUS_WASM_LEGACY_MEMBER_EXPR_SCATTER", false)
-        {
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_member_expr.start");
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("codegen.wasm.hir_body_scatter_member_expr"),
-                timestamp_writes: None,
-            });
-            compute.set_pipeline(self.hir_body_scatter_member_expr_pass.pipeline()?.as_ref());
-            compute.set_bind_group(0, Some(&bufs.hir_body_scatter_member_expr_bind_group), &[]);
-            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
-            drop(compute);
-            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_member_expr.done");
         }
 
         if features.has(WASM_BODY_FEATURE_BINARY_DIRECT) {

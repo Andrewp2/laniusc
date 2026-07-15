@@ -1,11 +1,27 @@
-use crate::gpu::buffers::LaniusBuffer;
+use crate::gpu::buffers::{LaniusBuffer, storage_rw_for_array};
 
 /// Reinterprets one typed storage buffer as another typed buffer with a new element count.
 pub(super) fn alias_storage_buffer<T, U>(
     source: &LaniusBuffer<T>,
     count: usize,
 ) -> LaniusBuffer<U> {
-    LaniusBuffer::new((source.buffer.clone(), source.byte_size as u64), count)
+    source.alias(count)
+}
+
+/// Reuses a dead u32 storage allocation for a later parser phase when it is
+/// large enough, otherwise allocates the requested workspace normally.
+pub(super) fn reuse_or_allocate_u32_workspace(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    reusable: Option<&LaniusBuffer<u32>>,
+) -> LaniusBuffer<u32> {
+    let required_bytes = count.saturating_mul(core::mem::size_of::<u32>());
+    if let Some(buffer) = reusable.filter(|buffer| buffer.byte_size >= required_bytes) {
+        buffer.alias(count)
+    } else {
+        storage_rw_for_array::<u32>(device, label, count)
+    }
 }
 
 /// Allocates a three-word dispatch-argument buffer usable for compute indirect dispatches.
@@ -21,7 +37,7 @@ pub(super) fn dispatch_args_schedule_buffer(
 ) -> LaniusBuffer<u32> {
     let word_count = dispatch_count.max(1) * 3;
     let byte_size = (word_count * std::mem::size_of::<u32>()) as u64;
-    LaniusBuffer::new(
+    LaniusBuffer::new_labeled(
         (
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -35,6 +51,7 @@ pub(super) fn dispatch_args_schedule_buffer(
             byte_size,
         ),
         word_count,
+        label,
     )
 }
 
@@ -46,7 +63,7 @@ pub(super) fn dispatch_args_schedule_with_count_buffer(
 ) -> LaniusBuffer<u32> {
     let word_count = dispatch_count.max(1) * 3 + 1;
     let byte_size = (word_count * std::mem::size_of::<u32>()) as u64;
-    LaniusBuffer::new(
+    LaniusBuffer::new_labeled(
         (
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -60,6 +77,7 @@ pub(super) fn dispatch_args_schedule_with_count_buffer(
             byte_size,
         ),
         word_count,
+        label,
     )
 }
 

@@ -21,7 +21,10 @@ void publish_env_let_call(
         len,
         uint4(BODY_FRAGMENT_LET_HOST_CALL_I32, local_index, call_node, wasm_func_index),
         uint4(INVALID, arg_count, 0u, 0u));
-    publish_body_features(BODY_FEATURE_HOST | BODY_FEATURE_HOST_ENV);
+    publish_body_features(
+        BODY_FEATURE_HOST |
+        BODY_FEATURE_HOST_ENV |
+        BODY_FEATURE_MEMBER_EXPR_SCATTER);
 }
 
 void validate_main_let_host_env(uint node, uint token)

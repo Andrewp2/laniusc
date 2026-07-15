@@ -15,13 +15,13 @@ pub(in crate::type_checker) struct TypeCheckParams {
     pub(in crate::type_checker) parser_feature_flags: u32,
 }
 
-/// Uniform for the loop-depth prefix-scan passes.
+/// Uniform for the enclosing-`if` depth prefix-scan passes.
 ///
-/// The pass family marks loop entry/exit deltas, scans them by token or HIR
-/// order, and exposes the resulting nesting depth to control-flow validation.
+/// The pass family marks `if` entry/exit deltas, scans them in token order,
+/// and exposes exact nesting depth to control-flow lowering.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct LoopDepthParams {
+pub(in crate::type_checker) struct IfDepthParams {
     pub(in crate::type_checker) n_tokens: u32,
     pub(in crate::type_checker) n_hir_nodes: u32,
     pub(in crate::type_checker) n_blocks: u32,
@@ -50,6 +50,26 @@ pub(in crate::type_checker) struct NameScanParams {
     pub(in crate::type_checker) scan_step: u32,
 }
 
+/// Capacity packet for GPU-produced exact path-prefix dispatches.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct PathPrefixDispatchParams {
+    pub(in crate::type_checker) segment_capacity: u32,
+    pub(in crate::type_checker) round_count: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+}
+
+/// One exact path-prefix doubling round.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct PathPrefixRoundParams {
+    pub(in crate::type_checker) segment_capacity: u32,
+    pub(in crate::type_checker) step: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+}
+
 /// Capacity packet for semantic-interface identity sizing.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -58,7 +78,7 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentitySizeParams {
     pub(in crate::type_checker) module_capacity: u32,
     pub(in crate::type_checker) decl_capacity: u32,
     pub(in crate::type_checker) module_segment_capacity: u32,
-    pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) module_index_capacity: u32,
     pub(in crate::type_checker) member_capacity: u32,
 }
 
@@ -83,7 +103,7 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityRecordParams {
     pub(in crate::type_checker) module_capacity: u32,
     pub(in crate::type_checker) decl_capacity: u32,
     pub(in crate::type_checker) module_segment_capacity: u32,
-    pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) module_index_capacity: u32,
     pub(in crate::type_checker) name_byte_capacity: u32,
     pub(in crate::type_checker) member_capacity: u32,
 }
@@ -96,7 +116,7 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityByteParams {
     pub(in crate::type_checker) source_len: u32,
     pub(in crate::type_checker) name_ref_count: u32,
     pub(in crate::type_checker) module_segment_capacity: u32,
-    pub(in crate::type_checker) module_segment_row_width: u32,
+    pub(in crate::type_checker) module_index_capacity: u32,
     pub(in crate::type_checker) decl_capacity: u32,
     pub(in crate::type_checker) member_capacity: u32,
 }
@@ -346,6 +366,10 @@ pub(in crate::type_checker) fn member_capacity_for_features(
     }
 }
 
+pub(in crate::type_checker) fn type_alias_passes_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ALIASES != 0
+}
+
 /// Whether aggregate field lookup needs its struct-field key radix table.
 pub(in crate::type_checker) fn struct_field_key_passes_required(parser_feature_flags: u32) -> bool {
     parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRUCTS != 0
@@ -495,13 +519,8 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     7, // str
     LANGUAGE_DECL_TAG_PRINT,
 ];
-/// Number of key segments used when sorting module identities.
-pub(in crate::type_checker) const MODULE_KEY_SORT_SEGMENTS: u32 = 8;
-/// Row width of one module-key sort entry.
-pub(in crate::type_checker) const MODULE_KEY_SEGMENT_ROW_WIDTH: usize =
-    MODULE_KEY_SORT_SEGMENTS as usize;
-/// Full byte-step count for module-key sorting.
-pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = MODULE_KEY_SORT_SEGMENTS * 4;
+/// Full byte-step count for exact canonical module-prefix ids.
+pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = 4;
 /// Largest source-file table sorted cooperatively by one 256-lane workgroup.
 pub(in crate::type_checker) const MODULE_KEY_SMALL_SORT_CAPACITY: u32 = 256;
 /// Packs the per-field byte widths and even pass count for declaration keys.
@@ -605,6 +624,7 @@ mod tests {
         method_passes_required,
         struct_field_key_passes_required,
         struct_init_passes_required,
+        type_alias_passes_required,
     };
     use crate::lexer::features::{
         PARSER_FEATURE_ARRAYS,
@@ -614,6 +634,7 @@ mod tests {
         PARSER_FEATURE_MEMBERS,
         PARSER_FEATURE_PREDICATES,
         PARSER_FEATURE_STRUCTS,
+        PARSER_FEATURE_TYPE_ALIASES,
         PARSER_FEATURE_TYPE_ARGS,
     };
 
@@ -657,6 +678,14 @@ mod tests {
         assert!(method_passes_required(PARSER_FEATURE_MEMBERS));
         assert!(method_passes_required(PARSER_FEATURE_PREDICATES));
         assert!(method_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn type_alias_passes_follow_the_type_alias_feature() {
+        assert!(!type_alias_passes_required(0));
+        assert!(!type_alias_passes_required(PARSER_FEATURE_TYPE_ARGS));
+        assert!(type_alias_passes_required(PARSER_FEATURE_TYPE_ALIASES));
+        assert!(type_alias_passes_required(u32::MAX));
     }
 
     #[test]

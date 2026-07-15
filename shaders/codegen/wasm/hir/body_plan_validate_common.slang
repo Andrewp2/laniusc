@@ -27,7 +27,6 @@ static const uint BODY_PLAN_ASSIGN_MAX_TOKEN = 25u;
 static const uint BODY_PLAN_ASSIGN_LEN_AGG = 26u;
 static const uint BODY_PLAN_LET_LEN_AGG = 27u;
 static const uint BODY_PLAN_RETURN_LEN_AGG = 28u;
-static const uint BODY_PLAN_LOCAL_CONST_EXPR_COUNT = 29u;
 static const uint BODY_PLAN_CONTROL_LEN_AGG = 30u;
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint HIR_EXPR_INDEX = 26u;

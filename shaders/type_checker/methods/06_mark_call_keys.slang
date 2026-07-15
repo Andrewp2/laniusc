@@ -148,7 +148,6 @@ static const uint TK_PATH_TYPE_ARG_GT = 185u;
 static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -400,23 +399,23 @@ uint find_imported_type_decl(uint module_id, uint name_id)
 
 uint segment_name_id(uint path_i, uint segment_i)
 {
-    if (!valid_path(path_i) || segment_i >= min(path_segment_count[path_i], MAX_PATH_SEGMENTS))
+    if (!valid_path(path_i) || segment_i >= path_segment_count[path_i])
         return INVALID;
     uint slot = path_segment_base[path_i] + segment_i;
-    return slot < active_token_count() * MAX_PATH_SEGMENTS ? path_segment_name_id[slot] : INVALID;
+    return slot < active_token_count() ? path_segment_name_id[slot] : INVALID;
 }
 
 uint segment_token(uint path_i, uint segment_i)
 {
-    if (!valid_path(path_i) || segment_i >= min(path_segment_count[path_i], MAX_PATH_SEGMENTS))
+    if (!valid_path(path_i) || segment_i >= path_segment_count[path_i])
         return INVALID;
     uint slot = path_segment_base[path_i] + segment_i;
-    return slot < active_token_count() * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
+    return slot < active_token_count() ? path_segment_token[slot] : INVALID;
 }
 
 uint path_leaf_token(uint path_i)
 {
-    uint count = valid_path(path_i) ? min(path_segment_count[path_i], MAX_PATH_SEGMENTS) : 0u;
+    uint count = valid_path(path_i) ? path_segment_count[path_i] : 0u;
     return count == 0u ? INVALID : segment_token(path_i, count - 1u);
 }
 
@@ -518,7 +517,7 @@ uint local_or_imported_type_decl_for_source_token(uint token_i)
 
 uint associated_receiver_segment_count(uint path_i, uint method_i)
 {
-    uint count = valid_path(path_i) ? min(path_segment_count[path_i], MAX_PATH_SEGMENTS) : 0u;
+    uint count = valid_path(path_i) ? path_segment_count[path_i] : 0u;
     if (count == 0u)
         return 0u;
 
@@ -533,7 +532,7 @@ uint associated_receiver_decl(uint path_i, uint receiver_segment_count)
     if (!valid_path(path_i) || receiver_segment_count == 0u)
         return INVALID;
 
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (receiver_segment_count == count)
     {
         uint decl_i = resolved_type_decl[path_i];

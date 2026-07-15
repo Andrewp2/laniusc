@@ -29,8 +29,18 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
     WasmRecordBoundary {
         stage: "hir_body_let_init",
-        reads: &["hir_status", "hir_records", "hir_stmt_records"],
-        writes: &["wasm_body_let_init_expr_by_decl_token"],
+        reads: &[
+            "hir_status",
+            "hir_records",
+            "hir_stmt_records",
+            "hir_token_spans",
+            "hir_expr_roots",
+            "enclosing_function_records",
+        ],
+        writes: &[
+            "wasm_body_let_init_expr_by_decl_token",
+            "wasm_function_local_bounds",
+        ],
     },
     WasmRecordBoundary {
         stage: "hir_functions_clear",
@@ -87,6 +97,7 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
             "typecheck_records",
             "call_records",
             "wasm_const_value_records",
+            "wasm_expression_subtree_features",
         ],
         writes: &["wasm_body_plan"],
     },
@@ -279,7 +290,7 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
         writes: &["wasm_body_words"],
     },
     WasmRecordBoundary {
-        stage: "hir_body_scatter_arrays",
+        stage: "hir_body_scatter_stored_expr",
         reads: &[
             "wasm_params",
             "wasm_body_fragment_len",
@@ -293,6 +304,18 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
     WasmRecordBoundary {
         stage: "hir_body_scatter_agg_copy",
+        reads: &[
+            "wasm_params",
+            "wasm_body_fragment_len",
+            "wasm_body_fragment_meta",
+            "wasm_body_scan_local_prefix",
+            "wasm_body_scan_block_prefix",
+            "wasm_status",
+        ],
+        writes: &["wasm_body_words"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_body_scatter_member_assign",
         reads: &[
             "wasm_params",
             "wasm_body_fragment_len",

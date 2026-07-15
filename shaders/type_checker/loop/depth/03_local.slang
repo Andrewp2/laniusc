@@ -9,9 +9,9 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<int> loop_delta;
+StructuredBuffer<int> if_delta;
 
-RWStructuredBuffer<int> loop_depth_inblock;
+RWStructuredBuffer<int> if_depth_inblock;
 RWStructuredBuffer<int> block_sum;
 
 static const uint WG_SIZE = 256u;
@@ -32,10 +32,10 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     uint lane = ltid.x;
     uint i = block_idx * WG_SIZE + lane;
-    int value = i < gParams.n_tokens ? loop_delta[i] : 0;
+    int value = i < gParams.n_tokens ? if_delta[i] : 0;
     int inclusive = prefix_scan_i32_256(lane, value);
     if (i < gParams.n_tokens)
-        loop_depth_inblock[i] = inclusive;
+        if_depth_inblock[i] = inclusive;
     if (lane + 1u == WG_SIZE)
         block_sum[block_idx] = inclusive;
 }

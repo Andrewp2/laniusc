@@ -13,6 +13,13 @@ impl GpuWasmCodeGenerator {
         let active_hir_dispatch_args_buf = inputs.active_hir_dispatch_args;
         let working_buffers =
             create_wasm_working_buffers(device, output_capacity, token_capacity, hir_node_capacity);
+        let expr_order = self.create_wasm_expr_order(
+            device,
+            hir_node_capacity,
+            inputs.expressions.forest_root_node,
+            inputs,
+            &working_buffers,
+        )?;
         let object_inputs = WasmObjectInputBuffers::from_codegen_inputs(inputs);
         let WasmPreludeBindGroups {
             wasm_const_values_bind_group,
@@ -42,7 +49,6 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_validate_assign_bind_group,
             hir_body_plan_validate_control_bind_group,
             hir_body_plan_validate_agg_range_control_bind_group,
-            hir_body_plan_validate_if_simple_bind_group,
             hir_body_plan_validate_print_simple_bind_group,
             hir_body_plan_validate_call_bind_group,
             hir_body_plan_validate_host_void_call_bind_group,
@@ -60,7 +66,8 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_arrays_bind_group,
             hir_body_plan_functions_bind_group,
             hir_body_plan_finalize_bind_group,
-        } = self.create_wasm_body_plan_bind_groups(device, inputs, &working_buffers)?;
+        } =
+            self.create_wasm_body_plan_bind_groups(device, inputs, &working_buffers, &expr_order)?;
         let WasmBodySizingBindGroups {
             hir_body_clear_bind_group,
             hir_body_counts_bind_group,
@@ -76,11 +83,15 @@ impl GpuWasmCodeGenerator {
             hir_body_agg_call_finalize_bind_group,
             hir_body_direct_call_finalize_bind_group,
             hir_body_status_bind_group,
-        } = self.create_wasm_body_sizing_bind_groups(device, inputs, &working_buffers)?;
+        } = self.create_wasm_body_sizing_bind_groups(
+            device,
+            inputs,
+            &working_buffers,
+            &expr_order,
+        )?;
         let WasmBodyScatterBindGroups {
             hir_body_scatter_bind_group,
             hir_body_scatter_frame_bind_group,
-            hir_body_scatter_if_simple_bind_group,
             hir_body_scatter_return_scalar_bind_group,
             hir_body_scatter_return_expr_bind_group,
             hir_body_scatter_conversion_expr_bind_group,
@@ -91,17 +102,22 @@ impl GpuWasmCodeGenerator {
             hir_body_scatter_direct_nested_call_bind_group,
             hir_body_scatter_host_io_bind_group,
             hir_body_scatter_host_bind_group,
-            hir_body_scatter_arrays_bind_group,
+            hir_body_scatter_stored_expr_bind_group,
             hir_body_scatter_agg_copy_bind_group,
+            hir_body_scatter_member_assign_bind_group,
             hir_body_scatter_array_lean_bind_group,
             hir_body_scatter_return_member_bind_group,
             hir_body_scatter_agg_call_args_bind_group,
             hir_body_scatter_nested_call_args_bind_group,
             hir_body_scatter_agg_direct_call_bind_group,
             hir_body_scatter_return_agg_direct_call_bind_group,
-            hir_body_scatter_member_expr_bind_group,
             hir_body_scatter_binary_direct_call_bind_group,
-        } = self.create_wasm_body_scatter_bind_groups(device, inputs, &working_buffers)?;
+        } = self.create_wasm_body_scatter_bind_groups(
+            device,
+            inputs,
+            &working_buffers,
+            &expr_order,
+        )?;
         let WasmModuleBindGroups {
             hir_agg_body_bind_group,
             hir_assert_module_bind_group,
@@ -150,6 +166,8 @@ impl GpuWasmCodeGenerator {
             body_scan_block_sum_buf,
             body_scan_prefix_a_buf,
             body_scan_prefix_b_buf,
+            expr_subtree_total_buf,
+            expr_subtree_features_buf,
             wasm_agg_call_arg_count_by_fragment_buf,
             wasm_agg_call_arg_count_local_prefix_buf,
             wasm_agg_call_arg_count_block_sum_buf,
@@ -233,6 +251,8 @@ impl GpuWasmCodeGenerator {
             _body_scan_block_sum_buf: body_scan_block_sum_buf,
             _body_scan_prefix_a_buf: body_scan_prefix_a_buf,
             _body_scan_prefix_b_buf: body_scan_prefix_b_buf,
+            _expr_subtree_total_buf: expr_subtree_total_buf,
+            _expr_subtree_features_buf: expr_subtree_features_buf,
             _wasm_agg_call_arg_count_by_fragment_buf: wasm_agg_call_arg_count_by_fragment_buf,
             _wasm_agg_call_arg_count_local_prefix_buf: wasm_agg_call_arg_count_local_prefix_buf,
             _wasm_agg_call_arg_count_block_sum_buf: wasm_agg_call_arg_count_block_sum_buf,
@@ -264,6 +284,7 @@ impl GpuWasmCodeGenerator {
             _hir_enum_match_record_buf: hir_enum_match_record_buf,
             wasm_const_value_record_buf,
             call_relocations,
+            expr_order,
             object_inputs,
             out_buf,
             packed_out_buf,
@@ -298,7 +319,6 @@ impl GpuWasmCodeGenerator {
             hir_body_plan_validate_assign_bind_group,
             hir_body_plan_validate_control_bind_group,
             hir_body_plan_validate_agg_range_control_bind_group,
-            hir_body_plan_validate_if_simple_bind_group,
             hir_body_plan_validate_print_simple_bind_group,
             hir_body_plan_validate_call_bind_group,
             hir_body_plan_validate_host_void_call_bind_group,
@@ -332,7 +352,6 @@ impl GpuWasmCodeGenerator {
             hir_body_status_bind_group,
             hir_body_scatter_bind_group,
             hir_body_scatter_frame_bind_group,
-            hir_body_scatter_if_simple_bind_group,
             hir_body_scatter_return_scalar_bind_group,
             hir_body_scatter_return_expr_bind_group,
             hir_body_scatter_conversion_expr_bind_group,
@@ -343,15 +362,15 @@ impl GpuWasmCodeGenerator {
             hir_body_scatter_direct_nested_call_bind_group,
             hir_body_scatter_host_io_bind_group,
             hir_body_scatter_host_bind_group,
-            hir_body_scatter_arrays_bind_group,
+            hir_body_scatter_stored_expr_bind_group,
             hir_body_scatter_array_lean_bind_group,
             hir_body_scatter_agg_copy_bind_group,
+            hir_body_scatter_member_assign_bind_group,
             hir_body_scatter_agg_call_args_bind_group,
             hir_body_scatter_nested_call_args_bind_group,
             hir_body_scatter_agg_direct_call_bind_group,
             hir_body_scatter_return_agg_direct_call_bind_group,
             hir_body_scatter_return_member_bind_group,
-            hir_body_scatter_member_expr_bind_group,
             hir_body_scatter_binary_direct_call_bind_group,
             hir_agg_body_bind_group,
             hir_assert_module_bind_group,

@@ -5,22 +5,26 @@
 //! passes in `link/executable.rs`.
 
 mod executable;
+mod paged;
+mod symbol_partitions;
+mod symbol_resolution;
 
-use super::{GpuWasmRelocatableObject, GpuWasmRelocationTargetKind, GpuWasmSymbolKind};
+use std::path::PathBuf;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct GpuWasmLinkFunctionRecord {
-    pub type_input_start: u32,
-    pub type_len: u32,
-    pub body_input_start: u32,
-    pub body_len: u32,
-}
+use super::{
+    GpuWasmRelocatableObject,
+    GpuWasmRelocatableObjectLayout,
+    GpuWasmRelocationTargetKind,
+    GpuWasmSymbolKind,
+};
+use crate::codegen::GpuLinkByteSource;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct GpuWasmLinkRelocationRecord {
     pub body_offset: u32,
     pub target_kind: GpuWasmRelocationTargetKind,
     pub target_index: u32,
+    pub target_identity: [u32; 3],
     pub addend: i32,
 }
 
@@ -33,105 +37,212 @@ pub(super) struct GpuWasmLinkSymbolRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GpuWasmLinkInput {
-    pub(super) functions: Vec<GpuWasmLinkFunctionRecord>,
-    pub(super) type_bytes: Vec<u8>,
-    pub(super) body_bytes: Vec<u8>,
+    pub(super) function_count: usize,
+    type_bytes: GpuLinkByteSource,
+    body_bytes: GpuLinkByteSource,
     pub(super) relocations: Vec<GpuWasmLinkRelocationRecord>,
     pub(super) symbols: Vec<GpuWasmLinkSymbolRecord>,
     pub(super) entry_function: u32,
 }
 
 impl GpuWasmLinkInput {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn for_executable(objects: &[GpuWasmRelocatableObject]) -> Result<Self, String> {
         if objects.is_empty() {
             return Err("Wasm link requires at least one object".into());
         }
-        let mut result = Self {
-            functions: Vec::new(),
-            type_bytes: Vec::new(),
-            body_bytes: Vec::new(),
-            relocations: Vec::new(),
-            symbols: Vec::new(),
-            entry_function: u32::MAX,
-        };
+        let mut result = Self::empty(
+            GpuLinkByteSource::resident("Wasm link type bytes", Vec::new()),
+            GpuLinkByteSource::resident("Wasm link body bytes", Vec::new()),
+        );
         for (object_index, object) in objects.iter().enumerate() {
-            object.validate()?;
-            let function_base = checked_u32("function", result.functions.len())?;
-            let type_base = checked_u32("type byte", result.type_bytes.len())?;
-            let body_base = checked_u32("body byte", result.body_bytes.len())?;
-            let symbol_base = checked_u32("symbol", result.symbols.len())?;
-            if let Some(entry) = object.entry_function {
-                if result.entry_function != u32::MAX {
-                    return Err(format!(
-                        "Wasm link has multiple entry objects; second is {object_index}"
-                    ));
-                }
-                result.entry_function = function_base
-                    .checked_add(entry)
-                    .ok_or_else(|| "Wasm entry function index overflows".to_string())?;
-            }
-            result.type_bytes.extend_from_slice(&object.type_bytes);
-            result.body_bytes.extend_from_slice(&object.body_bytes);
-            for function in &object.functions {
-                result.functions.push(GpuWasmLinkFunctionRecord {
-                    type_input_start: type_base
-                        .checked_add(function.type_byte_start)
-                        .ok_or_else(|| "Wasm type offset overflows".to_string())?,
-                    type_len: function.type_byte_len,
-                    body_input_start: body_base
-                        .checked_add(function.body_byte_start)
-                        .ok_or_else(|| "Wasm body offset overflows".to_string())?,
-                    body_len: function.body_byte_len,
-                });
-            }
-            for relocation in &object.relocations {
-                result.relocations.push(GpuWasmLinkRelocationRecord {
-                    body_offset: body_base
-                        .checked_add(relocation.body_byte_offset)
-                        .ok_or_else(|| "Wasm relocation offset overflows".to_string())?,
-                    target_kind: relocation.target_kind,
-                    target_index: match relocation.target_kind {
-                        GpuWasmRelocationTargetKind::LocalFunction => function_base
-                            .checked_add(relocation.target_index)
-                            .ok_or_else(|| {
-                                "Wasm relocation local function index overflows".to_string()
-                            })?,
-                        GpuWasmRelocationTargetKind::Symbol => symbol_base
-                            .checked_add(relocation.target_index)
-                            .ok_or_else(|| "Wasm relocation symbol index overflows".to_string())?,
-                    },
-                    addend: relocation.addend,
-                });
-            }
-            for symbol in &object.symbols {
-                let start = symbol.identity_byte_start as usize;
-                let identity = &object.identity_bytes[start..start + 12];
-                result.symbols.push(GpuWasmLinkSymbolRecord {
-                    identity: [
-                        u32::from_le_bytes(identity[0..4].try_into().unwrap()),
-                        u32::from_le_bytes(identity[4..8].try_into().unwrap()),
-                        u32::from_le_bytes(identity[8..12].try_into().unwrap()),
-                    ],
-                    function_index: match symbol.kind {
-                        GpuWasmSymbolKind::Undefined => u32::MAX,
-                        GpuWasmSymbolKind::Function => function_base
-                            .checked_add(symbol.function_index)
-                            .ok_or_else(|| "Wasm symbol function index overflows".to_string())?,
-                    },
-                    flags: symbol.flags,
-                });
-            }
-            checked_u32("function", result.functions.len())?;
-            checked_u32("type byte", result.type_bytes.len())?;
-            checked_u32("body byte", result.body_bytes.len())?;
-            checked_u32("relocation", result.relocations.len())?;
-            checked_u32("symbol", result.symbols.len())?;
+            result.append_object(object_index, object)?;
+            result.type_bytes.extend_resident(&object.type_bytes);
+            result.body_bytes.extend_resident(&object.body_bytes);
+            checked_u32("type byte", result.type_byte_len())?;
+            checked_u32("body byte", result.body_byte_len())?;
         }
-        if result.entry_function == u32::MAX {
-            return Err("Wasm link has no entry function".into());
+        result.finish_validation()?;
+        if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+            eprintln!(
+                "[laniusc][wasm-link] objects={} functions={} body_bytes={} relocations={}",
+                objects.len(),
+                result.function_count,
+                result.body_byte_len(),
+                result.relocations.len()
+            );
+            for (index, relocation) in result.relocations.iter().enumerate() {
+                let site = relocation.body_offset as usize;
+                let start = site.saturating_sub(1);
+                let end = site.saturating_add(5).min(result.body_byte_len());
+                let bytes = result.body_bytes.read_range(start..end)?;
+                let bytes = bytes
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                eprintln!(
+                    "[laniusc][wasm-link] relocation={index} site={site} target={:?}:{} identity={:?} bytes=[{bytes}]",
+                    relocation.target_kind, relocation.target_index, relocation.target_identity
+                );
+            }
         }
         Ok(result)
     }
+
+    /// Builds link metadata one object at a time while retaining large type and
+    /// body columns as file ranges. Peak host payload memory is therefore one
+    /// compilation unit rather than the complete project.
+    pub(crate) fn for_executable_files(
+        files: impl IntoIterator<Item = (PathBuf, GpuWasmRelocatableObjectLayout)>,
+    ) -> Result<Self, String> {
+        let mut result = Self::empty(
+            GpuLinkByteSource::file_segments("Wasm link type bytes"),
+            GpuLinkByteSource::file_segments("Wasm link body bytes"),
+        );
+        let mut object_count = 0usize;
+        for (object_index, (path, layout)) in files.into_iter().enumerate() {
+            let object_bytes = std::fs::read(&path)
+                .map_err(|err| format!("read Wasm link object {}: {err}", path.display()))?;
+            let object = GpuWasmRelocatableObject::from_bytes(&object_bytes)
+                .map_err(|reason| format!("parse Wasm link object {}: {reason}", path.display()))?;
+            let parsed_layout = GpuWasmRelocatableObjectLayout::from_header_bytes(
+                &object_bytes[..super::GPU_WASM_OBJECT_HEADER_BYTES],
+            )?;
+            if parsed_layout != layout {
+                return Err(format!(
+                    "Wasm link object {} changed after layout validation",
+                    path.display()
+                ));
+            }
+            result.append_object(object_index, &object)?;
+            let (type_range, body_range) = layout.payload_byte_ranges()?;
+            result
+                .type_bytes
+                .push_file_segment(path.clone(), type_range)?;
+            result.body_bytes.push_file_segment(path, body_range)?;
+            checked_u32("type byte", result.type_byte_len())?;
+            checked_u32("body byte", result.body_byte_len())?;
+            object_count += 1;
+        }
+        if object_count == 0 {
+            return Err("Wasm link requires at least one object".into());
+        }
+        result.finish_validation()?;
+        Ok(result)
+    }
+
+    fn empty(type_bytes: GpuLinkByteSource, body_bytes: GpuLinkByteSource) -> Self {
+        Self {
+            function_count: 0,
+            type_bytes,
+            body_bytes,
+            relocations: Vec::new(),
+            symbols: Vec::new(),
+            entry_function: u32::MAX,
+        }
+    }
+
+    fn append_object(
+        &mut self,
+        object_index: usize,
+        object: &GpuWasmRelocatableObject,
+    ) -> Result<(), String> {
+        object.validate()?;
+        let function_base = checked_u32("function", self.function_count)?;
+        let body_base = checked_u32("body byte", self.body_byte_len())?;
+        if let Some(entry) = object.entry_function {
+            if self.entry_function != u32::MAX {
+                return Err(format!(
+                    "Wasm link has multiple entry objects; second is {object_index}"
+                ));
+            }
+            self.entry_function = function_base
+                .checked_add(entry)
+                .ok_or_else(|| "Wasm entry function index overflows".to_string())?;
+        }
+        self.function_count = self
+            .function_count
+            .checked_add(object.functions.len())
+            .ok_or_else(|| "Wasm function count overflows usize".to_string())?;
+        for relocation in &object.relocations {
+            let (target_index, target_identity) = match relocation.target_kind {
+                GpuWasmRelocationTargetKind::LocalFunction => (
+                    function_base
+                        .checked_add(relocation.target_index)
+                        .ok_or_else(|| {
+                            "Wasm relocation local function index overflows".to_string()
+                        })?,
+                    [0; 3],
+                ),
+                GpuWasmRelocationTargetKind::Symbol => {
+                    let symbol = &object.symbols[relocation.target_index as usize];
+                    (0, symbol_identity(object, symbol))
+                }
+            };
+            self.relocations.push(GpuWasmLinkRelocationRecord {
+                body_offset: body_base
+                    .checked_add(relocation.body_byte_offset)
+                    .ok_or_else(|| "Wasm relocation offset overflows".to_string())?,
+                target_kind: relocation.target_kind,
+                target_index,
+                target_identity,
+                addend: relocation.addend,
+            });
+        }
+        for symbol in &object.symbols {
+            if symbol.kind == GpuWasmSymbolKind::Undefined {
+                continue;
+            }
+            self.symbols.push(GpuWasmLinkSymbolRecord {
+                identity: symbol_identity(object, symbol),
+                function_index: function_base
+                    .checked_add(symbol.function_index)
+                    .ok_or_else(|| "Wasm symbol function index overflows".to_string())?,
+                flags: symbol.flags,
+            });
+        }
+        checked_u32("function", self.function_count)?;
+        checked_u32("relocation", self.relocations.len())?;
+        checked_u32("symbol", self.symbols.len())?;
+        Ok(())
+    }
+
+    fn finish_validation(&self) -> Result<(), String> {
+        if self.entry_function == u32::MAX {
+            return Err("Wasm link has no entry function".into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn type_byte_len(&self) -> usize {
+        self.type_bytes.len()
+    }
+
+    pub(super) fn body_byte_len(&self) -> usize {
+        self.body_bytes.len()
+    }
+
+    pub(super) fn read_type_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
+        self.type_bytes.read_range(range)
+    }
+
+    pub(super) fn read_body_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
+        self.body_bytes.read_range(range)
+    }
+}
+
+fn symbol_identity(
+    object: &GpuWasmRelocatableObject,
+    symbol: &super::GpuWasmObjectSymbolRecord,
+) -> [u32; 3] {
+    let start = symbol.identity_byte_start as usize;
+    let identity = &object.identity_bytes[start..start + 12];
+    [
+        u32::from_le_bytes(identity[0..4].try_into().unwrap()),
+        u32::from_le_bytes(identity[4..8].try_into().unwrap()),
+        u32::from_le_bytes(identity[8..12].try_into().unwrap()),
+    ]
 }
 
 fn checked_u32(label: &str, len: usize) -> Result<u32, String> {
@@ -205,9 +316,104 @@ mod tests {
             object([1, 1, 2], true, true),
         ])
         .unwrap();
-        assert_eq!(input.functions.len(), 2);
+        assert_eq!(input.function_count, 2);
         assert_ne!(input.symbols[0].identity, input.symbols[1].identity);
         assert_eq!(input.entry_function, 1);
+    }
+
+    #[test]
+    fn gpu_definition_table_omits_undefined_reference_records() {
+        let input = GpuWasmLinkInput::for_executable(&[
+            object([1, 0, 2], false, false),
+            object([1, 0, 2], true, true),
+        ])
+        .expect("link input");
+        assert_eq!(input.symbols.len(), 1);
+        assert_eq!(input.symbols[0].identity, [1, 0, 2]);
+    }
+
+    #[test]
+    fn symbol_relocation_carries_nominal_identity_without_resident_undefined_symbol() {
+        let mut caller = object([1, 0, 2], true, true);
+        let target_identity: Vec<_> = [9u32, 8, 7]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        let target_hash = stable_name_hash(&target_identity);
+        caller.identity_bytes.extend_from_slice(&target_identity);
+        caller.symbols.push(GpuWasmObjectSymbolRecord {
+            identity_hash_lo: target_hash.0,
+            identity_hash_hi: target_hash.1,
+            identity_byte_start: 12,
+            identity_byte_len: 12,
+            kind: GpuWasmSymbolKind::Undefined,
+            function_index: u32::MAX,
+            size: 0,
+            flags: 0,
+        });
+        caller.relocations.push(GpuWasmRelocationRecord {
+            body_byte_offset: 0,
+            target_kind: GpuWasmRelocationTargetKind::Symbol,
+            target_index: 1,
+            addend: 0,
+        });
+
+        let input = GpuWasmLinkInput::for_executable(&[caller]).expect("link input");
+        assert_eq!(input.symbols.len(), 1);
+        assert_eq!(input.relocations.len(), 1);
+        assert_eq!(input.relocations[0].target_identity, [9, 8, 7]);
+        assert_eq!(input.relocations[0].target_index, 0);
+    }
+
+    #[test]
+    fn file_backed_payload_matches_resident_link_input_across_objects() {
+        let objects = vec![
+            object([1, 0, 2], true, false),
+            object([1, 1, 2], true, true),
+        ];
+        let resident = GpuWasmLinkInput::for_executable(&objects).expect("resident input");
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-wasm-file-link-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("temporary directory");
+        let mut files = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            let bytes = object.to_bytes().expect("serialize object");
+            let layout = GpuWasmRelocatableObjectLayout::from_header_bytes(
+                &bytes[..crate::codegen::wasm::GPU_WASM_OBJECT_HEADER_BYTES],
+            )
+            .expect("object layout");
+            let path = root.join(format!("{index}.wasmobj"));
+            std::fs::write(&path, bytes).expect("write object");
+            files.push((path, layout));
+        }
+        let file_backed = GpuWasmLinkInput::for_executable_files(files).expect("file-backed input");
+
+        assert_eq!(file_backed.function_count, resident.function_count);
+        assert_eq!(file_backed.relocations, resident.relocations);
+        assert_eq!(file_backed.symbols, resident.symbols);
+        assert_eq!(file_backed.entry_function, resident.entry_function);
+        assert_eq!(file_backed.type_byte_len(), resident.type_byte_len());
+        assert_eq!(file_backed.body_byte_len(), resident.body_byte_len());
+        assert_eq!(
+            file_backed
+                .read_type_range(2..5)
+                .expect("cross-object type range"),
+            resident.read_type_range(2..5).expect("resident type range")
+        );
+        assert_eq!(
+            file_backed
+                .read_body_range(5..9)
+                .expect("cross-object body range"),
+            resident.read_body_range(5..9).expect("resident body range")
+        );
+
+        std::fs::remove_dir_all(root).expect("remove temporary directory");
     }
 
     fn padded(value: u32) -> [u8; 5] {

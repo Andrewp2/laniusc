@@ -2604,7 +2604,7 @@ fn partial_link_work_queue_rejects_stale_producer_source_summary() {
 }
 
 #[test]
-fn persisted_partial_link_input_keys_reject_future_producer_jobs() {
+fn persisted_partial_link_input_keys_reject_non_dense_producer_jobs() {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock")
@@ -2643,10 +2643,10 @@ fn persisted_partial_link_input_keys_reject_future_producer_jobs() {
 
     let err = store
         .load_hierarchical_link_execution_partial_page_for_target(target, group_index, page_index)
-        .expect_err("persisted partial-link input keys must not point at future producer jobs");
+        .expect_err("persisted partial-link input keys must name the dense producer job");
     let message = err.to_string();
     assert!(
-        message.contains("future producer job 99") && message.contains("consumer link job 53"),
+        message.contains("producer job 99") && message.contains("expected dense producer job 51"),
         "unexpected partial-link input key validation error: {message}"
     );
 

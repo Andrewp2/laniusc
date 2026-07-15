@@ -1731,6 +1731,29 @@ fn finish_recorded_check_mapped(bytes: &[u8]) -> Result<(), GpuSyntaxError> {
     Ok(())
 }
 
+/// Materializes every pipeline used by the syntax-check recording path.
+///
+/// Compiler construction calls this before a daemon can report readiness so
+/// the first compilation job never inherits shader or pipeline creation work.
+pub(super) fn prewarm_passes(device: &wgpu::Device) -> Result<()> {
+    syntax_delimiters_01_pass(device)?;
+    syntax_delimiters_02_pass(device)?;
+    syntax_statement_context_01_pass(device)?;
+    syntax_statement_context_02_pass(device)?;
+    syntax_statement_context_03_pass(device)?;
+    syntax_impl_context_01_pass(device)?;
+    syntax_impl_context_02_pass(device)?;
+    syntax_impl_context_03_pass(device)?;
+    syntax_trait_context_01_pass(device)?;
+    syntax_trait_context_02_pass(device)?;
+    syntax_trait_context_03_pass(device)?;
+    syntax_paren_match_01_pass(device)?;
+    syntax_angle_match_01_pass(device)?;
+    syntax_match_min_tree_pass(device)?;
+    syntax_tokens_pass(device)?;
+    Ok(())
+}
+
 fn syntax_tokens_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
@@ -2121,7 +2144,7 @@ fn storage_u32_rw(
         usage: wgpu::BufferUsages::STORAGE | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size), count)
+    LaniusBuffer::new_labeled((raw, byte_size), count, label)
 }
 
 fn storage_i32_rw(
@@ -2137,7 +2160,7 @@ fn storage_i32_rw(
         usage: wgpu::BufferUsages::STORAGE | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((raw, byte_size), count)
+    LaniusBuffer::new_labeled((raw, byte_size), count, label)
 }
 
 fn token_bytes(tokens: &[Token]) -> Vec<u8> {

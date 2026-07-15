@@ -719,6 +719,30 @@ impl GpuWasmCodeGenerator {
                 identity_bytes,
             };
             object.validate().map_err(anyhow::Error::msg)?;
+            if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+                eprintln!(
+                    "[laniusc][wasm-object] library={} unit={} functions={} body_bytes={} relocations={}",
+                    object.library_id,
+                    object.unit_id,
+                    object.functions.len(),
+                    object.body_bytes.len(),
+                    object.relocations.len()
+                );
+                for (index, relocation) in object.relocations.iter().enumerate() {
+                    let site = relocation.body_byte_offset as usize;
+                    let start = site.saturating_sub(1);
+                    let end = site.saturating_add(5).min(object.body_bytes.len());
+                    let bytes = object.body_bytes[start..end]
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    eprintln!(
+                        "[laniusc][wasm-object] relocation={index} site={site} target={:?}:{} bytes=[{bytes}]",
+                        relocation.target_kind, relocation.target_index
+                    );
+                }
+            }
             Ok(object)
         })();
         readback.unmap();

@@ -1,6 +1,7 @@
 use super::{
     super::*,
     dependency_visibility::DependencyVisibilityState,
+    path_sequences::PathPrefixRound,
     projection::TypeAliasProjection,
 };
 
@@ -16,6 +17,10 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) count_path_segments: wgpu::BindGroup,
     pub(in crate::type_checker) path_segment_scan: U32ScanBindGroups,
     pub(in crate::type_checker) scatter_path_segments: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_path_prefix_max: wgpu::BindGroup,
+    pub(in crate::type_checker) path_prefix_dispatch_args: wgpu::BindGroup,
+    pub(in crate::type_checker) path_prefix_rounds: Vec<PathPrefixRound>,
+    pub(in crate::type_checker) path_prefix_finalize: wgpu::BindGroup,
     pub(in crate::type_checker) extract_module_record_flag: wgpu::BindGroup,
     pub(in crate::type_checker) module_scan: U32ScanBindGroups,
     pub(in crate::type_checker) extract_import_record_flag: wgpu::BindGroup,
@@ -148,6 +153,7 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) module_path_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) module_owner_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) module_status: LaniusBuffer<u32>,
+    pub(in crate::type_checker) module_key_canonical_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) module_key_segment_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) module_key_segment_base: LaniusBuffer<u32>,
     pub(in crate::type_checker) module_key_segment_name_id: LaniusBuffer<u32>,
@@ -258,6 +264,15 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) path_segment_name_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_segment_token: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_segment_count_out: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_max_segment_count: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_base: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_id_a: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_id_b: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_table_state: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_table_left: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_table_right: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_owner_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_owner_token: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_id_by_owner_hir: LaniusBuffer<u32>,
@@ -277,6 +292,8 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) _extract_decl_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) _path_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) _path_prefix_dispatch_params:
+        LaniusBuffer<PathPrefixDispatchParams>,
     pub(in crate::type_checker) _import_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _import_visible_validate_dispatch_params:
         LaniusBuffer<CountPairMaxDispatchParams>,

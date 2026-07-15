@@ -88,7 +88,6 @@ static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_NODE_INST_COUNTS_OK = 1u;
 static const uint X86_ERR_NODE_INST_COUNTS = 10u;
-static const uint X86_ERR_AGG_COPY_WIDTH = 26u;
 static const uint X86_ERR_POSTFIX_EXPR = 30u;
 static const uint X86_ERR_FOR_ITERABLE = 33u;
 static const uint X86_ERR_UNSUPPORTED_UNARY_EXPR = 39u;
@@ -206,7 +205,6 @@ static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_AGG_STORE_ARRAY = 2u;
-static const uint X86_AGG_COPY_MAX_WIDTH = 65535u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -1384,20 +1382,6 @@ void write_count(uint node, uint count, uint kind, uint payload)
         increment_stage_count4(x86_node_inst_count_status, 1u);
 }
 
-void record_aggregate_copy_width(uint width)
-{
-    if (width != 0u)
-        atomic_u32_max(x86_node_inst_count_status, 4u, width);
-}
-
-void publish_aggregate_copy_width_error(uint node)
-{
-    publish_stage_error_min_detail4(
-        x86_node_inst_count_status,
-        X86_ERR_AGG_COPY_WIDTH,
-        node);
-}
-
 uint postfix_diagnostic_node(uint node)
 {
     uint resolved = resolve_expr(node);
@@ -1590,12 +1574,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint field_copy_width = 0u;
     if (struct_field_aggregate_copy_width(node, field_copy_width))
     {
-        if (field_copy_width > X86_AGG_COPY_MAX_WIDTH)
-        {
-            publish_aggregate_copy_width_error(node);
-            return;
-        }
-        record_aggregate_copy_width(field_copy_width);
         write_count(node, field_copy_width * 2u + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
         return;
     }
@@ -1621,12 +1599,7 @@ void main(uint3 tid: SV_DispatchThreadID)
             return;
         }
         uint return_width = 0u;
-        if (aggregate_return_width(node, return_width) && return_width > X86_AGG_COPY_MAX_WIDTH)
-        {
-            publish_aggregate_copy_width_error(node);
-            return;
-        }
-        record_aggregate_copy_width(return_width);
+        aggregate_return_width(node, return_width);
         uint transfer_count = return_width > 0u ? return_width + 1u : 1u;
         write_count(node, transfer_count + padding, X86_NODE_INST_TRANSFER, stmt_slot(node, 1u));
         return;
@@ -1661,12 +1634,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint copy_width = 0u;
         if (aggregate_let_copy_width(node, copy_width))
         {
-            if (copy_width > X86_AGG_COPY_MAX_WIDTH)
-            {
-                publish_aggregate_copy_width_error(node);
-                return;
-            }
-            record_aggregate_copy_width(copy_width);
             write_count(node, copy_width * 2u + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
             return;
         }

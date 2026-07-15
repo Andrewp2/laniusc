@@ -1,7 +1,7 @@
 // build.rs — compile Slang entrypoints (no duplicate module sources).
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     env,
     fs,
     io,
@@ -51,6 +51,7 @@ fn main() -> Result<()> {
     let mut sources =
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
+    validate_body_fragment_ids(&sources)?;
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
@@ -164,6 +165,64 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn validate_body_fragment_ids(sources: &[PathBuf]) -> Result<()> {
+    let mut id_by_name = BTreeMap::<String, (u32, PathBuf, usize)>::new();
+    let mut name_by_id = BTreeMap::<u32, (String, PathBuf, usize)>::new();
+
+    for source_path in sources {
+        let source = fs::read_to_string(source_path)
+            .with_context(|| format!("read shader source {}", source_path.display()))?;
+        for (line_i, line) in source.lines().enumerate() {
+            let declaration = line.split("//").next().unwrap_or("").trim();
+            let Some((lhs, rhs)) = declaration.split_once('=') else {
+                continue;
+            };
+            let Some(name) = lhs.split_whitespace().last() else {
+                continue;
+            };
+            if !name.starts_with("BODY_FRAGMENT_") || name == "BODY_FRAGMENT_MAX_BYTES" {
+                continue;
+            }
+            let Some(value) = rhs.trim().strip_suffix(';') else {
+                continue;
+            };
+            let Some(value) = value.trim().strip_suffix('u') else {
+                continue;
+            };
+            let Ok(id) = value.trim().parse::<u32>() else {
+                continue;
+            };
+            let line_number = line_i + 1;
+
+            if let Some((prior_id, prior_path, prior_line)) = id_by_name.get(name) {
+                if *prior_id != id {
+                    return Err(anyhow!(
+                        "Wasm body fragment {name} has conflicting ids {prior_id} at {}:{prior_line} and {id} at {}:{line_number}",
+                        prior_path.display(),
+                        source_path.display(),
+                    ));
+                }
+            } else {
+                id_by_name.insert(name.to_string(), (id, source_path.clone(), line_number));
+            }
+
+            if let Some((prior_name, prior_path, prior_line)) = name_by_id.get(&id) {
+                if prior_name != name {
+                    return Err(anyhow!(
+                        "Wasm body fragment id {id} is shared by {prior_name} at {}:{prior_line} and {name} at {}:{line_number}",
+                        prior_path.display(),
+                        source_path.display(),
+                    ));
+                }
+            } else {
+                name_by_id.insert(id, (name.to_string(), source_path.clone(), line_number));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn workspace_root() -> Result<PathBuf> {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -223,16 +282,32 @@ fn shader_opt_level() -> Result<String> {
 
 fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
     let default = shader_opt_level()?;
-    if default != "0" && force_minimum_wasm_body_artifact_optimization(artifact_key) {
+    if default != "0" && force_minimum_complex_artifact_optimization(artifact_key) {
         return Ok("0".to_string());
     }
     Ok(default)
 }
 
-fn force_minimum_wasm_body_artifact_optimization(artifact_key: &str) -> bool {
+fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
     matches!(
         artifact_key,
-        "codegen/wasm/module"
+        "parser/tokens/to/kinds"
+            | "parser/syntax/tokens"
+            | "type_checker/conditions_hir"
+            | "type_checker/predicates/01_collect"
+            | "type_checker/predicates/01a_validate_bound_args"
+            | "type_checker/predicates/01_collect_impls"
+            | "type_checker/predicates/02_obligations"
+            | "type_checker/calls/03a_collect_row_args"
+            | "codegen/x86/node/inst/gen"
+            | "codegen/x86/node/inst/gen/calls"
+            | "codegen/x86/node/inst/gen/statements"
+            | "codegen/x86/node/inst/gen/matches"
+            | "codegen/x86/node/inst/gen/host_calls"
+            | "codegen/x86/node/inst/counts"
+            | "codegen/x86/encode"
+            | "codegen/x86/inst_size"
+            | "codegen/wasm/module"
             | "codegen/wasm/hir/body_plan"
             | "codegen/wasm/hir/body_plan_collect"
             | "codegen/wasm/hir/body_plan_validate"
@@ -277,13 +352,14 @@ fn force_minimum_wasm_body_artifact_optimization(artifact_key: &str) -> bool {
             | "codegen/wasm/hir/body_scatter_agg_range_control"
             | "codegen/wasm/hir/body_scatter_host_io"
             | "codegen/wasm/hir/body_scatter_host"
-            | "codegen/wasm/hir/body_scatter_arrays"
+            | "codegen/wasm/hir/body_scatter_stored_expr"
+            // O1 currently expands this pass from about 104 KiB to about 5.9 MiB.
             | "codegen/wasm/hir/body_scatter_agg_copy"
+            | "codegen/wasm/hir/body_scatter_member_assign"
             | "codegen/wasm/hir/body_scatter_agg_call_args"
             | "codegen/wasm/hir/body_scatter_nested_call_args"
             | "codegen/wasm/hir/body_scatter_agg_direct_call"
             | "codegen/wasm/hir/body_scatter_return_member"
-            | "codegen/wasm/hir/body_scatter_member_expr"
             | "codegen/wasm/hir/body_scatter_binary_direct_call"
             | "codegen/wasm/hir/body_scatter_return_agg_direct_call"
     )
@@ -344,7 +420,7 @@ fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> 
 }
 
 fn shader_max_spv_bytes() -> Result<Option<u64>> {
-    const DEFAULT_MAX_SPV_BYTES: u64 = 5 * 1024 * 1024;
+    const DEFAULT_MAX_SPV_BYTES: u64 = 512 * 1024;
 
     let value = match env::var("LANIUS_SHADER_MAX_SPV_BYTES") {
         Ok(value) => value,
@@ -377,7 +453,7 @@ fn validate_shader_artifact_size(ep: &Path, spv_out: &Path, max_bytes: Option<u6
     }
 
     Err(anyhow!(
-        "compiled shader artifact {} for {} is {} bytes, exceeding LANIUS_SHADER_MAX_SPV_BYTES={} bytes. Split the shader into smaller record/count/scan/scatter/join passes before relying on this pipeline; set LANIUS_SHADER_MAX_SPV_BYTES=0 only for local investigation.",
+        "compiled shader artifact {} for {} is {} bytes, exceeding LANIUS_SHADER_MAX_SPV_BYTES={} bytes. Use minimum Slang optimization for complex control-flow shaders or split the shader into smaller record/count/scan/scatter/join passes before relying on this pipeline; set LANIUS_SHADER_MAX_SPV_BYTES=0 only for local investigation.",
         spv_out.display(),
         ep.display(),
         size,
@@ -943,10 +1019,22 @@ fn collect_shader_dependencies(
 
     let text = fs::read_to_string(&path)
         .with_context(|| format!("read shader dependency {}", path.display()))?;
-    for import in shader_imports(&text) {
-        let dep = resolve_shader_import(shader_root, &path, import).ok_or_else(|| {
+    for dependency in shader_dependencies(&text) {
+        let (kind, name, dep) = match dependency {
+            ShaderDependency::Import(import) => (
+                "import",
+                import,
+                resolve_shader_import(shader_root, &path, import),
+            ),
+            ShaderDependency::Include(include) => (
+                "include",
+                include,
+                resolve_shader_include(shader_root, &path, include),
+            ),
+        };
+        let dep = dep.ok_or_else(|| {
             anyhow!(
-                "unresolved shader import `{import}` while collecting dependencies for {}",
+                "unresolved shader {kind} `{name}` while collecting dependencies for {}",
                 path.display()
             )
         })?;
@@ -955,12 +1043,49 @@ fn collect_shader_dependencies(
     Ok(())
 }
 
-fn shader_imports(text: &str) -> impl Iterator<Item = &str> {
+enum ShaderDependency<'a> {
+    Import(&'a str),
+    Include(&'a str),
+}
+
+fn shader_dependencies(text: &str) -> impl Iterator<Item = ShaderDependency<'_>> {
     text.lines().filter_map(|line| {
         let line = line.split("//").next().unwrap_or("").trim();
-        let rest = line.strip_prefix("import ")?;
-        rest.strip_suffix(';').map(str::trim)
+        if let Some(rest) = line.strip_prefix("import ") {
+            return rest
+                .strip_suffix(';')
+                .map(str::trim)
+                .map(ShaderDependency::Import);
+        }
+        let include = line.strip_prefix("#include")?.trim();
+        include
+            .strip_prefix('"')
+            .and_then(|include| include.strip_suffix('"'))
+            .or_else(|| {
+                include
+                    .strip_prefix('<')
+                    .and_then(|include| include.strip_suffix('>'))
+            })
+            .map(str::trim)
+            .filter(|include| !include.is_empty())
+            .map(ShaderDependency::Include)
     })
+}
+
+fn resolve_shader_include(shader_root: &Path, importer: &Path, include: &str) -> Option<PathBuf> {
+    let include = PathBuf::from(include);
+    let mut candidates = Vec::new();
+    if let Some(parent) = importer.parent() {
+        candidates.push(parent.join(&include));
+    }
+    candidates.extend([
+        shader_root.join(&include),
+        shader_root.join("lexer").join(&include),
+        shader_root.join("parser").join(&include),
+        shader_root.join("type_checker").join(&include),
+        shader_root.join("codegen").join(&include),
+    ]);
+    candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
 fn resolve_shader_import(shader_root: &Path, importer: &Path, import: &str) -> Option<PathBuf> {

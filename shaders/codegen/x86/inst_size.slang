@@ -166,7 +166,6 @@ static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
 static const uint X86_AGG_SOURCE_REG = 3u;
-static const uint X86_AGG_COPY_SEPARATE_ORDINALS = 0x80000000u;
 static const uint X86_AGG_RETURN_DEST_RET_PTR = 0xffu;
 // Keep local-slot displacements within x86 signed disp32 while allowing large
 // generated functions to exceed the old 16-bit-era guard.
@@ -1684,28 +1683,22 @@ uint call_mixed_size(uint target, uint info, uint packed, uint save_mask)
 
 uint copy_agg_ret_size(uint source_kind, uint payload, uint ordinal)
 {
-    uint source_ordinal = (ordinal & X86_AGG_COPY_SEPARATE_ORDINALS) != 0u
-                              ? ((ordinal >> 16u) & 0x7fffu)
-                              : ordinal;
-    uint dest_ordinal = (ordinal & X86_AGG_COPY_SEPARATE_ORDINALS) != 0u
-                            ? (ordinal & 0xffffu)
-                            : ordinal;
     if (source_kind == X86_AGG_SOURCE_LOCAL)
     {
-        uint load_size = local_mem_r32_size(X86_REG_R11D, payload + source_ordinal);
-        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, dest_ordinal);
+        uint load_size = local_mem_r32_size(X86_REG_R11D, payload);
+        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, ordinal);
         return load_size != 0u && store_size != 0u ? load_size + store_size : 0u;
     }
     if (source_kind == X86_AGG_SOURCE_PARAM)
     {
-        uint payload_base = param_aggregate_payload_base(payload);
-        uint payload_ordinal = param_aggregate_payload_ordinal(payload) + source_ordinal;
+        uint payload_base = payload & 0x0fu;
+        uint payload_ordinal = payload >> 4u;
         uint load_size = ptr_slot_mem_r32_size(X86_REG_R11D, payload_base, payload_ordinal);
-        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, dest_ordinal);
+        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, ordinal);
         return load_size != 0u && store_size != 0u ? load_size + store_size : 0u;
     }
     if (source_kind == X86_AGG_SOURCE_REG)
-        return ptr_slot_mem_r32_size(payload, X86_REG_EDI, dest_ordinal);
+        return ptr_slot_mem_r32_size(payload, X86_REG_EDI, ordinal);
     return 0u;
 }
 

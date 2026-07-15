@@ -42,7 +42,6 @@ RWStructuredBuffer<uint> visible_type;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
@@ -131,8 +130,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     visible_decl[owner_token] = const_token;
     visible_type[owner_token] = ty;
     module_value_path_const_head[owner_token] = 1u;
-    uint count = min(segment_count, MAX_PATH_SEGMENTS);
     module_value_path_const_end[owner_token] =
-        count == 0u ? owner_token : path_segment_token[path_segment_base[path_i] + count - 1u];
+        path_segment_token[path_segment_base[path_i] + segment_count - 1u];
     module_value_path_status[owner_token] = INVALID;
 }

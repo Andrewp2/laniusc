@@ -196,7 +196,8 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
         .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
         .env("LANIUS_GPU_COMPILE_HOST_TIMING", "1")
         .stdin(Stdio::from(stdin));
-    let output = common::command_output_with_timeout("laniusc daemon x86 job", &mut command);
+    let output =
+        common::codegen_command_output_with_timeout("laniusc daemon x86 job", &mut command);
     common::assert_command_success("laniusc daemon x86 job", &output);
 
     let responses = String::from_utf8(output.stdout)
@@ -210,11 +211,6 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
         "ready, recoverable file error, split compile, fused repeat compile, syntax error, trim, post-trim compile, and shutdown responses"
     );
     assert_eq!(responses[0]["event"], "ready");
-    assert!(
-        responses[0]["startup_ms"]
-            .as_f64()
-            .is_some_and(|ms| ms < 60_000.0)
-    );
     assert!(
         responses[0]["resident_set_bytes"]
             .as_u64()
@@ -231,12 +227,30 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
             .is_some_and(|bytes| bytes > 0)
     );
     assert!(responses[0]["wgpu_resources"]["buffers"].is_object());
+    assert!(
+        responses[0]["compute_pipelines_created"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
     assert_eq!(responses[1]["id"], "missing");
     assert_eq!(responses[1]["ok"], false);
     assert!(responses[1]["diagnostic"].is_object());
     assert_eq!(responses[2]["id"], "compile");
     assert_eq!(responses[2]["ok"], true);
     assert_eq!(responses[2]["emit"], "x86_64");
+    for response in [&responses[2], &responses[3], &responses[4], &responses[6]] {
+        assert_eq!(
+            response["compute_pipelines_created_during_job"], 0,
+            "daemon compilation jobs must not create pipelines after readiness: {response}"
+        );
+    }
+    assert!(
+        responses[0]["startup_ms"]
+            .as_f64()
+            .is_some_and(|ms| ms < 60_000.0),
+        "daemon must eagerly create every pipeline and become ready within 60 seconds: {}",
+        responses[0]
+    );
     assert!(responses[2]["tracked_gpu_buffers"].is_object());
     assert!(responses[2]["wgpu_resources"]["command_buffers"].is_object());
     assert!(
@@ -308,4 +322,78 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     let _ = fs::remove_file(repeat_artifact);
     let _ = fs::remove_file(second_artifact);
     let _ = fs::remove_file(requests);
+}
+
+#[test]
+fn cli_daemon_first_wasm_job_creates_no_pipelines_and_runs() {
+    common::require_node();
+
+    let source = common::temp_artifact_path("laniusc_daemon_wasm", "source", Some("lani"));
+    let artifact = common::temp_artifact_path("laniusc_daemon_wasm", "artifact", Some("wasm"));
+    let repeat_artifact = common::temp_artifact_path("laniusc_daemon_wasm", "repeat", Some("wasm"));
+    let requests = common::temp_artifact_path("laniusc_daemon_wasm", "requests", Some("jsonl"));
+    fs::write(
+        &source,
+        "fn main() -> i32 {\n    print(7);\n    return 0;\n}\n",
+    )
+    .expect("write daemon Wasm source fixture");
+    let compile = serde_json::json!({
+        "id": "compile",
+        "command": "compile",
+        "emit": "wasm",
+        "input": source,
+        "output": artifact,
+    });
+    let repeat_compile = serde_json::json!({
+        "id": "repeat_compile",
+        "command": "compile",
+        "emit": "wasm",
+        "input": source,
+        "output": repeat_artifact,
+    });
+    let shutdown = serde_json::json!({"id": "shutdown", "command": "shutdown"});
+    fs::write(
+        &requests,
+        format!("{compile}\n{repeat_compile}\n{shutdown}\n"),
+    )
+    .expect("write daemon Wasm requests");
+
+    let stdin = fs::File::open(&requests).expect("open daemon Wasm request fixture");
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("daemon")
+        .arg("--stdio")
+        .arg("--backend")
+        .arg("wasm")
+        .arg("--stdlib-root")
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .stdin(Stdio::from(stdin));
+    let output =
+        common::codegen_command_output_with_timeout("laniusc daemon Wasm first job", &mut command);
+    common::assert_command_success("laniusc daemon Wasm first job", &output);
+
+    let responses = String::from_utf8(output.stdout)
+        .expect("daemon stdout should be UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
+        .collect::<Vec<_>>();
+    assert_eq!(responses.len(), 4, "ready, two compiles, and shutdown");
+    assert_eq!(responses[0]["event"], "ready");
+    assert_eq!(responses[0]["targets"], serde_json::json!(["wasm"]));
+    for response in [&responses[1], &responses[2]] {
+        assert_eq!(
+            response["ok"], true,
+            "Wasm daemon compile failed: {response}"
+        );
+        assert_eq!(response["emit"], "wasm");
+        assert_eq!(
+            response["compute_pipelines_created_during_job"], 0,
+            "daemon Wasm jobs must not create pipelines after readiness: {response}"
+        );
+    }
+
+    let wasm = fs::read(&artifact).expect("read daemon Wasm artifact");
+    let stdout =
+        common::run_wasm_main_with_node("daemon first Wasm job", "daemon_first_wasm_job", &wasm);
+    assert_eq!(stdout, "7\n");
 }

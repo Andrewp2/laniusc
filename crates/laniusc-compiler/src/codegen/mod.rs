@@ -4,6 +4,10 @@
 //! planning. `x86` and `wasm` own target backend recorders that consume parser
 //! HIR plus retained type-check metadata after frontend status success.
 
+mod link_byte_source;
+pub(crate) mod link_layout;
+pub(crate) use link_byte_source::GpuLinkByteSource;
+
 /// Target-independent source-pack unit, job, artifact, and shard planning.
 pub mod unit;
 

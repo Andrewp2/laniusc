@@ -829,7 +829,7 @@ pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
         )));
     }
 
-    let mut input_partition_count = 0usize;
+    let mut input_partition_span = None::<(usize, usize)>;
     let mut source_byte_count = 0usize;
     let mut source_file_count = 0usize;
     let mut source_line_count = 0usize;
@@ -852,14 +852,13 @@ pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
                 group.group_index, group.level, input_group_index, input_group.level
             )));
         }
-        input_partition_count = input_partition_count
-            .checked_add(hierarchical_link_group_input_partition_count(&input_group))
-            .ok_or_else(|| {
-                library_partition_contract_error(format!(
-                    "hierarchical link reduce group {} input partition summary overflows",
-                    group.group_index
-                ))
-            })?;
+        let child_span =
+            hierarchical_link_group_partition_span(store, link_plan_index.target, &input_group)?;
+        extend_hierarchical_link_partition_span(
+            &mut input_partition_span,
+            child_span,
+            &format!("hierarchical link reduce group {}", group.group_index),
+        )?;
         source_byte_count = source_byte_count
             .checked_add(input_group.source_byte_count)
             .ok_or_else(|| {
@@ -886,6 +885,22 @@ pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
             })?;
         oversized_input |= input_group.oversized_input;
     }
+
+    let (first_input_partition, last_input_partition) = input_partition_span.ok_or_else(|| {
+        library_partition_contract_error(format!(
+            "hierarchical link reduce group {} has no input partition span",
+            group.group_index
+        ))
+    })?;
+    let input_partition_count = last_input_partition
+        .checked_sub(first_input_partition)
+        .and_then(|distance| distance.checked_add(1))
+        .ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "hierarchical link reduce group {} input partition summary overflows",
+                group.group_index
+            ))
+        })?;
 
     if group.input_partition_count != input_partition_count
         || group.source_byte_count != source_byte_count

@@ -5,6 +5,12 @@
 //! byte movement, and relocation application remain GPU work.
 
 mod executable;
+mod layout_chunks;
+mod paged;
+mod symbol_partitions;
+mod symbol_resolution;
+
+use std::path::PathBuf;
 
 use anyhow::Result;
 #[cfg(test)]
@@ -22,7 +28,13 @@ use super::support::{
     uniform_u32_words,
     workgroup_grid_1d,
 };
-use super::{GpuX86CodeGenerator, GpuX86RelocatableObject, GpuX86RelocationTargetKind};
+use super::{
+    GpuX86CodeGenerator,
+    GpuX86RelocatableObject,
+    GpuX86RelocatableObjectLayout,
+    GpuX86RelocationTargetKind,
+};
+use crate::codegen::GpuLinkByteSource;
 
 pub(super) const X86_LINK_SYMBOL_IDENTITY_BYTES: usize = 12;
 
@@ -48,6 +60,7 @@ pub(super) struct GpuX86LinkRelocationRecord {
     pub target_kind: u32,
     pub target_index: u32,
     pub target_offset: u32,
+    pub target_section: u32,
     pub addend_lo: u32,
     pub addend_hi: u32,
 }
@@ -66,8 +79,8 @@ pub(super) struct GpuX86LinkSymbolRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GpuX86LinkInput {
     pub(super) objects: Vec<GpuX86LinkObjectRecord>,
-    pub(super) text: Vec<u8>,
-    pub(super) rodata: Vec<u8>,
+    text: GpuLinkByteSource,
+    rodata: GpuLinkByteSource,
     pub(super) relocations: Vec<GpuX86LinkRelocationRecord>,
     pub(super) symbols: Vec<GpuX86LinkSymbolRecord>,
     pub(super) entry_object_index: u32,
@@ -75,6 +88,7 @@ pub(crate) struct GpuX86LinkInput {
 
 impl GpuX86LinkInput {
     /// Flattens independently validated object containers for one final link.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn for_executable(
         source_objects: &[GpuX86RelocatableObject],
     ) -> Result<Self, String> {
@@ -83,107 +97,182 @@ impl GpuX86LinkInput {
         }
         checked_u32_count("object", source_objects.len())?;
 
-        let mut input = Self {
-            objects: Vec::with_capacity(source_objects.len()),
-            text: Vec::new(),
-            rodata: Vec::new(),
+        let mut input = Self::empty(
+            GpuLinkByteSource::resident("x86 link text bytes", Vec::new()),
+            GpuLinkByteSource::resident("x86 link rodata bytes", Vec::new()),
+        );
+        input.objects.reserve(source_objects.len());
+
+        for (object_index, object) in source_objects.iter().enumerate() {
+            input.append_object(object_index, object)?;
+            input.text.extend_resident(&object.text);
+            input.rodata.extend_resident(&object.rodata);
+            checked_u32_count("flat text byte", input.text_len())?;
+            checked_u32_count("flat rodata byte", input.rodata_len())?;
+        }
+        input.finish_validation()?;
+        Ok(input)
+    }
+
+    /// Builds aggregate metadata one object at a time while retaining section
+    /// payloads as ranges in the persisted object files.
+    pub(crate) fn for_executable_files(
+        files: impl IntoIterator<Item = (PathBuf, GpuX86RelocatableObjectLayout)>,
+    ) -> Result<Self, String> {
+        let mut input = Self::empty(
+            GpuLinkByteSource::file_segments("x86 link text bytes"),
+            GpuLinkByteSource::file_segments("x86 link rodata bytes"),
+        );
+        let mut object_count = 0usize;
+        for (object_index, (path, layout)) in files.into_iter().enumerate() {
+            let object_bytes = std::fs::read(&path)
+                .map_err(|err| format!("read x86 link object {}: {err}", path.display()))?;
+            let object = GpuX86RelocatableObject::from_bytes(&object_bytes)
+                .map_err(|reason| format!("parse x86 link object {}: {reason}", path.display()))?;
+            let parsed_layout = GpuX86RelocatableObjectLayout::from_header_bytes(
+                &object_bytes[..super::GPU_X86_OBJECT_HEADER_BYTES],
+            )?;
+            if parsed_layout != layout {
+                return Err(format!(
+                    "x86 link object {} changed after layout validation",
+                    path.display()
+                ));
+            }
+            input.append_object(object_index, &object)?;
+            let (text_range, rodata_range) = layout.payload_byte_ranges()?;
+            input.text.push_file_segment(path.clone(), text_range)?;
+            input.rodata.push_file_segment(path, rodata_range)?;
+            checked_u32_count("flat text byte", input.text_len())?;
+            checked_u32_count("flat rodata byte", input.rodata_len())?;
+            object_count += 1;
+        }
+        if object_count == 0 {
+            return Err("x86 link requires at least one object".to_string());
+        }
+        input.finish_validation()?;
+        Ok(input)
+    }
+
+    fn empty(text: GpuLinkByteSource, rodata: GpuLinkByteSource) -> Self {
+        Self {
+            objects: Vec::new(),
+            text,
+            rodata,
             relocations: Vec::new(),
             symbols: Vec::new(),
             entry_object_index: u32::MAX,
-        };
+        }
+    }
 
-        for (object_index, object) in source_objects.iter().enumerate() {
-            object.validate()?;
-            let object_index = object_index as u32;
-            let text_input_start = checked_u32_count("flat text byte", input.text.len())?;
-            let rodata_input_start = checked_u32_count("flat rodata byte", input.rodata.len())?;
-            let relocation_start = checked_u32_count("flat relocation", input.relocations.len())?;
-            let symbol_start = checked_u32_count("flat symbol", input.symbols.len())?;
-
-            if let Some(entry_offset) = object.entry_offset {
-                if input.entry_object_index != u32::MAX {
-                    return Err(format!(
-                        "x86 link has multiple entry objects: {} and {object_index}",
-                        input.entry_object_index
-                    ));
-                }
-                input.entry_object_index = object_index;
-                debug_assert!(entry_offset < object.text.len() as u32);
+    fn append_object(
+        &mut self,
+        object_index: usize,
+        object: &GpuX86RelocatableObject,
+    ) -> Result<(), String> {
+        object.validate()?;
+        let object_index = checked_u32_count("object", object_index)?;
+        let text_input_start = checked_u32_count("flat text byte", self.text_len())?;
+        let rodata_input_start = checked_u32_count("flat rodata byte", self.rodata_len())?;
+        let relocation_start = checked_u32_count("flat relocation", self.relocations.len())?;
+        let symbol_start = checked_u32_count("flat symbol", self.symbols.len())?;
+        if let Some(entry_offset) = object.entry_offset {
+            if self.entry_object_index != u32::MAX {
+                return Err(format!(
+                    "x86 link has multiple entry objects: {} and {object_index}",
+                    self.entry_object_index
+                ));
             }
-
-            input.text.extend_from_slice(&object.text);
-            input.rodata.extend_from_slice(&object.rodata);
-            checked_u32_count("flat text byte", input.text.len())?;
-            checked_u32_count("flat rodata byte", input.rodata.len())?;
-
-            for relocation in &object.relocations {
-                let target_index = match relocation.target_kind {
-                    GpuX86RelocationTargetKind::SectionOffset => relocation.target_index,
-                    GpuX86RelocationTargetKind::Symbol => symbol_start
-                        .checked_add(relocation.target_index)
-                        .ok_or_else(|| "x86 link global symbol index overflows".to_string())?,
-                };
-                input.relocations.push(GpuX86LinkRelocationRecord {
-                    object_index,
-                    kind: relocation.kind as u32,
-                    site_section: relocation.site_section as u32,
-                    site_offset: relocation.site_offset,
-                    target_kind: relocation.target_kind as u32,
-                    target_index,
-                    target_offset: relocation.target_offset,
-                    addend_lo: relocation.addend as u64 as u32,
-                    addend_hi: ((relocation.addend as u64) >> 32) as u32,
-                });
-            }
-
-            for (symbol_index, symbol) in object.symbols.iter().enumerate() {
-                let identity_start = symbol.identity_byte_start as usize;
-                let identity_end = identity_start
-                    .checked_add(symbol.identity_byte_len as usize)
-                    .ok_or_else(|| "x86 link symbol identity range overflows".to_string())?;
-                let identity = object
-                    .identity_bytes
-                    .get(identity_start..identity_end)
-                    .ok_or_else(|| "x86 link symbol identity range is invalid".to_string())?;
-                if identity.len() != X86_LINK_SYMBOL_IDENTITY_BYTES {
-                    return Err(format!(
-                        "x86 link object {object_index} symbol {symbol_index} has {} identity bytes; expected {X86_LINK_SYMBOL_IDENTITY_BYTES}",
-                        identity.len()
-                    ));
-                }
-                input.symbols.push(GpuX86LinkSymbolRecord {
-                    object_index,
-                    identity: [
-                        u32::from_le_bytes(identity[0..4].try_into().expect("four bytes")),
-                        u32::from_le_bytes(identity[4..8].try_into().expect("four bytes")),
-                        u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
-                    ],
-                    section: symbol.section as u32,
-                    offset: symbol.offset,
-                    size: symbol.size,
-                    flags: symbol.flags,
-                });
-            }
-            checked_u32_count("flat relocation", input.relocations.len())?;
-            checked_u32_count("flat symbol", input.symbols.len())?;
-
-            input.objects.push(GpuX86LinkObjectRecord {
-                text_input_start,
-                text_len: object.text.len() as u32,
-                rodata_input_start,
-                rodata_len: object.rodata.len() as u32,
-                relocation_start,
-                relocation_count: object.relocations.len() as u32,
-                symbol_start,
-                symbol_count: object.symbols.len() as u32,
-                entry_offset: object.entry_offset.unwrap_or(u32::MAX),
+            self.entry_object_index = object_index;
+            debug_assert!(entry_offset < object.text.len() as u32);
+        }
+        for relocation in &object.relocations {
+            let target_index = match relocation.target_kind {
+                GpuX86RelocationTargetKind::SectionOffset => relocation.target_index,
+                GpuX86RelocationTargetKind::Symbol => symbol_start
+                    .checked_add(relocation.target_index)
+                    .ok_or_else(|| "x86 link global symbol index overflows".to_string())?,
+            };
+            self.relocations.push(GpuX86LinkRelocationRecord {
+                object_index,
+                kind: relocation.kind as u32,
+                site_section: relocation.site_section as u32,
+                site_offset: relocation.site_offset,
+                target_kind: relocation.target_kind as u32,
+                target_index,
+                target_offset: relocation.target_offset,
+                target_section: 0,
+                addend_lo: relocation.addend as u64 as u32,
+                addend_hi: ((relocation.addend as u64) >> 32) as u32,
             });
         }
+        for (symbol_index, symbol) in object.symbols.iter().enumerate() {
+            let identity_start = symbol.identity_byte_start as usize;
+            let identity_end = identity_start
+                .checked_add(symbol.identity_byte_len as usize)
+                .ok_or_else(|| "x86 link symbol identity range overflows".to_string())?;
+            let identity = object
+                .identity_bytes
+                .get(identity_start..identity_end)
+                .ok_or_else(|| "x86 link symbol identity range is invalid".to_string())?;
+            if identity.len() != X86_LINK_SYMBOL_IDENTITY_BYTES {
+                return Err(format!(
+                    "x86 link object {object_index} symbol {symbol_index} has {} identity bytes; expected {X86_LINK_SYMBOL_IDENTITY_BYTES}",
+                    identity.len()
+                ));
+            }
+            self.symbols.push(GpuX86LinkSymbolRecord {
+                object_index,
+                identity: [
+                    u32::from_le_bytes(identity[0..4].try_into().expect("four bytes")),
+                    u32::from_le_bytes(identity[4..8].try_into().expect("four bytes")),
+                    u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
+                ],
+                section: symbol.section as u32,
+                offset: symbol.offset,
+                size: symbol.size,
+                flags: symbol.flags,
+            });
+        }
+        checked_u32_count("flat relocation", self.relocations.len())?;
+        checked_u32_count("flat symbol", self.symbols.len())?;
+        self.objects.push(GpuX86LinkObjectRecord {
+            text_input_start,
+            text_len: object.text.len() as u32,
+            rodata_input_start,
+            rodata_len: object.rodata.len() as u32,
+            relocation_start,
+            relocation_count: object.relocations.len() as u32,
+            symbol_start,
+            symbol_count: object.symbols.len() as u32,
+            entry_offset: object.entry_offset.unwrap_or(u32::MAX),
+        });
+        Ok(())
+    }
 
-        if input.entry_object_index == u32::MAX {
+    fn finish_validation(&self) -> Result<(), String> {
+        if self.entry_object_index == u32::MAX {
             return Err("x86 link has no entry object".to_string());
         }
-        Ok(input)
+        Ok(())
+    }
+
+    pub(super) fn text_len(&self) -> usize {
+        self.text.len()
+    }
+
+    pub(super) fn rodata_len(&self) -> usize {
+        self.rodata.len()
+    }
+
+    pub(super) fn read_text_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
+        self.text.read_range(range)
+    }
+
+    pub(super) fn read_rodata_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<u8>, String> {
+        self.rodata.read_range(range)
     }
 }
 
@@ -199,73 +288,23 @@ impl GpuX86CodeGenerator {
         queue: &wgpu::Queue,
         input: &GpuX86LinkInput,
         object_bases: &[[u32; 2]],
-        symbol_definitions: &[u32],
         initial_output: &[u8],
     ) -> Result<(Vec<u8>, [u32; 4])> {
-        let mut relocation_a = Vec::with_capacity(input.relocations.len() * 4);
-        let mut relocation_b = Vec::with_capacity(input.relocations.len() * 4);
-        let mut relocation_c = Vec::with_capacity(input.relocations.len() * 4);
-        for relocation in &input.relocations {
-            relocation_a.extend_from_slice(&[
-                relocation.object_index,
-                relocation.kind,
-                relocation.site_section,
-                relocation.site_offset,
-            ]);
-            relocation_b.extend_from_slice(&[
-                relocation.target_kind,
-                relocation.target_index,
-                relocation.target_offset,
-                relocation.addend_lo,
-            ]);
-            relocation_c.extend_from_slice(&[relocation.addend_hi, 0, 0, 0]);
-        }
-        let mut base_words = Vec::with_capacity(object_bases.len() * 2);
-        for base in object_bases {
-            base_words.extend_from_slice(base);
-        }
-        let mut identity_section = Vec::with_capacity(input.symbols.len() * 4);
-        let mut locations = Vec::with_capacity(input.symbols.len() * 4);
-        for symbol in &input.symbols {
-            identity_section.extend_from_slice(&[
-                symbol.identity[0],
-                symbol.identity[1],
-                symbol.identity[2],
-                symbol.section,
-            ]);
-            locations.extend_from_slice(&[
-                symbol.object_index,
-                symbol.offset,
-                symbol.size,
-                symbol.flags,
-            ]);
-        }
+        let relocation_indices = (0..input.relocations.len()).collect::<Vec<_>>();
+        let (relocation_a, relocation_b, relocation_c) = executable::relocation_words(
+            input,
+            &input.relocations,
+            object_bases,
+            &relocation_indices,
+        )?;
         let relocation_a =
             storage_input_u32(device, "codegen.x86.link.relocation_a", &relocation_a);
         let relocation_b =
             storage_input_u32(device, "codegen.x86.link.relocation_b", &relocation_b);
         let relocation_c =
             storage_input_u32(device, "codegen.x86.link.relocation_c", &relocation_c);
-        let object_bases = storage_input_u32(device, "codegen.x86.link.object_bases", &base_words);
-        let identity_sections = storage_input_u32(
-            device,
-            "codegen.x86.link.relocation_symbol_identity_section",
-            &identity_section,
-        );
-        let symbol_locations =
-            storage_input_u32(device, "codegen.x86.link.symbol_location", &locations);
-        let definitions = storage_input_u32(
-            device,
-            "codegen.x86.link.relocation_symbol_definition",
-            symbol_definitions,
-        );
-        let symbol_status = storage_input_u32(
-            device,
-            "codegen.x86.link.relocation_symbol_status",
-            &[1, 0, u32::MAX, input.symbols.len() as u32],
-        );
-        let text_len = input.text.len() as u32;
-        let rodata_len = input.rodata.len() as u32;
+        let text_len = input.text_len() as u32;
+        let rodata_len = input.rodata_len() as u32;
         let elf_layout_words = [
             0x78,
             text_len,
@@ -290,7 +329,11 @@ impl GpuX86CodeGenerator {
             &[
                 input.objects.len() as u32,
                 input.relocations.len() as u32,
-                input.symbols.len() as u32,
+                0,
+                0,
+                0,
+                initial_output.len() as u32,
+                0,
                 0,
             ],
         );
@@ -304,14 +347,6 @@ impl GpuX86CodeGenerator {
                 ("link_relocation_a", relocation_a.as_entire_binding()),
                 ("link_relocation_b", relocation_b.as_entire_binding()),
                 ("link_relocation_c", relocation_c.as_entire_binding()),
-                ("link_object_section_base", object_bases.as_entire_binding()),
-                (
-                    "link_symbol_identity_section",
-                    identity_sections.as_entire_binding(),
-                ),
-                ("link_symbol_location", symbol_locations.as_entire_binding()),
-                ("link_symbol_definition", definitions.as_entire_binding()),
-                ("link_symbol_status", symbol_status.as_entire_binding()),
                 ("x86_elf_layout", elf_layout.as_entire_binding()),
                 ("out_words", output.as_entire_binding()),
                 (
@@ -377,7 +412,7 @@ impl GpuX86CodeGenerator {
         Ok((bytes, status))
     }
 
-    #[cfg(test)]
+    #[cfg(any())]
     fn resolve_symbols_for_test(
         &self,
         device: &wgpu::Device,
@@ -690,8 +725,8 @@ impl GpuX86CodeGenerator {
         let object_count = input.objects.len();
         let object_block_count = object_count.div_ceil(256).max(1);
         let output_len = 0x78usize
-            .checked_add(input.text.len())
-            .and_then(|len| len.checked_add(input.rodata.len()))
+            .checked_add(input.text_len())
+            .and_then(|len| len.checked_add(input.rodata_len()))
             .ok_or_else(|| anyhow::anyhow!("x86 linked output length overflows"))?;
         let output_capacity = output_len.div_ceil(4).saturating_mul(4).max(4);
         let output_capacity_u32 = u32::try_from(output_capacity)
@@ -718,9 +753,15 @@ impl GpuX86CodeGenerator {
             "codegen.x86.link.object_entries",
             &object_entry_words,
         );
-        let text_input = storage_input_bytes(device, "codegen.x86.link.text_input", &input.text);
+        let text_bytes = input
+            .read_text_range(0..input.text_len())
+            .map_err(anyhow::Error::msg)?;
+        let rodata_bytes = input
+            .read_rodata_range(0..input.rodata_len())
+            .map_err(anyhow::Error::msg)?;
+        let text_input = storage_input_bytes(device, "codegen.x86.link.text_input", &text_bytes);
         let rodata_input =
-            storage_input_bytes(device, "codegen.x86.link.rodata_input", &input.rodata);
+            storage_input_bytes(device, "codegen.x86.link.rodata_input", &rodata_bytes);
         let local_prefix = storage_u32_rw(
             device,
             "codegen.x86.link.section_local_prefix",
@@ -779,6 +820,10 @@ impl GpuX86CodeGenerator {
                 object_block_count as u32,
                 input.entry_object_index,
                 output_capacity_u32,
+                0,
+                0,
+                u32::MAX,
+                1,
             ],
         );
         let copy_params = uniform_u32_words(
@@ -786,15 +831,19 @@ impl GpuX86CodeGenerator {
             "codegen.x86.link.copy_params",
             &[
                 object_count as u32,
-                input.text.len() as u32,
-                input.rodata.len() as u32,
+                input.text_len() as u32,
+                input.rodata_len() as u32,
                 0,
+                0,
+                0,
+                0,
+                output_len as u32,
             ],
         );
         let elf_params = uniform_u32_words(
             device,
             "codegen.x86.link.elf_params",
-            &[0, 0, output_capacity_u32, 0],
+            &[0, output_len as u32, output_capacity_u32, 0],
         );
 
         let local_group = reflected_bind_group(
@@ -908,11 +957,6 @@ impl GpuX86CodeGenerator {
             0,
             &[
                 ("gCopy", copy_params.buffer.as_entire_binding()),
-                ("link_object_sections", object_sections.as_entire_binding()),
-                (
-                    "link_object_section_base",
-                    object_bases.buffer.as_entire_binding(),
-                ),
                 ("link_text_input", text_input.as_entire_binding()),
                 ("link_rodata_input", rodata_input.as_entire_binding()),
                 ("x86_elf_layout", elf_layout.buffer.as_entire_binding()),
@@ -960,7 +1004,7 @@ impl GpuX86CodeGenerator {
             &elf_group,
             (1, 1),
         );
-        let copy_items = input.text.len().max(input.rodata.len()).max(1) as u32;
+        let copy_items = input.text_len().max(input.rodata_len()).max(1) as u32;
         dispatch_compute_pass(
             &mut encoder,
             "link.copy_sections",
@@ -1125,7 +1169,69 @@ mod tests {
         assert_eq!(input.objects[1].symbol_start, 1);
         assert_eq!(input.relocations[0].target_index, 1);
         assert_eq!(input.symbols[0].identity, input.symbols[1].identity);
-        assert_eq!(input.text, vec![0x90, 0xc3, 0xe8, 0, 0, 0, 0, 0xc3]);
+        assert_eq!(
+            input.read_text_range(0..input.text_len()).unwrap(),
+            vec![0x90, 0xc3, 0xe8, 0, 0, 0, 0, 0xc3]
+        );
+    }
+
+    #[test]
+    fn file_backed_sections_match_resident_input_across_objects() {
+        let objects = vec![
+            GpuX86RelocatableObject {
+                version: GPU_X86_OBJECT_VERSION,
+                library_id: 1,
+                unit_id: 0,
+                entry_offset: None,
+                text: vec![1, 2],
+                rodata: vec![3, 4],
+                relocations: Vec::new(),
+                symbols: Vec::new(),
+                identity_bytes: Vec::new(),
+            },
+            GpuX86RelocatableObject {
+                version: GPU_X86_OBJECT_VERSION,
+                library_id: 1,
+                unit_id: 1,
+                entry_offset: Some(0),
+                text: vec![5, 6],
+                rodata: vec![7, 8],
+                relocations: Vec::new(),
+                symbols: Vec::new(),
+                identity_bytes: Vec::new(),
+            },
+        ];
+        let resident = GpuX86LinkInput::for_executable(&objects).expect("resident input");
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-x86-file-link-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("temporary directory");
+        let mut files = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            let bytes = object.to_bytes().expect("serialize object");
+            let layout = GpuX86RelocatableObjectLayout::from_header_bytes(
+                &bytes[..crate::codegen::x86::GPU_X86_OBJECT_HEADER_BYTES],
+            )
+            .expect("object layout");
+            let path = root.join(format!("{index}.x86obj"));
+            std::fs::write(&path, bytes).expect("write object");
+            files.push((path, layout));
+        }
+        let file_backed = GpuX86LinkInput::for_executable_files(files).expect("file input");
+
+        assert_eq!(file_backed.objects, resident.objects);
+        assert_eq!(file_backed.relocations, resident.relocations);
+        assert_eq!(file_backed.symbols, resident.symbols);
+        assert_eq!(file_backed.entry_object_index, resident.entry_object_index);
+        assert_eq!(file_backed.read_text_range(1..3).unwrap(), vec![2, 5]);
+        assert_eq!(file_backed.read_rodata_range(1..3).unwrap(), vec![4, 7]);
+
+        std::fs::remove_dir_all(root).expect("remove temporary directory");
     }
 
     #[test]
@@ -1200,49 +1306,6 @@ mod tests {
         assert_eq!(&bytes[0x78..0x78 + 5], &[0x90, 0xc3, 0xcc, 0x90, 0xc3]);
         assert_eq!(&bytes[0x78 + 5..], &[1, 2, 3, 4]);
 
-        let identity_a = [7, 3, 11];
-        let identity_b = [7, 3, 12];
-        let symbols = vec![
-            GpuX86LinkSymbolRecord {
-                object_index: 0,
-                identity: identity_a,
-                section: GpuX86ObjectSection::Text as u32,
-                offset: 0,
-                size: 1,
-                flags: 0,
-            },
-            GpuX86LinkSymbolRecord {
-                object_index: 1,
-                identity: identity_a,
-                section: GpuX86ObjectSection::Undefined as u32,
-                offset: 0,
-                size: 0,
-                flags: 0,
-            },
-            GpuX86LinkSymbolRecord {
-                object_index: 2,
-                identity: identity_b,
-                section: GpuX86ObjectSection::Undefined as u32,
-                offset: 0,
-                size: 0,
-                flags: 0,
-            },
-        ];
-        let (definitions, symbol_status) = generator
-            .resolve_symbols_for_test(&gpu.device, &gpu.queue, &symbols)
-            .expect("GPU symbol resolution");
-        assert_eq!(definitions, vec![0, 0, u32::MAX]);
-        assert_eq!(symbol_status, [1, 0, u32::MAX, 3]);
-
-        let mut duplicates = symbols;
-        duplicates[1].section = GpuX86ObjectSection::Text as u32;
-        duplicates[1].size = 1;
-        let (_, duplicate_status) = generator
-            .resolve_symbols_for_test(&gpu.device, &gpu.queue, &duplicates)
-            .expect("GPU duplicate symbol validation");
-        assert_eq!(duplicate_status[0], 0);
-        assert_eq!(duplicate_status[1], 1);
-
         let call_identity = identity(9, 0, 0);
         let mut dependency_symbol = symbol(&call_identity, GpuX86ObjectSection::Text);
         dependency_symbol.offset = 0;
@@ -1285,32 +1348,34 @@ mod tests {
         assert_eq!(&executable[..4], b"\x7fELF");
         assert_eq!(&executable[0x79..0x7d], &[1, 0, 0, 0]);
 
+        let mut resolved_input = relocation_input.clone();
+        resolved_input.relocations = generator
+            .resolve_symbol_relocations(&gpu.device, &gpu.queue, &relocation_input)
+            .expect("resolve relocation targets");
+
         let mut initial_output = vec![0u8; 0x78];
-        initial_output.extend_from_slice(&relocation_input.text);
+        initial_output.extend_from_slice(
+            &relocation_input
+                .read_text_range(0..relocation_input.text_len())
+                .unwrap(),
+        );
         let (relocated, relocation_status) = generator
             .relocate_for_test(
                 &gpu.device,
                 &gpu.queue,
-                &relocation_input,
+                &resolved_input,
                 &[[0, 0], [6, 0]],
-                &[1, 1],
                 &initial_output,
             )
             .expect("GPU relocation");
         assert_eq!(relocation_status, [1, 0, u32::MAX, 1]);
         assert_eq!(&relocated[0x79..0x7d], &[1, 0, 0, 0]);
 
-        let (_, unresolved_status) = generator
-            .relocate_for_test(
-                &gpu.device,
-                &gpu.queue,
-                &relocation_input,
-                &[[0, 0], [6, 0]],
-                &[u32::MAX, 1],
-                &initial_output,
-            )
-            .expect("GPU unresolved relocation");
-        assert_eq!(unresolved_status[0], 0);
-        assert_eq!(unresolved_status[1], 2);
+        let mut unresolved_input = relocation_input.clone();
+        unresolved_input.symbols[1].section = GpuX86ObjectSection::Undefined as u32;
+        let unresolved = generator
+            .resolve_symbol_relocations(&gpu.device, &gpu.queue, &unresolved_input)
+            .expect_err("undefined symbol should fail GPU resolution");
+        assert!(unresolved.to_string().contains("status"));
     }
 }

@@ -17,8 +17,6 @@ use crate::compiler::{
 
 /// Maximum number of source roots a package manifest may declare.
 pub const PACKAGE_MANIFEST_MAX_ROOTS: usize = 64;
-/// Maximum number of module path segments derived from a package-relative path.
-pub(super) const PACKAGE_MODULE_PATH_SEGMENT_LIMIT: usize = 8;
 /// Human-readable package name validation rule used in diagnostics.
 pub(super) const PACKAGE_NAME_RULES: &str = "use dot-separated ASCII package segments; each segment must start and end with a letter or digit and contain only letters, digits, '_' or '-'";
 
@@ -515,12 +513,6 @@ pub(super) fn package_source_root_relative_module_path_with_label(
             ));
         }
         segments.push(segment.to_string());
-        if segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT {
-            return Err(format!(
-                "{label} {} maps to a module path with more than {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} segments; current resolver supports at most {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} path segments",
-                relative_path.display()
-            ));
-        }
     }
 
     if segments.is_empty() {

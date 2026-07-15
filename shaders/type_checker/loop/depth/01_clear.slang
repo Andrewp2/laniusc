@@ -7,7 +7,7 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-RWStructuredBuffer<int> loop_delta;
+RWStructuredBuffer<int> if_delta;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -23,5 +23,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
     if (i <= gParams.n_tokens)
-        loop_delta[i] = 0;
+        if_delta[i] = 0;
 }

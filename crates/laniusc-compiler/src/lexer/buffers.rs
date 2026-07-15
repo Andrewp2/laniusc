@@ -226,6 +226,7 @@ impl GpuBuffers {
 
 impl From<LaniusBuffer<u8>> for LaniusBuffer<super::GpuToken> {
     fn from(b: LaniusBuffer<u8>) -> Self {
-        LaniusBuffer::new((b.buffer, b.byte_size as u64), b.count)
+        let count = b.count;
+        b.reinterpret(count)
     }
 }

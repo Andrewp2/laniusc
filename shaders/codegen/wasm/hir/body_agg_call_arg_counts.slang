@@ -26,7 +26,7 @@ static const uint BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 = 24u;
 static const uint BODY_FRAGMENT_LET_DIRECT_CALL_I32 = 25u;
 static const uint BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 = 26u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 = 27u;
-static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)

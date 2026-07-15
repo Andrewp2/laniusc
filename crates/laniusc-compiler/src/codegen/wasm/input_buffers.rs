@@ -58,6 +58,9 @@ pub struct GpuWasmCallMetadataBuffers<'a> {
 pub struct GpuWasmExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
     pub result_root_node: &'a wgpu::Buffer,
+    pub parent_node: &'a wgpu::Buffer,
+    pub forest_root_node: &'a wgpu::Buffer,
+    pub forest_status: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub float_bits: &'a wgpu::Buffer,
     pub string_start: &'a wgpu::Buffer,
@@ -142,6 +145,8 @@ pub struct GpuWasmCodegenInputs<'a> {
     pub name_id_by_token: &'a wgpu::Buffer,
     pub language_name_id: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
+    /// Inclusive number of enclosing `if` statements at each token.
+    pub if_depth: &'a wgpu::Buffer,
     pub structs: GpuWasmStructMetadataBuffers<'a>,
     pub enum_matches: GpuWasmEnumMatchMetadataBuffers<'a>,
     pub calls: GpuWasmCallMetadataBuffers<'a>,

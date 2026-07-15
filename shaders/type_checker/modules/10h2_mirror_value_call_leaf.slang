@@ -30,7 +30,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint PARAM_CACHE_STRIDE = 4u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -55,7 +54,7 @@ uint path_leaf_token(uint path_i, uint owner_token)
     if (count <= 1u)
         return owner_token;
     uint leaf_i = path_segment_base[path_i] + count - 1u;
-    uint leaf_token = leaf_i < gParams.n_tokens * MAX_PATH_SEGMENTS
+    uint leaf_token = leaf_i < gParams.n_tokens
         ? path_segment_token[leaf_i]
         : INVALID;
     return valid_token(leaf_token) ? leaf_token : owner_token;

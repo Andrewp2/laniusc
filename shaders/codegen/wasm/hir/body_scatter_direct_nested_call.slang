@@ -645,15 +645,17 @@ uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)
     uint call_len = fragment_len > 0u ? fragment_len - 1u : 0u;
     if (byte_i < call_len)
     {
-        return direct_call_expr_byte_with_nested_arg(
-            meta.y,
-            aux.x,
-            aux.y,
-            aux.z,
-            meta.z,
-            meta.w,
-            aux.w,
-            byte_i);
+        // Nested argument records are compacted and scattered by the shared
+        // argument passes. Emit only the outer call tail from the finalized
+        // fragment length; recomputing the old nested argument shape here
+        // would place the tail beyond the compacted argument interval.
+        uint tail_len = 1u + wasm_call_index_len(aux.x);
+        uint call_i = call_len >= tail_len ? call_len - tail_len : 0u;
+        if (byte_i < call_i)
+            return 0u;
+        if (byte_i == call_i)
+            return WASM_CALL;
+        return wasm_call_index_byte(aux.x, byte_i - call_i - 1u);
     }
     return WASM_RETURN;
 }

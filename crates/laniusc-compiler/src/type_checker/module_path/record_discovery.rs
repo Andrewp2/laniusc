@@ -244,6 +244,10 @@ pub(in crate::type_checker) fn create_record_discovery(
                 "path_segment_count",
                 buffers.path_segment_count.as_entire_binding(),
             ),
+            (
+                "path_max_segment_count",
+                buffers.path_max_segment_count.as_entire_binding(),
+            ),
         ],
     )?;
     let path_segment_scan = create_counted_u32_scan_bind_groups_with_passes(
@@ -305,6 +309,14 @@ pub(in crate::type_checker) fn create_record_discovery(
             (
                 "path_segment_token",
                 buffers.path_segment_token.as_entire_binding(),
+            ),
+            (
+                "path_prefix_base",
+                buffers.path_prefix_base.as_entire_binding(),
+            ),
+            (
+                "path_prefix_id_a",
+                buffers.path_prefix_id_a.as_entire_binding(),
             ),
         ],
     )?;

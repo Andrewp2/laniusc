@@ -11,9 +11,11 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_ADD,
                 HIR_EXPR_FORM_AND,
                 HIR_EXPR_FORM_CHAR,
+                HIR_EXPR_FORM_EQ,
                 HIR_EXPR_FORM_FALSE,
                 HIR_EXPR_FORM_FLOAT,
                 HIR_EXPR_FORM_FORWARD,
+                HIR_EXPR_FORM_GE,
                 HIR_EXPR_FORM_INDEX,
                 HIR_EXPR_FORM_INT,
                 HIR_EXPR_FORM_LE,
@@ -23,6 +25,7 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_NONE,
                 HIR_EXPR_FORM_NOT,
                 HIR_EXPR_FORM_RANGE,
+                HIR_EXPR_FORM_SHR,
                 HIR_EXPR_FORM_STRING,
                 HIR_EXPR_FORM_TRUE,
                 HIR_EXPR_NAME_ROLE_NONE,
@@ -202,6 +205,231 @@ fn syntax_token(kind: TokenKind, pos: usize) -> Token {
         start: pos,
         len: 1,
     }
+}
+
+fn resolve_expr_forest_node(parsed: &DecodedParserHirItemReadbacks, start: usize) -> usize {
+    let mut node = start;
+    let mut hops = 0usize;
+    loop {
+        assert!(
+            node < parsed.hir_expr_record_form.len(),
+            "expression forest node {node} should be inside the HIR record table"
+        );
+        if parsed.hir_expr_record_form[node] != HIR_EXPR_FORM_FORWARD {
+            return node;
+        }
+        let next = parsed.hir_expr_record_left[node];
+        assert_ne!(
+            next, INVALID,
+            "forward expression row {node} should publish a target"
+        );
+        node = next as usize;
+        hops += 1;
+        assert!(
+            hops <= parsed.hir_expr_record_form.len(),
+            "expression forwarding should be acyclic"
+        );
+    }
+}
+
+fn publish_expr_forest_parent(
+    parent: &mut [u32],
+    parsed: &DecodedParserHirItemReadbacks,
+    raw_child: u32,
+    owner: usize,
+) {
+    assert_ne!(
+        raw_child, INVALID,
+        "expression owner {owner} should publish a child"
+    );
+    let child = resolve_expr_forest_node(parsed, raw_child as usize);
+    assert_ne!(
+        child, owner,
+        "expression row {owner} must not parent itself"
+    );
+    let previous = parent[child];
+    assert!(
+        previous == INVALID || previous == owner as u32,
+        "resolved expression row {child} has conflicting parents {previous} and {owner}"
+    );
+    parent[child] = owner as u32;
+}
+
+#[test]
+fn parser_hir_records_form_an_arbitrary_depth_expression_forest() {
+    const DEEP_NEGATION_COUNT: usize = 48;
+
+    let mut deep_expr = "1".to_owned();
+    for _ in 0..DEEP_NEGATION_COUNT {
+        deep_expr = format!("-({deep_expr})");
+    }
+    let source = format!(
+        r#"
+module app::main;
+
+fn leaf(value: i32) -> i32 {{
+    return value;
+}}
+
+fn combine(left: i32, right: i32) -> i32 {{
+    return left + right;
+}}
+
+struct Settings {{
+    width: i32,
+}}
+
+fn main(a: i32, b: i32, c: i32, settings: Settings) -> i32 {{
+    let deep: i32 = {deep_expr};
+    let nested: i32 = combine(leaf(a + 1), leaf(b * 2));
+    let member_arg: i32 = leaf(settings.width - 1);
+    let composite: i32 = (leaf(a) + b) / leaf(settings.width - 1);
+    if (leaf(nested) > c && !(a == b)) {{
+        return combine(deep + nested, c + member_arg + composite);
+    }}
+    return deep + nested;
+}}
+"#
+    );
+    let parsed = parse_resident_source_pack(&[&source]);
+    assert_ne!(
+        parsed.ll1_status[0], 0,
+        "resident parser should accept the expression-forest fixture"
+    );
+
+    let node_count = parsed.hir_expr_record_form.len();
+    let mut parent = vec![INVALID; node_count];
+    for node in 0..node_count {
+        let form = parsed.hir_expr_record_form[node];
+        if form == HIR_EXPR_FORM_NOT || form == HIR_EXPR_FORM_NEG {
+            publish_expr_forest_parent(
+                &mut parent,
+                &parsed,
+                parsed.hir_expr_record_left[node],
+                node,
+            );
+        } else if (HIR_EXPR_FORM_EQ..=HIR_EXPR_FORM_GE).contains(&form)
+            || (HIR_EXPR_FORM_ADD..=HIR_EXPR_FORM_SHR).contains(&form)
+        {
+            publish_expr_forest_parent(
+                &mut parent,
+                &parsed,
+                parsed.hir_expr_record_left[node],
+                node,
+            );
+            publish_expr_forest_parent(
+                &mut parent,
+                &parsed,
+                parsed.hir_expr_record_right[node],
+                node,
+            );
+        }
+    }
+
+    for raw_arg in 0..node_count {
+        let call = parsed.hir_call_arg_parent_call[raw_arg];
+        if call == INVALID {
+            continue;
+        }
+        let call = call as usize;
+        assert_eq!(
+            parsed.hir_kind[call], HIR_NODE_CALL_EXPR,
+            "argument row {raw_arg} should point at a call expression"
+        );
+        publish_expr_forest_parent(&mut parent, &parsed, raw_arg as u32, call);
+    }
+
+    let mut max_depth = 0usize;
+    for start in 0..node_count {
+        let form = parsed.hir_expr_record_form[start];
+        let is_call = parsed.hir_kind[start] == HIR_NODE_CALL_EXPR;
+        if (form == HIR_EXPR_FORM_NONE || form == HIR_EXPR_FORM_FORWARD) && !is_call {
+            continue;
+        }
+
+        let mut node = start;
+        let mut depth = 0usize;
+        loop {
+            let next = parent[node];
+            if next == INVALID {
+                break;
+            }
+            node = next as usize;
+            depth += 1;
+            assert!(
+                depth <= node_count,
+                "expression parent links should be acyclic"
+            );
+        }
+        max_depth = max_depth.max(depth);
+    }
+
+    assert!(
+        max_depth >= DEEP_NEGATION_COUNT,
+        "fixture should prove an expression forest deeper than the old 16-row stack; got {max_depth}"
+    );
+
+    let gpu = parse_resident_source(&source);
+    assert!(
+        gpu.ll1.accepted,
+        "resident parser should accept the GPU expression-forest fixture"
+    );
+    assert_eq!(
+        gpu.hir_expr_forest_status, 0,
+        "GPU expression-forest construction should not publish malformed or conflicting edges"
+    );
+
+    for (child, &expected_parent) in parent.iter().enumerate() {
+        if expected_parent == INVALID {
+            continue;
+        }
+        assert_eq!(
+            gpu.hir_expr_parent_node[child], expected_parent,
+            "expression node {child} should publish parent {expected_parent} in the GPU forest"
+        );
+    }
+
+    for raw_arg in 0..gpu.hir_call_arg_parent_call.len() {
+        let call = gpu.hir_call_arg_parent_call[raw_arg];
+        if call == INVALID {
+            continue;
+        }
+        let resolved = gpu.hir_expr_result_root_node[raw_arg] as usize;
+        assert!(
+            resolved < gpu.hir_expr_parent_node.len(),
+            "call argument row {raw_arg} should resolve to a bounded expression node"
+        );
+        assert_eq!(
+            gpu.hir_expr_parent_node[resolved], call,
+            "resolved call argument {resolved} should publish call {call} as its GPU forest parent"
+        );
+    }
+
+    let mut gpu_max_depth = 0usize;
+    for start in 0..gpu.hir_expr_result_root_node.len() {
+        if gpu.hir_expr_result_root_node[start] != start as u32 {
+            continue;
+        }
+        let mut node = start;
+        let mut depth = 0usize;
+        while gpu.hir_expr_parent_node[node] != INVALID {
+            node = gpu.hir_expr_parent_node[node] as usize;
+            depth += 1;
+            assert!(
+                depth <= gpu.hir_expr_parent_node.len(),
+                "GPU expression parent links should be acyclic"
+            );
+        }
+        assert_eq!(
+            gpu.hir_expr_forest_root_node[start], node as u32,
+            "GPU pointer jumping should resolve expression node {start} to its terminal root"
+        );
+        gpu_max_depth = gpu_max_depth.max(depth);
+    }
+    assert!(
+        gpu_max_depth >= DEEP_NEGATION_COUNT,
+        "GPU expression forest should retain all {DEEP_NEGATION_COUNT} nested operators; got {gpu_max_depth}"
+    );
 }
 
 #[test]
@@ -2181,6 +2409,16 @@ fn main(pair: Pair) -> i32 {
         parsed.hir_kind[parsed.hir_member_receiver_node[first_member] as usize], HIR_NODE_NAME_EXPR,
         "first member receiver should be the base name expression"
     );
+    let base_receiver = parsed.hir_member_receiver_node[first_member] as usize;
+    let resolved_base = parsed.hir_expr_result_root_node[base_receiver] as usize;
+    assert_eq!(
+        parsed.hir_expr_parent_node[resolved_base], first_member as u32,
+        "base name should publish the first member as its expression-forest parent"
+    );
+    assert_eq!(
+        parsed.hir_expr_parent_node[first_member], second_member as u32,
+        "first member should publish the second member as its expression-forest parent"
+    );
 
     for member in [first_member, second_member] {
         let receiver = assert_valid_hir_node_index(
@@ -2208,6 +2446,59 @@ fn main(pair: Pair) -> i32 {
             "member row {member} name token should stay inside its member expression span"
         );
         assert_hir_node_has_non_empty_span(&parsed, receiver, "member receiver");
+    }
+}
+
+#[test]
+fn parser_expression_forest_retains_deep_member_receiver_chain() {
+    const DEPTH: usize = 24;
+    let chain = (0..DEPTH)
+        .map(|index| format!(".field{index}"))
+        .collect::<String>();
+    let source = format!(
+        "struct Root {{ field0: i32, }}\nfn read(value: Root) -> i32 {{ return value{chain}; }}\n"
+    );
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "deep member-chain fixture should parse"
+    );
+
+    let member_count = parsed
+        .hir_kind
+        .iter()
+        .filter(|&&kind| kind == HIR_NODE_MEMBER_EXPR)
+        .count();
+    assert_eq!(member_count, DEPTH);
+
+    let base = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_NODE_NAME_EXPR && parsed.hir_expr_parent_node[node] != INVALID)
+                .then_some(node)
+        })
+        .expect("member chain should publish its base name");
+    let mut node = base;
+    let mut depth = 0usize;
+    while parsed.hir_expr_parent_node[node] != INVALID {
+        node = parsed.hir_expr_parent_node[node] as usize;
+        depth += 1;
+        assert!(depth <= parsed.hir_expr_parent_node.len());
+    }
+    assert_eq!(
+        depth, DEPTH,
+        "every member should contribute one forest edge"
+    );
+    assert_eq!(parsed.hir_expr_forest_root_node[base], node as u32);
+    for (member, &kind) in parsed.hir_kind.iter().enumerate() {
+        if kind == HIR_NODE_MEMBER_EXPR {
+            assert_eq!(
+                parsed.hir_expr_forest_root_node[member], node as u32,
+                "every member in the receiver chain should publish the final member as its forest root"
+            );
+        }
     }
 }
 
@@ -7000,6 +7291,58 @@ fn free_generic<T>(value: T) -> T where T: Factory {
         flagged_non_method_rows, 0,
         "parser-owned method signature flags should only attach to method rows, not free generic functions"
     );
+}
+
+#[test]
+fn parser_hir_method_signature_flags_do_not_treat_trait_generics_as_method_generics() {
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module core::cmp;
+
+pub trait Eq<T> {
+    pub fn check(value: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn check(value: i32) -> bool {
+        return value > 0;
+    }
+}
+"#,
+        r#"
+module app;
+
+import core::cmp;
+
+fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
+    return value;
+}
+"#,
+    ]);
+    assert_ne!(
+        parsed.ll1_status[0], 0,
+        "resident parser should accept the fixture"
+    );
+
+    let method_nodes = parsed
+        .hir_method_name_token
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &name_token)| (name_token != INVALID).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        method_nodes.len(),
+        2,
+        "fixture should publish trait and impl methods"
+    );
+    let method_level_mask = HIR_METHOD_SIGNATURE_HAS_GENERICS | HIR_METHOD_SIGNATURE_HAS_WHERE;
+    for method_node in method_nodes {
+        assert_eq!(
+            parsed.hir_method_signature_flags[method_node] & method_level_mask,
+            0,
+            "trait-level and later free-function generics are not method-level generics"
+        );
+    }
 }
 
 #[test]

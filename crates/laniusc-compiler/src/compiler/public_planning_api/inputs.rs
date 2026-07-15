@@ -255,6 +255,31 @@ where
     load_explicit_source_pack_path_manifest_from_paths(&stdlib_paths, &user_paths)
 }
 
+/// Load a validated path-backed manifest into an in-memory source pack.
+///
+/// Small compilation jobs use this after path metadata has established that a
+/// single resident GPU job fits the configured codegen-unit limits. Large jobs
+/// stay path-backed and are loaded one bounded unit at a time by the artifact
+/// executor.
+pub fn load_explicit_source_pack_from_path_manifest(
+    manifest: &ExplicitSourcePackPathManifest,
+) -> Result<ExplicitSourcePack, CompileError> {
+    let sources = read_explicit_source_path_files("source-pack", &manifest.files)?;
+    let library_ids = manifest
+        .files
+        .iter()
+        .map(|file| file.library_id)
+        .collect::<Vec<_>>();
+    let source_paths = manifest
+        .files
+        .iter()
+        .map(|file| Some(file.path.clone()))
+        .collect::<Vec<_>>();
+    ExplicitSourcePack::new(sources, library_ids)?
+        .with_source_paths(source_paths)?
+        .with_library_dependencies(manifest.library_dependencies.clone())
+}
+
 /// Read explicit library path groups into an in-memory source pack while
 /// preserving per-source diagnostic paths.
 pub fn load_explicit_source_libraries_from_paths<P>(
@@ -304,9 +329,6 @@ where
     }
     source_pack.with_source_paths(source_paths)
 }
-
-const SOURCE_ROOT_IMPORT_FILE_LIMIT: usize = 1024;
-const SOURCE_ROOT_IMPORT_PATH_SEGMENT_LIMIT: usize = 8;
 
 /// Explicit source roots used when loading an entry file with optional stdlib roots.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -403,17 +425,13 @@ fn collect_entry_source_root_paths(
     }
     let entry_imports = leading_path_imports(&entry_source, &entry_path)?;
 
-    for import in entry_imports {
-        load_source_root_import(
-            &import,
-            SourceRootLibrary::User,
-            &search_roots,
-            &entry_path,
-            &mut loaded_source_paths,
-            &mut stdlib_paths,
-            &mut user_paths,
-        )?;
-    }
+    load_source_root_imports(
+        entry_imports,
+        &search_roots,
+        &mut loaded_source_paths,
+        &mut stdlib_paths,
+        &mut user_paths,
+    )?;
 
     Ok((stdlib_paths, user_paths))
 }
@@ -452,50 +470,38 @@ fn source_roots_overlap(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
-fn load_source_root_import(
-    import: &SourceRootImport,
-    importer_library: SourceRootLibrary,
+fn load_source_root_imports(
+    imports: Vec<SourceRootImport>,
     roots: &[SourceRootSearchRoot],
-    entry_path: &Path,
     loaded_source_paths: &mut BTreeSet<PathBuf>,
     stdlib_paths: &mut Vec<PathBuf>,
     user_paths: &mut Vec<PathBuf>,
 ) -> Result<(), CompileError> {
-    let resolved_import = resolve_source_root_import(import, roots, importer_library)?;
-    if loaded_source_paths.contains(&resolved_import.path) {
-        return Ok(());
-    }
+    let mut pending = imports
+        .into_iter()
+        .rev()
+        .map(|import| (import, SourceRootLibrary::User))
+        .collect::<Vec<_>>();
+    while let Some((import, importer_library)) = pending.pop() {
+        let resolved_import = resolve_source_root_import(&import, roots, importer_library)?;
+        if !loaded_source_paths.insert(resolved_import.path.clone()) {
+            continue;
+        }
 
-    let imported_file_count = stdlib_paths.len() + user_paths.len().saturating_sub(1);
-    if imported_file_count >= SOURCE_ROOT_IMPORT_FILE_LIMIT {
-        return Err(source_root_input_error(
-            format!(
-                "source-root import loading reached the limit of {SOURCE_ROOT_IMPORT_FILE_LIMIT} imported files while loading {}",
-                entry_path.display()
-            ),
-            "use package manifest/lockfile metadata or split the package into smaller source-root loading units",
-        ));
-    }
-
-    let imported_source =
-        read_source_for_import_discovery("source-root import", &resolved_import.path)?;
-    let nested_imports = leading_path_imports(&imported_source, &resolved_import.path)?;
-    loaded_source_paths.insert(resolved_import.path.clone());
-    let nested_importer_library = resolved_import.library;
-    match resolved_import.library {
-        SourceRootLibrary::Stdlib => stdlib_paths.push(resolved_import.path),
-        SourceRootLibrary::User => user_paths.push(resolved_import.path),
-    }
-    for nested_import in nested_imports {
-        load_source_root_import(
-            &nested_import,
-            nested_importer_library,
-            roots,
-            entry_path,
-            loaded_source_paths,
-            stdlib_paths,
-            user_paths,
-        )?;
+        let imported_source =
+            read_source_for_import_discovery("source-root import", &resolved_import.path)?;
+        let nested_imports = leading_path_imports(&imported_source, &resolved_import.path)?;
+        let nested_importer_library = resolved_import.library;
+        match resolved_import.library {
+            SourceRootLibrary::Stdlib => stdlib_paths.push(resolved_import.path),
+            SourceRootLibrary::User => user_paths.push(resolved_import.path),
+        }
+        pending.extend(
+            nested_imports
+                .into_iter()
+                .rev()
+                .map(|nested_import| (nested_import, nested_importer_library)),
+        );
     }
 
     Ok(())
@@ -987,10 +993,6 @@ impl SourceRootPathKind {
             SourceRootPathKind::Import => "import",
         }
     }
-
-    fn enforce_source_root_depth_limit(self) -> bool {
-        matches!(self, SourceRootPathKind::Import)
-    }
 }
 
 fn parse_source_root_path(
@@ -1001,7 +1003,6 @@ fn parse_source_root_path(
 ) -> Result<(String, usize), CompileError> {
     let bytes = source.as_bytes();
     let mut offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
-    let path_start = offset;
     let mut segments = Vec::new();
 
     loop {
@@ -1028,19 +1029,6 @@ fn parse_source_root_path(
             ));
         }
         segments.push(segment);
-        if kind.enforce_source_root_depth_limit()
-            && segments.len() > SOURCE_ROOT_IMPORT_PATH_SEGMENT_LIMIT
-        {
-            let (line, column) = line_column_at(source, path_start);
-            let (source_line, label_len) = source_line_and_label_len(source, path_start, offset);
-            return Err(source_root_import_path_too_deep_error(
-                source_path,
-                line,
-                column,
-                source_line,
-                label_len,
-            ));
-        }
         offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
         if invalid_source_root_path_separator(bytes, offset) {
             return Err(invalid_source_root_path_separator_error(
@@ -1113,29 +1101,6 @@ fn invalid_source_root_path_separator_error(
                 ),
         ),
     }
-}
-
-fn source_root_import_path_too_deep_error(
-    source_path: &Path,
-    line: usize,
-    column: usize,
-    source_line: String,
-    label_len: usize,
-) -> CompileError {
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0012", "import path too deep")
-            .with_primary_label(DiagnosticLabel::primary(
-                source_path.to_path_buf(),
-                line,
-                column,
-                label_len,
-                Some(source_line),
-                "import path exceeds the current resolver depth limit",
-            ))
-            .with_note(
-                "source-root discovery supports at most eight module path segments in an import; module declarations are still validated by the resolver",
-            ),
-    )
 }
 
 fn skip_quoted_import_path(

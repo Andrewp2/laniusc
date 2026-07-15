@@ -22,8 +22,15 @@ use super::common::{
     unsupported_cli_option_value_error,
 };
 use crate::{
-    compiler::{ExplicitSourcePack, GpuCompiler, GpuCompilerBackends, load_entry_with_stdlib},
-    gpu::device,
+    compiler::{
+        ExplicitSourcePack,
+        ExplicitSourcePackPathManifest,
+        GpuCompiler,
+        GpuCompilerBackends,
+        load_entry_path_manifest_with_stdlib,
+        load_explicit_source_pack_from_path_manifest,
+    },
+    gpu::{device, passes_core::pipeline_creation_count},
 };
 
 const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
@@ -103,14 +110,29 @@ struct SourceFileStamp {
 struct CachedSourcePack {
     input: PathBuf,
     stdlib_root: PathBuf,
-    source_pack: ExplicitSourcePack,
+    source_pack: CachedCompileInput,
     file_stamps: Vec<SourceFileStamp>,
+}
+
+enum CachedCompileInput {
+    Resident(ExplicitSourcePack),
+    Bounded(ExplicitSourcePackPathManifest),
+}
+
+impl CachedCompileInput {
+    #[cfg(test)]
+    fn resident(&self) -> Option<&ExplicitSourcePack> {
+        match self {
+            Self::Resident(source_pack) => Some(source_pack),
+            Self::Bounded(_) => None,
+        }
+    }
 }
 
 #[derive(Default)]
 struct SourcePackCache {
     entry: Option<CachedSourcePack>,
-    transient: Option<ExplicitSourcePack>,
+    transient: Option<CachedCompileInput>,
 }
 
 impl SourcePackCache {
@@ -118,7 +140,7 @@ impl SourcePackCache {
         &'a mut self,
         input: &Path,
         stdlib_root: &Path,
-    ) -> Result<&'a ExplicitSourcePack, crate::compiler::CompileError> {
+    ) -> Result<&'a CachedCompileInput, crate::compiler::CompileError> {
         let cache_hit = self.entry.as_ref().is_some_and(|entry| {
             entry.input == input
                 && entry.stdlib_root == stdlib_root
@@ -135,8 +157,10 @@ impl SourcePackCache {
         self.entry = None;
         self.transient = None;
 
-        let source_pack = load_entry_with_stdlib(input, stdlib_root)?;
-        if let Some(file_stamps) = source_file_stamps(&source_pack) {
+        let path_manifest = load_entry_path_manifest_with_stdlib(input, stdlib_root)?;
+        let file_stamps = source_file_stamps(&path_manifest);
+        let source_pack = cached_compile_input(path_manifest)?;
+        if let Some(file_stamps) = file_stamps {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
                 stdlib_root: stdlib_root.to_path_buf(),
@@ -158,11 +182,25 @@ impl SourcePackCache {
     }
 }
 
-fn source_file_stamps(source_pack: &ExplicitSourcePack) -> Option<Vec<SourceFileStamp>> {
+fn cached_compile_input(
+    path_manifest: ExplicitSourcePackPathManifest,
+) -> Result<CachedCompileInput, crate::compiler::CompileError> {
+    if path_manifest.requires_bounded_compilation() {
+        Ok(CachedCompileInput::Bounded(path_manifest))
+    } else {
+        Ok(CachedCompileInput::Resident(
+            load_explicit_source_pack_from_path_manifest(&path_manifest)?,
+        ))
+    }
+}
+
+fn source_file_stamps(
+    source_pack: &ExplicitSourcePackPathManifest,
+) -> Option<Vec<SourceFileStamp>> {
     source_pack
-        .source_paths
+        .files
         .iter()
-        .map(|path| source_file_stamp(path.as_deref()?))
+        .map(|file| source_file_stamp(&file.path))
         .collect()
 }
 
@@ -313,12 +351,9 @@ fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     let startup = Instant::now();
     let compiler: Arc<GpuCompiler<'static>> = Arc::new(
-        GpuCompiler::new_with_device_and_backends(
-            device::global(),
-            options.backend.compiler_backends(),
-        )
-        .await
-        .map_err(CliError::from_compile_error)?,
+        GpuCompiler::new_with_backends(options.backend.compiler_backends())
+            .await
+            .map_err(CliError::from_compile_error)?,
     );
     #[cfg(not(debug_assertions))]
     if matches!(options.backend, BackendSelection::X86) {
@@ -379,6 +414,7 @@ async fn run_session(
             "resident_set_bytes": resident_set_bytes(),
             "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
             "wgpu_resources": wgpu_resource_metrics(),
+            "compute_pipelines_created": pipeline_creation_count(),
             "idle_buffer_timeout_ms": options
                 .idle_buffer_timeout
                 .map(|timeout| timeout.as_millis() as u64),
@@ -474,7 +510,21 @@ async fn run_session(
         // A compilation is active rather than idle. Cancel the previous idle
         // deadline before it can contend for the resident pipeline lock.
         reaper.disarm();
-        let response = compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        let pipelines_before = pipeline_creation_count();
+        let mut response =
+            compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        let pipelines_after = pipeline_creation_count();
+        if let Some(response) = response.as_object_mut() {
+            response.insert(
+                "compute_pipelines_before_job".into(),
+                pipelines_before.into(),
+            );
+            response.insert("compute_pipelines_after_job".into(), pipelines_after.into());
+            response.insert(
+                "compute_pipelines_created_during_job".into(),
+                pipelines_after.saturating_sub(pipelines_before).into(),
+            );
+        }
         write_response(&mut output, &response)?;
         reaper.arm();
     }
@@ -599,16 +649,22 @@ async fn compile_request(
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     let compile_started = Instant::now();
-    let emitted = match emit.as_str() {
-        "wasm" => {
+    let emitted = match (emit.as_str(), source_pack) {
+        ("wasm", CachedCompileInput::Resident(source_pack)) => {
             compiler
                 .compile_source_pack_manifest_to_wasm(source_pack)
                 .await
         }
-        "x86_64" => {
+        ("wasm", CachedCompileInput::Bounded(source_pack)) => {
+            compiler.compile_path_manifest_to_wasm(source_pack).await
+        }
+        ("x86_64", CachedCompileInput::Resident(source_pack)) => {
             compiler
                 .compile_source_pack_manifest_to_x86_64(source_pack)
                 .await
+        }
+        ("x86_64", CachedCompileInput::Bounded(source_pack)) => {
+            compiler.compile_path_manifest_to_x86_64(source_pack).await
         }
         _ => unreachable!("backend support check accepted an unknown target"),
     };
@@ -642,11 +698,50 @@ async fn compile_request(
 
 fn tracked_gpu_buffer_metrics() -> Value {
     let stats = crate::gpu::buffers::tracked_buffer_allocation_stats();
-    json!({
+    let user_owned_wgpu_buffers = device::global()
+        .resource_stats()
+        .map(|stats| stats.buffers.kept_from_user as u64);
+    let untracked_allocations =
+        user_owned_wgpu_buffers.map(|buffers| buffers.saturating_sub(stats.allocations));
+    let mut metrics = json!({
         "allocations": stats.allocations,
         "bytes": stats.bytes,
-        "scope": "live LaniusBuffer allocations; raw wgpu buffers are excluded",
-    })
+        "user_owned_wgpu_buffers": user_owned_wgpu_buffers,
+        "untracked_allocations": untracked_allocations,
+        "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+    });
+    if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+        const DEFAULT_MAX_LABEL_ROWS: usize = 64;
+        const MAX_CONFIGURED_LABEL_ROWS: usize = 16_384;
+        let max_label_rows = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|&value| value > 0)
+            .unwrap_or(DEFAULT_MAX_LABEL_ROWS)
+            .min(MAX_CONFIGURED_LABEL_ROWS);
+        let rows = crate::gpu::buffers::tracked_buffer_allocation_stats_by_label();
+        let listed_bytes = rows
+            .iter()
+            .take(max_label_rows)
+            .map(|row| row.bytes)
+            .sum::<u64>();
+        let breakdown = rows
+            .iter()
+            .take(max_label_rows)
+            .map(|row| {
+                json!({
+                    "label": row.label.as_ref(),
+                    "allocations": row.allocations,
+                    "bytes": row.bytes,
+                })
+            })
+            .collect::<Vec<_>>();
+        metrics["largest_allocations_by_label"] = breakdown.into();
+        metrics["largest_allocations_listed_bytes"] = listed_bytes.into();
+        metrics["largest_allocations_omitted_bytes"] =
+            stats.bytes.saturating_sub(listed_bytes).into();
+    }
+    metrics
 }
 
 fn wgpu_resource_metrics() -> Value {
@@ -816,9 +911,14 @@ mod tests {
             std::process::id()
         ));
         fs::write(&path, "fn main() {}\n").expect("write source cache fixture");
-        let source_pack = ExplicitSourcePack::new(vec!["fn main() {}\n".into()], vec![1])
-            .and_then(|pack| pack.with_source_paths(vec![Some(path.clone())]))
-            .expect("build source cache fixture pack");
+        let source_pack = ExplicitSourcePackPathManifest::from_libraries(vec![
+            crate::compiler::ExplicitSourceLibraryPaths {
+                library_id: 1,
+                paths: vec![path.clone()],
+                dependency_library_ids: Vec::new(),
+            },
+        ])
+        .expect("build source cache fixture pack");
         let stamps = source_file_stamps(&source_pack).expect("source paths should be cacheable");
         assert!(file_stamps_match(&stamps));
 
@@ -848,25 +948,47 @@ mod tests {
         let first = cache
             .load(&entry, &stdlib_root)
             .expect("load initial cached source pack");
-        assert!(
-            first
+        assert!(first.resident().is_some_and(|source_pack| {
+            source_pack
                 .sources
                 .iter()
                 .any(|source| source.contains("return;"))
-        );
+        }));
 
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
             .load(&entry, &stdlib_root)
             .expect("reload changed source pack");
-        assert!(
-            second
+        assert!(second.resident().is_some_and(|source_pack| {
+            source_pack
                 .sources
                 .iter()
                 .any(|source| source.contains("print(17)"))
-        );
+        }));
 
         fs::remove_dir_all(root).expect("remove source cache fixture tree");
+    }
+
+    #[test]
+    fn daemon_keeps_large_source_packs_path_backed() {
+        let limits = crate::codegen::unit::CodegenUnitLimits::default();
+        let path_manifest = ExplicitSourcePackPathManifest {
+            files: (0..=limits.max_source_files)
+                .map(|index| crate::compiler::ExplicitSourcePathFile {
+                    library_id: 1,
+                    path: PathBuf::from(format!("not-loaded-{index}.lani")),
+                    byte_len: 1,
+                    modified_unix_nanos: None,
+                    line_count: None,
+                })
+                .collect(),
+            library_dependencies: Vec::new(),
+        };
+
+        assert!(matches!(
+            cached_compile_input(path_manifest),
+            Ok(CachedCompileInput::Bounded(_))
+        ));
     }
 }

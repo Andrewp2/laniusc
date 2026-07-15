@@ -3,6 +3,7 @@ use super::*;
 mod backends;
 pub use backends::GpuCompilerBackends;
 mod benchmarks;
+mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;
 mod typecheck;
@@ -117,7 +118,19 @@ impl SourcePackTreeCapacityCache {
 impl GpuCompiler<'static> {
     /// Create a compiler backed by the process-global GPU device.
     pub async fn new() -> Result<Self, CompileError> {
-        Self::new_with_device(device::global()).await
+        Self::new_with_backends(GpuCompilerBackends::all()).await
+    }
+
+    /// Create a compiler backed by the process-global GPU with selected backends.
+    pub async fn new_with_backends(backends: GpuCompilerBackends) -> Result<Self, CompileError> {
+        let gpu = device::global_result().map_err(|err| {
+            compiler_initialization_failed_error(
+                "the compiler stopped while selecting a GPU adapter",
+                "initialize GPU device",
+                anyhow::Error::new((*err).clone()),
+            )
+        })?;
+        Self::new_with_device_and_backends(gpu, backends).await
     }
 }
 
@@ -139,7 +152,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         let mut host_timer = CompilerHostTimer::new("compiler.init");
         host_timer.pipeline_cache_size(gpu, "start");
         let lexer = GpuLexer::new_with_device(gpu).await.map_err(|err| {
-            compiler_execution_failed_error(
+            compiler_initialization_failed_error(
                 "the compiler stopped while initializing GPU frontend pipelines",
                 "initialize lexer",
                 err,
@@ -160,7 +173,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         })?;
         host_timer.stamp("parse_tables");
         let parser = GpuParser::new_with_device(gpu).await.map_err(|err| {
-            compiler_execution_failed_error(
+            compiler_initialization_failed_error(
                 "the compiler stopped while initializing GPU frontend pipelines",
                 "initialize parser",
                 err,
@@ -168,37 +181,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         })?;
         host_timer.stamp("parser");
         host_timer.pipeline_cache_size(gpu, "after_parser");
-        #[cfg(debug_assertions)]
-        let type_checker =
-            gpu_type_checker::GpuTypeChecker::new_with_device(gpu).map_err(|err| {
-                compiler_execution_failed_error(
-                    "the compiler stopped while initializing GPU type-check pipelines",
-                    "initialize type checker",
-                    err,
-                )
-            })?;
-        #[cfg(debug_assertions)]
-        let wasm_generator = if backends.wasm {
-            wasm::GpuWasmCodeGenerator::new_with_device(gpu)
-                .map(Box::new)
-                .map_err(|err| err.to_string())
-        } else {
-            Err("WASM code generator was not initialized for this compiler".into())
-        };
-        #[cfg(debug_assertions)]
-        let x86_generator = if backends.x86 {
-            x86::GpuX86CodeGenerator::new_with_device(gpu)
-                .map(Box::new)
-                .map_err(|err| err.to_string())
-        } else {
-            Err("x86 code generator was not initialized for this compiler".into())
-        };
-
-        // Optimized daemon builds compile the independent type-checker and
-        // target pipeline families concurrently. Keeping this machinery out of
-        // debug builds also keeps validation-heavy constructors on the caller's
-        // ordinary sequential path.
-        #[cfg(not(debug_assertions))]
+        // These eager pipeline families have no construction-time data
+        // dependencies. Build them concurrently in every profile so debug
+        // daemon jobs exercise the same readiness contract as release jobs.
         let (type_checker, wasm_generator, x86_generator) = {
             // Pipeline compilation is CPU/driver-heavy and these families have
             // no construction-time data dependencies.
@@ -246,14 +231,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .expect("spawn x86 pipeline initialization worker")
                 });
                 let (type_checker, type_checker_elapsed) = type_checker.join().map_err(|_| {
-                    compiler_execution_failed_error(
+                    compiler_initialization_failed_error(
                         "the compiler stopped while initializing GPU type-check pipelines",
                         "initialize type checker worker",
                         anyhow::anyhow!("type checker initialization thread panicked"),
                     )
                 })?;
                 let type_checker = type_checker.map_err(|err| {
-                    compiler_execution_failed_error(
+                    compiler_initialization_failed_error(
                         "the compiler stopped while initializing GPU type-check pipelines",
                         "initialize type checker",
                         err,

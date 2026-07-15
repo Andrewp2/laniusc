@@ -175,7 +175,6 @@ static const uint PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH = 25u;
 static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW = 27u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
-static const uint PREDICATE_STATUS_BOUND_PATH_TOO_DEEP = 29u;
 
 static const uint OBLIGATION_STAGE_COUNT = 0u;
 static const uint OBLIGATION_STAGE_VALIDATE = 1u;
@@ -1098,7 +1097,6 @@ void validate_predicate_fail_closed_status(uint node)
         status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
-        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP ||
         status_value == PREDICATE_STATUS_INVALID_ARG ||
         (!trait_contract_node &&
          (status_value == PREDICATE_STATUS_INVALID_SUBJECT ||
@@ -1113,8 +1111,7 @@ void validate_predicate_fail_closed_status(uint node)
             token_i = predicate_subject_token[node];
         if ((status_value == PREDICATE_STATUS_INVALID_ARG ||
              status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
-             status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
-             status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP) &&
+             status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION) &&
             (valid_token(predicate_bound_first_arg_token[node]) ||
              valid_token(predicate_bound_second_arg_token[node])))
             token_i = valid_token(predicate_bound_second_arg_token[node])
@@ -1155,8 +1152,7 @@ void validate_predicate_fail_closed_status(uint node)
         status_value == PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH ||
         status_value == PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH ||
         status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW ||
-        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG ||
-        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
     if (!trait_contract_status)
         return;
 
@@ -1164,8 +1160,7 @@ void validate_predicate_fail_closed_status(uint node)
     bool trait_impl_arg_status =
         status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
         status_value == PREDICATE_STATUS_INVALID_IMPL_ARG ||
-        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG ||
-        status_value == PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
     if (trait_impl_arg_status && valid_token(predicate_bound_second_arg_token[node]))
         token_i = predicate_bound_second_arg_token[node];
     if (!valid_token(token_i))

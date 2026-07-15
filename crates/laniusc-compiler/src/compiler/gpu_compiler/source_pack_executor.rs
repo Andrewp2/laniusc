@@ -40,6 +40,28 @@ pub struct GpuSourcePackLinkHandle {
     pub(super) partial_link_artifacts: Vec<ArtifactPath>,
 }
 
+const GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION: u32 = 1;
+
+/// Durable ordered object-descriptor inputs carried between hierarchical link groups.
+///
+/// The target linker still performs symbol resolution, placement, relocation,
+/// and executable emission on the GPU. This bundle only prevents the persisted
+/// work queue from losing the concrete object inputs at reduce boundaries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct GpuSourcePackPartialLinkBundle {
+    version: u32,
+    target: SourcePackArtifactTarget,
+    object_descriptor_keys: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ValidatedCodegenObjectArtifact {
+    descriptor_key: String,
+    storage_key: String,
+    path: PathBuf,
+    byte_len: usize,
+}
+
 /// Validates that source-file metadata still matches a descriptor job record.
 pub(in crate::compiler) fn validate_gpu_source_pack_descriptor_job_source_file_records(
     stage: &str,
@@ -355,112 +377,45 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         )
     }
 
-    /// Finishes a direct link job by writing a linked-output descriptor.
+    /// Finishes a direct link job and returns the concrete target artifact.
     pub(super) async fn finish_linked_output_artifact(
         &self,
         job: &SourcePackJob,
         link_handle: GpuSourcePackLinkHandle,
     ) -> Result<ArtifactPath, CompileError> {
-        let mut linked_bytes = None;
-        if self.target == SourcePackArtifactTarget::X86_64 {
-            let objects =
-                self.load_x86_codegen_object_artifacts(&link_handle.codegen_object_artifacts)?;
-            let link_input = x86::GpuX86LinkInput::for_executable(&objects).map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "prepare source-pack x86 link job {}: {reason}",
-                    job.job_index
-                ))
-            })?;
-            let generator = self.compiler.x86_generator().map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "initialize source-pack x86 linker for job {}: {reason}",
-                    job.job_index
-                ))
-            })?;
-            let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-            linked_bytes = Some(
-                generator
-                    .link_executable(
-                        &self.compiler.gpu.device,
-                        &self.compiler.gpu.queue,
-                        &link_input,
-                    )
-                    .map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "execute source-pack x86 link job {}: {err}",
-                            job.job_index
-                        ))
-                    })?,
-            );
-        } else if self.target == SourcePackArtifactTarget::Wasm {
-            let objects =
-                self.load_wasm_codegen_object_artifacts(&link_handle.codegen_object_artifacts)?;
-            let link_input = wasm::GpuWasmLinkInput::for_executable(&objects).map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "prepare source-pack Wasm link job {}: {reason}",
-                    job.job_index
-                ))
-            })?;
-            let generator = self.compiler.wasm_generator().map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "initialize source-pack Wasm linker for job {}: {reason}",
-                    job.job_index
-                ))
-            })?;
-            let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-            linked_bytes = Some(
-                generator
-                    .link_executable(
-                        &self.compiler.gpu.device,
-                        &self.compiler.gpu.queue,
-                        &link_input,
-                    )
-                    .map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "execute source-pack Wasm link job {}: {err}",
-                            job.job_index
-                        ))
-                    })?,
-            );
-        }
+        let context = format!("source-pack link job {}", job.job_index);
+        let (artifact, linked_byte_len) = self
+            .link_codegen_object_artifacts_to_artifact(
+                &context,
+                &link_handle.codegen_object_artifacts,
+                &format!("job-{}", job.job_index),
+            )
+            .await?;
         let mut descriptor = GpuSourcePackArtifactDescriptor::linked_output_contract_for_job(
             self.target,
             job,
             link_handle.interface_count,
             link_handle.object_count,
         );
-        if let Some(bytes) = linked_bytes {
-            let artifact = match self.target {
-                SourcePackArtifactTarget::X86_64 => {
-                    self.write_x86_linked_output_artifact(job, &bytes)?
-                }
-                SourcePackArtifactTarget::Wasm => {
-                    self.write_wasm_linked_output_artifact(job, &bytes)?
-                }
-                SourcePackArtifactTarget::Generic => {
-                    return Err(source_pack_artifact_store_error(format!(
-                        "source-pack generic link job {} unexpectedly produced target bytes",
-                        job.job_index
-                    )));
-                }
-            };
-            attach_linked_output_artifact(&mut descriptor, &artifact, bytes.len());
-        }
+        attach_linked_output_artifact(&mut descriptor, &artifact, linked_byte_len);
         descriptor.validate_contract().map_err(|reason| {
             source_pack_artifact_store_error(format!(
                 "validate source-pack linked-output descriptor for job {}: {reason}",
                 job.job_index
             ))
         })?;
-        self.write_descriptor_artifact(GpuSourcePackArtifactStage::LinkedOutput, job, &descriptor)
+        self.write_descriptor_artifact(GpuSourcePackArtifactStage::LinkedOutput, job, &descriptor)?;
+        Ok(artifact)
     }
 
-    /// Finishes a hierarchical partial-link group by writing a partial-link descriptor.
+    /// Finishes a hierarchical partial-link group with an ordered object-input bundle.
     pub(super) fn finish_hierarchical_partial_link_artifact(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPage,
         link_handle: GpuSourcePackLinkHandle,
     ) -> Result<ArtifactPath, CompileError> {
+        let object_descriptors = self.object_descriptors_for_link_handle(&link_handle)?;
+        let artifact = self.write_partial_link_bundle(page.group_index, &object_descriptors)?;
         let descriptor = GpuSourcePackArtifactDescriptor::partial_link_contract_for_page(
             page,
             link_handle.interface_count,
@@ -471,27 +426,45 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             GpuSourcePackArtifactStage::PartialLink,
             format!("group-{}", page.group_index),
             &descriptor,
-        )
+        )?;
+        Ok(artifact)
     }
 
-    /// Finishes a hierarchical final-link group by writing a linked-output descriptor.
-    pub(super) fn finish_hierarchical_linked_output_artifact(
+    /// Finishes a hierarchical final-link group and returns target bytes.
+    pub(super) async fn finish_hierarchical_linked_output_artifact(
         &self,
         page: &SourcePackHierarchicalLinkExecutionPage,
         link_handle: GpuSourcePackLinkHandle,
     ) -> Result<ArtifactPath, CompileError> {
-        let descriptor =
+        let object_descriptors = self.object_descriptors_for_link_handle(&link_handle)?;
+        let context = format!("source-pack hierarchical link group {}", page.group_index);
+        let (artifact, linked_byte_len) = self
+            .link_codegen_object_artifacts_to_artifact(
+                &context,
+                &object_descriptors,
+                &format!("group-{}", page.group_index),
+            )
+            .await?;
+        let mut descriptor =
             GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
                 page,
                 link_handle.interface_count,
                 link_handle.object_count,
                 link_handle.partial_link_count,
             );
+        attach_linked_output_artifact(&mut descriptor, &artifact, linked_byte_len);
+        descriptor.validate_contract().map_err(|reason| {
+            source_pack_artifact_store_error(format!(
+                "validate source-pack hierarchical linked-output descriptor for group {}: {reason}",
+                page.group_index
+            ))
+        })?;
         self.write_descriptor_artifact_for_suffix(
             GpuSourcePackArtifactStage::LinkedOutput,
             format!("group-{}", page.group_index),
             &descriptor,
-        )
+        )?;
+        Ok(artifact)
     }
 
     /// Writes a job-scoped descriptor artifact using the standard job key suffix.
@@ -614,37 +587,194 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok(ArtifactPath { key, path })
     }
 
-    fn write_x86_linked_output_artifact(
+    async fn link_codegen_object_artifacts_to_artifact(
         &self,
-        job: &SourcePackJob,
-        bytes: &[u8],
+        context: &str,
+        object_descriptors: &[ArtifactPath],
+        key_suffix: &str,
+    ) -> Result<(ArtifactPath, usize), CompileError> {
+        let (artifact, artifact_label) = self.linked_output_artifact_destination(key_suffix)?;
+        let object_artifacts = self.resolve_codegen_object_artifacts(object_descriptors)?;
+        let device_limits = self.compiler.gpu.device.limits();
+        let max_page_bytes = (device_limits.max_storage_buffer_binding_size as u64)
+            .min(device_limits.max_buffer_size);
+        match self.target {
+            SourcePackArtifactTarget::X86_64 => {
+                let layouts = self.load_x86_codegen_object_layouts(&object_artifacts)?;
+                let _plan = crate::codegen::link_layout::GpuLinkLayoutPlan::for_x86(
+                    &layouts,
+                    max_page_bytes,
+                )
+                .map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "plan {context} for bounded x86_64 linking: {reason}"
+                    ))
+                })?;
+                let link_input = x86::GpuX86LinkInput::for_executable_files(
+                    object_artifacts
+                        .iter()
+                        .zip(layouts.iter())
+                        .map(|(artifact, layout)| (artifact.path.clone(), *layout)),
+                )
+                .map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "prepare {context} for x86_64: {reason}"
+                    ))
+                })?;
+                let generator = self.compiler.x86_generator().map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "initialize x86_64 linker for {context}: {reason}"
+                    ))
+                })?;
+                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
+                let byte_len = write_file_atomic_with_writer(
+                    &artifact.path,
+                    artifact_label,
+                    source_pack_artifact_store_error,
+                    |file, _error| {
+                        generator
+                            .link_executable_to_writer(
+                                &self.compiler.gpu.device,
+                                &self.compiler.gpu.queue,
+                                &link_input,
+                                file,
+                            )
+                            .map_err(|err| {
+                                source_pack_artifact_store_error(format!(
+                                    "execute x86_64 linker for {context}: {err}"
+                                ))
+                            })
+                    },
+                )?;
+                Ok((artifact, byte_len))
+            }
+            SourcePackArtifactTarget::Wasm => {
+                let layouts = self.load_wasm_codegen_object_layouts(&object_artifacts)?;
+                let _plan = crate::codegen::link_layout::GpuLinkLayoutPlan::for_wasm(
+                    &layouts,
+                    max_page_bytes,
+                )
+                .map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "plan {context} for bounded Wasm linking: {reason}"
+                    ))
+                })?;
+                let link_input = wasm::GpuWasmLinkInput::for_executable_files(
+                    object_artifacts
+                        .iter()
+                        .zip(layouts.iter())
+                        .map(|(artifact, layout)| (artifact.path.clone(), *layout)),
+                )
+                .map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "prepare {context} for Wasm: {reason}"
+                    ))
+                })?;
+                let generator = self.compiler.wasm_generator().map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "initialize Wasm linker for {context}: {reason}"
+                    ))
+                })?;
+                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
+                let byte_len = write_file_atomic_with_writer(
+                    &artifact.path,
+                    artifact_label,
+                    source_pack_artifact_store_error,
+                    |file, _error| {
+                        generator
+                            .link_executable_to_writer(
+                                &self.compiler.gpu.device,
+                                &self.compiler.gpu.queue,
+                                &link_input,
+                                file,
+                            )
+                            .map_err(|err| {
+                                source_pack_artifact_store_error(format!(
+                                    "execute Wasm linker for {context}: {err}"
+                                ))
+                            })
+                    },
+                )?;
+                Ok((artifact, byte_len))
+            }
+            SourcePackArtifactTarget::Generic => Err(source_pack_artifact_store_error(format!(
+                "{context} cannot emit target bytes for the generic artifact target"
+            ))),
+        }
+    }
+
+    fn object_descriptors_for_link_handle(
+        &self,
+        link_handle: &GpuSourcePackLinkHandle,
+    ) -> Result<Vec<ArtifactPath>, CompileError> {
+        let keys = object_descriptor_keys_for_link_handle(link_handle, self.target)?;
+        keys.into_iter()
+            .map(|key| {
+                let path = artifact_path(&self.artifact_root, &key)?;
+                if !path.is_file() {
+                    return Err(source_pack_artifact_store_error(format!(
+                        "hierarchical link codegen-object descriptor {key} is missing at {}",
+                        path.display()
+                    )));
+                }
+                Ok(ArtifactPath { key, path })
+            })
+            .collect()
+    }
+
+    fn write_partial_link_bundle(
+        &self,
+        group_index: usize,
+        object_descriptors: &[ArtifactPath],
     ) -> Result<ArtifactPath, CompileError> {
-        let key = gpu_source_pack_x86_linked_output_artifact_key(&format!("job-{}", job.job_index));
+        let bundle = GpuSourcePackPartialLinkBundle {
+            version: GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION,
+            target: self.target,
+            object_descriptor_keys: object_descriptors
+                .iter()
+                .map(|artifact| artifact.key.clone())
+                .collect(),
+        };
+        let bytes = serde_json::to_vec(&bundle).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "serialize source-pack partial-link bundle for group {group_index}: {err}"
+            ))
+        })?;
+        let key = gpu_source_pack_partial_link_bundle_artifact_key(
+            self.target,
+            &format!("group-{group_index}"),
+        );
         let path = artifact_path(&self.artifact_root, &key)?;
         write_file_atomic_with_error(
             &path,
-            bytes,
-            "source-pack x86 linked-output artifact",
+            &bytes,
+            "source-pack partial-link bundle artifact",
             source_pack_artifact_store_error,
         )?;
         Ok(ArtifactPath { key, path })
     }
 
-    fn write_wasm_linked_output_artifact(
+    fn linked_output_artifact_destination(
         &self,
-        job: &SourcePackJob,
-        bytes: &[u8],
-    ) -> Result<ArtifactPath, CompileError> {
-        let key =
-            gpu_source_pack_wasm_linked_output_artifact_key(&format!("job-{}", job.job_index));
+        key_suffix: &str,
+    ) -> Result<(ArtifactPath, &'static str), CompileError> {
+        let (key, label) = match self.target {
+            SourcePackArtifactTarget::X86_64 => (
+                gpu_source_pack_x86_linked_output_artifact_key(key_suffix),
+                "source-pack x86 linked-output artifact",
+            ),
+            SourcePackArtifactTarget::Wasm => (
+                gpu_source_pack_wasm_linked_output_artifact_key(key_suffix),
+                "source-pack Wasm linked-output artifact",
+            ),
+            SourcePackArtifactTarget::Generic => {
+                return Err(source_pack_artifact_store_error(
+                    "generic source-pack target cannot persist executable bytes",
+                ));
+            }
+        };
         let path = artifact_path(&self.artifact_root, &key)?;
-        write_file_atomic_with_error(
-            &path,
-            bytes,
-            "source-pack Wasm linked-output artifact",
-            source_pack_artifact_store_error,
-        )?;
-        Ok(ArtifactPath { key, path })
+        Ok((ArtifactPath { key, path }, label))
     }
 
     fn load_semantic_interface_artifacts(
@@ -707,16 +837,33 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             .collect()
     }
 
-    fn load_x86_codegen_object_artifacts(
+    fn resolve_codegen_object_artifacts(
         &self,
         descriptor_artifacts: &[ArtifactPath],
-    ) -> Result<Vec<x86::GpuX86RelocatableObject>, CompileError> {
+    ) -> Result<Vec<ValidatedCodegenObjectArtifact>, CompileError> {
+        let (target_label, expected_format, expected_version) = match self.target {
+            SourcePackArtifactTarget::X86_64 => (
+                "x86",
+                GpuSourcePackCodegenObjectFormat::LaniusX86_64,
+                x86::GPU_X86_OBJECT_VERSION,
+            ),
+            SourcePackArtifactTarget::Wasm => (
+                "Wasm",
+                GpuSourcePackCodegenObjectFormat::LaniusWasm,
+                wasm::GPU_WASM_OBJECT_VERSION,
+            ),
+            SourcePackArtifactTarget::Generic => {
+                return Err(source_pack_artifact_store_error(
+                    "generic source-pack target has no concrete codegen-object payload",
+                ));
+            }
+        };
         descriptor_artifacts
             .iter()
             .map(|descriptor_artifact| {
                 let descriptor_bytes = fs::read(&descriptor_artifact.path).map_err(|err| {
                     source_pack_artifact_store_error(format!(
-                        "read x86 codegen-object descriptor {} at {}: {err}",
+                        "read {target_label} codegen-object descriptor {} at {}: {err}",
                         descriptor_artifact.key,
                         descriptor_artifact.path.display()
                     ))
@@ -724,7 +871,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 let descriptor: GpuSourcePackArtifactDescriptor =
                     serde_json::from_slice(&descriptor_bytes).map_err(|err| {
                         source_pack_artifact_store_error(format!(
-                            "parse x86 codegen-object descriptor {} at {}: {err}",
+                            "parse {target_label} codegen-object descriptor {} at {}: {err}",
                             descriptor_artifact.key,
                             descriptor_artifact.path.display()
                         ))
@@ -732,126 +879,123 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 descriptor
                     .validate_contract_for(
                         GpuSourcePackArtifactStage::CodegenObject,
-                        Some(SourcePackArtifactTarget::X86_64),
+                        Some(self.target),
                     )
                     .map_err(|reason| {
                         source_pack_artifact_store_error(format!(
-                            "validate x86 codegen-object descriptor {}: {reason}",
+                            "validate {target_label} codegen-object descriptor {}: {reason}",
                             descriptor_artifact.key
                         ))
                     })?;
                 let payload = descriptor.codegen_object_payload.as_ref().ok_or_else(|| {
                     source_pack_artifact_store_error(format!(
-                        "x86 codegen-object descriptor {} has no persisted object payload",
+                        "{target_label} codegen-object descriptor {} has no persisted object payload",
                         descriptor_artifact.key
                     ))
                 })?;
-                if payload.format != GpuSourcePackCodegenObjectFormat::LaniusX86_64
-                    || payload.format_version != x86::GPU_X86_OBJECT_VERSION
+                if payload.format != expected_format || payload.format_version != expected_version
                 {
                     return Err(source_pack_artifact_store_error(format!(
-                        "x86 codegen-object descriptor {} has unsupported payload {:?} version {}",
+                        "{target_label} codegen-object descriptor {} has unsupported payload {:?} version {}",
                         descriptor_artifact.key, payload.format, payload.format_version
                     )));
                 }
-                let object_path = artifact_path(&self.artifact_root, &payload.storage_key)?;
-                let object_bytes = fs::read(&object_path).map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "read x86 codegen object {} at {}: {err}",
-                        payload.storage_key,
-                        object_path.display()
-                    ))
-                })?;
-                if object_bytes.len() != payload.byte_len {
-                    return Err(source_pack_artifact_store_error(format!(
-                        "x86 codegen object {} has {} bytes but descriptor records {}",
-                        payload.storage_key,
-                        object_bytes.len(),
-                        payload.byte_len
-                    )));
-                }
-                x86::GpuX86RelocatableObject::from_bytes(&object_bytes).map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "parse x86 codegen object {}: {reason}",
-                        payload.storage_key
-                    ))
+                Ok(ValidatedCodegenObjectArtifact {
+                    descriptor_key: descriptor_artifact.key.clone(),
+                    storage_key: payload.storage_key.clone(),
+                    path: artifact_path(&self.artifact_root, &payload.storage_key)?,
+                    byte_len: payload.byte_len,
                 })
             })
             .collect()
     }
 
-    fn load_wasm_codegen_object_artifacts(
+    fn load_x86_codegen_object_layouts(
         &self,
-        descriptor_artifacts: &[ArtifactPath],
-    ) -> Result<Vec<wasm::GpuWasmRelocatableObject>, CompileError> {
-        descriptor_artifacts
+        object_artifacts: &[ValidatedCodegenObjectArtifact],
+    ) -> Result<Vec<x86::GpuX86RelocatableObjectLayout>, CompileError> {
+        object_artifacts
             .iter()
-            .map(|descriptor_artifact| {
-                let descriptor_bytes = fs::read(&descriptor_artifact.path).map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "read Wasm codegen-object descriptor {} at {}: {err}",
-                        descriptor_artifact.key,
-                        descriptor_artifact.path.display()
-                    ))
-                })?;
-                let descriptor: GpuSourcePackArtifactDescriptor =
-                    serde_json::from_slice(&descriptor_bytes).map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "parse Wasm codegen-object descriptor {} at {}: {err}",
-                            descriptor_artifact.key,
-                            descriptor_artifact.path.display()
-                        ))
-                    })?;
-                descriptor
-                    .validate_contract_for(
-                        GpuSourcePackArtifactStage::CodegenObject,
-                        Some(SourcePackArtifactTarget::Wasm),
-                    )
+            .map(|artifact| {
+                let header = read_object_artifact_header::<{ x86::GPU_X86_OBJECT_HEADER_BYTES }>(
+                    &artifact.path,
+                    "x86",
+                    &artifact.storage_key,
+                )?;
+                let layout = x86::GpuX86RelocatableObjectLayout::from_header_bytes(&header)
                     .map_err(|reason| {
                         source_pack_artifact_store_error(format!(
-                            "validate Wasm codegen-object descriptor {}: {reason}",
-                            descriptor_artifact.key
+                            "parse x86 codegen object {} layout: {reason}",
+                            artifact.storage_key
                         ))
                     })?;
-                let payload = descriptor.codegen_object_payload.as_ref().ok_or_else(|| {
-                    source_pack_artifact_store_error(format!(
-                        "Wasm codegen-object descriptor {} has no persisted object payload",
-                        descriptor_artifact.key
-                    ))
-                })?;
-                if payload.format != GpuSourcePackCodegenObjectFormat::LaniusWasm
-                    || payload.format_version != wasm::GPU_WASM_OBJECT_VERSION
-                {
-                    return Err(source_pack_artifact_store_error(format!(
-                        "Wasm codegen-object descriptor {} has unsupported payload {:?} version {}",
-                        descriptor_artifact.key, payload.format, payload.format_version
-                    )));
-                }
-                let object_path = artifact_path(&self.artifact_root, &payload.storage_key)?;
-                let object_bytes = fs::read(&object_path).map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "read Wasm codegen object {} at {}: {err}",
-                        payload.storage_key,
-                        object_path.display()
-                    ))
-                })?;
-                if object_bytes.len() != payload.byte_len {
-                    return Err(source_pack_artifact_store_error(format!(
-                        "Wasm codegen object {} has {} bytes but descriptor records {}",
-                        payload.storage_key,
-                        object_bytes.len(),
-                        payload.byte_len
-                    )));
-                }
-                wasm::GpuWasmRelocatableObject::from_bytes(&object_bytes).map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "parse Wasm codegen object {}: {reason}",
-                        payload.storage_key
-                    ))
-                })
+                validate_object_layout_byte_len("x86", artifact, layout.serialized_byte_len)?;
+                Ok(layout)
             })
             .collect()
     }
+
+    fn load_wasm_codegen_object_layouts(
+        &self,
+        object_artifacts: &[ValidatedCodegenObjectArtifact],
+    ) -> Result<Vec<wasm::GpuWasmRelocatableObjectLayout>, CompileError> {
+        object_artifacts
+            .iter()
+            .map(|artifact| {
+                let header = read_object_artifact_header::<{ wasm::GPU_WASM_OBJECT_HEADER_BYTES }>(
+                    &artifact.path,
+                    "Wasm",
+                    &artifact.storage_key,
+                )?;
+                let layout = wasm::GpuWasmRelocatableObjectLayout::from_header_bytes(&header)
+                    .map_err(|reason| {
+                        source_pack_artifact_store_error(format!(
+                            "parse Wasm codegen object {} layout: {reason}",
+                            artifact.storage_key
+                        ))
+                    })?;
+                validate_object_layout_byte_len("Wasm", artifact, layout.serialized_byte_len)?;
+                Ok(layout)
+            })
+            .collect()
+    }
+}
+
+fn validate_object_layout_byte_len(
+    target: &str,
+    artifact: &ValidatedCodegenObjectArtifact,
+    layout_byte_len: u64,
+) -> Result<(), CompileError> {
+    if layout_byte_len == artifact.byte_len as u64 {
+        return Ok(());
+    }
+    Err(source_pack_artifact_store_error(format!(
+        "{target} codegen object {} from descriptor {} layout requires {} bytes but descriptor records {}",
+        artifact.storage_key, artifact.descriptor_key, layout_byte_len, artifact.byte_len
+    )))
+}
+
+fn read_object_artifact_header<const N: usize>(
+    path: &Path,
+    target: &str,
+    storage_key: &str,
+) -> Result<[u8; N], CompileError> {
+    use std::io::Read;
+
+    let mut file = fs::File::open(path).map_err(|err| {
+        source_pack_artifact_store_error(format!(
+            "open {target} codegen object {storage_key} at {}: {err}",
+            path.display()
+        ))
+    })?;
+    let mut header = [0; N];
+    file.read_exact(&mut header).map_err(|err| {
+        source_pack_artifact_store_error(format!(
+            "read {target} codegen object {storage_key} header at {}: {err}",
+            path.display()
+        ))
+    })?;
+    Ok(header)
 }
 
 /// Builds the artifact key for a source-pack descriptor artifact.
@@ -886,12 +1030,88 @@ fn gpu_source_pack_wasm_codegen_object_artifact_key(key_suffix: &str) -> String 
     format!("gpu-source-pack/wasm/codegen-object/{key_suffix}.lnwo")
 }
 
+fn gpu_source_pack_partial_link_bundle_artifact_key(
+    target: SourcePackArtifactTarget,
+    key_suffix: &str,
+) -> String {
+    let target = target.key_prefix().unwrap_or("generic");
+    format!("gpu-source-pack/{target}/partial-link/{key_suffix}.lnpl")
+}
+
 fn gpu_source_pack_x86_linked_output_artifact_key(key_suffix: &str) -> String {
     format!("gpu-source-pack/x86_64/linked-output/{key_suffix}.elf")
 }
 
 fn gpu_source_pack_wasm_linked_output_artifact_key(key_suffix: &str) -> String {
     format!("gpu-source-pack/wasm/linked-output/{key_suffix}.wasm")
+}
+
+fn load_partial_link_bundle(
+    artifact: &ArtifactPath,
+    target: SourcePackArtifactTarget,
+) -> Result<GpuSourcePackPartialLinkBundle, CompileError> {
+    let bytes = fs::read(&artifact.path).map_err(|err| {
+        source_pack_artifact_store_error(format!(
+            "read partial-link bundle {} at {}: {err}",
+            artifact.key,
+            artifact.path.display()
+        ))
+    })?;
+    let bundle: GpuSourcePackPartialLinkBundle = serde_json::from_slice(&bytes).map_err(|err| {
+        source_pack_artifact_store_error(format!(
+            "parse partial-link bundle {} at {}: {err}",
+            artifact.key,
+            artifact.path.display()
+        ))
+    })?;
+    if bundle.version != GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION {
+        return Err(source_pack_artifact_store_error(format!(
+            "partial-link bundle {} has version {}, expected {}",
+            artifact.key, bundle.version, GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION
+        )));
+    }
+    if bundle.target != target {
+        return Err(source_pack_artifact_store_error(format!(
+            "partial-link bundle {} targets {:?}, expected {:?}",
+            artifact.key, bundle.target, target
+        )));
+    }
+    if bundle.object_descriptor_keys.is_empty() {
+        return Err(source_pack_artifact_store_error(format!(
+            "partial-link bundle {} contains no codegen-object descriptors",
+            artifact.key
+        )));
+    }
+    Ok(bundle)
+}
+
+fn object_descriptor_keys_for_link_handle(
+    link_handle: &GpuSourcePackLinkHandle,
+    target: SourcePackArtifactTarget,
+) -> Result<Vec<String>, CompileError> {
+    let mut keys = link_handle
+        .codegen_object_artifacts
+        .iter()
+        .map(|artifact| artifact.key.clone())
+        .collect::<Vec<_>>();
+    for partial_link in &link_handle.partial_link_artifacts {
+        let bundle = load_partial_link_bundle(partial_link, target)?;
+        keys.extend(bundle.object_descriptor_keys);
+    }
+    let mut seen = BTreeSet::new();
+    for key in &keys {
+        if !seen.insert(key.clone()) {
+            return Err(source_pack_artifact_store_error(format!(
+                "hierarchical link input repeats codegen-object descriptor {key}"
+            )));
+        }
+    }
+    if keys.is_empty() {
+        return Err(source_pack_artifact_store_error(
+            "hierarchical link input contains no codegen-object descriptors",
+        ));
+    }
+    Ok(keys)
 }
 
 fn semantic_interface_record_count(interface: &GpuSemanticInterfaceArtifact) -> usize {
@@ -1268,7 +1488,10 @@ impl<'compiler, 'gpu> AsyncHierarchicalLinkExecutor
         page: &'a SourcePackHierarchicalLinkExecutionPage,
         link_handle: Self::LinkHandle,
     ) -> SourcePackBoxFuture<'a, Self::LinkedOutputArtifact> {
-        Box::pin(async move { self.finish_hierarchical_linked_output_artifact(page, link_handle) })
+        Box::pin(async move {
+            self.finish_hierarchical_linked_output_artifact(page, link_handle)
+                .await
+        })
     }
 }
 
@@ -1392,5 +1615,83 @@ mod tests {
             );
             assert!(arrays.iter().all(|array| array.storage_key.is_none()));
         }
+    }
+
+    #[test]
+    fn partial_link_bundle_preserves_ordered_concrete_object_descriptors() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-partial-link-bundle-{}-{suffix}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create partial-link bundle test root");
+        let path = root.join("group-3.lnpl");
+        let expected_keys = vec![
+            "gpu-source-pack/wasm/codegen-object/job-5.json".to_string(),
+            "gpu-source-pack/wasm/codegen-object/job-9.json".to_string(),
+        ];
+        let bundle = GpuSourcePackPartialLinkBundle {
+            version: GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION,
+            target: SourcePackArtifactTarget::Wasm,
+            object_descriptor_keys: expected_keys.clone(),
+        };
+        fs::write(&path, serde_json::to_vec(&bundle).unwrap()).expect("write partial-link bundle");
+
+        let loaded = load_partial_link_bundle(
+            &ArtifactPath {
+                key: "gpu-source-pack/wasm/partial-link/group-3.lnpl".into(),
+                path,
+            },
+            SourcePackArtifactTarget::Wasm,
+        )
+        .expect("load partial-link bundle");
+        assert_eq!(loaded.object_descriptor_keys, expected_keys);
+
+        fs::remove_dir_all(root).expect("remove partial-link bundle test root");
+    }
+
+    #[test]
+    fn hierarchical_reduce_flattens_partial_bundles_in_link_order() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-partial-link-reduce-{}-{suffix}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create partial-link reduce test root");
+        let make_bundle = |name: &str, keys: &[&str]| {
+            let path = root.join(name);
+            let bundle = GpuSourcePackPartialLinkBundle {
+                version: GPU_SOURCE_PACK_PARTIAL_LINK_BUNDLE_VERSION,
+                target: SourcePackArtifactTarget::X86_64,
+                object_descriptor_keys: keys.iter().map(|key| (*key).to_string()).collect(),
+            };
+            fs::write(&path, serde_json::to_vec(&bundle).unwrap())
+                .expect("write partial-link reduce bundle");
+            ArtifactPath {
+                key: format!("gpu-source-pack/x86_64/partial-link/{name}"),
+                path,
+            }
+        };
+        let first = make_bundle("first.lnpl", &["object-1.json", "object-2.json"]);
+        let second = make_bundle("second.lnpl", &["object-3.json"]);
+        let handle = GpuSourcePackLinkHandle {
+            partial_link_count: 2,
+            partial_link_artifacts: vec![first, second],
+            ..GpuSourcePackLinkHandle::default()
+        };
+
+        assert_eq!(
+            object_descriptor_keys_for_link_handle(&handle, SourcePackArtifactTarget::X86_64)
+                .expect("flatten ordered partial-link bundles"),
+            vec!["object-1.json", "object-2.json", "object-3.json"]
+        );
+
+        fs::remove_dir_all(root).expect("remove partial-link reduce test root");
     }
 }

@@ -1,10 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc,
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -27,7 +23,6 @@ pub(super) struct LazyWasmPass {
     bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
     reflection: Arc<SlangReflection>,
     pipeline: Mutex<Option<Arc<wgpu::ComputePipeline>>>,
-    pipeline_cache_dirty: Arc<AtomicBool>,
     device: Arc<wgpu::Device>,
 }
 
@@ -38,7 +33,6 @@ impl LazyWasmPass {
         label: &'static str,
         spv: &'static str,
         reflection: &'static str,
-        pipeline_cache_dirty: Arc<AtomicBool>,
     ) -> Result<Self> {
         let spv_path = crate::shader_artifacts::artifact_path(spv);
         let reflection_path = crate::shader_artifacts::artifact_path(reflection);
@@ -64,7 +58,6 @@ impl LazyWasmPass {
             bind_group_layouts,
             reflection: Arc::new(reflection),
             pipeline: Mutex::new(None),
-            pipeline_cache_dirty,
             device: device.clone(),
         })
     }
@@ -111,14 +104,13 @@ impl LazyWasmPass {
         trace_wasm_codegen(&format!("{}.pipeline.done", self.stage));
         let created = Arc::new(created);
         *pipeline = Some(created.clone());
-        self.pipeline_cache_dirty.store(true, Ordering::Release);
-        // A single complex driver pipeline can take longer than the compile
-        // timeout. Checkpoint expensive creations immediately so a later
-        // pipeline timeout does not discard all cold-start progress. Keep
-        // cheap pipelines batched behind the normal phase boundary.
-        if end.duration_since(start) >= Duration::from_secs(1) {
+        // Optional recovery mode for driver pipelines that take longer than a
+        // compile timeout. Normal compilation defers cache serialization to
+        // the owning CLI/daemon lifecycle so it never blocks a job phase.
+        if end.duration_since(start) >= Duration::from_secs(1)
+            && crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_CHECKPOINT_SLOW", false)
+        {
             device::persist_pipeline_cache_for_device(&self.device);
-            self.pipeline_cache_dirty.store(false, Ordering::Release);
         }
         Ok(created)
     }

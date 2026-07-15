@@ -6,10 +6,13 @@ public static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 public static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
 public static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 public static const uint PARSER_FEATURE_IMPORTS = 0x00000080u;
+public static const uint PARSER_FEATURE_TYPE_ALIASES = 0x00000100u;
+public static const uint PARSER_FEATURE_STRING_EXPRS = 0x00000200u;
 
 static const uint FEATURE_TK_LBRACKET = 20u;
 static const uint FEATURE_TK_RBRACKET = 21u;
 static const uint FEATURE_TK_DOT = 35u;
+static const uint FEATURE_TK_STRING = 32u;
 static const uint FEATURE_TK_ENUM = 93u;
 static const uint FEATURE_TK_STRUCT = 94u;
 static const uint FEATURE_TK_MATCH = 95u;
@@ -17,6 +20,7 @@ static const uint FEATURE_TK_IMPORT = 96u;
 static const uint FEATURE_TK_IMPL = 98u;
 static const uint FEATURE_TK_TRAIT = 99u;
 static const uint FEATURE_TK_WHERE = 104u;
+static const uint FEATURE_TK_TYPE = 103u;
 static const uint FEATURE_TK_STRUCT_LIT_LBRACE = 125u;
 static const uint FEATURE_TK_STRUCT_LIT_RBRACE = 126u;
 static const uint FEATURE_TK_TYPE_ARG_LT = 131u;
@@ -52,6 +56,10 @@ public uint parser_feature_flags_for_token(uint raw_kind, uint semantic_kind)
         flags |= PARSER_FEATURE_MATCHES;
     if (raw_kind == FEATURE_TK_IMPORT)
         flags |= PARSER_FEATURE_IMPORTS;
+    if (raw_kind == FEATURE_TK_TYPE)
+        flags |= PARSER_FEATURE_TYPE_ALIASES;
+    if (semantic_kind == FEATURE_TK_STRING)
+        flags |= PARSER_FEATURE_STRING_EXPRS;
     if (raw_kind == FEATURE_TK_IMPL || raw_kind == FEATURE_TK_TRAIT ||
         raw_kind == FEATURE_TK_WHERE)
     {

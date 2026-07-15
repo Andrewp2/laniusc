@@ -11,6 +11,87 @@ const GPU_X86_OBJECT_MAGIC: [u8; 8] = *b"LNX86OBJ";
 const HEADER_U32S: usize = 9;
 const RELOCATION_U32S: usize = 8;
 const SYMBOL_U32S: usize = 8;
+pub(crate) const GPU_X86_OBJECT_HEADER_BYTES: usize = 8 + HEADER_U32S * 4;
+
+/// Fixed-size object layout available without loading section payloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuX86RelocatableObjectLayout {
+    pub version: u32,
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub entry_offset: Option<u32>,
+    pub text_byte_len: u32,
+    pub rodata_byte_len: u32,
+    pub relocation_count: u32,
+    pub symbol_count: u32,
+    pub identity_byte_len: u32,
+    pub serialized_byte_len: u64,
+}
+
+impl GpuX86RelocatableObjectLayout {
+    pub(crate) fn from_header_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < GPU_X86_OBJECT_HEADER_BYTES || bytes[..8] != GPU_X86_OBJECT_MAGIC {
+            return Err("x86 object header is missing or invalid".to_string());
+        }
+        let mut cursor = 8;
+        let version = read_u32(bytes, &mut cursor)?;
+        if version != GPU_X86_OBJECT_VERSION {
+            return Err(format!(
+                "x86 object version {version} is unsupported; expected {GPU_X86_OBJECT_VERSION}"
+            ));
+        }
+        let library_id = read_u32(bytes, &mut cursor)?;
+        let unit_id = read_u32(bytes, &mut cursor)?;
+        let entry_offset = match read_u32(bytes, &mut cursor)? {
+            u32::MAX => None,
+            offset => Some(offset),
+        };
+        let text_byte_len = read_u32(bytes, &mut cursor)?;
+        let rodata_byte_len = read_u32(bytes, &mut cursor)?;
+        let relocation_count = read_u32(bytes, &mut cursor)?;
+        let symbol_count = read_u32(bytes, &mut cursor)?;
+        let identity_byte_len = read_u32(bytes, &mut cursor)?;
+        if entry_offset.is_some_and(|offset| offset >= text_byte_len) {
+            return Err(format!(
+                "x86 object entry offset {} exceeds text length {text_byte_len}",
+                entry_offset.expect("checked as present")
+            ));
+        }
+        let serialized_byte_len = (GPU_X86_OBJECT_HEADER_BYTES as u64)
+            .checked_add(text_byte_len as u64)
+            .and_then(|len| len.checked_add(rodata_byte_len as u64))
+            .and_then(|len| len.checked_add(relocation_count as u64 * RELOCATION_U32S as u64 * 4))
+            .and_then(|len| len.checked_add(symbol_count as u64 * SYMBOL_U32S as u64 * 4))
+            .and_then(|len| len.checked_add(identity_byte_len as u64))
+            .ok_or_else(|| "x86 object serialized length overflows u64".to_string())?;
+        Ok(Self {
+            version,
+            library_id,
+            unit_id,
+            entry_offset,
+            text_byte_len,
+            rodata_byte_len,
+            relocation_count,
+            symbol_count,
+            identity_byte_len,
+            serialized_byte_len,
+        })
+    }
+
+    /// Byte ranges of the variable-sized text and rodata payload columns.
+    pub(crate) fn payload_byte_ranges(
+        &self,
+    ) -> Result<(std::ops::Range<u64>, std::ops::Range<u64>), String> {
+        let text_start = GPU_X86_OBJECT_HEADER_BYTES as u64;
+        let text_end = text_start
+            .checked_add(self.text_byte_len as u64)
+            .ok_or_else(|| "x86 object text payload end overflows u64".to_string())?;
+        let rodata_end = text_end
+            .checked_add(self.rodata_byte_len as u64)
+            .ok_or_else(|| "x86 object rodata payload end overflows u64".to_string())?;
+        Ok((text_start..text_end, text_end..rodata_end))
+    }
+}
 
 /// Section referenced by an x86 object symbol or relocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -453,6 +534,18 @@ mod tests {
     fn x86_object_binary_roundtrip_preserves_sections_relocations_and_symbols() {
         let object = object_fixture();
         let bytes = object.to_bytes().expect("serialize object");
+        let layout =
+            GpuX86RelocatableObjectLayout::from_header_bytes(&bytes[..GPU_X86_OBJECT_HEADER_BYTES])
+                .expect("parse layout");
+        assert_eq!(layout.text_byte_len as usize, object.text.len());
+        assert_eq!(layout.rodata_byte_len as usize, object.rodata.len());
+        assert_eq!(layout.relocation_count as usize, object.relocations.len());
+        assert_eq!(layout.symbol_count as usize, object.symbols.len());
+        assert_eq!(
+            layout.identity_byte_len as usize,
+            object.identity_bytes.len()
+        );
+        assert_eq!(layout.serialized_byte_len as usize, bytes.len());
         assert_eq!(
             GpuX86RelocatableObject::from_bytes(&bytes).expect("parse object"),
             object

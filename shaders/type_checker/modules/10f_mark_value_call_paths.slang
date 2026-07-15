@@ -29,6 +29,7 @@ StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_path_segment_owner;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> path_segment_count;
@@ -55,7 +56,6 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_PATH_EXPR = 33u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -133,22 +133,22 @@ uint path_leaf_token(uint path_i)
 {
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
     uint slot = path_segment_base[path_i] + count - 1u;
-    return slot < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
+    return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
 uint path_segment_token_at(uint path_i, uint segment_i)
 {
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (segment_i >= count)
         return INVALID;
     uint slot = path_segment_base[path_i] + segment_i;
-    return slot < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
+    return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
 uint type_path_leaf_token(uint type_node, uint fallback_path_i, uint fallback_token)
@@ -163,33 +163,42 @@ uint type_path_leaf_token(uint type_node, uint fallback_path_i, uint fallback_to
     return valid_token(leaf_token) ? leaf_token : fallback_token;
 }
 
-void mark_associated_path_segments(uint path_i, uint method_token)
-{
-    if (path_i == INVALID || path_i >= gParams.n_hir_nodes || !valid_token(method_token))
-        return;
-
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
-    for (uint segment_i = 0u; segment_i < MAX_PATH_SEGMENTS; segment_i += 1u)
-    {
-        if (segment_i >= count)
-            break;
-        uint token = path_segment_token_at(path_i, segment_i);
-        if (valid_token(token))
-            module_value_path_associated_method_token[token] = method_token;
-    }
-}
-
 uint receiver_token_for_associated_path(uint path_i, uint method_token)
 {
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
+    uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
     uint leaf_token = path_segment_token_at(path_i, count - 1u);
     if (method_token == leaf_token && count > 1u)
         return path_segment_token_at(path_i, count - 2u);
     return leaf_token;
+}
+
+void mark_associated_path_segment(uint segment_node)
+{
+    uint owner = hir_path_segment_owner[segment_node];
+    if (!valid_node(owner))
+        return;
+
+    uint path_i = path_id_by_owner_hir[owner];
+    if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
+        return;
+
+    uint call_node = hir_call_parent_by_callee[owner];
+    if (!valid_hir_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return;
+
+    uint callee = hir_call_callee_node[call_node];
+    uint method_token = call_leaf_token_for_callee_path(path_i, callee);
+    uint owner_token = path_owner_token[path_i];
+    if (!valid_token(method_token) || method_token == owner_token)
+        return;
+
+    uint segment_token = hir_token_pos[segment_node];
+    if (valid_token(segment_token))
+        module_value_path_associated_method_token[segment_token] = method_token;
 }
 
 uint hir_callee_leaf_token(uint callee_node)
@@ -245,7 +254,6 @@ bool mark_path_call(uint path_i, uint call_node, uint leaf_token)
         if (leaf_token != owner_token)
         {
             uint receiver_token = receiver_token_for_associated_path(path_i, leaf_token);
-            mark_associated_path_segments(path_i, leaf_token);
             module_value_path_associated_method_token[owner_token] = leaf_token;
             module_value_path_associated_method_token[leaf_token] = leaf_token;
             module_value_path_associated_receiver_token[leaf_token] = receiver_token;
@@ -265,6 +273,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     if (i >= active_hir_node_count())
         return;
+
+    // Parser path-segment ownership makes this projection one thread per
+    // segment. It avoids a source-depth loop in the path-owner lane.
+    mark_associated_path_segment(i);
+
     if (hir_kind[i] != HIR_PATH_EXPR && hir_kind[i] != HIR_TYPE)
         return;
 

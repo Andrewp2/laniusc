@@ -144,6 +144,9 @@ pub struct ParserPasses {
     pub hir_method_fields: hir::method::fields::HirMethodFieldsPass,
     pub hir_expr_fields: hir::expr::fields::HirExprFieldsPass,
     pub hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass,
+    pub hir_expr_forest_edges: hir::expr::forest::edges::HirExprForestEdgesPass,
+    pub hir_expr_forest_root_init: hir::expr::forest::root_init::HirExprForestRootInitPass,
+    pub hir_expr_forest_root_step: hir::expr::forest::root_step::HirExprForestRootStepPass,
     pub hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass,
     pub hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass,
     pub hir_binary_spans: hir::binary::spans::HirBinarySpansPass,
@@ -341,6 +344,11 @@ impl ParserPasses {
             hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass::new(
                 device,
             )?,
+            hir_expr_forest_edges: hir::expr::forest::edges::HirExprForestEdgesPass::new(device)?,
+            hir_expr_forest_root_init:
+                hir::expr::forest::root_init::HirExprForestRootInitPass::new(device)?,
+            hir_expr_forest_root_step:
+                hir::expr::forest::root_step::HirExprForestRootStepPass::new(device)?,
             hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass::new(device)?,
             hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass::new(device)?,
             hir_binary_spans: hir::binary::spans::HirBinarySpansPass::new(device)?,
@@ -721,6 +729,16 @@ pub fn record_all_passes(
     )?;
     p.hir_call_arg_ordinal_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_expr_forest_edges
+        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+    p.hir_expr_forest_root_init
+        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+    p.hir_expr_forest_root_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.tree_pointer_jump_dispatch_args,
+    )?;
     p.hir_array_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_array_element_links
         .record_pass(&mut ctx, E1D(n_tree))?;

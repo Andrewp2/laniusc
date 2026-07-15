@@ -54,12 +54,12 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await?
         {
             CompletedWasmBackendArtifact::Executable(bytes) => Ok(bytes),
-            CompletedWasmBackendArtifact::RelocatableObject(_) => Err(
-                wasm_backend_execution_failed_for_source_pack(
+            CompletedWasmBackendArtifact::RelocatableObject(_) => {
+                Err(wasm_backend_execution_failed_for_source_pack(
                     &source_pack_diagnostic_files(sources, None),
                     "internal Wasm artifact mode mismatch",
-                ),
-            ),
+                ))
+            }
         }
     }
 
@@ -83,12 +83,12 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await?
         {
             CompletedWasmBackendArtifact::RelocatableObject(object) => Ok(object),
-            CompletedWasmBackendArtifact::Executable(_) => Err(
-                wasm_backend_execution_failed_for_source_pack(
+            CompletedWasmBackendArtifact::Executable(_) => {
+                Err(wasm_backend_execution_failed_for_source_pack(
                     &source_pack_diagnostic_files(sources, None),
                     "internal Wasm artifact mode mismatch",
-                ),
-            ),
+                ))
+            }
         }
     }
 
@@ -414,6 +414,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         name_id_by_token: codegen.name_id_by_token,
         language_name_id: codegen.language_name_id,
         enclosing_fn: codegen.enclosing_fn,
+        if_depth: codegen.if_depth,
         structs: wasm::GpuWasmStructMetadataBuffers {
                                                     member_receiver_node: &parse_bufs
                                                         .hir_member_receiver_node,
@@ -491,6 +492,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     record: &parse_bufs.hir_expr_record,
                                                     result_root_node: &parse_bufs
                                                         .hir_expr_result_root_node,
+                                                    parent_node: &parse_bufs.hir_expr_parent_node,
+                                                    forest_root_node: &parse_bufs
+                                                        .hir_expr_forest_root_node,
+                                                    forest_status: &parse_bufs
+                                                        .hir_expr_forest_status,
                                                     int_value: &parse_bufs.hir_expr_int_value,
                                                     float_bits: &parse_bufs.hir_expr_float_bits,
                                                     string_start: &parse_bufs
@@ -1014,6 +1020,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         name_id_by_token: codegen.name_id_by_token,
         language_name_id: codegen.language_name_id,
         enclosing_fn: codegen.enclosing_fn,
+        if_depth: codegen.if_depth,
         structs: wasm::GpuWasmStructMetadataBuffers {
                                                     member_receiver_node: &parse_bufs
                                                         .hir_member_receiver_node,
@@ -1092,6 +1099,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     record: &parse_bufs.hir_expr_record,
                                                     result_root_node: &parse_bufs
                                                         .hir_expr_result_root_node,
+                                                    parent_node: &parse_bufs.hir_expr_parent_node,
+                                                    forest_root_node: &parse_bufs
+                                                        .hir_expr_forest_root_node,
+                                                    forest_status: &parse_bufs
+                                                        .hir_expr_forest_status,
                                                     int_value: &parse_bufs.hir_expr_int_value,
                                                     float_bits: &parse_bufs.hir_expr_float_bits,
                                                     string_start: &parse_bufs.hir_string_data_offset,

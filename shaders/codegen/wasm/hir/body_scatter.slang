@@ -2,6 +2,8 @@
 
 import gpu_index;
 import prefix_scan;
+import expr_span_lookup;
+import expr_emission_common;
 
 struct ScanParams
 {
@@ -39,7 +41,6 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
-StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_fn_token;
@@ -50,6 +51,7 @@ StructuredBuffer<uint> call_param_row_count;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> wasm_func_param_ordinal_by_decl_token;
 StructuredBuffer<uint> wasm_func_local_max_by_token;
+StructuredBuffer<uint2> expr_node_emission;
 
 RWStructuredBuffer<uint> body_words;
 
@@ -168,9 +170,6 @@ static const uint ASSIGN_OP_MUL = 4u;
 static const uint ASSIGN_OP_DIV = 5u;
 static const uint ASSIGN_OP_MOD = 6u;
 static const uint WG_SIZE = 256u;
-static const uint MAX_EXPR_EMIT_STACK = 16u;
-static const uint MAX_EXPR_EMIT_STEPS = 48u;
-static const uint MAX_CONTROL_BRANCH_DEPTH = 16u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -486,23 +485,14 @@ bool local_decl_token_for_name_expr(uint node, out uint decl_token)
         return true;
     }
 
-    uint control = hir_nearest_enclosing_control_node[node];
-    for (uint i = 0u; i < MAX_CONTROL_BRANCH_DEPTH; i += 1u)
+    uint encoded_fn = enclosing_fn[decl_token];
+    if (encoded_fn == 0u || encoded_fn - 1u != owner_fn ||
+        !function_non_param_local_index(decl_token, owner_fn, local_index))
     {
-        if (!valid_node(control))
-            return false;
-        if ((hir_kind[control] == HIR_FOR_STMT || hir_kind[control] == HIR_STMT) &&
-            stmt_record_slot(control, 0u) == STMT_RECORD_KIND_FOR &&
-            stmt_record_slot(control, 1u) == decl_token)
-        {
-            if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-                return false;
-            decl_token = local_index;
-            return true;
-        }
-        control = hir_nearest_enclosing_control_node[control];
+        return false;
     }
-    return false;
+    decl_token = local_index;
+    return true;
 }
 
 bool name_const_record_value(uint node, out uint value)
@@ -621,90 +611,7 @@ uint expr_non_call_atom_len(uint node)
 uint expr_simple_len(uint root_node)
 {
     root_node = resolve_expr_node(root_node);
-    if (!valid_node(root_node))
-        return 0u;
-
-    uint nodes[MAX_EXPR_EMIT_STACK];
-    uint states[MAX_EXPR_EMIT_STACK];
-    uint lens[MAX_EXPR_EMIT_STACK];
-    uint sp = 1u;
-    uint lsp = 0u;
-    nodes[0u] = root_node;
-    states[0u] = 0u;
-
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STEPS; step += 1u)
-    {
-        if (sp == 0u)
-            break;
-
-        uint node = resolve_expr_node(nodes[sp - 1u]);
-        if (!valid_node(node))
-            return 0u;
-        nodes[sp - 1u] = node;
-        uint state = states[sp - 1u];
-        uint atom_len = expr_non_call_atom_len(node);
-        if (state == 0u && atom_len != 0u)
-        {
-            if (lsp >= MAX_EXPR_EMIT_STACK)
-                return 0u;
-            lens[lsp] = atom_len;
-            lsp += 1u;
-            sp -= 1u;
-            continue;
-        }
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT || form == HIR_EXPR_NEG)
-        {
-            if (state == 0u)
-            {
-                if (sp >= MAX_EXPR_EMIT_STACK)
-                    return 0u;
-                states[sp - 1u] = 1u;
-                nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-                states[sp] = 0u;
-                sp += 1u;
-                continue;
-            }
-            if (lsp < 1u)
-                return 0u;
-            lens[lsp - 1u] += form == HIR_EXPR_NOT ? 1u : (expr_neg_is_f32(node) ? 1u : 3u);
-            sp -= 1u;
-            continue;
-        }
-
-        if (expr_binary_op_byte_for_node(node) == 0u)
-            return 0u;
-        if (state == 0u)
-        {
-            if (sp >= MAX_EXPR_EMIT_STACK)
-                return 0u;
-            states[sp - 1u] = 1u;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_LEFT);
-            states[sp] = 0u;
-            sp += 1u;
-            continue;
-        }
-        if (state == 1u)
-        {
-            if (sp >= MAX_EXPR_EMIT_STACK)
-                return 0u;
-            states[sp - 1u] = 2u;
-            nodes[sp] = expr_record_slot(node, EXPR_RECORD_RIGHT);
-            states[sp] = 0u;
-            sp += 1u;
-            continue;
-        }
-        if (lsp < 2u)
-            return 0u;
-        uint right_len = lens[lsp - 1u];
-        uint left_len = lens[lsp - 2u];
-        lsp -= 1u;
-        lens[lsp - 1u] = left_len + right_len + 1u;
-        sp -= 1u;
-    }
-
-    return sp == 0u && lsp == 1u ? lens[0u] : 0u;
+    return wasm_expr_span_len(root_node, gParams.n_hir_nodes);
 }
 
 uint expr_non_call_atom_byte(uint node, uint byte_i)
@@ -726,72 +633,43 @@ uint expr_non_call_atom_byte(uint node, uint byte_i)
     return 0u;
 }
 
-uint expr_simple_byte(uint node, uint byte_i)
+uint expr_node_contribution_byte(uint node, uint byte_i)
 {
-    for (uint step = 0u; step < MAX_EXPR_EMIT_STEPS; step += 1u)
+    uint emission_byte = 0u;
+    if (wasm_expr_emission_byte(expr_node_emission[node], byte_i, emission_byte))
+        return emission_byte;
+    uint atom_len = expr_non_call_atom_len(node);
+    if (atom_len != 0u)
+        return byte_i < atom_len ? expr_non_call_atom_byte(node, byte_i) : 0u;
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_NOT)
+        return byte_i == 0u ? WASM_I32_EQZ : 0u;
+    if (form == HIR_EXPR_NEG)
     {
-        node = resolve_expr_node(node);
-        if (!valid_node(node))
-            return 0u;
-
-        uint atom_len = expr_non_call_atom_len(node);
-        if (atom_len != 0u)
-            return expr_non_call_atom_byte(node, byte_i);
-
-        uint form = expr_form(node);
-        if (form == HIR_EXPR_NOT)
-        {
-            uint inner = expr_record_slot(node, EXPR_RECORD_LEFT);
-            uint inner_len = expr_simple_len(inner);
-            if (byte_i < inner_len)
-            {
-                node = inner;
-                continue;
-            }
-            return byte_i == inner_len ? WASM_I32_EQZ : 0u;
-        }
-        if (form == HIR_EXPR_NEG)
-        {
-            uint inner = expr_record_slot(node, EXPR_RECORD_LEFT);
-            uint inner_len = expr_simple_len(inner);
-            if (expr_neg_is_f32(node))
-            {
-                if (byte_i < inner_len)
-                {
-                    node = inner;
-                    continue;
-                }
-                return byte_i == inner_len ? WASM_F32_NEG : 0u;
-            }
-            if (byte_i < 2u)
-                return i32_const_byte(0u, byte_i);
-            if (byte_i < 2u + inner_len)
-            {
-                node = inner;
-                byte_i -= 2u;
-                continue;
-            }
-            return byte_i == 2u + inner_len ? WASM_I32_SUB : 0u;
-        }
-
-        uint left = expr_record_slot(node, EXPR_RECORD_LEFT);
-        uint right = expr_record_slot(node, EXPR_RECORD_RIGHT);
-        uint left_len = expr_simple_len(left);
-        uint right_len = expr_simple_len(right);
-        if (byte_i < left_len)
-        {
-            node = left;
-            continue;
-        }
-        if (byte_i < left_len + right_len)
-        {
-            node = right;
-            byte_i -= left_len;
-            continue;
-        }
-        return byte_i == left_len + right_len ? expr_binary_op_byte_for_node(node) : 0u;
+        if (expr_neg_is_f32(node))
+            return byte_i == 0u ? WASM_F32_NEG : 0u;
+        if (byte_i < 2u)
+            return i32_const_byte(0xffffffffu, byte_i);
+        return byte_i == 2u ? WASM_I32_MUL : 0u;
     }
-    return 0u;
+    return byte_i == 0u ? expr_binary_op_byte_for_node(node) : 0u;
+}
+
+uint expr_simple_byte(uint root_node, uint byte_i)
+{
+    root_node = resolve_expr_node(root_node);
+    uint owner_node = INVALID;
+    uint owner_byte_i = 0u;
+    if (!wasm_expr_span_byte_owner(
+            root_node,
+            gParams.n_hir_nodes,
+            byte_i,
+            owner_node,
+            owner_byte_i))
+    {
+        return 0u;
+    }
+    return expr_node_contribution_byte(owner_node, owner_byte_i);
 }
 
 uint if_open_i32_fragment_byte(uint condition_node, uint byte_i)

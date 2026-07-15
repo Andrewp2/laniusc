@@ -108,7 +108,7 @@ grep -q 'new NVIDIA mapping or Xid kernel error' "$tmp/stderr"
 
 reset_samples '1000, 24000, 50'
 printf '%s\n' '999,other-compute,512' >"$FAKE_COMPUTE_FILE"
-expect_status 78 "$guard" -- sh -c 'exit 0'
-grep -q 'existing NVIDIA compute client' "$tmp/stderr"
+expect_status 0 "$guard" -- sh -c 'exit 0'
+grep -q 'starting GPU 0 workload' "$tmp/stderr"
 
 printf 'nvidia_gpu_guard_test: PASS\n'

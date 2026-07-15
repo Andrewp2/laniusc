@@ -27,6 +27,7 @@ static const uint TK_INT = 2;
 static const uint TK_ASSIGN = 8;
 static const uint TK_LBRACKET = 20;
 static const uint TK_RBRACKET = 21;
+static const uint TK_STRING = 32;
 static const uint TK_DOT = 35;
 static const uint TK_FLOAT = 33;
 static const uint TK_PUB = 66;
@@ -61,6 +62,11 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
 static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
 static const uint PARSER_FEATURE_MATCHES = 0x00000008u;
+static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
+static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
+static const uint PARSER_FEATURE_IMPORTS = 0x00000080u;
+static const uint PARSER_FEATURE_TYPE_ALIASES = 0x00000100u;
+static const uint PARSER_FEATURE_STRING_EXPRS = 0x00000200u;
 
 uint parser_features_for_lexical_token(uint kind)
 {
@@ -71,6 +77,14 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_ENUMS;
     if (kind == TK_MATCH)
         flags |= PARSER_FEATURE_MATCHES;
+    if (kind == TK_IMPL || kind == TK_TRAIT || kind == TK_WHERE)
+        flags |= PARSER_FEATURE_PREDICATES;
+    if (kind == TK_DOT)
+        flags |= PARSER_FEATURE_MEMBERS;
+    if (kind == TK_IMPORT)
+        flags |= PARSER_FEATURE_IMPORTS;
+    if (kind == TK_TYPE)
+        flags |= PARSER_FEATURE_TYPE_ALIASES;
     return flags;
 }
 
@@ -292,6 +306,25 @@ bool previous_token_is_adjacent_float_dot(uint token_index, uint start, uint fil
     return prev_end == start && float_token_ends_with_dot(prev_kind, prev_start, prev_end);
 }
 
+bool string_may_be_expression(uint token_index, uint kind, uint file_id)
+{
+    if (kind != TK_STRING)
+        return false;
+    if (token_index == 0u)
+        return true;
+
+    uint previous_index = token_index - 1u;
+    uint previous_end = end_positions[previous_index];
+    uint2 previous_file_info = file_start_and_id_for_token_end(previous_end);
+    if (previous_file_info.y != file_id)
+        return true;
+
+    uint previous_start = compact_token_start(previous_index);
+    previous_start = max(previous_start, previous_file_info.x);
+    uint previous_kind = retag_compact_kind(previous_index, previous_start, previous_end);
+    return previous_kind != TK_EXTERN && previous_kind != TK_IMPORT;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void tokens_build(uint3 tid: SV_DispatchThreadID)
@@ -335,6 +368,8 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     tokens_out[k] = t;
     token_file_id[k] = file_info.y;
     uint parser_features = parser_features_for_lexical_token(kind);
+    if (string_may_be_expression(k, kind, file_info.y))
+        parser_features |= PARSER_FEATURE_STRING_EXPRS;
     if (parser_features != 0u)
         atomic_u32_or(parser_feature_flags, 0u, parser_features);
 }

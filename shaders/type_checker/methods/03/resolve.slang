@@ -100,7 +100,6 @@ static const uint METHOD_RECEIVER_EXPLICIT = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint PARAM_CACHE_STRIDE = 4u;
-static const uint MAX_PATH_SEGMENTS = 9u;
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
@@ -320,11 +319,11 @@ uint path_id_for_callee_node(uint callee_node)
 
 uint path_leaf_token(uint path_i)
 {
-    uint count = valid_path(path_i) ? min(path_segment_count[path_i], MAX_PATH_SEGMENTS) : 0u;
+    uint count = valid_path(path_i) ? path_segment_count[path_i] : 0u;
     if (count == 0u)
         return INVALID;
     uint slot = path_segment_base[path_i] + count - 1u;
-    return slot < active_token_count() * MAX_PATH_SEGMENTS ? path_segment_token[slot] : INVALID;
+    return slot < active_token_count() ? path_segment_token[slot] : INVALID;
 }
 
 uint path_id_for_owner_token(uint owner_token)

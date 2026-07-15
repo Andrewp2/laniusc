@@ -37,7 +37,6 @@ static const uint BODY_PLAN_ASSIGN_MAX_TOKEN = 25u;
 static const uint BODY_PLAN_ASSIGN_LEN_AGG = 26u;
 static const uint BODY_PLAN_LET_LEN_AGG = 27u;
 static const uint BODY_PLAN_RETURN_LEN_AGG = 28u;
-static const uint BODY_PLAN_LOCAL_CONST_EXPR_COUNT = 29u;
 static const uint BODY_PLAN_CONTROL_LEN_AGG = 30u;
 static const uint BODY_PLAN_FUNCTION_COUNT = 31u;
 static const uint BODY_PLAN_BODY_LEN_AGG = 32u;
@@ -81,7 +80,6 @@ bool plan_aggregate_ok(
     uint print_count,
     uint print_len,
     uint return_len,
-    uint local_const_expr_count,
     out uint body_len)
 {
     body_len = 0u;
@@ -103,8 +101,6 @@ bool plan_aggregate_ok(
     if (body_plan[BODY_PLAN_RETURN_VALUE_INVALID_COUNT] != 0u)
         return false;
     if (body_plan[BODY_PLAN_CALL_INVALID_COUNT] != 0u)
-        return false;
-    if (assign_count != 0u && local_const_expr_count != 0u)
         return false;
     if (body_plan[BODY_PLAN_BODY_LEN_AGG] == 0u)
         return false;
@@ -180,7 +176,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint print_len = body_plan[BODY_PLAN_PRINT_LEN_AGG];
     uint return_value = body_plan[BODY_PLAN_RETURN_VALUE_AGG];
     uint return_len = body_plan[BODY_PLAN_RETURN_LEN_AGG];
-    uint local_const_expr_count = body_plan[BODY_PLAN_LOCAL_CONST_EXPR_COUNT];
     uint body_len = 0u;
     bool ok = plan_aggregate_ok(
         main_token,
@@ -194,7 +189,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         print_count,
         print_len,
         return_len,
-        local_const_expr_count,
         body_len);
     bool hard_error =
         input_error_code != 0u &&

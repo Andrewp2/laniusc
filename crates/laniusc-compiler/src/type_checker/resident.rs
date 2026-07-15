@@ -232,7 +232,14 @@ impl GpuTypeChecker {
             4,
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
-        let status_readback = readback_u32s(device, "rb.type_check.resident.status", 4);
+        let status_readback = LaniusBuffer::new_labeled(
+            (
+                readback_u32s(device, "rb.type_check.resident.status", 4),
+                4 * std::mem::size_of::<u32>() as u64,
+            ),
+            4,
+            "rb.type_check.resident.status",
+        );
 
         Ok(Self {
             passes,
@@ -781,6 +788,7 @@ impl GpuTypeChecker {
             let enums_required = enum_passes_required(parser_feature_flags);
             let matches_required = match_passes_required(parser_feature_flags);
             let aggregates_required = aggregate_passes_required(parser_feature_flags);
+            let aliases_required = type_alias_passes_required(parser_feature_flags);
 
             queue.write_buffer(
                 &bind_groups.name_bind_groups.name_max_len,
@@ -812,9 +820,9 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.frontend_boundary.done");
             }
-            record_loop_depth_passes_with_passes(&self.passes, encoder, bind_groups)?;
+            record_if_depth_passes_with_passes(&self.passes, encoder, bind_groups)?;
             if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.loop_depth.done");
+                timer.stamp(encoder, "typecheck.if_depth.done");
             }
             record_language_name_bind_groups_with_passes(
                 &self.passes,
@@ -923,15 +931,17 @@ impl GpuTypeChecker {
                 timer.as_deref_mut(),
             )?;
             if let Some(module_path) = &bind_groups.module_path {
-                record_type_alias_root_passes(&self.passes, encoder, module_path)?;
-                record_type_alias_projection_passes(
-                    &self.passes,
-                    encoder,
-                    module_path,
-                    "type_check.modules.project_type_aliases",
-                )?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.modules.project_type_aliases.done");
+                if aliases_required {
+                    record_type_alias_root_passes(&self.passes, encoder, module_path)?;
+                    record_type_alias_projection_passes(
+                        &self.passes,
+                        encoder,
+                        module_path,
+                        "type_check.modules.project_type_aliases",
+                    )?;
+                    if let Some(timer) = timer.as_deref_mut() {
+                        timer.stamp(encoder, "typecheck.modules.project_type_aliases.done");
+                    }
                 }
                 record_compute_indirect(
                     encoder,
@@ -954,17 +964,19 @@ impl GpuTypeChecker {
                     &super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS,
                     timer.as_deref_mut(),
                 )?;
-                record_type_alias_projection_passes(
-                    &self.passes,
-                    encoder,
-                    module_path,
-                    "type_check.modules.project_type_aliases.after_projected_refs",
-                )?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(
+                if aliases_required {
+                    record_type_alias_projection_passes(
+                        &self.passes,
                         encoder,
-                        "typecheck.modules.project_type_aliases.after_projected_refs.done",
-                    );
+                        module_path,
+                        "type_check.modules.project_type_aliases.after_projected_refs",
+                    )?;
+                    if let Some(timer) = timer.as_deref_mut() {
+                        timer.stamp(
+                            encoder,
+                            "typecheck.modules.project_type_aliases.after_projected_refs.done",
+                        );
+                    }
                 }
                 record_compute_indirect(
                     encoder,
@@ -1004,7 +1016,9 @@ impl GpuTypeChecker {
                         &module_path.path_dispatch_args,
                     )?;
                 }
-                record_type_alias_equivalence_passes(&self.passes, encoder, module_path)?;
+                if aliases_required {
+                    record_type_alias_equivalence_passes(&self.passes, encoder, module_path)?;
+                }
                 record_compute_indirect(
                     encoder,
                     &self.passes.modules_project_type_paths,
@@ -1036,7 +1050,7 @@ impl GpuTypeChecker {
                 "type_check.resident.type_instances_collect_named_arg_refs.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
-            if let Some(module_path) = &bind_groups.module_path {
+            if aliases_required && let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
                     encoder,
                     &self.passes.type_aliases.project_instances,
@@ -1064,7 +1078,9 @@ impl GpuTypeChecker {
                     &self.passes.type_instances_clear_semantic_type_rows,
                     &bind_groups.type_instances.clear_semantic_type_rows,
                     "type_check.type_instances.clear_semantic_type_rows",
-                    token_capacity.max(hir_node_capacity),
+                    token_capacity
+                        .saturating_add(LANGUAGE_SYMBOL_COUNT)
+                        .max(hir_node_capacity),
                 )?;
                 record_compute_indirect(
                     encoder,
@@ -1762,6 +1778,13 @@ impl GpuTypeChecker {
                 )?;
                 record_compute_indirect(
                     encoder,
+                    &self.passes.predicates_validate_bound_args,
+                    &predicates.validate_bound_args,
+                    "type_check.resident.predicates_validate_bound_args.pass",
+                    &bind_groups.predicate_hir_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
                     &self.passes.predicates_collect_impls,
                     &predicates.collect_impls,
                     "type_check.resident.predicates_collect_impls.pass",
@@ -2087,6 +2110,7 @@ impl GpuTypeChecker {
             name_id_by_token: &bind_groups.name_id_by_token,
             language_name_id: &bind_groups.language_name_id,
             enclosing_fn: &bind_groups.enclosing_fn,
+            if_depth: &bind_groups.if_depth,
             visible_decl: &bind_groups.visible_decl,
             visible_type: &bind_groups.visible_type,
             path_count_out: &module_path.path_count_out,
@@ -2258,6 +2282,7 @@ impl GpuTypeChecker {
             name_id_by_token,
             language_name_id,
             enclosing_fn,
+            if_depth,
             visible_decl,
             visible_type,
             module_path,
@@ -2351,6 +2376,7 @@ impl GpuTypeChecker {
             name_id_by_token,
             language_name_id,
             enclosing_fn,
+            if_depth,
             visible_decl,
             visible_type,
             path_count_out,

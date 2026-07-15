@@ -2,6 +2,7 @@
 
 import atomics;
 import body_arg_byte_common;
+import call_relocation;
 
 struct ScanParams
 {
@@ -34,6 +35,7 @@ static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 = 45u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint ARG_WG_SIZE = 256u;
 static const uint TY_BOOL = 2u;
 
@@ -84,7 +86,8 @@ uint direct_fragment_call_node(uint kind, uint4 meta)
     return kind == BODY_FRAGMENT_RETURN_AGG_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 ||
-           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32
+           kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID
                ? meta.y
                : meta.z;
 }
@@ -99,7 +102,8 @@ bool direct_record_fragment_kind(uint kind)
            kind == BODY_FRAGMENT_RETURN_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_LET_DIRECT_CALL_I32 ||
            kind == BODY_FRAGMENT_ASSIGN_DIRECT_CALL_I32 ||
-           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32;
+           kind == BODY_FRAGMENT_ASSIGN_COMPOUND_DIRECT_CALL_I32 ||
+           kind == BODY_FRAGMENT_DIRECT_CALL_VOID;
 }
 
 bool type_is_i32_abi_param(uint fn_token, uint ordinal, uint ty)
@@ -121,19 +125,11 @@ bool direct_call_expr_and_len(uint node, out uint len)
     if (!supported_function_token(fn_token))
         return false;
 
-    uint total = 1u + u32_leb_len(wasm_func_slot_by_token[fn_token] + 31u);
-    uint arg_count = call_param_count[fn_token];
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
-        uint param_ty = call_param_type_value(fn_token, i);
-        uint arg_len = 0u;
-        if (!direct_call_arg_abi_expr_and_len(arg_node, param_ty, arg_len) || arg_len == 0u)
-            return false;
-        total += arg_len;
-    }
-
-    len = total;
+    uint tail_len = 1u + wasm_call_index_len(wasm_func_slot_by_token[fn_token] + 31u);
+    uint2 total = expr_subtree_total[node];
+    if (total.y != 0u || total.x < tail_len)
+        return false;
+    len = total.x;
     return true;
 }
 
@@ -141,14 +137,17 @@ bool direct_call_record_arg_expr_and_len(uint arg_node, uint param_ty, out uint 
 {
     len = 0u;
     uint resolved = resolve_expr_node(arg_node);
-    if (valid_node(resolved) &&
-        hir_kind[resolved] == HIR_CALL_EXPR &&
-        param_ty != TY_STRING &&
-        param_ty < TY_ARRAY_BASE)
+    if (param_ty != TY_STRING)
     {
-        return direct_call_expr_and_len(resolved, len);
+        if (!valid_node(resolved))
+            return false;
+        uint2 total = expr_subtree_total[resolved];
+        if (total.y != 0u || total.x == 0u)
+            return false;
+        len = total.x;
+        return true;
     }
-    return direct_call_arg_abi_expr_and_len(arg_node, param_ty, len);
+    return string_value_expr_and_len(arg_node, len);
 }
 
 [shader("compute")]

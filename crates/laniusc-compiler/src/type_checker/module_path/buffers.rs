@@ -27,6 +27,7 @@ pub(super) struct Buffers {
     pub(super) module_path_id: LaniusBuffer<u32>,
     pub(super) module_owner_hir: LaniusBuffer<u32>,
     pub(super) module_status: LaniusBuffer<u32>,
+    pub(super) module_key_canonical_id: LaniusBuffer<u32>,
     pub(super) module_key_segment_count: LaniusBuffer<u32>,
     pub(super) module_key_segment_base: LaniusBuffer<u32>,
     pub(super) module_key_segment_name_id: LaniusBuffer<u32>,
@@ -131,6 +132,15 @@ pub(super) struct Buffers {
     pub(super) path_segment_name_id: LaniusBuffer<u32>,
     pub(super) path_segment_token: LaniusBuffer<u32>,
     pub(super) path_segment_count_out: LaniusBuffer<u32>,
+    pub(super) path_max_segment_count: LaniusBuffer<u32>,
+    pub(super) path_prefix_base: LaniusBuffer<u32>,
+    pub(super) path_prefix_id_a: LaniusBuffer<u32>,
+    pub(super) path_prefix_id_b: LaniusBuffer<u32>,
+    pub(super) path_prefix_table_state: LaniusBuffer<u32>,
+    pub(super) path_prefix_table_left: LaniusBuffer<u32>,
+    pub(super) path_prefix_table_right: LaniusBuffer<u32>,
+    pub(super) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
+    pub(super) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_owner_hir: LaniusBuffer<u32>,
     pub(super) path_owner_token: LaniusBuffer<u32>,
     pub(super) path_id_by_owner_hir: LaniusBuffer<u32>,
@@ -162,6 +172,13 @@ impl Buffers {
         let token_capacity = inputs.token_capacity;
         let external = inputs.external_scratch;
         let retained_path_external = inputs.external_scratch;
+        let path_segment_capacity = token_capacity.max(1) as usize;
+        let path_segment_name_id = typed_alias_or_storage_u32(
+            device,
+            "type_check.resident.path_segment_name_id",
+            path_segment_capacity,
+            retained_path_external.map(|scratch| scratch.path_segment_name_id),
+        );
         let scan_params = NameScanParams {
             n_items: hir_node_capacity,
             n_blocks,
@@ -307,6 +324,12 @@ impl Buffers {
             module_capacity,
             wgpu::BufferUsages::empty(),
         );
+        let module_key_canonical_id = typed_storage_u32_rw(
+            device,
+            "type_check.resident.module_key_canonical_id",
+            module_capacity,
+            wgpu::BufferUsages::empty(),
+        );
         let module_key_segment_count = typed_storage_u32_rw(
             device,
             "type_check.resident.module_key_segment_count",
@@ -319,15 +342,7 @@ impl Buffers {
             module_capacity,
             wgpu::BufferUsages::empty(),
         );
-        let module_key_segment_capacity = module_capacity
-            .max(1)
-            .saturating_mul(MODULE_KEY_SEGMENT_ROW_WIDTH);
-        let module_key_segment_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_segment_name_id",
-            module_key_segment_capacity,
-            wgpu::BufferUsages::empty(),
-        );
+        let module_key_segment_name_id = path_segment_name_id.clone();
         let module_key_to_module_id = typed_storage_u32_rw(
             device,
             "type_check.resident.module_key_to_module_id",
@@ -864,13 +879,6 @@ impl Buffers {
             record_capacity,
             retained_path_external.map(|scratch| scratch.path_segment_base),
         );
-        let path_segment_capacity = token_capacity.max(1) as usize;
-        let path_segment_name_id = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_segment_name_id",
-            path_segment_capacity,
-            retained_path_external.map(|scratch| scratch.path_segment_name_id),
-        );
         let path_segment_token = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_segment_token",
@@ -882,6 +890,65 @@ impl Buffers {
             "type_check.resident.path_segment_count_out",
             1,
             wgpu::BufferUsages::empty(),
+        );
+        let path_max_segment_count = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_max_segment_count",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_base = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_base",
+            path_segment_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_id_a = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_id_a",
+            path_segment_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_id_b = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_id_b",
+            path_segment_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_table_capacity = path_segment_capacity
+            .checked_mul(2)
+            .expect("path-prefix table capacity overflow");
+        let path_prefix_table_state = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_table_state",
+            path_prefix_table_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_table_left = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_table_left",
+            path_prefix_table_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_table_right = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_table_right",
+            path_prefix_table_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let path_prefix_round_count =
+            u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
+        let path_prefix_row_dispatch_args = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_row_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let path_prefix_round_dispatch_args = typed_storage_u32_rw(
+            device,
+            "type_check.resident.path_prefix_round_dispatch_args",
+            path_prefix_round_count.max(1) as usize * 3,
+            wgpu::BufferUsages::INDIRECT,
         );
         let path_owner_hir = typed_alias_or_storage_u32(
             device,
@@ -964,6 +1031,7 @@ impl Buffers {
             module_path_id,
             module_owner_hir,
             module_status,
+            module_key_canonical_id,
             module_key_segment_count,
             module_key_segment_base,
             module_key_segment_name_id,
@@ -1068,6 +1136,15 @@ impl Buffers {
             path_segment_name_id,
             path_segment_token,
             path_segment_count_out,
+            path_max_segment_count,
+            path_prefix_base,
+            path_prefix_id_a,
+            path_prefix_id_b,
+            path_prefix_table_state,
+            path_prefix_table_left,
+            path_prefix_table_right,
+            path_prefix_row_dispatch_args,
+            path_prefix_round_dispatch_args,
             path_owner_hir,
             path_owner_token,
             path_id_by_owner_hir,

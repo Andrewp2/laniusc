@@ -200,6 +200,39 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_host_argument_expression_beyond_legacy_stack_depth() {
+    common::require_node();
+    let mut expression = "1".to_owned();
+    for _ in 0..24 {
+        expression = format!("({expression} + 1)");
+    }
+    let source = format!(
+        r#"
+module app::main;
+
+import std::process;
+
+fn main() -> i32 {{
+    std::process::exit({expression});
+    return 99;
+}}
+"#
+    );
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/std/process.lani"),
+        &source,
+    ])
+    .expect("deep host-call argument expression should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM deep host-call argument",
+        "deep_host_call_argument",
+        &wasm,
+    );
+    assert_eq!(status, 25);
+}
+
+#[test]
 fn wasm_executes_std_process_argument_read_imports_with_node() {
     common::require_node();
     let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
@@ -1058,6 +1091,59 @@ fn main() -> i32 {
         &wasm,
     );
     assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_expression_deeper_than_legacy_emit_stack() {
+    common::require_node();
+    let mut expression = "1".to_owned();
+    for _ in 0..48 {
+        expression = format!("-({expression})");
+    }
+    let source = format!(
+        r#"
+fn main() -> i32 {{
+    let value: i32 = {expression};
+    if (value == 1) {{
+        return 0;
+    }}
+    return 1;
+}}
+"#
+    );
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep expression should compile to WASM without a bounded sizing walk");
+    let status =
+        common::run_wasm_main_return_with_node("WASM deep expression", "deep_expression", &wasm);
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_evaluates_deep_expression_from_reassigned_local_at_runtime() {
+    common::require_node();
+    let mut expression = "value".to_owned();
+    for _ in 0..48 {
+        expression = format!("1 + ({expression})");
+    }
+    let source = format!(
+        r#"
+fn main() {{
+    let value: i32 = 1;
+    value = 40;
+    let result: i32 = {expression};
+    print(result);
+    return 0;
+}}
+"#
+    );
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep expressions must read reassigned locals at runtime");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM deep runtime expression after reassignment",
+        "deep_runtime_expression_after_reassignment",
+        &wasm,
+    );
+    assert_eq!(stdout, "88\n");
 }
 
 #[test]
@@ -1997,6 +2083,190 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_handles_member_address_chain_deeper_than_legacy_limit() {
+    common::require_node();
+    const DEPTH: usize = 24;
+
+    let mut source = String::from("struct Leaf { value: i32, }\n");
+    for depth in 1..=DEPTH {
+        let child_ty = if depth == 1 {
+            "Leaf".to_owned()
+        } else {
+            format!("Wrap{}", depth - 1)
+        };
+        source.push_str(&format!("struct Wrap{depth} {{ child: {child_ty}, }}\n"));
+    }
+
+    let member_chain = format!("value{}", ".child".repeat(DEPTH)) + ".value";
+    source.push_str(&format!(
+        "fn read(value: Wrap{DEPTH}) -> i32 {{ return {member_chain}; }}\n"
+    ));
+    source.push_str("fn main() {\nlet leaf: Leaf = Leaf { value: 42 };\n");
+    for depth in 1..=DEPTH {
+        let child = if depth == 1 {
+            "leaf".to_owned()
+        } else {
+            format!("wrap{}", depth - 1)
+        };
+        source.push_str(&format!(
+            "let wrap{depth}: Wrap{depth} = Wrap{depth} {{ child: {child} }};\n"
+        ));
+    }
+    source.push_str(&format!("print(read(wrap{DEPTH}));\nreturn 0;\n}}\n"));
+
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep aggregate member chain should compile to WASM");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM aggregate member chain beyond legacy depth",
+        "deep_aggregate_member_chain",
+        &wasm,
+    );
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn wasm_resolves_member_chain_through_conflicting_field_layouts() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Leaf {
+    padding: i32,
+    value: i32,
+}
+
+struct Inner {
+    child: Leaf,
+    padding: i32,
+}
+
+struct Outer {
+    padding: i32,
+    child: Inner,
+}
+
+fn read(value: Outer) -> i32 {
+    return value.child.child.value;
+}
+
+fn main() {
+    let leaf: Leaf = Leaf { padding: 7, value: 42 };
+    let inner: Inner = Inner { child: leaf, padding: 11 };
+    let outer: Outer = Outer { padding: 13, child: inner };
+    print(read(outer));
+    return 0;
+}
+"#,
+    )
+    .expect("receiver types should resolve member fields with conflicting ordinals");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM receiver-typed member chain with conflicting field layouts",
+        "conflicting_field_layout_member_chain",
+        &wasm,
+    );
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn wasm_copies_aggregate_member_beyond_legacy_address_depth() {
+    common::require_node();
+    const DEPTH: usize = 24;
+
+    let mut source = String::from("struct Leaf { value: i32, }\n");
+    for depth in 1..=DEPTH {
+        let child_ty = if depth == 1 {
+            "Leaf".to_owned()
+        } else {
+            format!("Wrap{}", depth - 1)
+        };
+        if depth % 2 == 0 {
+            source.push_str(&format!(
+                "struct Wrap{depth} {{ padding: i32, child: {child_ty}, }}\n"
+            ));
+        } else {
+            source.push_str(&format!(
+                "struct Wrap{depth} {{ child: {child_ty}, padding: i32, }}\n"
+            ));
+        }
+    }
+
+    let member_chain = format!("value{}", ".child".repeat(DEPTH));
+    source.push_str(&format!(
+        "fn copy_leaf(value: Wrap{DEPTH}) -> Leaf {{\n    let copied: Leaf = {member_chain};\n    return copied;\n}}\n"
+    ));
+    source.push_str("fn main() {\nlet leaf: Leaf = Leaf { value: 42 };\n");
+    for depth in 1..=DEPTH {
+        let child = if depth == 1 {
+            "leaf".to_owned()
+        } else {
+            format!("wrap{}", depth - 1)
+        };
+        let fields = if depth % 2 == 0 {
+            format!("padding: {depth}, child: {child}")
+        } else {
+            format!("child: {child}, padding: {depth}")
+        };
+        source.push_str(&format!(
+            "let wrap{depth}: Wrap{depth} = Wrap{depth} {{ {fields} }};\n"
+        ));
+    }
+    source.push_str(&format!(
+        "let copied: Leaf = copy_leaf(wrap{DEPTH});\nprint(copied.value);\nreturn 0;\n}}\n"
+    ));
+
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep aggregate member copies should use expression-span metadata");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM aggregate copy beyond legacy member-address depth",
+        "deep_aggregate_member_copy",
+        &wasm,
+    );
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn wasm_assigns_through_member_chain_beyond_legacy_address_depth() {
+    common::require_node();
+    const DEPTH: usize = 24;
+
+    let mut source = String::from("struct Leaf { value: i32, }\n");
+    for depth in 1..=DEPTH {
+        let child_ty = if depth == 1 {
+            "Leaf".to_owned()
+        } else {
+            format!("Wrap{}", depth - 1)
+        };
+        source.push_str(&format!(
+            "struct Wrap{depth} {{ padding: i32, child: {child_ty}, }}\n"
+        ));
+    }
+
+    source.push_str("fn main() {\nlet leaf: Leaf = Leaf { value: 0 };\n");
+    for depth in 1..=DEPTH {
+        let child = if depth == 1 {
+            "leaf".to_owned()
+        } else {
+            format!("wrap{}", depth - 1)
+        };
+        source.push_str(&format!(
+            "let wrap{depth}: Wrap{depth} = Wrap{depth} {{ padding: {depth}, child: {child} }};\n"
+        ));
+    }
+    let member_chain = format!("wrap{DEPTH}{}", ".child".repeat(DEPTH));
+    source.push_str(&format!(
+        "{member_chain}.value = 42;\nprint({member_chain}.value);\nreturn 0;\n}}\n"
+    ));
+
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep aggregate member assignments should use expression-span metadata");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM assignment beyond legacy member-address depth",
+        "deep_aggregate_member_assignment",
+        &wasm,
+    );
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn wasm_executes_aggregate_return_direct_call_with_member_expr_args() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -2134,6 +2404,120 @@ fn main() {
 }
 
 #[test]
+fn wasm_executes_computed_array_literal_elements() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let base: i32 = 3;
+    let values: [i32; 2] = [base + 1, base * 2];
+    let total: i32 = 0;
+    total += values[0];
+    total += values[1];
+    return total;
+}
+"#,
+    )
+    .expect("computed array literal elements should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM computed array literal elements",
+        "computed_array_literal_elements",
+        &wasm,
+    );
+    assert_eq!(status, 10);
+}
+
+#[test]
+fn wasm_executes_computed_struct_literal_fields() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main() -> i32 {
+    let base: i32 = 4;
+    let pair: Pair = Pair { left: base + 2, right: base * 3 };
+    return pair.left + pair.right;
+}
+"#,
+    )
+    .expect("computed struct literal fields should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM computed struct literal fields",
+        "computed_struct_literal_fields",
+        &wasm,
+    );
+    assert_eq!(status, 18);
+}
+
+#[test]
+fn wasm_executes_struct_field_expression_beyond_legacy_stack_depth() {
+    common::require_node();
+    let mut expression = "1".to_owned();
+    for _ in 0..24 {
+        expression = format!("({expression} + 1)");
+    }
+    let source = format!(
+        r#"
+struct Pair {{
+    left: i32,
+    right: i32,
+}}
+
+fn main() -> i32 {{
+    let pair: Pair = Pair {{ left: {expression}, right: 17 }};
+    return pair.left + pair.right;
+}}
+"#
+    );
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep struct-field expression should compile without a bounded sizing walk");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM deep struct-field expression",
+        "deep_struct_field_expression",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_routes_member_expression_beyond_legacy_feature_stack() {
+    common::require_node();
+    let mut right = "1".to_owned();
+    for _ in 0..24 {
+        right = format!("(1 + {right})");
+    }
+    let source = format!(
+        r#"
+struct Boxed {{
+    value: i32,
+}}
+
+fn main() -> i32 {{
+    let boxed: Boxed = Boxed {{ value: 17 }};
+    let total: i32 = boxed.value + {right};
+    return total;
+}}
+"#
+    );
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("deep member expression should route from scanned subtree features");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM deep member-expression routing",
+        "deep_member_expression_routing",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
 fn wasm_executes_scalar_while_loop_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -2155,6 +2539,38 @@ fn main() {
 
     let stdout = common::run_wasm_main_with_node("WASM scalar while construct", "while_sum", &wasm);
     assert_eq!(stdout, "55\n");
+}
+
+#[test]
+fn wasm_reevaluates_member_expression_while_condition_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct State {
+    value: i32,
+    limit: i32,
+}
+
+fn main() {
+    let state: State = State { value: 1, limit: 5 };
+    let total: i32 = 0;
+    while (state.value < state.limit && state.value < 6) {
+        total += state.value;
+        state.value += 1;
+    }
+    print(total);
+    return 0;
+}
+"#,
+    )
+    .expect("member-expression while condition should compile to WASM");
+
+    let stdout = common::run_wasm_main_with_node(
+        "WASM reevaluated member-expression while condition",
+        "while_member_condition",
+        &wasm,
+    );
+    assert_eq!(stdout, "10\n");
 }
 
 #[test]
@@ -2391,6 +2807,87 @@ fn main() {
 }
 
 #[test]
+fn wasm_resolves_outer_loop_local_beyond_legacy_control_depth() {
+    common::require_node();
+    const DEPTH: usize = 24;
+
+    let mut source = String::from("fn main() {\nlet end: i32 = 2;\nfor value in 0..end {\n");
+    for _ in 0..DEPTH {
+        source.push_str("if (value >= 0) {\n");
+    }
+    source.push_str("print(value);\n");
+    for _ in 0..DEPTH {
+        source.push_str("}\n");
+    }
+    source.push_str("}\nreturn 0;\n}\n");
+
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("loop locals should resolve from semantic declarations at arbitrary depth");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM outer loop local beyond legacy control depth",
+        "deep_outer_loop_local",
+        &wasm,
+    );
+    assert_eq!(stdout, "0\n1\n");
+}
+
+#[test]
+fn wasm_branches_through_ifs_beyond_legacy_control_depth() {
+    common::require_node();
+    const DEPTH: usize = 24;
+
+    let mut source = String::from(
+        "fn main() {\n\
+         let break_value: i32 = 0;\n\
+         if (break_value == 0) {\n\
+         while (break_value < 3) {\n\
+         break_value += 1;\n",
+    );
+    for _ in 0..DEPTH {
+        source.push_str("if (break_value >= 0) {\n");
+    }
+    source.push_str("break;\n");
+    for _ in 0..DEPTH {
+        source.push_str("}\n");
+    }
+    source.push_str(
+        "break_value += 100;\n\
+         }\n\
+         }\n\
+         let continue_value: i32 = 0;\n\
+         let skipped: i32 = 0;\n\
+         if (continue_value == 0) {\n\
+         while (continue_value < 3) {\n\
+         continue_value += 1;\n",
+    );
+    for _ in 0..DEPTH {
+        source.push_str("if (continue_value >= 0) {\n");
+    }
+    source.push_str("continue;\n");
+    for _ in 0..DEPTH {
+        source.push_str("}\n");
+    }
+    source.push_str(
+        "skipped += 100;\n\
+         }\n\
+         }\n\
+         print(break_value);\n\
+         print(continue_value + skipped);\n\
+         return 0;\n\
+         }\n",
+    );
+
+    let wasm = common::compile_source_to_wasm_with_timeout(&source)
+        .expect("break and continue should use exact parallel control-depth metadata");
+    let stdout = common::run_wasm_main_with_node(
+        "WASM branches beyond legacy control depth",
+        "deep_break_continue",
+        &wasm,
+    );
+    assert_eq!(stdout, "1\n3\n");
+}
+
+#[test]
 fn wasm_executes_direct_user_function_call_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -2544,6 +3041,66 @@ fn main() {
 }
 
 #[test]
+fn wasm_executes_nested_user_function_calls_as_if_condition() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn write_status() -> i32 {
+    return 0;
+}
+
+fn operation_failed(result: i32) -> bool {
+    return result < 0;
+}
+
+fn main() -> i32 {
+    if (operation_failed(write_status())) {
+        return 1;
+    }
+    return 42;
+}
+"#,
+    )
+    .expect("nested user calls in an if condition should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM nested user calls in if condition",
+        "nested_user_calls_if_condition",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_executes_six_argument_call_with_nested_call_values() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn add(x: i32, y: i32) -> i32 {
+    return x + y;
+}
+
+fn sum6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+    return a + b + c + d + e + f;
+}
+
+fn main() {
+    print(sum6(add(1, 2), 4, add(5, 6), 7, 8, 9));
+    return 0;
+}
+"#,
+    )
+    .expect("six-argument call with nested call values should compile to WASM");
+
+    let stdout = common::run_wasm_main_with_node(
+        "WASM six-argument call with nested call values",
+        "six_argument_call_nested_values",
+        &wasm,
+    );
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn wasm_executes_recursive_direct_call_with_expression_argument() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -2686,6 +3243,28 @@ fn main() -> i32 {
         &wasm,
     );
     assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_returns_scalar_host_call_with_negative_expression_argument() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/std/time.lani"),
+        r#"
+module app::main;
+import std::time;
+fn main() -> i32 {
+    return std::time::sleep_ms_i32(-1);
+}
+"#,
+    ])
+    .expect("return-position scalar host calls should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM return-position scalar host call",
+        "return_scalar_host_call",
+        &wasm,
+    );
+    assert_eq!(status, -1);
 }
 
 #[test]

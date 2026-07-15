@@ -35,6 +35,7 @@ pub(super) struct EmitBindGroups {
 /// Buffer inputs needed by final x86 emit passes.
 pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
+    pub(super) elf_params: &'a wgpu::Buffer,
     pub(super) reloc_finalize_params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
     pub(super) rodata_scan_params: &'a UniformBindingArray,
@@ -98,6 +99,7 @@ pub(super) fn create_emit_bind_groups(
 ) -> Result<EmitBindGroups> {
     let EmitBindGroupInputs {
         params,
+        elf_params,
         reloc_finalize_params,
         text_scan_params,
         rodata_scan_params,
@@ -575,7 +577,7 @@ pub(super) fn create_emit_bind_groups(
         &generator.elf_write_pass,
         0,
         &[
-            ("gParams", params.as_entire_binding()),
+            ("gParams", elf_params.as_entire_binding()),
             ("x86_elf_layout", elf_layout.as_entire_binding()),
             ("layout_status", layout_status.as_entire_binding()),
             ("out_words", out.as_entire_binding()),

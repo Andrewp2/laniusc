@@ -42,10 +42,11 @@ pub(super) fn create_wasm_scan_param_buffers(
 ) -> Vec<LaniusBuffer<WasmScanParams>> {
     (0..step_count)
         .map(|step_i| {
-            LaniusBuffer::new(
+            let label = format!("{label_prefix}.{step_i}");
+            LaniusBuffer::new_labeled(
                 (
                     device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some(&format!("{label_prefix}.{step_i}")),
+                        label: Some(&label),
                         size: 16,
                         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
@@ -53,6 +54,7 @@ pub(super) fn create_wasm_scan_param_buffers(
                     16,
                 ),
                 1,
+                label,
             )
         })
         .collect()
@@ -151,6 +153,7 @@ pub(super) fn read_wasm_prefix_plan(
 pub(super) fn read_wasm_output(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    body_buf: &wgpu::Buffer,
     out_buf: &wgpu::Buffer,
     packed_out_buf: &wgpu::Buffer,
     status_readback: &wgpu::Buffer,
@@ -203,6 +206,20 @@ pub(super) fn read_wasm_output(
             return Err(super::wasm_output_error_from_status(error_code, error_detail).into());
         }
         if relocation_error_code != 0 || relocation_error_count != 0 {
+            if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+                trace_body_fragment_owner(
+                    device,
+                    body_fragment_len_readback,
+                    relocation_error_detail,
+                )?;
+                trace_body_words_around(
+                    device,
+                    queue,
+                    body_buf,
+                    relocation_error_detail,
+                    output_capacity,
+                )?;
+            }
             return Err(anyhow::anyhow!(
                 "WASM call-relocation compaction failed: count={relocation_count} errors={relocation_error_count} code={relocation_error_code} detail={relocation_error_detail}"
             ));
@@ -256,6 +273,81 @@ pub(super) fn read_wasm_output(
         trace_wasm_output_bytes(&bytes);
     }
     Ok(bytes)
+}
+
+fn trace_body_fragment_owner(
+    device: &wgpu::Device,
+    body_fragment_len_readback: &wgpu::Buffer,
+    body_offset: u32,
+) -> Result<()> {
+    let words = read_u32_vec_from_readback(
+        device,
+        body_fragment_len_readback,
+        "codegen.wasm.body_fragment_len.owner",
+    )?;
+    let mut offset = 0u32;
+    for (item, &len) in words.iter().enumerate() {
+        if body_offset >= offset && body_offset < offset.saturating_add(len) {
+            eprintln!(
+                "[laniusc][wasm-codegen] readback.body_fragment_owner body_offset={body_offset} item={item} fragment_offset={offset} fragment_len={len} within={}",
+                body_offset - offset
+            );
+            return Ok(());
+        }
+        offset = offset.saturating_add(len);
+    }
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.body_fragment_owner body_offset={body_offset} not_found total={offset}"
+    );
+    Ok(())
+}
+
+fn trace_body_words_around(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    body_buf: &wgpu::Buffer,
+    detail: u32,
+    capacity: usize,
+) -> Result<()> {
+    let center = detail as usize;
+    let start = center.saturating_sub(8).min(capacity);
+    let end = center.saturating_add(9).min(capacity);
+    let count = end.saturating_sub(start);
+    if count == 0 {
+        return Ok(());
+    }
+    let readback = readback_u32s(device, "rb.codegen.wasm.body_words.error", count);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("codegen.wasm.body_words.error.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(
+        body_buf,
+        (start * 4) as u64,
+        &readback,
+        0,
+        (count * 4) as u64,
+    );
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "codegen.wasm.body_words.error",
+        encoder.finish(),
+    );
+    let slice = readback.slice(..);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &slice,
+        "codegen.wasm.body_words.error",
+        wasm_readback_timeout(),
+    )?;
+    let data = slice.get_mapped_range();
+    let words = data
+        .chunks_exact(4)
+        .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    eprintln!("[laniusc][wasm-codegen] readback.body_words.error start={start} words={words:?}");
+    drop(data);
+    readback.unmap();
+    Ok(())
 }
 
 fn trace_wasm_output_bytes(bytes: &[u8]) {
@@ -379,6 +471,25 @@ pub(super) fn trace_body_fragment_len_readback(
         "[laniusc][wasm-codegen] readback.body_fragment_len items={} token_capacity={} nonzero=[{nonzero}]",
         words.len(),
         token_capacity
+    );
+    Ok(())
+}
+
+pub(super) fn trace_expr_root_total_readback(
+    device: &wgpu::Device,
+    readback: &wgpu::Buffer,
+) -> Result<()> {
+    let words = read_u32_vec_from_readback(device, readback, "codegen.wasm.expr_root_total")?;
+    let nonzero = words
+        .chunks_exact(2)
+        .enumerate()
+        .filter(|(_, pair)| pair[0] != 0 || pair[1] != 0)
+        .map(|(root, pair)| format!("{root}:{}:{}", pair[0], pair[1]))
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!(
+        "[laniusc][wasm-codegen] readback.expr_root_total roots={} nonzero=[{nonzero}]",
+        words.len() / 2
     );
     Ok(())
 }
@@ -527,7 +638,7 @@ pub(super) fn storage_u32_rw(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new((buffer, (count * 4) as u64), count)
+    LaniusBuffer::new_labeled((buffer, (count * 4) as u64), count, label)
 }
 
 /// Allocates a host-readable readback buffer for `count` `u32` words.

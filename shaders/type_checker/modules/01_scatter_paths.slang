@@ -51,6 +51,7 @@ static const uint PATH_RECORD_KIND_MODULE_DECL = 1u;
 static const uint PATH_RECORD_KIND_IMPORT_PATH = 2u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
+static const uint PATH_RECORD_KIND_BOUND_TYPE_EXPR = 5u;
 static const uint RECORD_PATH_KIND_SHIFT = 8u;
 static const uint RECORD_PATH_KIND_MASK = 0xffu;
 
@@ -84,6 +85,8 @@ uint path_span_start(uint owner_hir, uint kind)
         return hir_token_pos[owner_hir];
     if (kind == PATH_RECORD_KIND_HIR_TYPE_EXPR && hir_kind[owner_hir] == HIR_TYPE)
         return hir_token_pos[owner_hir];
+    if (kind == PATH_RECORD_KIND_BOUND_TYPE_EXPR)
+        return hir_token_pos[owner_hir];
     return INVALID;
 }
 
@@ -94,6 +97,8 @@ uint path_span_end(uint owner_hir, uint kind)
     if (kind == PATH_RECORD_KIND_HIR_PATH_EXPR && hir_kind[owner_hir] == HIR_PATH_EXPR)
         return hir_token_end[owner_hir];
     if (kind == PATH_RECORD_KIND_HIR_TYPE_EXPR && hir_kind[owner_hir] == HIR_TYPE)
+        return hir_token_end[owner_hir];
+    if (kind == PATH_RECORD_KIND_BOUND_TYPE_EXPR)
         return hir_token_end[owner_hir];
     return INVALID;
 }

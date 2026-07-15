@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub has_family: u32,
 }
 
 /// Pass that records enum-match subject and arm metadata.

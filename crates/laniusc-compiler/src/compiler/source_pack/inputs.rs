@@ -363,6 +363,18 @@ impl ExplicitSourcePack {
 }
 
 impl ExplicitSourcePackPathManifest {
+    /// Returns whether this pack must use path-backed bounded execution rather
+    /// than one resident frontend/backend job.
+    pub fn requires_bounded_compilation(&self) -> bool {
+        let limits = CodegenUnitLimits::default();
+        self.files.len() > limits.max_source_files
+            || self
+                .files
+                .iter()
+                .fold(0usize, |total, file| total.saturating_add(file.byte_len))
+                > limits.max_source_bytes
+    }
+
     /// Collects path metadata from library path inputs in dependency order.
     ///
     /// The returned manifest validates the library graph and then records file

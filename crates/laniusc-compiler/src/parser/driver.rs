@@ -129,6 +129,7 @@ impl GpuParser {
     pub async fn new_with_device(ctx: &device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
+        super::syntax::prewarm_passes(&ctx.device)?;
         macro_rules! make_parser_pass {
             ($label:literal, $make:ident) => {{ $make(&ctx.device)? }};
         }
@@ -577,6 +578,18 @@ impl GpuParser {
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<ResidentParserCapacity> {
+        // This probe uses a temporary parser allocation. Cached token-front-end
+        // bind groups may still reference the preceding resident allocation,
+        // so invalidate them before recording into the temporary buffers.
+        *self
+            .resident_token_kind_bind_groups
+            .lock()
+            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+        self.bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .clear();
+
         // Capacity measurement needs only the partial-parse buffers with a
         // one-row tree. Keep that temporary allocation out of the full parser
         // cache so daemon jobs do not evict and recreate the resident HIR.

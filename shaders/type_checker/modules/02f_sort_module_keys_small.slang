@@ -1,7 +1,7 @@
 // Cooperative module-key sort for source packs with at most 256 files.
 //
 // One lane owns each possible module row and the workgroup performs a shared
-// bitonic sort over the complete eight-segment path key. Larger source packs
+// bitonic sort over exact canonical path-prefix ids. Larger source packs
 // keep using the scalable multi-workgroup radix path.
 
 struct Params
@@ -15,30 +15,17 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_table_count_out;
-StructuredBuffer<uint> module_key_segment_count;
-StructuredBuffer<uint> module_key_segment_base;
-StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_key_canonical_id;
 RWStructuredBuffer<uint> module_key_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint SMALL_MODULE_SORT_CAPACITY = 256u;
-static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = 8u;
 
 groupshared uint shared_order[256];
 
 uint active_module_count()
 {
     return min(module_table_count_out[0u], gParams.module_capacity);
-}
-
-uint module_key_lane(uint module_i, uint lane)
-{
-    uint count = min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
-    if (lane >= count)
-        return 0u;
-    uint base = module_key_segment_base[module_i];
-    uint name_id = module_key_segment_name_id[base + lane];
-    return name_id == INVALID ? 0u : name_id + 1u;
 }
 
 bool module_key_less(uint left, uint right, uint active_count)
@@ -48,13 +35,10 @@ bool module_key_less(uint left, uint right, uint active_count)
     if (left_padding || right_padding)
         return !left_padding && right_padding;
 
-    for (uint lane = 0u; lane < MODULE_KEY_SEGMENT_ROW_WIDTH; lane += 1u)
-    {
-        uint left_value = module_key_lane(left, lane);
-        uint right_value = module_key_lane(right, lane);
-        if (left_value != right_value)
-            return left_value < right_value;
-    }
+    uint left_value = module_key_canonical_id[left];
+    uint right_value = module_key_canonical_id[right];
+    if (left_value != right_value)
+        return left_value < right_value;
     return left < right;
 }
 

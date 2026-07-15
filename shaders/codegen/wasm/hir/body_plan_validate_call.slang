@@ -33,7 +33,7 @@ static const uint BODY_PLAN_FEATURE_MASK = 35u;
 static const uint BODY_FEATURE_DIRECT = 1u << 1u;
 static const uint BODY_FEATURE_STMT_PRINT_DIRECT = 1u << 22u;
 static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
-static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 52u;
+static const uint BODY_FRAGMENT_DIRECT_CALL_VOID = 59u;
 static const uint WASM_PRINT_I64_FUNC_INDEX = 0u;
 
 bool type_is_i32_value(uint ty)
@@ -130,10 +130,9 @@ bool direct_call_header_aux(uint call_node, out uint4 aux)
     return true;
 }
 
-bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
+bool direct_void_call_header_aux(uint call_node, out uint4 aux)
 {
     aux = uint4(INVALID, 0u, INVALID, 0u);
-    len = 0u;
     call_node = resolve_expr_node(call_node);
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return false;
@@ -154,23 +153,7 @@ bool direct_void_call_header_aux(uint call_node, out uint4 aux, out uint len)
     if (call_param_count[fn_token] != arg_count)
         return false;
 
-    uint wasm_func_index = wasm_call_target_for_call(call_node, fn_token);
-    uint total = 1u + wasm_call_index_len(wasm_func_index);
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(call_node, fn_token, i);
-        uint arg_len = 0u;
-        if (!direct_call_arg_abi_expr_and_len(
-                arg_node,
-                call_param_type_value(fn_token, i),
-                arg_len) ||
-            arg_len == 0u)
-            return false;
-        total += arg_len;
-    }
-
-    aux = uint4(wasm_func_index, arg_count, fn_token, 0u);
-    len = total;
+    aux = uint4(wasm_call_target_for_call(call_node, fn_token), arg_count, fn_token, 0u);
     return true;
 }
 
@@ -231,10 +214,14 @@ void validate_main_call(uint node, uint token)
     if (!print_call_node(node))
     {
         uint4 direct_aux = uint4(INVALID, 0u, INVALID, 0u);
-        uint len = 0u;
-        if (!direct_void_call_header_aux(node, direct_aux, len))
+        if (!direct_void_call_header_aux(node, direct_aux))
             return;
 
+        // Publish only the fixed call tail here. One dense record per ABI
+        // argument validates and sizes argument bytes in parallel; the direct
+        // call finalizer adds their scanned byte total to this provisional
+        // length and to the owning function body.
+        uint len = 1u + wasm_call_index_len(direct_aux.x);
         add_func_body_len(owner_fn, len);
         uint slot = token * 2u;
         body_fragment_len[slot] = len;

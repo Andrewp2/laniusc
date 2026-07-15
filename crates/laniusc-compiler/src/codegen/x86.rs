@@ -22,6 +22,7 @@ mod record;
 mod support;
 
 pub(crate) use link::GpuX86LinkInput;
+pub(crate) use object::{GPU_X86_OBJECT_HEADER_BYTES, GpuX86RelocatableObjectLayout};
 pub use object::{
     GPU_X86_OBJECT_VERSION,
     GpuX86ObjectSection,
@@ -1028,6 +1029,9 @@ pub struct GpuX86CodeGenerator {
     virtual_inst_clear_dispatch_args_pass: PassData,
     virtual_inst_clear_pass: PassData,
     node_inst_gen_pass: PassData,
+    node_inst_gen_calls_pass: PassData,
+    node_inst_gen_statements_pass: PassData,
+    node_inst_gen_matches_pass: PassData,
     node_inst_gen_function_params_pass: PassData,
     node_inst_gen_host_calls_pass: PassData,
     node_inst_gen_for_stmt_pass: PassData,
@@ -1064,12 +1068,10 @@ pub struct GpuX86CodeGenerator {
     link_layout_scan_blocks_pass: PassData,
     link_layout_pass: PassData,
     link_copy_sections_pass: PassData,
-    link_symbol_seed_pass: PassData,
-    link_symbol_histogram_pass: PassData,
-    link_symbol_bucket_prefix_pass: PassData,
-    link_symbol_bucket_bases_pass: PassData,
-    link_symbol_scatter_pass: PassData,
-    link_symbol_resolve_pass: PassData,
+    link_symbol_partition_clear_pass: PassData,
+    link_symbol_partition_insert_pass: PassData,
+    link_symbol_partition_define_pass: PassData,
+    link_symbol_partition_resolve_pass: PassData,
     link_relocate_pass: PassData,
     encode_pass: PassData,
     elf_layout_pass: PassData,
@@ -1447,6 +1449,21 @@ impl GpuX86CodeGenerator {
             "codegen/x86/node/inst/gen.spv",
             "codegen/x86/node/inst/gen.reflect.json"
         );
+        let node_inst_gen_calls_pass = load_x86_pass!(
+            "node_inst_gen_calls",
+            "codegen/x86/node/inst/gen/calls.spv",
+            "codegen/x86/node/inst/gen/calls.reflect.json"
+        );
+        let node_inst_gen_statements_pass = load_x86_pass!(
+            "node_inst_gen_statements",
+            "codegen/x86/node/inst/gen/statements.spv",
+            "codegen/x86/node/inst/gen/statements.reflect.json"
+        );
+        let node_inst_gen_matches_pass = load_x86_pass!(
+            "node_inst_gen_matches",
+            "codegen/x86/node/inst/gen/matches.spv",
+            "codegen/x86/node/inst/gen/matches.reflect.json"
+        );
         let node_inst_gen_function_params_pass = load_x86_pass!(
             "node_inst_gen_function_params",
             "codegen/x86/node/inst/gen/function_params.spv",
@@ -1627,35 +1644,25 @@ impl GpuX86CodeGenerator {
             "codegen/x86/link/copy_sections.spv",
             "codegen/x86/link/copy_sections.reflect.json"
         );
-        let link_symbol_seed_pass = load_x86_pass!(
-            "link_symbol_seed",
-            "codegen/x86/link/symbol_seed.spv",
-            "codegen/x86/link/symbol_seed.reflect.json"
+        let link_symbol_partition_clear_pass = load_x86_pass!(
+            "link_symbol_partition_clear",
+            "codegen/x86/link/symbol_partition_clear.spv",
+            "codegen/x86/link/symbol_partition_clear.reflect.json"
         );
-        let link_symbol_histogram_pass = load_x86_pass!(
-            "link_symbol_histogram",
-            "codegen/x86/link/symbol_histogram.spv",
-            "codegen/x86/link/symbol_histogram.reflect.json"
+        let link_symbol_partition_insert_pass = load_x86_pass!(
+            "link_symbol_partition_insert",
+            "codegen/x86/link/symbol_partition_insert.spv",
+            "codegen/x86/link/symbol_partition_insert.reflect.json"
         );
-        let link_symbol_bucket_prefix_pass = load_x86_pass!(
-            "link_symbol_bucket_prefix",
-            "type_checker/names/radix/00b/bucket/prefix.spv",
-            "type_checker/names/radix/00b/bucket/prefix.reflect.json"
+        let link_symbol_partition_define_pass = load_x86_pass!(
+            "link_symbol_partition_define",
+            "codegen/x86/link/symbol_partition_define.spv",
+            "codegen/x86/link/symbol_partition_define.reflect.json"
         );
-        let link_symbol_bucket_bases_pass = load_x86_pass!(
-            "link_symbol_bucket_bases",
-            "type_checker/names/radix/00c/bucket/bases.spv",
-            "type_checker/names/radix/00c/bucket/bases.reflect.json"
-        );
-        let link_symbol_scatter_pass = load_x86_pass!(
-            "link_symbol_scatter",
-            "codegen/x86/link/symbol_scatter.spv",
-            "codegen/x86/link/symbol_scatter.reflect.json"
-        );
-        let link_symbol_resolve_pass = load_x86_pass!(
-            "link_symbol_resolve",
-            "codegen/x86/link/symbol_resolve.spv",
-            "codegen/x86/link/symbol_resolve.reflect.json"
+        let link_symbol_partition_resolve_pass = load_x86_pass!(
+            "link_symbol_partition_resolve",
+            "codegen/x86/link/symbol_partition_resolve.spv",
+            "codegen/x86/link/symbol_partition_resolve.reflect.json"
         );
         let link_relocate_pass = load_x86_pass!(
             "link_relocate",
@@ -1748,6 +1755,9 @@ impl GpuX86CodeGenerator {
             virtual_inst_clear_dispatch_args_pass,
             virtual_inst_clear_pass,
             node_inst_gen_pass,
+            node_inst_gen_calls_pass,
+            node_inst_gen_statements_pass,
+            node_inst_gen_matches_pass,
             node_inst_gen_function_params_pass,
             node_inst_gen_host_calls_pass,
             node_inst_gen_for_stmt_pass,
@@ -1784,12 +1794,10 @@ impl GpuX86CodeGenerator {
             link_layout_scan_blocks_pass,
             link_layout_pass,
             link_copy_sections_pass,
-            link_symbol_seed_pass,
-            link_symbol_histogram_pass,
-            link_symbol_bucket_prefix_pass,
-            link_symbol_bucket_bases_pass,
-            link_symbol_scatter_pass,
-            link_symbol_resolve_pass,
+            link_symbol_partition_clear_pass,
+            link_symbol_partition_insert_pass,
+            link_symbol_partition_define_pass,
+            link_symbol_partition_resolve_pass,
             link_relocate_pass,
             encode_pass,
             elf_layout_pass,

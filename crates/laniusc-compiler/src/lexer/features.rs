@@ -18,10 +18,20 @@ pub const PARSER_FEATURE_PREDICATES: u32 = 0x0000_0020;
 pub const PARSER_FEATURE_MEMBERS: u32 = 0x0000_0040;
 /// Source contains import syntax and requires compact import tables.
 pub const PARSER_FEATURE_IMPORTS: u32 = 0x0000_0080;
+/// Source contains a local type-alias declaration.
+pub const PARSER_FEATURE_TYPE_ALIASES: u32 = 0x0000_0100;
+/// Source contains a string expression rather than only import or extern ABI strings.
+pub const PARSER_FEATURE_STRING_EXPRS: u32 = 0x0000_0200;
 
 /// Parser families whose absence can be proven directly from final lexical tokens.
-pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 =
-    PARSER_FEATURE_ARRAYS | PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES;
+pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
+    | PARSER_FEATURE_ENUMS
+    | PARSER_FEATURE_MATCHES
+    | PARSER_FEATURE_PREDICATES
+    | PARSER_FEATURE_MEMBERS
+    | PARSER_FEATURE_IMPORTS
+    | PARSER_FEATURE_TYPE_ALIASES
+    | PARSER_FEATURE_STRING_EXPRS;
 
 /// Safe fallback when a caller has not run GPU feature classification.
 ///

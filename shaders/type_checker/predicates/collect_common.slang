@@ -1,5 +1,5 @@
-// HIR predicate record collection for generic bounds, where clauses, and trait
-// impl headers.
+// HIR predicate record collection shared by generic bounds, where clauses, and
+// trait/inherent impl headers.
 //
 // This pass consumes parser-owned predicate parse nodes, generic-parameter
 // declaration records, interned name ids, language type records, and module
@@ -11,6 +11,19 @@
 import generated_parse_production_ids;
 import fixed.key;
 import range_query;
+
+#define PREDICATE_COLLECT_METHOD_RECORDS 0
+#ifndef PREDICATE_COLLECT_IMPL_RECORDS
+#define PREDICATE_COLLECT_IMPL_RECORDS 0
+#endif
+#ifndef PREDICATE_BOUND_DECL_RESOLUTION
+#define PREDICATE_BOUND_DECL_RESOLUTION 1
+#endif
+#ifndef PREDICATE_BOUND_ARGUMENT_VALIDATION
+#define PREDICATE_BOUND_ARGUMENT_VALIDATION 1
+#endif
+#define PREDICATE_BOUND_PATH_RESOLUTION \
+    (PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_BOUND_ARGUMENT_VALIDATION)
 
 struct Params
 {
@@ -25,73 +38,106 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
+#if PREDICATE_BOUND_PATH_RESOLUTION
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> subtree_end;
+#endif
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_len_value;
-StructuredBuffer<uint> hir_type_file_id;
+#if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_type_path_leaf_node;
+#endif
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
+#endif
+#if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_type_arg_next;
+#endif
+#if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_item_kind;
+#endif
 StructuredBuffer<uint> hir_item_name_token;
+#if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_item_visibility;
 StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint> predicate_trait_impl_trait_type_node;
+#endif
 StructuredBuffer<uint> name_id_by_token;
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> type_decl_generic_param_count_by_node;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+#endif
+#if PREDICATE_BOUND_DECL_RESOLUTION
 StructuredBuffer<uint> generic_decl_owner_by_node;
 StructuredBuffer<uint> predicate_bound_list_by_node;
+#endif
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_node;
 StructuredBuffer<uint> generic_param_name_id;
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> generic_param_token;
+#endif
 StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_key_order;
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> language_type_code_by_name_id;
+#endif
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> decl_hir_node;
+#endif
 StructuredBuffer<uint> decl_visibility;
+#if PREDICATE_BOUND_PATH_RESOLUTION
 StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
-StructuredBuffer<uint> module_key_segment_count;
-StructuredBuffer<uint> module_key_segment_base;
-StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> decl_type_key_count_out;
 StructuredBuffer<uint> decl_type_key_to_decl_id;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> path_segment_name_id;
+StructuredBuffer<uint> path_prefix_id;
+#endif
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
-StructuredBuffer<uint> path_owner_module_id;
-StructuredBuffer<uint> module_id_by_file_id;
+#endif
+#if PREDICATE_COLLECT_IMPL_RECORDS
+StructuredBuffer<uint> path_id_by_owner_token;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> resolved_type_status;
+#endif
+#if PREDICATE_BOUND_PATH_RESOLUTION
 StructuredBuffer<uint> import_visible_type_count_out;
 StructuredBuffer<uint> import_visible_type_key_module_id;
 StructuredBuffer<uint> import_visible_type_key_name_id;
 StructuredBuffer<uint> import_visible_type_key_to_decl_id;
 StructuredBuffer<uint> import_visible_type_status;
+#endif
 
 RWStructuredBuffer<uint> predicate_owner_node;
+#if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 RWStructuredBuffer<uint> predicate_subject_token;
 RWStructuredBuffer<uint> predicate_bound_token;
+#endif
 RWStructuredBuffer<uint> predicate_bound_decl_id;
 RWStructuredBuffer<uint> predicate_bound_arg_count;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
 RWStructuredBuffer<uint> predicate_bound_second_arg_token;
 RWStructuredBuffer<uint> predicate_status;
+#if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 RWStructuredBuffer<uint> predicate_syntax_token;
+#endif
+#if PREDICATE_COLLECT_METHOD_RECORDS
 StructuredBuffer<uint> predicate_method_contract_owner_node;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_name_id;
@@ -105,14 +151,11 @@ StructuredBuffer<uint> predicate_method_contract_param_type_node;
 StructuredBuffer<uint> predicate_method_contract_key_order;
 StructuredBuffer<uint> predicate_method_contract_owner_range_first;
 StructuredBuffer<uint> predicate_method_contract_owner_range_count;
+#endif
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint SORT_PATH_SEGMENTS = 8u;
-static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
-static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
-static const uint BOUND_PATH_OVERFLOW_COUNT = PATH_SEGMENT_ROW_WIDTH + 1u;
 static const uint PREDICATE_ARG_TYPE_CODE_BIT = 0x80000000u;
 
 static const uint HIR_ITEM_KIND_FN = 4u;
@@ -155,7 +198,6 @@ static const uint PREDICATE_STATUS_DUPLICATE_IMPL_METHOD = 24u;
 static const uint PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH = 25u;
 static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
-static const uint PREDICATE_STATUS_BOUND_PATH_TOO_DEEP = 29u;
 static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
@@ -188,6 +230,7 @@ uint parent_node(uint node)
     return valid_node(node) ? parent[node] : INVALID;
 }
 
+#if PREDICATE_BOUND_PATH_RESOLUTION
 uint first_child_node(uint node)
 {
     if (!valid_node(node))
@@ -211,7 +254,9 @@ uint next_sibling_node(uint node)
         ? sibling
         : INVALID;
 }
+#endif
 
+#if PREDICATE_BOUND_DECL_RESOLUTION
 bool generic_decl_item_kind(uint item_kind)
 {
     return item_kind == HIR_ITEM_KIND_FN ||
@@ -240,6 +285,7 @@ uint generic_decl_owner_for_node(uint node)
         ? owner
         : INVALID;
 }
+#endif
 
 uint active_generic_param_count()
 {
@@ -328,6 +374,7 @@ bool generic_type_param_declared_on(uint decl_node, uint name_token)
     return generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE) != INVALID;
 }
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 uint generic_param_slot_for_name(uint decl_node, uint name_token)
 {
     if (!valid_node(decl_node) || !valid_token(name_token))
@@ -345,7 +392,9 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
         : INVALID;
     return slot != INVALID && (count == 0u || slot < count) ? slot : INVALID;
 }
+#endif
 
+#if PREDICATE_BOUND_DECL_RESOLUTION
 uint predicate_list_for_direct_bound(uint node)
 {
     if (!valid_node(node))
@@ -427,12 +476,21 @@ uint predicate_subject_token_for_list(uint list_node)
 
     return INVALID;
 }
+#endif
 
 uint decl_record_count()
 {
     return min(decl_count_out[0], gParams.n_hir_nodes);
 }
 
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
+uint path_record_count()
+{
+    return min(path_count_out[0], gParams.n_hir_nodes);
+}
+#endif
+
+#if PREDICATE_BOUND_PATH_RESOLUTION
 uint module_record_count()
 {
     return min(module_table_count_out[0], gParams.n_hir_nodes);
@@ -441,11 +499,6 @@ uint module_record_count()
 uint type_decl_key_record_count()
 {
     return min(decl_type_key_count_out[0], gParams.n_hir_nodes);
-}
-
-uint path_record_count()
-{
-    return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
 uint import_visible_type_record_count()
@@ -515,189 +568,81 @@ bool bound_path_tail_node(uint node)
     return kind == PROD_BOUND_TYPE_PATH_MORE || kind == PROD_PATH_MORE;
 }
 
-bool bound_path_segment_at(uint expr_node, uint segment_i, out uint segment_node)
+uint bound_path_record_id(uint expr_node)
 {
-    segment_node = INVALID;
-    if (segment_i >= PATH_SEGMENT_ROW_WIDTH)
-        return false;
-
-    uint container = bound_path_node(expr_node);
-    for (uint lane = 0u; lane < PATH_SEGMENT_ROW_WIDTH; lane += 1u)
-    {
-        if (!bound_path_container(container))
-            return false;
-
-        uint segment = first_child_node(container);
-        if (!bound_path_segment_node(segment))
-            return false;
-
-        if (lane == segment_i)
-        {
-            segment_node = segment;
-            return true;
-        }
-
-        uint tail = next_sibling_node(segment);
-        container = bound_path_tail_node(tail) ? tail : INVALID;
-    }
-    return false;
+    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+        return INVALID;
+    uint path_i = path_id_by_owner_hir[expr_node];
+    return path_i < path_record_count() ? path_i : INVALID;
 }
 
 bool bound_path_shape_supported(uint expr_node)
 {
-    uint container = bound_path_node(expr_node);
-    if (!bound_path_container(container))
+    uint path_i = bound_path_record_id(expr_node);
+    if (path_i == INVALID)
         return false;
-    if (subtree_end[container] <= container)
-        return false;
-
-    for (uint lane = 0u; lane < BOUND_PATH_OVERFLOW_COUNT; lane += 1u)
-    {
-        if (!bound_path_container(container))
-            return true;
-
-        if (lane >= PATH_SEGMENT_ROW_WIDTH)
-            return false;
-
-        uint segment = first_child_node(container);
-        if (!bound_path_segment_node(segment))
-            return false;
-
-        uint tail = next_sibling_node(segment);
-        container = bound_path_tail_node(tail) ? tail : INVALID;
-    }
-    return false;
+    uint base = path_segment_base[path_i];
+    uint count = path_segment_count[path_i];
+    return count != 0u && base <= gParams.n_tokens && count <= gParams.n_tokens - base;
 }
 
 uint bound_path_segment_token(uint expr_node, uint segment_i)
 {
-    uint segment = INVALID;
-    if (!bound_path_segment_at(expr_node, segment_i, segment))
+    uint path_i = bound_path_record_id(expr_node);
+    if (path_i == INVALID || segment_i >= path_segment_count[path_i])
         return INVALID;
-    return hir_token_pos[segment];
+    uint slot = path_segment_base[path_i] + segment_i;
+    return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
 uint bound_path_segment_name_id(uint expr_node, uint segment_i)
 {
-    uint token = bound_path_segment_token(expr_node, segment_i);
-    return valid_token(token) ? name_id_by_token[token] : INVALID;
+    uint path_i = bound_path_record_id(expr_node);
+    if (path_i == INVALID || segment_i >= path_segment_count[path_i])
+        return INVALID;
+    uint slot = path_segment_base[path_i] + segment_i;
+    return slot < gParams.n_tokens ? path_segment_name_id[slot] : INVALID;
 }
 
 uint bound_path_segment_count(uint expr_node)
 {
-    uint container = bound_path_node(expr_node);
-    if (!bound_path_container(container))
-        return 0u;
-
-    uint count = 0u;
-    for (uint lane = 0u; lane < BOUND_PATH_OVERFLOW_COUNT; lane += 1u)
-    {
-        if (!bound_path_container(container))
-            return count;
-
-        if (lane >= PATH_SEGMENT_ROW_WIDTH)
-            return BOUND_PATH_OVERFLOW_COUNT;
-
-        uint segment = first_child_node(container);
-        if (!bound_path_segment_node(segment))
-            return 0u;
-
-        count += 1u;
-        uint tail = next_sibling_node(segment);
-        container = bound_path_tail_node(tail) ? tail : INVALID;
-    }
-    return count;
-}
-
-uint bound_path_prefix_overflow_token(uint expr_node)
-{
-    uint container = bound_path_node(expr_node);
-    if (!bound_path_container(container))
-        return INVALID;
-
-    for (uint lane = 0u; lane < PATH_SEGMENT_ROW_WIDTH; lane += 1u)
-    {
-        if (!bound_path_container(container))
-            return INVALID;
-
-        uint segment = first_child_node(container);
-        if (!bound_path_segment_node(segment))
-            return INVALID;
-
-        uint tail = next_sibling_node(segment);
-        if (lane == SORT_PATH_SEGMENTS && bound_path_tail_node(tail))
-        {
-            uint token = hir_token_pos[segment];
-            return valid_token(token) ? token : INVALID;
-        }
-
-        container = bound_path_tail_node(tail) ? tail : INVALID;
-    }
-    return INVALID;
+    uint path_i = bound_path_record_id(expr_node);
+    return path_i == INVALID ? 0u : path_segment_count[path_i];
 }
 
 uint bound_path_leaf_token(uint expr_node)
 {
     uint segment_count = bound_path_segment_count(expr_node);
-    if (segment_count == 0u || segment_count > PATH_SEGMENT_ROW_WIDTH)
+    if (segment_count == 0u)
         return INVALID;
 
     return bound_path_segment_token(expr_node, segment_count - 1u);
 }
 
-uint module_key_segment_value(uint module_i, uint segment_i)
-{
-    uint value = INVALID;
-    if (module_i < module_record_count() &&
-        segment_i < min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH))
-    {
-        value = module_key_segment_name_id[module_key_segment_base[module_i] + segment_i];
-    }
-    return fixed_key_encode_nullable_u32(value, INVALID);
-}
-
 public struct BoundModulePrefixLookupKey
 {
-    uint expr_node;
-    uint prefix_count;
-}
-
-public struct BoundModulePrefixFixedKey : IFixedU32RowKey<BoundModulePrefixLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint module_i = sorted_module_key_order[row];
-        return module_key_segment_value(module_i, lane);
-    }
-
-    public static uint key_lane(BoundModulePrefixLookupKey key, uint lane)
-    {
-        uint value = lane < key.prefix_count
-            ? bound_path_segment_name_id(key.expr_node, lane)
-            : INVALID;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
+    uint canonical_id;
 }
 
 public struct BoundModulePrefixCompare : IRowQueryCompare<BoundModulePrefixLookupKey>
 {
     public static int compare(uint row, BoundModulePrefixLookupKey key)
     {
-        return fixed_u32_row_key_compare<BoundModulePrefixLookupKey, BoundModulePrefixFixedKey>(
-            row,
-            key,
-            SORT_PATH_SEGMENTS);
+        uint module_i = sorted_module_key_order[row];
+        uint row_id = module_key_canonical_id[module_i];
+        return row_id < key.canonical_id ? -1 : (row_id > key.canonical_id ? 1 : 0);
     }
 }
 
 uint find_module_for_bound_path_prefix(uint expr_node, uint prefix_count)
 {
-    if (prefix_count == 0u || prefix_count > SORT_PATH_SEGMENTS)
+    uint path_i = bound_path_record_id(expr_node);
+    if (path_i == INVALID || prefix_count == 0u ||
+        prefix_count >= path_segment_count[path_i])
         return INVALID;
 
     BoundModulePrefixLookupKey key;
-    key.expr_node = expr_node;
-    key.prefix_count = prefix_count;
+    key.canonical_id = path_prefix_id[path_segment_base[path_i] + prefix_count - 1u];
     uint row = find_equal_query<BoundModulePrefixLookupKey, BoundModulePrefixCompare>(
         module_record_count(),
         key);
@@ -868,9 +813,6 @@ uint type_decl_for_bound_path(uint expr_node, uint owner_decl_node)
         return type_decl_for_unqualified_bound_path(expr_node, owner_decl_node);
 
     uint prefix_count = segment_count - 1u;
-    if (prefix_count > SORT_PATH_SEGMENTS)
-        return INVALID;
-
     uint owner_module = owner_module_for_decl_node(owner_decl_node);
     uint module_i = find_module_for_bound_path_prefix(expr_node, prefix_count);
     uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
@@ -889,7 +831,9 @@ bool trait_decl_exists_for_bound_path(uint expr_node, uint owner_decl_node)
            decl_kind[decl_i] == HIR_ITEM_KIND_TRAIT &&
            decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE;
 }
+#endif
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 uint trait_decl_generic_param_count(uint decl_i)
 {
     if (decl_i >= decl_record_count())
@@ -907,7 +851,9 @@ bool language_type_exists_by_name(uint name_id)
         return false;
     return language_type_code_by_name_id[name_id] != 0u;
 }
+#endif
 
+#if PREDICATE_COLLECT_IMPL_RECORDS
 uint type_path_record_id(uint expr_node)
 {
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_TYPE_IDENT)
@@ -968,137 +914,19 @@ uint type_path_segment_token(uint expr_node, uint segment_i)
     return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
-uint type_path_segment_name_id(uint expr_node, uint segment_i)
-{
-    uint path_i = type_path_record_id(expr_node);
-    uint count = path_i != INVALID ? path_segment_count[path_i] : 0u;
-    if (path_i == INVALID)
-    {
-        uint token = valid_node(expr_node) && node_kind[expr_node] == PROD_TYPE_IDENT
-            ? hir_token_pos[expr_node]
-            : INVALID;
-        return segment_i == 0u && valid_token(token) ? name_id_by_token[token] : INVALID;
-    }
-
-    if (path_segment_base[path_i] + count > gParams.n_tokens || segment_i >= count)
-        return INVALID;
-
-    uint slot = path_segment_base[path_i] + segment_i;
-    return slot < gParams.n_tokens ? path_segment_name_id[slot] : INVALID;
-}
-
 uint type_path_leaf_token(uint expr_node)
 {
     uint segment_count = type_path_segment_count(expr_node);
     return segment_count == 0u ? INVALID : type_path_segment_token(expr_node, segment_count - 1u);
 }
 
-uint owner_module_from_type_file(uint expr_node)
-{
-    uint file_id = valid_node(expr_node) ? hir_type_file_id[expr_node] : INVALID;
-    if (file_id == INVALID)
-        return INVALID;
-
-    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
-    if (module_id != INVALID)
-        return module_id;
-
-    return file_id == 0u ? 0u : INVALID;
-}
-
-uint owner_module_for_type_path(uint expr_node)
-{
-    uint path_i = type_path_record_id(expr_node);
-    if (path_i != INVALID)
-    {
-        uint module_id = path_owner_module_id[path_i];
-        if (module_id != INVALID)
-            return module_id;
-    }
-
-    return owner_module_from_type_file(expr_node);
-}
-
-public struct TypeModulePrefixLookupKey
-{
-    uint expr_node;
-    uint prefix_count;
-}
-
-public struct TypeModulePrefixFixedKey : IFixedU32RowKey<TypeModulePrefixLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint module_i = sorted_module_key_order[row];
-        return module_key_segment_value(module_i, lane);
-    }
-
-    public static uint key_lane(TypeModulePrefixLookupKey key, uint lane)
-    {
-        uint value = lane < key.prefix_count
-            ? type_path_segment_name_id(key.expr_node, lane)
-            : INVALID;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct TypeModulePrefixCompare : IRowQueryCompare<TypeModulePrefixLookupKey>
-{
-    public static int compare(uint row, TypeModulePrefixLookupKey key)
-    {
-        return fixed_u32_row_key_compare<TypeModulePrefixLookupKey, TypeModulePrefixFixedKey>(
-            row,
-            key,
-            SORT_PATH_SEGMENTS);
-    }
-}
-
-uint find_module_for_type_path_prefix(uint expr_node, uint prefix_count)
-{
-    if (prefix_count == 0u || prefix_count > SORT_PATH_SEGMENTS)
-        return INVALID;
-
-    TypeModulePrefixLookupKey key;
-    key.expr_node = expr_node;
-    key.prefix_count = prefix_count;
-    uint row = find_equal_query<TypeModulePrefixLookupKey, TypeModulePrefixCompare>(
-        module_record_count(),
-        key);
-    return row == INVALID ? INVALID : sorted_module_key_order[row];
-}
-
-uint type_decl_for_unqualified_type_path(uint expr_node)
-{
-    uint leaf_name_id = type_path_segment_name_id(expr_node, 0u);
-    uint owner_module = owner_module_for_type_path(expr_node);
-    if (owner_module == INVALID)
-        return INVALID;
-
-    uint local_decl = find_type_decl_in_module(owner_module, leaf_name_id);
-    if (local_decl != INVALID)
-        return local_decl;
-
-    return find_import_visible_type_decl(owner_module, leaf_name_id);
-}
-
 uint type_decl_for_type_path(uint expr_node)
 {
-    uint segment_count = type_path_segment_count(expr_node);
-    if (segment_count == 0u)
+    uint path_i = type_path_record_id(expr_node);
+    if (path_i == INVALID || resolved_type_status[path_i] != 0u)
         return INVALID;
-
-    uint leaf_name_id = type_path_segment_name_id(expr_node, segment_count - 1u);
-    if (segment_count == 1u)
-        return type_decl_for_unqualified_type_path(expr_node);
-
-    uint prefix_count = segment_count - 1u;
-    if (prefix_count > SORT_PATH_SEGMENTS)
-        return INVALID;
-
-    uint owner_module = owner_module_for_type_path(expr_node);
-    uint module_i = find_module_for_type_path_prefix(expr_node, prefix_count);
-    uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
-    return decl_visible_from_module(owner_module, decl_i) ? decl_i : INVALID;
+    uint decl_i = resolved_type_decl[path_i];
+    return decl_i < decl_record_count() ? decl_i : INVALID;
 }
 
 uint validate_trait_impl_target_type(uint expr_node)
@@ -1155,7 +983,9 @@ bool trait_impl_type_arg_resolves(uint arg_node)
 
     return type_decl_for_type_path(arg_node) != INVALID;
 }
+#endif
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 bool supported_predicate_type_arg_decl(uint decl_i)
 {
     if (decl_i == INVALID || decl_i >= decl_record_count())
@@ -1230,12 +1060,15 @@ uint encoded_language_type_arg_for_token(uint token)
     return encoded_type_code(type_code);
 }
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION
 uint encoded_alias_type_arg_for_bound(uint owner_decl_node, uint arg_node)
 {
     uint decl_i = type_decl_for_bound_path(arg_node, owner_decl_node);
     return encoded_type_code(alias_type_code_for_decl(decl_i));
 }
+#endif
 
+#if PREDICATE_COLLECT_IMPL_RECORDS
 uint encoded_alias_type_arg_for_type_node(uint arg_node)
 {
     uint decl_i = type_decl_for_type_path(arg_node);
@@ -1244,10 +1077,12 @@ uint encoded_alias_type_arg_for_type_node(uint arg_node)
 
 uint encoded_alias_type_arg_for_type_token(uint owner_type_node, uint token)
 {
-    uint decl_i = type_decl_for_unqualified_type_arg_token(owner_type_node, token);
+    uint decl_i = type_decl_for_type_arg_token(token);
     return encoded_type_code(alias_type_code_for_decl(decl_i));
 }
+#endif
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION
 uint encoded_concrete_type_arg_for_bound(uint owner_decl_node, uint arg_node)
 {
     uint encoded_language = encoded_language_type_arg_for_token(bound_path_leaf_token(arg_node));
@@ -1257,7 +1092,10 @@ uint encoded_concrete_type_arg_for_bound(uint owner_decl_node, uint arg_node)
     uint decl_i = type_decl_for_bound_path(arg_node, owner_decl_node);
     return encoded_type_code(nominal_type_code_for_decl(decl_i));
 }
+#endif
+#endif
 
+#if PREDICATE_COLLECT_IMPL_RECORDS
 uint encoded_concrete_type_arg_for_type_node(uint arg_node)
 {
     uint encoded_language = encoded_language_type_arg_for_token(type_path_leaf_token(arg_node));
@@ -1274,7 +1112,7 @@ uint encoded_concrete_type_arg_for_type_token(uint owner_type_node, uint token)
     if (encoded_language != INVALID)
         return encoded_language;
 
-    uint decl_i = type_decl_for_unqualified_type_arg_token(owner_type_node, token);
+    uint decl_i = type_decl_for_type_arg_token(token);
     return encoded_type_code(nominal_type_code_for_decl(decl_i));
 }
 
@@ -1342,21 +1180,17 @@ uint direct_type_arg_scalar_token(uint owner_type_node, uint ordinal)
         : INVALID;
 }
 
-uint type_decl_for_unqualified_type_arg_token(uint owner_type_node, uint token)
+uint type_decl_for_type_arg_token(uint token)
 {
     if (!valid_token(token))
         return INVALID;
 
-    uint name_id = name_id_by_token[token];
-    uint owner_module = owner_module_for_type_path(owner_type_node);
-    if (name_id == INVALID || owner_module == INVALID)
+    uint path_i = path_id_by_owner_token[token];
+    if (path_i == INVALID || path_i >= path_record_count() || resolved_type_status[path_i] != 0u)
         return INVALID;
 
-    uint local_decl = find_type_decl_in_module(owner_module, name_id);
-    if (local_decl != INVALID)
-        return local_decl;
-
-    return find_import_visible_type_decl(owner_module, name_id);
+    uint decl_i = resolved_type_decl[path_i];
+    return decl_i < decl_record_count() ? decl_i : INVALID;
 }
 
 bool trait_impl_type_arg_token_requires_instance_args(uint owner_type_node, uint token)
@@ -1368,7 +1202,7 @@ bool trait_impl_type_arg_token_requires_instance_args(uint owner_type_node, uint
     if (language_type_exists_by_name(name_id))
         return false;
 
-    uint decl_i = type_decl_for_unqualified_type_arg_token(owner_type_node, token);
+    uint decl_i = type_decl_for_type_arg_token(token);
     if (decl_i == INVALID || decl_i >= decl_record_count())
         return false;
 
@@ -1388,7 +1222,7 @@ bool trait_impl_type_arg_token_resolves(uint owner_type_node, uint token)
     if (language_type_exists_by_name(name_id))
         return true;
 
-    return type_decl_for_unqualified_type_arg_token(owner_type_node, token) != INVALID;
+    return type_decl_for_type_arg_token(token) != INVALID;
 }
 
 bool trait_impl_type_arg_token_shape_supported(uint owner_type_node, uint token)
@@ -1400,7 +1234,7 @@ bool trait_impl_type_arg_token_shape_supported(uint owner_type_node, uint token)
     if (language_type_exists_by_name(name_id))
         return true;
 
-    uint decl_i = type_decl_for_unqualified_type_arg_token(owner_type_node, token);
+    uint decl_i = type_decl_for_type_arg_token(token);
     return decl_i == INVALID || supported_predicate_type_arg_decl(decl_i);
 }
 
@@ -1449,7 +1283,9 @@ uint validate_trait_impl_scalar_arg_token(
         token = encoded_concrete;
     return PREDICATE_STATUS_OK;
 }
+#endif
 
+#if PREDICATE_COLLECT_METHOD_RECORDS
 bool trait_method_node(uint node)
 {
     if (!valid_node(node))
@@ -1646,7 +1482,9 @@ bool duplicate_method_contract_for_owner_name(uint owner_node, uint name_id)
     return range.end > range.begin + 1u &&
            method_contract_range_matches_owner_name(owner_node, name_id, range);
 }
+#endif
 
+#if PREDICATE_COLLECT_IMPL_RECORDS
 uint direct_type_arg_count(uint owner_type_node)
 {
     if (!valid_node(owner_type_node))
@@ -1804,6 +1642,7 @@ uint validate_inherent_impl_target_type(uint impl_node, uint expr_node)
     return PREDICATE_STATUS_OK;
 }
 
+#if PREDICATE_COLLECT_METHOD_RECORDS
 uint trait_owner_node_for_method(uint method_node)
 {
     uint owner = valid_node(method_node)
@@ -1829,6 +1668,7 @@ bool duplicate_trait_method_node(uint method_node)
     return method_contract_node_matches_owner_name(first_method, trait_node, name_id) &&
            first_method != method_node;
 }
+#endif
 
 bool trait_impl_header_is_public(uint impl_node)
 {
@@ -1854,6 +1694,7 @@ bool trait_impl_header_visibility_matches_trait(uint trait_decl_i, uint impl_nod
     return trait_is_public == impl_is_public;
 }
 
+#if PREDICATE_COLLECT_METHOD_RECORDS
 uint method_unsupported_contract_status(uint method_node)
 {
     if (!valid_node(method_node))
@@ -1862,6 +1703,7 @@ uint method_unsupported_contract_status(uint method_node)
     uint record_status = predicate_method_contract_status[method_node];
     return record_status != INVALID ? record_status : PREDICATE_STATUS_OK;
 }
+#endif
 
 uint impl_receiver_type_node(uint impl_node)
 {
@@ -2188,7 +2030,9 @@ void validate_inherent_impl_header_node(uint node)
         receiver_type_node,
         direct_type_arg_count(receiver_type_node));
 }
+#endif
 
+#if PREDICATE_COLLECT_METHOD_RECORDS
 void validate_trait_method_contract_node(uint node)
 {
     if (!trait_method_node(node))
@@ -2239,7 +2083,9 @@ void validate_impl_method_contract_record_node(uint node)
         return;
     predicate_status[node] = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
 }
+#endif
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION
 bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
 {
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
@@ -2492,16 +2338,6 @@ uint validate_bound_type_args(
         }
         if (!bound_path_shape_supported(node))
         {
-            uint overflow_token = bound_path_prefix_overflow_token(node);
-            if (valid_token(overflow_token))
-            {
-                set_bound_arg_diagnostic_token(
-                    ordinal,
-                    overflow_token,
-                    first_arg_token,
-                    second_arg_token);
-                return PREDICATE_STATUS_BOUND_PATH_TOO_DEEP;
-            }
             set_bound_arg_diagnostic_token(
                 ordinal,
                 bound_arg_diagnostic_token_for(predicate_expr_node, node),
@@ -2546,7 +2382,9 @@ uint validate_bound_type_args(
 
     return PREDICATE_STATUS_OK;
 }
+#endif
 
+#if PREDICATE_BOUND_DECL_RESOLUTION
 void clear_predicate_record(uint node)
 {
     predicate_owner_node[node] = INVALID;
@@ -2554,13 +2392,17 @@ void clear_predicate_record(uint node)
     predicate_bound_token[node] = INVALID;
     predicate_bound_decl_id[node] = INVALID;
 }
+#endif
 
+#if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 void mark_predicate_syntax_token(uint token_i)
 {
     if (valid_token(token_i))
         predicate_syntax_token[token_i] = 1u;
 }
+#endif
 
+#if PREDICATE_BOUND_DECL_RESOLUTION
 void mark_direct_bound_syntax_tokens(uint node)
 {
     if (node_kind[node] == PROD_BOUND_TYPE_IDENT)
@@ -2574,3 +2416,4 @@ void mark_direct_bound_syntax_tokens(uint node)
     if (node_kind[node] == PROD_BOUND_TYPE_REF)
         mark_predicate_syntax_token(hir_token_pos[node]);
 }
+#endif

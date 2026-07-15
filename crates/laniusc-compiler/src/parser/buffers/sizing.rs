@@ -1,5 +1,10 @@
 use crate::{
-    lexer::features::{PARSER_FEATURE_ARRAYS, PARSER_FEATURE_STRUCTS},
+    lexer::features::{
+        PARSER_FEATURE_ARRAYS,
+        PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_MATCHES,
+        PARSER_FEATURE_STRUCTS,
+    },
     parser::tables::PrecomputedParseTables,
 };
 
@@ -15,11 +20,11 @@ impl ParserFamilyCapacities {
         let tree_capacity = tree_capacity.max(1);
         Self {
             arrays: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_ARRAYS),
-            // Enum and match relations remain source-node-addressable in shared
-            // parser consumers even when their construction passes are skipped.
-            // Keep their physical address space complete until those consumers
-            // are migrated to compact record ids.
-            enum_match: tree_capacity,
+            enum_match: feature_capacity(
+                tree_capacity,
+                parser_feature_flags,
+                PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES,
+            ),
             structs: feature_capacity(tree_capacity, parser_feature_flags, PARSER_FEATURE_STRUCTS),
         }
     }
@@ -76,8 +81,6 @@ pub(super) fn resident_partial_parse_tree_capacity(total_emit: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::features::{PARSER_FEATURE_ENUMS, PARSER_FEATURE_MATCHES};
-
     #[test]
     fn resident_tree_capacity_is_capacity_derived_and_bounded() {
         assert_eq!(resident_partial_parse_tree_capacity(1_000_000), 1_000_000);
@@ -97,12 +100,12 @@ mod tests {
     }
 
     #[test]
-    fn enum_match_relations_retain_source_node_address_space() {
+    fn absent_optional_parser_families_use_sentinel_capacity() {
         assert_eq!(
             ParserFamilyCapacities::new(1_000_000, 0),
             ParserFamilyCapacities {
                 arrays: 1,
-                enum_match: 1_000_000,
+                enum_match: 1,
                 structs: 1,
             }
         );
@@ -114,7 +117,7 @@ mod tests {
             ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_ARRAYS),
             ParserFamilyCapacities {
                 arrays: 1_000_000,
-                enum_match: 1_000_000,
+                enum_match: 1,
                 structs: 1,
             }
         );
@@ -138,7 +141,7 @@ mod tests {
             ParserFamilyCapacities::new(1_000_000, PARSER_FEATURE_STRUCTS),
             ParserFamilyCapacities {
                 arrays: 1,
-                enum_match: 1_000_000,
+                enum_match: 1,
                 structs: 1_000_000,
             }
         );

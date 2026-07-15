@@ -93,7 +93,6 @@ fn raytracer_ppm_compiles_runs_and_matches_oracle() {
         }
     })
     .expect("raytracer fixture should eventually compile to x86_64");
-
     let exe = common::TempArtifact::new("laniusc_raytracer", "raytracer_ppm", None);
     exe.write_bytes(&bytes);
     let mut permissions = fs::metadata(exe.path())
