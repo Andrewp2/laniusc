@@ -9,7 +9,7 @@ Lanius is designed around GPU-resident compilation for fast iteration. The
 current compiler is still early alpha; published benchmark claims need checked
 local evidence before they should be treated as production numbers.
 
-### 2) Embedadbility
+### 2) Embeddadbility
 Lanius is intended to be embeddable, including future web/Wasm-style hosts, but
 the current production backend work is focused on native x86_64.
 
