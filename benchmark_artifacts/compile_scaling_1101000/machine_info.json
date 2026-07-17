@@ -1,16 +1,52 @@
 {
-  "cpu_model": "AMD Ryzen 9 5950X 16-Core Processor",
-  "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
-  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
-  "gpu": "NVIDIA GeForce RTX 3090, 580.159.03, 24576 MiB",
-  "gpu_compute_processes_before_measurement": "steamwebhelper=9 MiB; chrome GPU process=322 MiB; helium GPU process=196 MiB; pstate=P8; utilization.gpu=12%; memory.used=3227 MiB",
-  "gpu_measurement_state_after_measurement": "utilization.gpu=84%, utilization.memory=5%, memory.used=3227 MiB, temperature=60 C, pstate=P0",
-  "kernel": "Linux 6.17.0-35-generic x86_64",
-  "lanius_profile": "release",
-  "laniusc": "laniusc 0.1.0",
-  "logical_cpus": "32",
-  "memory_total_bytes": "33585344512",
-  "rustc": "rustc 1.97.0-nightly (b954122bb 2026-05-20)",
-  "schema": "lanius.benchmark-machine.v1",
-  "zig": "0.16.0"
+  "cpu": "x86_64",
+  "daemon_ready": {
+    "compute_pipelines_created": 596,
+    "event": "ready",
+    "idle_buffer_timeout_ms": 30000,
+    "pid": 87448,
+    "resident_set_bytes": 589987840,
+    "schema": "lanius.compiler-daemon.v1",
+    "startup_ms": 1945.557485,
+    "targets": [
+      "x86_64"
+    ],
+    "tracked_gpu_buffers": {
+      "allocations": 3,
+      "bytes": 52,
+      "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+      "untracked_allocations": 0,
+      "user_owned_wgpu_buffers": 3
+    },
+    "wgpu_resources": {
+      "bind_groups": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "buffers": {
+        "kept_from_user": 3,
+        "released_from_user": 0
+      },
+      "command_buffers": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "command_encoders": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "compute_pipelines": {
+        "kept_from_user": 596,
+        "released_from_user": 0
+      },
+      "query_sets": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      }
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 580.159.03, 24576",
+  "logical_cpus": 32,
+  "schema": "lanius.compile-scaling-machine.v1",
+  "system": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39"
 }

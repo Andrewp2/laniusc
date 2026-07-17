@@ -43,23 +43,14 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     bool active = order_i < gExprRadix.n_items;
     uint node = active ? expr_order_in[order_i] : 0u;
     uint key = active ? radix_key(node) : INVALID;
-    uint sorted_key = INVALID;
-    uint sorted_node = 0u;
-    uint local_rank = 0u;
-    stable_radix_sort_byte_rank(
-        lane,
-        key,
-        node,
-        sorted_key,
-        sorted_node,
-        local_rank);
-    if (sorted_key == INVALID)
+    uint local_rank = stable_radix_byte_local_rank(lane, key, active);
+    if (!active)
         return;
-    uint histogram_i = sorted_key * gExprRadix.n_blocks + block;
+    uint histogram_i = key * gExprRadix.n_blocks + block;
     uint scan_block = histogram_i / WG_SIZE;
     uint prior_blocks = scan_block == 0u ? 0u : expr_radix_block_prefix[scan_block - 1u];
     uint dst = expr_radix_histogram_prefix[histogram_i] +
                prior_blocks +
                local_rank;
-    expr_order_out[dst] = sorted_node;
+    expr_order_out[dst] = node;
 }

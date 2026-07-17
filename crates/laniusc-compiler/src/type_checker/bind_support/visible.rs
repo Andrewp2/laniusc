@@ -25,6 +25,8 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &passes.counted_scan_hierarchy_down,
         &passes.counted_scan_apply,
         &passes.visible_scatter_hir_decl_records,
+        &passes.visible_scatter_match_payload_decls,
+        &passes.visible_finalize_decl_count,
         &passes.visible_seed_hir_decl_order,
         &passes.visible_sort_hir_decl_keys_small,
         &passes.visible_sort_hir_decl_keys,
@@ -78,6 +80,8 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     counted_scan_hierarchy_down_pass: &PassData,
     counted_scan_apply_pass: &PassData,
     scatter_hir_decl_records_pass: &PassData,
+    scatter_match_payload_decls_pass: &PassData,
+    finalize_decl_count_pass: &PassData,
     seed_hir_decl_order_pass: &PassData,
     sort_hir_decl_keys_small_pass: &PassData,
     sort_hir_decl_keys_pass: &PassData,
@@ -179,6 +183,41 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         device,
         "type_check_visible_03c_scatter_hir_decls",
         scatter_hir_decl_records_pass,
+        resources,
+    )?;
+    let match_payload_dispatch_args = typed_storage_u32_rw(
+        device,
+        "type_check.visible.match_payload_dispatch_args",
+        3,
+        wgpu::BufferUsages::INDIRECT,
+    );
+    let match_payload_dispatch = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check.visible.match_payload_dispatch"),
+        count_dispatch_pass,
+        0,
+        &[
+            ("gParams", hir_semantic_dispatch_params.as_entire_binding()),
+            (
+                "count_in",
+                resources["compact_match_payload_row_count"].clone(),
+            ),
+            (
+                "dispatch_args",
+                match_payload_dispatch_args.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let scatter_match_payload_decls = reflected_bind_group_from_resources(
+        device,
+        "type_check_visible_03c2_scatter_match_payload_decls",
+        scatter_match_payload_decls_pass,
+        resources,
+    )?;
+    let finalize_decl_count = reflected_bind_group_from_resources(
+        device,
+        "type_check_visible_03c3_finalize_decl_count",
+        finalize_decl_count_pass,
         resources,
     )?;
 
@@ -513,11 +552,15 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     Ok(VisibleBindGroups {
         hir_decl_scan_n_blocks,
         hir_semantic_dispatch_args,
+        match_payload_dispatch_args,
         clear,
         hir_semantic_dispatch,
         mark_hir_decl_names,
         hir_decl_scan,
         scatter_hir_decl_records,
+        match_payload_dispatch,
+        scatter_match_payload_decls,
+        finalize_decl_count,
         seed_hir_decl_order,
         hir_decl_key_radix_dispatch,
         hir_decl_key_radix_dispatch_args: typed_alias_storage_u32(

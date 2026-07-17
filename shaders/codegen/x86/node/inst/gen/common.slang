@@ -10,6 +10,7 @@ import gpu_index;
 import byte_packing;
 import bit_packing;
 import status;
+import codegen.x86.string_metadata;
 
 struct Params
 {
@@ -41,10 +42,10 @@ StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
-StructuredBuffer<uint> hir_expr_string_len;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -66,6 +67,7 @@ StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> x86_intrinsic_call_record;
 StructuredBuffer<uint2> x86_enum_value_record;
 StructuredBuffer<uint4> x86_match_record;
+StructuredBuffer<uint4> x86_match_arm_record;
 StructuredBuffer<uint> x86_match_arm_owner;
 StructuredBuffer<uint> x86_match_result_value_owner;
 StructuredBuffer<uint> x86_struct_access_record;
@@ -174,6 +176,8 @@ static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_COUNT = 2301u;
 static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_BINDING = 2302u;
 static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_SOURCE = 2303u;
 static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_WIDTH = 2304u;
+static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_OWNER = 2305u;
+static const uint X86_VINST_ERROR_NAME_MATCH_PAYLOAD_MATCH = 2306u;
 static const uint X86_VINST_ERROR_MEMBER_RECORD = 2401u;
 static const uint X86_VINST_ERROR_MEMBER_ORDINAL = 2402u;
 static const uint X86_VINST_ERROR_MEMBER_SOURCE = 2403u;
@@ -474,9 +478,7 @@ uint intrinsic_call_tag(uint call_node)
 bool upstream_ok()
 {
     return x86_node_inst_gen_input_status[0u] == X86_NODE_INST_GEN_INPUTS_OK &&
-           x86_node_inst_gen_input_status[1u] == 0u &&
-           x86_virtual_inst_status[0u] == X86_VIRTUAL_INST_OK &&
-           x86_virtual_inst_status[1u] == 0u;
+           x86_node_inst_gen_input_status[1u] == 0u;
 }
 
 uint gen_worklist_count()
@@ -1769,7 +1771,10 @@ bool emit_string_literal_to_local(uint node)
         return false;
     }
     write_inst(ptr_row, node, 0u, X86_VINST_STORE_LOCAL_RODATA_PTR, INVALID, uint4(slot, init_node, 0u, 0u));
-    write_inst(len_row, node, 1u, X86_VINST_STORE_LOCAL_IMM, INVALID, uint4(slot + 1u, hir_expr_string_len[init_node], 0u, 0u));
+    uint string_len = x86_string_decoded_len_for_raw(init_node, gParams.n_hir_nodes);
+    if (string_len == INVALID)
+        return false;
+    write_inst(len_row, node, 1u, X86_VINST_STORE_LOCAL_IMM, INVALID, uint4(slot + 1u, string_len, 0u, 0u));
     write_node_value(node, X86_NODE_VALUE_NONE, INVALID, 0u, 0u);
     return true;
 }
@@ -1897,7 +1902,10 @@ bool member_aggregate_width(uint member_token, out uint width)
     width = 0u;
     if (!valid_token(member_token))
         return false;
-    uint field_node = member_result_field_node[member_token];
+    uint field_token = member_result_field_node[member_token];
+    uint field_node = valid_token(field_token)
+                          ? x86_decl_node_by_token[field_token]
+                          : INVALID;
     if (!valid_node(field_node))
         return false;
     width = x86_struct_field_width_by_node[field_node];
@@ -2058,11 +2066,7 @@ uint nth_match_arm_node(uint match_node, uint ordinal)
     if (!has_match_feature() || !valid_node(match_node))
         return INVALID;
     uint4 record = x86_match_record[match_node];
-    if (ordinal == 0u)
-        return record.y;
-    if (ordinal == 1u)
-        return record.w;
-    return INVALID;
+    return ordinal < record.z && record.y != INVALID ? record.y + ordinal : INVALID;
 }
 
 bool match_expr_is_return_value(uint match_node, out uint return_node)
@@ -2085,7 +2089,7 @@ bool supported_return_match(uint match_node)
     uint return_node = INVALID;
     return hir_kind[match_node] == HIR_MATCH_EXPR &&
            valid_node(record.x) &&
-           valid_node(record.y) &&
+           record.y != INVALID &&
            record.z == 2u &&
            match_expr_is_return_value(match_node, return_node);
 }
@@ -2109,10 +2113,10 @@ bool return_stmt_has_supported_match(uint return_node)
 bool pattern_variant_ordinal(uint arm_node, out uint ordinal)
 {
     ordinal = INVALID;
-    if (!has_match_feature() || !valid_node(arm_node))
+    if (!has_match_feature() || arm_node == INVALID || arm_node >= gParams.n_hir_nodes)
         return false;
 
-    uint packed_ordinal = x86_match_record[arm_node].z >> 16u;
+    uint packed_ordinal = x86_match_arm_record[arm_node].z >> 16u;
     if (packed_ordinal == MATCH_ARM_VARIANT_UNRESOLVED)
     {
         ordinal = MATCH_ARM_VARIANT_UNRESOLVED;
@@ -2156,12 +2160,18 @@ bool match_payload_source_for_name(uint name_node, out uint source_kind, out uin
         return false;
 
     uint arm = x86_match_result_value_owner[name_node];
-    if (!valid_node(arm))
+    if (arm == INVALID || arm >= gParams.n_hir_nodes)
+    {
+        reason = X86_VINST_ERROR_NAME_MATCH_PAYLOAD_OWNER;
         return false;
-    uint4 arm_record = x86_match_record[arm];
+    }
+    uint4 arm_record = x86_match_arm_record[arm];
     uint match_node = x86_match_arm_owner[arm];
     if (!supported_return_match(match_node))
+    {
+        reason = X86_VINST_ERROR_NAME_MATCH_PAYLOAD_MATCH;
         return false;
+    }
     uint4 match_record = x86_match_record[match_node];
     if (match_arm_payload_count(arm_record) != 1u)
     {
@@ -4038,7 +4048,7 @@ bool emit_return_match(uint node)
     uint4 match_record = x86_match_record[node];
     uint arm0 = nth_match_arm_node(node, 0u);
     uint arm1 = nth_match_arm_node(node, 1u);
-    if (!valid_node(arm0) || !valid_node(arm1))
+    if (arm0 == INVALID || arm1 == INVALID)
     {
         write_status_error_detail(node, X86_VINST_ERROR_MATCH_ARMS);
         return false;
@@ -4072,8 +4082,8 @@ bool emit_return_match(uint node)
     uint return0_row = INVALID;
     uint return1_row = INVALID;
     uint arm1_target = INVALID;
-    uint result0 = x86_match_record[arm0].w;
-    uint result1 = x86_match_record[arm1].w;
+    uint result0 = x86_match_arm_record[arm0].w;
+    uint result1 = x86_match_arm_record[arm1].w;
     uint result0_vreg = INVALID;
     uint result1_vreg = INVALID;
     if (!location_for_node_local(node, 0u, branch_row) ||

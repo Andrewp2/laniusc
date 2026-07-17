@@ -568,10 +568,10 @@ uint aggregate_member_field_type(uint node)
     if (!valid_token(member_name))
         return TY_UNKNOWN;
 
-    uint field_node = member_result_field_node[member_name];
-    if (valid_node(field_node))
+    uint field_token = member_result_field_node[member_name];
+    if (valid_token(field_token))
     {
-        uint field_type = visible_type_for_token(hir_token_pos[field_node]);
+        uint field_type = visible_type_for_token(field_token);
         if (field_type != TY_UNKNOWN)
             return field_type;
     }

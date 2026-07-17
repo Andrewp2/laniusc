@@ -27,14 +27,14 @@ struct FeatureParams
 ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<uint> x86_match_pattern_node_variant;
 StructuredBuffer<uint> x86_match_pattern_node_payload_decl;
 StructuredBuffer<uint> x86_match_pattern_first_use_node;
 StructuredBuffer<uint> x86_match_pattern_first_variant_node;
 StructuredBuffer<uint> x86_match_pattern_first_payload_node;
 
-RWStructuredBuffer<uint4> x86_match_record;
+RWStructuredBuffer<uint4> x86_match_arm_record;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -43,7 +43,6 @@ static const uint MATCH_ARM_VARIANT_UNKNOWN = 0xffffu;
 static const uint MATCH_ARM_VARIANT_UNRESOLVED = 0xfffeu;
 static const uint MATCH_ARM_VARIANT_NO_USE_TOKEN = 0xfffdu;
 static const uint MATCH_ARM_VARIANT_NO_VARIANT = 0xfffcu;
-static const uint HIR_MATCH_EXPR = 34u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -58,6 +57,11 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
 }
 
 bool valid_token(uint token)
@@ -75,14 +79,12 @@ bool has_match_feature()
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint arm = linear_dispatch_id(tid);
-    if (!valid_node(arm))
+    if (arm >= active_arm_count())
         return;
     if (!has_match_feature())
         return;
-    if (hir_kind[arm] == HIR_MATCH_EXPR)
-        return;
 
-    uint4 record = x86_match_record[arm];
+    uint4 record = x86_match_arm_record[arm];
     if (!valid_node(record.x) || !valid_node(record.w))
         return;
 
@@ -98,7 +100,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint ordinal = x86_match_pattern_node_variant[first_variant];
         if (ordinal >= MATCH_ARM_VARIANT_UNKNOWN)
             ordinal = MATCH_ARM_VARIANT_UNRESOLVED;
-        x86_match_record[arm] = uint4(
+        x86_match_arm_record[arm] = uint4(
             record.x,
             payload_decl,
             pack_u16_pair(payload_count, ordinal),
@@ -110,7 +112,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint reason = valid_node(first_use)
         ? MATCH_ARM_VARIANT_NO_VARIANT
         : MATCH_ARM_VARIANT_NO_USE_TOKEN;
-    x86_match_record[arm] = uint4(
+    x86_match_arm_record[arm] = uint4(
         record.x,
         payload_decl,
         pack_u16_pair(payload_count, reason),

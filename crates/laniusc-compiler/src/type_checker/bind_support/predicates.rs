@@ -55,8 +55,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 resident_resources["predicate_trait_impl_trait_type_node"].clone(),
             ),
             (
-                "predicate_method_contract_owner_node",
-                rows.method_contract_owner_node.as_entire_binding(),
+                "predicate_method_contract_owner_hir",
+                rows.method_contract_owner_hir.as_entire_binding(),
             ),
             (
                 "predicate_method_contract_name_token",
@@ -173,6 +173,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         &[
             ("gParams", input.params.as_entire_binding()),
             ("hir_status", input.hir_status.as_entire_binding()),
+            (
+                "raw_to_compact_hir",
+                items.raw_to_compact_hir.as_entire_binding(),
+            ),
             ("node_kind", items.node_kind.as_entire_binding()),
             ("parent", items.parent.as_entire_binding()),
             ("first_child", items.first_child.as_entire_binding()),
@@ -206,8 +210,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 items.param_type_node.as_entire_binding(),
             ),
             (
-                "predicate_method_contract_owner_node",
-                rows.method_contract_owner_node.as_entire_binding(),
+                "predicate_method_contract_owner_hir",
+                rows.method_contract_owner_hir.as_entire_binding(),
             ),
             (
                 "predicate_method_contract_name_token",
@@ -256,6 +260,22 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             0,
             &[
                 ("gParams", input.params.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    items.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_core",
+                    items.compact_hir_core.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_payload",
+                    items.compact_hir_payload.as_entire_binding(),
+                ),
+                (
+                    "raw_to_compact_hir",
+                    items.raw_to_compact_hir.as_entire_binding(),
+                ),
                 ("hir_status", input.hir_status.as_entire_binding()),
                 ("node_kind", items.node_kind.as_entire_binding()),
                 ("parent", items.parent.as_entire_binding()),
@@ -297,7 +317,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     input.name_id_by_token.as_entire_binding(),
                 ),
                 (
-                    "type_decl_generic_param_count_by_node",
+                    "type_decl_generic_param_count_by_owner_token",
                     input.generic_param_count_by_node.as_entire_binding(),
                 ),
                 (
@@ -317,8 +337,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     resident_resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resident_resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resident_resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_name_id",
@@ -472,8 +492,20 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     resident_resources["predicate_syntax_token"].clone(),
                 ),
                 (
-                    "predicate_method_contract_owner_node",
-                    rows.method_contract_owner_node.as_entire_binding(),
+                    "compact_hir_count",
+                    items.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_payload",
+                    items.compact_hir_payload.as_entire_binding(),
+                ),
+                (
+                    "hir_method_owner_node",
+                    items.method_owner_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_method_contract_owner_hir",
+                    rows.method_contract_owner_hir.as_entire_binding(),
                 ),
                 (
                     "predicate_method_contract_name_token",
@@ -584,8 +616,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             ("gParams", input.params.as_entire_binding()),
             ("hir_status", input.hir_status.as_entire_binding()),
             (
-                "predicate_method_contract_owner_node",
-                rows.method_contract_owner_node.as_entire_binding(),
+                "predicate_method_contract_owner_hir",
+                rows.method_contract_owner_hir.as_entire_binding(),
             ),
             (
                 "predicate_method_contract_name_id",
@@ -613,9 +645,25 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         &[
             ("gParams", input.params.as_entire_binding()),
             ("hir_status", input.hir_status.as_entire_binding()),
+            (
+                "compact_hir_count",
+                items.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                items.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                items.raw_to_compact_hir.as_entire_binding(),
+            ),
             ("node_kind", items.node_kind.as_entire_binding()),
             ("hir_item_kind", items.kind.as_entire_binding()),
             ("hir_token_pos", input.hir_token_pos.as_entire_binding()),
+            (
+                "hir_method_owner_node",
+                items.method_owner_node.as_entire_binding(),
+            ),
             ("hir_param_record", items.param_record.as_entire_binding()),
             ("hir_type_form", items.type_form.as_entire_binding()),
             (
@@ -672,8 +720,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             ),
             ("decl_hir_node", path.decl_hir_node.as_entire_binding()),
             (
-                "predicate_method_contract_owner_node",
-                rows.method_contract_owner_node.as_entire_binding(),
+                "predicate_method_contract_owner_hir",
+                rows.method_contract_owner_hir.as_entire_binding(),
             ),
             (
                 "predicate_method_contract_name_token",
@@ -1234,8 +1282,8 @@ fn predicate_key_small_sort_bindings<'a>(
         ),
         ("predicate_status", resources["predicate_status"].clone()),
         (
-            "predicate_method_contract_owner_node",
-            resources["predicate_method_contract_owner_node"].clone(),
+            "predicate_method_contract_owner_hir",
+            resources["predicate_method_contract_owner_hir"].clone(),
         ),
         (
             "predicate_method_contract_name_id",
@@ -1295,8 +1343,8 @@ fn predicate_key_sort_bindings<'a>(
         ),
         ("predicate_status", resources["predicate_status"].clone()),
         (
-            "predicate_method_contract_owner_node",
-            resources["predicate_method_contract_owner_node"].clone(),
+            "predicate_method_contract_owner_hir",
+            resources["predicate_method_contract_owner_hir"].clone(),
         ),
         (
             "predicate_method_contract_name_id",

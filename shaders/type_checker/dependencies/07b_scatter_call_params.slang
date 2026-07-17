@@ -22,11 +22,12 @@ StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_call_arg_ordinal;
 StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> dependency_declaration_words;
+StructuredBuffer<uint> dependency_type_words;
+StructuredBuffer<uint> dependency_type_edge_words;
+StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
-StructuredBuffer<uint> call_param_row_node_type;
-StructuredBuffer<uint> call_param_row_node_ref_tag;
-StructuredBuffer<uint> call_param_row_node_ref_payload;
 RWStructuredBuffer<uint> call_param_row_node;
 RWStructuredBuffer<uint> call_param_row_fn_token;
 RWStructuredBuffer<uint> call_param_row_ordinal;
@@ -37,6 +38,15 @@ RWStructuredBuffer<uint> call_param_row_start;
 RWStructuredBuffer<uint> call_param_row_count;
 
 static const uint INVALID = 0xffffffffu;
+static const uint DECL_WORDS = 14u;
+static const uint TYPE_WORDS = 9u;
+static const uint INTERFACE_TYPE_SCALAR = 1u;
+static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_GENERIC_BASE = 8192u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -59,8 +69,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (callee_node >= active_hir_count())
         return;
     uint callee_token = hir_token_pos[callee_node];
-    if (callee_token >= gParams.visible_capacity ||
-        call_dependency_decl[callee_token] == INVALID)
+    if (callee_token >= gParams.visible_capacity)
+        return;
+    uint declaration_i = call_dependency_decl[callee_token];
+    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count)
         return;
     uint ordinal = hir_call_arg_ordinal[arg_node];
     uint count = call_param_count[callee_token];
@@ -70,12 +82,34 @@ void main(uint3 dtid: SV_DispatchThreadID)
         row >= call_param_row_count_out[0u] || row >= active_hir_count())
         return;
 
+    uint signature_i = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
+    uint signature_base = signature_i * TYPE_WORDS;
+    uint edge_start = dependency_type_words[signature_base + 3u];
+    uint type_i = canonical_type_roots[dependency_type_edge_words[edge_start + ordinal]];
+    uint type_base = type_i * TYPE_WORDS;
+    uint kind = dependency_type_words[type_base];
+    uint tag = TYPE_REF_EXTERNAL_CANONICAL;
+    uint payload = type_i;
+    uint type_code = TY_UNKNOWN;
+    if (kind == INTERFACE_TYPE_SCALAR)
+    {
+        tag = TYPE_REF_SCALAR;
+        payload = dependency_type_words[type_base + 1u];
+        type_code = payload;
+    }
+    else if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
+    {
+        tag = TYPE_REF_EXTERNAL_GENERIC;
+        payload = dependency_type_words[type_base + 1u];
+        type_code = TY_GENERIC_BASE;
+    }
+
     call_param_row_node[row] = arg_node;
     call_param_row_fn_token[row] = callee_token;
     call_param_row_ordinal[row] = ordinal;
-    call_param_row_type[row] = call_param_row_node_type[arg_node];
-    call_param_row_ref_tag[row] = call_param_row_node_ref_tag[arg_node];
-    call_param_row_ref_payload[row] = call_param_row_node_ref_payload[arg_node];
+    call_param_row_type[row] = type_code;
+    call_param_row_ref_tag[row] = tag;
+    call_param_row_ref_payload[row] = payload;
     if (ordinal == 0u)
         call_param_row_count[callee_token] = count;
 }

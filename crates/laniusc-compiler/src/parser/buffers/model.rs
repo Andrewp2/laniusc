@@ -38,6 +38,259 @@ pub struct TokenBraceMatchParams {
     pub n_tokens: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// Dense canonical HIR identity and source span.
+pub struct HirCore {
+    pub kind: u32,
+    pub parent: u32,
+    pub token_start: u32,
+    pub token_end: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// Dense canonical HIR navigation and source-file identity.
+pub struct HirLinks {
+    pub first_child: u32,
+    pub next_sibling: u32,
+    pub subtree_end: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// Kind-dependent canonical HIR payload.
+pub struct HirPayload {
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub d: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// Packed range into one compact HIR side table. Empty owners use
+/// `{ start: INVALID, count: 0 }`.
+pub struct HirRange {
+    pub start: u32,
+    pub count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirCallArg {
+    pub call: u32,
+    pub value: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirParam {
+    pub owner: u32,
+    pub name_token: u32,
+    pub type_node: u32,
+    pub ordinal: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirTypeArg {
+    pub owner: u32,
+    pub value: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirGenericParam {
+    pub owner: u32,
+    pub name_token: u32,
+    pub kind: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirPath {
+    pub owner: u32,
+    pub segment_start: u32,
+    pub segment_count: u32,
+    pub kind: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirPathSegment {
+    pub path: u32,
+    pub name_token: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// A compact aggregate field. `value` is a type for struct declarations and
+/// an expression for struct literals, as determined by the dense owner kind.
+pub struct HirField {
+    pub owner: u32,
+    pub name_token: u32,
+    pub value: u32,
+    pub ordinal: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirVariant {
+    pub owner: u32,
+    pub name_token: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirVariantPayload {
+    pub variant: u32,
+    pub type_node: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirMatchArm {
+    pub owner: u32,
+    pub pattern: u32,
+    pub result: u32,
+    pub ordinal: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirMatchPayload {
+    pub arm: u32,
+    pub pattern: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirArrayElement {
+    pub array: u32,
+    pub value: u32,
+    pub ordinal: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// One decoded string literal. `node` is a dense canonical HIR ID and the
+/// byte range addresses the separately compacted decoded string pool.
+pub struct HirString {
+    pub node: u32,
+    pub data_offset: u32,
+    pub decoded_len: u32,
+    pub file_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirMethodCore {
+    pub node: u32,
+    pub owner: u32,
+    pub impl_node: u32,
+    pub name_token: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+pub struct HirMethodSignature {
+    pub first_param_token: u32,
+    pub impl_receiver_type: u32,
+    pub receiver_mode: u32,
+    /// Visibility in the low 16 bits and signature flags in the high 16 bits.
+    pub metadata: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// One compact trait obligation. `subject` is a token for generic bounds and
+/// a dense HIR type for trait impls, as selected by the low metadata byte.
+/// The remaining metadata bits contain the source file id.
+pub struct HirPredicate {
+    pub owner: u32,
+    pub subject: u32,
+    pub bound: u32,
+    pub metadata: u32,
+}
+
+/// Allocation-free handle set for the compact parser phase artifact.
+///
+/// Cloning this view only clones `wgpu::Buffer` handles. It deliberately does
+/// not expose raw production rows, so consumers migrated to this boundary
+/// cannot accidentally re-derive semantics from parser scaffolding.
+#[derive(Clone)]
+pub struct GpuHirView {
+    pub capacity: u32,
+    pub count: LaniusBuffer<u32>,
+    pub core: LaniusBuffer<HirCore>,
+    pub links: LaniusBuffer<HirLinks>,
+    pub payload: LaniusBuffer<HirPayload>,
+    /// Dense return-type HIR id keyed by dense function HIR id.
+    pub fn_return_type: LaniusBuffer<u32>,
+    /// Dense target-type HIR id keyed by dense type-alias declaration HIR id.
+    pub type_alias_target: LaniusBuffer<u32>,
+    /// Dense annotated-type HIR id keyed by dense constant declaration HIR id.
+    pub const_type: LaniusBuffer<u32>,
+    pub call_arg_count: LaniusBuffer<u32>,
+    pub call_args: LaniusBuffer<HirCallArg>,
+    pub param_count: LaniusBuffer<u32>,
+    pub params: LaniusBuffer<HirParam>,
+    pub param_ranges: LaniusBuffer<HirRange>,
+    pub type_arg_count: LaniusBuffer<u32>,
+    pub type_args: LaniusBuffer<HirTypeArg>,
+    pub type_arg_ranges: LaniusBuffer<HirRange>,
+    pub generic_param_count: LaniusBuffer<u32>,
+    pub generic_params: LaniusBuffer<HirGenericParam>,
+    pub generic_param_ranges: LaniusBuffer<HirRange>,
+    pub path_count: LaniusBuffer<u32>,
+    pub paths: LaniusBuffer<HirPath>,
+    pub path_segment_count: LaniusBuffer<u32>,
+    pub path_segments: LaniusBuffer<HirPathSegment>,
+    pub field_count: LaniusBuffer<u32>,
+    pub fields: LaniusBuffer<HirField>,
+    pub variant_count: LaniusBuffer<u32>,
+    pub variants: LaniusBuffer<HirVariant>,
+    pub variant_payload_start: LaniusBuffer<u32>,
+    pub variant_payload_count: LaniusBuffer<u32>,
+    pub variant_payload_row_count: LaniusBuffer<u32>,
+    pub variant_payloads: LaniusBuffer<HirVariantPayload>,
+    pub match_arm_count: LaniusBuffer<u32>,
+    pub match_arms: LaniusBuffer<HirMatchArm>,
+    pub match_payload_start: LaniusBuffer<u32>,
+    pub match_payload_count: LaniusBuffer<u32>,
+    pub match_payload_row_count: LaniusBuffer<u32>,
+    pub match_payloads: LaniusBuffer<HirMatchPayload>,
+    pub array_element_start: LaniusBuffer<u32>,
+    pub array_element_count: LaniusBuffer<u32>,
+    pub array_element_row_count: LaniusBuffer<u32>,
+    pub array_elements: LaniusBuffer<HirArrayElement>,
+    pub string_count: LaniusBuffer<u32>,
+    pub strings: LaniusBuffer<HirString>,
+    pub string_data_words: LaniusBuffer<u32>,
+    pub string_pool_len: LaniusBuffer<u32>,
+    pub method_count: LaniusBuffer<u32>,
+    pub method_cores: LaniusBuffer<HirMethodCore>,
+    pub method_signatures: LaniusBuffer<HirMethodSignature>,
+    pub predicate_count: LaniusBuffer<u32>,
+    pub predicates: LaniusBuffer<HirPredicate>,
+}
+
 /// All GPU-side buffers for the parser pipeline.
 ///
 /// This struct owns resident GPU storage and uniform buffers only; readback and
@@ -56,6 +309,7 @@ pub struct ParserBuffers {
     pub hir_array_capacity: u32,
     pub hir_enum_match_capacity: u32,
     pub hir_struct_capacity: u32,
+    pub hir_canonical_capacity: u32,
 
     // canonical LL(1) parser tables and outputs
     pub ll1_predict: LaniusBuffer<u32>,
@@ -290,6 +544,82 @@ pub struct ParserBuffers {
     pub hir_semantic_child_index_rank_a: LaniusBuffer<u32>,
     pub hir_semantic_child_index_rank_b: LaniusBuffer<u32>,
     pub hir_semantic_count: LaniusBuffer<u32>,
+    // -------- Canonical dense HIR phase boundary --------
+    pub hir_canonical_params:
+        LaniusBuffer<super::super::passes::hir::canonical::CanonicalHirParams>,
+    pub hir_canonical_count: LaniusBuffer<u32>,
+    pub hir_canonical_status: LaniusBuffer<u32>,
+    /// Winning raw-node-plus-one for each source-token anchor. Zero means no
+    /// canonical node claimed the token.
+    pub hir_canonical_anchor_owner: LaniusBuffer<u32>,
+    /// Prefix-before value for every raw parse node. It is a dense id only
+    /// when `hir_semantic_flag[raw]` is set by the canonical mark pass.
+    pub hir_canonical_prefix_before_raw: LaniusBuffer<u32>,
+    pub hir_canonical_dense_to_raw: LaniusBuffer<u32>,
+    pub hir_canonical_raw_to_dense: LaniusBuffer<u32>,
+    pub hir_core: LaniusBuffer<HirCore>,
+    pub hir_links: LaniusBuffer<HirLinks>,
+    pub hir_payload: LaniusBuffer<HirPayload>,
+    pub hir_canonical_fn_return_type: LaniusBuffer<u32>,
+    pub hir_canonical_type_alias_target: LaniusBuffer<u32>,
+    pub hir_canonical_const_type: LaniusBuffer<u32>,
+    pub hir_call_arg_table_count: LaniusBuffer<u32>,
+    pub hir_call_arg_family_flag: LaniusBuffer<u32>,
+    pub hir_call_args: LaniusBuffer<HirCallArg>,
+    pub hir_param_table_count: LaniusBuffer<u32>,
+    pub hir_param_family_flag: LaniusBuffer<u32>,
+    pub hir_param_rows: LaniusBuffer<HirParam>,
+    pub hir_param_ranges: LaniusBuffer<HirRange>,
+    pub hir_type_arg_table_count: LaniusBuffer<u32>,
+    pub hir_type_arg_family_flag: LaniusBuffer<u32>,
+    pub hir_type_arg_rows: LaniusBuffer<HirTypeArg>,
+    pub hir_type_arg_ranges: LaniusBuffer<HirRange>,
+    pub hir_generic_param_table_count: LaniusBuffer<u32>,
+    pub hir_generic_param_family_flag: LaniusBuffer<u32>,
+    pub hir_generic_param_rows: LaniusBuffer<HirGenericParam>,
+    pub hir_generic_param_ranges: LaniusBuffer<HirRange>,
+    pub hir_path_table_count: LaniusBuffer<u32>,
+    pub hir_path_family_flag: LaniusBuffer<u32>,
+    pub hir_path_rows: LaniusBuffer<HirPath>,
+    pub hir_path_segment_table_count: LaniusBuffer<u32>,
+    pub hir_path_segment_family_flag: LaniusBuffer<u32>,
+    pub hir_path_segment_rows: LaniusBuffer<HirPathSegment>,
+    pub hir_field_table_count: LaniusBuffer<u32>,
+    pub hir_field_family_flag: LaniusBuffer<u32>,
+    pub hir_field_rows: LaniusBuffer<HirField>,
+    pub hir_variant_table_count: LaniusBuffer<u32>,
+    pub hir_variant_family_flag: LaniusBuffer<u32>,
+    pub hir_variant_rows: LaniusBuffer<HirVariant>,
+    pub hir_variant_raw_to_row: LaniusBuffer<u32>,
+    pub hir_variant_compact_payload_start: LaniusBuffer<u32>,
+    pub hir_variant_compact_payload_count: LaniusBuffer<u32>,
+    pub hir_variant_payload_table_count: LaniusBuffer<u32>,
+    pub hir_variant_payload_family_flag: LaniusBuffer<u32>,
+    pub hir_variant_payload_rows: LaniusBuffer<HirVariantPayload>,
+    pub hir_match_arm_table_count: LaniusBuffer<u32>,
+    pub hir_match_arm_family_flag: LaniusBuffer<u32>,
+    /// Phase-local raw match-arm to compact-row map. This aliases the variant
+    /// map because all compact variant payloads have been materialized before
+    /// compact match construction begins.
+    pub hir_match_arm_raw_to_row: LaniusBuffer<u32>,
+    pub hir_match_arm_rows: LaniusBuffer<HirMatchArm>,
+    pub hir_match_compact_payload_start: LaniusBuffer<u32>,
+    pub hir_match_compact_payload_count: LaniusBuffer<u32>,
+    pub hir_match_payload_table_count: LaniusBuffer<u32>,
+    pub hir_match_payload_family_flag: LaniusBuffer<u32>,
+    pub hir_match_payload_rows: LaniusBuffer<HirMatchPayload>,
+    pub hir_array_compact_element_start: LaniusBuffer<u32>,
+    pub hir_array_compact_element_count: LaniusBuffer<u32>,
+    pub hir_array_element_table_count: LaniusBuffer<u32>,
+    pub hir_array_element_family_flag: LaniusBuffer<u32>,
+    pub hir_array_element_rows: LaniusBuffer<HirArrayElement>,
+    pub hir_canonical_string_rows: LaniusBuffer<HirString>,
+    pub hir_method_table_count: LaniusBuffer<u32>,
+    pub hir_method_family_flag: LaniusBuffer<u32>,
+    pub hir_method_core_rows: LaniusBuffer<HirMethodCore>,
+    pub hir_method_signature_rows: LaniusBuffer<HirMethodSignature>,
+    pub hir_predicate_table_count: LaniusBuffer<u32>,
+    pub hir_predicate_rows: LaniusBuffer<HirPredicate>,
     pub hir_token_pos: LaniusBuffer<u32>,
     pub hir_token_end: LaniusBuffer<u32>,
     pub hir_token_file_id: LaniusBuffer<u32>,
@@ -546,4 +876,61 @@ pub struct ParserBuffers {
     pub hir_struct_rank_node: LaniusBuffer<u32>,
     pub hir_struct_rank_count: LaniusBuffer<u32>,
     pub hir_struct_rank_dispatch_args: LaniusBuffer<u32>,
+}
+
+impl GpuHirView {
+    pub fn from_parser_buffers(buffers: &ParserBuffers) -> Self {
+        Self {
+            capacity: buffers.hir_canonical_capacity,
+            count: buffers.hir_canonical_count.clone(),
+            core: buffers.hir_core.clone(),
+            links: buffers.hir_links.clone(),
+            payload: buffers.hir_payload.clone(),
+            fn_return_type: buffers.hir_canonical_fn_return_type.clone(),
+            type_alias_target: buffers.hir_canonical_type_alias_target.clone(),
+            const_type: buffers.hir_canonical_const_type.clone(),
+            call_arg_count: buffers.hir_call_arg_table_count.clone(),
+            call_args: buffers.hir_call_args.clone(),
+            param_count: buffers.hir_param_table_count.clone(),
+            params: buffers.hir_param_rows.clone(),
+            param_ranges: buffers.hir_param_ranges.clone(),
+            type_arg_count: buffers.hir_type_arg_table_count.clone(),
+            type_args: buffers.hir_type_arg_rows.clone(),
+            type_arg_ranges: buffers.hir_type_arg_ranges.clone(),
+            generic_param_count: buffers.hir_generic_param_table_count.clone(),
+            generic_params: buffers.hir_generic_param_rows.clone(),
+            generic_param_ranges: buffers.hir_generic_param_ranges.clone(),
+            path_count: buffers.hir_path_table_count.clone(),
+            paths: buffers.hir_path_rows.clone(),
+            path_segment_count: buffers.hir_path_segment_table_count.clone(),
+            path_segments: buffers.hir_path_segment_rows.clone(),
+            field_count: buffers.hir_field_table_count.clone(),
+            fields: buffers.hir_field_rows.clone(),
+            variant_count: buffers.hir_variant_table_count.clone(),
+            variants: buffers.hir_variant_rows.clone(),
+            variant_payload_start: buffers.hir_variant_compact_payload_start.clone(),
+            variant_payload_count: buffers.hir_variant_compact_payload_count.clone(),
+            variant_payload_row_count: buffers.hir_variant_payload_table_count.clone(),
+            variant_payloads: buffers.hir_variant_payload_rows.clone(),
+            match_arm_count: buffers.hir_match_arm_table_count.clone(),
+            match_arms: buffers.hir_match_arm_rows.clone(),
+            match_payload_start: buffers.hir_match_compact_payload_start.clone(),
+            match_payload_count: buffers.hir_match_compact_payload_count.clone(),
+            match_payload_row_count: buffers.hir_match_payload_table_count.clone(),
+            match_payloads: buffers.hir_match_payload_rows.clone(),
+            array_element_start: buffers.hir_array_compact_element_start.clone(),
+            array_element_count: buffers.hir_array_compact_element_count.clone(),
+            array_element_row_count: buffers.hir_array_element_table_count.clone(),
+            array_elements: buffers.hir_array_element_rows.clone(),
+            string_count: buffers.hir_string_count.clone(),
+            strings: buffers.hir_canonical_string_rows.clone(),
+            string_data_words: buffers.hir_string_data_words.clone(),
+            string_pool_len: buffers.hir_string_pool_len.clone(),
+            method_count: buffers.hir_method_table_count.clone(),
+            method_cores: buffers.hir_method_core_rows.clone(),
+            method_signatures: buffers.hir_method_signature_rows.clone(),
+            predicate_count: buffers.hir_predicate_table_count.clone(),
+            predicates: buffers.hir_predicate_rows.clone(),
+        }
+    }
 }

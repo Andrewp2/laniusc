@@ -136,6 +136,90 @@ pub struct ParserPasses {
     pub hir_method_signature_status: hir::method::signature_status::HirMethodSignatureStatusPass,
     pub hir_item_fields: hir::item::fields::HirItemFieldsPass,
     pub hir_item_decl_tokens: hir::item::decl_tokens::HirItemDeclTokensPass,
+    pub hir_canonical_mark: hir::canonical::mark::HirCanonicalMarkPass,
+    pub hir_canonical_local: hir::canonical::local::HirCanonicalLocalPass,
+    pub hir_canonical_scatter: hir::canonical::scatter::HirCanonicalScatterPass,
+    pub hir_canonical_parent_init: hir::canonical::parent_init::HirCanonicalParentInitPass,
+    pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
+    pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
+    pub hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass,
+    pub hir_canonical_call_arg_mark: hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass,
+    pub hir_canonical_call_arg_local:
+        hir::canonical::call_args::local::HirCanonicalCallArgLocalPass,
+    pub hir_canonical_call_arg_scatter:
+        hir::canonical::call_args::scatter::HirCanonicalCallArgScatterPass,
+    pub hir_canonical_param_mark: hir::canonical::params::mark::HirCanonicalParamMarkPass,
+    pub hir_canonical_param_local: hir::canonical::params::local::HirCanonicalParamLocalPass,
+    pub hir_canonical_param_scatter: hir::canonical::params::scatter::HirCanonicalParamScatterPass,
+    pub hir_canonical_type_arg_mark: hir::canonical::type_args::mark::HirCanonicalTypeArgMarkPass,
+    pub hir_canonical_type_arg_local:
+        hir::canonical::type_args::local::HirCanonicalTypeArgLocalPass,
+    pub hir_canonical_type_arg_scatter:
+        hir::canonical::type_args::scatter::HirCanonicalTypeArgScatterPass,
+    pub hir_canonical_generic_param_owner_init:
+        hir::canonical::generic_params::owner_init::HirCanonicalGenericParamOwnerInitPass,
+    pub hir_canonical_generic_param_finalize:
+        hir::canonical::generic_params::finalize::HirCanonicalGenericParamFinalizePass,
+    pub hir_canonical_generic_param_local:
+        hir::canonical::generic_params::local::HirCanonicalGenericParamLocalPass,
+    pub hir_canonical_generic_param_scatter:
+        hir::canonical::generic_params::scatter::HirCanonicalGenericParamScatterPass,
+    pub hir_canonical_path_segment_mark:
+        hir::canonical::paths::segments::mark::HirCanonicalPathSegmentMarkPass,
+    pub hir_canonical_path_segment_local:
+        hir::canonical::paths::segments::local::HirCanonicalPathSegmentLocalPass,
+    pub hir_canonical_path_segment_scatter:
+        hir::canonical::paths::segments::scatter::HirCanonicalPathSegmentScatterPass,
+    pub hir_canonical_path_mark: hir::canonical::paths::mark::HirCanonicalPathMarkPass,
+    pub hir_canonical_path_local: hir::canonical::paths::local::HirCanonicalPathLocalPass,
+    pub hir_canonical_path_scatter: hir::canonical::paths::scatter::HirCanonicalPathScatterPass,
+    pub hir_canonical_field_mark: hir::canonical::fields::mark::HirCanonicalFieldMarkPass,
+    pub hir_canonical_field_local: hir::canonical::fields::local::HirCanonicalFieldLocalPass,
+    pub hir_canonical_field_scatter: hir::canonical::fields::scatter::HirCanonicalFieldScatterPass,
+    pub hir_canonical_variant_mark: hir::canonical::variants::mark::HirCanonicalVariantMarkPass,
+    pub hir_canonical_variant_local: hir::canonical::variants::local::HirCanonicalVariantLocalPass,
+    pub hir_canonical_variant_scatter:
+        hir::canonical::variants::scatter::HirCanonicalVariantScatterPass,
+    pub hir_canonical_variant_payload_owner_init:
+        hir::canonical::variants::payload_owner_init::HirCanonicalVariantPayloadOwnerInitPass,
+    pub hir_canonical_variant_payload_local:
+        hir::canonical::variants::payload_local::HirCanonicalVariantPayloadLocalPass,
+    pub hir_canonical_variant_payload_scatter:
+        hir::canonical::variants::payload_scatter::HirCanonicalVariantPayloadScatterPass,
+    pub hir_canonical_variant_payload_ordinal:
+        hir::canonical::variants::payload_ordinal::HirCanonicalVariantPayloadOrdinalPass,
+    pub hir_canonical_match_arm_mark:
+        hir::canonical::matches::arms::mark::HirCanonicalMatchArmMarkPass,
+    pub hir_canonical_match_arm_local:
+        hir::canonical::matches::arms::local::HirCanonicalMatchArmLocalPass,
+    pub hir_canonical_match_arm_scatter:
+        hir::canonical::matches::arms::scatter::HirCanonicalMatchArmScatterPass,
+    pub hir_canonical_match_payload_mark:
+        hir::canonical::matches::payloads::mark::HirCanonicalMatchPayloadMarkPass,
+    pub hir_canonical_match_payload_local:
+        hir::canonical::matches::payloads::local::HirCanonicalMatchPayloadLocalPass,
+    pub hir_canonical_match_payload_scatter:
+        hir::canonical::matches::payloads::scatter::HirCanonicalMatchPayloadScatterPass,
+    pub hir_canonical_array_element_mark:
+        hir::canonical::array_elements::mark::HirCanonicalArrayElementMarkPass,
+    pub hir_canonical_array_element_local:
+        hir::canonical::array_elements::local::HirCanonicalArrayElementLocalPass,
+    pub hir_canonical_array_element_scatter:
+        hir::canonical::array_elements::scatter::HirCanonicalArrayElementScatterPass,
+    pub hir_canonical_string_scatter:
+        hir::canonical::strings::scatter::HirCanonicalStringScatterPass,
+    pub hir_canonical_method_mark: hir::canonical::methods::mark::HirCanonicalMethodMarkPass,
+    pub hir_canonical_method_local: hir::canonical::methods::local::HirCanonicalMethodLocalPass,
+    pub hir_canonical_method_scatter:
+        hir::canonical::methods::scatter::HirCanonicalMethodScatterPass,
+    pub hir_canonical_predicate_subject_init:
+        hir::canonical::predicates::subject_init::HirCanonicalPredicateSubjectInitPass,
+    pub hir_canonical_predicate_finalize:
+        hir::canonical::predicates::finalize::HirCanonicalPredicateFinalizePass,
+    pub hir_canonical_predicate_local:
+        hir::canonical::predicates::local::HirCanonicalPredicateLocalPass,
+    pub hir_canonical_predicate_scatter:
+        hir::canonical::predicates::scatter::HirCanonicalPredicateScatterPass,
     pub hir_param_links: hir::param::links::HirParamLinksPass,
     pub hir_param_id_clear: hir::param::id_clear::HirParamIdClearPass,
     pub hir_param_id_base: hir::param::id_base::HirParamIdBasePass,
@@ -334,6 +418,93 @@ impl ParserPasses {
                 hir::method::signature_status::HirMethodSignatureStatusPass::new(device)?,
             hir_item_fields: hir::item::fields::HirItemFieldsPass::new(device)?,
             hir_item_decl_tokens: hir::item::decl_tokens::HirItemDeclTokensPass::new(device)?,
+            hir_canonical_mark: hir::canonical::mark::HirCanonicalMarkPass::new(device)?,
+            hir_canonical_local: hir::canonical::local::HirCanonicalLocalPass::new(device)?,
+            hir_canonical_scatter: hir::canonical::scatter::HirCanonicalScatterPass::new(device)?,
+            hir_canonical_parent_init:
+                hir::canonical::parent_init::HirCanonicalParentInitPass::new(device)?,
+            hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
+            hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
+            hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass::new(
+                device,
+            )?,
+            hir_canonical_call_arg_mark:
+                hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass::new(device)?,
+            hir_canonical_call_arg_local:
+                hir::canonical::call_args::local::HirCanonicalCallArgLocalPass::new(device)?,
+            hir_canonical_call_arg_scatter:
+                hir::canonical::call_args::scatter::HirCanonicalCallArgScatterPass::new(device)?,
+            hir_canonical_param_mark: hir::canonical::params::mark::HirCanonicalParamMarkPass::new(
+                device,
+            )?,
+            hir_canonical_param_local:
+                hir::canonical::params::local::HirCanonicalParamLocalPass::new(device)?,
+            hir_canonical_param_scatter:
+                hir::canonical::params::scatter::HirCanonicalParamScatterPass::new(device)?,
+            hir_canonical_type_arg_mark:
+                hir::canonical::type_args::mark::HirCanonicalTypeArgMarkPass::new(device)?,
+            hir_canonical_type_arg_local:
+                hir::canonical::type_args::local::HirCanonicalTypeArgLocalPass::new(device)?,
+            hir_canonical_type_arg_scatter:
+                hir::canonical::type_args::scatter::HirCanonicalTypeArgScatterPass::new(device)?,
+            hir_canonical_generic_param_owner_init:
+                hir::canonical::generic_params::owner_init::HirCanonicalGenericParamOwnerInitPass::new(device)?,
+            hir_canonical_generic_param_finalize:
+                hir::canonical::generic_params::finalize::HirCanonicalGenericParamFinalizePass::new(device)?,
+            hir_canonical_generic_param_local:
+                hir::canonical::generic_params::local::HirCanonicalGenericParamLocalPass::new(device)?,
+            hir_canonical_generic_param_scatter:
+                hir::canonical::generic_params::scatter::HirCanonicalGenericParamScatterPass::new(device)?,
+            hir_canonical_path_segment_mark:
+                hir::canonical::paths::segments::mark::HirCanonicalPathSegmentMarkPass::new(device)?,
+            hir_canonical_path_segment_local:
+                hir::canonical::paths::segments::local::HirCanonicalPathSegmentLocalPass::new(device)?,
+            hir_canonical_path_segment_scatter:
+                hir::canonical::paths::segments::scatter::HirCanonicalPathSegmentScatterPass::new(device)?,
+            hir_canonical_path_mark:
+                hir::canonical::paths::mark::HirCanonicalPathMarkPass::new(device)?,
+            hir_canonical_path_local:
+                hir::canonical::paths::local::HirCanonicalPathLocalPass::new(device)?,
+            hir_canonical_path_scatter:
+                hir::canonical::paths::scatter::HirCanonicalPathScatterPass::new(device)?,
+            hir_canonical_field_mark:
+                hir::canonical::fields::mark::HirCanonicalFieldMarkPass::new(device)?,
+            hir_canonical_field_local:
+                hir::canonical::fields::local::HirCanonicalFieldLocalPass::new(device)?,
+            hir_canonical_field_scatter:
+                hir::canonical::fields::scatter::HirCanonicalFieldScatterPass::new(device)?,
+            hir_canonical_variant_mark:
+                hir::canonical::variants::mark::HirCanonicalVariantMarkPass::new(device)?,
+            hir_canonical_variant_local:
+                hir::canonical::variants::local::HirCanonicalVariantLocalPass::new(device)?,
+            hir_canonical_variant_scatter:
+                hir::canonical::variants::scatter::HirCanonicalVariantScatterPass::new(device)?,
+            hir_canonical_variant_payload_owner_init:
+                hir::canonical::variants::payload_owner_init::HirCanonicalVariantPayloadOwnerInitPass::new(device)?,
+            hir_canonical_variant_payload_local:
+                hir::canonical::variants::payload_local::HirCanonicalVariantPayloadLocalPass::new(device)?,
+            hir_canonical_variant_payload_scatter:
+                hir::canonical::variants::payload_scatter::HirCanonicalVariantPayloadScatterPass::new(device)?,
+            hir_canonical_variant_payload_ordinal:
+                hir::canonical::variants::payload_ordinal::HirCanonicalVariantPayloadOrdinalPass::new(device)?,
+            hir_canonical_match_arm_mark:
+                hir::canonical::matches::arms::mark::HirCanonicalMatchArmMarkPass::new(device)?,
+            hir_canonical_match_arm_local:
+                hir::canonical::matches::arms::local::HirCanonicalMatchArmLocalPass::new(device)?,
+            hir_canonical_match_arm_scatter:
+                hir::canonical::matches::arms::scatter::HirCanonicalMatchArmScatterPass::new(device)?,
+            hir_canonical_match_payload_mark:
+                hir::canonical::matches::payloads::mark::HirCanonicalMatchPayloadMarkPass::new(device)?,
+            hir_canonical_match_payload_local:
+                hir::canonical::matches::payloads::local::HirCanonicalMatchPayloadLocalPass::new(device)?,
+            hir_canonical_match_payload_scatter:
+                hir::canonical::matches::payloads::scatter::HirCanonicalMatchPayloadScatterPass::new(device)?,
+            hir_canonical_array_element_mark:
+                hir::canonical::array_elements::mark::HirCanonicalArrayElementMarkPass::new(device)?,
+            hir_canonical_array_element_local:
+                hir::canonical::array_elements::local::HirCanonicalArrayElementLocalPass::new(device)?,
+            hir_canonical_array_element_scatter:
+                hir::canonical::array_elements::scatter::HirCanonicalArrayElementScatterPass::new(device)?,
             hir_param_links: hir::param::links::HirParamLinksPass::new(device)?,
             hir_param_id_clear: hir::param::id_clear::HirParamIdClearPass::new(device)?,
             hir_param_id_base: hir::param::id_base::HirParamIdBasePass::new(device)?,
@@ -370,6 +541,22 @@ impl ParserPasses {
             hir_string_offset_scatter:
                 hir::string::offset_scatter::HirStringOffsetScatterPass::new(device)?,
             hir_string_decode: hir::string::decode::HirStringDecodePass::new(device)?,
+            hir_canonical_string_scatter:
+                hir::canonical::strings::scatter::HirCanonicalStringScatterPass::new(device)?,
+            hir_canonical_method_mark:
+                hir::canonical::methods::mark::HirCanonicalMethodMarkPass::new(device)?,
+            hir_canonical_method_local:
+                hir::canonical::methods::local::HirCanonicalMethodLocalPass::new(device)?,
+            hir_canonical_method_scatter:
+                hir::canonical::methods::scatter::HirCanonicalMethodScatterPass::new(device)?,
+            hir_canonical_predicate_subject_init:
+                hir::canonical::predicates::subject_init::HirCanonicalPredicateSubjectInitPass::new(device)?,
+            hir_canonical_predicate_finalize:
+                hir::canonical::predicates::finalize::HirCanonicalPredicateFinalizePass::new(device)?,
+            hir_canonical_predicate_local:
+                hir::canonical::predicates::local::HirCanonicalPredicateLocalPass::new(device)?,
+            hir_canonical_predicate_scatter:
+                hir::canonical::predicates::scatter::HirCanonicalPredicateScatterPass::new(device)?,
             hir_call_fields: hir::call::fields::HirCallFieldsPass::new(device)?,
             hir_call_spans: hir::call::spans::HirCallSpansPass::new(device)?,
             hir_call_arg_links: hir::call::arg::links::HirCallArgLinksPass::new(device)?,
@@ -729,6 +916,9 @@ pub fn record_all_passes(
     )?;
     p.hir_call_arg_ordinal_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_canonical_call_arg_mark
+        .record_pass(&mut ctx, E1D(n_tree))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_expr_forest_edges
         .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
     p.hir_expr_forest_root_init
@@ -821,6 +1011,297 @@ pub fn record_all_passes(
     p.hir_item_decl_tokens
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
 
+    record_canonical_hir(&mut ctx, p)?;
+
+    Ok(())
+}
+
+/// Materializes the durable, token-bounded HIR after all raw-tree-derived
+/// records have been finalized. The raw-to-dense maps and pointer-jump rows
+/// are phase-local workspace and may be overwritten by later phases.
+pub fn record_canonical_hir(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        None,
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_count.buffer,
+        0,
+        None,
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_status.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    // The local scan consumes atomic anchor winners. Keep this as an explicit
+    // pass boundary: same-pass dispatch ordering does not provide a portable
+    // storage-memory barrier for atomics through wgpu backends.
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_parent_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_core
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_nav
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_call_arg_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_call_arg_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_call_arg_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_param_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_param_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_param_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_param_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_type_arg_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_type_arg_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_type_arg_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_type_arg_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_generic_param_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_generic_param_owner_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_generic_param_finalize
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_generic_param_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_generic_param_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_path_segment_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_path_segment_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_path_segment_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_path_segment_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_path_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_path_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_path_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_path_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_field_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_field_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_field_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_field_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_variant_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_variant_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_variant_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_payload_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_variant_payload_owner_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_variant_payload_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_variant_payload_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_variant_payload_ordinal
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_arm_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_match_arm_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_match_arm_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_arm_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_payload_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_match_payload_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_match_payload_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_payload_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_array_element_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_array_element_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_array_element_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_array_element_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_string_scatter
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_method_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_method_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_method_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_method_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_predicate_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_predicate_subject_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_semantic_parent_step.record_steps_for_buffers(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_type_arg_link_a,
+        &ctx.buffers.hir_type_arg_rank_a,
+        &ctx.buffers.hir_type_arg_link_b,
+        &ctx.buffers.hir_type_arg_rank_b,
+        "hir_canonical_predicate_owner_step",
+    )?;
+    p.hir_canonical_predicate_finalize
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_canonical_predicate_local
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_predicate_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_validate
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::buffers::record_tracked_buffer_phase_snapshot("compact_hir_materialized");
     Ok(())
 }
 

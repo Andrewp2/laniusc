@@ -39,7 +39,6 @@ pub use input_buffers::{
     GpuWasmCallMetadataBuffers,
     GpuWasmCodegenInputs,
     GpuWasmDependencySymbolBuffers,
-    GpuWasmEnumMatchMetadataBuffers,
     GpuWasmExprMetadataBuffers,
     GpuWasmPathMetadataBuffers,
     GpuWasmSemanticHirBuffers,
@@ -245,7 +244,6 @@ struct ResidentWasmBuffers {
     _wasm_agg_scan_block_sum_buf: LaniusBuffer<u32>,
     _wasm_agg_scan_prefix_a_buf: LaniusBuffer<u32>,
     _wasm_agg_scan_prefix_b_buf: LaniusBuffer<u32>,
-    _hir_enum_match_record_buf: LaniusBuffer<u32>,
     wasm_const_value_record_buf: LaniusBuffer<u32>,
     call_relocations: ResidentWasmCallRelocations,
     expr_order: ResidentWasmExprOrder,
@@ -338,7 +336,6 @@ struct ResidentWasmBuffers {
     hir_body_scatter_binary_direct_call_bind_group: wgpu::BindGroup,
     hir_agg_body_bind_group: wgpu::BindGroup,
     hir_assert_module_bind_group: wgpu::BindGroup,
-    hir_enum_match_records_bind_group: wgpu::BindGroup,
     wasm_const_values_bind_group: wgpu::BindGroup,
     module_type_lengths_bind_group: wgpu::BindGroup,
     module_type_dispatch_args_bind_group: wgpu::BindGroup,
@@ -435,7 +432,6 @@ pub struct GpuWasmCodeGenerator {
     hir_body_scatter_binary_direct_call_pass: LazyWasmPass,
     hir_agg_body_pass: LazyWasmPass,
     hir_assert_module_pass: LazyWasmPass,
-    hir_enum_match_records_pass: LazyWasmPass,
     wasm_const_values_pass: LazyWasmPass,
     module_type_lengths_pass: LazyWasmPass,
     module_type_dispatch_args_pass: LazyWasmPass,
@@ -996,12 +992,6 @@ impl GpuWasmCodeGenerator {
             "codegen/wasm/hir/assert_module.spv",
             "codegen/wasm/hir/assert_module.reflect.json"
         );
-        let hir_enum_match_records_pass = wasm_pass!(
-            "hir_enum_match_records",
-            "codegen_wasm_hir_enum_match_records",
-            "codegen/wasm/hir/enum_match_records.spv",
-            "codegen/wasm/hir/enum_match_records.reflect.json"
-        );
         let wasm_const_values_pass = wasm_pass!(
             "const_values",
             "codegen_wasm_const_values",
@@ -1433,10 +1423,6 @@ impl GpuWasmCodeGenerator {
             ),
             hir_agg_body_pass: join_wasm_pass!(hir_agg_body_pass, "hir_agg_body"),
             hir_assert_module_pass: join_wasm_pass!(hir_assert_module_pass, "hir_assert_module"),
-            hir_enum_match_records_pass: join_wasm_pass!(
-                hir_enum_match_records_pass,
-                "hir_enum_match_records"
-            ),
             wasm_const_values_pass: join_wasm_pass!(wasm_const_values_pass, "const_values"),
             module_type_lengths_pass: join_wasm_pass!(
                 module_type_lengths_pass,

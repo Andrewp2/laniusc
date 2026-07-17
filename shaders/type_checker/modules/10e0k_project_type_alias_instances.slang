@@ -13,10 +13,16 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_path_leaf_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
@@ -29,6 +35,7 @@ RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_ERROR = 4u;
@@ -37,7 +44,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_ref(uint tag, uint payload)
@@ -45,17 +52,31 @@ bool valid_ref(uint tag, uint payload)
     return tag != TYPE_REF_INVALID && tag != TYPE_REF_ERROR && payload != INVALID;
 }
 
+uint leaf_token_for_owner(uint owner)
+{
+    if (owner >= active_hir_count())
+        return INVALID;
+    uint path_i = path_id_by_owner_hir[owner];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path_i == INVALID || path_i >= path_count)
+        return INVALID;
+    uint count = path_segment_count[path_i];
+    if (count == 0u)
+        return INVALID;
+    uint row = path_segment_base[path_i] + count - 1u;
+    return row < gParams.n_tokens ? path_segment_token[row] : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (node >= active_hir_count())
+    if (node >= active_hir_count() || compact_hir_core[node].kind != HIR_TYPE)
         return;
 
-    uint owner_token = hir_token_pos[node];
-    uint leaf_node = hir_type_path_leaf_node[node];
-    uint leaf_token = leaf_node < active_hir_count() ? hir_token_pos[leaf_node] : INVALID;
+    uint owner_token = compact_hir_core[node].token_start;
+    uint leaf_token = leaf_token_for_owner(node);
     if (owner_token >= gParams.n_tokens || leaf_token >= gParams.n_tokens)
         return;
 
@@ -64,7 +85,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? type_decl_hir_node_by_token[decl_token]
         : INVALID;
     if (alias_node >= active_hir_count() ||
-        hir_item_kind[alias_node] != HIR_ITEM_KIND_TYPE_ALIAS)
+        compact_hir_payload[alias_node].a != HIR_ITEM_KIND_TYPE_ALIAS)
         return;
 
     uint source = alias_normalized_source[alias_node];

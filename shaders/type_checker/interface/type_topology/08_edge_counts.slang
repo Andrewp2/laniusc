@@ -7,8 +7,10 @@ struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_arg_count;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirRange { uint start; uint count; };
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
 RWStructuredBuffer<uint> interface_type_edge_count;
 RWStructuredBuffer<uint> interface_status;
 
@@ -38,9 +40,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         atomic_u32_min(interface_status, 1u, index);
         return;
     }
-    uint form = hir_type_form[node];
+    uint form = compact_hir_payload[node].a;
     if (form == HIR_TYPE_FORM_PATH)
-        interface_type_edge_count[index] = hir_type_arg_count[node];
+        interface_type_edge_count[index] = compact_type_arg_ranges[node].count;
     else if (form == HIR_TYPE_FORM_ARRAY || form == HIR_TYPE_FORM_SLICE ||
              form == HIR_TYPE_FORM_REF)
         interface_type_edge_count[index] = 1u;

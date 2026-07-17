@@ -12,11 +12,17 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_call_context_stmt_node;
-StructuredBuffer<uint> hir_variant_payload_count;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -35,9 +41,11 @@ StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
+StructuredBuffer<uint> module_value_path_call_head;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> call_return_type;
+RWStructuredBuffer<uint> visible_decl;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -51,6 +59,7 @@ static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint PATH_KIND_VALUE = 3u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -79,6 +88,22 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
+uint enclosing_function_decl_token(uint token)
+{
+    uint encoded_fn = valid_token(token) ? enclosing_fn[token] : 0u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return valid_token(fn_token) ? fn_token : INVALID;
+}
+
+bool valid_variant(uint row)
+{
+    return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
+}
+
 uint path_leaf_token(uint path_i, uint owner_token)
 {
     uint count = path_segment_count[path_i];
@@ -100,8 +125,7 @@ uint function_return_instance_for_token(uint token)
     if (!valid_token(token))
         return INVALID;
 
-    uint encoded_fn = enclosing_fn[token];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_token = enclosing_function_decl_token(token);
     if (valid_token(fn_token))
     {
         uint tag = fn_return_ref_tag[fn_token];
@@ -150,10 +174,15 @@ uint contextual_instance_for_call(uint owner_token, uint call_node)
     return function_return_instance_for_call(owner_token, call_node);
 }
 
-bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_node)
+bool valid_enum_variant_decl(
+    uint decl_i,
+    out uint variant_token,
+    out uint enum_token,
+    out uint variant)
 {
+    variant_token = INVALID;
     enum_token = INVALID;
-    variant_node = INVALID;
+    variant = INVALID;
     if (decl_i >= gParams.n_hir_nodes || decl_kind[decl_i] != HIR_ITEM_KIND_ENUM_VARIANT)
         return false;
 
@@ -161,9 +190,10 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_
     if (enum_decl_i >= gParams.n_hir_nodes || decl_kind[enum_decl_i] != HIR_ITEM_KIND_ENUM)
         return false;
 
+    variant_token = decl_name_token[decl_i];
     enum_token = decl_name_token[enum_decl_i];
-    variant_node = decl_hir_node[decl_i];
-    return valid_token(enum_token) && valid_node(variant_node);
+    variant = decl_hir_node[decl_i];
+    return valid_token(variant_token) && valid_token(enum_token) && valid_variant(variant);
 }
 
 uint call_arg_count_for_call(uint owner_token, uint call_node)
@@ -174,12 +204,12 @@ uint call_arg_count_for_call(uint owner_token, uint call_node)
     return max(record_count, call_arg_row_count[call_node]);
 }
 
-bool prepared_constructor_still_valid(uint owner_token, uint enum_token, uint variant_node)
+bool prepared_constructor_still_valid(uint owner_token, uint enum_token, uint variant)
 {
     uint4 arg_record = call_arg_record[owner_token];
     uint call_node = arg_record.z;
     uint actual_count = call_arg_count_for_call(owner_token, call_node);
-    uint expected_count = hir_variant_payload_count[variant_node];
+    uint expected_count = compact_variant_payload_count[variant];
     if (actual_count != expected_count)
         return false;
     if (actual_count > PARAM_CACHE_STRIDE ||
@@ -199,29 +229,39 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint path_i = linear_thread_id(dtid);
     if (path_i >= active_path_count())
         return;
+    if (path_kind[path_i] != PATH_KIND_VALUE)
+        return;
 
     uint owner_token = path_owner_token[path_i];
     if (!valid_token(owner_token))
+        return;
+    if (module_value_path_call_head[owner_token] == 0u)
         return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK ||
         module_value_path_status[owner_token] != PATH_RESOLVE_STATUS_OK)
         return;
 
+    uint variant_token;
     uint enum_token;
-    uint variant_node;
-    if (!valid_enum_variant_decl(resolved_value_decl[path_i], enum_token, variant_node))
+    uint variant;
+    if (!valid_enum_variant_decl(
+            resolved_value_decl[path_i], variant_token, enum_token, variant))
         return;
 
-    if (!prepared_constructor_still_valid(owner_token, enum_token, variant_node))
+    if (!prepared_constructor_still_valid(owner_token, enum_token, variant))
     {
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
         return;
     }
 
     uint result_ty = TY_ENUM_BASE + enum_token;
+    visible_decl[owner_token] = variant_token;
     call_return_type[owner_token] = result_ty;
     uint leaf_token = path_leaf_token(path_i, owner_token);
     if (leaf_token != owner_token)
+    {
+        visible_decl[leaf_token] = variant_token;
         call_return_type[leaf_token] = result_ty;
+    }
     module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_INVALID;
 }

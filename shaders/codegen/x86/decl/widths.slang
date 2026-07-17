@@ -498,14 +498,8 @@ bool declared_array_width_for_decl_node(uint node, out uint width)
     if (!is_local_decl_node(node))
         return false;
 
-    // The statement's type slot points into the flat statement-record stream;
-    // that stream entry contains the HIR type node. Preserve this parser/HIR
-    // contract as a fallback when semantic type-instance projection has not
-    // attached the explicit local annotation to the declaration token.
-    uint type_record = stmt_slot(node, 3u);
-    if (type_record == INVALID || type_record >= active_hir_node_count() * STMT_RECORD_STRIDE)
-        return false;
-    uint type_node = hir_stmt_record[type_record];
+    // The parser stores the HIR type node directly in statement slot 3.
+    uint type_node = stmt_slot(node, 3u);
     if (!valid_node(type_node) ||
         hir_kind[type_node] != HIR_TYPE ||
         hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)

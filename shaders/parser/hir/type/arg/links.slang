@@ -24,6 +24,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_path_owner_by_leaf;
+StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 
 RWStructuredBuffer<uint> hir_type_arg_owner_a;
 RWStructuredBuffer<uint> hir_type_arg_link_a;
@@ -88,7 +89,9 @@ uint previous_sibling_node(uint node)
 bool is_type_arg_container(uint prod)
 {
     return prod == PROD_TYPE_ARGS_SOME ||
-           prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE;
+           prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE ||
+           prod == PROD_BOUND_TYPE_ARGS_SOME ||
+           prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE;
 }
 
 bool is_type_path_container(uint prod)
@@ -101,7 +104,8 @@ bool is_type_path_segment(uint prod)
 {
     return prod == PROD_TYPE_PATH_IDENT ||
            prod == PROD_PATH_IDENT ||
-           prod == PROD_PATH_IDENT_ARGS;
+           prod == PROD_PATH_IDENT_ARGS ||
+           prod == PROD_BOUND_TYPE_PATH_IDENT;
 }
 
 uint arg_from_container(uint container)
@@ -115,7 +119,8 @@ uint arg_from_container(uint container)
 uint previous_arg_for_after_comma(uint container)
 {
     if (!valid_node(container) ||
-        node_kind[container] != PROD_TYPE_ARGS_AFTER_COMMA_MORE)
+        node_kind[container] != PROD_TYPE_ARGS_AFTER_COMMA_MORE &&
+        node_kind[container] != PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
         return INVALID;
     uint more = parent_node(container);
     uint previous_container = parent_node(more);
@@ -129,7 +134,9 @@ uint previous_arg_for_after_comma(uint container)
 
 uint owner_seed_for_arg_container(uint container)
 {
-    if (!valid_node(container) || node_kind[container] != PROD_TYPE_ARGS_SOME)
+    if (!valid_node(container) ||
+        (node_kind[container] != PROD_TYPE_ARGS_SOME &&
+         node_kind[container] != PROD_BOUND_TYPE_ARGS_SOME))
         return INVALID;
     uint owner = parent_node(container);
     return valid_node(owner) && hir_kind[owner] == HIR_TYPE ? owner : INVALID;
@@ -150,9 +157,9 @@ uint owner_seed_for_path_arg(uint node)
         return INVALID;
 
     uint encoded_owner = hir_type_path_owner_by_leaf[leaf];
-    if (encoded_owner == 0u || encoded_owner > OWNER_NODE_MASK)
-        return INVALID;
-    uint owner = OWNER_NODE_MASK - encoded_owner;
+    uint owner = encoded_owner != 0u && encoded_owner <= OWNER_NODE_MASK
+        ? OWNER_NODE_MASK - encoded_owner
+        : hir_bound_path_owner_by_leaf[leaf];
     return valid_path_type_owner(owner, leaf) ? owner : INVALID;
 }
 
@@ -191,13 +198,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (prod == PROD_TYPE_ARGS_SOME)
+    if (prod == PROD_TYPE_ARGS_SOME || prod == PROD_BOUND_TYPE_ARGS_SOME)
     {
         hir_type_arg_owner_a[node] = owner_seed_for_arg_container(container);
         return;
     }
 
-    if (prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE)
+    if (prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE ||
+        prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
     {
         uint previous = previous_arg_for_after_comma(container);
         if (valid_node(previous))

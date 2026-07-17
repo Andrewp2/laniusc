@@ -42,6 +42,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // Non-expression rows share the sorted domain but do not invalidate it.
     uint form = expr_form(node);
     bool expression_row = hir_kind[node] == HIR_CALL_EXPR ||
+                          hir_kind[node] == HIR_INDEX_EXPR ||
                           hir_kind[node] == HIR_MEMBER_EXPR ||
                           (hir_kind[node] == HIR_EXPR &&
                            form != HIR_EXPR_FORWARD && form != HIR_EXPR_NONE);
@@ -51,6 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                             member_result_field_index[hir_member_name_token[node]] != INVALID;
     bool generic_compatible = !expression_row ||
                               projected_member ||
+                              (hir_kind[node] == HIR_INDEX_EXPR && supported) ||
                               expr_non_call_atom_and_len(node, generic_atom_len) ||
                               form == HIR_EXPR_NOT ||
                               form == HIR_EXPR_NEG ||

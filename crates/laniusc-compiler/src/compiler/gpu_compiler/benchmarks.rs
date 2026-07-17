@@ -128,9 +128,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             ll1.rejection_message(),
                         ));
                     }
-                    let semantic_hir_count = self
+                    let (semantic_hir_count, canonical_hir_count) = self
                         .parser
-                        .finish_recorded_hir_semantic_count(&semantic_count)
+                        .finish_recorded_hir_counts(&semantic_count)
                         .map_err(|err| benchmark_parser_execution_error(&src, err))?;
                     Ok(GpuParseBenchmarkResult {
                         ll1,
@@ -138,6 +138,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         parser_tree_capacity,
                         parser_feature_flags,
                         semantic_hir_count,
+                        canonical_hir_count,
                     })
                 },
             )

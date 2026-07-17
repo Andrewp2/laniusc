@@ -17,7 +17,7 @@ StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_callee_path_node;
 StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -101,7 +101,8 @@ uint path_leaf_token_for_callee(uint callee_node)
     if (!valid_node(path_node))
         return INVALID;
 
-    uint path_i = path_id_by_owner_hir[path_node];
+    uint owner_token = hir_token_pos[path_node];
+    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
 

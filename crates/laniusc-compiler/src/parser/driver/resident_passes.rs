@@ -928,6 +928,11 @@ impl GpuParser {
                     "parser.hir_call_arg_ordinal_scatter",
                 );
                 self.passes
+                    .hir_canonical_call_arg_mark
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_family_mark");
+                self.passes
                     .hir_expr_forest_edges
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_edges");
@@ -1147,6 +1152,8 @@ impl GpuParser {
                     .hir_item_decl_tokens
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_item_decl_tokens");
+                crate::parser::passes::record_canonical_hir(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_canonical");
             }
         }
         Ok(())

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Generate comparable, type-valid compiler scaling inputs."""
+"""Generate semantically matched, fully reachable compiler scaling inputs."""
 
 import argparse
 import hashlib
 import json
 from pathlib import Path
 
-
-LANGUAGES = ("rust", "c", "cpp", "zig", "lanius")
+from compile_workload_model import LANGUAGES, build_workload, evaluate, render
 
 
 def main() -> int:
@@ -26,7 +25,7 @@ def main() -> int:
     parser.add_argument(
         "--functions",
         type=int,
-        help="force the same function count across separately generated variants",
+        help="force the number of reachable leaf functions",
     )
     args = parser.parse_args()
 
@@ -37,19 +36,16 @@ def main() -> int:
     out = (repo / args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    source_sets = []
-    for target_bytes in sizes:
-        source_set = generate_source_set(out, target_bytes, args.seed, args.functions)
-        source_sets.append(source_set)
-
+    source_sets = [
+        generate_source_set(out, target_bytes, args.seed, args.functions)
+        for target_bytes in sizes
+    ]
     manifest = {
-        "schema": "lanius.compile-scaling-sources.v1",
+        "schema": "lanius.compile-scaling-sources.v2",
         "seed": args.seed,
         "source_sets": source_sets,
     }
-    (out / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-    )
+    write_json(out / "manifest.json", manifest)
     return 0
 
 
@@ -66,35 +62,32 @@ def parse_sizes(parser: argparse.ArgumentParser, raw: str) -> list[int]:
 
 
 def generate_source_set(
-    out: Path, target_bytes: int, seed: int, function_count: int | None = None
+    out: Path, target_bytes: int, seed: int, leaf_count: int | None
 ) -> dict[str, object]:
+    leaf_count = leaf_count or largest_workload_that_fits(seed, target_bytes)
+    workload = build_workload(seed, leaf_count)
+    lanius_source = render("lanius", workload, target_bytes)
+    sources = {
+        language: (
+            lanius_source if language == "lanius" else render(language, workload)
+        )
+        for language in LANGUAGES
+    }
     set_dir = out / str(target_bytes)
     set_dir.mkdir(parents=True, exist_ok=True)
-    function_count = function_count or function_count_for_lanius_size(target_bytes, seed)
-    expected = kernel_value(0, 7, seed)
-    paths = {
-        language: set_dir / source_name(language) for language in LANGUAGES
-    }
-    writers = {language: path.open("w") for language, path in paths.items()}
-    try:
-        for language, writer in writers.items():
-            writer.write(header(language))
-        for index in range(function_count):
-            for language, writer in writers.items():
-                writer.write(function(language, index, seed))
-        pad_lanius_to_target(
-            writers["lanius"], target_bytes, len(main_function("lanius").encode())
-        )
-        for language, writer in writers.items():
-            writer.write(main_function(language))
-    finally:
-        for writer in writers.values():
-            writer.close()
+    paths = {language: set_dir / source_name(language) for language in LANGUAGES}
+    for language, path in paths.items():
+        path.write_text(sources[language])
 
+    expected = evaluate(workload)
+    structure = workload.structure()
+    if structure["reachable_function_count"] != workload.function_count:
+        raise AssertionError("workload contains unreachable functions")
     return {
         "target_lanius_bytes": target_bytes,
-        "function_count": function_count,
+        "seed": seed,
         "expected_stdout": f"{expected}\n",
+        "workload": structure,
         "sources": {
             language: {
                 "path": str(path.relative_to(out)),
@@ -106,38 +99,23 @@ def generate_source_set(
     }
 
 
-def pad_lanius_to_target(writer, target_bytes: int, trailer_bytes: int) -> None:
-    remaining = target_bytes - writer.tell() - trailer_bytes
-    if remaining < 0:
-        raise ValueError(
-            "forced function count exceeds target Lanius byte size; increase --sizes"
-        )
-    if remaining == 0:
-        return
-    if remaining <= 2:
-        writer.write("\n" * remaining)
-        return
-    writer.write("//")
-    remaining -= 2
-    chunk = "p" * min(remaining, 1 << 20)
-    while remaining > 1:
-        amount = min(remaining - 1, len(chunk))
-        writer.write(chunk[:amount])
-        remaining -= amount
-    writer.write("\n")
+def largest_workload_that_fits(seed: int, target_bytes: int) -> int:
+    low = 1
+    high = 2
+    while source_size(seed, high) <= target_bytes:
+        low = high
+        high *= 2
+    while low + 1 < high:
+        middle = (low + high) // 2
+        if source_size(seed, middle) <= target_bytes:
+            low = middle
+        else:
+            high = middle
+    return low
 
 
-def function_count_for_lanius_size(target_bytes: int, seed: int) -> int:
-    base = len((header("lanius") + main_function("lanius")).encode())
-    count = 0
-    size = base
-    while True:
-        next_size = size + len(function("lanius", count, seed).encode())
-        if next_size > target_bytes:
-            break
-        size = next_size
-        count += 1
-    return max(count, 1)
+def source_size(seed: int, leaf_count: int) -> int:
+    return len(render("lanius", build_workload(seed, leaf_count)).encode())
 
 
 def source_name(language: str) -> str:
@@ -150,85 +128,12 @@ def source_name(language: str) -> str:
     }[language]
 
 
-def header(language: str) -> str:
-    return {
-        "rust": "#![allow(dead_code)]\n\n",
-        "c": "#include <stdio.h>\n\n",
-        "cpp": "#include <cstdio>\n\n",
-        "zig": 'const c = @cImport({ @cInclude("stdio.h"); });\n\n',
-        "lanius": "module bench::scaling;\n\nimport std::io;\n\n",
-    }[language]
-
-
-def function(language: str, index: int, seed: int) -> str:
-    name = f"kernel_{index:07d}"
-    threshold = (index * 13 + seed * 7) % 89
-    bias = (index * 29 + seed * 11) % 101
-    if language == "rust":
-        return f"""pub fn {name}(x: i32) -> i32 {{
-    let mixed = (x * 17 + {bias}) % 97;
-    if mixed < {threshold} {{ mixed + x }} else {{ mixed - x }}
-}}
-
-"""
-    if language == "c":
-        return f"""int {name}(int x) {{
-    int mixed = (x * 17 + {bias}) % 97;
-    if (mixed < {threshold}) return mixed + x;
-    return mixed - x;
-}}
-
-"""
-    if language == "cpp":
-        return f"""extern "C" int {name}(int x) {{
-    int mixed = (x * 17 + {bias}) % 97;
-    if (mixed < {threshold}) return mixed + x;
-    return mixed - x;
-}}
-
-"""
-    if language == "zig":
-        return f"""export fn {name}(x: i32) i32 {{
-    const mixed: i32 = @mod(x * 17 + {bias}, 97);
-    if (mixed < {threshold}) return mixed + x;
-    return mixed - x;
-}}
-
-"""
-    return f"""pub fn {name}(x: i32) -> i32 {{
-    let mixed: i32 = (x * 17 + {bias}) % 97;
-    if (mixed < {threshold}) {{
-        return mixed + x;
-    }}
-    return mixed - x;
-}}
-
-"""
-
-
-def main_function(language: str) -> str:
-    return {
-        "rust": 'fn main() { println!("{}", kernel_0000000(7)); }\n',
-        "c": 'int main(void) { printf("%d\\n", kernel_0000000(7)); return 0; }\n',
-        "cpp": 'int main() { std::printf("%d\\n", kernel_0000000(7)); return 0; }\n',
-        "zig": 'pub fn main() void { _ = c.printf("%d\\n", kernel_0000000(7)); }\n',
-        "lanius": """fn main() -> i32 {
-    std::io::print_i32(kernel_0000000(7));
-    return 0;
-}
-""",
-    }[language]
-
-
-def kernel_value(index: int, x: int, seed: int) -> int:
-    threshold = (index * 13 + seed * 7) % 89
-    bias = (index * 29 + seed * 11) % 101
-    mixed = (x * 17 + bias) % 97
-    return mixed + x if mixed < threshold else mixed - x
-
-
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":

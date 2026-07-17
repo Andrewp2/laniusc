@@ -20,24 +20,34 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_value_node;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
-StructuredBuffer<uint> hir_struct_field_ordinal;
-StructuredBuffer<uint> hir_struct_field_type_node;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_lit_context_instance;
 
@@ -47,6 +57,8 @@ RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
 RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_node;
 RWStructuredBuffer<uint> struct_init_field_decl_node_by_node;
+RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
+RWStructuredBuffer<uint> struct_init_field_decl_token_by_row;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -82,29 +94,66 @@ bool valid_node(uint i)
     return i != INVALID && i < active_node_count();
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_tokens);
+}
+
+uint active_compact_field_count()
+{
+    return min(compact_field_count[0u], gParams.n_tokens);
+}
+
+bool valid_compact_node(uint i)
+{
+    return i != INVALID && i < active_compact_hir_count();
+}
+
+bool valid_compact_field(uint i)
+{
+    return i != INVALID && i < active_compact_field_count();
+}
+
+uint compact_field_row_for_name_token(uint name_token)
+{
+    if (!valid_token(name_token))
+        return INVALID;
+    uint begin = 0u;
+    uint end = active_compact_field_count();
+    while (begin < end)
+    {
+        uint middle = begin + (end - begin) / 2u;
+        if (compact_fields[middle].name_token < name_token)
+            begin = middle + 1u;
+        else
+            end = middle;
+    }
+    return begin < active_compact_field_count() &&
+           compact_fields[begin].name_token == name_token
+               ? begin
+               : INVALID;
+}
+
 uint type_head_token_for_node(uint type_node)
 {
-    if (!valid_node(type_node))
+    if (!valid_compact_node(type_node))
         return INVALID;
 
-    // Type-instance collection publishes the leaf of each parser-owned path
-    // type. Consumers use that record instead of rescanning the type subtree.
-    uint leaf_node = hir_type_path_leaf_node[type_node];
-    if (valid_node(leaf_node))
+    uint path_i = path_id_by_owner_hir[type_node];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path_i != INVALID && path_i < path_count)
     {
-        uint leaf = hir_token_pos[leaf_node];
-        if (valid_token(leaf))
-            return leaf;
+        uint count = path_segment_count[path_i];
+        if (count != 0u)
+        {
+            uint row = path_segment_base[path_i] + count - 1u;
+            uint leaf = row < gParams.n_tokens ? path_segment_token[row] : INVALID;
+            if (valid_token(leaf))
+                return leaf;
+        }
     }
 
-    uint value_node = hir_type_value_node[type_node];
-    if (valid_node(value_node))
-    {
-        uint value_head = hir_token_pos[value_node];
-        if (valid_token(value_head))
-            return value_head;
-    }
-    uint type_head = hir_token_pos[type_node];
+    uint type_head = compact_hir_core[type_node].token_start;
     return valid_token(type_head) ? type_head : INVALID;
 }
 
@@ -125,7 +174,9 @@ uint struct_node_for_decl_token(uint decl_token)
     if (!valid_token(decl_token))
         return INVALID;
     uint node = type_decl_hir_node_by_token[decl_token];
-    return valid_node(node) && hir_kind[node] == HIR_STRUCT_ITEM ? node : INVALID;
+    return valid_compact_node(node) && compact_hir_core[node].kind == HIR_STRUCT_ITEM
+        ? node
+        : INVALID;
 }
 
 bool same_name_id(uint left_token, uint right_token)
@@ -155,19 +206,21 @@ public struct StructFieldFixedKey : IFixedU32RowKey<StructFieldLookupKey>
 {
     public static uint row_lane(uint row, uint lane)
     {
-        uint field_node = row < active_node_count() ? struct_field_key_order[row] : INVALID;
-        if (!valid_node(field_node))
+        uint field_row = row < active_compact_field_count() ? struct_field_key_order[row] : INVALID;
+        if (!valid_compact_field(field_row))
             return 0u;
-        uint owner = hir_struct_field_parent_struct[field_node];
-        uint token = hir_token_pos[field_node];
+        HirField field = compact_fields[field_row];
+        uint owner = field.owner;
+        uint token = field.name_token;
         uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
-        if (!valid_node(owner) || hir_kind[owner] != HIR_STRUCT_ITEM || name_id == INVALID)
+        if (!valid_compact_node(owner) ||
+            compact_hir_core[owner].kind != HIR_STRUCT_ITEM || name_id == INVALID)
             return 0u;
         if (lane == 0u)
             return fixed_key_encode_nullable_u32(owner, INVALID);
         if (lane == 1u)
             return fixed_key_encode_nullable_u32(name_id, INVALID);
-        return fixed_key_encode_nullable_u32(field_node, INVALID);
+        return fixed_key_encode_nullable_u32(field_row, INVALID);
     }
 
     public static uint key_lane(StructFieldLookupKey key, uint lane)
@@ -191,11 +244,11 @@ public struct StructFieldKeyCompare : IRowQueryCompare<StructFieldLookupKey>
     }
 }
 
-bool field_node_for_literal_field(uint struct_node, uint field_token, out uint field_node, out uint field_ordinal)
+bool field_row_for_literal_field(uint struct_node, uint field_token, out uint field_row, out uint field_ordinal)
 {
-    field_node = INVALID;
+    field_row = INVALID;
     field_ordinal = INVALID;
-    if (!valid_node(struct_node) || !valid_token(field_token))
+    if (!valid_compact_node(struct_node) || !valid_token(field_token))
         return false;
 
     uint field_name = name_id_by_token[field_token];
@@ -206,17 +259,17 @@ bool field_node_for_literal_field(uint struct_node, uint field_token, out uint f
     key.struct_node = struct_node;
     key.name_id = field_name;
     QueryRange range = equal_range_query<StructFieldLookupKey, StructFieldKeyCompare>(
-        active_node_count(),
+        active_compact_field_count(),
         key);
     if (range.end != range.begin + 1u)
         return false;
 
-    field_node = struct_field_key_order[range.begin];
-    if (!valid_node(field_node) ||
-        hir_struct_field_parent_struct[field_node] != struct_node ||
-        hir_kind[struct_node] != HIR_STRUCT_ITEM)
+    field_row = struct_field_key_order[range.begin];
+    if (!valid_compact_field(field_row) ||
+        compact_fields[field_row].owner != struct_node ||
+        compact_hir_core[struct_node].kind != HIR_STRUCT_ITEM)
         return false;
-    field_ordinal = hir_struct_field_ordinal[field_node];
+    field_ordinal = compact_fields[field_row].ordinal;
     return field_ordinal != INVALID;
 }
 
@@ -238,15 +291,16 @@ void publish_struct_init_field_node(uint field_node)
         return;
 
     uint struct_node = struct_node_for_decl_token(decl_token);
-    if (!valid_node(struct_node))
+    if (!valid_compact_node(struct_node))
         return;
 
-    uint decl_field_node;
+    uint decl_field_row;
     uint field_ordinal;
-    if (!field_node_for_literal_field(struct_node, field_token, decl_field_node, field_ordinal))
+    if (!field_row_for_literal_field(struct_node, field_token, decl_field_row, field_ordinal))
         return;
 
-    uint field_type_node = hir_struct_field_type_node[decl_field_node];
+    HirField decl_field = compact_fields[decl_field_row];
+    uint field_type_node = decl_field.value;
     uint type_head = type_head_token_for_node(field_type_node);
     if (!valid_token(type_head))
         return;
@@ -267,7 +321,20 @@ void publish_struct_init_field_node(uint field_node)
     struct_init_field_expected_ref_payload[field_token] = payload;
     struct_init_field_ordinal[field_token] = field_ordinal;
     struct_init_field_ordinal_by_node[field_node] = field_ordinal;
-    struct_init_field_decl_node_by_node[field_node] = decl_field_node;
+    // Backend-facing field identity is token-keyed and survives release of the
+    // raw parser tree.
+    struct_init_field_decl_node_by_node[field_node] = decl_field.name_token;
+    uint literal_hir = raw_to_compact_hir[literal_node];
+    uint row = compact_field_row_for_name_token(field_token);
+    if (!valid_compact_node(literal_hir) || !valid_compact_field(row))
+        return;
+    HirPayload literal_payload = compact_hir_payload[literal_hir];
+    HirField literal_field = compact_fields[row];
+    if (literal_field.owner != literal_hir || literal_payload.b == INVALID ||
+        row < literal_payload.b || row - literal_payload.b >= literal_payload.c)
+        return;
+    struct_init_field_ordinal_by_row[row] = field_ordinal;
+    struct_init_field_decl_token_by_row[row] = decl_field.name_token;
 }
 
 [shader("compute")]
@@ -279,7 +346,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (!valid_node(i))
         return;
-
     struct_init_field_ordinal_by_node[i] = INVALID;
     struct_init_field_decl_node_by_node[i] = INVALID;
 

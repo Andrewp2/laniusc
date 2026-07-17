@@ -1,4 +1,4 @@
-// Copy parser-owned string literal payload bytes into final x86 ELF rodata.
+// Copy compact string literal payload bytes into final x86 ELF rodata.
 
 import atomics;
 import byte_packing;
@@ -14,12 +14,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_string_data_offset;
-StructuredBuffer<uint> hir_string_decoded_len;
-StructuredBuffer<uint> hir_string_data_words;
-StructuredBuffer<uint> hir_string_node;
-StructuredBuffer<uint> hir_string_count;
+struct HirString { uint node; uint data_offset; uint decoded_len; uint file_id; };
+StructuredBuffer<uint> compact_string_count;
+StructuredBuffer<HirString> compact_strings;
+StructuredBuffer<uint> compact_string_data_words;
+StructuredBuffer<uint> x86_compact_executable_raw;
 StructuredBuffer<uint> x86_rodata_size_by_node;
 StructuredBuffer<uint> x86_rodata_offset_by_node;
 StructuredBuffer<uint> x86_rodata_len;
@@ -45,11 +44,6 @@ static const uint LAYOUT_RODATA_LEN = 7u;
 uint linear_dispatch_id(uint3 tid)
 {
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
-}
-
-uint active_hir_node_count()
-{
-    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
 }
 
 bool upstream_ok()
@@ -110,14 +104,14 @@ void publish_upstream_error()
 
 uint canonical_string_byte(uint pos)
 {
-    uint packed = hir_string_data_words[pos >> 2u];
+    uint packed = compact_string_data_words[pos >> 2u];
     return (packed >> ((pos & 3u) * 8u)) & 0xffu;
 }
 
-void write_node_rodata(uint node, uint rodata_offset, uint lane)
+void write_node_rodata(uint node, HirString string_row, uint rodata_offset, uint lane)
 {
-    uint start = hir_string_data_offset[node];
-    uint decoded_len = hir_string_decoded_len[node];
+    uint start = string_row.data_offset;
+    uint decoded_len = string_row.decoded_len;
     uint data_offset = x86_rodata_offset_by_node[node];
     uint size = x86_rodata_size_by_node[node];
     if (size == 0u)
@@ -155,11 +149,15 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
             publish_upstream_error();
     }
 
-    if (!ok || row >= hir_string_count[0u] || x86_rodata_len[0u] == 0u)
+    uint string_count = min(compact_string_count[0u], gParams.n_hir_nodes);
+    if (!ok || row >= string_count || x86_rodata_len[0u] == 0u)
         return;
 
-    uint node = hir_string_node[row];
-    if (node >= active_hir_node_count())
+    HirString string_row = compact_strings[row];
+    uint node = string_row.node < gParams.n_hir_nodes
+                    ? x86_compact_executable_raw[string_row.node]
+                    : INVALID;
+    if (node >= gParams.n_hir_nodes)
         return;
-    write_node_rodata(node, x86_elf_layout[LAYOUT_RODATA_OFFSET], ltid.x);
+    write_node_rodata(node, string_row, x86_elf_layout[LAYOUT_RODATA_OFFSET], ltid.x);
 }

@@ -149,10 +149,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint prod = node_kind[i];
-    if (prod == PROD_TYPE_IDENT)
+    if (prod == PROD_TYPE_IDENT || prod == PROD_BOUND_TYPE_IDENT)
         publish_path_type(i);
     else if (prod == PROD_TYPE_ARRAY)
         publish_array_or_slice_type(i);
-    else if (prod == PROD_TYPE_REF)
+    else if (prod == PROD_TYPE_REF || prod == PROD_BOUND_TYPE_REF)
         publish_ref_type(i);
 }

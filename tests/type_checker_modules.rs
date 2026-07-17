@@ -343,6 +343,46 @@ fn main() -> i32 { return visible(ANSWER); }
 }
 
 #[test]
+fn semantic_interface_variant_rows_do_not_alias_dense_hir_declarations() {
+    // Forty family rows necessarily cover the early dense-HIR id range. The
+    // declaration and family domains must remain independent even when their
+    // numeric ids coincide.
+    let variants = (0..40)
+        .map(|index| format!("    V{index}(i32),"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        "module collision::api;\n\
+         pub fn before(value: i32) -> i32 {{ return value; }}\n\
+         pub enum Many {{\n{variants}\n}}\n\
+         pub struct After {{ value: i32 }}\n\
+         pub const LAST: i32 = 7;\n"
+    );
+    let artifact = common::semantic_interface_with_timeout(41, &[source.as_str()])
+        .expect("variant family rows must not overwrite dense-HIR declaration mappings");
+    let declaration = |name: &str| {
+        artifact
+            .declarations
+            .iter()
+            .find(|decl| {
+                semantic_interface_name(
+                    &artifact.name_bytes,
+                    decl.name_byte_start,
+                    decl.name_byte_len,
+                ) == name
+            })
+            .unwrap_or_else(|| panic!("missing public declaration {name}"))
+    };
+    assert_ne!(declaration("before").signature_type, u32::MAX);
+    assert_ne!(declaration("After").signature_type, u32::MAX);
+    assert_ne!(declaration("LAST").signature_type, u32::MAX);
+    assert_eq!(declaration("Many").member_count, 40);
+    for index in 0..40 {
+        assert_ne!(declaration(&format!("V{index}")).signature_type, u32::MAX);
+    }
+}
+
+#[test]
 fn dependency_nominals_from_distinct_units_of_one_library_do_not_alias() {
     let alpha = common::semantic_interface_with_timeout(
         7,

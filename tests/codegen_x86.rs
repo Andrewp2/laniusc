@@ -312,7 +312,6 @@ fn x86_read_bytes(
 fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
     common::run_gpu_codegen_with_timeout("x86 rodata string offsets", || {
         const INVALID: u32 = 0xffff_ffff;
-        const HIR_EXPR_STRING: u32 = 28;
         const X86_RODATA_OK: u32 = 1;
 
         let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
@@ -343,40 +342,32 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             &[4, 1, 0, 4],
         );
-        let hir_status = x86_buffer_from_u32s(
+        let compact_string_count = x86_buffer_from_u32s(
             device,
-            "x86_rodata.hir_status",
+            "x86_rodata.compact_string_count",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[1, 0, INVALID, 0, 0, 4],
+            &[2],
         );
-        let expr_record = x86_buffer_from_u32s(
+        let compact_strings = x86_buffer_from_u32s(
             device,
-            "x86_rodata.expr_record",
+            "x86_rodata.compact_strings",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[
-                HIR_EXPR_STRING,
-                INVALID,
-                INVALID,
                 0,
                 0,
-                INVALID,
-                INVALID,
-                INVALID,
-                HIR_EXPR_STRING,
-                INVALID,
-                INVALID,
+                3,
+                0,
                 2,
+                3,
+                1,
                 0,
-                INVALID,
-                INVALID,
-                INVALID,
             ],
         );
-        let decoded_len = x86_buffer_from_u32s(
+        let compact_executable_raw = x86_buffer_from_u32s(
             device,
-            "x86_rodata.decoded_len",
+            "x86_rodata.compact_executable_raw",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[3, 0, 1, 0],
+            &[0, INVALID, 2, INVALID],
         );
         let size_by_node = x86_buffer_from_u32s(
             device,
@@ -443,9 +434,15 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
-                    ("hir_status", hir_status.as_entire_binding()),
-                    ("hir_expr_record", expr_record.as_entire_binding()),
-                    ("hir_string_decoded_len", decoded_len.as_entire_binding()),
+                    (
+                        "compact_string_count",
+                        compact_string_count.as_entire_binding(),
+                    ),
+                    ("compact_strings", compact_strings.as_entire_binding()),
+                    (
+                        "x86_compact_executable_raw",
+                        compact_executable_raw.as_entire_binding(),
+                    ),
                     ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
                     ("x86_rodata_status", rodata_status.as_entire_binding()),
                 ],
@@ -566,35 +563,23 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[0x0a63_6261],
         );
-        let hir_status = x86_buffer_from_u32s(
+        let compact_strings = x86_buffer_from_u32s(
             device,
-            "x86_rodata_write.hir_status",
+            "x86_rodata_write.compact_strings",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[1, 0, INVALID, 0, 0, 4],
+            &[0, 0, 3, 0, 2, 3, 1, 0],
         );
-        let string_data_offset = x86_buffer_from_u32s(
+        let compact_string_count = x86_buffer_from_u32s(
             device,
-            "x86_rodata_write.string_data_offset",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[0, 0, 3, 0],
-        );
-        let decoded_len = x86_buffer_from_u32s(
-            device,
-            "x86_rodata_write.decoded_len",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[3, 0, 1, 0],
-        );
-        let string_node = x86_buffer_from_u32s(
-            device,
-            "x86_rodata_write.string_node",
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[0, 2],
-        );
-        let string_count = x86_buffer_from_u32s(
-            device,
-            "x86_rodata_write.string_count",
+            "x86_rodata_write.compact_string_count",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             &[2],
+        );
+        let compact_executable_raw = x86_buffer_from_u32s(
+            device,
+            "x86_rodata_write.compact_executable_raw",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            &[0, INVALID, 2, INVALID],
         );
         let size_by_node = x86_buffer_from_u32s(
             device,
@@ -666,18 +651,19 @@ fn x86_rodata_write_copies_parser_string_payload_bytes_after_text() {
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
-                    ("hir_status", hir_status.as_entire_binding()),
                     (
-                        "hir_string_data_offset",
-                        string_data_offset.as_entire_binding(),
+                        "compact_string_count",
+                        compact_string_count.as_entire_binding(),
                     ),
-                    ("hir_string_decoded_len", decoded_len.as_entire_binding()),
+                    ("compact_strings", compact_strings.as_entire_binding()),
                     (
-                        "hir_string_data_words",
+                        "compact_string_data_words",
                         string_data_words.as_entire_binding(),
                     ),
-                    ("hir_string_node", string_node.as_entire_binding()),
-                    ("hir_string_count", string_count.as_entire_binding()),
+                    (
+                        "x86_compact_executable_raw",
+                        compact_executable_raw.as_entire_binding(),
+                    ),
                     ("x86_rodata_size_by_node", size_by_node.as_entire_binding()),
                     (
                         "x86_rodata_offset_by_node",
@@ -3445,6 +3431,27 @@ fn main() {
 }
 
 #[test]
+fn x86_keeps_explicit_scalar_locals_scalar_among_many_array_type_nodes() {
+    let mut source = String::new();
+    for function in 0..256 {
+        source.push_str(&format!(
+            "fn padding_{function}() -> i32 {{\n    let values: [i32; 2] = [{function}, {}];\n    let scalar: i32 = {};\n    return values[0] + scalar;\n}}\n",
+            function + 1,
+            function & 7,
+        ));
+    }
+    source.push_str(
+        "fn main() -> i32 {\n    let scalar: i32 = 37;\n    return (scalar * 3 + 5) & 255;\n}\n",
+    );
+
+    assert_source_exit(
+        "explicit_scalar_locals_among_array_type_nodes",
+        &source,
+        116,
+    );
+}
+
+#[test]
 fn x86_executes_nested_while_loop_with_scalar_local_mutation() {
     assert_source_exit(
         "nested_while_loop_scalar_mutation",
@@ -5162,6 +5169,24 @@ fn main() {
 }
 "#,
         53,
+    );
+}
+
+#[test]
+fn x86_executes_array_literal_return_with_local_elements() {
+    assert_source_exit(
+        "array_literal_return_local_elements",
+        r#"
+fn pair(seed: i32) -> [i32; 2] {
+    return [seed, seed + 1];
+}
+
+fn main() {
+    let values: [i32; 2] = pair(4);
+    return values[0] * 10 + values[1];
+}
+"#,
+        45,
     );
 }
 

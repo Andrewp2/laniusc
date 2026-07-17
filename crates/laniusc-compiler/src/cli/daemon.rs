@@ -648,6 +648,7 @@ async fn compile_request(
         Err(err) => return compile_error_response(id, started, err),
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
+    crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
     let compile_started = Instant::now();
     let emitted = match (emit.as_str(), source_pack) {
         ("wasm", CachedCompileInput::Resident(source_pack)) => {
@@ -698,6 +699,7 @@ async fn compile_request(
 
 fn tracked_gpu_buffer_metrics() -> Value {
     let stats = crate::gpu::buffers::tracked_buffer_allocation_stats();
+    let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
     let user_owned_wgpu_buffers = device::global()
         .resource_stats()
         .map(|stats| stats.buffers.kept_from_user as u64);
@@ -706,11 +708,19 @@ fn tracked_gpu_buffer_metrics() -> Value {
     let mut metrics = json!({
         "allocations": stats.allocations,
         "bytes": stats.bytes,
+        "peak_allocations": peak.allocations,
+        "peak_bytes": peak.bytes,
         "user_owned_wgpu_buffers": user_owned_wgpu_buffers,
         "untracked_allocations": untracked_allocations,
         "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
     });
     if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+        for snapshot in crate::gpu::buffers::tracked_buffer_phase_snapshots() {
+            eprintln!(
+                "gpu_buffer_phase phase=\"{}\" allocations={} bytes={}",
+                snapshot.phase, snapshot.stats.allocations, snapshot.stats.bytes,
+            );
+        }
         const DEFAULT_MAX_LABEL_ROWS: usize = 64;
         const MAX_CONFIGURED_LABEL_ROWS: usize = 16_384;
         let max_label_rows = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")

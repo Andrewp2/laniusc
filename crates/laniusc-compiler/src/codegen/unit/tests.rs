@@ -7,6 +7,14 @@ fn limits(max_source_bytes: usize, max_source_files: usize) -> CodegenUnitLimits
     }
 }
 
+#[test]
+fn default_frontend_unit_capacity_is_ten_mebibytes() {
+    assert_eq!(
+        CodegenUnitLimits::default().max_source_bytes,
+        10 * 1024 * 1024,
+    );
+}
+
 fn test_job(job_index: usize, dependency_job_indices: Vec<usize>) -> SourcePackJob {
     SourcePackJob {
         job_index,

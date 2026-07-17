@@ -14,6 +14,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -26,6 +28,8 @@ StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -87,6 +91,17 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint enclosing_function_decl_token(uint token)
+{
+    uint encoded_fn = valid_token(token) ? enclosing_fn[token] : 0u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return valid_token(fn_token) ? fn_token : INVALID;
 }
 
 uint receiver_token_for_member(uint member_node)
@@ -196,8 +211,7 @@ bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint
     if (!valid_token(member_token))
         return false;
 
-    uint encoded_fn = enclosing_fn[member_token];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_token = enclosing_function_decl_token(member_token);
     if (!valid_token(fn_token))
         return false;
 

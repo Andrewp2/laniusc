@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> x86_aggregate_source_node;
@@ -437,8 +438,11 @@ bool aggregate_source_for_expr(
         struct_access_kind(first) == X86_STRUCT_ACCESS_MEMBER)
     {
         uint member_token = struct_access_payload2(first);
-        uint field_node = valid_token(member_token)
-                              ? member_result_field_node[member_token]
+        uint field_token = valid_token(member_token)
+                               ? member_result_field_node[member_token]
+                               : INVALID;
+        uint field_node = valid_token(field_token)
+                              ? x86_decl_node_by_token[field_token]
                               : INVALID;
         selected_width = valid_node(field_node)
                              ? x86_struct_field_width_by_node[field_node]

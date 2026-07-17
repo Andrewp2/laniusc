@@ -790,6 +790,48 @@ impl GpuParser {
         self.finish_resident_tree_readback(encoder, bufs)
     }
 
+    /// Source-aware variant of the resident parser debug path. This records
+    /// string literal extraction and decoding exactly as compilation does.
+    #[doc(hidden)]
+    pub fn parse_resident_tokens_with_source(
+        &self,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        source_len: u32,
+        source_buf: &wgpu::Buffer,
+        tables: &PrecomputedParseTables,
+    ) -> Result<ResidentParseResult> {
+        let mut resident_guard = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        let bufs = self.resident_debug_buffers_for(&mut resident_guard, token_capacity, tables);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("parser.resident_tree.source_aware.encoder"),
+            });
+        self.record_tokens_to_kinds(
+            &mut encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            bufs,
+        )?;
+        let mut timer_ref: Option<&mut GpuTimer> = None;
+        self.record_ll1_resident_passes(
+            &mut encoder,
+            bufs,
+            true,
+            true,
+            Some((source_len, token_buf, source_buf)),
+            &mut timer_ref,
+        )?;
+        self.finish_resident_tree_readback(encoder, bufs)
+    }
+
     /// Debug/test helper for classifying raw lexer token kinds into the parser
     /// semantic token alphabet used by one-shot parser buffers.
     #[doc(hidden)]

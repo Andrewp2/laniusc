@@ -34,7 +34,8 @@ StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
-StructuredBuffer<uint> hir_variant_payload_count;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> module_value_path_expr_head;
 
@@ -72,9 +73,9 @@ uint active_path_count()
     return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
-bool valid_hir_node(uint node)
+bool valid_variant(uint row)
 {
-    return node != INVALID && node < gParams.n_hir_nodes;
+    return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
 }
 
 bool valid_unit_enum_variant_decl(uint decl_i, out uint variant_token, out uint enum_token)
@@ -85,8 +86,8 @@ bool valid_unit_enum_variant_decl(uint decl_i, out uint variant_token, out uint 
     if (token_i == INVALID || token_i >= active_token_count())
         return false;
 
-    uint variant_node = decl_hir_node[decl_i];
-    if (!valid_hir_node(variant_node) || hir_variant_payload_count[variant_node] != 0u)
+    uint variant = decl_hir_node[decl_i];
+    if (!valid_variant(variant) || compact_variant_payload_count[variant] != 0u)
         return false;
 
     uint enum_decl_i = decl_parent_type_decl[decl_i];

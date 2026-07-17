@@ -214,6 +214,10 @@ bool local_decl_initializer_contains_token(uint use_token, uint decl_i)
         return true;
 
     uint decl_node = hir_visible_decl_node[decl_i];
+    // Compact family rows which introduce a declaration but have no
+    // initializer relation (currently match payload binders) use INVALID.
+    if (decl_node == INVALID)
+        return false;
     if (!valid_node(decl_node))
         return true;
 

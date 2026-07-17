@@ -8,7 +8,6 @@
 //   status buffer. It does not inspect source bytes, token spelling, helper
 //   names, or function-body shapes.
 
-import generated_parse_production_ids;
 import gpu_index;
 import status;
 
@@ -24,12 +23,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_owner_hir;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> resolved_type_status;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> module_value_path_status;
@@ -43,6 +37,9 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
+static const uint PATH_RECORD_KIND_MODULE = 1u;
+static const uint PATH_RECORD_KIND_IMPORT = 2u;
+static const uint PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR = 5u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
@@ -64,63 +61,6 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-bool valid_hir_index(uint node)
-{
-    return node != INVALID && node < gParams.n_hir_nodes;
-}
-
-bool predicate_bound_type_path(uint path_i)
-{
-    uint owner = path_owner_hir[path_i];
-    if (!valid_hir_index(owner))
-        return false;
-
-    uint leaf = hir_type_path_leaf_node[owner];
-    if (!valid_hir_index(leaf))
-        return false;
-
-    return valid_hir_index(hir_bound_path_owner_by_leaf[leaf]);
-}
-
-bool metadata_path_record_step(inout uint node, out bool done)
-{
-    done = true;
-    if (node == INVALID || node >= gParams.n_hir_nodes)
-        return false;
-
-    uint kind = node_kind[node];
-    if (kind == PROD_MODULE ||
-        kind == PROD_IMPORT ||
-        kind == PROD_IMPORT_PATH ||
-        kind == PROD_ITEM_MODULE ||
-        kind == PROD_ITEM_IMPORT)
-        return true;
-    if (kind != PROD_PATH)
-        return false;
-
-    node = parent[node];
-    done = false;
-    return false;
-}
-
-bool metadata_path_record(uint path_i)
-{
-    uint node = path_owner_hir[path_i];
-    bool done = false;
-
-    bool found = metadata_path_record_step(node, done);
-    if (found || done)
-        return found;
-    found = metadata_path_record_step(node, done);
-    if (found || done)
-        return found;
-    found = metadata_path_record_step(node, done);
-    if (found || done)
-        return found;
-    found = metadata_path_record_step(node, done);
-    return found;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -131,10 +71,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner_token = path_owner_token[path_i];
     uint error_token = owner_token < gParams.n_tokens ? owner_token : gParams.n_tokens;
 
-    if (predicate_bound_type_path(path_i))
+    uint kind = path_kind[path_i];
+    if (kind == PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR)
         return;
 
-    if (path_kind[path_i] == PATH_RECORD_KIND_HIR_TYPE_EXPR)
+    if (kind == PATH_RECORD_KIND_HIR_TYPE_EXPR)
     {
         if (path_segment_count[path_i] <= 1u)
             return;
@@ -147,9 +88,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
+    if (kind == PATH_RECORD_KIND_MODULE || kind == PATH_RECORD_KIND_IMPORT)
         return;
-    if (metadata_path_record(path_i))
+    if (kind != PATH_RECORD_KIND_HIR_PATH_EXPR)
         return;
     if (owner_token >= gParams.n_tokens || module_value_path_expr_head[owner_token] == 0u)
         return;

@@ -58,12 +58,15 @@ StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
 StructuredBuffer<uint> hir_type_arg_next;
-StructuredBuffer<uint> hir_member_receiver_node;
-StructuredBuffer<uint> hir_member_receiver_token;
-StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> path_count_out;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_token;
@@ -164,6 +167,11 @@ uint active_hir_node_count()
     return min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+uint active_compact_hir_count()
+{
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
+}
+
 uint source_file_count()
 {
     return max(gParams.n_source_files, 1u);
@@ -187,6 +195,11 @@ uint active_import_visible_type_count()
 bool valid_node(uint i)
 {
     return i != INVALID && i < active_hir_node_count();
+}
+
+bool valid_dense(uint i)
+{
+    return i != INVALID && i < active_compact_hir_count();
 }
 
 bool valid_token(uint i)
@@ -238,28 +251,6 @@ bool receiver_decl_type_ref(uint receiver_i, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
-uint semantic_receiver_token(uint receiver_node, uint fallback_token)
-{
-    if (valid_node(receiver_node) && hir_kind[receiver_node] == HIR_MEMBER_EXPR)
-    {
-        uint member_token = hir_member_name_token[receiver_node];
-        if (valid_token(member_token))
-            return member_token;
-    }
-    return fallback_token;
-}
-
-uint receiver_token_for_member_node(uint member_node)
-{
-    uint receiver_token = valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
-    if (valid_token(receiver_token))
-        return receiver_token;
-
-    uint receiver_node = valid_node(member_node) ? hir_member_receiver_node[member_node] : INVALID;
-    uint token = valid_node(receiver_node) ? hir_token_pos[receiver_node] : INVALID;
-    return valid_token(token) ? token : INVALID;
-}
-
 uint module_for_hir_node(uint node)
 {
     uint token_i = node < active_hir_node_count() ? hir_token_pos[node] : INVALID;
@@ -268,6 +259,69 @@ uint module_for_hir_node(uint node)
     if (module_id != INVALID)
         return module_id;
     return file_id == 0u || file_id == INVALID ? 0u : INVALID;
+}
+
+uint module_for_compact_hir(uint hir)
+{
+    uint token_i = valid_dense(hir) ? compact_hir_core[hir].token_start : INVALID;
+    uint file_id = valid_token(token_i) ? token_file_id[token_i] : INVALID;
+    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
+    if (module_id != INVALID)
+        return module_id;
+    return file_id == 0u || file_id == INVALID ? 0u : INVALID;
+}
+
+uint compact_receiver_token(uint receiver)
+{
+    if (!valid_dense(receiver))
+        return INVALID;
+    if (compact_hir_core[receiver].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[receiver].c;
+        if (valid_token(member_token))
+            return member_token;
+    }
+    uint token = compact_hir_core[receiver].token_start;
+    return valid_token(token) ? token : INVALID;
+}
+
+void publish_compact_direct_method_call(uint call_hir)
+{
+    if (!valid_dense(call_hir) || compact_hir_core[call_hir].kind != HIR_CALL_EXPR)
+        return;
+
+    uint member = compact_hir_payload[call_hir].a;
+    if (!valid_dense(member) || compact_hir_core[member].kind != HIR_MEMBER_EXPR)
+        return;
+
+    HirPayload member_payload = compact_hir_payload[member];
+    uint method_i = member_payload.c;
+    uint receiver = member_payload.b;
+    uint raw_receiver_i = valid_token(member_payload.d)
+                              ? member_payload.d
+                              : compact_receiver_token(receiver);
+    uint receiver_i = valid_dense(receiver) &&
+                              compact_hir_core[receiver].kind == HIR_MEMBER_EXPR
+                          ? compact_hir_payload[receiver].c
+                          : raw_receiver_i;
+    if (!valid_token(method_i) || !valid_token(raw_receiver_i) || !valid_token(receiver_i))
+        return;
+
+    method_call_name_id[method_i] = name_id_by_token[method_i];
+    method_call_site_module_id[method_i] = module_for_compact_hir(member);
+
+    uint decl_i = visible_decl[raw_receiver_i];
+    uint call_site_module = module_for_decl_token(decl_i);
+    method_call_site_module_id[method_i] =
+        call_site_module == INVALID ? module_for_compact_hir(member) : call_site_module;
+
+    uint tag;
+    uint payload;
+    if (!receiver_decl_type_ref(receiver_i, tag, payload))
+        return;
+
+    method_call_receiver_ref_tag[method_i] = tag;
+    method_call_receiver_ref_payload[method_i] = payload;
 }
 
 uint module_for_path(uint path_i)
@@ -458,7 +512,10 @@ uint path_id_for_callee_node(uint callee_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
     uint path_node = hir_call_callee_path_node[call_node];
-    uint path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+    uint path_owner = valid_node(path_node) ? raw_to_compact_hir[path_node] : INVALID;
+    uint path_i = path_owner < gParams.n_hir_nodes
+        ? path_id_by_owner_hir[path_owner]
+        : INVALID;
     return valid_path(path_i) ? path_i : INVALID;
 }
 
@@ -1127,6 +1184,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < active_token_count())
         publish_associated_method_call_for_method_token(i);
 
+    if (i < active_compact_hir_count())
+        publish_compact_direct_method_call(i);
+
     if (i >= active_hir_node_count() || hir_kind[i] != HIR_CALL_EXPR)
         return;
 
@@ -1134,32 +1194,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(callee_node) || hir_kind[callee_node] != HIR_MEMBER_EXPR)
     {
         publish_associated_method_call(i, callee_node);
-        return;
     }
-
-    uint method_i = hir_member_name_token[callee_node];
-    if (method_i >= active_token_count())
-        return;
-
-    method_call_name_id[method_i] = name_id_by_token[method_i];
-    method_call_site_module_id[method_i] = module_for_hir_node(callee_node);
-
-    uint receiver_i = receiver_token_for_member_node(callee_node);
-    if (!valid_token(receiver_i))
-        return;
-    uint raw_receiver_i = receiver_i;
-    receiver_i = semantic_receiver_token(hir_member_receiver_node[callee_node], receiver_i);
-
-    uint decl_i = visible_decl[raw_receiver_i];
-    uint call_site_module = module_for_decl_token(decl_i);
-    method_call_site_module_id[method_i] =
-        call_site_module == INVALID ? module_for_hir_node(callee_node) : call_site_module;
-
-    uint tag;
-    uint payload;
-    if (!receiver_decl_type_ref(receiver_i, tag, payload))
-        return;
-
-    method_call_receiver_ref_tag[method_i] = tag;
-    method_call_receiver_ref_payload[method_i] = payload;
 }

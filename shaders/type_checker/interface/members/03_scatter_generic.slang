@@ -2,11 +2,11 @@
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> generic_param_count_out; StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_count_out; StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id; StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind; StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token; StructuredBuffer<uint> interface_generic_type_count_by_decl;
-StructuredBuffer<uint> public_decl_index_by_hir; StructuredBuffer<uint> interface_member_prefix;
+StructuredBuffer<uint> decl_id_by_name_token; StructuredBuffer<uint> public_decl_index_by_local; StructuredBuffer<uint> interface_member_prefix;
 RWStructuredBuffer<uint> interface_member_words; RWStructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_member_index_by_generic_row; RWStructuredBuffer<uint> interface_member_written;
 RWStructuredBuffer<uint> interface_status;
@@ -18,7 +18,8 @@ void fail(uint d){atomic_u32_or(interface_status,0u,8192u);atomic_u32_min(interf
 void main(uint3 dtid:SV_DispatchThreadID)
 {
  uint row=linear_thread_id(dtid);if(row>=min(generic_param_count_out[0u],gParams.token_capacity))return;
- uint owner_hir=generic_param_owner_node[row];uint owner=owner_hir<gParams.hir_capacity?public_decl_index_by_hir[owner_hir]:INVALID;if(owner>=gParams.decl_capacity)return;
+ uint owner_token=generic_param_owner_token[row];uint local=owner_token<gParams.token_capacity?decl_id_by_name_token[owner_token]:INVALID;
+ uint owner=local<gParams.decl_capacity?public_decl_index_by_local[local]:INVALID;if(owner>=gParams.decl_capacity)return;
  uint token=generic_param_token[row],kind=generic_param_kind[row],slot=INVALID,member_kind=0u;
  if(kind==GENERIC_TYPE){slot=token<gParams.token_capacity?type_generic_param_slot_by_token[token]:INVALID;member_kind=MEMBER_GENERIC_TYPE;}
  else if(kind==GENERIC_CONST){slot=token<gParams.token_capacity?type_const_param_slot_by_token[token]:INVALID;slot=slot==INVALID?INVALID:interface_generic_type_count_by_decl[owner]+slot;member_kind=MEMBER_GENERIC_CONST;}

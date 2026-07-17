@@ -1,0 +1,20 @@
+{
+  "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed immediately precedes a contiguous randomized hot-daemon batch",
+  "debug_info": "disabled in every CPU lane",
+  "order_seed": 1741061,
+  "sample_policy": "all samples retained; median is primary, min/max/MAD are reported",
+  "schema": "lanius.compile-scaling-matrix-config.v1",
+  "seeds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26
+  ],
+  "size": 1101000,
+  "timing_policy": "wall clock from request/process start through artifact write",
+  "validation_policy": "every artifact must execute with exact model-derived stdout",
+  "warm_seed": 19
+}

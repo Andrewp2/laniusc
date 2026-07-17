@@ -6,7 +6,6 @@ use super::{
         GpuX86CallMetadataBuffers,
         GpuX86CodeGenerator,
         GpuX86ExprMetadataBuffers,
-        GpuX86FunctionMetadataBuffers,
         GpuX86StructMetadataBuffers,
         GpuX86TypeMetadataBuffers,
         support::reflected_bind_group,
@@ -32,6 +31,7 @@ pub(super) struct SemanticRecordBindGroups {
     pub(super) struct_field_widths: wgpu::BindGroup,
     pub(super) struct_field_stream: wgpu::BindGroup,
     pub(super) struct_records: wgpu::BindGroup,
+    pub(super) array_element_rows: wgpu::BindGroup,
     pub(super) array_records: wgpu::BindGroup,
     pub(super) decl_widths: wgpu::BindGroup,
     pub(super) decl_layout: wgpu::BindGroup,
@@ -45,7 +45,6 @@ pub(super) struct SemanticRecordInputs<'a> {
     pub(super) hir_kind_buf: &'a wgpu::Buffer,
     pub(super) parent_buf: &'a wgpu::Buffer,
     pub(super) subtree_end_buf: &'a wgpu::Buffer,
-    pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) call_metadata: &'a GpuX86CallMetadataBuffers<'a>,
     pub(super) array_metadata: &'a GpuX86ArrayMetadataBuffers<'a>,
@@ -55,12 +54,22 @@ pub(super) struct SemanticRecordInputs<'a> {
     pub(super) expr_resolved_final_buf: &'a wgpu::Buffer,
     pub(super) node_tree_status_buf: &'a wgpu::Buffer,
     pub(super) match_record_buf: &'a wgpu::Buffer,
+    pub(super) match_arm_record_buf: &'a wgpu::Buffer,
+    pub(super) compact_hir_count_buf: &'a wgpu::Buffer,
+    pub(super) compact_hir_core_buf: &'a wgpu::Buffer,
+    pub(super) compact_hir_links_buf: &'a wgpu::Buffer,
+    pub(super) compact_match_arms_buf: &'a wgpu::Buffer,
+    pub(super) raw_to_compact_hir_buf: &'a wgpu::Buffer,
+    pub(super) compact_match_arm_count_buf: &'a wgpu::Buffer,
     pub(super) match_return_node_buf: &'a wgpu::Buffer,
+    pub(super) match_arm_owner_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_owner_buf: &'a wgpu::Buffer,
     pub(super) match_result_value_owner_buf: &'a wgpu::Buffer,
+    pub(super) match_result_dense_owner_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_node_variant_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_node_payload_decl_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_first_use_node_buf: &'a wgpu::Buffer,
+    pub(super) compact_executable_raw_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_first_variant_node_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_first_payload_node_buf: &'a wgpu::Buffer,
     pub(super) enclosing_return_node_a_buf: &'a wgpu::Buffer,
@@ -91,7 +100,12 @@ pub(super) struct SemanticRecordInputs<'a> {
     pub(super) match_pattern_owner_steps: &'a [u32],
     pub(super) struct_type_record_buf: &'a wgpu::Buffer,
     pub(super) struct_field_width_by_node_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_count_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_base_by_hir_buf: &'a wgpu::Buffer,
     pub(super) struct_field_stream_index_by_node_buf: &'a wgpu::Buffer,
+    pub(super) array_element_row_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) struct_literal_field_row_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) compact_expr_wrapper_buf: &'a wgpu::Buffer,
     pub(super) struct_access_record_buf: &'a wgpu::Buffer,
     pub(super) struct_store_record_buf: &'a wgpu::Buffer,
     pub(super) struct_record_status_buf: &'a wgpu::Buffer,
@@ -120,7 +134,6 @@ pub(super) fn create_semantic_record_bind_groups(
         hir_kind_buf,
         parent_buf,
         subtree_end_buf,
-        function_metadata,
         expr_metadata,
         call_metadata,
         array_metadata,
@@ -130,12 +143,22 @@ pub(super) fn create_semantic_record_bind_groups(
         expr_resolved_final_buf,
         node_tree_status_buf,
         match_record_buf,
+        match_arm_record_buf,
+        compact_hir_count_buf,
+        compact_hir_core_buf,
+        compact_hir_links_buf,
+        compact_match_arms_buf,
+        raw_to_compact_hir_buf,
+        compact_match_arm_count_buf,
         match_return_node_buf,
+        match_arm_owner_buf,
         match_pattern_owner_buf,
         match_result_value_owner_buf,
+        match_result_dense_owner_buf,
         match_pattern_node_variant_buf,
         match_pattern_node_payload_decl_buf,
         match_pattern_first_use_node_buf,
+        compact_executable_raw_buf,
         match_pattern_first_variant_node_buf,
         match_pattern_first_payload_node_buf,
         enclosing_return_node_a_buf,
@@ -166,7 +189,12 @@ pub(super) fn create_semantic_record_bind_groups(
         match_pattern_owner_steps,
         struct_type_record_buf,
         struct_field_width_by_node_buf,
+        struct_field_count_by_hir_buf,
+        struct_field_base_by_hir_buf,
         struct_field_stream_index_by_node_buf,
+        array_element_row_by_hir_buf,
+        struct_literal_field_row_by_hir_buf,
+        compact_expr_wrapper_buf,
         struct_access_record_buf,
         struct_store_record_buf,
         struct_record_status_buf,
@@ -344,9 +372,41 @@ pub(super) fn create_semantic_record_bind_groups(
                 "x86_enclosing_return_node",
                 enclosing_return_step_final_buf.as_entire_binding(),
             ),
+            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
+            (
+                "compact_hir_payload",
+                array_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "compact_match_arm_count",
+                compact_match_arm_count_buf.as_entire_binding(),
+            ),
+            (
+                "compact_match_arms",
+                compact_match_arms_buf.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_return_node",
                 match_return_node_buf.as_entire_binding(),
+            ),
+            ("x86_match_record", match_record_buf.as_entire_binding()),
+            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+            (
+                "x86_match_arm_owner",
+                match_arm_owner_buf.as_entire_binding(),
             ),
         ],
     )?;
@@ -358,12 +418,12 @@ pub(super) fn create_semantic_record_bind_groups(
         &[
             ("gParams", params_buf.as_entire_binding()),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
             (
                 "x86_match_result_root_owner",
-                match_result_value_owner_buf.as_entire_binding(),
+                match_result_dense_owner_buf.as_entire_binding(),
             ),
-            ("x86_tree_parent", parent_buf.as_entire_binding()),
             (
                 "x86_match_result_owner",
                 match_result_owner_a_buf.as_entire_binding(),
@@ -381,7 +441,7 @@ pub(super) fn create_semantic_record_bind_groups(
         match_result_owner_steps,
         params_buf,
         hir_status_buf,
-        &[],
+        &[("compact_hir_count", compact_hir_count_buf)],
         StepNames {
             first_in: "x86_match_result_owner_in",
             second_in: "x86_match_result_owner_link_in",
@@ -419,6 +479,14 @@ pub(super) fn create_semantic_record_bind_groups(
             ),
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("x86_match_record", match_record_buf.as_entire_binding()),
+            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
+            ("raw_to_compact_hir", raw_to_compact_hir_buf.as_entire_binding()),
+            ("x86_match_result_dense_owner", match_result_dense_owner_buf.as_entire_binding()),
+            ("compact_hir_links", compact_hir_links_buf.as_entire_binding()),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
+            ("compact_match_arms", compact_match_arms_buf.as_entire_binding()),
             (
                 "x86_match_pattern_owner",
                 match_pattern_owner_buf.as_entire_binding(),
@@ -436,10 +504,11 @@ pub(super) fn create_semantic_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("x86_tree_parent", parent_buf.as_entire_binding()),
+            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("x86_match_record", match_record_buf.as_entire_binding()),
+            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
             (
                 "x86_match_pattern_owner",
                 match_pattern_owner_buf.as_entire_binding(),
@@ -461,7 +530,7 @@ pub(super) fn create_semantic_record_bind_groups(
         match_pattern_owner_steps,
         params_buf,
         hir_status_buf,
-        &[],
+        &[("compact_hir_count", compact_hir_count_buf)],
         StepNames {
             first_in: "x86_match_pattern_node_owner_in",
             second_in: "x86_match_pattern_owner_link_in",
@@ -483,7 +552,7 @@ pub(super) fn create_semantic_record_bind_groups(
         &[
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
             (
                 "x86_match_pattern_node_variant",
                 match_pattern_node_variant_buf.as_entire_binding(),
@@ -505,7 +574,57 @@ pub(super) fn create_semantic_record_bind_groups(
                 match_pattern_first_payload_node_buf.as_entire_binding(),
             ),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("x86_match_record", match_record_buf.as_entire_binding()),
+            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+        ],
+    )?;
+    let array_element_rows = reflected_bind_group(
+        device,
+        Some("codegen.x86.array_element_rows.bind_group"),
+        &generator.array_element_rows_pass,
+        0,
+        &[
+            ("gParams", params_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                array_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_element_row_count",
+                array_metadata.compact_element_row_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_elements",
+                array_metadata.compact_elements.as_entire_binding(),
+            ),
+            (
+                "compact_field_count",
+                struct_metadata.compact_field_count.as_entire_binding(),
+            ),
+            (
+                "compact_fields",
+                struct_metadata.compact_fields.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                struct_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            (
+                "raw_to_compact_hir",
+                array_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "x86_array_element_row_by_hir",
+                array_element_row_by_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_struct_literal_field_row_by_hir",
+                struct_literal_field_row_by_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper_buf.as_entire_binding(),
+            ),
         ],
     )?;
     let struct_field_widths = reflected_bind_group(
@@ -516,36 +635,29 @@ pub(super) fn create_semantic_record_bind_groups(
         &[
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
             (
-                "hir_item_name_token",
-                struct_metadata.item_name_token.as_entire_binding(),
+                "compact_hir_count",
+                struct_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_token_pos",
-                function_metadata.hir_token_pos.as_entire_binding(),
+                "compact_hir_core",
+                struct_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
-                "hir_type_value_node",
-                type_metadata.type_value_node.as_entire_binding(),
+                "compact_hir_payload",
+                struct_metadata.compact_hir_payload.as_entire_binding(),
             ),
             (
-                "hir_type_path_leaf_node",
-                type_metadata.type_path_leaf_node.as_entire_binding(),
+                "compact_field_count",
+                struct_metadata.compact_field_count.as_entire_binding(),
             ),
             (
-                "hir_struct_field_parent_struct",
-                struct_metadata
-                    .struct_field_parent_struct
-                    .as_entire_binding(),
+                "compact_fields",
+                struct_metadata.compact_fields.as_entire_binding(),
             ),
             (
-                "hir_struct_field_type_node",
-                struct_metadata.struct_field_type_node.as_entire_binding(),
-            ),
-            (
-                "hir_struct_decl_field_count",
-                struct_metadata.struct_decl_field_count.as_entire_binding(),
+                "raw_to_compact_hir",
+                struct_metadata.raw_to_compact_hir.as_entire_binding(),
             ),
             (
                 "type_expr_ref_tag",
@@ -617,6 +729,14 @@ pub(super) fn create_semantic_record_bind_groups(
                 struct_field_width_by_node_buf.as_entire_binding(),
             ),
             (
+                "x86_struct_field_count_by_hir",
+                struct_field_count_by_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_decl_node_by_token",
+                decl_node_by_token_buf.as_entire_binding(),
+            ),
+            (
                 "x86_struct_field_count_scan_input",
                 node_inst_scan_input_buf.as_entire_binding(),
             ),
@@ -629,16 +749,21 @@ pub(super) fn create_semantic_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
             (
-                "hir_struct_field_parent_struct",
-                struct_metadata
-                    .struct_field_parent_struct
-                    .as_entire_binding(),
+                "compact_hir_count",
+                struct_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_struct_field_ordinal",
-                struct_metadata.struct_field_ordinal.as_entire_binding(),
+                "compact_hir_core",
+                struct_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_field_count",
+                struct_metadata.compact_field_count.as_entire_binding(),
+            ),
+            (
+                "compact_fields",
+                struct_metadata.compact_fields.as_entire_binding(),
             ),
             (
                 "x86_struct_field_width_by_node",
@@ -660,6 +785,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 "x86_struct_field_stream_index_by_node",
                 struct_field_stream_index_by_node_buf.as_entire_binding(),
             ),
+            (
+                "x86_struct_field_base_by_hir",
+                struct_field_base_by_hir_buf.as_entire_binding(),
+            ),
         ],
     )?;
     let struct_records = reflected_bind_group(
@@ -672,10 +801,6 @@ pub(super) fn create_semantic_record_bind_groups(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             (
-                "hir_item_name_token",
-                struct_metadata.item_name_token.as_entire_binding(),
-            ),
-            (
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
@@ -685,94 +810,76 @@ pub(super) fn create_semantic_record_bind_groups(
                 expr_resolved_final_buf.as_entire_binding(),
             ),
             (
-                "hir_member_receiver_node",
-                call_metadata.member_receiver_node.as_entire_binding(),
+                "compact_hir_count",
+                struct_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_member_name_token",
-                call_metadata.member_name_token.as_entire_binding(),
+                "compact_hir_core",
+                struct_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
-                "hir_token_pos",
-                function_metadata.hir_token_pos.as_entire_binding(),
+                "compact_hir_payload",
+                struct_metadata.compact_hir_payload.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_parent_lit",
-                struct_metadata
-                    .struct_lit_field_parent_lit
-                    .as_entire_binding(),
+                "compact_field_count",
+                struct_metadata.compact_field_count.as_entire_binding(),
             ),
             (
-                "hir_struct_field_parent_struct",
-                struct_metadata
-                    .struct_field_parent_struct
-                    .as_entire_binding(),
+                "compact_fields",
+                struct_metadata.compact_fields.as_entire_binding(),
             ),
             (
-                "hir_struct_field_ordinal",
-                struct_metadata.struct_field_ordinal.as_entire_binding(),
+                "compact_array_element_row_count",
+                array_metadata.compact_element_row_count.as_entire_binding(),
             ),
             (
-                "hir_struct_decl_field_start",
-                struct_metadata.struct_decl_field_start.as_entire_binding(),
+                "compact_array_elements",
+                array_metadata.compact_elements.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_head_node",
-                struct_metadata.struct_lit_head_node.as_entire_binding(),
+                "raw_to_compact_hir",
+                struct_metadata.raw_to_compact_hir.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_context_stmt_node",
-                struct_metadata
-                    .struct_lit_context_stmt_node
-                    .as_entire_binding(),
+                "x86_compact_executable_raw",
+                compact_executable_raw_buf.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_count",
-                struct_metadata.struct_lit_field_count.as_entire_binding(),
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper_buf.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_start",
-                struct_metadata.struct_lit_field_start.as_entire_binding(),
-            ),
-            (
-                "hir_struct_decl_field_count",
-                struct_metadata.struct_decl_field_count.as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_field_value_node",
-                struct_metadata
-                    .struct_lit_field_value_node
-                    .as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_field_next",
-                struct_metadata.struct_lit_field_next.as_entire_binding(),
-            ),
-            (
-                "member_result_field_ordinal",
-                struct_metadata
-                    .member_result_field_ordinal
-                    .as_entire_binding(),
+                "x86_array_element_row_by_hir",
+                array_element_row_by_hir_buf.as_entire_binding(),
             ),
             (
                 "member_result_field_node",
                 struct_metadata.member_result_field_node.as_entire_binding(),
             ),
             (
-                "struct_init_field_ordinal_by_node",
+                "struct_init_field_ordinal_by_row",
                 struct_metadata
-                    .struct_init_field_ordinal_by_node
+                    .struct_init_field_ordinal_by_row
                     .as_entire_binding(),
             ),
             (
-                "struct_init_field_decl_node_by_node",
+                "struct_init_field_decl_token_by_row",
                 struct_metadata
-                    .struct_init_field_decl_node_by_node
+                    .struct_init_field_decl_token_by_row
                     .as_entire_binding(),
             ),
             (
                 "x86_struct_field_width_by_node",
                 struct_field_width_by_node_buf.as_entire_binding(),
+            ),
+            (
+                "x86_struct_field_count_by_hir",
+                struct_field_count_by_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_struct_field_base_by_hir",
+                struct_field_base_by_hir_buf.as_entire_binding(),
             ),
             (
                 "x86_struct_field_stream_width",
@@ -783,24 +890,16 @@ pub(super) fn create_semantic_record_bind_groups(
                 struct_field_stream_index_by_node_buf.as_entire_binding(),
             ),
             (
+                "x86_decl_node_by_token",
+                decl_node_by_token_buf.as_entire_binding(),
+            ),
+            (
                 "x86_struct_field_scan_local_prefix",
                 node_inst_scan_local_prefix_buf.as_entire_binding(),
             ),
             (
                 "x86_struct_field_scan_block_prefix",
                 final_node_inst_scan_prefix_buf.as_entire_binding(),
-            ),
-            (
-                "hir_array_element_parent_lit",
-                array_metadata.element_parent_lit.as_entire_binding(),
-            ),
-            (
-                "hir_array_element_ordinal",
-                array_metadata.element_ordinal.as_entire_binding(),
-            ),
-            (
-                "hir_nearest_array_element_node",
-                array_metadata.nearest_element.as_entire_binding(),
             ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
             (
@@ -836,48 +935,49 @@ pub(super) fn create_semantic_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            (
-                "hir_stmt_record",
-                expr_metadata.stmt_record.as_entire_binding(),
-            ),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-            (
-                "hir_node_decl_token",
-                function_metadata.node_decl_token.as_entire_binding(),
-            ),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),
             ),
             (
-                "hir_array_lit_first_element",
-                array_metadata.lit_first_element.as_entire_binding(),
+                "compact_hir_count",
+                array_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_array_lit_element_count",
-                array_metadata.lit_element_count.as_entire_binding(),
+                "compact_hir_core",
+                array_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
-                "hir_array_element_parent_lit",
-                array_metadata.element_parent_lit.as_entire_binding(),
+                "compact_hir_payload",
+                array_metadata.compact_hir_payload.as_entire_binding(),
             ),
             (
-                "hir_array_element_ordinal",
-                array_metadata.element_ordinal.as_entire_binding(),
+                "compact_array_element_start",
+                array_metadata.compact_element_start.as_entire_binding(),
             ),
             (
-                "hir_array_element_next",
-                array_metadata.element_next.as_entire_binding(),
+                "compact_array_element_count",
+                array_metadata.compact_element_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_element_row_count",
+                array_metadata.compact_element_row_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_elements",
+                array_metadata.compact_elements.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper_buf.as_entire_binding(),
             ),
             (
                 "x86_node_tree_status",
                 node_tree_status_buf.as_entire_binding(),
-            ),
-            (
-                "x86_enclosing_let_node",
-                enclosing_let_step_final_buf.as_entire_binding(),
             ),
             (
                 "x86_struct_access_record",
@@ -1144,6 +1244,7 @@ pub(super) fn create_semantic_record_bind_groups(
         struct_field_widths,
         struct_field_stream,
         struct_records,
+        array_element_rows,
         array_records,
         decl_widths,
         decl_layout,

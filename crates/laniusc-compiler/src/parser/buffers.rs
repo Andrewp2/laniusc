@@ -6,7 +6,33 @@ mod scan_steps;
 mod scans;
 mod sizing;
 mod storage;
-pub use model::{ActionHeader, ParserBuffers, TokenBraceMatchParams, TokenDelimiterParams};
+pub use model::{
+    ActionHeader,
+    GpuHirView,
+    HirArrayElement,
+    HirCallArg,
+    HirCore,
+    HirField,
+    HirGenericParam,
+    HirLinks,
+    HirMatchArm,
+    HirMatchPayload,
+    HirMethodCore,
+    HirMethodSignature,
+    HirParam,
+    HirPath,
+    HirPathSegment,
+    HirPayload,
+    HirPredicate,
+    HirRange,
+    HirString,
+    HirTypeArg,
+    HirVariant,
+    HirVariantPayload,
+    ParserBuffers,
+    TokenBraceMatchParams,
+    TokenDelimiterParams,
+};
 pub use scan_steps::*;
 use scans::*;
 pub(crate) use sizing::resident_partial_parse_tree_capacity_for_tables;
@@ -481,6 +507,16 @@ impl ParserBuffers {
                 }
             })
             .max(1);
+        let parser_workspace_plan = storage::parser_phase_workspace_plan(tree_capacity);
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+            for assignment in &parser_workspace_plan.assignments {
+                let slot = &parser_workspace_plan.slots[assignment.slot as usize];
+                eprintln!(
+                    "gpu_workspace logical={:?} slot={} bytes={} usage={:?}",
+                    assignment.name, assignment.slot, slot.bytes, slot.usage,
+                );
+            }
+        }
         let emit_capacity = if resident_partial_parse_capacity {
             tree_capacity
         } else {
@@ -971,6 +1007,10 @@ impl ParserBuffers {
         );
         let hir_semantic_prefix_scan_steps =
             make_hir_semantic_prefix_scan_steps(device, tree_n_node_blocks);
+        // Raw type records still alias the parser prefix arrays in resident
+        // compilation, and remain live through type checking during the HIR
+        // migration. Keep canonical-family scan storage distinct until every
+        // consumer reads compact type metadata instead of those raw columns.
         let hir_semantic_flag =
             storage_rw_for_array::<u32>(device, "parser.hir_semantic_flag", tree_capacity as usize);
         let hir_semantic_local_prefix = storage_rw_for_array::<u32>(
@@ -2021,6 +2061,268 @@ impl ParserBuffers {
             token_input_capacity as usize,
         );
 
+        // Canonical HIR is the durable parser phase output. Candidate rows are
+        // deduplicated by source-token anchor, so the token capacity is a hard
+        // checked upper bound rather than a grammar-amplified estimate.
+        let hir_canonical_capacity = token_input_capacity;
+        assert!(
+            tree_capacity < (1u32 << 28),
+            "raw parse-tree capacity exceeds canonical HIR anchor arbitration range",
+        );
+        let hir_canonical_params = uniform_from_val(
+            device,
+            "parser.hir_canonical.params",
+            &super::passes::hir::canonical::CanonicalHirParams {
+                raw_capacity: tree_capacity,
+                canonical_capacity: hir_canonical_capacity,
+                uses_status_count: u32::from(tree_count_uses_status),
+                local_ancestor_span: super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            },
+        );
+        let hir_canonical_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_canonical_count", 1);
+        let hir_canonical_status =
+            storage_rw_for_array::<u32>(device, "parser.hir_canonical_status", 13);
+        let hir_canonical_anchor_owner = alias_storage_buffer::<u32, u32>(
+            &token_braced_rhs_statement_kind,
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_prefix_before_raw =
+            alias_storage_buffer::<u32, u32>(&hir_node_dense_id, tree_capacity as usize);
+        let hir_canonical_dense_to_raw =
+            alias_storage_buffer::<u32, u32>(&match_for_index, hir_canonical_capacity as usize);
+        let hir_canonical_raw_to_dense = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_raw_to_dense",
+            tree_capacity as usize,
+        );
+        let hir_core = storage_rw_for_array::<HirCore>(
+            device,
+            "parser.hir_core",
+            hir_canonical_capacity as usize,
+        );
+        let hir_links = storage_rw_for_array::<HirLinks>(
+            device,
+            "parser.hir_links",
+            hir_canonical_capacity as usize,
+        );
+        let hir_payload = storage_rw_for_array::<HirPayload>(
+            device,
+            "parser.hir_payload",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_fn_return_type = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_fn_return_type",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_type_alias_target = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_type_alias_target",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_const_type = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_const_type",
+            hir_canonical_capacity as usize,
+        );
+        let hir_call_arg_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_call_arg_table_count", 1);
+        let hir_call_arg_family_flag = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_call_arg_family_flag",
+            tree_capacity as usize,
+        );
+        let hir_call_args = storage_rw_for_array::<HirCallArg>(
+            device,
+            "parser.hir_call_args",
+            hir_canonical_capacity as usize,
+        );
+        let hir_param_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_param_table_count", 1);
+        // Call arguments are captured early, then consumed before parameter
+        // and type-argument compaction begins. All three family marks therefore
+        // occupy one serial HIR-family workspace slot.
+        let hir_param_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_param_rows = storage_rw_for_array::<HirParam>(
+            device,
+            "parser.hir_params",
+            hir_canonical_capacity as usize,
+        );
+        let hir_param_ranges = storage_rw_for_array::<HirRange>(
+            device,
+            "parser.hir_param_ranges",
+            hir_canonical_capacity as usize,
+        );
+        let hir_type_arg_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_type_arg_table_count", 1);
+        let hir_type_arg_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_type_arg_rows = storage_rw_for_array::<HirTypeArg>(
+            device,
+            "parser.hir_type_args",
+            hir_canonical_capacity as usize,
+        );
+        let hir_type_arg_ranges = storage_rw_for_array::<HirRange>(
+            device,
+            "parser.hir_type_arg_ranges",
+            hir_canonical_capacity as usize,
+        );
+        let hir_generic_param_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_generic_param_table_count", 1);
+        let hir_generic_param_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_generic_param_rows = storage_rw_for_array::<HirGenericParam>(
+            device,
+            "parser.hir_generic_params",
+            hir_canonical_capacity as usize,
+        );
+        let hir_generic_param_ranges = storage_rw_for_array::<HirRange>(
+            device,
+            "parser.hir_generic_param_ranges",
+            hir_canonical_capacity as usize,
+        );
+        let hir_path_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_path_table_count", 1);
+        let hir_path_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_path_rows = storage_rw_for_array::<HirPath>(
+            device,
+            "parser.hir_paths",
+            hir_canonical_capacity as usize,
+        );
+        let hir_path_segment_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_path_segment_table_count", 1);
+        let hir_path_segment_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_path_segment_rows = storage_rw_for_array::<HirPathSegment>(
+            device,
+            "parser.hir_path_segments",
+            hir_canonical_capacity as usize,
+        );
+        let hir_field_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_field_table_count", 1);
+        let hir_field_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_field_rows = storage_rw_for_array::<HirField>(
+            device,
+            "parser.hir_fields",
+            hir_canonical_capacity as usize,
+        );
+        let hir_variant_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_variant_table_count", 1);
+        let hir_variant_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_variant_rows = storage_rw_for_array::<HirVariant>(
+            device,
+            "parser.hir_variants",
+            hir_canonical_capacity as usize,
+        );
+        // This map is migration-only: the raw typechecker still consumes the
+        // path-owner workspace after compact HIR materialization, so the two
+        // lifetimes cannot alias yet. Once name resolution consumes compact
+        // paths, this map can take that phase-colored slot.
+        let hir_variant_raw_to_row = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_variant_raw_to_row",
+            tree_capacity as usize,
+        );
+        let hir_variant_compact_payload_start = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_variant_compact_payload_start",
+            hir_canonical_capacity as usize,
+        );
+        let hir_variant_compact_payload_count = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_variant_compact_payload_count",
+            hir_canonical_capacity as usize,
+        );
+        let hir_variant_payload_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_variant_payload_table_count", 1);
+        let hir_variant_payload_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_variant_payload_rows = storage_rw_for_array::<HirVariantPayload>(
+            device,
+            "parser.hir_variant_payloads",
+            hir_canonical_capacity as usize,
+        );
+        let hir_match_arm_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_table_count", 1);
+        let hir_match_arm_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_match_arm_raw_to_row =
+            alias_storage_buffer::<u32, u32>(&hir_variant_raw_to_row, tree_capacity as usize);
+        let hir_match_arm_rows = storage_rw_for_array::<HirMatchArm>(
+            device,
+            "parser.hir_match_arms",
+            hir_canonical_capacity as usize,
+        );
+        let hir_match_compact_payload_start = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_match_compact_payload_start",
+            hir_canonical_capacity as usize,
+        );
+        let hir_match_compact_payload_count = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_match_compact_payload_count",
+            hir_canonical_capacity as usize,
+        );
+        let hir_match_payload_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_match_payload_table_count", 1);
+        let hir_match_payload_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_match_payload_rows = storage_rw_for_array::<HirMatchPayload>(
+            device,
+            "parser.hir_match_payloads",
+            hir_canonical_capacity as usize,
+        );
+        let hir_array_compact_element_start = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_array_compact_element_start",
+            hir_canonical_capacity as usize,
+        );
+        let hir_array_compact_element_count = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_array_compact_element_count",
+            hir_canonical_capacity as usize,
+        );
+        let hir_array_element_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_array_element_table_count", 1);
+        let hir_array_element_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_array_element_rows = storage_rw_for_array::<HirArrayElement>(
+            device,
+            "parser.hir_array_elements",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_string_rows = storage_rw_for_array::<HirString>(
+            device,
+            "parser.hir_canonical_strings",
+            hir_canonical_capacity as usize,
+        );
+        let hir_method_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_method_table_count", 1);
+        let hir_method_family_flag =
+            alias_storage_buffer::<u32, u32>(&hir_call_arg_family_flag, tree_capacity as usize);
+        let hir_method_core_rows = storage_rw_for_array::<HirMethodCore>(
+            device,
+            "parser.hir_method_cores",
+            hir_canonical_capacity as usize,
+        );
+        let hir_method_signature_rows = storage_rw_for_array::<HirMethodSignature>(
+            device,
+            "parser.hir_method_signatures",
+            hir_canonical_capacity as usize,
+        );
+        let hir_predicate_table_count =
+            storage_rw_for_array::<u32>(device, "parser.hir_predicate_table_count", 1);
+        let hir_predicate_rows = storage_rw_for_array::<HirPredicate>(
+            device,
+            "parser.hir_predicates",
+            hir_canonical_capacity as usize,
+        );
+
         Self {
             source_capacity: source_capacity.max(1),
             n_tokens,
@@ -2033,6 +2335,7 @@ impl ParserBuffers {
             hir_array_capacity: family_capacities.arrays,
             hir_enum_match_capacity: family_capacities.enum_match,
             hir_struct_capacity: family_capacities.structs,
+            hir_canonical_capacity,
 
             ll1_predict,
             ll1_prod_rhs_off,
@@ -2212,7 +2515,55 @@ impl ParserBuffers {
             subtree_end,
 
             // HIR-facing classification
-            hir_params,
+            hir_param_rows,
+            hir_param_ranges,
+            hir_type_arg_table_count,
+            hir_type_arg_family_flag,
+            hir_type_arg_rows,
+            hir_type_arg_ranges,
+            hir_generic_param_table_count,
+            hir_generic_param_family_flag,
+            hir_generic_param_rows,
+            hir_generic_param_ranges,
+            hir_path_table_count,
+            hir_path_family_flag,
+            hir_path_rows,
+            hir_path_segment_table_count,
+            hir_path_segment_family_flag,
+            hir_path_segment_rows,
+            hir_field_table_count,
+            hir_field_family_flag,
+            hir_field_rows,
+            hir_variant_table_count,
+            hir_variant_family_flag,
+            hir_variant_rows,
+            hir_variant_raw_to_row,
+            hir_variant_compact_payload_start,
+            hir_variant_compact_payload_count,
+            hir_variant_payload_table_count,
+            hir_variant_payload_family_flag,
+            hir_variant_payload_rows,
+            hir_match_arm_table_count,
+            hir_match_arm_family_flag,
+            hir_match_arm_raw_to_row,
+            hir_match_arm_rows,
+            hir_match_compact_payload_start,
+            hir_match_compact_payload_count,
+            hir_match_payload_table_count,
+            hir_match_payload_family_flag,
+            hir_match_payload_rows,
+            hir_array_compact_element_start,
+            hir_array_compact_element_count,
+            hir_array_element_table_count,
+            hir_array_element_family_flag,
+            hir_array_element_rows,
+            hir_canonical_string_rows,
+            hir_method_table_count,
+            hir_method_family_flag,
+            hir_method_core_rows,
+            hir_method_signature_rows,
+            hir_predicate_table_count,
+            hir_predicate_rows,
             hir_span_params,
             hir_type_fields_params,
             hir_item_fields_params,
@@ -2254,6 +2605,25 @@ impl ParserBuffers {
             hir_semantic_child_index_rank_a,
             hir_semantic_child_index_rank_b,
             hir_semantic_count,
+            hir_canonical_params,
+            hir_canonical_count,
+            hir_canonical_status,
+            hir_canonical_anchor_owner,
+            hir_canonical_prefix_before_raw,
+            hir_canonical_dense_to_raw,
+            hir_canonical_raw_to_dense,
+            hir_core,
+            hir_links,
+            hir_payload,
+            hir_canonical_fn_return_type,
+            hir_canonical_type_alias_target,
+            hir_canonical_const_type,
+            hir_call_arg_table_count,
+            hir_call_arg_family_flag,
+            hir_call_args,
+            hir_param_table_count,
+            hir_param_family_flag,
+            hir_params,
             hir_token_pos,
             hir_token_end,
             hir_token_file_id,

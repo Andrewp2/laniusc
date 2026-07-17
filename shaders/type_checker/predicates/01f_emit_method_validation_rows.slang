@@ -30,6 +30,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_method_owner_node;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_value_node;
@@ -46,7 +47,11 @@ StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> decl_type_key_count_out;
 StructuredBuffer<uint> decl_hir_node;
-StructuredBuffer<uint> predicate_method_contract_owner_node;
+StructuredBuffer<uint> compact_hir_count;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_method_contract_param_count;
@@ -107,6 +112,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_hir(uint hir)
+{
+    return hir != INVALID && hir < active_compact_hir_count();
+}
+
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
@@ -117,9 +132,9 @@ uint decl_record_count()
     return min(decl_type_key_count_out[0], gParams.n_tokens);
 }
 
-bool trait_owner_node(uint node)
+bool trait_owner_hir(uint hir)
 {
-    return valid_node(node) && hir_item_kind[node] == HIR_ITEM_KIND_TRAIT;
+    return valid_hir(hir) && compact_hir_payload[hir].a == HIR_ITEM_KIND_TRAIT;
 }
 
 bool trait_impl_owner_node(uint node)
@@ -130,7 +145,7 @@ bool trait_impl_owner_node(uint node)
 bool method_contract_lookup_row_valid(uint method_node)
 {
     return valid_node(method_node) &&
-           valid_node(predicate_method_contract_owner_node[method_node]) &&
+           valid_hir(predicate_method_contract_owner_hir[method_node]) &&
            predicate_method_contract_name_id[method_node] != INVALID;
 }
 
@@ -177,7 +192,7 @@ public struct MethodContractFixedKey : IFixedU32RowKey<MethodContractLookupKey>
 
         if (lane == 0u)
             return fixed_key_encode_nullable_u32(
-                predicate_method_contract_owner_node[method_node],
+                predicate_method_contract_owner_hir[method_node],
                 INVALID);
         return fixed_key_encode_nullable_u32(
             predicate_method_contract_name_id[method_node],
@@ -216,7 +231,7 @@ QueryRange method_contract_range_for_owner_name(uint owner_node, uint name_id)
 bool method_contract_node_matches_owner_name(uint method_node, uint owner_node, uint name_id)
 {
     return method_contract_lookup_row_valid(method_node) &&
-           predicate_method_contract_owner_node[method_node] == owner_node &&
+           predicate_method_contract_owner_hir[method_node] == owner_node &&
            predicate_method_contract_name_id[method_node] == name_id;
 }
 
@@ -234,7 +249,7 @@ QueryRange method_contract_range_for_owner(uint owner_node)
     QueryRange range;
     range.begin = 0u;
     range.end = 0u;
-    if (!valid_node(owner_node))
+    if (!valid_hir(owner_node))
         return range;
 
     uint first = predicate_method_contract_owner_range_first[owner_node];
@@ -257,12 +272,12 @@ bool method_contract_order_row_matches_owner(uint row, uint owner_node)
 
     uint method_node = predicate_method_contract_key_order[row];
     return method_contract_lookup_row_valid(method_node) &&
-           predicate_method_contract_owner_node[method_node] == owner_node;
+           predicate_method_contract_owner_hir[method_node] == owner_node;
 }
 
 bool method_contract_range_matches_owner(uint owner_node, QueryRange range)
 {
-    if (!valid_node(owner_node))
+    if (!valid_hir(owner_node))
         return false;
     if (range.begin >= range.end)
         return true;
@@ -283,7 +298,7 @@ bool method_contract_range_matches_owner_name(
     uint name_id,
     QueryRange range)
 {
-    if (!valid_node(owner_node) || name_id == INVALID)
+    if (!valid_hir(owner_node) || name_id == INVALID)
         return false;
     if (range.begin >= range.end)
         return true;
@@ -404,9 +419,10 @@ uint trait_node_for_impl_owner(uint impl_node)
         return INVALID;
 
     uint decl_i = predicate_bound_decl_id[impl_node];
-    return decl_i != INVALID && decl_i < decl_record_count()
-        ? decl_hir_node[decl_i]
-        : INVALID;
+    if (decl_i == INVALID || decl_i >= decl_record_count())
+        return INVALID;
+    uint dense = decl_hir_node[decl_i];
+    return valid_hir(dense) ? dense : INVALID;
 }
 
 bool method_contract_is_public(uint method_node)
@@ -765,21 +781,22 @@ bool validate_impl_param_row(uint param_node)
     uint4 record = hir_param_record[param_node];
     uint impl_method = record.x;
     uint ordinal = record.y;
-    uint owner = predicate_method_contract_owner_node[impl_method];
-    if (!trait_impl_owner_node(owner))
+    uint owner_hir = predicate_method_contract_owner_hir[impl_method];
+    uint owner_raw = hir_method_owner_node[impl_method];
+    if (!valid_hir(owner_hir) || !trait_impl_owner_node(owner_raw))
         return true;
 
     uint name_id = method_contract_name_id(impl_method);
-    uint trait_node = trait_node_for_impl_owner(owner);
-    uint trait_method = valid_node(trait_node)
-        ? first_method_contract_for_owner_name(trait_node, name_id)
+    uint trait_hir = trait_node_for_impl_owner(owner_raw);
+    uint trait_method = valid_hir(trait_hir)
+        ? first_method_contract_for_owner_name(trait_hir, name_id)
         : INVALID;
     if (!valid_node(trait_method))
         return true;
 
     if (method_unsupported_contract_status(impl_method) != PREDICATE_STATUS_OK ||
         method_unsupported_contract_status(trait_method) != PREDICATE_STATUS_OK ||
-        duplicate_method_contract_for_owner_name(owner, name_id) ||
+        duplicate_method_contract_for_owner_name(owner_hir, name_id) ||
         !trait_impl_method_arity_matches(trait_method, impl_method))
         return true;
 
@@ -790,15 +807,16 @@ bool validate_impl_param_row(uint param_node)
     publish_type_peer(
         method_param_type_node(param_node),
         method_param_type_node(method_param_for_ordinal(trait_method, ordinal)),
-        owner,
+        owner_raw,
         impl_method);
 
-    if (method_param_signature_definitely_mismatches(trait_method, impl_method, owner, ordinal))
+    if (method_param_signature_definitely_mismatches(
+            trait_method, impl_method, owner_raw, ordinal))
     {
         uint detail = method_contract_diagnostic_token(impl_method);
         publish_validation_row(
             param_node,
-            owner,
+            owner_raw,
             trait_method,
             PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH,
             valid_token(detail) ? detail : hir_token_pos[param_node]);
@@ -809,14 +827,15 @@ bool validate_impl_param_row(uint param_node)
 
 void validate_impl_owner_method_counts(uint owner)
 {
-    uint trait_node = trait_node_for_impl_owner(owner);
-    if (!valid_node(trait_node))
+    uint owner_hir = valid_node(owner) ? raw_to_compact_hir[owner] : INVALID;
+    uint trait_hir = trait_node_for_impl_owner(owner);
+    if (!valid_hir(owner_hir) || !valid_hir(trait_hir))
         return;
 
-    QueryRange trait_methods = method_contract_range_for_owner(trait_node);
-    QueryRange impl_methods = method_contract_range_for_owner(owner);
-    if (!method_contract_range_matches_owner(trait_node, trait_methods) ||
-        !method_contract_range_matches_owner(owner, impl_methods))
+    QueryRange trait_methods = method_contract_range_for_owner(trait_hir);
+    QueryRange impl_methods = method_contract_range_for_owner(owner_hir);
+    if (!method_contract_range_matches_owner(trait_hir, trait_methods) ||
+        !method_contract_range_matches_owner(owner_hir, impl_methods))
         return;
 
     uint trait_count = method_contract_range_count(trait_methods);
@@ -828,21 +847,26 @@ void validate_impl_owner_method_counts(uint owner)
     publish_validation_row(
         owner,
         owner,
-        trait_node,
+        trait_hir,
         PREDICATE_STATUS_MISSING_METHOD,
         valid_token(owner_token) ? owner_token : INVALID);
 }
 
-void validate_trait_method_row(uint method_node, uint owner, uint name_id, uint detail_token)
+void validate_trait_method_row(
+    uint method_node,
+    uint owner_hir,
+    uint owner_raw,
+    uint name_id,
+    uint detail_token)
 {
-    if (duplicate_method_contract_for_owner_name(owner, name_id))
+    if (duplicate_method_contract_for_owner_name(owner_hir, name_id))
     {
-        uint first = first_method_contract_for_owner_name(owner, name_id);
+        uint first = first_method_contract_for_owner_name(owner_hir, name_id);
         if (first != method_node)
         {
             publish_validation_row(
                 method_node,
-                owner,
+                owner_raw,
                 first,
                 PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD,
                 detail_token);
@@ -851,20 +875,25 @@ void validate_trait_method_row(uint method_node, uint owner, uint name_id, uint 
     }
 
     uint status = method_unsupported_contract_status(method_node);
-    publish_validation_row(method_node, owner, INVALID, status, detail_token);
+    publish_validation_row(method_node, owner_raw, INVALID, status, detail_token);
 }
 
-void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint detail_token)
+void validate_impl_method_row(
+    uint method_node,
+    uint owner_hir,
+    uint owner_raw,
+    uint name_id,
+    uint detail_token)
 {
-    uint trait_node = trait_node_for_impl_owner(owner);
-    uint trait_method = valid_node(trait_node)
-        ? first_method_contract_for_owner_name(trait_node, name_id)
+    uint trait_hir = trait_node_for_impl_owner(owner_raw);
+    uint trait_method = valid_hir(trait_hir)
+        ? first_method_contract_for_owner_name(trait_hir, name_id)
         : INVALID;
 
     uint status = method_unsupported_contract_status(method_node);
     if (status != PREDICATE_STATUS_OK)
     {
-        publish_validation_row(method_node, owner, trait_method, status, detail_token);
+        publish_validation_row(method_node, owner_raw, trait_method, status, detail_token);
         return;
     }
 
@@ -872,7 +901,7 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
     {
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             INVALID,
             PREDICATE_STATUS_EXTRA_IMPL_METHOD,
             detail_token);
@@ -885,21 +914,21 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
         uint trait_detail = method_contract_diagnostic_token(trait_method);
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             trait_method,
             trait_status,
             valid_token(trait_detail) ? trait_detail : detail_token);
         return;
     }
 
-    if (duplicate_method_contract_for_owner_name(owner, name_id))
+    if (duplicate_method_contract_for_owner_name(owner_hir, name_id))
     {
-        uint first = first_method_contract_for_owner_name(owner, name_id);
+        uint first = first_method_contract_for_owner_name(owner_hir, name_id);
         if (first != method_node)
         {
             publish_validation_row(
                 method_node,
-                owner,
+                owner_raw,
                 first,
                 PREDICATE_STATUS_DUPLICATE_IMPL_METHOD,
                 detail_token);
@@ -911,7 +940,7 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
     {
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             trait_method,
             PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH,
             detail_token);
@@ -922,7 +951,7 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
     {
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             trait_method,
             PREDICATE_STATUS_METHOD_ARITY_MISMATCH,
             detail_token);
@@ -932,24 +961,25 @@ void validate_impl_method_row(uint method_node, uint owner, uint name_id, uint d
     publish_type_peer(
         method_return_type_node(method_node),
         method_return_type_node(trait_method),
-        owner,
+        owner_raw,
         method_node);
 
     if (trait_impl_method_return_signature_definitely_mismatches(
             trait_method,
             method_node,
-            owner))
+            owner_raw))
     {
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             trait_method,
             PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH,
             detail_token);
         return;
     }
 
-    publish_validation_row(method_node, owner, trait_method, PREDICATE_STATUS_OK, detail_token);
+    publish_validation_row(
+        method_node, owner_raw, trait_method, PREDICATE_STATUS_OK, detail_token);
 }
 
 [shader("compute")]
@@ -969,7 +999,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!method_contract_lookup_row_valid(method_node))
         return;
 
-    uint owner = predicate_method_contract_owner_node[method_node];
+    uint owner_hir = predicate_method_contract_owner_hir[method_node];
+    uint owner_raw = hir_method_owner_node[method_node];
     uint name_id = method_contract_name_id(method_node);
     uint name_token = method_contract_name_token(method_node);
     uint diagnostic_token = method_contract_diagnostic_token(method_node);
@@ -977,15 +1008,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         publish_validation_row(
             method_node,
-            owner,
+            owner_raw,
             INVALID,
             PREDICATE_STATUS_METHOD_ARITY_MISMATCH,
             diagnostic_token);
         return;
     }
 
-    if (trait_owner_node(owner))
-        validate_trait_method_row(method_node, owner, name_id, diagnostic_token);
-    else if (trait_impl_owner_node(owner))
-        validate_impl_method_row(method_node, owner, name_id, diagnostic_token);
+    if (trait_owner_hir(owner_hir))
+        validate_trait_method_row(
+            method_node, owner_hir, owner_raw, name_id, diagnostic_token);
+    else if (trait_impl_owner_node(owner_raw))
+        validate_impl_method_row(
+            method_node, owner_hir, owner_raw, name_id, diagnostic_token);
 }

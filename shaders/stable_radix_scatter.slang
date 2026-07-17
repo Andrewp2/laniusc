@@ -48,6 +48,35 @@ void stable_sort_radix_byte(uint lane, uint key, uint value)
     }
 }
 
+// Stable rank within one byte bucket while retaining the caller's lane order.
+// The shared radix network performs eight parallel stable binary partitions;
+// the sorted lane then scatters its bucket-local rank back to the source lane.
+public uint stable_radix_byte_local_rank(uint lane, uint key, bool active)
+{
+    stable_sort_radix_byte(
+        lane,
+        active ? key : SCATTER_INACTIVE_KEY,
+        lane);
+
+    uint sorted_key = stable_radix_keys_a[lane];
+    uint source_lane = stable_radix_values_a[lane];
+    stable_radix_bucket_start[lane] = SCATTER_INACTIVE_KEY;
+    if (lane == 0u)
+        stable_radix_bucket_start[STABLE_RADIX_BUCKET_CAPACITY - 1u] =
+            SCATTER_INACTIVE_KEY;
+    GroupMemoryBarrierWithGroupSync();
+
+    bool sorted_active = sorted_key != SCATTER_INACTIVE_KEY;
+    if (sorted_active && (lane == 0u || sorted_key != stable_radix_keys_a[lane - 1u]))
+        stable_radix_bucket_start[sorted_key] = lane;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (sorted_active)
+        stable_radix_scan[source_lane] = lane - stable_radix_bucket_start[sorted_key];
+    GroupMemoryBarrierWithGroupSync();
+    return active ? stable_radix_scan[lane] : 0u;
+}
+
 public void stable_radix_sort_byte_value(
     uint lane,
     uint key,

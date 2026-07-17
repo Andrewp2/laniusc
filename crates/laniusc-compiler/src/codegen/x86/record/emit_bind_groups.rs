@@ -39,8 +39,8 @@ pub(super) struct EmitBindGroupInputs<'a> {
     pub(super) reloc_finalize_params: &'a wgpu::Buffer,
     pub(super) text_scan_params: &'a UniformBindingArray,
     pub(super) rodata_scan_params: &'a UniformBindingArray,
-    pub(super) hir_status: &'a wgpu::Buffer,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
+    pub(super) compact_executable_raw: &'a wgpu::Buffer,
     pub(super) func_meta: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) virtual_inst_record: &'a wgpu::Buffer,
@@ -103,8 +103,8 @@ pub(super) fn create_emit_bind_groups(
         reloc_finalize_params,
         text_scan_params,
         rodata_scan_params,
-        hir_status,
         expr_metadata,
+        compact_executable_raw,
         func_meta,
         decl_layout_status,
         virtual_inst_record,
@@ -376,11 +376,17 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("hir_status", hir_status.as_entire_binding()),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "hir_string_decoded_len",
-                expr_metadata.string_decoded_len.as_entire_binding(),
+                "compact_string_count",
+                expr_metadata.compact_string_count.as_entire_binding(),
+            ),
+            (
+                "compact_strings",
+                expr_metadata.compact_strings.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw.as_entire_binding(),
             ),
             (
                 "x86_rodata_size_by_node",
@@ -466,8 +472,8 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             (
-                "hir_string_count",
-                expr_metadata.string_count.as_entire_binding(),
+                "compact_string_count",
+                expr_metadata.compact_string_count.as_entire_binding(),
             ),
             (
                 "string_dispatch_args",
@@ -591,26 +597,21 @@ pub(super) fn create_emit_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("hir_status", hir_status.as_entire_binding()),
             (
-                "hir_string_data_offset",
-                expr_metadata.string_data_offset.as_entire_binding(),
+                "compact_string_count",
+                expr_metadata.compact_string_count.as_entire_binding(),
             ),
             (
-                "hir_string_decoded_len",
-                expr_metadata.string_decoded_len.as_entire_binding(),
+                "compact_strings",
+                expr_metadata.compact_strings.as_entire_binding(),
             ),
             (
-                "hir_string_data_words",
-                expr_metadata.string_data_words.as_entire_binding(),
+                "compact_string_data_words",
+                expr_metadata.compact_string_data_words.as_entire_binding(),
             ),
             (
-                "hir_string_node",
-                expr_metadata.string_node.as_entire_binding(),
-            ),
-            (
-                "hir_string_count",
-                expr_metadata.string_count.as_entire_binding(),
+                "x86_compact_executable_raw",
+                compact_executable_raw.as_entire_binding(),
             ),
             (
                 "x86_rodata_size_by_node",

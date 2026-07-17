@@ -14,21 +14,23 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
 };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> hir_array_lit_first_element;
-StructuredBuffer<uint> hir_array_lit_element_count;
-StructuredBuffer<uint> hir_array_element_parent_lit;
-StructuredBuffer<uint> hir_array_element_ordinal;
-StructuredBuffer<uint> hir_array_element_next;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_array_element_start;
+StructuredBuffer<uint> compact_array_element_count;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> x86_compact_executable_raw;
+StructuredBuffer<uint> x86_compact_expr_wrapper;
 StructuredBuffer<uint> x86_node_tree_status;
-StructuredBuffer<uint> x86_enclosing_let_node;
 
 RWStructuredBuffer<uint> x86_struct_access_record;
 RWStructuredBuffer<uint4> x86_struct_store_record;
@@ -39,10 +41,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_TREE_OK = 1u;
 static const uint HIR_ARRAY_EXPR = 24u;
 
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
-
-static const uint EXPR_RECORD_STRIDE = 4u;
 
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_STRUCT_ACCESS_ARRAY_ELEMENT = 4u;
@@ -58,14 +57,24 @@ uint linear_dispatch_id(uint3 tid)
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
-uint active_hir_node_count()
+uint active_compact_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
-bool valid_node(uint node)
+bool valid_dense(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+bool valid_raw(uint node)
+{
+    return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+uint active_array_element_count()
+{
+    return min(gParams.n_hir_nodes, compact_array_element_row_count[0u]);
 }
 
 bool valid_token(uint token)
@@ -79,29 +88,17 @@ bool upstream_ok()
            x86_node_tree_status[1u] == 0u;
 }
 
-uint stmt_slot(uint node, uint slot)
-{
-    return row_major_load<uint>(
-        hir_stmt_record,
-        node,
-        STMT_RECORD_STRIDE,
-        slot,
-        INVALID);
-}
-
-uint expr_slot(uint node, uint slot)
-{
-    return row_major_load<uint>(
-        hir_expr_record,
-        node,
-        EXPR_RECORD_STRIDE,
-        slot,
-        INVALID);
-}
-
 uint resolve_expr(uint node)
 {
-    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+    return valid_raw(node) ? x86_expr_resolved_node[node] : INVALID;
+}
+
+uint compact_expr_raw(uint dense)
+{
+    if (!valid_dense(dense))
+        return INVALID;
+    uint raw = x86_compact_expr_wrapper[dense];
+    return valid_raw(raw) ? raw : x86_compact_executable_raw[dense];
 }
 
 uint pack_struct_access_info(uint kind, uint payload)
@@ -113,7 +110,7 @@ uint pack_struct_access_info(uint kind, uint payload)
 
 uint struct_access_kind(uint node)
 {
-    if (!valid_node(node))
+    if (!valid_raw(node))
         return 0u;
     uint info = x86_struct_access_record[node * X86_STRUCT_ACCESS_STRIDE + 2u];
     return info == INVALID ? 0u : info & X86_STRUCT_ACCESS_KIND_MASK;
@@ -135,36 +132,61 @@ bool write_struct_access_record(
     return true;
 }
 
-void publish_literal_record(uint node)
+void publish_literal_record(uint array_dense)
 {
-    uint first_element = hir_array_lit_first_element[node];
-    uint count = hir_array_lit_element_count[node];
+    uint array_node = x86_compact_executable_raw[array_dense];
+    if (!valid_raw(array_node))
+        return;
+    uint start = compact_array_element_start[array_dense];
+    uint count = compact_array_element_count[array_dense];
+    uint first_element = INVALID;
+    if (count != 0u && start < active_array_element_count())
+        first_element = compact_expr_raw(compact_array_elements[start].value);
     write_struct_access_record(
-        node,
+        array_node,
         X86_STRUCT_ACCESS_ARRAY_LITERAL,
         count,
         first_element,
         0u);
 }
 
-void publish_element_record(uint node)
+bool valid_array_element(uint row, HirArrayElement element)
 {
-    uint array_node = hir_array_element_parent_lit[node];
-    uint ordinal = hir_array_element_ordinal[node];
-    if (!valid_node(array_node) || hir_kind[array_node] != HIR_ARRAY_EXPR || ordinal == INVALID)
+    return row < active_array_element_count() &&
+           valid_dense(element.array) &&
+           compact_hir_core[element.array].kind == HIR_ARRAY_EXPR &&
+           valid_dense(element.value) &&
+           element.ordinal != INVALID;
+}
+
+uint next_element_raw(uint row, HirArrayElement element)
+{
+    uint next = row + 1u;
+    if (next >= active_array_element_count())
+        return 0u;
+    HirArrayElement candidate = compact_array_elements[next];
+    return candidate.array == element.array && candidate.ordinal == element.ordinal + 1u
+               ? compact_expr_raw(candidate.value)
+               : 0u;
+}
+
+void publish_element_record(uint row, HirArrayElement element)
+{
+    uint array_node = x86_compact_executable_raw[element.array];
+    uint expr_node = compact_expr_raw(element.value);
+    if (!valid_raw(array_node) || !valid_raw(expr_node))
         return;
-    uint next_element = hir_array_element_next[node];
     write_struct_access_record(
-        node,
+        expr_node,
         X86_STRUCT_ACCESS_ARRAY_ELEMENT,
         array_node,
-        ordinal,
-        valid_node(next_element) ? next_element : 0u);
+        element.ordinal,
+        next_element_raw(row, element));
 }
 
 void publish_store_record_for_value(uint value_node, uint decl_token, uint ordinal, uint array_node)
 {
-    if (!valid_node(value_node) || !valid_token(decl_token) || ordinal == INVALID)
+    if (!valid_raw(value_node) || !valid_token(decl_token) || ordinal == INVALID)
         return;
     uint4 existing = x86_struct_store_record[value_node];
     if (existing.x != INVALID)
@@ -176,57 +198,64 @@ void publish_store_record_for_value(uint value_node, uint decl_token, uint ordin
         X86_AGG_STORE_ARRAY);
 }
 
-bool let_initializer_is_array_literal(uint let_node, uint array_node)
+bool let_initializer_is_array_literal(uint let_dense, uint array_dense)
 {
-    if (!valid_node(let_node) || !valid_node(array_node))
+    if (!valid_dense(let_dense) || !valid_dense(array_dense))
         return false;
-    // Nested aggregate ownership needs an explicit owner/path record; do not
-    // infer it from subtree spans in this backend projection.
-    uint init_expr = stmt_slot(let_node, 2u);
-    return resolve_expr(init_expr) == array_node;
+    HirPayload array_payload = compact_hir_payload[array_dense];
+    HirPayload let_payload = compact_hir_payload[let_dense];
+    return array_payload.d == let_dense &&
+           let_payload.a == STMT_RECORD_KIND_LET &&
+           let_payload.c == array_dense;
 }
 
-void publish_element_store_record(uint node)
+void publish_element_store_record(uint row, HirArrayElement element)
 {
-    uint array_node = hir_array_element_parent_lit[node];
-    uint ordinal = hir_array_element_ordinal[node];
-    if (!valid_node(array_node) || hir_kind[array_node] != HIR_ARRAY_EXPR || ordinal == INVALID)
+    uint array_node = x86_compact_executable_raw[element.array];
+    // The compact family row already names the semantic value. Preserve its
+    // backend projection as a store owner, then mirror the record to the
+    // legacy resolved row while the raw-node planner is still being removed.
+    // Resolving first can skip the value-producing binary row entirely.
+    uint value_node = compact_expr_raw(element.value);
+    uint let_dense = compact_hir_payload[element.array].d;
+    uint let_node = valid_dense(let_dense) ? x86_compact_executable_raw[let_dense] : INVALID;
+    if (!valid_raw(array_node) || !valid_raw(value_node) || !valid_raw(let_node))
+        return;
+    if (!let_initializer_is_array_literal(let_dense, element.array))
         return;
 
-    uint let_node = valid_node(array_node) ? x86_enclosing_let_node[array_node] : INVALID;
-    if (!valid_node(let_node) || stmt_slot(let_node, 0u) != STMT_RECORD_KIND_LET)
-        return;
-
-    if (!let_initializer_is_array_literal(let_node, array_node))
-        return;
-
-    uint decl_token = stmt_slot(let_node, 1u);
-    uint resolved = resolve_expr(node);
+    uint decl_token = compact_hir_payload[let_dense].b;
+    uint resolved = resolve_expr(value_node);
     // Struct-array elements are lowered through their independently parallel
     // field-store records. Publishing a scalar element store on the resolved
     // type-name row would make instruction generation treat that name as a
     // runtime local.
-    if (struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL)
+    if (struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL ||
+        struct_access_kind(value_node) == X86_STRUCT_ACCESS_LITERAL)
         return;
-    publish_store_record_for_value(node, decl_token, ordinal, array_node);
-    publish_store_record_for_value(resolved, decl_token, ordinal, array_node);
+    publish_store_record_for_value(value_node, decl_token, element.ordinal, array_node);
+    publish_store_record_for_value(resolved, decl_token, element.ordinal, array_node);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_id(tid);
+    uint row = linear_dispatch_id(tid);
     bool ok = upstream_ok();
-    if (!ok || !valid_node(node))
+    if (!ok)
         return;
 
-    if (hir_kind[node] == HIR_ARRAY_EXPR)
-        publish_literal_record(node);
-    uint array_node = hir_array_element_parent_lit[node];
-    if (valid_node(array_node) && hir_kind[array_node] == HIR_ARRAY_EXPR)
+    if (row < active_compact_hir_count() &&
+        compact_hir_core[row].kind == HIR_ARRAY_EXPR)
+        publish_literal_record(row);
+    if (row < active_array_element_count())
     {
-        publish_element_record(node);
-        publish_element_store_record(node);
+        HirArrayElement element = compact_array_elements[row];
+        if (valid_array_element(row, element))
+        {
+            publish_element_record(row, element);
+            publish_element_store_record(row, element);
+        }
     }
 }

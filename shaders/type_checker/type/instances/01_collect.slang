@@ -15,6 +15,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_variant_payload_row_count;
+StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -112,28 +120,54 @@ uint path_leaf_token_for_type_node(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!is_hir_path_type_node(node))
-        return;
-
-    uint token = hir_token_pos[node];
-    uint leaf_token = path_leaf_token_for_type_node(node);
-    if (!valid_token(token) && !valid_token(leaf_token))
+    if (is_hir_path_type_node(node))
     {
-        if (valid_node(node))
+        uint token = hir_token_pos[node];
+        uint leaf_token = path_leaf_token_for_type_node(node);
+        if (!valid_token(token) && !valid_token(leaf_token))
         {
-            uint fallback = min(hir_token_pos[node], gParams.n_tokens);
-            if (fallback < gParams.n_tokens)
+            if (valid_node(node))
             {
-                type_expr_ref_tag[fallback] = TYPE_REF_ERROR;
-                type_expr_ref_payload[fallback] = fallback;
+                uint fallback = min(hir_token_pos[node], gParams.n_tokens);
+                if (fallback < gParams.n_tokens)
+                {
+                    type_expr_ref_tag[fallback] = TYPE_REF_ERROR;
+                    type_expr_ref_payload[fallback] = fallback;
+                }
             }
         }
-        return;
+        else
+        {
+            if (valid_token(token))
+                publish_path_ref(token);
+            if (valid_token(leaf_token) && leaf_token != token)
+                publish_path_ref(leaf_token);
+        }
     }
 
-    if (valid_token(token))
-        publish_path_ref(token);
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node < compact_count &&
+        compact_hir_core[node].kind == HIR_TYPE &&
+        compact_hir_payload[node].a == HIR_TYPE_FORM_PATH)
+    {
+        uint compact_token = compact_hir_core[node].token_start;
+        if (valid_token(compact_token))
+            publish_path_ref(compact_token);
+    }
 
-    if (valid_token(leaf_token) && leaf_token != token)
-        publish_path_ref(leaf_token);
+    // Variant payload rows are the authoritative declaration-family relation;
+    // consume their dense type ids directly instead of depending on a raw
+    // parser node having the same index or wrapper shape.
+    uint variant_payload_count =
+        min(compact_variant_payload_row_count[0u], gParams.n_hir_nodes);
+    if (node < variant_payload_count)
+    {
+        uint type_node = compact_variant_payloads[node].type_node;
+        if (type_node < compact_count)
+        {
+            uint type_token = compact_hir_core[type_node].token_start;
+            if (valid_token(type_token))
+                publish_path_ref(type_token);
+        }
+    }
 }

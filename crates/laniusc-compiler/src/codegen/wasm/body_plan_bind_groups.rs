@@ -377,6 +377,18 @@ impl GpuWasmCodeGenerator {
                     expr_metadata.int_value.as_entire_binding(),
                 ),
                 (
+                    "expr_subtree_total",
+                    body_binding_context
+                        .expr_subtree_total_buf
+                        .as_entire_binding(),
+                ),
+                (
+                    "expr_subtree_features",
+                    body_binding_context
+                        .expr_subtree_features_buf
+                        .as_entire_binding(),
+                ),
+                (
                     "body_let_init_expr_by_decl_token",
                     body_let_init_expr_by_decl_token_buf.as_entire_binding(),
                 ),
@@ -455,8 +467,8 @@ impl GpuWasmCodeGenerator {
                     path_metadata.segment_token.as_entire_binding(),
                 ),
                 (
-                    "path_id_by_owner_hir",
-                    path_metadata.id_by_owner_hir.as_entire_binding(),
+                    "path_id_by_owner_token",
+                    path_metadata.id_by_owner_token.as_entire_binding(),
                 ),
                 (
                     "hir_call_callee_node",

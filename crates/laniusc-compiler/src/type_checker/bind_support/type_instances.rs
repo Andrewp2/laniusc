@@ -98,15 +98,15 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     hir_node_capacity: u32,
     generic_param_key_radix_dispatch_args: &LaniusBuffer<u32>,
     struct_field_key_radix_dispatch_args: &LaniusBuffer<u32>,
-    _hir_scan_n_blocks: u32,
-    hir_scan_steps: &[NameScanStep],
 ) -> Result<TypeInstanceBindGroups> {
     let param_capacity = token_capacity.max(1);
     let param_n_blocks = param_capacity.div_ceil(256).max(1);
     let radix_bytes = generic_param_key_radix_bytes(param_capacity, hir_node_capacity);
     let radix_steps = generic_param_key_radix_steps(param_capacity, hir_node_capacity);
     let owner_steps = generic_decl_owner_step_count(hir_node_capacity);
-    let struct_field_capacity = hir_node_capacity.max(1);
+    // Every compact field row has a distinct source-token anchor, so its
+    // capacity is bounded by the token domain rather than the raw parse tree.
+    let struct_field_capacity = token_capacity.max(1);
     let struct_field_n_blocks = struct_field_capacity.div_ceil(256).max(1);
     let arg_row_scan_n_blocks = token_capacity.div_ceil(256).max(1);
     let arg_row_scan_steps = make_name_scan_steps(
@@ -171,8 +171,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                     resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_name_id",
@@ -242,8 +242,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                     resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_name_id",
@@ -317,8 +317,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                     resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_name_id",
@@ -408,8 +408,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                     resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_node",
@@ -483,8 +483,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                     resources["generic_param_count_out"].clone(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    resources["generic_param_owner_node"].clone(),
+                    "generic_param_owner_token",
+                    resources["generic_param_owner_token"].clone(),
                 ),
                 (
                     "generic_param_node",
@@ -521,11 +521,14 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     let struct_field_key_radix_dispatch = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check.type_instances.struct_field_key_radix_dispatch"),
-        &passes.names_radix_dispatch_args,
+        &passes.struct_field_radix_dispatch_args,
         0,
         &[
             ("gParams", struct_field_radix_params.as_entire_binding()),
-            ("name_count_in", resources["hir_active_count"].clone()),
+            (
+                "compact_field_count",
+                resources["compact_field_count"].clone(),
+            ),
             (
                 "radix_dispatch_args",
                 resources["struct_field_key_radix_dispatch_args"].clone(),
@@ -534,7 +537,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     )?;
 
     let mut sort_struct_field_key_histogram = Vec::with_capacity(struct_field_radix_steps as usize);
-    let mut sort_struct_field_key_bucket_prefix =
+    let mut sort_struct_field_key_bucket_local =
+        Vec::with_capacity(struct_field_radix_steps as usize);
+    let mut sort_struct_field_key_bucket_chunks =
+        Vec::with_capacity(struct_field_radix_steps as usize);
+    let mut sort_struct_field_key_bucket_apply =
         Vec::with_capacity(struct_field_radix_steps as usize);
     let mut sort_struct_field_key_bucket_bases =
         Vec::with_capacity(struct_field_radix_steps as usize);
@@ -572,12 +579,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             0,
             &[
                 ("gParams", step_params.as_entire_binding()),
-                ("hir_active_count", resources["hir_active_count"].clone()),
-                ("hir_token_pos", resources["hir_token_pos"].clone()),
                 (
-                    "hir_struct_field_parent_struct",
-                    resources["hir_struct_field_parent_struct"].clone(),
+                    "compact_field_count",
+                    resources["compact_field_count"].clone(),
                 ),
+                ("compact_hir_count", resources["compact_hir_count"].clone()),
+                ("compact_hir_core", resources["compact_hir_core"].clone()),
+                ("compact_fields", resources["compact_fields"].clone()),
                 ("name_id_by_token", resources["name_id_by_token"].clone()),
                 ("struct_field_key_order_in", read_order.clone()),
                 (
@@ -586,14 +594,17 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 ),
             ],
         )?);
-        sort_struct_field_key_bucket_prefix.push(bind_group::create_bind_group_from_bindings(
+        sort_struct_field_key_bucket_local.push(bind_group::create_bind_group_from_bindings(
             device,
-            Some("type_check.type_instances.struct_field_key_radix_bucket_prefix"),
-            &passes.names_radix_bucket_prefix,
+            Some("type_check.type_instances.struct_field_key_radix_bucket_local"),
+            &passes.struct_field_radix_bucket_local,
             0,
             &[
                 ("gParams", step_params.as_entire_binding()),
-                ("name_count_in", resources["hir_active_count"].clone()),
+                (
+                    "compact_field_count",
+                    resources["compact_field_count"].clone(),
+                ),
                 (
                     "radix_block_histogram",
                     resources["struct_field_key_radix_block_histogram"].clone(),
@@ -605,6 +616,48 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 (
                     "radix_bucket_total",
                     resources["struct_field_key_radix_bucket_total"].clone(),
+                ),
+            ],
+        )?);
+        sort_struct_field_key_bucket_chunks.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.type_instances.struct_field_key_radix_bucket_chunks"),
+            &passes.struct_field_radix_bucket_chunks,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "compact_field_count",
+                    resources["compact_field_count"].clone(),
+                ),
+                (
+                    "radix_block_histogram",
+                    resources["struct_field_key_radix_block_histogram"].clone(),
+                ),
+                (
+                    "radix_bucket_total",
+                    resources["struct_field_key_radix_bucket_total"].clone(),
+                ),
+            ],
+        )?);
+        sort_struct_field_key_bucket_apply.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.type_instances.struct_field_key_radix_bucket_apply"),
+            &passes.struct_field_radix_bucket_apply,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "compact_field_count",
+                    resources["compact_field_count"].clone(),
+                ),
+                (
+                    "radix_block_histogram",
+                    resources["struct_field_key_radix_block_histogram"].clone(),
+                ),
+                (
+                    "radix_block_bucket_prefix",
+                    resources["struct_field_key_radix_block_bucket_prefix"].clone(),
                 ),
             ],
         )?);
@@ -632,12 +685,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             0,
             &[
                 ("gParams", step_params.as_entire_binding()),
-                ("hir_active_count", resources["hir_active_count"].clone()),
-                ("hir_token_pos", resources["hir_token_pos"].clone()),
                 (
-                    "hir_struct_field_parent_struct",
-                    resources["hir_struct_field_parent_struct"].clone(),
+                    "compact_field_count",
+                    resources["compact_field_count"].clone(),
                 ),
+                ("compact_hir_count", resources["compact_hir_count"].clone()),
+                ("compact_hir_core", resources["compact_hir_core"].clone()),
+                ("compact_fields", resources["compact_fields"].clone()),
                 ("name_id_by_token", resources["name_id_by_token"].clone()),
                 ("struct_field_key_order_in", read_order),
                 (
@@ -703,21 +757,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         )?);
     }
 
-    let generic_param_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check.type_instances.generic_param_scan",
-        hir_scan_steps,
-        buffer_from_resources(resources, "hir_active_count")?,
-        buffer_from_resources(resources, "generic_param_flag")?,
-        buffer_from_resources(resources, "generic_param_prefix")?,
-        buffer_from_resources(resources, "generic_param_count_out")?,
-        buffer_from_resources(resources, "generic_param_scan_local_prefix")?,
-        buffer_from_resources(resources, "generic_param_scan_block_sum")?,
-        buffer_from_resources(resources, "generic_param_scan_prefix_a")?,
-        buffer_from_resources(resources, "generic_param_scan_prefix_b")?,
-    )?;
-
     let type_instance_arg_row_scan = create_counted_u32_scan_bind_groups_with_passes(
         passes,
         device,
@@ -765,13 +804,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             resources,
         )?,
         propagate_generic_decl_owner,
-        finalize_generic_param_flags: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_type_instances_finalize_generic_param_flags",
-            &passes.type_instances_finalize_generic_param_flags,
-            resources,
-        )?,
-        generic_param_scan,
         type_instance_arg_row_scan,
         type_instance_arg_row_scan_n_blocks: arg_row_scan_n_blocks,
         decl_generic_params: reflected_bind_group_from_resources(
@@ -806,7 +838,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         struct_field_key_radix_dispatch_args: (*struct_field_key_radix_dispatch_args).clone(),
         struct_field_key_radix_dispatch,
         sort_struct_field_key_histogram,
-        sort_struct_field_key_bucket_prefix,
+        sort_struct_field_key_bucket_local,
+        sort_struct_field_key_bucket_chunks,
+        sort_struct_field_key_bucket_apply,
+        struct_field_radix_prefix_work_items: struct_field_n_blocks
+            .div_ceil(256)
+            .saturating_mul(NAME_RADIX_BUCKETS)
+            .saturating_mul(256),
         sort_struct_field_key_bucket_bases,
         sort_struct_field_key_scatter,
         collect: reflected_bind_group_from_resources(

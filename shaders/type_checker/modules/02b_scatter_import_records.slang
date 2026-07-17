@@ -22,8 +22,10 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> import_record_flag;
 StructuredBuffer<uint> import_record_prefix;
-StructuredBuffer<uint> hir_item_file_id;
-StructuredBuffer<uint> hir_item_import_target_kind;
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> path_id_by_owner_hir;
 
 RWStructuredBuffer<uint> import_module_file_id;
@@ -54,10 +56,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot.active == 0u)
         return;
 
-    uint kind = hir_item_import_target_kind[i];
-    import_module_file_id[slot.dst] = hir_item_file_id[i];
-    import_path_id[slot.dst] =
-        kind == HIR_ITEM_IMPORT_TARGET_PATH ? path_id_by_owner_hir[i] : INVALID;
+    uint kind = compact_hir_payload[i].d;
+    import_module_file_id[slot.dst] = compact_hir_links[i].file_id;
+    import_path_id[slot.dst] = kind == HIR_ITEM_IMPORT_TARGET_PATH
+        ? path_id_by_owner_hir[i]
+        : INVALID;
     import_kind[slot.dst] = kind;
     import_owner_hir[slot.dst] = i;
 }

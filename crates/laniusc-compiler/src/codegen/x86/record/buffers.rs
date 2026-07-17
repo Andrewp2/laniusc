@@ -45,9 +45,11 @@ pub(super) struct InitialRecordBuffers {
     pub(super) enum_record_status_buf: PooledStorageBuffer,
     pub(super) match_record_rows: usize,
     pub(super) match_record_buf: LaniusBuffer<u32>,
+    pub(super) match_arm_record_buf: LaniusBuffer<u32>,
     pub(super) match_arm_owner_buf: LaniusBuffer<u32>,
     pub(super) match_return_node_buf: LaniusBuffer<u32>,
     pub(super) match_pattern_owner_buf: LaniusBuffer<u32>,
+    pub(super) match_result_dense_owner_buf: LaniusBuffer<u32>,
     pub(super) match_result_value_owner_buf: LaniusBuffer<u32>,
     pub(super) match_pattern_node_owner_buf: LaniusBuffer<u32>,
     pub(super) match_pattern_node_variant_buf: LaniusBuffer<u32>,
@@ -72,6 +74,7 @@ pub(super) struct InitialRecordBufferInputs<'a, 'scratch> {
 
 /// Buffers allocated for x86 semantic metadata and call/aggregate planning.
 pub(super) struct MetadataRecordBuffers {
+    pub(super) compact_executable_raw_buf: LaniusBuffer<u32>,
     pub(super) match_pattern_first_use_node_buf: LaniusBuffer<u32>,
     pub(super) needs_enclosing_return_records: bool,
     pub(super) enclosing_return_node_a_buf: LaniusBuffer<u32>,
@@ -81,8 +84,13 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) match_pattern_first_variant_node_storage_buf: Option<LaniusBuffer<u32>>,
     pub(super) match_pattern_first_payload_node_storage_buf: Option<LaniusBuffer<u32>>,
     pub(super) aggregate_record_rows: usize,
+    pub(super) array_element_row_by_hir_buf: LaniusBuffer<u32>,
+    pub(super) struct_literal_field_row_by_hir_buf: LaniusBuffer<u32>,
+    pub(super) compact_expr_wrapper_buf: LaniusBuffer<u32>,
     pub(super) struct_type_record_buf: LaniusBuffer<u32>,
     pub(super) struct_field_width_by_node_buf: LaniusBuffer<u32>,
+    pub(super) struct_field_count_by_hir_buf: LaniusBuffer<u32>,
+    pub(super) struct_field_base_by_hir_buf: LaniusBuffer<u32>,
     pub(super) struct_field_stream_index_by_node_buf: LaniusBuffer<u32>,
     pub(super) struct_access_record_buf: LaniusBuffer<u32>,
     pub(super) struct_store_record_buf: LaniusBuffer<u32>,
@@ -304,6 +312,11 @@ pub(super) fn create_initial_record_buffers(
     };
     let match_record_buf =
         storage_u32_copy(device, "codegen.x86.match_record", match_record_rows * 4);
+    let match_arm_record_buf = storage_u32_copy(
+        device,
+        "codegen.x86.match_arm_record",
+        match_record_rows * 4,
+    );
     let match_arm_owner_buf =
         storage_u32_copy(device, "codegen.x86.match_arm_owner", match_record_rows);
     let match_return_node_buf =
@@ -317,6 +330,11 @@ pub(super) fn create_initial_record_buffers(
     let match_result_value_owner_buf = storage_u32_copy(
         device,
         "codegen.x86.match_result_value_owner",
+        match_record_rows,
+    );
+    let match_result_dense_owner_buf = storage_u32_copy(
+        device,
+        "codegen.x86.match_result_dense_owner",
         match_record_rows,
     );
     let match_pattern_node_owner_buf = external_or_storage_u32_copy(
@@ -369,9 +387,11 @@ pub(super) fn create_initial_record_buffers(
         enum_record_status_buf,
         match_record_rows,
         match_record_buf,
+        match_arm_record_buf,
         match_arm_owner_buf,
         match_return_node_buf,
         match_pattern_owner_buf,
+        match_result_dense_owner_buf,
         match_result_value_owner_buf,
         match_pattern_node_owner_buf,
         match_pattern_node_variant_buf,
@@ -397,6 +417,11 @@ pub(super) fn create_metadata_record_buffers(
         external_scratch,
     } = inputs;
 
+    let compact_executable_raw_buf = storage_u32_copy(
+        device,
+        "codegen.x86.compact_executable_raw",
+        hir_words,
+    );
     let match_pattern_first_use_node_buf = external_or_storage_u32_copy(
         device,
         "codegen.x86.match_pattern_first_use_node",
@@ -449,8 +474,21 @@ pub(super) fn create_metadata_record_buffers(
     });
     let struct_type_record_buf =
         storage_u32_copy(device, "codegen.x86.struct_type_record", token_words);
+    let array_element_row_by_hir_buf =
+        storage_u32_copy(device, "codegen.x86.array_element_row_by_hir", hir_words);
+    let struct_literal_field_row_by_hir_buf = storage_u32_copy(
+        device,
+        "codegen.x86.struct_literal_field_row_by_hir",
+        hir_words,
+    );
+    let compact_expr_wrapper_buf =
+        storage_u32_copy(device, "codegen.x86.compact_expr_wrapper", hir_words);
     let struct_field_width_by_node_buf =
         storage_u32_copy(device, "codegen.x86.struct_field_width_by_node", hir_words);
+    let struct_field_count_by_hir_buf =
+        storage_u32_copy(device, "codegen.x86.struct_field_count_by_hir", hir_words);
+    let struct_field_base_by_hir_buf =
+        storage_u32_copy(device, "codegen.x86.struct_field_base_by_hir", hir_words);
     let struct_field_stream_index_by_node_buf = storage_u32_copy(
         device,
         "codegen.x86.struct_field_stream_index_by_node",
@@ -621,6 +659,7 @@ pub(super) fn create_metadata_record_buffers(
     allocation_scope.checkpoint("call argument planning buffer allocation")?;
 
     Ok(MetadataRecordBuffers {
+        compact_executable_raw_buf,
         match_pattern_first_use_node_buf,
         needs_enclosing_return_records,
         enclosing_return_node_a_buf,
@@ -630,8 +669,13 @@ pub(super) fn create_metadata_record_buffers(
         match_pattern_first_variant_node_storage_buf,
         match_pattern_first_payload_node_storage_buf,
         aggregate_record_rows,
+        array_element_row_by_hir_buf,
+        struct_literal_field_row_by_hir_buf,
+        compact_expr_wrapper_buf,
         struct_type_record_buf,
         struct_field_width_by_node_buf,
+        struct_field_count_by_hir_buf,
+        struct_field_base_by_hir_buf,
         struct_field_stream_index_by_node_buf,
         struct_access_record_buf,
         struct_store_record_buf,

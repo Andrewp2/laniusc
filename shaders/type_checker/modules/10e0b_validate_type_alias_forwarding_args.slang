@@ -9,10 +9,12 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_arg_owner;
-StructuredBuffer<uint> hir_type_arg_rank;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> alias_forwarding;
 RWStructuredBuffer<uint> alias_forwarding_valid_arg_count;
@@ -27,26 +29,27 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
+uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+uint active_type_arg_count() { return min(gParams.n_hir_nodes, compact_type_arg_count[0u]); }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= active_hir_count())
+    uint row = linear_thread_id(dtid);
+    if (row >= active_type_arg_count())
         return;
-    uint owner = hir_type_arg_owner[node];
+    HirTypeArg arg = compact_type_args[row];
+    uint owner = arg.owner;
     uint decl_i = owner < active_hir_count() ? alias_decl_by_target_hir[owner] : INVALID;
     if (decl_i >= gParams.n_hir_nodes || alias_forwarding[decl_i] == 0u)
         return;
 
-    uint token = hir_token_pos[node];
+    uint token = arg.value < active_hir_count()
+        ? compact_hir_core[arg.value].token_start
+        : INVALID;
     uint slot = token < gParams.n_tokens ? type_generic_param_slot_by_token[token] : INVALID;
-    uint rank = hir_type_arg_rank[node];
+    uint rank = arg.ordinal;
     if (slot == INVALID || slot != rank)
     {
         uint ignored;

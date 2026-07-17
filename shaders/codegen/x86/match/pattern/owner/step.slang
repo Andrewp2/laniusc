@@ -17,6 +17,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> x86_match_pattern_node_owner_in;
 StructuredBuffer<uint> x86_match_pattern_owner_link_in;
 
@@ -33,7 +34,7 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -51,7 +52,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint owner = x86_match_pattern_node_owner_in[node];
     uint link = x86_match_pattern_owner_link_in[node];
-    if (valid_node(owner) || !valid_node(link))
+    if (owner != INVALID || !valid_node(link))
     {
         x86_match_pattern_node_owner_out[node] = owner;
         x86_match_pattern_owner_link_out[node] = INVALID;
@@ -59,7 +60,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
 
     uint linked_owner = x86_match_pattern_node_owner_in[link];
-    if (valid_node(linked_owner))
+    if (linked_owner != INVALID)
     {
         x86_match_pattern_node_owner_out[node] = linked_owner;
         x86_match_pattern_owner_link_out[node] = INVALID;

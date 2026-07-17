@@ -571,10 +571,7 @@ bool declared_array_width_for_decl_node(uint node, out uint width)
     if (!is_local_decl_node(node))
         return false;
 
-    uint type_record = stmt_slot(node, 3u);
-    if (type_record == INVALID || type_record >= active_hir_node_count() * STMT_RECORD_STRIDE)
-        return false;
-    uint type_node = hir_stmt_record[type_record];
+    uint type_node = stmt_slot(node, 3u);
     if (!valid_node(type_node) ||
         hir_kind[type_node] != HIR_TYPE ||
         hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)

@@ -1,9 +1,12 @@
-// Pack parser-owned match HIR metadata for x86 lowering.
+// Project compact HIR match metadata into the legacy raw-node x86 planner.
 //
-// Downstream x86 passes stay under WebGPU storage-buffer limits by consuming
-// one packed record table instead of rebinding every parser match array.
+// Match expressions remain keyed by their raw semantic representative until
+// the x86 instruction planner is dense-HIR-native. Match arms are compact
+// family rows; raw grammar productions never cross this boundary.
 
+import atomics;
 import gpu_index;
+
 struct Params
 {
     uint n_tokens;
@@ -24,23 +27,45 @@ struct FeatureParams
 
 ConstantBuffer<FeatureParams> gX86Features;
 
-StructuredBuffer<uint> hir_match_scrutinee_node;
-StructuredBuffer<uint> hir_match_arm_start;
-StructuredBuffer<uint> hir_match_arm_count;
-StructuredBuffer<uint> hir_match_arm_next;
-StructuredBuffer<uint> hir_match_arm_pattern_node;
-StructuredBuffer<uint> hir_match_arm_payload_start;
-StructuredBuffer<uint> hir_match_arm_payload_count;
-StructuredBuffer<uint> hir_match_arm_result_node;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
+struct HirMatchPayload { uint arm; uint pattern; uint ordinal; uint file_id; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
+StructuredBuffer<uint> compact_match_payload_start;
+StructuredBuffer<uint> compact_match_payload_count;
+StructuredBuffer<uint> compact_match_payload_row_count;
+StructuredBuffer<HirMatchPayload> compact_match_payloads;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> x86_node_func;
 
 RWStructuredBuffer<uint4> x86_match_record;
-RWStructuredBuffer<uint> x86_match_result_value_owner;
+RWStructuredBuffer<uint4> x86_match_arm_record;
+RWStructuredBuffer<uint> x86_match_result_dense_owner;
 RWStructuredBuffer<uint> x86_match_arm_owner;
+RWStructuredBuffer<uint> x86_match_pattern_owner;
+RWStructuredBuffer<uint> x86_compact_executable_raw;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_FEATURE_MATCH = 1u << 1u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint MATCH_ARM_VARIANT_UNKNOWN = 0xffffu;
 
 uint linear_dispatch_id(uint3 tid)
@@ -48,9 +73,29 @@ uint linear_dispatch_id(uint3 tid)
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
-bool valid_node(uint node)
+uint active_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+uint active_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_raw(uint node)
 {
     return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < active_hir_count();
+}
+
+bool valid_arm(uint arm)
+{
+    return arm != INVALID && arm < active_arm_count();
 }
 
 bool valid_token(uint token)
@@ -63,11 +108,35 @@ bool has_match_feature()
     return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
 }
 
-uint token_for_node(uint node)
+bool expression_kind_requires_payload(uint kind)
 {
-    if (!valid_node(node))
+    return kind == HIR_EXPR || kind == HIR_ASSIGN_EXPR ||
+           kind == HIR_BINARY_EXPR || kind == HIR_UNARY_EXPR ||
+           kind == HIR_POSTFIX_EXPR || kind == HIR_NAME_EXPR ||
+           kind == HIR_LITERAL_EXPR;
+}
+
+bool is_executable_projection(uint raw, uint dense)
+{
+    if (!valid_raw(raw) || !valid_dense(dense) ||
+        hir_kind[raw] != compact_hir_core[dense].kind ||
+        !valid_raw(x86_node_func[raw]))
+        return false;
+    uint kind = hir_kind[raw];
+    return !expression_kind_requires_payload(kind) ||
+           hir_expr_record[raw * EXPR_RECORD_STRIDE] > HIR_EXPR_FORWARD;
+}
+
+uint payload_token_for_arm(uint arm)
+{
+    uint count = compact_match_payload_count[arm];
+    uint start = compact_match_payload_start[arm];
+    if (count == 0u || start == INVALID)
         return INVALID;
-    uint token = hir_token_pos[node];
+    HirMatchPayload payload = compact_match_payloads[start];
+    if (!valid_dense(payload.pattern))
+        return INVALID;
+    uint token = compact_hir_core[payload.pattern].token_start;
     return valid_token(token) ? token : INVALID;
 }
 
@@ -75,43 +144,55 @@ uint token_for_node(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_id(tid);
-    if (node >= gParams.n_hir_nodes)
+    uint row = linear_dispatch_id(tid);
+    if (row >= gParams.n_hir_nodes)
         return;
+
+    uint dense = raw_to_compact_hir[row];
+    if (is_executable_projection(row, dense))
+        atomic_u32_min(x86_compact_executable_raw, dense, row);
+
     if (!has_match_feature())
         return;
 
-    x86_match_record[node] = uint4(INVALID, INVALID, 0u, INVALID);
+    x86_match_record[row] = uint4(INVALID, INVALID, 0u, INVALID);
+    x86_match_arm_record[row] = uint4(INVALID, INVALID, 0u, INVALID);
 
-    uint scrutinee = hir_match_scrutinee_node[node];
-    uint arm_start = hir_match_arm_start[node];
-    uint arm_count = hir_match_arm_count[node];
-    if (scrutinee != INVALID || arm_count != 0u)
+    if (valid_dense(dense) && compact_hir_core[dense].kind == HIR_MATCH_EXPR)
     {
-        uint second_arm = arm_count > 1u && valid_node(arm_start)
-                              ? hir_match_arm_next[arm_start]
-                              : INVALID;
-        x86_match_record[node] = uint4(scrutinee, arm_start, arm_count, second_arm);
-        if (valid_node(arm_start))
-            x86_match_arm_owner[arm_start] = node;
-        if (valid_node(second_arm))
-            x86_match_arm_owner[second_arm] = node;
+        HirPayload payload = compact_hir_payload[dense];
+        x86_match_record[row] = uint4(
+            INVALID, payload.b, payload.c, INVALID);
+    }
+
+    if (!valid_arm(row))
+    {
+        uint payload_rows = min(compact_match_payload_row_count[0u], gParams.n_hir_nodes);
+        if (row < payload_rows)
+        {
+            HirMatchPayload payload = compact_match_payloads[row];
+            if (valid_dense(payload.pattern) && valid_arm(payload.arm))
+                x86_match_pattern_owner[payload.pattern] = payload.arm;
+        }
         return;
     }
 
-    uint pattern = hir_match_arm_pattern_node[node];
-    uint result = hir_match_arm_result_node[node];
-    if (pattern != INVALID || result != INVALID)
+    HirMatchArm arm = compact_match_arms[row];
+    uint payload_count = min(compact_match_payload_count[row], 0xffffu);
+    x86_match_arm_record[row] = uint4(
+        arm.pattern,
+        payload_token_for_arm(row),
+        pack_u16_pair(payload_count, MATCH_ARM_VARIANT_UNKNOWN),
+        INVALID);
+
+    if (valid_dense(arm.result))
+        x86_match_result_dense_owner[arm.result] = row;
+
+    uint payload_rows = min(compact_match_payload_row_count[0u], gParams.n_hir_nodes);
+    if (row < payload_rows)
     {
-        uint payload_node = hir_match_arm_payload_start[node];
-        uint payload_token = token_for_node(payload_node);
-        uint payload_count = unpack_u16_pair_low(hir_match_arm_payload_count[node]);
-        x86_match_record[node] = uint4(
-            pattern,
-            payload_token,
-            pack_u16_pair(payload_count, MATCH_ARM_VARIANT_UNKNOWN),
-            result);
-        if (valid_node(result))
-            x86_match_result_value_owner[result] = node;
+        HirMatchPayload payload = compact_match_payloads[row];
+        if (valid_dense(payload.pattern) && valid_arm(payload.arm))
+            x86_match_pattern_owner[payload.pattern] = payload.arm;
     }
 }

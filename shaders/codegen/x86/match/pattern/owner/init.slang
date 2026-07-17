@@ -26,9 +26,11 @@ struct FeatureParams
 
 ConstantBuffer<FeatureParams> gX86Features;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint4> x86_match_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint4> x86_match_arm_record;
+StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<uint> x86_match_pattern_owner;
 
 RWStructuredBuffer<uint> x86_match_pattern_node_owner;
@@ -45,12 +47,22 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_arm(uint arm)
+{
+    return arm != INVALID && arm < active_arm_count();
 }
 
 bool has_match_feature()
@@ -60,7 +72,7 @@ bool has_match_feature()
 
 uint parent_node(uint node)
 {
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
+    return valid_node(node) ? compact_hir_core[node].parent : INVALID;
 }
 
 uint valid_pattern_owner_at(uint node)
@@ -69,10 +81,10 @@ uint valid_pattern_owner_at(uint node)
         return INVALID;
 
     uint arm = x86_match_pattern_owner[node];
-    if (!valid_node(arm))
+    if (!valid_arm(arm))
         return INVALID;
 
-    uint4 record = x86_match_record[arm];
+    uint4 record = x86_match_arm_record[arm];
     return record.x != INVALID && record.w != INVALID ? arm : INVALID;
 }
 
@@ -88,5 +100,5 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint owner = valid_pattern_owner_at(node);
     x86_match_pattern_node_owner[node] = owner;
-    x86_match_pattern_owner_link[node] = valid_node(owner) ? INVALID : parent_node(node);
+    x86_match_pattern_owner_link[node] = valid_arm(owner) ? INVALID : parent_node(node);
 }

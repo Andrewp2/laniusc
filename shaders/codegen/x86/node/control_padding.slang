@@ -143,7 +143,7 @@ bool supported_return_match(uint match_node)
         return false;
     uint4 record = x86_match_record[match_node];
     return valid_node(record.x) &&
-           valid_node(record.y) &&
+           record.y != INVALID &&
            record.z == 2u &&
            match_expr_is_return_value(match_node);
 }
@@ -165,7 +165,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    if (has_match_feature() && valid_node(x86_match_result_value_owner[node]))
+    if (has_match_feature() && x86_match_result_value_owner[node] != INVALID)
     {
         add_padding(node, 1u);
     }

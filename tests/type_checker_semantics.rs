@@ -5104,6 +5104,31 @@ fn main() {
 }
 
 #[test]
+fn type_checker_limits_compact_match_payload_binders_to_their_arm_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+enum MaybeI32 {
+    Some(i32),
+    None,
+}
+
+fn choose(value: MaybeI32) -> i32 {
+    return match (value) {
+        Some(inner) -> inner,
+        None -> inner,
+    };
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0005",
+        &["error[LNC0005]: unresolved identifier", "None -> inner"],
+    );
+}
+
+#[test]
 fn type_checker_rejects_enum_match_pattern_payload_arity_mismatch_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"

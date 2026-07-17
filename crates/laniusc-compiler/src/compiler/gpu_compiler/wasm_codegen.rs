@@ -203,6 +203,76 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             module_record_capacity: parse_bufs.tree_capacity,
                                             call_param_row_capacity: parse_bufs.tree_capacity,
                                             call_arg_row_capacity: parse_bufs.tree_capacity,
+                                            compact_hir_count: &parse_bufs.hir_canonical_count,
+                                            compact_hir_core: &parse_bufs.hir_core,
+                                            raw_to_compact_hir: &parse_bufs
+                                                .hir_canonical_raw_to_dense,
+                                            compact_hir_links: &parse_bufs.hir_links,
+                                            compact_hir_payload: &parse_bufs.hir_payload,
+                                            compact_fn_return_type: &parse_bufs
+                                                .hir_canonical_fn_return_type,
+                                            compact_type_alias_target: &parse_bufs
+                                                .hir_canonical_type_alias_target,
+                                            compact_param_count: &parse_bufs.hir_param_table_count,
+                                            compact_params: &parse_bufs.hir_param_rows,
+                                            compact_param_ranges: &parse_bufs.hir_param_ranges,
+                                            compact_method_count: &parse_bufs.hir_method_table_count,
+                                            compact_method_cores: &parse_bufs.hir_method_core_rows,
+                                            compact_method_signatures: &parse_bufs
+                                                .hir_method_signature_rows,
+                                            compact_predicate_count: &parse_bufs
+                                                .hir_predicate_table_count,
+                                            compact_predicates: &parse_bufs.hir_predicate_rows,
+                                            compact_type_arg_count: &parse_bufs
+                                                .hir_type_arg_table_count,
+                                            compact_type_args: &parse_bufs.hir_type_arg_rows,
+                                            compact_type_arg_ranges: &parse_bufs
+                                                .hir_type_arg_ranges,
+                                            compact_path_count: &parse_bufs.hir_path_table_count,
+                                            compact_paths: &parse_bufs.hir_path_rows,
+                                            compact_path_segment_count: &parse_bufs
+                                                .hir_path_segment_table_count,
+                                            compact_path_segments: &parse_bufs
+                                                .hir_path_segment_rows,
+                                            compact_generic_param_count: &parse_bufs
+                                                .hir_generic_param_table_count,
+                                            compact_generic_params: &parse_bufs
+                                                .hir_generic_param_rows,
+                                            compact_generic_param_ranges: &parse_bufs
+                                                .hir_generic_param_ranges,
+                                            compact_field_count: &parse_bufs
+                                                .hir_field_table_count,
+                                            compact_fields: &parse_bufs.hir_field_rows,
+                                            compact_variant_count: &parse_bufs
+                                                .hir_variant_table_count,
+                                            compact_variants: &parse_bufs.hir_variant_rows,
+                                            compact_variant_payload_start: &parse_bufs
+                                                .hir_variant_compact_payload_start,
+                                            compact_variant_payload_count: &parse_bufs
+                                                .hir_variant_compact_payload_count,
+                                            compact_variant_payload_row_count: &parse_bufs
+                                                .hir_variant_payload_table_count,
+                                            compact_variant_payloads: &parse_bufs
+                                                .hir_variant_payload_rows,
+                                            compact_match_arm_count: &parse_bufs
+                                                .hir_match_arm_table_count,
+                                            compact_match_arms: &parse_bufs.hir_match_arm_rows,
+                                            compact_match_payload_start: &parse_bufs
+                                                .hir_match_compact_payload_start,
+                                            compact_match_payload_count: &parse_bufs
+                                                .hir_match_compact_payload_count,
+                                            compact_match_payload_row_count: &parse_bufs
+                                                .hir_match_payload_table_count,
+                                            compact_match_payloads: &parse_bufs
+                                                .hir_match_payload_rows,
+                                            compact_array_element_start: &parse_bufs
+                                                .hir_array_compact_element_start,
+                                            compact_array_element_count: &parse_bufs
+                                                .hir_array_compact_element_count,
+                                            compact_array_element_row_count: &parse_bufs
+                                                .hir_array_element_table_count,
+                                            compact_array_elements: &parse_bufs
+                                                .hir_array_element_rows,
                                             node_kind: &parse_bufs.node_kind,
                                             parent: &parse_bufs.parent,
                                             first_child: &parse_bufs.first_child,
@@ -298,35 +368,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             call_arg_parent_call: &parse_bufs
                                                 .hir_call_arg_parent_call,
                                             call_arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                            variant_parent_enum: &parse_bufs
-                                                .hir_variant_parent_enum,
-                                            variant_payload_start: &parse_bufs
-                                                .hir_variant_payload_start,
-                                            variant_payload_count: &parse_bufs
-                                                .hir_variant_payload_count,
-                                            variant_payload_node: &parse_bufs
-                                                .hir_variant_payload_node,
-                                            match_scrutinee_node: &parse_bufs
-                                                .hir_match_scrutinee_node,
-                                            match_arm_start: &parse_bufs.hir_match_arm_start,
-                                            match_arm_count: &parse_bufs.hir_match_arm_count,
-                                            match_arm_next: &parse_bufs.hir_match_arm_next,
-                                            match_arm_pattern_node: &parse_bufs
-                                                .hir_match_arm_pattern_node,
-                                            match_pattern_owner_arm: &parse_bufs
-                                                .hir_match_pattern_owner_arm,
-                                            match_arm_payload_start: &parse_bufs
-                                                .hir_match_arm_payload_start,
-                                            match_arm_payload_count: &parse_bufs
-                                                .hir_match_arm_payload_count,
-                                            match_arm_result_node: &parse_bufs
-                                                .hir_match_arm_result_node,
-                                            match_payload_owner_arm: &parse_bufs
-                                                .hir_match_payload_owner_arm,
-                                            match_payload_match_node: &parse_bufs
-                                                .hir_match_payload_match_node,
-                                            match_payload_ordinal: &parse_bufs
-                                                .hir_match_payload_ordinal,
                                             struct_field_parent_struct: &parse_bufs
                                                 .hir_struct_field_parent_struct,
                                             struct_field_ordinal: &parse_bufs
@@ -443,25 +484,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     struct_init_field_decl_node_by_node: codegen
                                                         .struct_init_field_decl_node_by_node,
                                                 },
-        enum_matches: wasm::GpuWasmEnumMatchMetadataBuffers {
-                                                    variant_ordinal: &parse_bufs
-                                                        .hir_variant_ordinal,
-                                                    match_scrutinee_node: &parse_bufs
-                                                        .hir_match_scrutinee_node,
-                                                    match_arm_start: &parse_bufs
-                                                        .hir_match_arm_start,
-                                                    match_arm_count: &parse_bufs
-                                                        .hir_match_arm_count,
-                                                    match_arm_next: &parse_bufs.hir_match_arm_next,
-                                                    match_arm_pattern_node: &parse_bufs
-                                                        .hir_match_arm_pattern_node,
-                                                    match_arm_payload_start: &parse_bufs
-                                                        .hir_match_arm_payload_start,
-                                                    match_arm_payload_count: &parse_bufs
-                                                        .hir_match_arm_payload_count,
-                                                    match_arm_result_node: &parse_bufs
-                                                        .hir_match_arm_result_node,
-                                                },
         calls: wasm::GpuWasmCallMetadataBuffers {
                                                     callee_node: &parse_bufs.hir_call_callee_node,
                                                     context_stmt: &parse_bufs
@@ -535,7 +557,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     segment_count: codegen.path_segment_count,
                                                     segment_base: codegen.path_segment_base,
                                                     segment_token: codegen.path_segment_token,
-                                                    id_by_owner_hir: codegen.path_id_by_owner_hir,
+                                                    id_by_owner_token: codegen.path_id_by_owner_token,
                                                 },
         semantic_hir: wasm::GpuWasmSemanticHirBuffers {
                                                     count: &parse_bufs.hir_semantic_count,
@@ -810,6 +832,76 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             module_record_capacity: parse_bufs.tree_capacity,
                                             call_param_row_capacity: parse_bufs.tree_capacity,
                                             call_arg_row_capacity: parse_bufs.tree_capacity,
+                                            compact_hir_count: &parse_bufs.hir_canonical_count,
+                                            compact_hir_core: &parse_bufs.hir_core,
+                                            raw_to_compact_hir: &parse_bufs
+                                                .hir_canonical_raw_to_dense,
+                                            compact_hir_links: &parse_bufs.hir_links,
+                                            compact_hir_payload: &parse_bufs.hir_payload,
+                                            compact_fn_return_type: &parse_bufs
+                                                .hir_canonical_fn_return_type,
+                                            compact_type_alias_target: &parse_bufs
+                                                .hir_canonical_type_alias_target,
+                                            compact_param_count: &parse_bufs.hir_param_table_count,
+                                            compact_params: &parse_bufs.hir_param_rows,
+                                            compact_param_ranges: &parse_bufs.hir_param_ranges,
+                                            compact_method_count: &parse_bufs.hir_method_table_count,
+                                            compact_method_cores: &parse_bufs.hir_method_core_rows,
+                                            compact_method_signatures: &parse_bufs
+                                                .hir_method_signature_rows,
+                                            compact_predicate_count: &parse_bufs
+                                                .hir_predicate_table_count,
+                                            compact_predicates: &parse_bufs.hir_predicate_rows,
+                                            compact_type_arg_count: &parse_bufs
+                                                .hir_type_arg_table_count,
+                                            compact_type_args: &parse_bufs.hir_type_arg_rows,
+                                            compact_type_arg_ranges: &parse_bufs
+                                                .hir_type_arg_ranges,
+                                            compact_path_count: &parse_bufs.hir_path_table_count,
+                                            compact_paths: &parse_bufs.hir_path_rows,
+                                            compact_path_segment_count: &parse_bufs
+                                                .hir_path_segment_table_count,
+                                            compact_path_segments: &parse_bufs
+                                                .hir_path_segment_rows,
+                                            compact_generic_param_count: &parse_bufs
+                                                .hir_generic_param_table_count,
+                                            compact_generic_params: &parse_bufs
+                                                .hir_generic_param_rows,
+                                            compact_generic_param_ranges: &parse_bufs
+                                                .hir_generic_param_ranges,
+                                            compact_field_count: &parse_bufs
+                                                .hir_field_table_count,
+                                            compact_fields: &parse_bufs.hir_field_rows,
+                                            compact_variant_count: &parse_bufs
+                                                .hir_variant_table_count,
+                                            compact_variants: &parse_bufs.hir_variant_rows,
+                                            compact_variant_payload_start: &parse_bufs
+                                                .hir_variant_compact_payload_start,
+                                            compact_variant_payload_count: &parse_bufs
+                                                .hir_variant_compact_payload_count,
+                                            compact_variant_payload_row_count: &parse_bufs
+                                                .hir_variant_payload_table_count,
+                                            compact_variant_payloads: &parse_bufs
+                                                .hir_variant_payload_rows,
+                                            compact_match_arm_count: &parse_bufs
+                                                .hir_match_arm_table_count,
+                                            compact_match_arms: &parse_bufs.hir_match_arm_rows,
+                                            compact_match_payload_start: &parse_bufs
+                                                .hir_match_compact_payload_start,
+                                            compact_match_payload_count: &parse_bufs
+                                                .hir_match_compact_payload_count,
+                                            compact_match_payload_row_count: &parse_bufs
+                                                .hir_match_payload_table_count,
+                                            compact_match_payloads: &parse_bufs
+                                                .hir_match_payload_rows,
+                                            compact_array_element_start: &parse_bufs
+                                                .hir_array_compact_element_start,
+                                            compact_array_element_count: &parse_bufs
+                                                .hir_array_compact_element_count,
+                                            compact_array_element_row_count: &parse_bufs
+                                                .hir_array_element_table_count,
+                                            compact_array_elements: &parse_bufs
+                                                .hir_array_element_rows,
                                             node_kind: &parse_bufs.node_kind,
                                             parent: &parse_bufs.parent,
                                             first_child: &parse_bufs.first_child,
@@ -907,35 +999,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             call_arg_parent_call: &parse_bufs
                                                 .hir_call_arg_parent_call,
                                             call_arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                            variant_parent_enum: &parse_bufs
-                                                .hir_variant_parent_enum,
-                                            variant_payload_start: &parse_bufs
-                                                .hir_variant_payload_start,
-                                            variant_payload_count: &parse_bufs
-                                                .hir_variant_payload_count,
-                                            variant_payload_node: &parse_bufs
-                                                .hir_variant_payload_node,
-                                            match_scrutinee_node: &parse_bufs
-                                                .hir_match_scrutinee_node,
-                                            match_arm_start: &parse_bufs.hir_match_arm_start,
-                                            match_arm_count: &parse_bufs.hir_match_arm_count,
-                                            match_arm_next: &parse_bufs.hir_match_arm_next,
-                                            match_arm_pattern_node: &parse_bufs
-                                                .hir_match_arm_pattern_node,
-                                            match_pattern_owner_arm: &parse_bufs
-                                                .hir_match_pattern_owner_arm,
-                                            match_arm_payload_start: &parse_bufs
-                                                .hir_match_arm_payload_start,
-                                            match_arm_payload_count: &parse_bufs
-                                                .hir_match_arm_payload_count,
-                                            match_arm_result_node: &parse_bufs
-                                                .hir_match_arm_result_node,
-                                            match_payload_owner_arm: &parse_bufs
-                                                .hir_match_payload_owner_arm,
-                                            match_payload_match_node: &parse_bufs
-                                                .hir_match_payload_match_node,
-                                            match_payload_ordinal: &parse_bufs
-                                                .hir_match_payload_ordinal,
                                             struct_field_parent_struct: &parse_bufs
                                                 .hir_struct_field_parent_struct,
                                             struct_field_ordinal: &parse_bufs
@@ -1049,25 +1112,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     struct_init_field_decl_node_by_node: codegen
                                                         .struct_init_field_decl_node_by_node,
                                                 },
-        enum_matches: wasm::GpuWasmEnumMatchMetadataBuffers {
-                                                    variant_ordinal: &parse_bufs
-                                                        .hir_variant_ordinal,
-                                                    match_scrutinee_node: &parse_bufs
-                                                        .hir_match_scrutinee_node,
-                                                    match_arm_start: &parse_bufs
-                                                        .hir_match_arm_start,
-                                                    match_arm_count: &parse_bufs
-                                                        .hir_match_arm_count,
-                                                    match_arm_next: &parse_bufs.hir_match_arm_next,
-                                                    match_arm_pattern_node: &parse_bufs
-                                                        .hir_match_arm_pattern_node,
-                                                    match_arm_payload_start: &parse_bufs
-                                                        .hir_match_arm_payload_start,
-                                                    match_arm_payload_count: &parse_bufs
-                                                        .hir_match_arm_payload_count,
-                                                    match_arm_result_node: &parse_bufs
-                                                        .hir_match_arm_result_node,
-                                                },
         calls: wasm::GpuWasmCallMetadataBuffers {
                                                     callee_node: &parse_bufs.hir_call_callee_node,
                                                     context_stmt: &parse_bufs
@@ -1139,7 +1183,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                     segment_count: codegen.path_segment_count,
                                                     segment_base: codegen.path_segment_base,
                                                     segment_token: codegen.path_segment_token,
-                                                    id_by_owner_hir: codegen.path_id_by_owner_hir,
+                                                    id_by_owner_token: codegen.path_id_by_owner_token,
                                                 },
         semantic_hir: wasm::GpuWasmSemanticHirBuffers {
                                                     count: &parse_bufs.hir_semantic_count,

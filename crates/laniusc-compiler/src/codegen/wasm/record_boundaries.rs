@@ -370,11 +370,6 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
         writes: &[],
     },
     WasmRecordBoundary {
-        stage: "hir_enum_match_records",
-        reads: &["hir_match_records"],
-        writes: &["wasm_enum_match_records"],
-    },
-    WasmRecordBoundary {
         stage: "module_status",
         reads: &["wasm_params", "wasm_body_status", "wasm_status"],
         writes: &["wasm_status"],

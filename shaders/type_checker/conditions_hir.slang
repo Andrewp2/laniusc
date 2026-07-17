@@ -21,6 +21,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct CompactFnPayload { uint a; uint b; uint c; uint d; };
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
@@ -39,9 +41,6 @@ StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> hir_nearest_stmt_node;
 StructuredBuffer<uint> hir_nearest_block_node;
 StructuredBuffer<uint> hir_nearest_fn_node;
-StructuredBuffer<uint> hir_match_arm_pattern_node;
-StructuredBuffer<uint> hir_match_pattern_owner_arm;
-StructuredBuffer<uint> hir_match_payload_owner_arm;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
@@ -51,7 +50,6 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_has_array_arg;
 StructuredBuffer<uint> call_array_return_arg_instance;
 StructuredBuffer<uint> path_count_out;
-StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -66,6 +64,7 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> module_type_path_status;
 StructuredBuffer<uint> module_value_path_status;
+StructuredBuffer<uint> module_value_path_call_path_id;
 StructuredBuffer<uint> module_value_path_call_leaf;
 StructuredBuffer<uint> module_value_path_associated_method_token;
 StructuredBuffer<uint> visible_decl;
@@ -76,13 +75,15 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<CompactFnPayload> compact_hir_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> type_decl_generic_param_count_by_node;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
@@ -969,19 +970,27 @@ uint path_id_for_callee_node(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-    if (hir_kind[callee_node] == HIR_PATH_EXPR || hir_kind[callee_node] == HIR_TYPE)
+
+    // path_id_by_owner_hir is keyed by dense compact-HIR ids. This validator
+    // still walks legacy raw call records, so crossing that table directly
+    // would mix index domains. Call discovery publishes the same semantic path
+    // relation by each distinct source anchor used by the call, owner, and leaf.
+    uint token = value_token_for_node(callee_node);
+    if (!valid_token(token))
+        token = hir_token_pos[callee_node];
+    uint path_i = valid_token(token) ? module_value_path_call_path_id[token] : INVALID;
+    if (valid_path(path_i))
+        return path_i;
+
+    uint child = first_child[callee_node];
+    if (valid_node(child))
     {
-        uint path_i = path_id_by_owner_hir[callee_node];
-        return valid_path(path_i) ? path_i : INVALID;
-    }
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && (hir_kind[child] == HIR_PATH_EXPR || hir_kind[child] == HIR_TYPE))
-        {
-            uint path_i = path_id_by_owner_hir[child];
-            return valid_path(path_i) ? path_i : INVALID;
-        }
+        token = value_token_for_node(child);
+        if (!valid_token(token))
+            token = hir_token_pos[child];
+        path_i = valid_token(token) ? module_value_path_call_path_id[token] : INVALID;
+        if (valid_path(path_i))
+            return path_i;
     }
     return INVALID;
 }
@@ -1230,20 +1239,6 @@ bool decl_initializer_context_is_array(uint node)
     return valid_node(type_node) &&
            hir_kind[type_node] == HIR_TYPE &&
            hir_type_form[type_node] == HIR_TYPE_FORM_ARRAY;
-}
-
-bool parser_published_match_payload(uint node)
-{
-    return valid_node(node) && valid_node(hir_match_payload_owner_arm[node]);
-}
-
-bool parser_published_match_pattern(uint node)
-{
-    if (!valid_node(node))
-        return false;
-
-    uint arm = hir_match_pattern_owner_arm[node];
-    return valid_node(arm) && hir_match_arm_pattern_node[arm] == node;
 }
 
 bool token_inside_node_span(uint node, uint token_i)
@@ -1694,6 +1689,15 @@ void validate_decl_initializer_node(uint node)
     if (resolved_call_expr_has_unknown_result(expr_node))
         return;
 
+    // Array declarations are represented by an instance ref, while
+    // `visible_type` intentionally exposes their scalar element type to value
+    // expression inference. Do not compare the literal against that flattened
+    // scalar here: the parallel array-literal instance pass validates its
+    // bounded length and every linked element against the full array ref.
+    if (decl_initializer_context_is_array(node) &&
+        valid_node(direct_array_literal_node(expr_node)))
+        return;
+
     uint value_token = INVALID;
     uint actual = TY_UNKNOWN;
     if (is_contextual_aggregate_type(expected) &&
@@ -1827,7 +1831,12 @@ uint enclosing_function_token_for_token(uint token_i)
         return INVALID;
 
     uint encoded_fn = enclosing_fn[token_i];
-    return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return valid_token(fn_token) ? fn_token : INVALID;
 }
 
 uint enclosing_function_return_type_token_for_token(uint token_i)
@@ -1979,10 +1988,6 @@ void validate_value_path_status_node(uint node)
     // Intrinsic call heads are resolved by the call-record pass; call arguments
     // remain ordinary value expressions and are validated by their own HIR rows.
     if (is_intrinsic_name(token_i))
-        return;
-    if (parser_published_match_payload(node))
-        return;
-    if (parser_published_match_pattern(node))
         return;
     if (parser_published_type_syntax(node, token_i))
         return;

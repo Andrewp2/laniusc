@@ -2416,6 +2416,7 @@ fn main() -> i32 {
     total += values[1];
     return total;
 }
+
 "#,
     )
     .expect("computed array literal elements should compile to WASM");
@@ -2426,6 +2427,43 @@ fn main() -> i32 {
         &wasm,
     );
     assert_eq!(status, 10);
+}
+
+#[test]
+fn wasm_executes_deep_computed_array_literal_elements() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn build(x: i32) -> i32 {
+    let value: i32 = 7;
+    let values: [i32; 4] = [
+        value,
+        (x + 8) & 31,
+        (value + 6) & 31,
+        (x * 3 + 7) & 31,
+    ];
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 4) {
+        total = (total + values[i] * (i + 1)) & 255;
+        i += 1;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return build(5);
+}
+"#,
+    )
+    .expect("nested array element expressions should use the parallel expression forest");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM nested computed array literal elements",
+        "deep_computed_array_literal_elements",
+        &wasm,
+    );
+    assert_eq!(status, 160);
 }
 
 #[test]

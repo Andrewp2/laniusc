@@ -21,6 +21,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -38,6 +40,8 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
@@ -94,6 +98,17 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint enclosing_function_decl_token(uint token)
+{
+    uint encoded_fn = valid_token(token) ? enclosing_fn[token] : 0u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return valid_token(fn_token) ? fn_token : INVALID;
 }
 
 uint stmt_slot(uint node, uint slot)
@@ -192,8 +207,7 @@ uint function_return_array_instance(uint return_node)
     if (!valid_token(return_token))
         return INVALID;
 
-    uint encoded_fn = enclosing_fn[return_token];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_token = enclosing_function_decl_token(return_token);
     if (!valid_token(fn_token))
         return INVALID;
 

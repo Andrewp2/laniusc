@@ -22,6 +22,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
@@ -34,7 +35,7 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 
-RWStructuredBuffer<uint> predicate_method_contract_owner_node;
+RWStructuredBuffer<uint> predicate_method_contract_owner_hir;
 RWStructuredBuffer<uint> predicate_method_contract_name_token;
 RWStructuredBuffer<uint> predicate_method_contract_name_id;
 RWStructuredBuffer<uint> predicate_method_contract_param_count;
@@ -251,7 +252,8 @@ void publish_method_record(uint node)
     if (!valid_node(owner) || !valid_token(name_token) || name_id == INVALID)
         status = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
 
-    predicate_method_contract_owner_node[node] = owner;
+    uint owner_hir = valid_node(owner) ? raw_to_compact_hir[owner] : INVALID;
+    predicate_method_contract_owner_hir[node] = owner_hir;
     predicate_method_contract_name_token[node] = name_token;
     predicate_method_contract_name_id[node] = name_id;
     predicate_method_contract_return_type_node[node] = method_return_type_node(node);

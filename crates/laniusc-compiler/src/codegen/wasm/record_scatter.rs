@@ -21,11 +21,6 @@ impl GpuWasmCodeGenerator {
         let body_scatter_items = output_capacity as u32;
         let body_scatter_groups = body_scatter_items.div_ceil(256).max(1);
         let (body_scatter_groups_x, body_scatter_groups_y) = workgroup_grid_1d(body_scatter_groups);
-        let agg_layout_groups = token_capacity
-            .max(bufs.hir_node_capacity)
-            .div_ceil(256)
-            .max(1);
-        let (agg_layout_groups_x, agg_layout_groups_y) = workgroup_grid_1d(agg_layout_groups);
         let wasm_assert_output_groups = ((output_capacity as u32)
             .min(WASM_ASSERT_OUTPUT_TARGET_LIMIT))
         .div_ceil(256)
@@ -442,17 +437,6 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(token_groups_x, token_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.phase2.dispatch.hir_agg_body.done");
-
-        trace_wasm_codegen("record.phase2.dispatch.hir_enum_match_records.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_enum_match_records"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(self.hir_enum_match_records_pass.pipeline()?.as_ref());
-        compute.set_bind_group(0, Some(&bufs.hir_enum_match_records_bind_group), &[]);
-        compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.phase2.dispatch.hir_enum_match_records.done");
 
         trace_wasm_codegen("record.phase2.dispatch.call_relocations.start");
         self.record_wasm_call_relocations(encoder, &bufs.call_relocations, body_len)?;

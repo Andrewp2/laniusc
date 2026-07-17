@@ -558,7 +558,7 @@ impl Buffers {
             device,
             "type_check.resident.decl_duplicate_of",
             record_capacity,
-            external.map(|scratch| scratch.type_decl_generic_param_count_by_node),
+            external.map(|scratch| scratch.type_decl_generic_param_count_by_owner_token),
         );
         // Declaration namespace/public flags are consumed during module-path
         // visibility setup, before type-instance argument tag/payload tables are

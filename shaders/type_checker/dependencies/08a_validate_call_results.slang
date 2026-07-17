@@ -18,6 +18,9 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -87,6 +90,19 @@ static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 uint active_hir_count()
 {
     return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+}
+
+uint enclosing_function_decl_token(uint token)
+{
+    if (token == INVALID || token >= gParams.visible_capacity)
+        return INVALID;
+    uint encoded_fn = enclosing_fn[token];
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.hir_capacity);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return fn_token < gParams.visible_capacity ? fn_token : INVALID;
 }
 
 bool valid_node(uint node)
@@ -249,8 +265,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint actual_tag = decl_type_ref_tag[callee_token];
     uint actual_payload = decl_type_ref_payload[callee_token];
     uint return_token = hir_token_pos[node];
-    uint encoded_fn = valid_token(return_token) ? enclosing_fn[return_token] : 0u;
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_token = enclosing_function_decl_token(return_token);
     if (!valid_token(fn_token))
         return;
 

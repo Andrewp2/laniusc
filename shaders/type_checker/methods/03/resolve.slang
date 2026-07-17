@@ -55,6 +55,7 @@ StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> path_segment_count;
@@ -313,7 +314,10 @@ uint path_id_for_callee_node(uint callee_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
     uint path_node = hir_call_callee_path_node[call_node];
-    uint path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+    uint path_owner = valid_node(path_node) ? raw_to_compact_hir[path_node] : INVALID;
+    uint path_i = path_owner < gParams.n_hir_nodes
+        ? path_id_by_owner_hir[path_owner]
+        : INVALID;
     return valid_path(path_i) ? path_i : INVALID;
 }
 

@@ -61,6 +61,32 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
     );
     record_compute(
         encoder,
+        &passes.count_dispatch_args,
+        &groups.match_payload_dispatch,
+        "type_check.visible.match_payload_dispatch_args",
+        1,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.visible_scatter_match_payload_decls,
+        &groups.scatter_match_payload_decls,
+        "type_check.visible.scatter_match_payload_decls",
+        &groups.match_payload_dispatch_args,
+    )?;
+    record_compute(
+        encoder,
+        &passes.visible_finalize_decl_count,
+        &groups.finalize_decl_count,
+        "type_check.visible.finalize_decl_count",
+        1,
+    )?;
+    stamp_typecheck_timer(
+        &mut timer,
+        encoder,
+        "typecheck.visible.scatter_match_payload_decls.done",
+    );
+    record_compute(
+        encoder,
         &passes.names_radix_dispatch_args,
         &groups.hir_decl_key_radix_dispatch,
         "type_check.visible.hir_decl_key_radix_dispatch_args",

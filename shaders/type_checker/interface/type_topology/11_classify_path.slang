@@ -14,8 +14,11 @@ struct Params
     uint dependency_type_count;
 };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
@@ -27,6 +30,7 @@ RWStructuredBuffer<uint4> interface_type_path_classification;
 RWStructuredBuffer<uint> interface_status;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
@@ -81,9 +85,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gParams.hir_capacity)
         return;
     interface_type_path_classification[node] = uint4(0u, 0u, 0u, 0u);
-    if (hir_type_form[node] != HIR_TYPE_FORM_PATH)
+    if (node >= min(compact_hir_count[0u], gParams.hir_capacity) ||
+        compact_hir_core[node].kind != HIR_TYPE ||
+        compact_hir_payload[node].a != HIR_TYPE_FORM_PATH)
         return;
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
     {
         fail(node);

@@ -28,6 +28,7 @@ fn grid_checksum_benchmark_artifacts_are_checked() {
     let command_map = commands["commands"]
         .as_object()
         .expect("commands.json should contain command map");
+    assert_no_debug_info_flags(command_map);
 
     let machine = read_json(root.join("machine_info.json"));
     assert_eq!(machine["schema"], "lanius.benchmark-machine.v1");
@@ -213,149 +214,169 @@ fn grid_checksum_sources_match_generator() {
 fn compile_scaling_1101000_artifacts_are_checked_and_reproducible() {
     let repo = repo_root();
     let root = repo.join("benchmark_artifacts/compile_scaling_1101000");
-    let config = read_json(root.join("generator_config.json"));
-    assert_eq!(config["schema"], "lanius.compile-scaling-generator.v1");
-    assert_eq!(config["target_lanius_bytes"], 1_101_000);
-    assert_eq!(config["function_count"], 6_927);
-    assert_eq!(config["baseline_seed"], 20);
-    assert_eq!(config["lanius_capacity_warm_seed"], 19);
+    let config = read_json(root.join("config.json"));
+    assert_eq!(config["schema"], "lanius.compile-scaling-matrix-config.v1");
+    assert_eq!(config["size"], 1_101_000);
     assert_eq!(
-        config["lanius_variable_job_seeds"],
-        serde_json::json!([20, 21, 22])
+        config["seeds"],
+        serde_json::json!([20, 21, 22, 23, 24, 25, 26])
+    );
+    assert_eq!(config["warm_seed"], 19);
+    assert_eq!(
+        config["sample_policy"],
+        "all samples retained; median is primary, min/max/MAD are reported"
+    );
+    assert_eq!(
+        config["validation_policy"],
+        "every artifact must execute with exact model-derived stdout"
+    );
+    assert!(
+        config["daemon_warmup_policy"]
+            .as_str()
+            .unwrap()
+            .contains("contiguous randomized hot-daemon batch")
     );
 
     let commands = read_json(root.join("commands.json"));
-    assert_eq!(commands["schema"], "lanius.compile-scaling-commands.v1");
-    for language in ["rust", "c", "cpp", "zig"] {
-        assert_command_array(&commands["compile"], language, "compile scaling");
-        assert_command_array(&commands["run"], language, "compile scaling");
+    assert_eq!(
+        commands["schema"],
+        "lanius.compile-scaling-command-templates.v1"
+    );
+    for lane in ["o0", "optimized"] {
+        let map = commands[lane].as_object().expect("lane command map");
+        assert_no_debug_info_flags(map);
+        for language in ["rust", "c", "cpp", "zig"] {
+            assert_command_array(&commands[lane], language, lane);
+        }
     }
-    assert_command_array(&commands["lanius"], "daemon_start", "compile scaling");
-    assert_command_array(&commands["lanius"], "runner", "compile scaling");
-    assert_eq!(
-        commands["lanius"]["runner_sha256"],
-        sha256_file(&repo.join("tools/run_daemon_benchmark.py"))
+    assert_command_array(&commands, "lanius_daemon", "compile scaling");
+    assert!(
+        commands["o0"]["c"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "-O0")
     );
-    assert_eq!(
-        commands["lanius"]["scheduling_policy"],
-        "all requests are queued immediately after the ready event and before reading the first job response"
-    );
-    let requests = commands["lanius"]["requests"]
-        .as_array()
-        .expect("Lanius scaling requests should be an array");
-    assert_eq!(requests.len(), 5);
-    assert_eq!(requests.last().unwrap()["command"], "shutdown");
-    let variable_inputs = requests[1..4]
-        .iter()
-        .map(|request| request["input"].as_str().unwrap())
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        variable_inputs.len(),
-        3,
-        "Lanius measurements must use distinct inputs"
+    assert!(
+        commands["optimized"]["c"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "-O2")
     );
 
     let source_manifest = read_json(root.join("source_manifest.json"));
     assert_eq!(
         source_manifest["schema"],
-        "lanius.compile-scaling-sources.v1"
+        "lanius.compile-scaling-source-manifest.v2"
     );
-    assert_eq!(source_manifest["function_count"], 6_927);
-    assert_eq!(
-        source_manifest["generator_sha256"],
-        sha256_file(&repo.join("tools/generate_compile_scaling_sources.py"))
-    );
-
-    let regen_root = repo.join("target/benchmark-artifact-regeneration/compile-scaling-1101000");
-    let _ = fs::remove_dir_all(&regen_root);
-    for seed in [19, 20, 21, 22] {
-        let out = regen_root.join(format!("seed{seed}"));
-        let output = Command::new("python3")
-            .arg("tools/generate_compile_scaling_sources.py")
-            .arg("--out")
-            .arg(out.strip_prefix(&repo).unwrap())
-            .arg("--sizes")
-            .arg("1101000")
-            .arg("--seed")
-            .arg(seed.to_string())
-            .arg("--functions")
-            .arg("6927")
-            .current_dir(&repo)
-            .output()
-            .expect("regenerate compile scaling sources");
+    for seed in 19..=26 {
+        let variant = &source_manifest["variants"][seed.to_string()];
+        assert_eq!(variant["target_lanius_bytes"], 1_101_000);
+        assert_eq!(variant["workload"]["all_functions_reachable"], true);
         assert!(
-            output.status.success(),
-            "seed {seed} regeneration failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            variant["workload"]["reachable_function_count"]
+                .as_u64()
+                .unwrap()
+                > 1_900
         );
-        let expected_sources = source_manifest["variants"][seed.to_string()]["sources"]
-            .as_object()
-            .expect("variant sources should be an object");
-        for (language, expected) in expected_sources {
-            let path = out.join("1101000").join(match language.as_str() {
-                "rust" => "scaling.rs",
-                "c" => "scaling.c",
-                "cpp" => "scaling.cpp",
-                "zig" => "scaling.zig",
-                "lanius" => "scaling.lani",
-                other => panic!("unknown scaling language {other}"),
-            });
-            assert_eq!(
-                fs::metadata(&path).unwrap().len(),
-                expected["bytes"].as_u64().unwrap()
+        for family in ["array", "bitwise", "loop", "nested_branch", "struct"] {
+            assert!(
+                variant["workload"]["leaf_family_counts"][family]
+                    .as_u64()
+                    .unwrap()
+                    > 0
             );
-            assert_eq!(sha256_file(&path), expected["sha256"]);
         }
     }
 
-    let rows = parse_scale_results(&root.join("results.tsv"));
-    assert_eq!(rows.len(), 16);
-    let measured_lanius = rows
+    let samples = read_json(root.join("samples.json"));
+    let rows = samples["samples"].as_array().expect("raw samples");
+    assert_eq!(rows.len(), 63);
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["language"] == "lanius")
+            .count(),
+        7
+    );
+    let orders = rows
         .iter()
-        .filter(|row| row["language"] == "lanius" && row["measurement"] == "measured")
-        .collect::<Vec<_>>();
-    assert_eq!(measured_lanius.len(), 3);
-    assert_eq!(
-        measured_lanius
-            .iter()
-            .map(|row| row["seed"].as_str())
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from(["20", "21", "22"])
-    );
-    assert_eq!(
-        measured_lanius
-            .iter()
-            .map(|row| row["source_sha256"].as_str())
-            .collect::<BTreeSet<_>>()
-            .len(),
-        3
-    );
-    for row in &rows {
-        assert_positive_number(&row["compile_ms"], "compile_ms", &row["language"]);
-        assert_positive_number(&row["max_rss_kib"], "max_rss_kib", &row["language"]);
-        let output_name = if row["language"] == "lanius" {
-            format!("lanius{}.stdout", row["seed"])
-        } else {
-            format!("{}.stdout", row["language"])
-        };
-        assert_eq!(
-            sha256_file(&root.join("outputs").join(output_name)),
-            row["stdout_sha256"]
-        );
+        .map(|row| row["order"].as_u64().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(orders.len(), 63);
+    for row in rows {
+        assert!(row["wall_ms"].as_f64().unwrap() > 0.0);
+        let seed = row["seed"].as_u64().unwrap();
+        let expected = fs::read(root.join("outputs").join(format!("seed-{seed}.stdout"))).unwrap();
+        assert_eq!(row["stdout_sha256"], sha256_bytes(&expected));
     }
 
+    let provenance = read_json(root.join("provenance.json"));
+    assert_eq!(
+        provenance["runner_sha256"],
+        sha256_file(&repo.join("tools/run_compile_scaling_matrix.py"))
+    );
+    assert_eq!(
+        provenance["generator_sha256"],
+        sha256_file(&repo.join("tools/generate_compile_scaling_sources.py"))
+    );
+    assert_eq!(
+        provenance["model_sha256"],
+        sha256_file(&repo.join("tools/compile_workload_model.py"))
+    );
+
+    let summary = read_json(root.join("summary.json"));
+    assert_eq!(summary["schema"], "lanius.compile-scaling-summary.v1");
+    assert_eq!(summary["rows"].as_array().unwrap().len(), 9);
+    let lanius = summary["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["language"] == "lanius")
+        .unwrap();
+    assert_eq!(lanius["lane"], "hot_daemon");
+    assert_eq!(lanius["samples"], 7);
     let manifest = read_json(root.join("manifest.json"));
-    assert_eq!(manifest["schema"], "lanius.benchmark-artifacts.v1");
-    assert_eq!(manifest["workload"], "compile_scaling_1101000");
-    assert!(manifest["speedup_vs_lanius_best"]["c"].as_f64().unwrap() >= 10.0);
+    assert_eq!(
+        manifest["schema"],
+        "lanius.compile-scaling-matrix-manifest.v1"
+    );
     for file in manifest["files"].as_array().unwrap() {
         let relative = file["path"].as_str().unwrap();
         assert_eq!(sha256_file(&root.join(relative)), file["sha256"]);
+        assert_eq!(
+            fs::metadata(root.join(relative)).unwrap().len(),
+            file["bytes"].as_u64().unwrap()
+        );
     }
 }
 
 fn artifact_root() -> PathBuf {
     repo_root().join("benchmark_artifacts/grid_checksum")
+}
+
+fn assert_no_debug_info_flags(commands: &serde_json::Map<String, Value>) {
+    let command = |language: &str| {
+        let value = commands
+            .get(language)
+            .unwrap_or_else(|| panic!("commands missing {language}"));
+        value
+            .get("compile")
+            .unwrap_or(value)
+            .as_array()
+            .unwrap_or_else(|| panic!("{language} compile command should be an array"))
+            .iter()
+            .map(|arg| arg.as_str().expect("command argument should be a string"))
+            .collect::<Vec<_>>()
+    };
+
+    for language in ["c", "cpp"] {
+        assert!(command(language).contains(&"-g0"));
+    }
+    let rust = command("rust");
+    assert!(rust.contains(&"debuginfo=0"));
+    assert!(rust.contains(&"strip=debuginfo"));
+    assert!(command("zig").contains(&"-fstrip"));
 }
 
 fn repo_root() -> PathBuf {
@@ -438,28 +459,6 @@ fn parse_results(path: &Path) -> BTreeMap<String, BTreeMap<String, String>> {
         );
     }
     rows
-}
-
-fn parse_scale_results(path: &Path) -> Vec<BTreeMap<String, String>> {
-    let text = fs::read_to_string(path).unwrap();
-    let mut lines = text.lines();
-    let header = lines
-        .next()
-        .expect("scale results should include a header")
-        .split('\t')
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    lines
-        .map(|line| {
-            let fields = line.split('\t').map(str::to_string).collect::<Vec<_>>();
-            assert_eq!(
-                fields.len(),
-                header.len(),
-                "scale results row width mismatch"
-            );
-            header.iter().cloned().zip(fields).collect()
-        })
-        .collect()
 }
 
 fn sha256_file(path: &Path) -> String {

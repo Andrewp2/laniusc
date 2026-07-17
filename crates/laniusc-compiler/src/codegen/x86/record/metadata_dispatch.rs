@@ -29,7 +29,6 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) has_match: bool,
     pub(super) needs_enclosing_return_records: bool,
     pub(super) enclosing_let_needs_copyback: bool,
-    pub(super) match_pattern_owner_needs_copyback: bool,
     pub(super) active_hir_dispatch_args_buf: &'a wgpu::Buffer,
     pub(super) pointer_jump_dispatch_args_buf: &'a wgpu::Buffer,
     pub(super) hir_count: &'a wgpu::Buffer,
@@ -39,12 +38,20 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) expr_resolved_step_final_buf: &'a wgpu::Buffer,
     pub(super) expr_resolved_final_buf: &'a wgpu::Buffer,
     pub(super) match_result_owner_step_final_buf: &'a wgpu::Buffer,
-    pub(super) match_result_value_owner_buf: &'a wgpu::Buffer,
+    pub(super) match_result_dense_owner_buf: &'a wgpu::Buffer,
     pub(super) enclosing_let_node_b_buf: &'a wgpu::Buffer,
     pub(super) enclosing_let_node_a_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_owner_step_final_buf: &'a wgpu::Buffer,
-    pub(super) match_pattern_node_owner_buf: &'a wgpu::Buffer,
     pub(super) match_pattern_first_use_node_buf: &'a wgpu::Buffer,
+    pub(super) compact_executable_raw_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_width_by_node_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_count_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_base_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) struct_field_stream_index_by_node_buf: &'a wgpu::Buffer,
+    pub(super) array_element_row_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) struct_literal_field_row_by_hir_buf: &'a wgpu::Buffer,
+    pub(super) compact_expr_wrapper_buf: &'a wgpu::Buffer,
+    pub(super) node_inst_scan_input_buf: &'a wgpu::Buffer,
     pub(super) func_meta_buf: &'a wgpu::Buffer,
     pub(super) func_meta_uniform_buf: &'a wgpu::Buffer,
     pub(super) const_value_status_buf: &'a wgpu::Buffer,
@@ -80,6 +87,7 @@ pub(super) struct MetadataCallDispatchInputs<'a, 'timer> {
     pub(super) struct_field_widths_bind_group: &'a wgpu::BindGroup,
     pub(super) struct_field_stream_bind_group: &'a wgpu::BindGroup,
     pub(super) struct_records_bind_group: &'a wgpu::BindGroup,
+    pub(super) array_element_rows_bind_group: &'a wgpu::BindGroup,
     pub(super) array_records_bind_group: &'a wgpu::BindGroup,
     pub(super) enclosing_stmt_init_bind_group: &'a wgpu::BindGroup,
     pub(super) enclosing_stmt_step_bind_groups: &'a [wgpu::BindGroup],
@@ -114,7 +122,6 @@ pub(super) fn record_metadata_and_call_dispatches(
         has_match,
         needs_enclosing_return_records,
         enclosing_let_needs_copyback,
-        match_pattern_owner_needs_copyback,
         active_hir_dispatch_args_buf,
         pointer_jump_dispatch_args_buf,
         hir_count,
@@ -124,12 +131,20 @@ pub(super) fn record_metadata_and_call_dispatches(
         expr_resolved_step_final_buf,
         expr_resolved_final_buf,
         match_result_owner_step_final_buf,
-        match_result_value_owner_buf,
+        match_result_dense_owner_buf,
         enclosing_let_node_b_buf,
         enclosing_let_node_a_buf,
         match_pattern_owner_step_final_buf,
-        match_pattern_node_owner_buf,
         match_pattern_first_use_node_buf,
+        compact_executable_raw_buf,
+        struct_field_width_by_node_buf,
+        struct_field_count_by_hir_buf,
+        struct_field_base_by_hir_buf,
+        struct_field_stream_index_by_node_buf,
+        array_element_row_by_hir_buf,
+        struct_literal_field_row_by_hir_buf,
+        compact_expr_wrapper_buf,
+        node_inst_scan_input_buf,
         func_meta_buf,
         func_meta_uniform_buf,
         const_value_status_buf,
@@ -165,6 +180,7 @@ pub(super) fn record_metadata_and_call_dispatches(
         struct_field_widths_bind_group,
         struct_field_stream_bind_group,
         struct_records_bind_group,
+        array_element_rows_bind_group,
         array_records_bind_group,
         enclosing_stmt_init_bind_group,
         enclosing_stmt_step_bind_groups,
@@ -265,6 +281,16 @@ pub(super) fn record_metadata_and_call_dispatches(
         (hir_words * 4) as u64,
     );
     stamp_timer(timer, encoder, "x86.metadata.expr_resolve.done");
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "compact_executable_raw",
+        compact_executable_raw_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
     dispatch_x86_stages_indirect(
         encoder,
         &[
@@ -326,7 +352,7 @@ pub(super) fn record_metadata_and_call_dispatches(
         encoder,
         match_result_owner_step_final_buf,
         0,
-        match_result_value_owner_buf,
+        match_result_dense_owner_buf,
         0,
         (match_record_rows * 4) as u64,
     );
@@ -381,12 +407,14 @@ pub(super) fn record_metadata_and_call_dispatches(
         match_pattern_owner_step_bind_groups,
         pointer_jump_dispatch_args_buf,
     );
-    if match_pattern_owner_needs_copyback {
+    // Result ownership has already been scattered to its raw-node table, so
+    // its compact buffer becomes stable pattern-owner storage for this phase.
+    if has_match {
         copy_x86_buffer_to_buffer(
             encoder,
             match_pattern_owner_step_final_buf,
             0,
-            match_pattern_node_owner_buf,
+            match_result_dense_owner_buf,
             0,
             (hir_words * 4) as u64,
         );
@@ -420,6 +448,93 @@ pub(super) fn record_metadata_and_call_dispatches(
             active_hir_dispatch_args_buf,
         );
     }
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "array_element_row_by_hir",
+        array_element_row_by_hir_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_literal_field_row_by_hir",
+        struct_literal_field_row_by_hir_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "compact_expr_wrapper",
+        compact_expr_wrapper_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
+    dispatch_x86_stage_indirect(
+        encoder,
+        "array_element_rows",
+        &generator.array_element_rows_pass,
+        array_element_rows_bind_group,
+        active_hir_dispatch_args_buf,
+    );
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_width",
+        struct_field_width_by_node_buf,
+        &[0u32],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_count",
+        struct_field_count_by_hir_buf,
+        &[0u32],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_base",
+        struct_field_base_by_hir_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_stream_index",
+        struct_field_stream_index_by_node_buf,
+        &[u32::MAX],
+        hir_words,
+    )?;
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_count_scan_input",
+        node_inst_scan_input_buf,
+        &[0u32],
+        hir_words,
+    )?;
     dispatch_x86_stage_indirect(
         encoder,
         "struct_field_widths_seed",
@@ -450,6 +565,16 @@ pub(super) fn record_metadata_and_call_dispatches(
         node_inst_scan_params_buf,
         hir_scan_block,
     );
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_stream_width",
+        node_inst_scan_input_buf,
+        &[0u32],
+        hir_words,
+    )?;
     dispatch_x86_stage_indirect(
         encoder,
         "struct_field_stream",
@@ -480,6 +605,16 @@ pub(super) fn record_metadata_and_call_dispatches(
         struct_records_bind_group,
         active_hir_dispatch_args_buf,
     );
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_count_scan_input_refine",
+        node_inst_scan_input_buf,
+        &[0u32],
+        hir_words,
+    )?;
     dispatch_x86_stage_indirect(
         encoder,
         "struct_field_widths_refine",
@@ -503,6 +638,16 @@ pub(super) fn record_metadata_and_call_dispatches(
         node_inst_scan_params_buf,
         hir_scan_block,
     );
+    init_repeated_u32_words(
+        device,
+        queue,
+        encoder,
+        &generator.fill_u32_pass,
+        "struct_field_stream_width_refine",
+        node_inst_scan_input_buf,
+        &[0u32],
+        hir_words,
+    )?;
     dispatch_x86_stage_indirect(
         encoder,
         "struct_field_stream_refine",

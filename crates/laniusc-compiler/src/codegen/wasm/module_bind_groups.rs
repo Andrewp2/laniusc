@@ -3,7 +3,6 @@ use super::*;
 pub(super) struct WasmModuleBindGroups {
     pub hir_agg_body_bind_group: wgpu::BindGroup,
     pub hir_assert_module_bind_group: wgpu::BindGroup,
-    pub hir_enum_match_records_bind_group: wgpu::BindGroup,
     pub module_type_dispatch_args_bind_group: wgpu::BindGroup,
     pub module_type_lengths_bind_group: wgpu::BindGroup,
     pub module_type_bytes_bind_group: wgpu::BindGroup,
@@ -20,7 +19,6 @@ impl GpuWasmCodeGenerator {
         working: &WasmWorkingBuffers,
     ) -> Result<WasmModuleBindGroups> {
         let GpuWasmCodegenInputs {
-            enum_matches: enum_match_metadata,
             calls: call_metadata,
             expressions: expr_metadata,
             call_return_type: call_return_type_buf,
@@ -33,7 +31,6 @@ impl GpuWasmCodeGenerator {
             body_buf,
             body_plan_buf,
             body_status_buf,
-            hir_enum_match_record_buf,
             module_type_dispatch_buf,
             out_buf,
             packed_out_buf,
@@ -74,60 +71,6 @@ impl GpuWasmCodeGenerator {
             &self.hir_assert_module_pass,
             0,
             &hir_assert_module_bindings,
-        )?;
-
-        let hir_enum_match_records_bind_group = create_wasm_bind_group(
-            device,
-            Some("codegen_wasm_hir_enum_match_records"),
-            &self.hir_enum_match_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "hir_match_scrutinee_node",
-                    enum_match_metadata.match_scrutinee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_start",
-                    enum_match_metadata.match_arm_start.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_count",
-                    enum_match_metadata.match_arm_count.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_next",
-                    enum_match_metadata.match_arm_next.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_pattern_node",
-                    enum_match_metadata
-                        .match_arm_pattern_node
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_payload_start",
-                    enum_match_metadata
-                        .match_arm_payload_start
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_payload_count",
-                    enum_match_metadata
-                        .match_arm_payload_count
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_result_node",
-                    enum_match_metadata
-                        .match_arm_result_node
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_enum_match_record",
-                    hir_enum_match_record_buf.as_entire_binding(),
-                ),
-            ],
         )?;
 
         let module_type_dispatch_args_bind_group = create_wasm_bind_group(
@@ -364,7 +307,6 @@ impl GpuWasmCodeGenerator {
         Ok(WasmModuleBindGroups {
             hir_agg_body_bind_group,
             hir_assert_module_bind_group,
-            hir_enum_match_records_bind_group,
             module_type_dispatch_args_bind_group,
             module_type_lengths_bind_group,
             module_type_bytes_bind_group,

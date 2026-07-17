@@ -18,9 +18,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_alias_target_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_type_alias_target;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
@@ -59,7 +60,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_decl_count()
@@ -81,7 +82,7 @@ uint alias_target_type_node(uint alias_node)
 {
     if (!valid_node(alias_node))
         return INVALID;
-    uint target = hir_type_alias_target_node[alias_node];
+    uint target = compact_type_alias_target[alias_node];
     return valid_node(target) ? target : INVALID;
 }
 
@@ -94,7 +95,7 @@ bool alias_target_type_ref(uint alias_node, out uint tag, out uint payload)
     if (!valid_node(type_node))
         return false;
 
-    uint type_token = hir_token_pos[type_node];
+    uint type_token = compact_hir_core[type_node].token_start;
     if (!valid_token(type_token))
         return false;
 

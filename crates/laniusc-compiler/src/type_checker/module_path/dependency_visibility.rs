@@ -91,7 +91,13 @@ pub(in crate::type_checker) fn create(
         return Ok(None);
     };
     let import_capacity = layout.import_record_capacity_u32.max(1);
-    let visible_capacity = inputs.token_capacity.max(1);
+    // Imported public declarations are not bounded by the importing unit's
+    // token count. A small entry module can import a large persisted interface,
+    // so retain enough rows for every declaration in the dependency batch.
+    let visible_capacity = inputs
+        .token_capacity
+        .max(dependencies.declaration_count)
+        .max(1);
     let lookup_capacity = visible_capacity
         .checked_mul(2)
         .and_then(u32::checked_next_power_of_two)
@@ -976,32 +982,8 @@ pub(in crate::type_checker) fn create(
                 dependencies.type_words.as_entire_binding(),
             ),
             (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
-            ),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
                 "call_param_count",
                 inputs.call_param_count.as_entire_binding(),
-            ),
-            (
-                "call_param_row_flag",
-                inputs.call_param_row_flag.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_type",
-                inputs.call_param_row_node_type.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_ref_tag",
-                inputs.call_param_row_node_ref_tag.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_ref_payload",
-                inputs.call_param_row_node_ref_payload.as_entire_binding(),
             ),
         ],
     )?;
@@ -1034,24 +1016,28 @@ pub(in crate::type_checker) fn create(
                 call_dependency_decl.as_entire_binding(),
             ),
             (
+                "dependency_declaration_words",
+                dependencies.declaration_words.as_entire_binding(),
+            ),
+            (
+                "dependency_type_words",
+                dependencies.type_words.as_entire_binding(),
+            ),
+            (
+                "dependency_type_edge_words",
+                dependencies.type_edge_words.as_entire_binding(),
+            ),
+            (
+                "canonical_type_roots",
+                canonical_type_roots.as_entire_binding(),
+            ),
+            (
                 "call_param_count",
                 inputs.call_param_count.as_entire_binding(),
             ),
             (
                 "call_param_row_count_out",
                 inputs.call_param_row_count_out.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_type",
-                inputs.call_param_row_node_type.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_ref_tag",
-                inputs.call_param_row_node_ref_tag.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node_ref_payload",
-                inputs.call_param_row_node_ref_payload.as_entire_binding(),
             ),
             (
                 "call_param_row_node",
@@ -1226,6 +1212,14 @@ pub(in crate::type_checker) fn create(
             let mut bindings = Vec::with_capacity(45);
             bindings.extend([
                 ("gParams", value_params.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    inputs.hir_items.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_payload",
+                    inputs.hir_items.compact_hir_payload.as_entire_binding(),
+                ),
                 ("hir_status", inputs.hir_status_buf.as_entire_binding()),
                 ("hir_kind", inputs.hir_kind_buf.as_entire_binding()),
                 (

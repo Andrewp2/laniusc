@@ -16,6 +16,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -23,6 +25,8 @@ StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
@@ -65,7 +69,12 @@ bool valid_token(uint token)
 uint enclosing_function_token_for_receiver(uint receiver_token)
 {
     uint encoded_fn = valid_token(receiver_token) ? enclosing_fn[receiver_token] : 0u;
-    return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (fn_node == INVALID || fn_node >= count)
+        return INVALID;
+    uint fn_token = compact_hir_payload[fn_node].b;
+    return valid_token(fn_token) ? fn_token : INVALID;
 }
 
 void bind_self_token(uint self_token)

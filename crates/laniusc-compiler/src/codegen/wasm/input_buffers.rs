@@ -11,23 +11,11 @@ pub struct GpuWasmStructMetadataBuffers<'a> {
     pub lit_field_next: &'a wgpu::Buffer,
     pub member_name_token: &'a wgpu::Buffer,
     pub member_result_field_ordinal: &'a wgpu::Buffer,
+    /// Declaration field-name token selected by type checking.
     pub member_result_field_node: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+    /// Declaration field-name token selected by type checking.
     pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
-}
-
-#[derive(Clone, Copy)]
-/// Enum-match metadata buffers needed by WASM lowering.
-pub struct GpuWasmEnumMatchMetadataBuffers<'a> {
-    pub variant_ordinal: &'a wgpu::Buffer,
-    pub match_scrutinee_node: &'a wgpu::Buffer,
-    pub match_arm_start: &'a wgpu::Buffer,
-    pub match_arm_count: &'a wgpu::Buffer,
-    pub match_arm_next: &'a wgpu::Buffer,
-    pub match_arm_pattern_node: &'a wgpu::Buffer,
-    pub match_arm_payload_start: &'a wgpu::Buffer,
-    pub match_arm_payload_count: &'a wgpu::Buffer,
-    pub match_arm_result_node: &'a wgpu::Buffer,
 }
 
 #[derive(Clone, Copy)]
@@ -92,7 +80,7 @@ pub struct GpuWasmPathMetadataBuffers<'a> {
     pub segment_count: &'a wgpu::Buffer,
     pub segment_base: &'a wgpu::Buffer,
     pub segment_token: &'a wgpu::Buffer,
-    pub id_by_owner_hir: &'a wgpu::Buffer,
+    pub id_by_owner_token: &'a wgpu::Buffer,
 }
 
 #[derive(Clone, Copy)]
@@ -148,7 +136,6 @@ pub struct GpuWasmCodegenInputs<'a> {
     /// Inclusive number of enclosing `if` statements at each token.
     pub if_depth: &'a wgpu::Buffer,
     pub structs: GpuWasmStructMetadataBuffers<'a>,
-    pub enum_matches: GpuWasmEnumMatchMetadataBuffers<'a>,
     pub calls: GpuWasmCallMetadataBuffers<'a>,
     pub expressions: GpuWasmExprMetadataBuffers<'a>,
     pub arrays: GpuWasmArrayMetadataBuffers<'a>,

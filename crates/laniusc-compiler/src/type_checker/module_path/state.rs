@@ -11,13 +11,10 @@ use super::{
 /// independent from individual constructor helpers.
 pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) mark_records: wgpu::BindGroup,
-    pub(in crate::type_checker) extract_path_record_flag: wgpu::BindGroup,
-    pub(in crate::type_checker) path_scan: U32ScanBindGroups,
     pub(in crate::type_checker) scatter_paths: wgpu::BindGroup,
     pub(in crate::type_checker) count_path_segments: wgpu::BindGroup,
-    pub(in crate::type_checker) path_segment_scan: U32ScanBindGroups,
     pub(in crate::type_checker) scatter_path_segments: wgpu::BindGroup,
-    pub(in crate::type_checker) clear_path_prefix_max: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_path_state: wgpu::BindGroup,
     pub(in crate::type_checker) path_prefix_dispatch_args: wgpu::BindGroup,
     pub(in crate::type_checker) path_prefix_rounds: Vec<PathPrefixRound>,
     pub(in crate::type_checker) path_prefix_finalize: wgpu::BindGroup,
@@ -30,6 +27,8 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) scatter_module_records: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_import_records: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_decl_core_records: wgpu::BindGroup,
+    pub(in crate::type_checker) append_variant_decl_count: wgpu::BindGroup,
+    pub(in crate::type_checker) scatter_variant_decl_records: wgpu::BindGroup,
     pub(in crate::type_checker) clear_decl_lookup: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_decl_span_records: wgpu::BindGroup,
     pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
@@ -283,8 +282,6 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) path_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) scan_steps: Vec<NameScanStep>,
     pub(in crate::type_checker) record_scan_steps: Vec<NameScanStep>,
-    pub(in crate::type_checker) _extract_path_record_flag_params:
-        LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) _extract_module_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) _extract_import_record_flag_params:

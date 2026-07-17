@@ -20,31 +20,31 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> hir_member_receiver_node;
-StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
-StructuredBuffer<uint> hir_struct_field_ordinal;
-StructuredBuffer<uint> hir_struct_decl_field_start;
-StructuredBuffer<uint> hir_struct_lit_head_node;
-StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
-StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
-StructuredBuffer<uint> hir_struct_lit_field_start;
-StructuredBuffer<uint> hir_struct_lit_field_count;
-StructuredBuffer<uint> hir_struct_decl_field_count;
-StructuredBuffer<uint> hir_struct_lit_field_value_node;
-StructuredBuffer<uint> hir_struct_lit_field_next;
-StructuredBuffer<uint> hir_array_element_parent_lit;
-StructuredBuffer<uint> hir_array_element_ordinal;
-StructuredBuffer<uint> hir_nearest_array_element_node;
-StructuredBuffer<uint> member_result_field_ordinal;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> x86_compact_executable_raw;
+StructuredBuffer<uint> x86_compact_expr_wrapper;
+StructuredBuffer<uint> x86_array_element_row_by_hir;
 StructuredBuffer<uint> member_result_field_node;
-StructuredBuffer<uint> struct_init_field_ordinal_by_node;
-StructuredBuffer<uint> struct_init_field_decl_node_by_node;
+StructuredBuffer<uint> struct_init_field_ordinal_by_row;
+StructuredBuffer<uint> struct_init_field_decl_token_by_row;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
+StructuredBuffer<uint> x86_struct_field_count_by_hir;
+StructuredBuffer<uint> x86_struct_field_base_by_hir;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_struct_field_stream_width;
 StructuredBuffer<uint> x86_struct_field_stream_index_by_node;
 StructuredBuffer<uint> x86_struct_field_scan_local_prefix;
@@ -95,6 +95,26 @@ uint linear_dispatch_id(uint3 tid)
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+}
+
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+uint active_compact_field_count()
+{
+    return min(compact_field_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_field_row(uint row)
+{
+    return row != INVALID && row < active_compact_field_count();
 }
 
 bool valid_node(uint node)
@@ -151,15 +171,28 @@ uint scanned_field_prefix(uint stream_i)
 
 uint field_scalar_width(uint field_node)
 {
-    return valid_node(field_node) ? x86_struct_field_width_by_node[field_node] : 0u;
+    return valid_field_row(field_node) ? x86_struct_field_width_by_node[field_node] : 0u;
+}
+
+uint decl_field_row(uint field_token)
+{
+    if (!valid_token(field_token))
+        return INVALID;
+    uint node = x86_decl_node_by_token[field_token];
+    if (!valid_field_row(node))
+        return INVALID;
+    HirField field = compact_fields[node];
+    return valid_dense(field.owner) && compact_hir_core[field.owner].kind == HIR_STRUCT_ITEM
+               ? node
+               : INVALID;
 }
 
 uint field_scalar_offset(uint decl_field_node)
 {
-    if (!valid_node(decl_field_node))
+    if (!valid_field_row(decl_field_node))
         return INVALID;
     uint stream_i = x86_struct_field_stream_index_by_node[decl_field_node];
-    uint ordinal = hir_struct_field_ordinal[decl_field_node];
+    uint ordinal = compact_fields[decl_field_node].ordinal;
     if (stream_i == INVALID || ordinal == INVALID || stream_i < ordinal)
         return INVALID;
     uint base_i = stream_i - ordinal;
@@ -170,19 +203,14 @@ uint field_scalar_offset(uint decl_field_node)
 
 uint struct_scalar_width(uint struct_node)
 {
-    if (!valid_node(struct_node))
+    if (!valid_dense(struct_node) || compact_hir_core[struct_node].kind != HIR_STRUCT_ITEM)
         return 0u;
-    uint count = hir_struct_decl_field_count[struct_node];
+    uint count = x86_struct_field_count_by_hir[struct_node];
     if (count == 0u)
         return 0u;
-    uint first_field = hir_struct_decl_field_start[struct_node];
-    if (!valid_node(first_field))
+    uint base_i = x86_struct_field_base_by_hir[struct_node];
+    if (base_i == INVALID)
         return 0u;
-    uint first_stream = x86_struct_field_stream_index_by_node[first_field];
-    uint first_ordinal = hir_struct_field_ordinal[first_field];
-    if (first_stream == INVALID || first_ordinal == INVALID || first_stream < first_ordinal)
-        return 0u;
-    uint base_i = first_stream - first_ordinal;
     uint last_i = base_i + count - 1u;
     if (!valid_node(last_i))
         return 0u;
@@ -192,19 +220,22 @@ uint struct_scalar_width(uint struct_node)
     return last_prefix >= base_prefix ? last_prefix - base_prefix + last_width : 0u;
 }
 
-uint literal_scalar_width(uint literal_node)
+uint literal_scalar_width(uint literal_dense)
 {
-    if (!valid_node(literal_node))
+    if (!valid_dense(literal_dense) ||
+        compact_hir_core[literal_dense].kind != HIR_STRUCT_LITERAL_EXPR)
         return 0u;
-    uint first_field = hir_struct_lit_field_start[literal_node];
-    uint decl_field = valid_node(first_field)
-                          ? struct_init_field_decl_node_by_node[first_field]
-                          : INVALID;
-    uint struct_node = valid_node(decl_field)
-                           ? hir_struct_field_parent_struct[decl_field]
+    HirPayload payload = compact_hir_payload[literal_dense];
+    uint first_field = payload.b;
+    uint decl_field_token = valid_field_row(first_field)
+                                ? struct_init_field_decl_token_by_row[first_field]
+                                : INVALID;
+    uint decl_field = decl_field_row(decl_field_token);
+    uint struct_node = valid_field_row(decl_field)
+                           ? compact_fields[decl_field].owner
                            : INVALID;
     uint width = struct_scalar_width(struct_node);
-    return width != 0u ? width : hir_struct_lit_field_count[literal_node];
+    return width != 0u ? width : payload.c;
 }
 
 void publish_error(uint detail)
@@ -243,14 +274,27 @@ bool write_struct_access_record(
 
 void publish_member_access_record(uint node)
 {
-    uint member_token = hir_member_name_token[node];
+    uint dense = raw_to_compact_hir[node];
+    if (!valid_dense(dense) || compact_hir_core[dense].kind != HIR_MEMBER_EXPR)
+        return;
+    HirPayload payload = compact_hir_payload[dense];
+    uint member_token = payload.c;
     if (!valid_token(member_token))
         return;
-    uint field_node = member_result_field_node[member_token];
+    uint field_node = decl_field_row(member_result_field_node[member_token]);
     uint offset = field_scalar_offset(field_node);
     if (offset == INVALID)
         return;
-    uint receiver_node = hir_member_receiver_node[node];
+    uint receiver_dense = payload.b;
+    // Prefer the semantic raw representative. A forwarding HIR_EXPR wrapper
+    // may resolve to the result root of a surrounding binary expression,
+    // which turns a repeated receiver such as the second `self` in
+    // `self.a * self.b` into an unrelated aggregate temporary.
+    uint receiver_node = valid_dense(receiver_dense)
+                             ? x86_compact_executable_raw[receiver_dense]
+                             : INVALID;
+    if (!valid_node(receiver_node) && valid_dense(receiver_dense))
+        receiver_node = x86_compact_expr_wrapper[receiver_dense];
     if (!valid_node(receiver_node))
         return;
 
@@ -264,8 +308,11 @@ void publish_member_access_record(uint node)
 
 void publish_struct_type_record(uint node)
 {
-    uint decl_token = hir_item_name_token[node];
-    uint width = struct_scalar_width(node);
+    uint dense = raw_to_compact_hir[node];
+    if (!valid_dense(dense) || compact_hir_core[dense].kind != HIR_STRUCT_ITEM)
+        return;
+    uint decl_token = compact_hir_payload[dense].b;
+    uint width = struct_scalar_width(dense);
     if (!valid_token(decl_token) || width == 0u)
         return;
     x86_struct_type_record[decl_token] = width;
@@ -273,10 +320,14 @@ void publish_struct_type_record(uint node)
 
 void publish_literal_access_record(uint node)
 {
-    uint width = literal_scalar_width(node);
+    uint dense = raw_to_compact_hir[node];
+    if (!valid_dense(dense) || compact_hir_core[dense].kind != HIR_STRUCT_LITERAL_EXPR)
+        return;
+    HirPayload payload = compact_hir_payload[dense];
+    uint width = literal_scalar_width(dense);
     if (width == 0u)
         return;
-    uint first_field = hir_struct_lit_field_start[node];
+    uint first_field = payload.b;
     if (!write_struct_access_record(
             node,
             X86_STRUCT_ACCESS_LITERAL,
@@ -285,30 +336,25 @@ void publish_literal_access_record(uint node)
             0u))
         return;
 
-    uint head_node = hir_struct_lit_head_node[node];
-    if (valid_node(head_node) && head_node != node && hir_kind[head_node] != HIR_MEMBER_EXPR)
+    uint wrapper = x86_compact_expr_wrapper[dense];
+    if (valid_node(wrapper) && wrapper != node && hir_kind[wrapper] != HIR_MEMBER_EXPR)
     {
         write_struct_access_record(
-            head_node,
+            wrapper,
             X86_STRUCT_ACCESS_LITERAL,
             width,
             first_field,
             0u);
-        uint head_token = expr_value_token(head_node);
-        if (valid_token(head_token))
-            x86_struct_type_record[head_token] = width;
+        uint wrapper_token = expr_value_token(wrapper);
+        if (valid_token(wrapper_token))
+            x86_struct_type_record[wrapper_token] = width;
 
-        // A struct literal's parser-owned head is the path immediately before
-        // the literal (`Vec3` in `Vec3 { ... }`). Expression resolution may
-        // canonicalize to the path wrapper's parent, so publish the same
-        // literal record there instead of making every consumer rediscover a
-        // sibling relationship.
-        uint head_expr = x86_tree_parent[head_node];
-        if (valid_node(head_expr) && head_expr != node &&
-            hir_kind[head_expr] != HIR_MEMBER_EXPR)
+        uint resolved = resolve_expr(wrapper);
+        if (valid_node(resolved) && resolved != node && resolved != wrapper &&
+            hir_kind[resolved] != HIR_MEMBER_EXPR)
         {
             write_struct_access_record(
-                head_expr,
+                resolved,
                 X86_STRUCT_ACCESS_LITERAL,
                 width,
                 first_field,
@@ -316,14 +362,17 @@ void publish_literal_access_record(uint node)
         }
     }
 
-    uint context_stmt = hir_struct_lit_context_stmt_node[node];
+    uint context_dense = payload.d;
+    uint context_stmt = valid_dense(context_dense)
+                            ? x86_compact_executable_raw[context_dense]
+                            : INVALID;
     uint context_kind = valid_node(context_stmt) ? stmt_slot(context_stmt, 0u) : 0u;
     uint context_expr = context_kind == STMT_RECORD_KIND_RETURN
                             ? stmt_slot(context_stmt, 1u)
                             : context_kind == STMT_RECORD_KIND_LET
                                   ? stmt_slot(context_stmt, 2u)
                                   : INVALID;
-    if (valid_node(context_expr) && context_expr != node && context_expr != head_node)
+    if (valid_node(context_expr) && context_expr != node && context_expr != wrapper)
     {
         write_struct_access_record(
             context_expr,
@@ -341,9 +390,9 @@ void publish_store_record_for_value(uint value_node, uint decl_token, uint ordin
     x86_struct_store_record[value_node] = uint4(decl_token, ordinal, literal_node, 0u);
 }
 
-bool let_initializer_is_struct_literal(uint let_node, uint literal_node)
+bool let_initializer_is_struct_literal(uint let_node, uint literal_dense, uint literal_node)
 {
-    if (!valid_node(let_node) || !valid_node(literal_node))
+    if (!valid_node(let_node) || !valid_dense(literal_dense) || !valid_node(literal_node))
         return false;
     // Nested aggregate ownership needs an explicit owner/path record; do not
     // infer it from subtree spans in this backend projection.
@@ -352,16 +401,20 @@ bool let_initializer_is_struct_literal(uint let_node, uint literal_node)
     if (init_expr == literal_node || resolved_init == literal_node)
         return true;
 
-    uint head_node = hir_struct_lit_head_node[literal_node];
-    return valid_node(head_node) &&
-           (init_expr == head_node || resolved_init == head_node);
+    uint wrapper = x86_compact_expr_wrapper[literal_dense];
+    return valid_node(wrapper) &&
+           (init_expr == wrapper || resolved_init == wrapper);
 }
 
-bool struct_literal_context_matches_let(uint literal_node, uint let_node)
+bool struct_literal_context_matches_let(uint literal_dense, uint let_node)
 {
-    return valid_node(literal_node) &&
-           valid_node(let_node) &&
-           hir_struct_lit_context_stmt_node[literal_node] == let_node;
+    if (!valid_dense(literal_dense) || !valid_node(let_node))
+        return false;
+    uint context_dense = compact_hir_payload[literal_dense].d;
+    uint context = valid_dense(context_dense)
+                       ? x86_compact_executable_raw[context_dense]
+                       : INVALID;
+    return context == let_node;
 }
 
 bool array_element_record_for_candidate(uint candidate, out uint array_node, out uint element_ordinal)
@@ -371,8 +424,16 @@ bool array_element_record_for_candidate(uint candidate, out uint array_node, out
     if (!valid_node(candidate))
         return false;
 
-    uint owner = hir_array_element_parent_lit[candidate];
-    uint ordinal = hir_array_element_ordinal[candidate];
+    uint dense = raw_to_compact_hir[candidate];
+    uint row_count = min(compact_array_element_row_count[0u], gParams.n_hir_nodes);
+    uint row = valid_dense(dense) ? x86_array_element_row_by_hir[dense] : INVALID;
+    if (row == INVALID || row >= row_count)
+        return false;
+    HirArrayElement element = compact_array_elements[row];
+    uint owner = valid_dense(element.array)
+                     ? x86_compact_executable_raw[element.array]
+                     : INVALID;
+    uint ordinal = element.ordinal;
     if (!valid_node(owner) || hir_kind[owner] != HIR_ARRAY_EXPR || ordinal == INVALID)
         return false;
 
@@ -382,30 +443,25 @@ bool array_element_record_for_candidate(uint candidate, out uint array_node, out
 }
 
 bool array_element_record_for_struct_literal(
-    uint literal_node,
+    uint literal_dense,
     out uint array_node,
     out uint element_ordinal)
 {
     array_node = INVALID;
     element_ordinal = INVALID;
-    if (!valid_node(literal_node))
+    if (!valid_dense(literal_dense))
         return false;
-
-    uint head_node = hir_struct_lit_head_node[literal_node];
-    if (array_element_record_for_candidate(literal_node, array_node, element_ordinal) ||
-        array_element_record_for_candidate(head_node, array_node, element_ordinal) ||
-        array_element_record_for_candidate(resolve_expr(head_node), array_node, element_ordinal))
-        return true;
-
-    uint element = hir_nearest_array_element_node[literal_node];
-    return array_element_record_for_candidate(element, array_node, element_ordinal);
+    uint candidate = x86_compact_expr_wrapper[literal_dense];
+    if (!valid_node(candidate))
+        candidate = x86_compact_executable_raw[literal_dense];
+    return array_element_record_for_candidate(candidate, array_node, element_ordinal);
 }
 
-bool struct_literal_is_array_element(uint literal_node)
+bool struct_literal_is_array_element(uint literal_dense)
 {
     uint array_node = INVALID;
     uint element_ordinal = INVALID;
-    return array_element_record_for_struct_literal(literal_node, array_node, element_ordinal);
+    return array_element_record_for_struct_literal(literal_dense, array_node, element_ordinal);
 }
 
 bool let_initializer_is_array_literal(uint let_node, uint array_node)
@@ -417,14 +473,14 @@ bool let_initializer_is_array_literal(uint let_node, uint array_node)
 }
 
 void publish_array_struct_field_store_record(
-    uint literal_node,
+    uint literal_dense,
     uint value_node,
     uint field_offset)
 {
     uint array_node = INVALID;
     uint element_ordinal = INVALID;
-    uint element_width = literal_scalar_width(literal_node);
-    if (!array_element_record_for_struct_literal(literal_node, array_node, element_ordinal) ||
+    uint element_width = literal_scalar_width(literal_dense);
+    if (!array_element_record_for_struct_literal(literal_dense, array_node, element_ordinal) ||
         !valid_node(array_node) || element_ordinal == INVALID ||
         field_offset == INVALID || element_width == 0u)
         return;
@@ -446,8 +502,9 @@ void publish_array_struct_field_store_record(
         X86_AGG_STORE_ARRAY);
 
     uint resolved = resolve_expr(value_node);
-    uint literal_head = hir_struct_lit_head_node[literal_node];
-    if (valid_node(resolved) && resolved != literal_node && resolved != literal_head)
+    uint literal_node = x86_compact_executable_raw[literal_dense];
+    uint literal_wrapper = x86_compact_expr_wrapper[literal_dense];
+    if (valid_node(resolved) && resolved != literal_node && resolved != literal_wrapper)
     {
         x86_struct_store_record[resolved] = uint4(
             decl_token,
@@ -468,13 +525,9 @@ uint context_let_node(uint node)
                : INVALID;
 }
 
-uint struct_literal_context_let(uint literal_node, uint field_node, uint value_node)
+uint struct_literal_context_let(uint literal_dense, uint literal_node, uint value_node)
 {
     uint let_node = context_let_node(literal_node);
-    if (valid_node(let_node))
-        return let_node;
-
-    let_node = context_let_node(field_node);
     if (valid_node(let_node))
         return let_node;
 
@@ -486,46 +539,78 @@ uint struct_literal_context_let(uint literal_node, uint field_node, uint value_n
     if (valid_node(let_node))
         return let_node;
 
-    let_node = hir_struct_lit_context_stmt_node[literal_node];
+    uint context_dense = valid_dense(literal_dense)
+                             ? compact_hir_payload[literal_dense].d
+                             : INVALID;
+    let_node = valid_dense(context_dense)
+                   ? x86_compact_executable_raw[context_dense]
+                   : INVALID;
     return valid_node(let_node) && stmt_slot(let_node, 0u) == STMT_RECORD_KIND_LET
                ? let_node
                : INVALID;
 }
 
-void publish_struct_field_store_record(uint field_node)
+void publish_struct_field_store_record(uint field_row)
 {
-    uint literal_node = hir_struct_lit_field_parent_lit[field_node];
-    if (!valid_node(literal_node))
+    if (!valid_field_row(field_row))
         return;
-
-    uint value_node = hir_struct_lit_field_value_node[field_node];
+    HirField field = compact_fields[field_row];
+    uint literal_dense = field.owner;
+    if (!valid_dense(literal_dense) ||
+        compact_hir_core[literal_dense].kind != HIR_STRUCT_LITERAL_EXPR ||
+        !valid_dense(field.value))
+        return;
+    uint literal_node = x86_compact_executable_raw[literal_dense];
+    uint value_node = x86_compact_expr_wrapper[field.value];
     if (!valid_node(value_node))
-        return;
-
-    uint decl_field_node = struct_init_field_decl_node_by_node[field_node];
-    uint offset = field_scalar_offset(decl_field_node);
-    if (offset != INVALID)
+        value_node = x86_compact_executable_raw[field.value];
+    if (!valid_node(literal_node))
     {
-        uint next_field = hir_struct_lit_field_next[field_node];
-        x86_struct_store_record[field_node] = uint4(value_node, offset, literal_node, next_field);
-        publish_array_struct_field_store_record(literal_node, value_node, offset);
+        publish_error(0x10000000u + field_row);
+        return;
     }
-    if (struct_literal_is_array_element(literal_node))
+    if (!valid_node(value_node))
+    {
+        publish_error(0x11000000u + field_row);
+        return;
+    }
+
+    uint decl_field_token = struct_init_field_decl_token_by_row[field_row];
+    uint decl_field_node = decl_field_row(decl_field_token);
+    uint offset = field_scalar_offset(decl_field_node);
+    if (!valid_token(decl_field_token))
+    {
+        publish_error(0x21000000u + field_row);
+        return;
+    }
+    if (!valid_field_row(decl_field_node))
+    {
+        publish_error(0x22000000u + field_row);
+        return;
+    }
+    if (offset == INVALID)
+    {
+        publish_error(0x23000000u + field_row);
+        return;
+    }
+    if (offset != INVALID)
+        publish_array_struct_field_store_record(literal_dense, value_node, offset);
+    if (struct_literal_is_array_element(literal_dense))
         return;
 
-    uint let_node = struct_literal_context_let(literal_node, field_node, value_node);
+    uint let_node = struct_literal_context_let(literal_dense, literal_node, value_node);
     if (!valid_node(let_node))
         return;
 
-    if (!let_initializer_is_struct_literal(let_node, literal_node) &&
-        !struct_literal_context_matches_let(literal_node, let_node))
+    if (!let_initializer_is_struct_literal(let_node, literal_dense, literal_node) &&
+        !struct_literal_context_matches_let(literal_dense, let_node))
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);
     publish_store_record_for_value(value_node, decl_token, offset, literal_node);
     uint resolved = resolve_expr(value_node);
-    uint literal_head = hir_struct_lit_head_node[literal_node];
-    if (resolved != literal_node && resolved != literal_head)
+    uint literal_wrapper = x86_compact_expr_wrapper[literal_dense];
+    if (resolved != literal_node && resolved != literal_wrapper)
         publish_store_record_for_value(resolved, decl_token, offset, literal_node);
 }
 
@@ -543,15 +628,18 @@ void main(uint3 tid: SV_DispatchThreadID)
         x86_struct_record_status[3u] = 0u;
     }
 
-    if (!ok || !valid_node(node))
+    if (!ok)
         return;
 
-    if (hir_kind[node] == HIR_STRUCT_ITEM)
-        publish_struct_type_record(node);
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
-        publish_member_access_record(node);
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
-        publish_literal_access_record(node);
-    if (hir_struct_lit_field_parent_lit[node] != INVALID)
+    if (valid_node(node))
+    {
+        if (hir_kind[node] == HIR_STRUCT_ITEM)
+            publish_struct_type_record(node);
+        if (hir_kind[node] == HIR_MEMBER_EXPR)
+            publish_member_access_record(node);
+        if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
+            publish_literal_access_record(node);
+    }
+    if (valid_field_row(node))
         publish_struct_field_store_record(node);
 }

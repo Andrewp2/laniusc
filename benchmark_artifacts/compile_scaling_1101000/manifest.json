@@ -1,33 +1,80 @@
 {
-  "best_compile_ms": {
-    "c": 9340.0,
-    "cpp": 9940.0,
-    "lanius": 75.463,
-    "rust": 1110.0,
-    "zig": 8230.0
-  },
   "files": [
-    {"path": "commands.json", "sha256": "17ff4f1cb06d920848a643ee2b2510ce7a4d87dcba5c9fcb8f5c9e06e6ee3001"},
-    {"path": "generator_config.json", "sha256": "d2c413c5c2e27c63a87cc61cf182a305d25010723d2c2f414d5cb3cf4f610be9"},
-    {"path": "machine_info.json", "sha256": "f05d64b9a6e1406667923cf2f563b178ecf6379e6251057cfa4f6b21044926f4"},
-    {"path": "outputs/c.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
-    {"path": "outputs/cpp.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
-    {"path": "outputs/lanius19.stdout", "sha256": "a4b2c5db15348c29451e18b8307e5ef81625ea638e807935f39ceaa8d9ac7758"},
-    {"path": "outputs/lanius20.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
-    {"path": "outputs/lanius21.stdout", "sha256": "1a62e878f334291869f88f4b71f8c157ee774b6bdb11d2ca86cccf2b48cef87b"},
-    {"path": "outputs/lanius22.stdout", "sha256": "b35e87b5838011a3637be660e4238af9a55e4edc74404c990f7a558e7f416658"},
-    {"path": "outputs/rust.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
-    {"path": "outputs/zig.stdout", "sha256": "e3667f7d8c030260bf49046f955ec9bebdb9a4cb8a66b812fd498ded5431a821"},
-    {"path": "results.tsv", "sha256": "a3e787d6797c5825b4550ec8e74c5c4709002386aac4a033a7e107d1cdd21ce9"},
-    {"path": "source_manifest.json", "sha256": "f8bd8a10331914561fb7c170a2e86a3344544fd9e3497a0304d85d0cc554d9c4"}
+    {
+      "bytes": 1355,
+      "path": "commands.json",
+      "sha256": "c0c0e55447a6424db16458a493d2229140fedd9a1dad4304e87fd7746a86bdd2"
+    },
+    {
+      "bytes": 681,
+      "path": "config.json",
+      "sha256": "de84c9f15006456ee5ce709e207b040f367be80b19a61c773632a07ca3493bfe"
+    },
+    {
+      "bytes": 1405,
+      "path": "machine_info.json",
+      "sha256": "175acc56aed1d87ba2f045ac56a6171df7d29ec24d9487d3a15863681d500590"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-20.stdout",
+      "sha256": "b4d04a1dc9a7df5a842defb17a311cbf2ab75d2d213dadbb4c5c5078d9394767"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-21.stdout",
+      "sha256": "72b3424f0ba531b3186e885d45ce902f77fe0ab8fd1b42aa1da1030a3a1a74a4"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-22.stdout",
+      "sha256": "e1b4fa83e6914e07055dda217a7c2d223438ef5478cb966fd3a7893d29887e32"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-23.stdout",
+      "sha256": "c0a0973095905ebe6991e8fdc1c7538df3cad393dd94f997f0e87254d6c2f4cc"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-24.stdout",
+      "sha256": "2e293834de573754c6a71ea8b66723227db4a68c734bd28851436689c642c7ea"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-25.stdout",
+      "sha256": "3d4624711c1970699b4e4c6f8e63cc26bac6ab9177e70ac39fbb326b19b3dd2f"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-26.stdout",
+      "sha256": "2aedcc23ba73e8a9be7d3fab3729d1e262be9177061e8bfb02aa187acbfb8ef6"
+    },
+    {
+      "bytes": 1433,
+      "path": "provenance.json",
+      "sha256": "4cba3b4a5da8723dad30e6814e8a7e34cbc841ff7e3303315aef0e6a99375966"
+    },
+    {
+      "bytes": 15826,
+      "path": "results.tsv",
+      "sha256": "30a8bb2b46024be2ab6eb81352b67a1538eb6341b8463ac3281cb4d29e0523d5"
+    },
+    {
+      "bytes": 35427,
+      "path": "samples.json",
+      "sha256": "600ae34fa0d173144e1621f92138adf91606de74a084fc7809abb29b30a96d46"
+    },
+    {
+      "bytes": 13308,
+      "path": "source_manifest.json",
+      "sha256": "85c541d741848eadf1a76a8957e052838950979d4e0086af7243b376d82b050a"
+    },
+    {
+      "bytes": 2306,
+      "path": "summary.json",
+      "sha256": "2271775e17e8d20d307aba88699fd7ed6691e2188aa27bca9680d9edf99d6207"
+    }
   ],
-  "languages": ["rust", "c", "cpp", "zig", "lanius"],
-  "schema": "lanius.benchmark-artifacts.v1",
-  "speedup_vs_lanius_best": {
-    "c": 123.769,
-    "cpp": 131.72,
-    "rust": 14.709,
-    "zig": 109.06
-  },
-  "workload": "compile_scaling_1101000"
+  "schema": "lanius.compile-scaling-matrix-manifest.v1"
 }

@@ -683,10 +683,10 @@ uint aggregate_member_field_type(uint node)
     uint member_type = visible_type_for_token(member_name);
     if (member_type != TY_UNKNOWN)
         return member_type;
-    uint field_node = member_result_field_node[member_name];
-    if (!valid_node(field_node))
+    uint field_token = member_result_field_node[member_name];
+    if (!valid_token(field_token))
         return TY_UNKNOWN;
-    return visible_type_for_token(hir_token_pos[field_node]);
+    return visible_type_for_token(field_token);
 }
 
 uint aggregate_member_len(uint node)

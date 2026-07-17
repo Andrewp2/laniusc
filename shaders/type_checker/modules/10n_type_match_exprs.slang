@@ -1,43 +1,22 @@
-// GPU match-expression result typing.
-//
-// Scheduling contract:
-// - Dispatch after match-pattern binding and before the general scope/token
-//   validation passes.
-// - Use parser-owned match-arm owner/rank records to type arms independently
-//   and publish the expression result type in call_return_type[match_token].
-// - Arm-local names are consumed from the visible_decl/visible_type bindings
-//   produced by type_check_modules_10m_bind_match_patterns.slang.
+// Publish match result types from compact match-arm and dense expression rows.
 
 import atomics;
 import hir_expr_semantics;
 import status;
 
-struct Params
-{
-    uint n_tokens;
-    uint source_len;
-    uint n_hir_nodes;
-};
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
 
 ConstantBuffer<Params> gParams;
-
-StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_struct_lit_head_node;
-StructuredBuffer<uint> hir_match_arm_start;
-StructuredBuffer<uint> hir_match_arm_count;
-StructuredBuffer<uint> hir_match_arm_result_node;
-StructuredBuffer<uint> hir_match_payload_match_node;
-StructuredBuffer<uint> hir_match_payload_ordinal;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
-
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
 
@@ -46,23 +25,14 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_BAD_HIR = 6u;
-
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
-
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
-static const uint HIR_EXPR_RECORD_RIGHT = 2u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
-
 static const uint HIR_EXPR_NONE = 0u;
 static const uint HIR_EXPR_NAME = 2u;
-static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
 static const uint HIR_EXPR_NOT = 6u;
@@ -85,300 +55,127 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
-static const uint HIR_EXPR_FLOAT = 27u;
-
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
-static const uint TY_STRING = 7u;
 
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
-{
-    return min(token_count[0], gParams.n_tokens);
-}
-
-uint active_hir_node_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
-}
-
-void record_error(uint token_i, uint code, uint detail)
-{
-    record_min_token_error(status, token_i, code, detail);
-}
-
-bool valid_token(uint token)
-{
-    return token != INVALID && token < active_token_count();
-}
-
-uint expr_record_slot(uint node, uint slot)
-{
-    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
-}
-
-uint expr_form(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
-}
-
-uint expr_value_token(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN) : INVALID;
-}
-
-uint resolve_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : node;
-}
+uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
+uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_nodes); }
+bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
+bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
 uint visible_type_for_token(uint token)
 {
     if (!valid_token(token))
         return TY_UNKNOWN;
-
     uint ty = visible_type[token];
     if (ty != TY_UNKNOWN)
         return ty;
-
     uint decl = visible_decl[token];
-    if (valid_token(decl))
-    {
-        ty = visible_type[decl];
-        if (ty != TY_UNKNOWN)
-            return ty;
-    }
-
+    if (valid_token(decl) && visible_type[decl] != TY_UNKNOWN)
+        return visible_type[decl];
     return call_return_type[token];
+}
+
+uint expression_token(uint node)
+{
+    if (!valid_hir(node))
+        return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint direct_node_type(uint node)
 {
-    if (!valid_node(node))
+    if (!valid_hir(node))
         return TY_UNKNOWN;
-
-    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
-    if (lit != TY_UNKNOWN)
-        return lit;
-
-    uint token = hir_token_pos[node];
-    if (hir_kind[node] == HIR_NAME_EXPR)
-        return visible_type_for_token(token);
-
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    uint literal = hir_scalar_type_for_expr_form(payload.a);
+    if (literal != TY_UNKNOWN)
+        return literal;
+    if (core.kind == HIR_NAME_EXPR || core.kind == HIR_MEMBER_EXPR)
+        return visible_type_for_token(expression_token(node));
+    if (core.kind == HIR_STRUCT_LITERAL_EXPR)
+        return visible_type_for_token(core.token_start);
+    if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MATCH_EXPR)
+        return valid_token(core.token_start) ? call_return_type[core.token_start] : TY_UNKNOWN;
+    if (core.kind == HIR_CALL_EXPR)
     {
-        uint member_token = hir_member_name_token[node];
-        return visible_type_for_token(member_token);
+        uint callee = payload.a;
+        uint callee_ty = valid_hir(callee)
+            ? visible_type_for_token(expression_token(callee))
+            : TY_UNKNOWN;
+        if (callee_ty != TY_UNKNOWN)
+            return callee_ty;
+        return valid_token(core.token_start) ? call_return_type[core.token_start] : TY_UNKNOWN;
     }
-
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
-    {
-        uint head_node = hir_struct_lit_head_node[node];
-        return valid_node(head_node) ? visible_type_for_token(hir_token_pos[head_node])
-                                     : TY_UNKNOWN;
-    }
-
-    if (hir_kind[node] == HIR_INDEX_EXPR || hir_kind[node] == HIR_MATCH_EXPR)
-        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
-
-    if (hir_kind[node] == HIR_CALL_EXPR)
-    {
-        uint callee_node = hir_call_callee_node[node];
-        if (valid_node(callee_node))
-        {
-            if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
-            {
-                uint member_token = hir_member_name_token[callee_node];
-                return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
-            }
-
-            uint callee_token = hir_token_pos[callee_node];
-            uint callee_ty = valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
-            if (callee_ty != TY_UNKNOWN)
-                return callee_ty;
-        }
-
-        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
-    }
-
     return TY_UNKNOWN;
 }
 
-uint expr_type(uint result_node)
+uint expression_type(uint node)
 {
-    uint node = resolve_expr(result_node);
-    if (!valid_node(node))
-        return TY_UNKNOWN;
-
-    uint direct_ty = direct_node_type(node);
-    if (direct_ty != TY_UNKNOWN)
-        return direct_ty;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+    uint direct = direct_node_type(node);
+    if (direct != TY_UNKNOWN || !valid_hir(node))
+        return direct;
+    HirPayload payload = compact_hir_payload[node];
+    uint form = payload.a;
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE || form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ || form == HIR_EXPR_NE || form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT || form == HIR_EXPR_LE || form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND || form == HIR_EXPR_OR)
         return TY_BOOL;
-    if (form == HIR_EXPR_INT)
-        return TY_INT;
-    if (form == HIR_EXPR_FLOAT)
-        return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
+        return visible_type_for_token(expression_token(node));
+    if (form == HIR_EXPR_NEG || form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL || form == HIR_EXPR_DIV)
     {
-        uint token = expr_value_token(node);
-        if (!valid_token(token))
-            token = hir_token_pos[node];
-        return visible_type_for_token(token);
+        uint left = direct_node_type(payload.b);
+        uint right = direct_node_type(payload.c);
+        return left == TY_FLOAT || right == TY_FLOAT ? TY_FLOAT : TY_INT;
     }
-
-    if (form == HIR_EXPR_NOT ||
-        form == HIR_EXPR_EQ ||
-        form == HIR_EXPR_NE ||
-        form == HIR_EXPR_LT ||
-        form == HIR_EXPR_GT ||
-        form == HIR_EXPR_LE ||
-        form == HIR_EXPR_GE ||
-        form == HIR_EXPR_AND ||
-        form == HIR_EXPR_OR)
-        return TY_BOOL;
-
-    if (form == HIR_EXPR_NEG ||
-        form == HIR_EXPR_ADD ||
-        form == HIR_EXPR_SUB ||
-        form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_DIV)
-    {
-        uint left_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
-        uint right_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
-        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
-    }
-
-    if (form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_BIT_OR ||
-        form == HIR_EXPR_BIT_XOR ||
-        form == HIR_EXPR_BIT_AND ||
-        form == HIR_EXPR_SHL ||
-        form == HIR_EXPR_SHR)
+    if (form == HIR_EXPR_MOD || form == HIR_EXPR_BIT_OR || form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND || form == HIR_EXPR_SHL || form == HIR_EXPR_SHR)
         return TY_INT;
-
     return TY_UNKNOWN;
-}
-
-bool same_result_type(uint left, uint right)
-{
-    if (left == TY_UNKNOWN || right == TY_UNKNOWN)
-        return false;
-    return left == right;
-}
-
-void validate_match_node(uint match_node, uint match_i)
-{
-    uint arm_i = hir_match_arm_start[match_node];
-    uint arm_count = hir_match_arm_count[match_node];
-    if (arm_count == 0u || !valid_node(arm_i))
-    {
-        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-    }
-
-    if (valid_node(arm_i) && hir_match_payload_match_node[arm_i] != match_node)
-        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-}
-
-void record_arm_bad_hir(uint arm_node)
-{
-    uint arm_i = hir_token_pos[arm_node];
-    record_error(valid_token(arm_i) ? arm_i : active_token_count(),
-                 ERR_BAD_HIR,
-                 HIR_MATCH_EXPR);
-}
-
-void publish_match_arm_type(uint arm_node)
-{
-    uint match_node = hir_match_payload_match_node[arm_node];
-    if (!valid_node(match_node) || hir_kind[match_node] != HIR_MATCH_EXPR)
-    {
-        record_arm_bad_hir(arm_node);
-        return;
-    }
-
-    uint match_i = hir_token_pos[match_node];
-    if (!valid_token(match_i))
-    {
-        record_error(active_token_count(), ERR_BAD_HIR, match_i);
-        return;
-    }
-
-    uint ordinal = hir_match_payload_ordinal[arm_node];
-    if (ordinal >= hir_match_arm_count[match_node])
-    {
-        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-
-    uint result_node = hir_match_arm_result_node[arm_node];
-    if (!valid_node(result_node))
-    {
-        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-
-    uint result_start = hir_token_pos[result_node];
-    if (!valid_token(result_start))
-    {
-        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-
-    uint arm_ty = expr_type(result_node);
-    if (arm_ty == TY_UNKNOWN)
-    {
-        record_error(result_start, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-
-    uint prior = atomic_u32_compare_exchange(
-        call_return_type,
-        match_i,
-        TY_UNKNOWN,
-        arm_ty);
-    if (prior != TY_UNKNOWN && !same_result_type(prior, arm_ty))
-        record_error(result_start, ERR_ASSIGN_MISMATCH, arm_ty);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= active_hir_node_count())
+    uint arm_i = linear_thread_id(dtid);
+    if (arm_i >= active_arm_count())
         return;
-
-    if (hir_kind[i] == HIR_MATCH_EXPR)
+    HirMatchArm arm = compact_match_arms[arm_i];
+    if (!valid_hir(arm.owner) || compact_hir_core[arm.owner].kind != HIR_MATCH_EXPR ||
+        !valid_hir(arm.result))
     {
-        uint match_i = hir_token_pos[i];
-        if (!valid_token(match_i))
-        {
-            record_error(active_token_count(), ERR_BAD_HIR, match_i);
-            return;
-        }
-        validate_match_node(i, match_i);
+        uint token = valid_hir(arm.owner) ? compact_hir_core[arm.owner].token_start : 0u;
+        record_min_token_error(status, valid_token(token) ? token : 0u, ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
     }
-
-    if (valid_node(hir_match_arm_result_node[i]))
+    uint match_token = compact_hir_core[arm.owner].token_start;
+    uint result_token = compact_hir_core[arm.result].token_start;
+    if (!valid_token(match_token) || !valid_token(result_token))
     {
-        publish_match_arm_type(i);
+        record_min_token_error(status, valid_token(match_token) ? match_token : 0u,
+                               ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
     }
+    uint arm_ty = expression_type(arm.result);
+    if (arm_ty == TY_UNKNOWN)
+    {
+        record_min_token_error(status, result_token, ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
+    }
+    uint prior = atomic_u32_compare_exchange(call_return_type, match_token, TY_UNKNOWN, arm_ty);
+    if (prior != TY_UNKNOWN && prior != arm_ty)
+        record_min_token_error(status, result_token, ERR_ASSIGN_MISMATCH, arm_ty);
 }

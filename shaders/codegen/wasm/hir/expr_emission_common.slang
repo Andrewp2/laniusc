@@ -11,6 +11,8 @@ public static const uint WASM_EXPR_EMISSION_LOCAL_GET = 3u;
 public static const uint WASM_EXPR_EMISSION_I32_CONST = 4u;
 public static const uint WASM_EXPR_EMISSION_I32_LOAD = 5u;
 public static const uint WASM_EXPR_EMISSION_F32_LOAD = 6u;
+public static const uint WASM_EXPR_EMISSION_INDEX_I32_LOAD = 7u;
+public static const uint WASM_EXPR_EMISSION_INDEX_F32_LOAD = 8u;
 
 public uint2 wasm_expr_no_emission()
 {
@@ -42,6 +44,13 @@ public uint2 wasm_expr_load_emission(uint offset, bool f32)
     return uint2(
         f32 ? WASM_EXPR_EMISSION_F32_LOAD : WASM_EXPR_EMISSION_I32_LOAD,
         offset);
+}
+
+public uint2 wasm_expr_index_load_emission(bool f32)
+{
+    return uint2(
+        f32 ? WASM_EXPR_EMISSION_INDEX_F32_LOAD : WASM_EXPR_EMISSION_INDEX_I32_LOAD,
+        0u);
 }
 
 uint wasm_expr_u32_leb_byte(uint value, uint byte_i)
@@ -109,6 +118,25 @@ public bool wasm_expr_emission_byte(uint2 emission, uint byte_i, out uint byte)
             byte = 2u;
         else
             byte = wasm_expr_u32_leb_byte(emission.y, byte_i - 2u);
+        return true;
+    }
+    if (emission.x == WASM_EXPR_EMISSION_INDEX_I32_LOAD ||
+        emission.x == WASM_EXPR_EMISSION_INDEX_F32_LOAD)
+    {
+        if (byte_i == 0u)
+            byte = 0x41u;
+        else if (byte_i == 1u)
+            byte = 4u;
+        else if (byte_i == 2u)
+            byte = 0x6cu;
+        else if (byte_i == 3u)
+            byte = 0x6au;
+        else if (byte_i == 4u)
+            byte = emission.x == WASM_EXPR_EMISSION_INDEX_F32_LOAD ? 0x2au : 0x28u;
+        else if (byte_i == 5u)
+            byte = 2u;
+        else
+            byte = 0u;
         return true;
     }
     if (emission.x != WASM_EXPR_EMISSION_CALL)

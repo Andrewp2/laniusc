@@ -1,16 +1,13 @@
-// Scatter parser-owned path segment rows into compact typechecker path storage.
+// Project compact HIR path segments into name-resolution storage.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
+struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
-
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_path_segment_owner;
-StructuredBuffer<uint> hir_path_segment_rank;
-StructuredBuffer<uint> path_id_by_owner_hir;
-StructuredBuffer<uint> path_count_out;
-StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> compact_path_segment_count;
+StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> name_id_by_token;
 RWStructuredBuffer<uint> path_segment_name_id;
 RWStructuredBuffer<uint> path_segment_token;
@@ -20,36 +17,27 @@ RWStructuredBuffer<uint> path_prefix_id_a;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-uint active_hir_node_count() { return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]); }
-uint active_path_count() { return min(path_count_out[0], gParams.n_hir_nodes); }
+uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint segment = linear_thread_id(dtid);
-    if (segment >= active_hir_node_count())
+    uint row = tid(dtid);
+    uint segment_count = min(compact_path_segment_count[0u], gParams.n_tokens);
+    if (row >= segment_count)
         return;
-
-    uint owner = hir_path_segment_owner[segment];
-    if (owner >= active_hir_node_count())
+    HirPathSegment segment = compact_path_segments[row];
+    if (segment.path >= compact_path_count[0u])
         return;
-    uint path_slot = path_id_by_owner_hir[owner];
-    if (path_slot >= active_path_count())
+    HirPath path = compact_paths[segment.path];
+    if (segment.ordinal >= path.segment_count || path.segment_start + segment.ordinal != row)
         return;
-    uint ordinal = hir_path_segment_rank[segment];
-    if (ordinal >= path_segment_count[path_slot])
-        return;
-
-    uint token = hir_token_pos[segment];
+    uint token = segment.name_token;
     if (token >= gParams.n_tokens || name_id_by_token[token] == INVALID)
         return;
-    uint dst = path_segment_base[path_slot] + ordinal;
-    if (dst >= gParams.n_tokens)
-        return;
-    path_segment_name_id[dst] = name_id_by_token[token];
-    path_segment_token[dst] = token;
-    path_prefix_base[dst] = path_segment_base[path_slot];
-    path_prefix_id_a[dst] = name_id_by_token[token];
+    path_segment_name_id[row] = name_id_by_token[token];
+    path_segment_token[row] = token;
+    path_prefix_base[row] = path.segment_start;
+    path_prefix_id_a[row] = name_id_by_token[token];
 }

@@ -21,25 +21,63 @@ impl GpuParser {
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedHirSemanticCount> {
         stamp_timer(timer_ref, encoder, "parser.hir_semantic_count_readback");
-        let byte_size = bufs.hir_semantic_count.byte_size as u64;
-        let block_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.hir_semantic_count"),
-            size: byte_size,
+        const WORDS: u64 = 30;
+        let count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.hir_counts"),
+            size: WORDS * 4,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        encoder.copy_buffer_to_buffer(&bufs.hir_semantic_count, 0, &count_readback, 0, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_canonical_count, 0, &count_readback, 4, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_canonical_status, 0, &count_readback, 8, 52);
+        encoder.copy_buffer_to_buffer(&bufs.hir_call_arg_table_count, 0, &count_readback, 60, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_param_table_count, 0, &count_readback, 64, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_type_arg_table_count, 0, &count_readback, 68, 4);
         encoder.copy_buffer_to_buffer(
-            &bufs.hir_semantic_count,
+            &bufs.hir_generic_param_table_count,
             0,
-            &block_count_readback,
-            0,
-            byte_size,
+            &count_readback,
+            72,
+            4,
         );
+        encoder.copy_buffer_to_buffer(&bufs.hir_path_table_count, 0, &count_readback, 76, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_path_segment_table_count,
+            0,
+            &count_readback,
+            80,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(&bufs.hir_field_table_count, 0, &count_readback, 84, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_variant_table_count, 0, &count_readback, 88, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_variant_payload_table_count,
+            0,
+            &count_readback,
+            92,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(&bufs.hir_match_arm_table_count, 0, &count_readback, 96, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_match_payload_table_count,
+            0,
+            &count_readback,
+            100,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_element_table_count,
+            0,
+            &count_readback,
+            104,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(&bufs.hir_string_count, 0, &count_readback, 108, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_method_table_count, 0, &count_readback, 112, 4);
+        encoder.copy_buffer_to_buffer(&bufs.hir_predicate_table_count, 0, &count_readback, 116, 4);
 
-        Ok(RecordedHirSemanticCount {
-            block_count_readback,
-            block_count_words: bufs.hir_semantic_count.count,
-        })
+        Ok(RecordedHirSemanticCount { count_readback })
     }
 
     /// Finishes a recorded semantic-HIR count readback.
@@ -47,17 +85,80 @@ impl GpuParser {
         &self,
         recorded: &RecordedHirSemanticCount,
     ) -> Result<u32> {
-        let slice = recorded.block_count_readback.slice(..);
+        Ok(self.finish_recorded_hir_counts(recorded)?.0)
+    }
+
+    /// Finishes semantic and canonical HIR count readback and enforces the
+    /// token-anchor capacity boundary.
+    pub fn finish_recorded_hir_counts(
+        &self,
+        recorded: &RecordedHirSemanticCount,
+    ) -> Result<(u32, u32)> {
+        let slice = recorded.count_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &slice,
             "parser.hir_semantic_count",
         )?;
         let mapped = slice.get_mapped_range();
-        let words = read_u32_words(&mapped, recorded.block_count_words)?;
+        let words = read_u32_words(&mapped, 30)?;
         drop(mapped);
-        recorded.block_count_readback.unmap();
-        Ok(words.into_iter().fold(0u32, u32::saturating_add))
+        recorded.count_readback.unmap();
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+            eprintln!(
+                "gpu_hir_rows semantic={} canonical={} candidates={} unique_anchors={} call_args={} params={} type_args={} generic_params={} paths={} path_segments={} fields={} variants={} variant_payloads={} match_arms={} match_payloads={} array_elements={} strings={} methods={} predicates={} max_anchor={} anchor_sum={} capacity={} status={} detail_row={} reason_bits={} bad_ref_raw_plus_one={} bad_ref_input_plus_one={} bad_ref_anchor_plus_one={} bad_ref_winner_plus_one={}",
+                words[0],
+                words[1],
+                words[6],
+                words[8],
+                words[15],
+                words[16],
+                words[17],
+                words[18],
+                words[19],
+                words[20],
+                words[21],
+                words[22],
+                words[23],
+                words[24],
+                words[25],
+                words[26],
+                words[27],
+                words[28],
+                words[29],
+                words[7],
+                words[9],
+                words[4],
+                words[2],
+                words[5].saturating_sub(1),
+                words[10],
+                words[11],
+                words[12],
+                words[13],
+                words[14],
+            );
+        }
+        if words[2] == 1 {
+            anyhow::bail!(
+                "canonical HIR capacity exceeded: required {} rows, capacity {}, first overflow raw node {}; every durable HIR row must have a unique token or file anchor",
+                words[3],
+                words[4],
+                words[5].saturating_sub(1),
+            );
+        }
+        if words[2] == 2 {
+            anyhow::bail!(
+                "canonical HIR structural invariant failed at or before dense row {}",
+                words[5].saturating_sub(1),
+            );
+        }
+        if words[2] == 3 {
+            anyhow::bail!(
+                "compact HIR family side-table capacity exceeded at or before raw row {}",
+                words[5].saturating_sub(1),
+            );
+        }
+        Ok((words[0], words[1]))
     }
 
     /// Records parser/HIR work plus caller work, submits it, then checks parser status.

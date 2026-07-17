@@ -4,12 +4,13 @@ import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
-StructuredBuffer<uint> public_decl_index_by_hir;
+StructuredBuffer<uint> decl_id_by_name_token;
+StructuredBuffer<uint> public_decl_index_by_local;
 RWStructuredBuffer<uint> interface_generic_type_count_by_decl;
 RWStructuredBuffer<uint> interface_generic_const_count_by_decl;
 static const uint GENERIC_TYPE=1u,GENERIC_CONST=2u,WG_SIZE=256u,MAX_GROUPS_X=65535u;
@@ -18,7 +19,9 @@ uint linear_thread_id(uint3 d){return d.x+d.y*MAX_GROUPS_X*WG_SIZE;}
 void main(uint3 dtid:SV_DispatchThreadID)
 {
  uint row=linear_thread_id(dtid);if(row>=min(generic_param_count_out[0u],gParams.token_capacity))return;
- uint owner_hir=generic_param_owner_node[row];uint owner=owner_hir<gParams.hir_capacity?public_decl_index_by_hir[owner_hir]:0xffffffffu;
+ uint owner_token=generic_param_owner_token[row];
+ uint local=owner_token<gParams.token_capacity?decl_id_by_name_token[owner_token]:0xffffffffu;
+ uint owner=local<gParams.decl_capacity?public_decl_index_by_local[local]:0xffffffffu;
  uint token=generic_param_token[row];if(owner>=gParams.decl_capacity||token>=gParams.token_capacity)return;
  uint kind=generic_param_kind[row];
  if(kind==GENERIC_TYPE){uint slot=type_generic_param_slot_by_token[token];if(slot<gParams.token_capacity)atomic_u32_max(interface_generic_type_count_by_decl,owner,slot+1u);}

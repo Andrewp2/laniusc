@@ -13,8 +13,9 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> alias_equiv_parent;
 RWStructuredBuffer<uint> alias_equiv_component_source;
@@ -28,7 +29,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]
@@ -38,7 +39,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
     if (node >= active_hir_count())
         return;
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (token >= gParams.n_tokens)
         return;
     uint tag = type_expr_ref_tag[token];

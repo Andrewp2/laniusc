@@ -26,7 +26,10 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_token_pos;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> method_decl_param_offset;
 
 RWStructuredBuffer<uint> x86_func_slot_flags;
@@ -51,6 +54,18 @@ bool valid_token(uint token_i)
     return token_i != INVALID && token_i < gParams.n_tokens;
 }
 
+uint canonical_function_token(uint node_i)
+{
+    if (node_i >= active_hir_node_count())
+        return INVALID;
+    uint dense = raw_to_compact_hir[node_i];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense == INVALID || dense >= count)
+        return INVALID;
+    uint token = compact_hir_payload[dense].b;
+    return valid_token(token) ? token : INVALID;
+}
+
 bool is_compiled_function_node(uint node_i)
 {
     if (node_i >= active_hir_node_count() || hir_kind[node_i] != HIR_FN)
@@ -58,7 +73,7 @@ bool is_compiled_function_node(uint node_i)
     if (hir_item_kind[node_i] == HIR_ITEM_KIND_FN)
         return true;
 
-    uint fn_token = hir_token_pos[node_i];
+    uint fn_token = canonical_function_token(node_i);
     return valid_token(fn_token) && method_decl_param_offset[fn_token] != INVALID;
 }
 

@@ -38,6 +38,7 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint4> x86_match_record;
+StructuredBuffer<uint4> x86_match_arm_record;
 StructuredBuffer<uint> x86_for_iterable_node;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_node_inst_range_start;
@@ -102,6 +103,11 @@ static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 static const uint EXPR_SEMANTIC_FLOAT_FLAG = 0x80000000u;
 static const uint X86_NODE_INST_LOCATION_ERR_BRANCH = 1u;
 static const uint X86_NODE_INST_LOCATION_ERR_MATCH = 2u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH_RECORD = 20u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH_ARMS = 21u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH_SCRUTINEE = 22u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH_RESULT0 = 23u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH_RESULT1 = 24u;
 static const uint X86_NODE_INST_LOCATION_ERR_LOOP = 3u;
 static const uint X86_NODE_INST_LOCATION_ERR_FOR = 4u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE = 5u;
@@ -299,11 +305,7 @@ uint nth_match_arm_node(uint match_node, uint ordinal)
     if (!has_match_feature() || !valid_node(match_node))
         return INVALID;
     uint4 record = x86_match_record[match_node];
-    if (ordinal == 0u)
-        return record.y;
-    if (ordinal == 1u)
-        return record.w;
-    return INVALID;
+    return ordinal < record.z && record.y != INVALID ? record.y + ordinal : INVALID;
 }
 
 bool corrected_branch_locations(uint node, out uint4 locations)
@@ -371,30 +373,48 @@ bool corrected_for_locations(uint node, out uint4 locations)
     return true;
 }
 
-bool corrected_match_return_locations(uint node, out uint4 locations)
+bool corrected_match_return_locations(uint node, out uint4 locations, out uint failure)
 {
     locations = uint4_fill(INVALID);
+    failure = X86_NODE_INST_LOCATION_ERR_MATCH;
     if (!has_match_feature() || !valid_node(node) || hir_kind[node] != HIR_MATCH_EXPR)
         return false;
 
     uint4 match_record = x86_match_record[node];
     if (!valid_node(match_record.x) || match_record.z != 2u)
+    {
+        failure = X86_NODE_INST_LOCATION_ERR_MATCH_RECORD;
         return false;
+    }
 
     uint arm0 = nth_match_arm_node(node, 0u);
     uint arm1 = nth_match_arm_node(node, 1u);
-    if (!valid_node(arm0) || !valid_node(arm1))
+    if (arm0 == INVALID || arm1 == INVALID)
+    {
+        failure = X86_NODE_INST_LOCATION_ERR_MATCH_ARMS;
         return false;
+    }
 
-    uint result0 = resolve_expr(x86_match_record[arm0].w);
-    uint result1 = resolve_expr(x86_match_record[arm1].w);
+    uint result0 = resolve_expr(x86_match_arm_record[arm0].w);
+    uint result1 = resolve_expr(x86_match_arm_record[arm1].w);
     uint branch_location = INVALID;
     uint return0_location = INVALID;
     uint return1_location = INVALID;
-    if (!padding_location_for_node(match_record.x, branch_location) ||
-        !padding_location_for_node(result0, return0_location) ||
-        !padding_location_for_node(result1, return1_location))
+    if (!padding_location_for_node(match_record.x, branch_location))
+    {
+        failure = X86_NODE_INST_LOCATION_ERR_MATCH_SCRUTINEE;
         return false;
+    }
+    if (!padding_location_for_node(result0, return0_location))
+    {
+        failure = X86_NODE_INST_LOCATION_ERR_MATCH_RESULT0;
+        return false;
+    }
+    if (!padding_location_for_node(result1, return1_location))
+    {
+        failure = X86_NODE_INST_LOCATION_ERR_MATCH_RESULT1;
+        return false;
+    }
 
     locations = uint4(branch_location, return0_location, return1_location, INVALID);
     return true;
@@ -574,12 +594,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (has_match_feature() && hir_kind[node] == HIR_MATCH_EXPR && kind == X86_NODE_INST_BRANCH)
     {
         uint4 match_locations = uint4_fill(INVALID);
-        if (corrected_match_return_locations(node, match_locations))
+        uint match_location_failure = X86_NODE_INST_LOCATION_ERR_MATCH;
+        if (corrected_match_return_locations(node, match_locations, match_location_failure))
         {
             store_locations_and_gen_flag(node, match_locations, range);
             return;
         }
-        publish_error(node, X86_NODE_INST_LOCATION_ERR_MATCH);
+        publish_error(node, match_location_failure);
         return;
     }
 

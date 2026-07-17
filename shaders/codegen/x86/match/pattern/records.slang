@@ -29,6 +29,12 @@ struct FeatureParams
 
 ConstantBuffer<FeatureParams> gX86Features;
 
+struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
@@ -45,12 +51,17 @@ StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
-StructuredBuffer<uint> hir_variant_ordinal;
-StructuredBuffer<uint4> x86_match_record;
-StructuredBuffer<uint> x86_match_pattern_node_owner;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> x86_match_pattern_dense_owner;
+StructuredBuffer<uint> x86_match_pattern_root_owner;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint4> x86_match_arm_record;
 
 RWStructuredBuffer<uint> x86_match_pattern_node_variant;
 RWStructuredBuffer<uint> x86_match_pattern_node_payload_decl;
+RWStructuredBuffer<uint> x86_match_pattern_node_owner;
 RWStructuredBuffer<uint> x86_match_pattern_first_use_node;
 RWStructuredBuffer<uint> x86_match_pattern_first_variant_node;
 RWStructuredBuffer<uint> x86_match_pattern_first_payload_node;
@@ -86,6 +97,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+uint active_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_arm(uint arm)
+{
+    return arm != INVALID && arm < active_arm_count();
+}
+
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
@@ -104,6 +125,11 @@ uint active_decl_count()
 uint active_path_count()
 {
     return min(path_count_out[0u], gParams.n_hir_nodes);
+}
+
+uint active_variant_count()
+{
+    return min(compact_variant_count[0u], gParams.n_hir_nodes);
 }
 
 uint expr_slot(uint node, uint slot)
@@ -185,10 +211,10 @@ bool variant_ordinal_from_decl(uint decl_i, out uint ordinal)
         return false;
 
     uint variant_node = decl_hir_node[decl_i];
-    if (!valid_node(variant_node) || hir_variant_ordinal[variant_node] == INVALID)
+    if (variant_node >= active_variant_count())
         return false;
 
-    ordinal = hir_variant_ordinal[variant_node];
+    ordinal = compact_variants[variant_node].ordinal;
     return ordinal < MATCH_ARM_VARIANT_UNKNOWN;
 }
 
@@ -271,8 +297,28 @@ void main(uint3 tid: SV_DispatchThreadID)
     x86_match_pattern_node_variant[node] = MATCH_ARM_VARIANT_UNKNOWN;
     x86_match_pattern_node_payload_decl[node] = INVALID;
 
-    uint arm = x86_match_pattern_node_owner[node];
-    if (!valid_node(arm))
+    uint dense = raw_to_compact_hir[node];
+    uint arm = dense != INVALID && dense < gParams.n_hir_nodes
+        ? x86_match_pattern_dense_owner[dense]
+        : INVALID;
+    if (valid_arm(arm) && x86_match_pattern_root_owner[dense] != arm)
+    {
+        uint pattern = x86_match_arm_record[arm].x;
+        if (pattern == INVALID || pattern >= gParams.n_hir_nodes)
+            arm = INVALID;
+        else
+        {
+            uint end = compact_hir_links[pattern].subtree_end;
+            HirCore pattern_core = compact_hir_core[pattern];
+            HirCore node_core = compact_hir_core[dense];
+            if (dense < pattern || end == INVALID || dense >= end ||
+                node_core.token_start < pattern_core.token_start ||
+                node_core.token_end > pattern_core.token_end)
+                arm = INVALID;
+        }
+    }
+    x86_match_pattern_node_owner[node] = arm;
+    if (!valid_arm(arm))
         return;
 
     uint ordinal = INVALID;

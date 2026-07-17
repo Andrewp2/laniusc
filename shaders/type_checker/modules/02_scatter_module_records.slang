@@ -21,7 +21,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_record_flag;
 StructuredBuffer<uint> module_record_prefix;
-StructuredBuffer<uint> hir_item_file_id;
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> path_id_by_owner_hir;
 
 RWStructuredBuffer<uint> module_file_id;
@@ -57,7 +58,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot.active == 0u || slot.dst >= gParams.module_capacity)
         return;
 
-    module_file_id[slot.dst] = hir_item_file_id[i];
+    module_file_id[slot.dst] = compact_hir_links[i].file_id;
     module_path_id[slot.dst] = path_id_by_owner_hir[i];
     module_owner_hir[slot.dst] = i;
 }

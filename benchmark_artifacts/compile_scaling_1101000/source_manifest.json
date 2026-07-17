@@ -1,35 +1,438 @@
 {
-  "function_count": 6927,
   "generator_path": "tools/generate_compile_scaling_sources.py",
-  "generator_sha256": "c3c68ed25db4e72a581111306e19649e69c9602b9e3146c1cdd923cb21aee47c",
-  "schema": "lanius.compile-scaling-sources.v1",
+  "model_path": "tools/compile_workload_model.py",
+  "schema": "lanius.compile-scaling-source-manifest.v2",
   "variants": {
     "19": {
-      "expected_stdout": "36\n",
+      "expected_stdout": "1618\n",
+      "seed": 19,
       "sources": {
-        "lanius": {"bytes": 1101000, "sha256": "235efe28ba1dcf1cfdb025b63f4153c88a742fc49e2eee745d2b535c49d46590"}
+        "c": {
+          "bytes": 1071739,
+          "path": "1101000/scaling.c",
+          "sha256": "3fc789915aadb7af83dbd28ee4983cda21a58b44b22a7f08ef53db8db24a3c18"
+        },
+        "cpp": {
+          "bytes": 1071731,
+          "path": "1101000/scaling.cpp",
+          "sha256": "1ace18ba9ed4a651b1030a710f020d1f48df5f2a68e76bcadb59f86c36998772"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "d2a9e072a11bb3b537ceab3080595594cf7adfa844aa368bd7f4ff913557c4d9"
+        },
+        "rust": {
+          "bytes": 1107514,
+          "path": "1101000/scaling.rs",
+          "sha256": "18c955444b8e7fc01451a3a3fc39fec9c4f160fef633fcc802e2eb9b96ab0fe1"
+        },
+        "zig": {
+          "bytes": 1107749,
+          "path": "1101000/scaling.zig",
+          "sha256": "92666ea8927686bec0d99bf58c38ce2b862bdf0b436793eaf2b56f0dc0fe2481"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1986,
+        "leaf_family_counts": {
+          "array": 199,
+          "bitwise": 199,
+          "loop": 199,
+          "nested_branch": 198,
+          "struct": 199
+        },
+        "leaf_function_count": 994,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1774,
+          "branch": 1748,
+          "mul": 1776,
+          "shift": 1825,
+          "xor": 1852
+        },
+        "reachable_function_count": 1987,
+        "reduction_function_count": 993
       }
     },
     "20": {
-      "expected_stdout": "47\n",
+      "expected_stdout": "1802\n",
+      "seed": 20,
       "sources": {
-        "c": {"bytes": 878415, "sha256": "501aca52f2f4eb4daf4e01d82dc4435932cf1d66dced8dd31bddc65f8e6cb98c"},
-        "cpp": {"bytes": 954612, "sha256": "8d4e1bd90634690ec70bfacc35537966eda8e44eaba1b0f5ababb0711a72e0f8"},
-        "lanius": {"bytes": 1101000, "sha256": "21cfb64abc5d0b15dffc85153db0086bdc16aeda43dcdf5dbb7ce336878a193d"},
-        "rust": {"bytes": 892256, "sha256": "15fd3abff62e06b50aa44473f2ff649e9e876df8d21b7b2b59731b4b18f74b9f"},
-        "zig": {"bytes": 1023910, "sha256": "12e47ba3b16403318ca90de5e84c00344c397dea4bc35430bfdbee103db5989a"}
+        "c": {
+          "bytes": 1072659,
+          "path": "1101000/scaling.c",
+          "sha256": "f036f1ed56eeefbc89c39b9a09d2de50bab7f6ceb845c14c73dfab6027f079cc"
+        },
+        "cpp": {
+          "bytes": 1072651,
+          "path": "1101000/scaling.cpp",
+          "sha256": "f1b52e36bd1665c6360c86f1e1c464671057a5edd035c0084f46b304b78f6a82"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "6349cc83bc438e72cf49d98dffacea46c28662955118e936bd4550be621b73bb"
+        },
+        "rust": {
+          "bytes": 1108318,
+          "path": "1101000/scaling.rs",
+          "sha256": "ee2d157398267526391def776a1c72da510ba38e5d941e70cc43d57f034a3a75"
+        },
+        "zig": {
+          "bytes": 1108553,
+          "path": "1101000/scaling.zig",
+          "sha256": "54013a6b9a7906d64c43c91b3340d76bb163a701f0719b2afa2a09aabf5ee397"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1980,
+        "leaf_family_counts": {
+          "array": 198,
+          "bitwise": 198,
+          "loop": 199,
+          "nested_branch": 198,
+          "struct": 198
+        },
+        "leaf_function_count": 991,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1833,
+          "branch": 1792,
+          "mul": 1807,
+          "shift": 1756,
+          "xor": 1788
+        },
+        "reachable_function_count": 1981,
+        "reduction_function_count": 990
       }
     },
     "21": {
-      "expected_stdout": "58\n",
+      "expected_stdout": "4013\n",
+      "seed": 21,
       "sources": {
-        "lanius": {"bytes": 1101000, "sha256": "996aef4feb767f04cf0b3adb7bb58c8711d060cb018d7a3d21987d23cc30cf63"}
+        "c": {
+          "bytes": 1072596,
+          "path": "1101000/scaling.c",
+          "sha256": "9984902dd9b855445641488a3ff5b05df0aaa2f7c54d97fb62cf297375ddd892"
+        },
+        "cpp": {
+          "bytes": 1072588,
+          "path": "1101000/scaling.cpp",
+          "sha256": "601bbc633b36205fab3514b62b6763c4c746255439181536e868373f16ff7e36"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "bce162cda32bb7553f62082538016f2620d75b9383ed57561c87d4a7533121e6"
+        },
+        "rust": {
+          "bytes": 1107995,
+          "path": "1101000/scaling.rs",
+          "sha256": "7fe4dcd965ee41ef1ee4de19967332212f48e63f2b132a1a634c7e81da3ceeb8"
+        },
+        "zig": {
+          "bytes": 1108219,
+          "path": "1101000/scaling.zig",
+          "sha256": "6e5ebcf3dc231c78320ce6bc84e522a1a67b344dcdaf01a4d250587375c6c5f9"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1966,
+        "leaf_family_counts": {
+          "array": 197,
+          "bitwise": 197,
+          "loop": 196,
+          "nested_branch": 197,
+          "struct": 197
+        },
+        "leaf_function_count": 984,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1779,
+          "branch": 1810,
+          "mul": 1834,
+          "shift": 1840,
+          "xor": 1732
+        },
+        "reachable_function_count": 1967,
+        "reduction_function_count": 983
       }
     },
     "22": {
-      "expected_stdout": "69\n",
+      "expected_stdout": "1146\n",
+      "seed": 22,
       "sources": {
-        "lanius": {"bytes": 1101000, "sha256": "8eba00518627e4d31a712092a71aa74825b6517216fda360ba8a78fdddd173c9"}
+        "c": {
+          "bytes": 1071540,
+          "path": "1101000/scaling.c",
+          "sha256": "988b99cad5dae103b865d9df9b516e71d012ce4284c8c7b589c991e539f0e68a"
+        },
+        "cpp": {
+          "bytes": 1071532,
+          "path": "1101000/scaling.cpp",
+          "sha256": "ac16ca93d953d2dbea516e434945825134589d33064ae8b0c392e679a1889084"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "96de70ab086fab9a341844305e1eb5b579e1b223d26467f6076735e559829a7e"
+        },
+        "rust": {
+          "bytes": 1107250,
+          "path": "1101000/scaling.rs",
+          "sha256": "f2980ec908461c09b316a0f73e04f42e74b516367306ac4ae01c7b4ee25c9eac"
+        },
+        "zig": {
+          "bytes": 1107473,
+          "path": "1101000/scaling.zig",
+          "sha256": "7fb1ae0cd62563343b9ff18cd9b99d13cc0ac09a4ff539210a95eb00f897a831"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1984,
+        "leaf_family_counts": {
+          "array": 198,
+          "bitwise": 199,
+          "loop": 198,
+          "nested_branch": 199,
+          "struct": 199
+        },
+        "leaf_function_count": 993,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1795,
+          "branch": 1787,
+          "mul": 1747,
+          "shift": 1803,
+          "xor": 1774
+        },
+        "reachable_function_count": 1985,
+        "reduction_function_count": 992
+      }
+    },
+    "23": {
+      "expected_stdout": "1512\n",
+      "seed": 23,
+      "sources": {
+        "c": {
+          "bytes": 1071748,
+          "path": "1101000/scaling.c",
+          "sha256": "6622a5f0327e077a0d3c791b92bb286d74bfb752bba2223c99c0a3021d4fa81b"
+        },
+        "cpp": {
+          "bytes": 1071740,
+          "path": "1101000/scaling.cpp",
+          "sha256": "8907550540a60cd0425a660150da8d8b67a05f002e05f542c97143928bfb0a3c"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "d203904f4264f0abc9dafcc70e2d44a01a4052a26bc25ea9529644fe0074ac39"
+        },
+        "rust": {
+          "bytes": 1107635,
+          "path": "1101000/scaling.rs",
+          "sha256": "98fd928dd0abe67a5b29a953d552c3a23b6c474d3ebb3ede6714a1ea7e14ccab"
+        },
+        "zig": {
+          "bytes": 1107863,
+          "path": "1101000/scaling.zig",
+          "sha256": "c83bc60435cac77f386061e9d7d2d4d68706d87a289d2a9d0ca80b1713d116ed"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1994,
+        "leaf_family_counts": {
+          "array": 199,
+          "bitwise": 200,
+          "loop": 200,
+          "nested_branch": 200,
+          "struct": 199
+        },
+        "leaf_function_count": 998,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1764,
+          "branch": 1700,
+          "mul": 1851,
+          "shift": 1893,
+          "xor": 1779
+        },
+        "reachable_function_count": 1995,
+        "reduction_function_count": 997
+      }
+    },
+    "24": {
+      "expected_stdout": "1280\n",
+      "seed": 24,
+      "sources": {
+        "c": {
+          "bytes": 1071304,
+          "path": "1101000/scaling.c",
+          "sha256": "cf372b8e2bb0f493aa00f327b7bae2823d0effc26fd3c2d801cbc9225e28ff3c"
+        },
+        "cpp": {
+          "bytes": 1071296,
+          "path": "1101000/scaling.cpp",
+          "sha256": "e9e46c76e04d609781ae798fdfea52cb4fce0b06a6a83c302200983fad066a07"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "52848ec5200004d7b0425c889c3825fd778f84e692ab53d79de7681c13f71311"
+        },
+        "rust": {
+          "bytes": 1107127,
+          "path": "1101000/scaling.rs",
+          "sha256": "affa4ae10db0a26a88ee8e32ce9590ec9ca7c28d0798c08683a1e7d05edf7c7e"
+        },
+        "zig": {
+          "bytes": 1107354,
+          "path": "1101000/scaling.zig",
+          "sha256": "a31c65129ce2c9dd628a83a9aee0fdc3de2201ce02fbba38419c20b8b9bc544d"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1990,
+        "leaf_family_counts": {
+          "array": 199,
+          "bitwise": 200,
+          "loop": 199,
+          "nested_branch": 199,
+          "struct": 199
+        },
+        "leaf_function_count": 996,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1716,
+          "branch": 1807,
+          "mul": 1798,
+          "shift": 1722,
+          "xor": 1809
+        },
+        "reachable_function_count": 1991,
+        "reduction_function_count": 995
+      }
+    },
+    "25": {
+      "expected_stdout": "2963\n",
+      "seed": 25,
+      "sources": {
+        "c": {
+          "bytes": 1071834,
+          "path": "1101000/scaling.c",
+          "sha256": "48999e7135642034dee8607d7411230e26a1103e38a3e1a77d8fcfd355b99841"
+        },
+        "cpp": {
+          "bytes": 1071826,
+          "path": "1101000/scaling.cpp",
+          "sha256": "24dc55a085caa3e6fc6fcfbdba13b0fa6baf36e92e9f9313bea35527f28b8408"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "7f0bfc4aedfa5425f308a248cf98bf49f9a866a093be55e9531ba9eeca2702ab"
+        },
+        "rust": {
+          "bytes": 1107453,
+          "path": "1101000/scaling.rs",
+          "sha256": "00851fa1d26d96e9016a292473b68132695451a5780a809a95f9eb660bd14878"
+        },
+        "zig": {
+          "bytes": 1107683,
+          "path": "1101000/scaling.zig",
+          "sha256": "03bc0c032f33a0f6e74663630628b526d639c5d3765be2b234b3c3a5653cdf16"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1978,
+        "leaf_family_counts": {
+          "array": 198,
+          "bitwise": 198,
+          "loop": 198,
+          "nested_branch": 198,
+          "struct": 198
+        },
+        "leaf_function_count": 990,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1802,
+          "branch": 1790,
+          "mul": 1782,
+          "shift": 1791,
+          "xor": 1791
+        },
+        "reachable_function_count": 1979,
+        "reduction_function_count": 989
+      }
+    },
+    "26": {
+      "expected_stdout": "2625\n",
+      "seed": 26,
+      "sources": {
+        "c": {
+          "bytes": 1072258,
+          "path": "1101000/scaling.c",
+          "sha256": "7c95850c59ba4445457cc0f24123824fdf36995dacf3247fa71bc57006add096"
+        },
+        "cpp": {
+          "bytes": 1072250,
+          "path": "1101000/scaling.cpp",
+          "sha256": "836ea9f7b87c80c32adbea1f218d7eb889b6cbc8478c4518d3ba414dfdc7ecbe"
+        },
+        "lanius": {
+          "bytes": 1101000,
+          "path": "1101000/scaling.lani",
+          "sha256": "37656423e1878008a5ec185aa14f8fa378ad3fcc5a81f043b4543a4865012e3c"
+        },
+        "rust": {
+          "bytes": 1108106,
+          "path": "1101000/scaling.rs",
+          "sha256": "d512857126c7865a1299697847faa0466f6bd290acbc782048461c07c610dba6"
+        },
+        "zig": {
+          "bytes": 1108340,
+          "path": "1101000/scaling.zig",
+          "sha256": "da864a250b97679f95dd981619da62e44dbd6df4c9717fa740ece663bba65a15"
+        }
+      },
+      "target_lanius_bytes": 1101000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1990,
+        "leaf_family_counts": {
+          "array": 200,
+          "bitwise": 199,
+          "loop": 199,
+          "nested_branch": 199,
+          "struct": 199
+        },
+        "leaf_function_count": 996,
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 1850,
+          "branch": 1744,
+          "mul": 1795,
+          "shift": 1814,
+          "xor": 1764
+        },
+        "reachable_function_count": 1991,
+        "reduction_function_count": 995
       }
     }
   }

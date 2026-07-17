@@ -71,6 +71,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) const_value_record: &'a wgpu::Buffer,
     pub(super) struct_type_record: &'a wgpu::Buffer,
     pub(super) struct_field_width_by_node: &'a wgpu::Buffer,
+    pub(super) decl_node_by_token: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) param_reg_record: &'a wgpu::Buffer,
@@ -87,6 +88,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) enum_value_record: &'a wgpu::Buffer,
     pub(super) enum_record_status: &'a wgpu::Buffer,
     pub(super) match_record: &'a wgpu::Buffer,
+    pub(super) match_arm_record: &'a wgpu::Buffer,
     pub(super) match_pattern_node_owner: &'a wgpu::Buffer,
     pub(super) match_result_value_owner: &'a wgpu::Buffer,
     pub(super) struct_access_record: &'a wgpu::Buffer,
@@ -173,6 +175,7 @@ pub(super) fn create_inst_plan_bind_groups(
         const_value_record,
         struct_type_record,
         struct_field_width_by_node,
+        decl_node_by_token,
         decl_layout_record,
         decl_layout_status,
         param_reg_record,
@@ -189,6 +192,7 @@ pub(super) fn create_inst_plan_bind_groups(
         enum_value_record,
         enum_record_status,
         match_record,
+        match_arm_record,
         match_pattern_node_owner,
         match_result_value_owner,
         struct_access_record,
@@ -402,6 +406,10 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "member_result_field_node",
                 struct_metadata.member_result_field_node.as_entire_binding(),
+            ),
+            (
+                "x86_decl_node_by_token",
+                decl_node_by_token.as_entire_binding(),
             ),
             (
                 "x86_struct_field_width_by_node",
@@ -888,6 +896,7 @@ pub(super) fn create_inst_plan_bind_groups(
             ),
             ("gX86Features", feature_params.as_entire_binding()),
             ("x86_match_record", match_record.as_entire_binding()),
+            ("x86_match_arm_record", match_arm_record.as_entire_binding()),
             (
                 "x86_for_iterable_node",
                 for_iterable_node.as_entire_binding(),

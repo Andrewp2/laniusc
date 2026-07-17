@@ -7,6 +7,16 @@ pub(super) struct EmptyHirBindings {
     first_child: LaniusBuffer<u32>,
     next_sibling: LaniusBuffer<u32>,
     semantic_dense_node: LaniusBuffer<u32>,
+    compact_param_count: LaniusBuffer<u32>,
+    compact_params: LaniusBuffer<u32>,
+    compact_param_ranges: LaniusBuffer<u32>,
+    compact_path_count: LaniusBuffer<u32>,
+    compact_paths: LaniusBuffer<u32>,
+    compact_path_segment_count: LaniusBuffer<u32>,
+    compact_path_segments: LaniusBuffer<u32>,
+    compact_generic_param_count: LaniusBuffer<u32>,
+    compact_generic_params: LaniusBuffer<u32>,
+    compact_generic_param_ranges: LaniusBuffer<u32>,
 }
 
 impl EmptyHirBindings {
@@ -43,6 +53,53 @@ impl EmptyHirBindings {
             "type_check.resident.hir_semantic_dense_node.identity",
             &identity_node,
         );
+        let compact_generic_param_count = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_generic_param_count.empty",
+            &[0],
+        );
+        let compact_generic_params = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_generic_params.empty",
+            &[u32::MAX; 4],
+        );
+        let compact_generic_param_ranges = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_generic_param_ranges.empty",
+            &[u32::MAX, 0],
+        );
+        let compact_param_count = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_param_count.empty",
+            &[0],
+        );
+        let compact_params = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_params.empty",
+            &[u32::MAX; 4],
+        );
+        let compact_param_ranges = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_param_ranges.empty",
+            &[u32::MAX, 0],
+        );
+        let compact_path_count =
+            storage_ro_from_u32s(device, "type_check.resident.compact_path_count.empty", &[0]);
+        let compact_paths = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_paths.empty",
+            &[u32::MAX; 4],
+        );
+        let compact_path_segment_count = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_path_segment_count.empty",
+            &[0],
+        );
+        let compact_path_segments = storage_ro_from_u32s(
+            device,
+            "type_check.resident.compact_path_segments.empty",
+            &[u32::MAX; 4],
+        );
 
         Self {
             node_kind,
@@ -50,6 +107,16 @@ impl EmptyHirBindings {
             first_child,
             next_sibling,
             semantic_dense_node,
+            compact_param_count,
+            compact_params,
+            compact_param_ranges,
+            compact_path_count,
+            compact_paths,
+            compact_path_segment_count,
+            compact_path_segments,
+            compact_generic_param_count,
+            compact_generic_params,
+            compact_generic_param_ranges,
         }
     }
 }
@@ -59,6 +126,92 @@ pub(super) fn register_hir_item_resources<'a>(
     resources: &mut ResourceMap<'a>,
     hir_items: GpuTypeCheckHirItemBuffers<'a>,
 ) {
+    resources.buffer("compact_hir_count", &hir_items.compact_hir_count);
+    resources.buffer("compact_hir_core", &hir_items.compact_hir_core);
+    resources.buffer("raw_to_compact_hir", &hir_items.raw_to_compact_hir);
+    resources.buffer("compact_hir_links", &hir_items.compact_hir_links);
+    resources.buffer("compact_hir_payload", &hir_items.compact_hir_payload);
+    resources.buffer("compact_fn_return_type", &hir_items.compact_fn_return_type);
+    resources.buffer(
+        "compact_type_alias_target",
+        &hir_items.compact_type_alias_target,
+    );
+    resources.buffer("compact_param_count", &hir_items.compact_param_count);
+    resources.buffer("compact_params", &hir_items.compact_params);
+    resources.buffer("compact_param_ranges", &hir_items.compact_param_ranges);
+    resources.buffer("compact_type_arg_count", &hir_items.compact_type_arg_count);
+    resources.buffer("compact_type_args", &hir_items.compact_type_args);
+    resources.buffer(
+        "compact_type_arg_ranges",
+        &hir_items.compact_type_arg_ranges,
+    );
+    resources.buffer("compact_path_count", &hir_items.compact_path_count);
+    resources.buffer("compact_paths", &hir_items.compact_paths);
+    resources.buffer(
+        "compact_path_segment_count",
+        &hir_items.compact_path_segment_count,
+    );
+    resources.buffer("compact_path_segments", &hir_items.compact_path_segments);
+    resources.buffer(
+        "compact_generic_param_count",
+        &hir_items.compact_generic_param_count,
+    );
+    resources.buffer("compact_generic_params", &hir_items.compact_generic_params);
+    resources.buffer(
+        "compact_generic_param_ranges",
+        &hir_items.compact_generic_param_ranges,
+    );
+    resources.buffer("compact_field_count", &hir_items.compact_field_count);
+    resources.buffer("compact_fields", &hir_items.compact_fields);
+    resources.buffer("compact_variant_count", &hir_items.compact_variant_count);
+    resources.buffer("compact_variants", &hir_items.compact_variants);
+    resources.buffer(
+        "compact_variant_payload_start",
+        &hir_items.compact_variant_payload_start,
+    );
+    resources.buffer(
+        "compact_variant_payload_count",
+        &hir_items.compact_variant_payload_count,
+    );
+    resources.buffer(
+        "compact_variant_payload_row_count",
+        &hir_items.compact_variant_payload_row_count,
+    );
+    resources.buffer(
+        "compact_variant_payloads",
+        &hir_items.compact_variant_payloads,
+    );
+    resources.buffer(
+        "compact_match_arm_count",
+        &hir_items.compact_match_arm_count,
+    );
+    resources.buffer("compact_match_arms", &hir_items.compact_match_arms);
+    resources.buffer(
+        "compact_match_payload_start",
+        &hir_items.compact_match_payload_start,
+    );
+    resources.buffer(
+        "compact_match_payload_count",
+        &hir_items.compact_match_payload_count,
+    );
+    resources.buffer(
+        "compact_match_payload_row_count",
+        &hir_items.compact_match_payload_row_count,
+    );
+    resources.buffer("compact_match_payloads", &hir_items.compact_match_payloads);
+    resources.buffer(
+        "compact_array_element_start",
+        &hir_items.compact_array_element_start,
+    );
+    resources.buffer(
+        "compact_array_element_count",
+        &hir_items.compact_array_element_count,
+    );
+    resources.buffer(
+        "compact_array_element_row_count",
+        &hir_items.compact_array_element_row_count,
+    );
+    resources.buffer("compact_array_elements", &hir_items.compact_array_elements);
     resources.buffer("node_kind", &hir_items.node_kind);
     resources.buffer("parent", &hir_items.parent);
     resources.buffer("parent_record", &hir_items.parent);
@@ -174,40 +327,6 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_call_arg_count", &hir_items.call_arg_count);
     resources.buffer("hir_call_arg_parent_call", &hir_items.call_arg_parent_call);
     resources.buffer("hir_call_arg_ordinal", &hir_items.call_arg_ordinal);
-    resources.buffer("hir_variant_parent_enum", &hir_items.variant_parent_enum);
-    resources.buffer(
-        "hir_variant_payload_start",
-        &hir_items.variant_payload_start,
-    );
-    resources.buffer(
-        "hir_variant_payload_count",
-        &hir_items.variant_payload_count,
-    );
-    resources.buffer("hir_variant_payload_node", &hir_items.variant_payload_node);
-    resources.buffer(
-        "hir_match_arm_result_node",
-        &hir_items.match_arm_result_node,
-    );
-    resources.buffer(
-        "hir_match_arm_pattern_node",
-        &hir_items.match_arm_pattern_node,
-    );
-    resources.buffer(
-        "hir_match_pattern_owner_arm",
-        &hir_items.match_pattern_owner_arm,
-    );
-    resources.buffer(
-        "hir_match_payload_owner_arm",
-        &hir_items.match_payload_owner_arm,
-    );
-    resources.buffer(
-        "hir_match_payload_match_node",
-        &hir_items.match_payload_match_node,
-    );
-    resources.buffer(
-        "hir_match_payload_ordinal",
-        &hir_items.match_payload_ordinal,
-    );
     resources.buffer(
         "hir_struct_field_parent_struct",
         &hir_items.struct_field_parent_struct,
@@ -257,6 +376,92 @@ pub(super) fn register_empty_hir_resources<'a>(
     empty_hir: &'a EmptyHirBindings,
     hir_active_count: &'a wgpu::Buffer,
 ) {
+    resources.buffer("compact_hir_count", &empty_hir.compact_generic_param_count);
+    resources.buffer("compact_hir_core", &empty_hir.compact_generic_params);
+    resources.buffer("raw_to_compact_hir", &empty_hir.parent);
+    resources.buffer("compact_hir_links", &empty_hir.compact_generic_params);
+    resources.buffer("compact_hir_payload", &empty_hir.compact_generic_params);
+    resources.buffer("compact_fn_return_type", &empty_hir.parent);
+    resources.buffer("compact_type_alias_target", &empty_hir.parent);
+    resources.buffer("compact_param_count", &empty_hir.compact_param_count);
+    resources.buffer("compact_params", &empty_hir.compact_params);
+    resources.buffer("compact_param_ranges", &empty_hir.compact_param_ranges);
+    resources.buffer("compact_type_arg_count", &empty_hir.compact_param_count);
+    resources.buffer("compact_type_args", &empty_hir.compact_params);
+    resources.buffer("compact_type_arg_ranges", &empty_hir.compact_param_ranges);
+    resources.buffer("compact_path_count", &empty_hir.compact_path_count);
+    resources.buffer("compact_paths", &empty_hir.compact_paths);
+    resources.buffer(
+        "compact_path_segment_count",
+        &empty_hir.compact_path_segment_count,
+    );
+    resources.buffer("compact_path_segments", &empty_hir.compact_path_segments);
+    resources.buffer(
+        "compact_generic_param_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_generic_params", &empty_hir.compact_generic_params);
+    resources.buffer(
+        "compact_generic_param_ranges",
+        &empty_hir.compact_generic_param_ranges,
+    );
+    resources.buffer(
+        "compact_field_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_fields", &empty_hir.compact_generic_params);
+    resources.buffer(
+        "compact_variant_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_variants", &empty_hir.compact_generic_params);
+    resources.buffer(
+        "compact_variant_payload_start",
+        &empty_hir.compact_generic_param_ranges,
+    );
+    resources.buffer(
+        "compact_variant_payload_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer(
+        "compact_variant_payload_row_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer(
+        "compact_variant_payloads",
+        &empty_hir.compact_generic_params,
+    );
+    resources.buffer(
+        "compact_match_arm_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_match_arms", &empty_hir.compact_generic_params);
+    resources.buffer(
+        "compact_match_payload_start",
+        &empty_hir.compact_generic_param_ranges,
+    );
+    resources.buffer(
+        "compact_match_payload_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer(
+        "compact_match_payload_row_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_match_payloads", &empty_hir.compact_generic_params);
+    resources.buffer(
+        "compact_array_element_start",
+        &empty_hir.compact_generic_param_ranges,
+    );
+    resources.buffer(
+        "compact_array_element_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer(
+        "compact_array_element_row_count",
+        &empty_hir.compact_generic_param_count,
+    );
+    resources.buffer("compact_array_elements", &empty_hir.compact_generic_params);
     resources.buffer("node_kind", &empty_hir.node_kind);
     resources.buffer("parent", &empty_hir.parent);
     resources.buffer("parent_record", &empty_hir.parent);
@@ -321,16 +526,6 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("hir_call_arg_count", &empty_hir.node_kind);
     resources.buffer("hir_call_arg_parent_call", &empty_hir.parent);
     resources.buffer("hir_call_arg_ordinal", &empty_hir.parent);
-    resources.buffer("hir_variant_parent_enum", &empty_hir.parent);
-    resources.buffer("hir_variant_payload_start", &empty_hir.parent);
-    resources.buffer("hir_variant_payload_count", &empty_hir.node_kind);
-    resources.buffer("hir_variant_payload_node", &empty_hir.parent);
-    resources.buffer("hir_match_arm_result_node", &empty_hir.parent);
-    resources.buffer("hir_match_arm_pattern_node", &empty_hir.parent);
-    resources.buffer("hir_match_pattern_owner_arm", &empty_hir.parent);
-    resources.buffer("hir_match_payload_owner_arm", &empty_hir.parent);
-    resources.buffer("hir_match_payload_match_node", &empty_hir.parent);
-    resources.buffer("hir_match_payload_ordinal", &empty_hir.parent);
     resources.buffer("hir_struct_field_parent_struct", &empty_hir.parent);
     resources.buffer("hir_struct_field_ordinal", &empty_hir.parent);
     resources.buffer("hir_struct_field_type_node", &empty_hir.parent);

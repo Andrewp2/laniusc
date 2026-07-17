@@ -25,8 +25,21 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_enclosing_return_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> x86_compact_executable_raw;
 
 RWStructuredBuffer<uint> x86_match_return_node;
+RWStructuredBuffer<uint4> x86_match_record;
+RWStructuredBuffer<uint4> x86_match_arm_record;
+RWStructuredBuffer<uint> x86_match_arm_owner;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -51,6 +64,11 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return valid_index_or_invalid(node, active_hir_node_count(), INVALID);
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
 uint stmt_slot(uint node, uint slot)
@@ -81,6 +99,45 @@ bool is_return_stmt(uint node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint return_node = linear_dispatch_id(tid);
+    if (!valid_node(return_node))
+        return;
+
+    uint arm_count = min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+    if (return_node < arm_count)
+    {
+        uint owner_dense = compact_match_arms[return_node].owner;
+        uint owner_raw = valid_dense(owner_dense)
+                             ? x86_compact_executable_raw[owner_dense]
+                             : INVALID;
+        uint result_dense = compact_match_arms[return_node].result;
+        uint result_raw = valid_dense(result_dense)
+                              ? x86_compact_executable_raw[result_dense]
+                              : INVALID;
+        if (valid_node(owner_raw))
+            x86_match_arm_owner[return_node] = owner_raw;
+        if (valid_node(result_raw))
+        {
+            uint4 arm_record = x86_match_arm_record[return_node];
+            arm_record.w = result_raw;
+            x86_match_arm_record[return_node] = arm_record;
+        }
+    }
+
+    uint dense = raw_to_compact_hir[return_node];
+    if (valid_dense(dense) && compact_hir_core[dense].kind == HIR_MATCH_EXPR)
+    {
+        uint scrutinee_dense = compact_hir_payload[dense].a;
+        uint scrutinee_raw = valid_dense(scrutinee_dense)
+                                   ? x86_compact_executable_raw[scrutinee_dense]
+                                   : INVALID;
+        if (valid_node(scrutinee_raw))
+        {
+            uint4 record = x86_match_record[return_node];
+            record.x = scrutinee_raw;
+            x86_match_record[return_node] = record;
+        }
+    }
+
     if (!is_return_stmt(return_node))
         return;
 

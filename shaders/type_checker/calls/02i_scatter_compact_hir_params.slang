@@ -1,4 +1,4 @@
-// Scatter compact parser-owned HIR function-parameter rows.
+// Scatter compact HIR function-parameter rows.
 //
 // Parameter type projection writes per-HIR-node facts and per-function counts.
 // The host scans those counts to assign each function-token segment a dense
@@ -14,9 +14,15 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_flag;
 StructuredBuffer<uint> call_param_row_count_out;
@@ -34,9 +40,6 @@ RWStructuredBuffer<uint> call_param_row_start;
 RWStructuredBuffer<uint> call_param_row_count;
 
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_PARAM_RECORD_FN = 0u;
-static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
-static const uint HIR_PARAM = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -47,7 +50,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes;
+    return min(compact_hir_count[0u], gParams.n_tokens);
 }
 
 bool valid_node(uint node)
@@ -64,21 +67,18 @@ bool valid_token(uint token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    uint n = active_hir_node_count();
-    if (node >= n || call_param_row_flag[node] == 0u)
+    uint param_row = linear_thread_id(dtid);
+    uint param_count = min(compact_param_count[0u], gParams.n_tokens);
+    if (param_row >= param_count || call_param_row_flag[param_row] == 0u)
         return;
 
-    if (hir_kind[node] != HIR_PARAM)
-        return;
-
-    uint4 record = hir_param_record[node];
-    uint fn_node = record[HIR_PARAM_RECORD_FN];
-    uint ordinal = record[HIR_PARAM_RECORD_ORDINAL];
+    HirParam parameter = compact_params[param_row];
+    uint fn_node = parameter.owner;
+    uint ordinal = parameter.ordinal;
     if (!valid_node(fn_node))
         return;
 
-    uint fn_token = hir_token_pos[fn_node];
+    uint fn_token = compact_hir_payload[fn_node].b;
     if (!valid_token(fn_token))
         return;
 
@@ -89,15 +89,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ordinal >= count ||
         row < start ||
         row >= call_param_row_count_out[0u] ||
-        row >= n)
+        row >= gParams.n_hir_nodes)
         return;
 
-    call_param_row_node[row] = node;
+    call_param_row_node[row] = param_row;
     call_param_row_fn_token[row] = fn_token;
     call_param_row_ordinal[row] = ordinal;
-    call_param_row_type[row] = call_param_row_node_type[node];
-    call_param_row_ref_tag[row] = call_param_row_node_ref_tag[node];
-    call_param_row_ref_payload[row] = call_param_row_node_ref_payload[node];
+    call_param_row_type[row] = call_param_row_node_type[param_row];
+    call_param_row_ref_tag[row] = call_param_row_node_ref_tag[param_row];
+    call_param_row_ref_payload[row] = call_param_row_node_ref_payload[param_row];
 
     if (ordinal == 0u)
     {

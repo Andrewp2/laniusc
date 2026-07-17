@@ -50,9 +50,12 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) call_callee_owner_steps: &'a [u32],
     pub(super) const_value_record_buf: &'a wgpu::Buffer,
     pub(super) const_value_status_buf: &'a wgpu::Buffer,
-    pub(super) hir_param_record_buf: &'a wgpu::Buffer,
     pub(super) fn_entrypoint_tag_buf: &'a wgpu::Buffer,
     pub(super) decl_node_by_token_buf: &'a wgpu::Buffer,
+    pub(super) raw_to_compact_hir_buf: &'a wgpu::Buffer,
+    pub(super) compact_hir_count_buf: &'a wgpu::Buffer,
+    pub(super) compact_executable_raw_buf: &'a wgpu::Buffer,
+    pub(super) compact_expr_wrapper_buf: &'a wgpu::Buffer,
     pub(super) decl_layout_record_buf: &'a wgpu::Buffer,
     pub(super) struct_type_record_buf: &'a wgpu::Buffer,
     pub(super) struct_record_status_buf: &'a wgpu::Buffer,
@@ -102,9 +105,12 @@ pub(super) fn create_call_record_bind_groups(
         call_callee_owner_steps,
         const_value_record_buf,
         const_value_status_buf,
-        hir_param_record_buf,
         fn_entrypoint_tag_buf,
         decl_node_by_token_buf,
+        raw_to_compact_hir_buf,
+        compact_hir_count_buf,
+        compact_executable_raw_buf,
+        compact_expr_wrapper_buf,
         decl_layout_record_buf,
         struct_type_record_buf,
         struct_record_status_buf,
@@ -133,10 +139,33 @@ pub(super) fn create_call_record_bind_groups(
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "hir_expr_result_root_node",
-                expr_metadata.expr_result_root_node.as_entire_binding(),
+                "compact_hir_count",
+                call_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                call_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                call_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "compact_hir_links",
+                call_metadata.compact_hir_links.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw_buf.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper_buf.as_entire_binding(),
             ),
             (
                 "path_count_out",
@@ -168,26 +197,6 @@ pub(super) fn create_call_record_bind_groups(
             ),
             ("x86_node_func", final_node_func_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            (
-                "hir_call_callee_node",
-                call_metadata.callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_token_pos",
-                function_metadata.hir_token_pos.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_count",
-                call_metadata.arg_count.as_entire_binding(),
-            ),
-            (
-                "hir_member_receiver_node",
-                call_metadata.member_receiver_node.as_entire_binding(),
-            ),
-            (
-                "hir_member_name_token",
-                call_metadata.member_name_token.as_entire_binding(),
-            ),
             (
                 "call_fn_index",
                 call_metadata.call_fn_index.as_entire_binding(),
@@ -323,14 +332,33 @@ pub(super) fn create_call_record_bind_groups(
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-            (
-                "hir_node_decl_token",
-                function_metadata.node_decl_token.as_entire_binding(),
-            ),
             (
                 "hir_token_pos",
                 function_metadata.hir_token_pos.as_entire_binding(),
+            ),
+            (
+                "compact_hir_count",
+                call_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                call_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                call_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "compact_param_count",
+                function_metadata.compact_param_count.as_entire_binding(),
+            ),
+            (
+                "compact_params",
+                function_metadata.compact_params.as_entire_binding(),
+            ),
+            (
+                "x86_decl_node_by_token",
+                decl_node_by_token_buf.as_entire_binding(),
             ),
             (
                 "fn_entrypoint_tag",
@@ -339,6 +367,14 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "hir_fn_return_type_node",
                 function_metadata.fn_return_type_node.as_entire_binding(),
+            ),
+            (
+                "fn_return_ref_tag",
+                function_metadata.fn_return_ref_tag.as_entire_binding(),
+            ),
+            (
+                "fn_return_ref_payload",
+                function_metadata.fn_return_ref_payload.as_entire_binding(),
             ),
             ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
             (
@@ -558,6 +594,12 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "x86_decl_node_by_token",
                 decl_node_by_token_buf.as_entire_binding(),
+            ),
+            ("raw_to_compact_hir", raw_to_compact_hir_buf.as_entire_binding()),
+            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw_buf.as_entire_binding(),
             ),
             (
                 "x86_enclosing_let_node",

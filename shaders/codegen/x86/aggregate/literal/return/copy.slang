@@ -33,11 +33,23 @@ StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_struct_access_record;
-StructuredBuffer<uint> hir_array_element_parent_lit;
-StructuredBuffer<uint> hir_array_element_ordinal;
-StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
-StructuredBuffer<uint> hir_struct_lit_field_value_node;
-StructuredBuffer<uint> struct_init_field_ordinal_by_node;
+struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> x86_compact_executable_raw;
+StructuredBuffer<uint> x86_compact_expr_wrapper;
+StructuredBuffer<uint> x86_array_element_row_by_hir;
+StructuredBuffer<uint> x86_struct_literal_field_row_by_hir;
+StructuredBuffer<uint> struct_init_field_ordinal_by_row;
 StructuredBuffer<uint> x86_enclosing_return_node;
 StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
@@ -54,12 +66,15 @@ static const uint X86_NODE_INST_GEN_INPUTS_OK = 1u;
 static const uint X86_ERR_NODE_VIRTUAL_INST = 11u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_VALUE = 2603u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION = 2604u;
+static const uint X86_VINST_ERROR_AGG_RET_STRUCT_OWNER = 2605u;
+static const uint X86_VINST_ERROR_AGG_RET_STRUCT_MATCH = 2606u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_VALUE = 2613u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_LOCATION = 2614u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint EXPR_RECORD_STRIDE = 4u;
@@ -94,6 +109,26 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+uint active_compact_field_count()
+{
+    return min(compact_field_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_field_row(uint row)
+{
+    return row != INVALID && row < active_compact_field_count();
 }
 
 bool upstream_ok()
@@ -218,7 +253,8 @@ bool explicit_receiver_reg_source_for_expr(uint value_node, uint owner_fn, out u
     if (!valid_node(owner_fn) || !valid_node(value_node) || expr_form(value_node) != HIR_EXPR_NAME)
         return false;
 
-    uint fn_token = hir_token_pos[owner_fn];
+    uint fn_dense = raw_to_compact_hir[owner_fn];
+    uint fn_token = valid_dense(fn_dense) ? compact_hir_payload[fn_dense].b : INVALID;
     if (!valid_token(fn_token) || method_decl_receiver_mode[fn_token] != METHOD_RECEIVER_EXPLICIT)
         return false;
 
@@ -304,7 +340,7 @@ bool struct_literal_record_for_expr(uint expr_node, out uint width, out uint fir
         return false;
     width = struct_access_payload0(node);
     first_field = struct_access_payload1(node);
-    return width != 0u && valid_node(first_field);
+    return width != 0u && valid_field_row(first_field);
 }
 
 bool range_for_node(uint node, out uint2 range)
@@ -414,14 +450,29 @@ bool return_expr_is_struct_literal(uint return_node, uint literal_node)
 
 void emit_array_element_return_copy(uint node)
 {
-    uint literal_node = hir_array_element_parent_lit[node];
-    uint ordinal = hir_array_element_ordinal[node];
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint element_count = min(compact_array_element_row_count[0u], gParams.n_hir_nodes);
+    uint dense = raw_to_compact_hir[node];
+    uint value_owner = dense < compact_count ? x86_compact_expr_wrapper[dense] : INVALID;
+    if (!valid_node(value_owner) && dense < compact_count)
+        value_owner = x86_compact_executable_raw[dense];
+    if (value_owner != node)
+        return;
+    uint value_node = resolve_expr(node);
+    uint element_row = dense < compact_count ? x86_array_element_row_by_hir[dense] : INVALID;
+    if (element_row == INVALID || element_row >= element_count)
+        return;
+    HirArrayElement element = compact_array_elements[element_row];
+    uint literal_node = element.array < compact_count
+                            ? x86_compact_executable_raw[element.array]
+                            : INVALID;
+    uint ordinal = element.ordinal;
     uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
     if (!valid_node(return_node) ||
         !return_expr_is_array_literal(return_node, literal_node))
         return;
     uint src = INVALID;
-    if (!value_vreg_for_node(node, src))
+    if (!value_vreg_for_node(value_node, src))
     {
         write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_ARRAY_VALUE);
         return;
@@ -438,14 +489,36 @@ void emit_array_element_return_copy(uint node)
 
 void emit_struct_field_return_copy(uint node)
 {
-    uint literal_node = hir_struct_lit_field_parent_lit[node];
-    uint value_node = hir_struct_lit_field_value_node[node];
-    uint ordinal = struct_init_field_ordinal_by_node[node];
-    uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
-    if (!valid_node(return_node) ||
-        !valid_node(value_node) ||
-        !return_expr_is_struct_literal(return_node, literal_node))
+    uint dense = raw_to_compact_hir[node];
+    uint value_owner = valid_dense(dense) ? x86_compact_expr_wrapper[dense] : INVALID;
+    if (!valid_node(value_owner) && valid_dense(dense))
+        value_owner = x86_compact_executable_raw[dense];
+    if (value_owner != node)
         return;
+    uint field_row = x86_struct_literal_field_row_by_hir[dense];
+    if (!valid_field_row(field_row))
+        return;
+    HirField field = compact_fields[field_row];
+    if (!valid_dense(field.owner) ||
+        compact_hir_core[field.owner].kind != HIR_STRUCT_LITERAL_EXPR ||
+        !valid_dense(field.value))
+        return;
+    uint literal_node = x86_compact_executable_raw[field.owner];
+    uint value_node = x86_compact_expr_wrapper[field.value];
+    if (!valid_node(value_node))
+        value_node = x86_compact_executable_raw[field.value];
+    uint ordinal = struct_init_field_ordinal_by_row[field_row];
+    uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
+    if (!valid_node(return_node) || !valid_node(value_node))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_STRUCT_OWNER);
+        return;
+    }
+    if (!return_expr_is_struct_literal(return_node, literal_node))
+    {
+        write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_MATCH);
+        return;
+    }
     uint scalar_payload = INVALID;
     if (explicit_receiver_reg_source_for_expr(value_node, x86_node_func[return_node], scalar_payload))
     {

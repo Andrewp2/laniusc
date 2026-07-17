@@ -1,0 +1,95 @@
+{
+  "rows": [
+    {
+      "lane": "o0",
+      "language": "c",
+      "mad_ms": 24.88847099999998,
+      "max_ms": 1644.963749,
+      "median_ms": 1316.068381,
+      "min_ms": 1291.17991,
+      "samples": 7,
+      "speedup_vs_lanius": 7.71140547904509
+    },
+    {
+      "lane": "optimized",
+      "language": "c",
+      "mad_ms": 241.323582,
+      "max_ms": 6452.889985,
+      "median_ms": 5870.822191,
+      "min_ms": 5595.343415,
+      "samples": 7,
+      "speedup_vs_lanius": 34.39964903326471
+    },
+    {
+      "lane": "o0",
+      "language": "cpp",
+      "mad_ms": 227.66953999999987,
+      "max_ms": 1904.609072,
+      "median_ms": 1676.939532,
+      "min_ms": 1436.258064,
+      "samples": 7,
+      "speedup_vs_lanius": 9.825903335863297
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp",
+      "mad_ms": 37.20821699999942,
+      "max_ms": 6436.189995,
+      "median_ms": 5778.633138,
+      "min_ms": 5738.869751,
+      "samples": 7,
+      "speedup_vs_lanius": 33.85947408591736
+    },
+    {
+      "lane": "hot_daemon",
+      "language": "lanius",
+      "mad_ms": 2.570456000000007,
+      "max_ms": 187.54702,
+      "median_ms": 170.665177,
+      "min_ms": 167.906197,
+      "samples": 7,
+      "speedup_vs_lanius": 1.0
+    },
+    {
+      "lane": "o0",
+      "language": "rust",
+      "mad_ms": 63.38367999999991,
+      "max_ms": 2183.74386,
+      "median_ms": 1783.731851,
+      "min_ms": 1720.348171,
+      "samples": 7,
+      "speedup_vs_lanius": 10.451645041800179
+    },
+    {
+      "lane": "optimized",
+      "language": "rust",
+      "mad_ms": 16.446026999999958,
+      "max_ms": 1685.811093,
+      "median_ms": 1459.194281,
+      "min_ms": 1442.748254,
+      "samples": 7,
+      "speedup_vs_lanius": 8.55004111940188
+    },
+    {
+      "lane": "o0",
+      "language": "zig",
+      "mad_ms": 15.331845000000044,
+      "max_ms": 558.77689,
+      "median_ms": 515.9127,
+      "min_ms": 453.294958,
+      "samples": 7,
+      "speedup_vs_lanius": 3.022952362449429
+    },
+    {
+      "lane": "optimized",
+      "language": "zig",
+      "mad_ms": 28.659325999999965,
+      "max_ms": 1281.002745,
+      "median_ms": 1165.145355,
+      "min_ms": 994.537266,
+      "samples": 7,
+      "speedup_vs_lanius": 6.827083154755115
+    }
+  ],
+  "schema": "lanius.compile-scaling-summary.v1"
+}

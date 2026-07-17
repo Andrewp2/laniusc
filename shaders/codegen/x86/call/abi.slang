@@ -35,6 +35,9 @@ StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> x86_decl_node_by_token;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> x86_compact_executable_raw;
 StructuredBuffer<uint> x86_enclosing_let_node;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint4> x86_call_record;
@@ -632,7 +635,14 @@ uint function_node_for_resolver_target(uint resolver_fn_token)
         return INVALID;
 
     uint node = x86_decl_node_by_token[resolver_fn_token];
-    return valid_node(node) ? node : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint dense_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense == INVALID || dense >= dense_count)
+        return node;
+    uint executable_raw = x86_compact_executable_raw[dense];
+    return valid_node(executable_raw) ? executable_raw : node;
 }
 
 void mark_call_abi_error(uint detail)

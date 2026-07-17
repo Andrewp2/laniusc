@@ -1,11 +1,15 @@
-// Shared semantic classification for compact module/import/declaration/path rows.
-
-import generated_parse_production_ids;
+// Shared semantic classification for dense canonical HIR item rows.
 
 static const uint MODULE_RECORD_INVALID = 0xffffffffu;
 
-static const uint MODULE_HIR_TYPE = 5u;
-static const uint MODULE_HIR_PATH_EXPR = 33u;
+static const uint MODULE_HIR_ITEM = 2u;
+static const uint MODULE_HIR_FN = 3u;
+static const uint MODULE_HIR_CONST_ITEM = 25u;
+static const uint MODULE_HIR_ENUM_ITEM = 26u;
+static const uint MODULE_HIR_STRUCT_ITEM = 27u;
+static const uint MODULE_HIR_TYPE_ALIAS_ITEM = 29u;
+static const uint MODULE_HIR_MODULE_ITEM = 31u;
+static const uint MODULE_HIR_IMPORT_ITEM = 32u;
 
 static const uint MODULE_ITEM_MODULE = 1u;
 static const uint MODULE_ITEM_IMPORT = 2u;
@@ -20,40 +24,35 @@ static const uint MODULE_ITEM_TRAIT = 10u;
 
 static const uint MODULE_NAMESPACE_VALUE = 2u;
 static const uint MODULE_NAMESPACE_TYPE = 3u;
-static const uint MODULE_IMPORT_TARGET_NONE = 0u;
-static const uint MODULE_IMPORT_TARGET_PATH = 1u;
-
-static const uint MODULE_PATH_NONE = 0u;
-static const uint MODULE_PATH_MODULE_DECL = 1u;
-static const uint MODULE_PATH_IMPORT = 2u;
-static const uint MODULE_PATH_VALUE = 3u;
-static const uint MODULE_PATH_TYPE = 4u;
-static const uint MODULE_PATH_BOUND_TYPE = 5u;
 
 public static const uint MODULE_RECORD_FLAG_MODULE = 1u << 0u;
 public static const uint MODULE_RECORD_FLAG_IMPORT = 1u << 1u;
 public static const uint MODULE_RECORD_FLAG_DECL = 1u << 2u;
-public static const uint MODULE_RECORD_FLAG_PATH = 1u << 3u;
-public static const uint MODULE_RECORD_PATH_KIND_SHIFT = 8u;
 
 public struct ModuleRecordCandidate
 {
-    public uint candidate_node_kind;
-    public uint candidate_hir_kind;
-    public uint candidate_token_pos;
-    public uint candidate_token_end;
-    public uint candidate_item_kind;
-    public uint candidate_item_name_token;
-    public uint candidate_item_namespace;
-    public uint candidate_item_path_start;
-    public uint candidate_item_path_end;
-    public uint candidate_import_target_kind;
+    public uint hir_kind;
+    public uint item_kind;
+    public uint name_token;
+    public uint namespace_kind;
 };
 
-bool module_valid_span(uint start, uint end_exclusive, uint n_tokens)
+bool module_item_kind_matches_hir_kind(uint hir_kind, uint item_kind)
 {
-    return start != MODULE_RECORD_INVALID && end_exclusive != MODULE_RECORD_INVALID &&
-           start < end_exclusive && end_exclusive <= n_tokens;
+    if (hir_kind == MODULE_HIR_MODULE_ITEM) return item_kind == MODULE_ITEM_MODULE;
+    if (hir_kind == MODULE_HIR_IMPORT_ITEM) return item_kind == MODULE_ITEM_IMPORT;
+    if (hir_kind == MODULE_HIR_CONST_ITEM) return item_kind == MODULE_ITEM_CONST;
+    if (hir_kind == MODULE_HIR_FN)
+        return item_kind == MODULE_ITEM_FN || item_kind == MODULE_ITEM_EXTERN_FN;
+    if (hir_kind == MODULE_HIR_STRUCT_ITEM) return item_kind == MODULE_ITEM_STRUCT;
+    if (hir_kind == MODULE_HIR_ENUM_ITEM) return item_kind == MODULE_ITEM_ENUM;
+    if (hir_kind == MODULE_HIR_TYPE_ALIAS_ITEM) return item_kind == MODULE_ITEM_TYPE_ALIAS;
+    // Enum variants are emitted from the compact variant side table. Keeping
+    // them out of this core-row classifier prevents grammar winners at the
+    // same token anchor from deciding whether a variant exists.
+    if (hir_kind == MODULE_HIR_ITEM)
+        return item_kind == MODULE_ITEM_TRAIT;
+    return false;
 }
 
 bool module_top_level_decl(uint kind)
@@ -61,51 +60,26 @@ bool module_top_level_decl(uint kind)
     return kind == MODULE_ITEM_CONST || kind == MODULE_ITEM_FN ||
            kind == MODULE_ITEM_EXTERN_FN || kind == MODULE_ITEM_STRUCT ||
            kind == MODULE_ITEM_ENUM || kind == MODULE_ITEM_TYPE_ALIAS ||
-           kind == MODULE_ITEM_ENUM_VARIANT || kind == MODULE_ITEM_TRAIT;
+           kind == MODULE_ITEM_TRAIT;
 }
 
-bool module_decl_namespace(uint namespace)
+bool module_decl_namespace(uint namespace_kind)
 {
-    return namespace == MODULE_NAMESPACE_VALUE || namespace == MODULE_NAMESPACE_TYPE;
-}
-
-uint module_candidate_path_kind(ModuleRecordCandidate row, uint n_tokens)
-{
-    if (row.candidate_item_kind == MODULE_ITEM_MODULE &&
-        module_valid_span(row.candidate_item_path_start, row.candidate_item_path_end, n_tokens))
-        return MODULE_PATH_MODULE_DECL;
-    if (row.candidate_item_kind == MODULE_ITEM_IMPORT &&
-        row.candidate_import_target_kind == MODULE_IMPORT_TARGET_PATH &&
-        module_valid_span(row.candidate_item_path_start, row.candidate_item_path_end, n_tokens))
-        return MODULE_PATH_IMPORT;
-    if (row.candidate_hir_kind == MODULE_HIR_PATH_EXPR &&
-        row.candidate_node_kind == PROD_PATH &&
-        module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
-        return MODULE_PATH_VALUE;
-    if (row.candidate_hir_kind == MODULE_HIR_TYPE &&
-        module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
-        return MODULE_PATH_TYPE;
-    if (row.candidate_node_kind == PROD_BOUND_TYPE_IDENT &&
-        module_valid_span(row.candidate_token_pos, row.candidate_token_end, n_tokens))
-        return MODULE_PATH_BOUND_TYPE;
-    return MODULE_PATH_NONE;
+    return namespace_kind == MODULE_NAMESPACE_VALUE || namespace_kind == MODULE_NAMESPACE_TYPE;
 }
 
 public uint module_record_candidate_bits(ModuleRecordCandidate row, uint n_tokens)
 {
+    if (!module_item_kind_matches_hir_kind(row.hir_kind, row.item_kind))
+        return 0u;
+
     uint bits = 0u;
-    if (row.candidate_item_kind == MODULE_ITEM_MODULE &&
-        module_valid_span(row.candidate_item_path_start, row.candidate_item_path_end, n_tokens))
+    if (row.item_kind == MODULE_ITEM_MODULE)
         bits |= MODULE_RECORD_FLAG_MODULE;
-    if (row.candidate_item_kind == MODULE_ITEM_IMPORT &&
-        row.candidate_import_target_kind != MODULE_IMPORT_TARGET_NONE)
+    if (row.item_kind == MODULE_ITEM_IMPORT)
         bits |= MODULE_RECORD_FLAG_IMPORT;
-    if (module_top_level_decl(row.candidate_item_kind) &&
-        module_decl_namespace(row.candidate_item_namespace) &&
-        row.candidate_item_name_token != MODULE_RECORD_INVALID)
+    if (module_top_level_decl(row.item_kind) &&
+        module_decl_namespace(row.namespace_kind) && row.name_token < n_tokens)
         bits |= MODULE_RECORD_FLAG_DECL;
-    uint path_kind = module_candidate_path_kind(row, n_tokens);
-    if (path_kind != MODULE_PATH_NONE)
-        bits |= MODULE_RECORD_FLAG_PATH | (path_kind << MODULE_RECORD_PATH_KIND_SHIFT);
     return bits;
 }

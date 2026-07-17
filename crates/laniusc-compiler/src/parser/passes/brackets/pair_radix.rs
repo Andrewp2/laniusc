@@ -51,7 +51,7 @@ struct PairRadixScatterPass {
     data: PassData,
 }
 
-const WARP_HISTOGRAM_STORAGE_BYTES: u32 = 33 * 1024;
+const WARP_HISTOGRAM_STORAGE_BYTES: u32 = 9 * 1024;
 
 fn pair_radix_scatter_shader(max_workgroup_storage_bytes: u32) -> &'static str {
     if max_workgroup_storage_bytes >= WARP_HISTOGRAM_STORAGE_BYTES {

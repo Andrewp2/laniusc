@@ -18,8 +18,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_array_element_parent_lit;
-StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> x86_compact_expr_wrapper;
+StructuredBuffer<uint> x86_compact_executable_raw;
+StructuredBuffer<uint> x86_array_element_row_by_hir;
+StructuredBuffer<uint> x86_struct_literal_field_row_by_hir;
 StructuredBuffer<uint> x86_enclosing_return_node;
 
 RWStructuredBuffer<uint> x86_node_inst_gen_flag;
@@ -37,6 +41,14 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
+uint projected_value_node(uint dense, uint compact_count)
+{
+    if (dense >= compact_count)
+        return INVALID;
+    uint wrapper = x86_compact_expr_wrapper[dense];
+    return valid_node(wrapper) ? wrapper : x86_compact_executable_raw[dense];
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -46,8 +58,13 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint return_node = x86_enclosing_return_node[node];
-    bool is_array_element = hir_array_element_parent_lit[node] != INVALID;
-    bool is_struct_field = hir_struct_lit_field_parent_lit[node] != INVALID;
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint dense = raw_to_compact_hir[node];
+    uint value_node = projected_value_node(dense, compact_count);
+    bool is_array_element = value_node == node &&
+                            x86_array_element_row_by_hir[dense] != INVALID;
+    bool is_struct_field = value_node == node &&
+                           x86_struct_literal_field_row_by_hir[dense] != INVALID;
     x86_node_inst_gen_flag[node] =
         valid_node(return_node) && (is_array_element || is_struct_field) ? 1u : 0u;
 }

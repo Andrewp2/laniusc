@@ -66,6 +66,7 @@ struct RecordedSemanticInterfaceTypeTopology {
     _signature_scan_prefix_a: LaniusBuffer<u32>,
     _signature_scan_prefix_b: LaniusBuffer<u32>,
     _variant_count_by_hir: LaniusBuffer<u32>,
+    _field_count_by_hir: LaniusBuffer<u32>,
     _generic_type_count_by_decl: LaniusBuffer<u32>,
     _generic_const_count_by_decl: LaniusBuffer<u32>,
     _member_count: LaniusBuffer<u32>,
@@ -73,7 +74,6 @@ struct RecordedSemanticInterfaceTypeTopology {
     _member_total: LaniusBuffer<u32>,
     _members: LaniusBuffer<u32>,
     _member_name_id: LaniusBuffer<u32>,
-    _member_index_by_hir: LaniusBuffer<u32>,
     _member_index_by_generic_row: LaniusBuffer<u32>,
     _member_written: LaniusBuffer<u32>,
     _params: LaniusBuffer<SemanticInterfaceTypeTopologyParams>,
@@ -175,10 +175,6 @@ impl GpuTypeChecker {
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
             public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
-            decl_type_ref_tag: &state.decl_type_ref_tag,
-            decl_type_ref_payload: &state.decl_type_ref_payload,
-            fn_return_ref_tag: &state.fn_return_ref_tag,
-            fn_return_ref_payload: &state.fn_return_ref_payload,
             type_expr_ref_tag: &state.type_expr_ref_tag,
             type_expr_ref_payload: &state.type_expr_ref_payload,
             type_generic_param_slot_by_token: &state.type_generic_param_slot_by_token,
@@ -195,17 +191,18 @@ impl GpuTypeChecker {
                 .map_or(&state.type_instance_external_canonical, |dependencies| {
                     &dependencies.type_words
                 }),
-            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
+            path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
-            call_param_count: &state.call_param_count,
             generic_param_count_out: &state.generic_param_count_out,
-            generic_param_owner_node: &state.generic_param_owner_node,
+            generic_param_owner_token: &state.generic_param_owner_token,
             generic_param_name_id: &state.generic_param_name_id,
             generic_param_token: &state.generic_param_token,
             generic_param_kind: &state.generic_param_kind,
-            type_decl_generic_param_count_by_node: &state.type_decl_generic_param_count_by_node,
-            type_decl_const_param_count_by_node: &state.type_decl_const_param_count_by_node,
+            type_decl_generic_param_count_by_owner_token: &state
+                .type_decl_generic_param_count_by_owner_token,
+            type_decl_const_param_count_by_owner_token: &state
+                .type_decl_const_param_count_by_owner_token,
         };
         self.record_semantic_interface_from_buffers(
             device,
@@ -257,7 +254,7 @@ impl GpuTypeChecker {
             1,
             "module key segment names",
         )?;
-        let member_capacity = u32_capacity(hir.hir_kind, 1, "semantic-interface member HIR")?
+        let member_capacity = u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?
             .checked_add(u32_capacity(
                 inputs.type_expr_ref_tag,
                 1,
@@ -605,10 +602,6 @@ impl GpuTypeChecker {
                     "public_decl_index_by_local",
                     inputs.public_decl_index_by_local.as_entire_binding(),
                 ),
-                (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
-                ),
                 ("decl_module_id", inputs.decl_module_id.as_entire_binding()),
                 ("decl_name_id", inputs.decl_name_id.as_entire_binding()),
                 ("decl_namespace", inputs.decl_namespace.as_entire_binding()),
@@ -617,7 +610,6 @@ impl GpuTypeChecker {
                     "decl_parent_type_decl",
                     inputs.decl_parent_type_decl.as_entire_binding(),
                 ),
-                ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
                 ("interface_name_ref_len", name_ref_len.as_entire_binding()),
                 (
                     "interface_name_ref_prefix",
@@ -896,7 +888,7 @@ impl GpuTypeChecker {
         inputs: &GpuSemanticInterfaceIdentityBuffers<'_>,
         status: &wgpu::Buffer,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
-        let hir_capacity = u32_capacity(hir.hir_kind, 1, "semantic-interface HIR kinds")?;
+        let hir_capacity = u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?;
         let decl_capacity = u32_capacity(
             inputs.public_decl_local_id,
             1,
@@ -1179,6 +1171,12 @@ impl GpuTypeChecker {
             capacity as usize,
             wgpu::BufferUsages::COPY_DST,
         );
+        let field_count_by_hir = typed_storage_u32_rw(
+            device,
+            "type_check.interface.members.field_count_by_hir",
+            capacity as usize,
+            wgpu::BufferUsages::COPY_DST,
+        );
         let generic_type_count_by_decl = typed_storage_u32_rw(
             device,
             "type_check.interface.members.generic_type_count_by_decl",
@@ -1219,12 +1217,6 @@ impl GpuTypeChecker {
             device,
             "type_check.interface.members.name_id",
             member_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_index_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.index_by_hir",
-            capacity as usize,
             wgpu::BufferUsages::empty(),
         );
         let member_index_by_generic_row = typed_storage_u32_rw(
@@ -1366,16 +1358,6 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_init,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                (
-                    "hir_type_arg_owner",
-                    hir.hir_type_arg_owner.as_entire_binding(),
-                ),
-                (
-                    "hir_type_arg_rank",
-                    hir.hir_type_arg_rank.as_entire_binding(),
-                ),
                 ("interface_type_parent", parent.as_entire_binding()),
                 (
                     "interface_type_child_ordinal",
@@ -1393,13 +1375,11 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_attach_unary,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                ("hir_type_form", hir.hir_type_form.as_entire_binding()),
-                (
-                    "hir_type_value_node",
-                    hir.hir_type_value_node.as_entire_binding(),
-                ),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
+                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
+                ("compact_type_arg_count", hir.compact_type_arg_count.as_entire_binding()),
+                ("compact_type_args", hir.compact_type_args.as_entire_binding()),
                 ("interface_type_parent", parent.as_entire_binding()),
                 (
                     "interface_type_child_ordinal",
@@ -1413,8 +1393,8 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_declarations,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "public_decl_count",
                     inputs.public_decl_count.as_entire_binding(),
@@ -1426,14 +1406,14 @@ impl GpuTypeChecker {
                 ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
                 ("decl_kind", inputs.decl_kind.as_entire_binding()),
                 (
-                    "hir_fn_return_type_node",
-                    hir.hir_fn_return_type_node.as_entire_binding(),
+                    "compact_fn_return_type",
+                    hir.compact_fn_return_type.as_entire_binding(),
                 ),
                 (
-                    "hir_type_alias_target_node",
-                    hir.hir_type_alias_target_node.as_entire_binding(),
+                    "compact_type_alias_target",
+                    hir.compact_type_alias_target.as_entire_binding(),
                 ),
-                ("hir_stmt_record", hir.hir_stmt_record.as_entire_binding()),
+                ("compact_const_type", hir.compact_const_type.as_entire_binding()),
                 ("interface_type_parent", parent.as_entire_binding()),
                 ("interface_type_seed_owner", seed_owner.as_entire_binding()),
                 (
@@ -1448,13 +1428,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_params,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                ("hir_param_record", hir.hir_param_record.as_entire_binding()),
-                (
-                    "hir_param_type_node",
-                    hir.hir_param_type_node.as_entire_binding(),
-                ),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
+                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                ("compact_params", hir.compact_params.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
                     inputs.public_decl_index_by_hir.as_entire_binding(),
@@ -1469,16 +1446,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_fields,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                (
-                    "hir_struct_field_parent_struct",
-                    hir.hir_struct_field_parent_struct.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_field_type_node",
-                    hir.hir_struct_field_type_node.as_entire_binding(),
-                ),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
+                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
                     inputs.public_decl_index_by_hir.as_entire_binding(),
@@ -1493,19 +1464,28 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_variants,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
+                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
                 (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
+                    "compact_variant_payload_row_count",
+                    hir.compact_variant_payload_row_count.as_entire_binding(),
                 ),
                 (
-                    "hir_variant_payload_count",
-                    hir.hir_variant_payload_count.as_entire_binding(),
+                    "compact_variants",
+                    hir.compact_variants.as_entire_binding(),
                 ),
                 (
-                    "hir_variant_payload_node",
-                    hir.hir_variant_payload_node.as_entire_binding(),
+                    "compact_variant_payloads",
+                    hir.compact_variant_payloads.as_entire_binding(),
+                ),
+                (
+                    "decl_id_by_name_token",
+                    inputs.decl_id_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "public_decl_index_by_local",
+                    inputs.public_decl_index_by_local.as_entire_binding(),
                 ),
                 ("interface_type_parent", parent.as_entire_binding()),
                 ("interface_type_seed_owner", seed_owner.as_entire_binding()),
@@ -1517,8 +1497,8 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_root_init,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 ("interface_type_parent", parent.as_entire_binding()),
                 ("interface_type_root_link", root_link_a.as_entire_binding()),
                 (
@@ -1584,8 +1564,8 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_mark_reverse,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "interface_type_root_owner",
                     final_root_owner.as_entire_binding(),
@@ -1624,11 +1604,8 @@ impl GpuTypeChecker {
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
                 ("interface_type_hir_order", hir_order.as_entire_binding()),
-                ("hir_type_form", hir.hir_type_form.as_entire_binding()),
-                (
-                    "hir_type_arg_count",
-                    hir.hir_type_arg_count.as_entire_binding(),
-                ),
+                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
+                ("compact_type_arg_ranges", hir.compact_type_arg_ranges.as_entire_binding()),
                 ("interface_type_edge_count", edge_count.as_entire_binding()),
                 ("interface_status", status.as_entire_binding()),
             ],
@@ -1666,7 +1643,8 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_resolve_local_decl,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_token_pos", hir.hir_token_pos.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "type_expr_ref_tag",
                     inputs.type_expr_ref_tag.as_entire_binding(),
@@ -1680,8 +1658,8 @@ impl GpuTypeChecker {
                     inputs.type_instance_decl_token.as_entire_binding(),
                 ),
                 (
-                    "path_id_by_owner_hir",
-                    inputs.path_id_by_owner_hir.as_entire_binding(),
+                    "path_id_by_owner_token",
+                    inputs.path_id_by_owner_token.as_entire_binding(),
                 ),
                 (
                     "resolved_type_decl",
@@ -1702,8 +1680,9 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_classify_path,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_token_pos", hir.hir_token_pos.as_entire_binding()),
-                ("hir_type_form", hir.hir_type_form.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
+                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
                 (
                     "type_expr_ref_tag",
                     inputs.type_expr_ref_tag.as_entire_binding(),
@@ -1751,7 +1730,7 @@ impl GpuTypeChecker {
                     edge_prefix.as_entire_binding(),
                 ),
                 ("interface_type_edge_count", edge_count.as_entire_binding()),
-                ("hir_type_form", hir.hir_type_form.as_entire_binding()),
+                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
                 (
                     "interface_type_path_classification",
                     path_classification.as_entire_binding(),
@@ -1767,15 +1746,7 @@ impl GpuTypeChecker {
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
                 ("interface_type_hir_order", hir_order.as_entire_binding()),
-                ("hir_type_form", hir.hir_type_form.as_entire_binding()),
-                (
-                    "hir_type_len_token",
-                    hir.hir_type_len_token.as_entire_binding(),
-                ),
-                (
-                    "hir_type_len_value",
-                    hir.hir_type_len_value.as_entire_binding(),
-                ),
+                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
                 (
                     "type_const_param_slot_by_token",
                     inputs.type_const_param_slot_by_token.as_entire_binding(),
@@ -1799,14 +1770,12 @@ impl GpuTypeChecker {
                 ),
                 ("decl_kind", inputs.decl_kind.as_entire_binding()),
                 ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                ("hir_token_pos", hir.hir_token_pos.as_entire_binding()),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_param_ranges", hir.compact_param_ranges.as_entire_binding()),
+                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
                 (
-                    "call_param_count",
-                    inputs.call_param_count.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_payload_count",
-                    hir.hir_variant_payload_count.as_entire_binding(),
+                    "compact_variant_payload_count",
+                    hir.compact_variant_payload_count.as_entire_binding(),
                 ),
                 (
                     "interface_signature_type_flag",
@@ -1922,13 +1891,8 @@ impl GpuTypeChecker {
             &self.passes.interface_signature_param_edges,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                ("hir_param_record", hir.hir_param_record.as_entire_binding()),
-                (
-                    "hir_param_type_node",
-                    hir.hir_param_type_node.as_entire_binding(),
-                ),
+                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                ("compact_params", hir.compact_params.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
                     inputs.public_decl_index_by_hir.as_entire_binding(),
@@ -2011,18 +1975,26 @@ impl GpuTypeChecker {
             &self.passes.interface_signature_variant_payload_edges,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
                 (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
+                    "compact_variant_payload_row_count",
+                    hir.compact_variant_payload_row_count.as_entire_binding(),
+                ),
+                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
+                (
+                    "compact_variants",
+                    hir.compact_variants.as_entire_binding(),
                 ),
                 (
-                    "hir_variant_payload_count",
-                    hir.hir_variant_payload_count.as_entire_binding(),
+                    "compact_variant_payloads",
+                    hir.compact_variant_payloads.as_entire_binding(),
                 ),
                 (
-                    "hir_variant_payload_node",
-                    hir.hir_variant_payload_node.as_entire_binding(),
+                    "decl_id_by_name_token",
+                    inputs.decl_id_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "public_decl_index_by_local",
+                    inputs.public_decl_index_by_local.as_entire_binding(),
                 ),
                 (
                     "interface_signature_edge_count",
@@ -2050,14 +2022,19 @@ impl GpuTypeChecker {
             &self.passes.interface_members_variant_counts,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
+                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
-                    "hir_variant_parent_enum",
-                    hir.hir_variant_parent_enum.as_entire_binding(),
+                    "compact_variant_count",
+                    hir.compact_variant_count.as_entire_binding(),
                 ),
                 (
-                    "hir_variant_ordinal",
-                    hir.hir_variant_ordinal.as_entire_binding(),
+                    "compact_variants",
+                    hir.compact_variants.as_entire_binding(),
+                ),
+                (
+                    "interface_field_count_by_hir",
+                    field_count_by_hir.as_entire_binding(),
                 ),
                 (
                     "interface_variant_count_by_hir",
@@ -2075,8 +2052,8 @@ impl GpuTypeChecker {
                     inputs.generic_param_count_out.as_entire_binding(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    inputs.generic_param_owner_node.as_entire_binding(),
+                    "generic_param_owner_token",
+                    inputs.generic_param_owner_token.as_entire_binding(),
                 ),
                 (
                     "generic_param_token",
@@ -2095,8 +2072,12 @@ impl GpuTypeChecker {
                     inputs.type_const_param_slot_by_token.as_entire_binding(),
                 ),
                 (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
+                    "decl_id_by_name_token",
+                    inputs.decl_id_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "public_decl_index_by_local",
+                    inputs.public_decl_index_by_local.as_entire_binding(),
                 ),
                 (
                     "interface_generic_type_count_by_decl",
@@ -2123,15 +2104,9 @@ impl GpuTypeChecker {
                 ),
                 ("decl_kind", inputs.decl_kind.as_entire_binding()),
                 ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                ("hir_token_pos", hir.hir_token_pos.as_entire_binding()),
-                (
-                    "call_param_count",
-                    inputs.call_param_count.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_decl_field_count",
-                    hir.hir_struct_decl_field_count.as_entire_binding(),
-                ),
+                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                ("compact_param_ranges", hir.compact_param_ranges.as_entire_binding()),
+                ("interface_field_count_by_hir", field_count_by_hir.as_entire_binding()),
                 (
                     "interface_variant_count_by_hir",
                     variant_count_by_hir.as_entire_binding(),
@@ -2153,37 +2128,29 @@ impl GpuTypeChecker {
             &self.passes.interface_members_scatter_hir,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("hir_status", hir.hir_status.as_entire_binding()),
-                ("hir_kind", hir.hir_kind.as_entire_binding()),
-                ("hir_token_pos", hir.hir_token_pos.as_entire_binding()),
-                ("hir_param_record", hir.hir_param_record.as_entire_binding()),
+                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                ("compact_params", hir.compact_params.as_entire_binding()),
+                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
-                    "hir_param_type_node",
-                    hir.hir_param_type_node.as_entire_binding(),
+                    "compact_variant_count",
+                    hir.compact_variant_count.as_entire_binding(),
                 ),
                 (
-                    "hir_struct_field_parent_struct",
-                    hir.hir_struct_field_parent_struct.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_field_ordinal",
-                    hir.hir_struct_field_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_field_type_node",
-                    hir.hir_struct_field_type_node.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_parent_enum",
-                    hir.hir_variant_parent_enum.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_ordinal",
-                    hir.hir_variant_ordinal.as_entire_binding(),
+                    "compact_variants",
+                    hir.compact_variants.as_entire_binding(),
                 ),
                 (
                     "public_decl_index_by_hir",
                     inputs.public_decl_index_by_hir.as_entire_binding(),
+                ),
+                (
+                    "public_decl_index_by_local",
+                    inputs.public_decl_index_by_local.as_entire_binding(),
+                ),
+                (
+                    "decl_id_by_name_token",
+                    inputs.decl_id_by_name_token.as_entire_binding(),
                 ),
                 (
                     "name_id_by_token",
@@ -2212,10 +2179,6 @@ impl GpuTypeChecker {
                     member_name_id.as_entire_binding(),
                 ),
                 (
-                    "interface_member_index_by_hir",
-                    member_index_by_hir.as_entire_binding(),
-                ),
-                (
                     "interface_member_written",
                     member_written.as_entire_binding(),
                 ),
@@ -2232,8 +2195,8 @@ impl GpuTypeChecker {
                     inputs.generic_param_count_out.as_entire_binding(),
                 ),
                 (
-                    "generic_param_owner_node",
-                    inputs.generic_param_owner_node.as_entire_binding(),
+                    "generic_param_owner_token",
+                    inputs.generic_param_owner_token.as_entire_binding(),
                 ),
                 (
                     "generic_param_name_id",
@@ -2260,8 +2223,12 @@ impl GpuTypeChecker {
                     generic_type_count_by_decl.as_entire_binding(),
                 ),
                 (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
+                    "decl_id_by_name_token",
+                    inputs.decl_id_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "public_decl_index_by_local",
+                    inputs.public_decl_index_by_local.as_entire_binding(),
                 ),
                 ("interface_member_prefix", member_prefix.as_entire_binding()),
                 ("interface_member_words", members.as_entire_binding()),
@@ -2319,6 +2286,7 @@ impl GpuTypeChecker {
         )?;
 
         record_typecheck_clear_buffer(encoder, &edge_written, 0, None);
+        record_typecheck_clear_buffer(encoder, &field_count_by_hir, 0, None);
         record_typecheck_clear_buffer(encoder, &variant_count_by_hir, 0, None);
         record_typecheck_clear_buffer(encoder, &generic_type_count_by_decl, 0, None);
         record_typecheck_clear_buffer(encoder, &generic_const_count_by_decl, 0, None);
@@ -2510,7 +2478,7 @@ impl GpuTypeChecker {
                 &self.passes.interface_signature_variant_payload_edges,
                 &signature_variant_payload_edges,
                 "type_check.interface.signature.variant_payload_edges",
-                capacity.saturating_mul(4),
+                capacity,
             ),
             (
                 &self.passes.interface_signature_return_edges,
@@ -2706,6 +2674,7 @@ impl GpuTypeChecker {
             _signature_scan_prefix_a: signature_scan_prefix_a,
             _signature_scan_prefix_b: signature_scan_prefix_b,
             _variant_count_by_hir: variant_count_by_hir,
+            _field_count_by_hir: field_count_by_hir,
             _generic_type_count_by_decl: generic_type_count_by_decl,
             _generic_const_count_by_decl: generic_const_count_by_decl,
             _member_count: member_count,
@@ -2713,7 +2682,6 @@ impl GpuTypeChecker {
             _member_total: member_total,
             _members: members,
             _member_name_id: member_name_id,
-            _member_index_by_hir: member_index_by_hir,
             _member_index_by_generic_row: member_index_by_generic_row,
             _member_written: member_written,
             _params: params,

@@ -19,6 +19,7 @@ StructuredBuffer<uint> decl_value_public_flag;
 StructuredBuffer<uint> decl_type_public_prefix;
 StructuredBuffer<uint> decl_value_public_prefix;
 StructuredBuffer<uint> decl_hir_node;
+StructuredBuffer<uint> decl_kind;
 RWStructuredBuffer<uint> interface_public_decl_count;
 RWStructuredBuffer<uint> interface_public_decl_local_id;
 RWStructuredBuffer<uint> interface_public_decl_index_by_local;
@@ -26,6 +27,7 @@ RWStructuredBuffer<uint> interface_public_decl_index_by_hir;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -48,7 +50,7 @@ void publish(uint local_decl, uint persisted_decl)
     interface_public_decl_local_id[persisted_decl] = local_decl;
     interface_public_decl_index_by_local[local_decl] = persisted_decl;
     uint hir = decl_hir_node[local_decl];
-    if (hir < gParams.capacity)
+    if (decl_kind[local_decl] != HIR_ITEM_KIND_ENUM_VARIANT && hir < gParams.capacity)
         interface_public_decl_index_by_hir[hir] = persisted_decl;
 }
 

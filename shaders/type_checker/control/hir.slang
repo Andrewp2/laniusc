@@ -414,7 +414,10 @@ void validate_binary_expr_node(uint node)
 
 void validate_index_expr_node(uint node)
 {
-    if (hir_kind[node] != HIR_INDEX_EXPR && expr_form(node) != HIR_EXPR_INDEX)
+    // Expression-record storage is shared by multiple semantic row kinds.
+    // The parser-published HIR kind owns index validation; interpreting a
+    // coincidental record-form value on an array/statement row is unsound.
+    if (hir_kind[node] != HIR_INDEX_EXPR)
         return;
 
     uint base = expr_left(node);

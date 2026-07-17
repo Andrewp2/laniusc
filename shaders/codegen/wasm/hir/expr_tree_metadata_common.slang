@@ -90,6 +90,14 @@ public bool wasm_expr_node_contribution(
     }
     if (form == HIR_EXPR_FORWARD)
         return false;
+    if (hir_kind[node] == HIR_INDEX_EXPR && form == HIR_EXPR_INDEX_FORM)
+    {
+        len = 7u;
+        uint token = hir_token_pos[node];
+        emission = wasm_expr_index_load_emission(
+            valid_token(token) && visible_type_for_token(token) == TY_FLOAT);
+        return true;
+    }
     if (wasm_i32_to_f32_expr_node(node))
     {
         len = 1u;

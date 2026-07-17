@@ -1,29 +1,22 @@
-// HIR-driven named generic argument refs.
-//
-// This pass runs after type-expression refs have been collected and after any
-// declaration binding pass has had a chance to attach the named instance to a
-// resolved declaration. It overwrites generic argument refs from parser-owned
-// top-level HIR type-argument nodes instead of re-scanning token neighborhoods.
+// Scatter named generic argument refs from the compact type-argument family.
 
-struct Params
-{
-    uint n_tokens;
-    uint source_len;
-    uint n_hir_nodes;
-};
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirRange { uint start; uint count; };
+struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_type_arg_start;
-StructuredBuffer<uint> hir_type_arg_count;
-StructuredBuffer<uint> hir_type_arg_next;
-StructuredBuffer<uint> hir_type_arg_owner;
-StructuredBuffer<uint> hir_type_arg_rank;
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -40,14 +33,8 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
-
-static const uint HIR_TYPE = 5u;
-
-static const uint HIR_TYPE_FORM_PATH = 1u;
-
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_ERROR = 4u;
-
 static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
 
 uint linear_thread_id(uint3 dtid)
@@ -55,14 +42,14 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
+uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-bool valid_node(uint node)
+bool valid_compact_node(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return node != INVALID && node < active_hir_count();
 }
 
 bool valid_token(uint token)
@@ -70,27 +57,26 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-bool is_hir_type_node(uint node)
+uint leaf_token_for_owner(uint owner)
 {
-    return valid_node(node) && hir_kind[node] == HIR_TYPE;
+    if (!valid_compact_node(owner))
+        return INVALID;
+    uint path_i = path_id_by_owner_hir[owner];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path_i == INVALID || path_i >= path_count)
+        return INVALID;
+    uint count = path_segment_count[path_i];
+    if (count == 0u)
+        return INVALID;
+    uint row = path_segment_base[path_i] + count - 1u;
+    return row < gParams.n_tokens ? path_segment_token[row] : INVALID;
 }
 
-uint path_leaf_token_for_type_node(uint node)
+void mark_instance_unsupported(uint owner, uint leaf_token)
 {
-    uint leaf_node = valid_node(node) ? hir_type_path_leaf_node[node] : INVALID;
-    return valid_node(leaf_node) ? hir_token_pos[leaf_node] : INVALID;
-}
-
-uint arg_ref_index(uint instance_i, uint slot)
-{
-    return instance_i * TYPE_INSTANCE_ARG_REF_STRIDE + slot;
-}
-
-void mark_instance_unsupported(uint root, uint leaf_token)
-{
-    type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
-
-    uint owner_token = valid_node(root) ? hir_token_pos[root] : INVALID;
+    if (valid_token(leaf_token))
+        type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
+    uint owner_token = valid_compact_node(owner) ? compact_hir_core[owner].token_start : INVALID;
     if (valid_token(owner_token))
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_ERROR;
@@ -103,83 +89,46 @@ void mark_instance_unsupported(uint root, uint leaf_token)
     }
 }
 
-bool publish_arg_ref(uint leaf_token, uint ordinal, uint node)
-{
-    if (!valid_node(node))
-        return false;
-
-    uint row_start = type_instance_arg_row_start[leaf_token];
-    uint row_i = row_start == INVALID ? INVALID : row_start + ordinal;
-    if (row_i == INVALID || row_i >= type_instance_arg_row_count_out[0u])
-        return false;
-
-    uint arg_token = hir_token_pos[node];
-    uint tag = TYPE_REF_ERROR;
-    uint payload = leaf_token;
-    if (!valid_token(arg_token) || type_expr_ref_tag[arg_token] == TYPE_REF_INVALID)
-    {
-        type_instance_arg_row_ref_tag[row_i] = TYPE_REF_ERROR;
-        type_instance_arg_row_ref_payload[row_i] = leaf_token;
-        if (ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
-        {
-            uint out_i = arg_ref_index(leaf_token, ordinal);
-            type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
-            type_instance_arg_ref_payload[out_i] = leaf_token;
-        }
-        return false;
-    }
-
-    tag = type_expr_ref_tag[arg_token];
-    payload = type_expr_ref_payload[arg_token];
-    type_instance_arg_row_ref_tag[row_i] = tag;
-    type_instance_arg_row_ref_payload[row_i] = payload;
-    if (ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
-    {
-        uint out_i = arg_ref_index(leaf_token, ordinal);
-        type_instance_arg_ref_tag[out_i] = tag;
-        type_instance_arg_ref_payload[out_i] = payload;
-    }
-    return true;
-}
-
-bool row_arg_ref_published(uint leaf_token, uint ordinal)
-{
-    uint row_start = type_instance_arg_row_start[leaf_token];
-    uint row_i = row_start == INVALID ? INVALID : row_start + ordinal;
-    return row_i != INVALID &&
-           row_i < type_instance_arg_row_count_out[0u] &&
-           type_instance_arg_row_ref_tag[row_i] != TYPE_REF_INVALID;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (!is_hir_type_node(node))
+    uint arg_i = linear_thread_id(dtid);
+    uint arg_count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    if (arg_i >= arg_count)
         return;
 
-    uint root = hir_type_arg_owner[node];
-    if (!is_hir_type_node(root) || hir_type_form[root] != HIR_TYPE_FORM_PATH)
+    HirTypeArg arg = compact_type_args[arg_i];
+    if (!valid_compact_node(arg.owner) || !valid_compact_node(arg.value))
         return;
-
-    uint leaf_token = path_leaf_token_for_type_node(root);
-    if (!valid_token(leaf_token))
-        return;
-
-    uint arg_count = hir_type_arg_count[root];
-    uint ordinal = hir_type_arg_rank[node];
-    if (arg_count == 0u || ordinal >= arg_count ||
-        type_instance_arg_count[leaf_token] != arg_count ||
-        type_instance_arg_start[leaf_token] == INVALID)
+    HirRange owner_args = compact_type_arg_ranges[arg.owner];
+    uint leaf_token = leaf_token_for_owner(arg.owner);
+    if (!valid_token(leaf_token) || owner_args.start == INVALID ||
+        arg.ordinal >= owner_args.count ||
+        type_instance_arg_count[leaf_token] != owner_args.count)
     {
-        mark_instance_unsupported(root, leaf_token);
+        mark_instance_unsupported(arg.owner, leaf_token);
         return;
     }
 
-    if (!publish_arg_ref(leaf_token, ordinal, node) &&
-        !row_arg_ref_published(leaf_token, ordinal))
+    uint row_start = type_instance_arg_row_start[leaf_token];
+    uint row_i = row_start == INVALID ? INVALID : row_start + arg.ordinal;
+    uint arg_token = compact_hir_core[arg.value].token_start;
+    if (row_i == INVALID || row_i >= type_instance_arg_row_count_out[0u] ||
+        !valid_token(arg_token) || type_expr_ref_tag[arg_token] == TYPE_REF_INVALID)
     {
-        mark_instance_unsupported(root, leaf_token);
+        mark_instance_unsupported(arg.owner, leaf_token);
+        return;
+    }
+
+    uint tag = type_expr_ref_tag[arg_token];
+    uint payload = type_expr_ref_payload[arg_token];
+    type_instance_arg_row_ref_tag[row_i] = tag;
+    type_instance_arg_row_ref_payload[row_i] = payload;
+    if (arg.ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
+    {
+        uint legacy_i = leaf_token * TYPE_INSTANCE_ARG_REF_STRIDE + arg.ordinal;
+        type_instance_arg_ref_tag[legacy_i] = tag;
+        type_instance_arg_ref_payload[legacy_i] = payload;
     }
 }

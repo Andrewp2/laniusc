@@ -514,7 +514,7 @@ fn compiler_device_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
     // The fast byte-wide radix scatter uses eight 256-bin virtual-warp
     // histograms (plus one digit row), matching the proven renderer sorter in
     // ~/code/game. Request up to 48 KiB when available; adapters below the
-    // exact 33 KiB requirement select the prefix-scan fallback pipeline.
+    // exact 9 KiB requirement select the prefix-scan fallback pipeline.
     limits.max_compute_workgroup_storage_size = adapter_limits
         .max_compute_workgroup_storage_size
         .min(48 * 1024);

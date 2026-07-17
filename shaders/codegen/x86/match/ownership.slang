@@ -33,6 +33,17 @@ StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_match_record;
+RWStructuredBuffer<uint4> x86_match_arm_record;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> x86_match_result_dense_owner;
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirMatchArm> compact_match_arms;
 
 RWStructuredBuffer<uint> x86_match_pattern_owner;
 RWStructuredBuffer<uint> x86_match_result_value_owner;
@@ -59,6 +70,21 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_arm(uint arm)
+{
+    return arm != INVALID && arm < active_arm_count();
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
 bool has_match_feature()
@@ -96,32 +122,15 @@ bool supported_return_match(uint match_node)
     uint4 record = x86_match_record[match_node];
     return hir_kind[match_node] == HIR_MATCH_EXPR &&
            valid_node(record.x) &&
-           valid_node(record.y) &&
+           valid_arm(record.y) &&
            record.z == 2u &&
            match_expr_is_return_value(match_node);
 }
 
 void publish_owner(RWStructuredBuffer<uint> owners, uint node, uint owner)
 {
-    if (valid_node(node) && valid_node(owner))
+    if (valid_dense(node) && valid_arm(owner))
         atomic_u32_min(owners, node, owner);
-}
-
-void publish_unique_owner(RWStructuredBuffer<uint> owners, uint node, uint owner)
-{
-    if (valid_node(node) && valid_node(owner))
-        owners[node] = owner;
-}
-
-void publish_return_result_owner(uint arm_node)
-{
-    if (!valid_node(arm_node))
-        return;
-
-    uint4 arm_record = x86_match_record[arm_node];
-    uint result_root = arm_record.w;
-    uint result_value = resolve_expr(result_root);
-    publish_unique_owner(x86_match_result_value_owner, result_value, arm_node);
 }
 
 [shader("compute")]
@@ -134,17 +143,38 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!has_match_feature())
         return;
 
-    uint4 record = x86_match_record[node];
-    if (hir_kind[node] != HIR_MATCH_EXPR)
+    uint dense = raw_to_compact_hir[node];
+    if (valid_dense(dense))
     {
-        if (valid_node(record.x) && valid_node(record.w))
-            publish_owner(x86_match_pattern_owner, record.x, node);
-        return;
+        uint arm = x86_match_result_dense_owner[dense];
+        if (valid_arm(arm))
+        {
+            uint result = compact_match_arms[arm].result;
+            uint end = valid_dense(result) ? compact_hir_links[result].subtree_end : INVALID;
+            if (valid_dense(result) && end != INVALID && dense >= result && dense < end)
+            {
+                HirCore result_core = compact_hir_core[result];
+                HirCore node_core = compact_hir_core[dense];
+                if (node_core.token_start >= result_core.token_start &&
+                    node_core.token_end <= result_core.token_end)
+                    x86_match_result_value_owner[node] = arm;
+                if (dense == result)
+                {
+                    uint resolved = resolve_expr(node);
+                    if (valid_node(resolved))
+                    {
+                        uint ignored;
+                        InterlockedExchange(x86_match_arm_record[arm].w, resolved, ignored);
+                    }
+                }
+            }
+        }
     }
 
-    if (supported_return_match(node))
+    if (valid_arm(node))
     {
-        publish_return_result_owner(record.y);
-        publish_return_result_owner(record.w);
+        uint4 arm_record = x86_match_arm_record[node];
+        if (valid_dense(arm_record.x))
+            publish_owner(x86_match_pattern_owner, arm_record.x, node);
     }
 }

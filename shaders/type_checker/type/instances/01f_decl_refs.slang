@@ -13,14 +13,21 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -33,7 +40,6 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 
-static const uint HIR_PARAM = 4u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -76,6 +82,16 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_compact_node(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
@@ -113,25 +129,14 @@ uint name_token_for_expr(uint root)
     return name_or_path_token_for_node(result_expr(root));
 }
 
-uint stmt_type_node(uint stmt_node)
+void publish_compact_decl_ref(uint decl_token, uint type_node)
 {
-    if (!valid_node(stmt_node))
-        return INVALID;
-    uint type_node = hir_stmt_record[stmt_slot(stmt_node, 3u)];
-    return valid_node(type_node) ? type_node : INVALID;
-}
-
-uint param_type_node(uint param_node)
-{
-    return valid_node(param_node) ? hir_param_type_node[param_node] : INVALID;
-}
-
-void publish_decl_ref(uint decl_token, uint type_node)
-{
-    if (!valid_token(decl_token) || !valid_node(type_node))
+    if (!valid_token(decl_token))
+        return;
+    if (!valid_compact_node(type_node))
         return;
 
-    uint type_token = hir_token_pos[type_node];
+    uint type_token = compact_hir_core[type_node].token_start;
     if (!valid_token(type_token))
         return;
 
@@ -155,14 +160,15 @@ void publish_decl_ref_value(uint decl_token, uint tag, uint payload)
     decl_type_ref_payload[decl_token] = payload;
 }
 
-void publish_stmt_decl_ref(uint node)
+void publish_compact_stmt_decl_ref(uint node)
 {
-    uint kind = hir_stmt_record[stmt_slot(node, 0u)];
+    if (!valid_compact_node(node))
+        return;
+    HirPayload statement = compact_hir_payload[node];
+    uint kind = statement.a;
     if (kind != STMT_RECORD_KIND_LET && kind != STMT_RECORD_KIND_CONST)
         return;
-
-    uint decl_token = hir_stmt_record[stmt_slot(node, 1u)];
-    publish_decl_ref(decl_token, stmt_type_node(node));
+    publish_compact_decl_ref(statement.b, statement.d);
 }
 
 void publish_for_decl_ref(uint node)
@@ -196,14 +202,14 @@ void publish_for_decl_ref(uint node)
         type_instance_elem_ref_payload[instance]);
 }
 
-void publish_param_decl_ref(uint node)
+void publish_param_decl_ref(uint row)
 {
-    if (hir_kind[node] != HIR_PARAM)
+    uint count = min(compact_param_count[0u], gParams.n_tokens);
+    if (row >= count)
         return;
 
-    uint4 record = hir_param_record[node];
-    uint decl_token = record.z;
-    publish_decl_ref(decl_token, param_type_node(node));
+    HirParam parameter = compact_params[row];
+    publish_compact_decl_ref(parameter.name_token, parameter.type_node);
 }
 
 [shader("compute")]
@@ -211,10 +217,8 @@ void publish_param_decl_ref(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
-        return;
-
-    publish_stmt_decl_ref(node);
-    publish_for_decl_ref(node);
+    if (valid_node(node))
+        publish_for_decl_ref(node);
+    publish_compact_stmt_decl_ref(node);
     publish_param_decl_ref(node);
 }

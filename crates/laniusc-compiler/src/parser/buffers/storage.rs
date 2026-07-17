@@ -1,10 +1,72 @@
-use crate::gpu::buffers::{LaniusBuffer, storage_rw_for_array};
+use crate::gpu::{
+    buffers::{LaniusBuffer, storage_rw_for_array},
+    workspace::{
+        WorkspacePhase,
+        WorkspacePlan,
+        WorkspaceRequest,
+        WorkspaceUsageClass,
+        plan_workspace,
+    },
+};
+
+pub(super) fn parser_phase_workspace_plan(tree_capacity: u32) -> WorkspacePlan {
+    let tree_bytes = u64::from(tree_capacity) * 4;
+    let requests = [
+        WorkspaceRequest {
+            name: "tree.prefix_inblock",
+            bytes: tree_bytes,
+            usage: WorkspaceUsageClass::Storage,
+            first: WorkspacePhase::RawTree,
+            last: WorkspacePhase::RawTree,
+        },
+        WorkspaceRequest {
+            name: "tree.prefix",
+            bytes: tree_bytes + 4,
+            usage: WorkspaceUsageClass::Storage,
+            first: WorkspacePhase::RawTree,
+            last: WorkspacePhase::RawTree,
+        },
+        WorkspaceRequest {
+            name: "hir.family_flag",
+            bytes: tree_bytes,
+            usage: WorkspaceUsageClass::Storage,
+            first: WorkspacePhase::Hir,
+            last: WorkspacePhase::Hir,
+        },
+        WorkspaceRequest {
+            name: "hir.family_local_prefix",
+            // Reserve the full slot inherited from `tree.prefix`; the final
+            // word is padding during HIR scans.
+            bytes: tree_bytes + 4,
+            usage: WorkspaceUsageClass::Storage,
+            first: WorkspacePhase::Hir,
+            last: WorkspacePhase::Hir,
+        },
+        WorkspaceRequest {
+            name: "typecheck.fn_entrypoint_tag",
+            bytes: tree_bytes,
+            usage: WorkspaceUsageClass::Storage,
+            first: WorkspacePhase::TypeCheck,
+            last: WorkspacePhase::TypeCheck,
+        },
+    ];
+    plan_workspace(&requests).expect("parser phase workspace liveness table must be valid")
+}
 
 /// Reinterprets one typed storage buffer as another typed buffer with a new element count.
 pub(super) fn alias_storage_buffer<T, U>(
     source: &LaniusBuffer<T>,
     count: usize,
 ) -> LaniusBuffer<U> {
+    let target_stride = core::mem::size_of::<U>().max(1);
+    let required_bytes = count
+        .checked_mul(target_stride)
+        .expect("storage alias byte size overflow");
+    assert!(
+        required_bytes <= source.byte_size,
+        "storage alias requires {required_bytes} bytes but source only has {} bytes",
+        source.byte_size,
+    );
     source.alias(count)
 }
 
@@ -21,6 +83,32 @@ pub(super) fn reuse_or_allocate_u32_workspace(
         buffer.alias(count)
     } else {
         storage_rw_for_array::<u32>(device, label, count)
+    }
+}
+
+/// Reuses a phase-dead storage allocation for a later typed workspace when it
+/// is large enough. The allocation identity stays stable, which lets resident
+/// bind groups describe the complete phase schedule without retaining a
+/// separate physical buffer for every logical array.
+#[allow(dead_code)]
+pub(super) fn reuse_or_allocate_workspace<T, U>(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    reusable: &LaniusBuffer<U>,
+) -> LaniusBuffer<T>
+where
+    T: Default + encase::ShaderType + encase::internal::WriteInto,
+{
+    let mut layout = encase::StorageBuffer::new(Vec::<u8>::new());
+    layout
+        .write(&T::default())
+        .expect("failed to measure storage workspace element");
+    let required_bytes = count.saturating_mul(layout.as_ref().len());
+    if reusable.byte_size >= required_bytes {
+        reusable.alias(count)
+    } else {
+        storage_rw_for_array::<T>(device, label, count)
     }
 }
 
@@ -91,7 +179,7 @@ pub(crate) fn pointer_jump_step_capacity(items: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::pointer_jump_step_capacity;
+    use super::{parser_phase_workspace_plan, pointer_jump_step_capacity};
 
     #[test]
     fn pointer_jump_capacity_is_ceiling_log_two() {
@@ -102,5 +190,21 @@ mod tests {
         assert_eq!(pointer_jump_step_capacity(4), 2);
         assert_eq!(pointer_jump_step_capacity(5), 3);
         assert_eq!(pointer_jump_step_capacity(u32::MAX), 32);
+    }
+
+    #[test]
+    fn parser_raw_hir_and_typecheck_scratch_fit_two_stable_slots() {
+        let plan = parser_phase_workspace_plan(1024);
+        assert_eq!(plan.slots.len(), 2);
+        let slot = |name| {
+            plan.assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap()
+                .slot
+        };
+        assert_eq!(slot("tree.prefix_inblock"), slot("hir.family_flag"));
+        assert_eq!(slot("tree.prefix"), slot("hir.family_local_prefix"));
+        assert_eq!(slot("tree.prefix"), slot("typecheck.fn_entrypoint_tag"));
     }
 }

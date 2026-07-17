@@ -15,6 +15,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> x86_match_result_owner_in;
 StructuredBuffer<uint> x86_match_result_owner_link_in;
 
@@ -31,7 +32,7 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)

@@ -31,6 +31,7 @@ pub(super) struct InitializerInputs<'a> {
     pub match_arm_owner_buf: &'a wgpu::Buffer,
     pub match_return_node_buf: &'a wgpu::Buffer,
     pub match_pattern_owner_buf: &'a wgpu::Buffer,
+    pub match_result_dense_owner_buf: &'a wgpu::Buffer,
     pub match_result_value_owner_buf: &'a wgpu::Buffer,
     pub match_pattern_node_owner_buf: &'a wgpu::Buffer,
     pub match_pattern_node_variant_buf: &'a wgpu::Buffer,
@@ -116,6 +117,7 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         match_arm_owner_buf,
         match_return_node_buf,
         match_pattern_owner_buf,
+        match_result_dense_owner_buf,
         match_result_value_owner_buf,
         match_pattern_node_owner_buf,
         match_pattern_node_variant_buf,
@@ -234,6 +236,12 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         hir_words
     );
     init_repeated!(
+        "match_result_dense_owner",
+        match_result_dense_owner_buf,
+        &[u32::MAX],
+        match_record_rows,
+    );
+    init_repeated!(
         "match_result_value_owner",
         match_result_value_owner_buf,
         &[u32::MAX],
@@ -319,7 +327,7 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
             hir_words
         );
     }
-    write_u32_words(queue, call_record_status_buf, &[0, 0, u32::MAX, 0]);
+    write_u32_words(queue, call_record_status_buf, &[1, 0, u32::MAX, 0]);
     init_repeated!(
         "const_value_record",
         const_value_record_buf,

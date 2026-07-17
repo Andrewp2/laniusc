@@ -21,6 +21,7 @@ static const uint FEATURE_TK_IMPL = 98u;
 static const uint FEATURE_TK_TRAIT = 99u;
 static const uint FEATURE_TK_WHERE = 104u;
 static const uint FEATURE_TK_TYPE = 103u;
+static const uint FEATURE_TK_BOUND_COLON = 107u;
 static const uint FEATURE_TK_STRUCT_LIT_LBRACE = 125u;
 static const uint FEATURE_TK_STRUCT_LIT_RBRACE = 126u;
 static const uint FEATURE_TK_TYPE_ARG_LT = 131u;
@@ -61,7 +62,7 @@ public uint parser_feature_flags_for_token(uint raw_kind, uint semantic_kind)
     if (semantic_kind == FEATURE_TK_STRING)
         flags |= PARSER_FEATURE_STRING_EXPRS;
     if (raw_kind == FEATURE_TK_IMPL || raw_kind == FEATURE_TK_TRAIT ||
-        raw_kind == FEATURE_TK_WHERE)
+        raw_kind == FEATURE_TK_WHERE || semantic_kind == FEATURE_TK_BOUND_COLON)
     {
         flags |= PARSER_FEATURE_PREDICATES;
     }

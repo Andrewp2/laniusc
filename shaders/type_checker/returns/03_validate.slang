@@ -11,9 +11,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> call_return_type;
@@ -52,6 +55,18 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint canonical_function_token(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense == INVALID || dense >= count)
+        return INVALID;
+    uint token = compact_hir_payload[dense].b;
+    return valid_token(token) ? token : INVALID;
+}
+
 bool function_with_body(uint node)
 {
     return valid_node(node) &&
@@ -73,7 +88,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!function_with_body(node))
         return;
 
-    uint fn_token = hir_token_pos[node];
+    uint fn_token = canonical_function_token(node);
     if (!valid_token(fn_token))
         return;
 

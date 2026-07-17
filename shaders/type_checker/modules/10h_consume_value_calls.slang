@@ -28,7 +28,7 @@ StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
-StructuredBuffer<uint> decl_token_start;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_call_arg_count;
@@ -194,7 +194,7 @@ bool valid_function_decl(uint decl_i, out uint fn_token)
     if (decl_i >= gParams.n_hir_nodes)
         return false;
 
-    uint token_i = decl_token_start[decl_i];
+    uint token_i = decl_name_token[decl_i];
     if (!valid_token(token_i) || call_fn_index[token_i] != token_i)
         return false;
 

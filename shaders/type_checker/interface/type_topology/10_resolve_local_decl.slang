@@ -4,11 +4,13 @@
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 RWStructuredBuffer<uint> interface_type_local_decl_by_hir;
@@ -28,10 +30,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gParams.hir_capacity)
         return;
     uint local = INVALID;
-    uint path = path_id_by_owner_hir[node];
+    uint active = min(compact_hir_count[0u], gParams.hir_capacity);
+    if (node >= active) { interface_type_local_decl_by_hir[node] = INVALID; return; }
+    uint token = compact_hir_core[node].token_start;
+    uint path = valid_token(token) ? path_id_by_owner_token[token] : INVALID;
     if (path < gParams.hir_capacity && resolved_type_decl[path] < gParams.decl_capacity)
         local = resolved_type_decl[path];
-    uint token = hir_token_pos[node];
     if (local == INVALID && valid_token(token) && type_expr_ref_tag[token] == TYPE_REF_INSTANCE)
     {
         uint instance = type_expr_ref_payload[token];

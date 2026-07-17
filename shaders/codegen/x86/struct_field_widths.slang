@@ -4,6 +4,7 @@
 // A later prefix scan over these widths gives each field its struct-local
 // scalar offset.
 
+import atomics;
 import gpu_index;
 
 struct Params
@@ -17,14 +18,15 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_value_node;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
-StructuredBuffer<uint> hir_struct_field_type_node;
-StructuredBuffer<uint> hir_struct_decl_field_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -43,7 +45,9 @@ StructuredBuffer<uint> x86_enum_type_record;
 
 RWStructuredBuffer<uint> x86_struct_type_record;
 RWStructuredBuffer<uint> x86_struct_field_width_by_node;
+RWStructuredBuffer<uint> x86_struct_field_count_by_hir;
 RWStructuredBuffer<uint> x86_struct_field_count_scan_input;
+RWStructuredBuffer<uint> x86_decl_node_by_token;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -75,6 +79,21 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+uint active_compact_field_count()
+{
+    return min(compact_field_count[0u], gParams.n_hir_nodes);
+}
+
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
@@ -88,28 +107,18 @@ uint visible_decl_for_type_token(uint token)
     return valid_token(decl) ? decl : INVALID;
 }
 
-uint type_head_token_for_node(uint type_node)
+uint type_head_token_for_dense_type(uint type_node)
 {
-    if (!valid_node(type_node))
+    if (!valid_dense(type_node))
         return INVALID;
-
-    uint leaf_node = hir_type_path_leaf_node[type_node];
-    if (valid_node(leaf_node))
+    uint value_node = compact_hir_payload[type_node].b;
+    if (valid_dense(value_node))
     {
-        uint leaf = hir_token_pos[leaf_node];
-        if (valid_token(leaf))
-            return leaf;
-    }
-
-    uint value_node = hir_type_value_node[type_node];
-    if (valid_node(value_node))
-    {
-        uint value_head = hir_token_pos[value_node];
+        uint value_head = compact_hir_core[value_node].token_start;
         if (valid_token(value_head))
             return value_head;
     }
-
-    uint type_head = hir_token_pos[type_node];
+    uint type_head = compact_hir_core[type_node].token_start;
     return valid_token(type_head) ? type_head : INVALID;
 }
 
@@ -137,9 +146,10 @@ uint declared_struct_field_count_width(uint decl_token)
     if (!valid_token(decl_token))
         return 1u;
     uint struct_node = type_decl_hir_node_by_token[decl_token];
-    if (!valid_node(struct_node) || hir_kind[struct_node] != HIR_STRUCT_ITEM)
+    uint dense = valid_node(struct_node) ? raw_to_compact_hir[struct_node] : INVALID;
+    if (!valid_dense(dense) || compact_hir_core[dense].kind != HIR_STRUCT_ITEM)
         return 1u;
-    uint count = hir_struct_decl_field_count[struct_node];
+    uint count = x86_struct_field_count_by_hir[dense];
     return count == 0u ? 1u : count;
 }
 
@@ -230,9 +240,10 @@ uint type_ref_width(uint tag, uint payload)
     return named_instance_width(payload);
 }
 
-uint field_width_for_node(uint node)
+uint field_width_for_row(uint row)
 {
-    uint field_token = hir_token_pos[node];
+    HirField field = compact_fields[row];
+    uint field_token = field.name_token;
     if (valid_token(field_token))
     {
         uint semantic_width = semantic_type_width(visible_type[field_token]);
@@ -245,8 +256,7 @@ uint field_width_for_node(uint node)
             return decl_width;
     }
 
-    uint type_node = hir_struct_field_type_node[node];
-    uint type_head = type_head_token_for_node(type_node);
+    uint type_head = type_head_token_for_dense_type(field.value);
     if (!valid_token(type_head))
         return 1u;
     uint type_head_width = semantic_type_width(visible_type[type_head]);
@@ -270,23 +280,19 @@ uint field_width_for_node(uint node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
-    if (!valid_node(node))
+    if (node >= active_compact_field_count())
         return;
 
-    x86_struct_field_width_by_node[node] = 0u;
-    x86_struct_field_count_scan_input[node] = 0u;
-
-    if (hir_kind[node] == HIR_STRUCT_ITEM)
-    {
-        uint decl_token = hir_item_name_token[node];
-        uint field_count = hir_struct_decl_field_count[node];
-        x86_struct_field_count_scan_input[node] = field_count;
-        if (valid_token(decl_token) && field_count != 0u && x86_struct_type_record[decl_token] == 0u)
-            x86_struct_type_record[decl_token] = field_count;
-    }
-
-    if (!valid_node(hir_struct_field_parent_struct[node]))
+    HirField field = compact_fields[node];
+    if (!valid_dense(field.owner) ||
+        compact_hir_core[field.owner].kind != HIR_STRUCT_ITEM ||
+        field.ordinal >= gParams.n_hir_nodes)
         return;
 
-    x86_struct_field_width_by_node[node] = field_width_for_node(node);
+    atomic_u32_max(x86_struct_field_count_by_hir, field.owner, field.ordinal + 1u);
+    atomic_u32_max(x86_struct_field_count_scan_input, field.owner, field.ordinal + 1u);
+    uint field_token = field.name_token;
+    if (valid_token(field_token))
+        x86_decl_node_by_token[field_token] = node;
+    x86_struct_field_width_by_node[node] = field_width_for_row(node);
 }

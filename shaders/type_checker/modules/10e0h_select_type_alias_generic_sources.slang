@@ -14,9 +14,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> alias_equiv_parent;
 RWStructuredBuffer<uint> alias_normalized_source;
 
@@ -33,9 +34,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(generic_param_count_out[0u], gParams.n_tokens);
     if (row >= count || generic_param_kind[row] != GENERIC_PARAM_KIND_TYPE)
         return;
-    uint owner = generic_param_owner_node[row];
+    uint owner_token = generic_param_owner_token[row];
     uint token = generic_param_token[row];
-    if (owner >= gParams.n_hir_nodes || token >= gParams.n_tokens)
+    if (owner_token >= gParams.n_tokens || token >= gParams.n_tokens)
+        return;
+    uint owner = type_decl_hir_node_by_token[owner_token];
+    if (owner >= gParams.n_hir_nodes)
         return;
     uint output_node = gParams.n_tokens + owner;
     if (alias_equiv_parent[token] == alias_equiv_parent[output_node])

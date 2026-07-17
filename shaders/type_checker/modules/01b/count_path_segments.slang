@@ -1,33 +1,34 @@
-// Project parser-owned path segment counts onto compact typechecker path rows.
+// Publish compact path segment ranges without reconstructing parser lists.
 
 import atomics;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
 ConstantBuffer<Params> gParams;
-
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> path_count_out;
-StructuredBuffer<uint> path_owner_hir;
-StructuredBuffer<uint> hir_path_segment_count;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> compact_path_segment_count;
+RWStructuredBuffer<uint> path_segment_base;
 RWStructuredBuffer<uint> path_segment_count;
+RWStructuredBuffer<uint> path_segment_count_out;
 RWStructuredBuffer<uint> path_max_segment_count;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-uint active_hir_node_count() { return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]); }
-uint active_path_count() { return min(path_count_out[0], gParams.n_hir_nodes); }
+uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint path_slot = linear_thread_id(dtid);
-    if (path_slot >= active_path_count())
+    uint row = tid(dtid);
+    if (row == 0u)
+        path_segment_count_out[0u] = min(compact_path_segment_count[0u], gParams.n_tokens);
+    uint count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    if (row >= count)
         return;
-    uint owner = path_owner_hir[path_slot];
-    uint count = owner < active_hir_node_count()
-        ? hir_path_segment_count[owner] : 0u;
-    path_segment_count[path_slot] = count;
-    atomic_u32_max(path_max_segment_count, 0u, count);
+    HirPath path = compact_paths[row];
+    path_segment_base[row] = path.segment_start;
+    path_segment_count[row] = path.segment_count;
+    atomic_u32_max(path_max_segment_count, 0u, path.segment_count);
 }

@@ -1,11 +1,11 @@
-// Mark HIR generic-parameter declaration records.
+// Initialize raw-tree owner propagation needed by predicate and alias consumers.
 //
 // Scheduling contract:
 // - Dispatch after HIR item records and interned token names are available.
 // - This initializes generic-declaration and predicate-list owner propagation. Follow with
 //   type_check_type_instances_00a1_propagate_generic_decl_owner until the
 //   parent jump table reaches the root.
-// - A counted prefix scan over generic_param_flag compacts the marked rows.
+// - Generic parameter rows themselves come from the compact HIR side table.
 // - This pass also publishes declaration-token to HIR-node facts for later
 //   consumers; it does not scan declaration subtrees.
 
@@ -20,15 +20,15 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_method_signature_flags;
 
-RWStructuredBuffer<uint> generic_param_flag;
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
 RWStructuredBuffer<uint> generic_decl_parent_jump_a;
@@ -81,30 +81,6 @@ bool impl_node_kind(uint kind)
     return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
-bool type_params_list_param_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_ENUM_TYPE_PARAMS_SOME ||
-           kind == PROD_ENUM_TYPE_PARAMS_MORE;
-}
-
-bool generic_param_record_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    if (kind == PROD_ENUM_TYPE_PARAM || kind == PROD_ENUM_CONST_PARAM)
-        return true;
-
-    if (!type_params_list_param_node(node))
-        return false;
-
-    uint start = hir_token_pos[node];
-    return valid_token(start + 1u);
-}
-
 bool generic_decl_node(uint node)
 {
     if (!valid_node(node))
@@ -125,17 +101,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    generic_param_flag[node] = generic_param_record_node(node) ? 1u : 0u;
     generic_decl_owner_by_node_a[node] =
         generic_decl_node(node) ? node : INVALID;
     predicate_bound_list_by_node_a[node] =
         node_kind[node] == PROD_TYPE_PARAM_BOUND_LIST ? node : INVALID;
     generic_decl_parent_jump_a[node] = valid_node(parent[node]) ? parent[node] : INVALID;
 
-    if (generic_decl_item_kind(hir_item_kind[node]))
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node < compact_count)
     {
-        uint name_token = hir_item_name_token[node];
-        if (valid_token(name_token))
+        HirPayload payload = compact_hir_payload[node];
+        uint name_token = payload.b;
+        if (generic_decl_item_kind(payload.a) && valid_token(name_token))
             type_decl_hir_node_by_token[name_token] = node;
     }
 }

@@ -130,13 +130,6 @@ pub fn validate_hir_enum_variant_records(
         variant_ordinal_keys.push((parent, ordinal, row));
 
         let payload_count = payload_counts[row];
-        if payload_count > HIR_VARIANT_PAYLOAD_SLOT_STRIDE {
-            return Err(anyhow!(
-                "parser HIR enum variant row {row} published {payload_count} payloads, exceeding {} flat payload slots",
-                HIR_VARIANT_PAYLOAD_SLOT_STRIDE
-            ));
-        }
-
         if payload_count == 0 {
             if payload_starts[row] != INVALID
                 || payload_slots.iter().any(|&payload| payload != INVALID)
@@ -156,6 +149,10 @@ pub fn validate_hir_enum_variant_records(
         }
 
         let mut previous_payload: Option<usize> = None;
+        // The raw compatibility record retains only its first four payload
+        // edges. Arbitrary-width payloads are validated in the compact GPU
+        // side table; this loop continues to validate every retained prefix
+        // slot while imposing no language-level width limit.
         for slot in 0..slot_stride {
             let payload = payload_slots[slot];
             if slot >= payload_count as usize {

@@ -27,9 +27,14 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> hir_token_pos;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> method_decl_name_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> hir_nearest_fn_node;
 
@@ -69,6 +74,18 @@ bool valid_token(uint token_i)
     return token_i != INVALID && token_i < gParams.n_tokens;
 }
 
+uint canonical_function_token(uint node_i)
+{
+    if (!valid_node(node_i))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node_i];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense == INVALID || dense >= count)
+        return INVALID;
+    uint token = compact_hir_payload[dense].b;
+    return valid_token(token) ? token : INVALID;
+}
+
 bool is_main_function_node(uint node_i)
 {
     return hir_kind[node_i] == HIR_FN &&
@@ -78,7 +95,7 @@ bool is_main_function_node(uint node_i)
 
 bool is_impl_method_function_node(uint node_i)
 {
-    uint fn_token = valid_node(node_i) ? hir_token_pos[node_i] : INVALID;
+    uint fn_token = canonical_function_token(node_i);
     return hir_kind[node_i] == HIR_FN &&
            valid_token(fn_token) &&
            valid_token(method_decl_param_offset[fn_token]);
@@ -122,6 +139,10 @@ void publish_function_lookup(uint node_i)
     publish_function_lookup_key(hir_token_pos[node_i], node_i);
     publish_function_lookup_key(hir_node_decl_token[node_i], node_i);
     publish_function_lookup_key(hir_item_name_token[node_i], node_i);
+    uint fn_token = canonical_function_token(node_i);
+    publish_function_lookup_key(
+        valid_token(fn_token) ? method_decl_name_token[fn_token] : INVALID,
+        node_i);
 }
 
 [shader("compute")]

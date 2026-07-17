@@ -24,10 +24,11 @@ StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_method_owner_node;
+StructuredBuffer<uint> hir_method_name_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
@@ -114,12 +115,20 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
+uint generic_owner_token(uint decl_node)
+{
+    if (!valid_node(decl_node))
+        return INVALID;
+    uint name_token = hir_item_name_token[decl_node];
+    return valid_token(name_token) ? name_token : hir_token_pos[decl_node];
+}
+
 bool generic_param_key_less(uint row, uint owner, uint name_id)
 {
     if (row >= active_generic_param_count())
         return false;
 
-    uint row_owner = generic_param_owner_node[row];
+    uint row_owner = generic_param_owner_token[row];
     if (row_owner != owner)
         return row_owner < owner;
     return generic_param_name_id[row] < name_id;
@@ -128,7 +137,7 @@ bool generic_param_key_less(uint row, uint owner, uint name_id)
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
-           generic_param_owner_node[row] == owner &&
+           generic_param_owner_token[row] == owner &&
            generic_param_name_id[row] == name_id &&
            generic_param_kind[row] == kind;
 }
@@ -136,6 +145,10 @@ bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
 {
     if (!valid_node(decl_node) || !valid_token(name_token))
+        return INVALID;
+
+    uint owner_token = generic_owner_token(decl_node);
+    if (!valid_token(owner_token))
         return INVALID;
 
     uint name_id = name_id_by_token[name_token];
@@ -151,7 +164,7 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
             continue;
         uint mid = lo + ((hi - lo) >> 1u);
         uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
             hi = mid;
         else
             lo = mid + 1u;
@@ -160,7 +173,7 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
     if (lo >= count)
         return INVALID;
     uint row = generic_param_key_order[lo];
-    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+    return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
 uint generic_param_decl_token_for_name(uint decl_node, uint name_token)
@@ -197,7 +210,9 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
 
 uint declaration_token_for_function(uint fn_node)
 {
-    uint decl_token = hir_token_pos[fn_node];
+    uint decl_token = hir_item_name_token[fn_node];
+    if (!valid_token(decl_token))
+        decl_token = hir_method_name_token[fn_node];
     return valid_token(decl_token) ? decl_token : INVALID;
 }
 

@@ -15,14 +15,15 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_variant_payload_count;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> hir_item_decl_token;
-StructuredBuffer<uint> hir_variant_parent_enum;
-StructuredBuffer<uint> hir_variant_ordinal;
-StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -81,6 +82,11 @@ uint active_path_count()
 uint active_decl_count()
 {
     return min(decl_count_out[0u], gParams.n_hir_nodes);
+}
+
+uint active_variant_count()
+{
+    return min(compact_variant_count[0u], gParams.n_hir_nodes);
 }
 
 bool valid_node(uint node)
@@ -155,13 +161,13 @@ bool variant_record_from_decl(
         return false;
 
     variant_node = decl_hir_node[decl_i];
-    if (!valid_node(variant_node) || hir_variant_ordinal[variant_node] == INVALID)
+    if (variant_node >= active_variant_count())
         return false;
 
     variant_token = decl_name_token[decl_i];
     enum_token = decl_name_token[enum_decl_i];
-    ordinal = hir_variant_ordinal[variant_node];
-    payload_count = hir_variant_payload_count[variant_node];
+    ordinal = compact_variants[variant_node].ordinal;
+    payload_count = compact_variant_payload_count[variant_node];
     return valid_token(variant_token) && valid_token(enum_token);
 }
 
@@ -255,23 +261,6 @@ uint pack_enum_value_info(uint kind, uint payload_count)
            (kind & X86_ENUM_VALUE_KIND_MASK);
 }
 
-void scatter_declared_variant(uint node)
-{
-    if (hir_variant_ordinal[node] == INVALID)
-        return;
-
-    uint variant_token = hir_item_decl_token[node];
-    uint enum_node = hir_variant_parent_enum[node];
-    if (!valid_token(variant_token) || !valid_node(enum_node))
-        return;
-
-    uint enum_token = hir_item_decl_token[enum_node];
-    if (!valid_token(enum_token))
-        return;
-
-    x86_enum_type_record[enum_token] = X86_ENUM_WIDTH_TAG_PAYLOAD;
-}
-
 void scatter_decl_row(uint decl_i)
 {
     if (decl_i >= active_decl_count())
@@ -342,7 +331,7 @@ void scatter_value_record(uint node)
             ordinal,
             payload_count);
     }
-    else
+    if (!found_variant)
     {
         found_variant = variant_record_for_use_token(
             use_token,
@@ -381,7 +370,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    scatter_declared_variant(node);
     scatter_decl_row(node);
     scatter_value_record(node);
 }

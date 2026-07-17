@@ -2,7 +2,7 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs};
 
 /// Bind groups for exact, arbitrary-depth path-prefix canonicalization.
 pub(in crate::type_checker) struct PathSequences {
-    pub(in crate::type_checker) clear_max: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_state: wgpu::BindGroup,
     pub(in crate::type_checker) dispatch_params: LaniusBuffer<PathPrefixDispatchParams>,
     pub(in crate::type_checker) dispatch_args: wgpu::BindGroup,
     pub(in crate::type_checker) rounds: Vec<PathPrefixRound>,
@@ -37,15 +37,22 @@ pub(in crate::type_checker) fn create_path_sequences(
         },
     );
 
-    let clear_max = bind_group::create_bind_group_from_bindings(
+    let clear_state = bind_group::create_bind_group_from_bindings(
         device,
-        Some("type_check_modules_01c_clear_path_prefix_max"),
-        &passes.modules_clear_path_prefix_max,
+        Some("type_check_modules_01a_clear_path_state"),
+        &passes.modules_clear_path_state,
         0,
-        &[(
-            "path_max_segment_count",
-            buffers.path_max_segment_count.as_entire_binding(),
-        )],
+        &[
+            ("gParams", inputs.params.as_entire_binding()),
+            (
+                "path_id_by_owner_hir",
+                buffers.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "path_max_segment_count",
+                buffers.path_max_segment_count.as_entire_binding(),
+            ),
+        ],
     )?;
     let dispatch_args = bind_group::create_bind_group_from_bindings(
         device,
@@ -204,7 +211,7 @@ pub(in crate::type_checker) fn create_path_sequences(
     )?;
 
     Ok(PathSequences {
-        clear_max,
+        clear_state,
         dispatch_params,
         dispatch_args,
         rounds,

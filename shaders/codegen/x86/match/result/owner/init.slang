@@ -24,9 +24,10 @@ struct FeatureParams
 
 ConstantBuffer<FeatureParams> gX86Features;
 
-StructuredBuffer<uint> hir_status;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> x86_match_result_root_owner;
-StructuredBuffer<uint> x86_tree_parent;
 
 RWStructuredBuffer<uint> x86_match_result_owner;
 RWStructuredBuffer<uint> x86_match_result_owner_link;
@@ -42,7 +43,7 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -73,7 +74,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint parent = x86_tree_parent[node];
+    uint parent = compact_hir_core[node].parent;
     uint parent_owner = valid_node(parent) ? x86_match_result_root_owner[parent] : INVALID;
     if (valid_node(parent_owner))
     {

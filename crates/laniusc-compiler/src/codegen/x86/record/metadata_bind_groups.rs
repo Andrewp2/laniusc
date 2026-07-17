@@ -259,6 +259,18 @@ pub(super) fn create_function_discovery_bind_groups(
                 inputs.function_metadata.hir_token_pos.as_entire_binding(),
             ),
             (
+                "raw_to_compact_hir",
+                inputs.expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "compact_hir_count",
+                inputs.expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                inputs.expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
                 "method_decl_param_offset",
                 inputs
                     .function_metadata
@@ -272,6 +284,13 @@ pub(super) fn create_function_discovery_bind_groups(
             (
                 "hir_item_name_token",
                 inputs.function_metadata.node_name_token.as_entire_binding(),
+            ),
+            (
+                "method_decl_name_token",
+                inputs
+                    .function_metadata
+                    .method_decl_name_token
+                    .as_entire_binding(),
             ),
             (
                 "fn_entrypoint_tag",
@@ -300,8 +319,16 @@ pub(super) fn create_function_discovery_bind_groups(
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
             ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
-                "hir_token_pos",
-                inputs.function_metadata.hir_token_pos.as_entire_binding(),
+                "raw_to_compact_hir",
+                inputs.expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "compact_hir_count",
+                inputs.expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                inputs.expr_metadata.compact_hir_payload.as_entire_binding(),
             ),
             (
                 "method_decl_param_offset",

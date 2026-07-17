@@ -21,12 +21,12 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_record_flag;
 StructuredBuffer<uint> decl_record_prefix;
-StructuredBuffer<uint> hir_item_file_id;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_namespace;
-StructuredBuffer<uint> hir_item_visibility;
-StructuredBuffer<uint> hir_variant_parent_enum;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> decl_module_file_id;
@@ -61,9 +61,9 @@ bool valid_node(uint node)
 
 uint parent_enum_decl_for_variant(uint hir_i)
 {
-    uint enum_node = valid_node(hir_i) ? hir_variant_parent_enum[hir_i] : INVALID;
+    uint enum_node = valid_node(hir_i) ? compact_hir_core[hir_i].parent : INVALID;
     if (!valid_node(enum_node) ||
-        hir_item_kind[enum_node] != HIR_ITEM_KIND_ENUM ||
+        compact_hir_payload[enum_node].a != HIR_ITEM_KIND_ENUM ||
         decl_record_flag[enum_node] == 0u)
         return INVALID;
     return decl_record_prefix[enum_node];
@@ -81,13 +81,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot.active == 0u)
         return;
 
-    uint name_token = hir_item_name_token[i];
-    decl_module_file_id[slot.dst] = hir_item_file_id[i];
+    HirPayload payload = compact_hir_payload[i];
+    uint name_token = payload.b;
+    decl_module_file_id[slot.dst] = compact_hir_links[i].file_id;
     decl_name_id[slot.dst] = name_id_for_decl(name_token);
-    decl_kind[slot.dst] = hir_item_kind[i];
-    decl_namespace[slot.dst] = hir_item_namespace[i];
-    decl_visibility[slot.dst] = hir_item_visibility[i];
+    decl_kind[slot.dst] = payload.a;
+    decl_namespace[slot.dst] = payload.c;
+    decl_visibility[slot.dst] = payload.d;
     decl_hir_node[slot.dst] = i;
     decl_parent_type_decl[slot.dst] =
-        hir_item_kind[i] == HIR_ITEM_KIND_ENUM_VARIANT ? parent_enum_decl_for_variant(i) : INVALID;
+        payload.a == HIR_ITEM_KIND_ENUM_VARIANT ? parent_enum_decl_for_variant(i) : INVALID;
 }

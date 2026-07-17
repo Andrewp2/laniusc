@@ -19,17 +19,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_item_namespace;
-StructuredBuffer<uint> hir_item_path_start;
-StructuredBuffer<uint> hir_item_path_end;
-StructuredBuffer<uint> hir_item_import_target_kind;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> record_family_bits;
 
@@ -43,7 +37,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]
@@ -61,15 +55,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     ModuleRecordCandidate row;
-    row.candidate_node_kind = node_kind[i];
-    row.candidate_hir_kind = hir_kind[i];
-    row.candidate_token_pos = hir_token_pos[i];
-    row.candidate_token_end = hir_token_end[i];
-    row.candidate_item_kind = hir_item_kind[i];
-    row.candidate_item_name_token = hir_item_name_token[i];
-    row.candidate_item_namespace = hir_item_namespace[i];
-    row.candidate_item_path_start = hir_item_path_start[i];
-    row.candidate_item_path_end = hir_item_path_end[i];
-    row.candidate_import_target_kind = hir_item_import_target_kind[i];
+    HirCore core = compact_hir_core[i];
+    HirPayload payload = compact_hir_payload[i];
+    row.hir_kind = core.kind;
+    row.item_kind = payload.a;
+    row.name_token = payload.b;
+    row.namespace_kind = payload.c;
     record_family_bits[i] = module_record_candidate_bits(row, gParams.n_tokens);
 }

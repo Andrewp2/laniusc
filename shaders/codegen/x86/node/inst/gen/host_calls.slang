@@ -1,6 +1,7 @@
 import gpu_index;
 import byte_packing;
 import status;
+import codegen.x86.string_metadata;
 
 struct Params
 {
@@ -18,7 +19,6 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> hir_expr_string_len;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -509,7 +509,7 @@ bool host_text_write_arg(uint arg_node, uint owner_fn, out uint payload, out uin
         expr_form(value_node) == HIR_EXPR_STRING)
     {
         payload = value_node;
-        len = hir_expr_string_len[value_node];
+        len = x86_string_decoded_len_for_raw(value_node, gParams.n_hir_nodes);
         return true;
     }
     return false;
@@ -535,7 +535,7 @@ bool host_path_arg(uint arg_node, uint owner_fn, out uint source_kind, out uint 
     {
         source_kind = 0u;
         payload = value_node;
-        len = hir_expr_string_len[value_node];
+        len = x86_string_decoded_len_for_raw(value_node, gParams.n_hir_nodes);
         return true;
     }
     return false;

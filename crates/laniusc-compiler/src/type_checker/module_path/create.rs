@@ -43,7 +43,7 @@ pub(in crate::type_checker) fn create_with_passes(
     } = layout;
     let buffers = Buffers::new(device, layout, &inputs);
     let PathSequences {
-        clear_max: clear_path_prefix_max,
+        clear_state: clear_path_state,
         dispatch_params: path_prefix_dispatch_params,
         dispatch_args: path_prefix_dispatch_args,
         rounds: path_prefix_rounds,
@@ -53,22 +53,18 @@ pub(in crate::type_checker) fn create_with_passes(
         dependency_visibility::create(passes, device, layout, &inputs, &buffers)?;
     let RecordDiscovery {
         mark_records,
-        extract_path_record_flag_params,
-        extract_path_record_flag,
         extract_module_record_flag_params,
         extract_module_record_flag,
         extract_import_record_flag_params,
         extract_import_record_flag,
         extract_decl_record_flag_params,
         extract_decl_record_flag,
-        path_scan,
         scatter_paths,
         path_dispatch_params,
         path_dispatch_args: path_dispatch_args_group,
         import_dispatch_params,
         import_dispatch_args: import_dispatch_args_group,
         count_path_segments,
-        path_segment_scan,
         scatter_path_segments,
         module_scan,
         import_scan,
@@ -272,8 +268,6 @@ pub(in crate::type_checker) fn create_with_passes(
         params,
         token_capacity,
         hir_node_capacity,
-        hir_token_pos_buf,
-        hir_token_end_buf,
         status_buf,
         hir_active_count_buf: _,
         hir_items,
@@ -373,7 +367,14 @@ pub(in crate::type_checker) fn create_with_passes(
             ),
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_owner_hir", path_owner_hir.as_entire_binding()),
-            ("hir_item_file_id", hir_items.file_id.as_entire_binding()),
+            (
+                "compact_hir_count",
+                hir_items.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_links",
+                hir_items.compact_hir_links.as_entire_binding(),
+            ),
             ("module_count_out", module_count_out.as_entire_binding()),
             (
                 "module_id_by_file_id",
@@ -826,6 +827,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 decl_value_public_prefix.as_entire_binding(),
             ),
             ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
             (
                 "interface_public_decl_count",
                 interface_public_decl_count.as_entire_binding(),
@@ -1902,23 +1904,17 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            ("hir_item_file_id", hir_items.file_id.as_entire_binding()),
             (
-                "hir_item_name_token",
-                hir_items.name_token.as_entire_binding(),
-            ),
-            ("hir_item_kind", hir_items.kind.as_entire_binding()),
-            (
-                "hir_item_namespace",
-                hir_items.namespace.as_entire_binding(),
+                "compact_hir_core",
+                hir_items.compact_hir_core.as_entire_binding(),
             ),
             (
-                "hir_item_visibility",
-                hir_items.visibility.as_entire_binding(),
+                "compact_hir_links",
+                hir_items.compact_hir_links.as_entire_binding(),
             ),
             (
-                "hir_variant_parent_enum",
-                hir_items.variant_parent_enum.as_entire_binding(),
+                "compact_hir_payload",
+                hir_items.compact_hir_payload.as_entire_binding(),
             ),
             ("name_id_by_token", name_id_by_token.as_entire_binding()),
             (
@@ -1934,6 +1930,21 @@ pub(in crate::type_checker) fn create_with_passes(
                 "decl_parent_type_decl",
                 decl_parent_type_decl.as_entire_binding(),
             ),
+        ],
+    )?;
+
+    let append_variant_decl_count = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_02c1_append_variant_decl_count"),
+        &passes.modules_append_variant_decl_count,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            (
+                "compact_variant_count",
+                hir_items.compact_variant_count.as_entire_binding(),
+            ),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
         ],
     )?;
 
@@ -1961,12 +1972,60 @@ pub(in crate::type_checker) fn create_with_passes(
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
             (
-                "hir_item_name_token",
-                hir_items.name_token.as_entire_binding(),
+                "compact_hir_core",
+                hir_items.compact_hir_core.as_entire_binding(),
             ),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            (
+                "compact_hir_payload",
+                hir_items.compact_hir_payload.as_entire_binding(),
+            ),
             ("decl_name_token", decl_name_token.as_entire_binding()),
+            ("decl_token_start", decl_token_start.as_entire_binding()),
+            ("decl_token_end", decl_token_end.as_entire_binding()),
+            (
+                "decl_id_by_name_token",
+                decl_id_by_name_token.as_entire_binding(),
+            ),
+        ],
+    )?;
+
+    let scatter_variant_decl_records = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_02c2_scatter_variant_decl_records"),
+        &passes.modules_scatter_variant_decl_records,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            (
+                "compact_variant_count",
+                hir_items.compact_variant_count.as_entire_binding(),
+            ),
+            (
+                "compact_variants",
+                hir_items.compact_variants.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                hir_items.compact_hir_payload.as_entire_binding(),
+            ),
+            ("decl_record_flag", decl_record_flag.as_entire_binding()),
+            ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
+            ("decl_count_out", decl_count_out.as_entire_binding()),
+            ("name_id_by_token", name_id_by_token.as_entire_binding()),
+            (
+                "decl_module_file_id",
+                decl_module_file_id.as_entire_binding(),
+            ),
+            ("decl_name_token", decl_name_token.as_entire_binding()),
+            ("decl_name_id", decl_name_id.as_entire_binding()),
+            ("decl_kind", decl_kind.as_entire_binding()),
+            ("decl_namespace", decl_namespace.as_entire_binding()),
+            ("decl_visibility", decl_visibility.as_entire_binding()),
+            ("decl_hir_node", decl_hir_node.as_entire_binding()),
+            (
+                "decl_parent_type_decl",
+                decl_parent_type_decl.as_entire_binding(),
+            ),
             ("decl_token_start", decl_token_start.as_entire_binding()),
             ("decl_token_end", decl_token_end.as_entire_binding()),
             (
@@ -2152,7 +2211,6 @@ pub(in crate::type_checker) fn create_with_passes(
         path_dispatch_args,
         scan_steps,
         record_scan_steps,
-        _extract_path_record_flag_params: extract_path_record_flag_params,
         _extract_module_record_flag_params: extract_module_record_flag_params,
         _extract_import_record_flag_params: extract_import_record_flag_params,
         _extract_decl_record_flag_params: extract_decl_record_flag_params,
@@ -2169,13 +2227,10 @@ pub(in crate::type_checker) fn create_with_passes(
         _retained_key_params: retained_key_params,
         bind_groups: BindGroups {
             mark_records,
-            extract_path_record_flag,
-            path_scan,
             scatter_paths,
             count_path_segments,
-            path_segment_scan,
             scatter_path_segments,
-            clear_path_prefix_max,
+            clear_path_state,
             path_prefix_dispatch_args,
             path_prefix_rounds,
             path_prefix_finalize,
@@ -2188,6 +2243,8 @@ pub(in crate::type_checker) fn create_with_passes(
             scatter_module_records,
             scatter_import_records,
             scatter_decl_core_records,
+            append_variant_decl_count,
+            scatter_variant_decl_records,
             clear_decl_lookup,
             scatter_decl_span_records,
             build_module_keys,

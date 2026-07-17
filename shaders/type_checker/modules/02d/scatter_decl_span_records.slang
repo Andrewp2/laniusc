@@ -20,9 +20,10 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_record_flag;
 StructuredBuffer<uint> decl_record_prefix;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> decl_name_token;
 RWStructuredBuffer<uint> decl_token_start;
@@ -49,10 +50,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot.active == 0u)
         return;
 
-    uint name_token = hir_item_name_token[i];
+    HirCore core = compact_hir_core[i];
+    uint name_token = compact_hir_payload[i].b;
     decl_name_token[slot.dst] = name_token;
-    decl_token_start[slot.dst] = hir_token_pos[i];
-    decl_token_end[slot.dst] = hir_token_end[i];
+    decl_token_start[slot.dst] = core.token_start;
+    decl_token_end[slot.dst] = core.token_end;
     if (name_token < gParams.n_tokens)
         decl_id_by_name_token[name_token] = slot.dst;
 }

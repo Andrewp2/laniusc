@@ -21,8 +21,8 @@ RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> type_instance_kind;
 RWStructuredBuffer<uint> type_instance_head_token;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
-RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
-RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
+RWStructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+RWStructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 RWStructuredBuffer<uint> type_decl_hir_node_by_token;
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -74,8 +74,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (i < gParams.n_hir_nodes)
     {
-        type_decl_generic_param_count_by_node[i] = 0u;
-        type_decl_const_param_count_by_node[i] = 0u;
         type_instance_arg_row_ref_tag[i] = TYPE_REF_INVALID;
         type_instance_arg_row_ref_payload[i] = INVALID;
     }
@@ -93,6 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_instance_kind[i] = TYPE_INSTANCE_INVALID;
     type_instance_head_token[i] = INVALID;
     type_decl_generic_param_count[i] = 0u;
+    type_decl_generic_param_count_by_owner_token[i] = 0u;
+    type_decl_const_param_count_by_owner_token[i] = 0u;
     type_decl_hir_node_by_token[i] = INVALID;
     type_generic_param_slot_by_token[i] = INVALID;
     type_const_param_slot_by_token[i] = INVALID;

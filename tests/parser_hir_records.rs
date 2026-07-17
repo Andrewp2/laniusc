@@ -523,10 +523,12 @@ fn parse_resident_source(source: &str) -> ResidentParseResult {
 
         lexer
             .with_resident_tokens(&source, |_, _, buffers| {
-                parser.parse_resident_tokens(
+                parser.parse_resident_tokens_with_source(
                     buffers.n,
                     &buffers.tokens_out,
                     &buffers.token_count,
+                    buffers.n,
+                    &buffers.in_bytes,
                     &tables,
                 )
             })
@@ -4107,6 +4109,1017 @@ fn assert_hir_child_span_inside_owner(
 }
 
 #[test]
+fn parser_compact_hir_generic_params_use_dense_owner_rows() {
+    let parsed = parse_resident_source(
+        r#"
+struct Wide<A, B, C, D, E> {
+    value: E,
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "generic declaration should parse");
+    let raw_owner = parsed
+        .hir_item_kind
+        .iter()
+        .position(|kind| *kind == HIR_ITEM_KIND_STRUCT)
+        .expect("fixture should publish one struct item");
+    let dense_owner = parsed.hir_canonical_raw_to_dense[raw_owner];
+    assert_ne!(
+        dense_owner, INVALID,
+        "struct item should have a dense HIR row"
+    );
+
+    assert_eq!(
+        parsed.hir_generic_param_owner.len(),
+        5,
+        "owners={:?} names={:?} kinds={:?}",
+        parsed.hir_generic_param_owner,
+        parsed.hir_generic_param_name_token,
+        parsed.hir_generic_param_kind,
+    );
+    assert_eq!(
+        parsed.hir_generic_param_owner,
+        vec![dense_owner; 5],
+        "compact generic rows must refer to the dense declaration owner"
+    );
+    assert_eq!(parsed.hir_generic_param_kind, vec![1; 5]);
+    assert_eq!(parsed.hir_generic_param_file_id, vec![0; 5]);
+    assert_eq!(
+        parsed.hir_generic_param_range_start[dense_owner as usize],
+        0
+    );
+    assert_eq!(
+        parsed.hir_generic_param_range_count[dense_owner as usize],
+        5
+    );
+    assert!(
+        parsed
+            .hir_generic_param_name_token
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]),
+        "generic rows should preserve source order and distinct token anchors"
+    );
+}
+
+#[test]
+fn parser_compact_hir_generic_params_cover_methods_impls_and_const_params() {
+    let parsed = parse_resident_source(
+        r#"
+trait Contract {
+    fn apply<T, const N: bool>(values: [u32; N]) -> u32 where T: Contract;
+}
+
+impl<U: Copy, const M: u32> Debug for bool {
+}
+
+fn free<V>(value: V) -> V {
+    return value;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "generic owner fixture should parse");
+    assert_eq!(
+        parsed.hir_generic_param_owner.len(),
+        5,
+        "owners={:?} names={:?} kinds={:?}",
+        parsed.hir_generic_param_owner,
+        parsed.hir_generic_param_name_token,
+        parsed.hir_generic_param_kind,
+    );
+    assert_eq!(
+        parsed
+            .hir_generic_param_kind
+            .iter()
+            .filter(|kind| **kind == 1)
+            .count(),
+        3,
+        "fixture contains three type parameters"
+    );
+    assert_eq!(
+        parsed
+            .hir_generic_param_kind
+            .iter()
+            .filter(|kind| **kind == 2)
+            .count(),
+        2,
+        "fixture contains two const parameters"
+    );
+
+    let mut rows_per_owner = std::collections::BTreeMap::new();
+    for (row, owner) in parsed.hir_generic_param_owner.iter().enumerate() {
+        assert_ne!(*owner, INVALID, "generic parameter owner must be dense");
+        assert!(
+            parsed.hir_canonical_raw_to_dense.contains(owner),
+            "generic owner {owner} must belong to the canonical HIR domain"
+        );
+        let entry = rows_per_owner.entry(*owner).or_insert((row, 0usize));
+        entry.1 += 1;
+    }
+    for (&owner, &(start, count)) in &rows_per_owner {
+        assert_eq!(
+            parsed.hir_generic_param_range_start[owner as usize], start as u32,
+            "owner {owner} should point at its first compact generic row"
+        );
+        assert_eq!(
+            parsed.hir_generic_param_range_count[owner as usize], count as u32,
+            "owner {owner} should retain its exact compact generic row count"
+        );
+    }
+    let mut owner_counts = rows_per_owner
+        .into_values()
+        .map(|(_, count)| count)
+        .collect::<Vec<_>>();
+    owner_counts.sort_unstable();
+    assert_eq!(
+        owner_counts,
+        vec![1, 2, 2],
+        "free function, trait method, and impl should own distinct compact row ranges"
+    );
+    assert!(
+        parsed
+            .hir_generic_param_name_token
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]),
+        "generic rows should be globally source ordered"
+    );
+}
+
+#[test]
+fn parser_compact_hir_maps_colliding_nested_qualified_callees_to_dense_owners() {
+    let parsed = parse_resident_source(
+        "fn main() { return helpers::maybe::score(hit) * 10 + helpers::maybe::score(miss); }",
+    );
+    let qualified_callee_owners = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter(|&(_, kind)| *kind == HIR_NODE_CALL_EXPR)
+        .map(|(call, _)| {
+            let raw_callee = parsed.hir_call_callee_node[call] as usize;
+            parsed.hir_canonical_raw_to_dense[raw_callee]
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(qualified_callee_owners.len(), 2);
+    assert!(
+        qualified_callee_owners.iter().all(|owner| *owner != INVALID),
+        "every raw callee must translate through raw_to_hir even when another expression wins its token anchor"
+    );
+    assert_eq!(
+        parsed
+            .hir_path_segment_count
+            .iter()
+            .filter(|count| **count == 3)
+            .count(),
+        2,
+        "both qualified score paths must survive compact path construction"
+    );
+    for owner in qualified_callee_owners {
+        assert!(
+            parsed.hir_path_owner.contains(&owner),
+            "callee dense row {owner} must own a compact path"
+        );
+    }
+}
+
+#[test]
+fn parser_compact_hir_call_identity_preserves_binary_operand_roots() {
+    let source = r#"
+fn weighted5(a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
+    return a + b * 2 + c * 3 + d * 4 + e * 5;
+}
+
+fn weighted6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6;
+}
+
+fn main() {
+    return weighted5(1, 2, 3, 4, 5) + weighted6(1, 2, 3, 4, 5, 6);
+}
+"#;
+    let parsed = parse_resident_source(source);
+
+    let calls = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, kind)| (*kind == HIR_NODE_CALL_EXPR).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2, "fixture should publish two raw call rows");
+    assert!(
+        calls
+            .iter()
+            .all(|call| parsed.hir_canonical_raw_to_dense[*call] != INVALID),
+        "every backend call row must map to a dense call identity"
+    );
+    let parsed_main_return = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, kind)| (*kind == STMT_RECORD_KIND_RETURN).then_some(node))
+        .max_by_key(|node| parsed.hir_token_pos[*node])
+        .expect("fixture should publish the main return statement");
+    let parsed_return_value = parsed.hir_stmt_record_operand0[parsed_main_return] as usize;
+    let parsed_root = parsed.hir_expr_result_root_node[parsed_return_value] as usize;
+    assert!(parsed_root < parsed.hir_kind.len(), "main return root must be valid");
+    let root_dense = parsed.hir_canonical_raw_to_dense[parsed_root];
+    let callee_dense = calls
+        .iter()
+        .map(|call| {
+            let callee = parsed.hir_call_callee_node[*call] as usize;
+            parsed.hir_canonical_raw_to_dense[callee]
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        callee_dense.iter().all(|dense| *dense != INVALID && *dense != root_dense),
+        "callee names and the enclosing binary expression must have distinct dense identities: callees={callee_dense:?} root={root_dense}"
+    );
+    assert_ne!(
+        callee_dense[0], callee_dense[1],
+        "separate callee occurrences must retain separate dense identities"
+    );
+
+    let records = parse_resident_source_pack(&[source]);
+    let record_calls = records
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, kind)| (*kind == HIR_NODE_CALL_EXPR).then_some(node))
+        .collect::<Vec<_>>();
+    let main_return = records
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, kind)| (*kind == STMT_RECORD_KIND_RETURN).then_some(node))
+        .max_by_key(|node| records.hir_token_pos[*node])
+        .expect("fixture should publish the main return statement");
+    let return_value = records.hir_stmt_record_operand0[main_return] as usize;
+    let root = resolve_forward_expr_record(&records, return_value, "main return value");
+    assert_eq!(
+        records.hir_expr_record_form[root], HIR_EXPR_FORM_ADD,
+        "the main return should resolve to its binary addition root"
+    );
+    let operands = [
+        records.hir_expr_record_left[root],
+        records.hir_expr_record_right[root],
+    ]
+    .map(|operand| resolve_forward_expr_record(&records, operand as usize, "call operand"));
+    assert_eq!(
+        operands, [record_calls[0], record_calls[1]],
+        "binary operands must resolve to the same raw call rows projected by x86"
+    );
+}
+
+#[test]
+fn parser_compact_hir_member_identity_preserves_receiver_operand() {
+    let parsed = parse_resident_source(
+        r#"
+struct Counter { value: i32 }
+impl Counter {
+    fn add(self, amount: i32) -> i32 { return self.value + amount; }
+}
+fn main() {
+    let counter: Counter = Counter { value: 1 };
+    return counter.add(2);
+}
+"#,
+    );
+    let call = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, kind)| (*kind == HIR_NODE_CALL_EXPR).then_some(node))
+        .expect("fixture should publish a call");
+    let member = parsed.hir_call_callee_node[call] as usize;
+    assert_eq!(parsed.hir_kind[member], HIR_NODE_MEMBER_EXPR);
+    let receiver = parsed.hir_member_receiver_node[member] as usize;
+    let call_dense = parsed.hir_canonical_raw_to_dense[call];
+    let member_dense = parsed.hir_canonical_raw_to_dense[member];
+    let receiver_dense = parsed.hir_canonical_raw_to_dense[receiver];
+    assert!(
+        [call_dense, member_dense, receiver_dense]
+            .iter()
+            .all(|dense| *dense != INVALID),
+        "call, member, and receiver must all translate to compact identities"
+    );
+    assert_ne!(
+        receiver_dense, member_dense,
+        "receiver and member identities must differ: receiver_span={}..{} member_span={}..{} member_name_token={}",
+        parsed.hir_token_pos[receiver],
+        parsed.hir_token_end[receiver],
+        parsed.hir_token_pos[member],
+        parsed.hir_token_end[member],
+        parsed.hir_member_name_token[member],
+    );
+    assert_ne!(member_dense, call_dense, "member and call identities must differ");
+}
+
+#[test]
+fn parser_compact_hir_repeated_member_receivers_keep_per_occurrence_identity() {
+    let parsed = parse_resident_source(
+        r#"
+struct Counter { value: i32, scale: i32 }
+impl Counter {
+    fn product(self) -> i32 { return self.value * self.scale; }
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "repeated member receiver fixture should parse");
+    let members = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(raw, kind)| (*kind == HIR_NODE_MEMBER_EXPR).then_some(raw))
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 2, "fixture should publish exactly two member expressions");
+
+    let mut receiver_dense = Vec::new();
+    for member in members {
+        let receiver = parsed.hir_member_receiver_node[member] as usize;
+        assert!(receiver < parsed.hir_kind.len());
+        assert_eq!(parsed.hir_kind[receiver], HIR_NODE_NAME_EXPR);
+        let member_dense = parsed.hir_canonical_raw_to_dense[member];
+        let dense = parsed.hir_canonical_raw_to_dense[receiver];
+        assert_ne!(member_dense, INVALID);
+        assert_ne!(dense, INVALID);
+        assert_ne!(dense, member_dense);
+        receiver_dense.push(dense);
+    }
+    assert_ne!(
+        receiver_dense[0], receiver_dense[1],
+        "each source occurrence of `self` must retain a distinct compact identity"
+    );
+    let method = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(raw, kind)| {
+            if *kind != HIR_NODE_FN {
+                return None;
+            }
+            let dense = parsed.hir_canonical_raw_to_dense[raw] as usize;
+            (dense < parsed.hir_param_range_count.len()
+                && parsed.hir_param_range_count[dense] == 1)
+                .then_some(raw)
+        })
+        .expect("fixture should publish its method function");
+    let method_dense = parsed.hir_canonical_raw_to_dense[method] as usize;
+    assert!(method_dense < parsed.hir_param_range_count.len());
+    assert_eq!(
+        parsed.hir_param_range_count[method_dense], 1,
+        "the compact parameter family must retain the implicit `self` receiver"
+    );
+}
+
+#[test]
+fn parser_compact_hir_paths_use_dense_path_and_segment_domains() {
+    let parsed = parse_resident_source(
+        r#"
+module app::main;
+import core::math::ops;
+
+fn take(value: app::types::Value) -> core::i32 {
+    return app::factory::make(value);
+}
+
+fn bounded<T>(value: T) -> T where T: core::Copy {
+    return value;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "qualified-path fixture should parse");
+    assert!(
+        parsed.hir_path_owner.len() >= 4,
+        "module, import, type, and value paths should be compacted: owners={:?} starts={:?} counts={:?} segment_paths={:?} segment_tokens={:?}",
+        parsed.hir_path_owner,
+        parsed.hir_path_segment_start,
+        parsed.hir_path_segment_count,
+        parsed.hir_path_segment_path,
+        parsed.hir_path_segment_name_token,
+    );
+    assert_eq!(
+        parsed.hir_path_segment_path.len(),
+        parsed.hir_path_segment_name_token.len()
+    );
+    assert_eq!(
+        parsed.hir_path_segment_path.len(),
+        parsed.hir_path_segment_ordinal.len()
+    );
+    assert_eq!(parsed.hir_path_owner.len(), parsed.hir_path_kind.len());
+    for expected_kind in 1..=5 {
+        assert!(
+            parsed.hir_path_kind.contains(&expected_kind),
+            "fixture should preserve compact semantic path kind {expected_kind}: {:?}",
+            parsed.hir_path_kind
+        );
+    }
+
+    let mut next_segment = 0usize;
+    for path in 0..parsed.hir_path_owner.len() {
+        let owner = parsed.hir_path_owner[path];
+        assert_ne!(owner, INVALID, "path owner must be a dense HIR id");
+        assert!(
+            parsed.hir_canonical_raw_to_dense.contains(&owner),
+            "path owner {owner} must belong to the canonical HIR domain"
+        );
+        let start = parsed.hir_path_segment_start[path] as usize;
+        let count = parsed.hir_path_segment_count[path] as usize;
+        assert_eq!(start, next_segment, "path segment ranges must be packed");
+        assert!(count > 0, "every path row must own at least one segment");
+        for ordinal in 0..count {
+            let segment = start + ordinal;
+            assert_eq!(parsed.hir_path_segment_path[segment], path as u32);
+            assert_eq!(parsed.hir_path_segment_ordinal[segment], ordinal as u32);
+            assert_eq!(parsed.hir_path_segment_file_id[segment], 0);
+            if ordinal > 0 {
+                assert!(
+                    parsed.hir_path_segment_name_token[segment - 1]
+                        < parsed.hir_path_segment_name_token[segment],
+                    "segments within one path must retain source order"
+                );
+            }
+        }
+        next_segment += count;
+    }
+    assert_eq!(next_segment, parsed.hir_path_segment_path.len());
+    assert!(
+        parsed
+            .hir_path_segment_count
+            .iter()
+            .any(|count| *count == 3),
+        "fixture should preserve at least one three-segment path"
+    );
+}
+
+#[test]
+fn parser_compact_hir_distinguishes_nominal_type_paths_from_bounds() {
+    let parsed = parse_resident_source(
+        r#"
+module app::main;
+fn forward(value: Token) -> Token { return value; }
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "nominal type-path fixture should parse");
+    assert_eq!(
+        parsed
+            .hir_path_kind
+            .iter()
+            .filter(|kind| **kind == 4)
+            .count(),
+        2,
+        "the parameter and return annotations must be ordinary type paths: {:?}",
+        parsed.hir_path_kind,
+    );
+    assert!(
+        !parsed.hir_path_kind.contains(&5),
+        "ordinary type annotations must not be classified as generic bounds: {:?}",
+        parsed.hir_path_kind,
+    );
+}
+
+#[test]
+fn parser_compact_hir_fields_match_parser_owned_aggregate_records() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair {
+    left: i32,
+    flag: bool,
+}
+
+fn main() {
+    let first: Pair = Pair { left: 7, flag: true };
+    return first.left;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "aggregate field fixture should parse");
+    let mut expected_owner = Vec::new();
+    let mut expected_name_token = Vec::new();
+    let mut expected_value = Vec::new();
+    let mut expected_ordinal = Vec::new();
+    let mut literal_ordinal_by_owner = std::collections::BTreeMap::<u32, u32>::new();
+
+    for raw in 0..parsed.hir_kind.len() {
+        let declaration_owner = parsed.hir_struct_field_parent_struct[raw];
+        let literal_owner = parsed.hir_struct_lit_field_parent_lit[raw];
+        if declaration_owner == INVALID && literal_owner == INVALID {
+            continue;
+        }
+        assert!(
+            declaration_owner == INVALID || literal_owner == INVALID,
+            "one raw field cannot be both a declaration and an initializer"
+        );
+        let declaration = declaration_owner != INVALID;
+        let raw_owner = if declaration {
+            declaration_owner
+        } else {
+            literal_owner
+        } as usize;
+        let raw_value = if declaration {
+            parsed.hir_struct_field_type_node[raw]
+        } else {
+            parsed.hir_struct_lit_field_value_node[raw]
+        } as usize;
+        let ordinal = if declaration {
+            parsed.hir_struct_field_ordinal[raw]
+        } else {
+            let next = literal_ordinal_by_owner.entry(literal_owner).or_insert(0);
+            let ordinal = *next;
+            *next += 1;
+            ordinal
+        };
+
+        let dense_owner = parsed.hir_canonical_raw_to_dense[raw_owner];
+        let dense_value = if declaration {
+            parsed.hir_canonical_raw_to_dense[raw_value]
+        } else {
+            let raw_root = parsed.hir_expr_result_root_node[raw_value];
+            let root_value = if raw_root == INVALID {
+                INVALID
+            } else {
+                parsed.hir_canonical_raw_to_dense[raw_root as usize]
+            };
+            if root_value != INVALID {
+                root_value
+            } else {
+                parsed.hir_canonical_raw_to_dense[raw_value]
+            }
+        };
+        assert_ne!(dense_owner, INVALID, "field owner must map to dense HIR");
+        expected_owner.push(dense_owner);
+        expected_name_token.push(parsed.hir_token_pos[raw]);
+        expected_value.push(dense_value);
+        expected_ordinal.push(ordinal);
+    }
+
+    assert_eq!(
+        expected_owner.len(),
+        4,
+        "two declaration and two initializer fields expected"
+    );
+    assert_eq!(parsed.hir_field_owner, expected_owner);
+    assert_eq!(parsed.hir_field_name_token, expected_name_token);
+    for (row, (&actual, &direct_expected)) in parsed
+        .hir_field_value
+        .iter()
+        .zip(&expected_value)
+        .enumerate()
+    {
+        assert_ne!(actual, INVALID, "field row {row} must have a dense value");
+        assert!(
+            parsed.hir_canonical_raw_to_dense.contains(&actual),
+            "field row {row} value {actual} must belong to the canonical HIR domain"
+        );
+        if direct_expected != INVALID {
+            assert_eq!(actual, direct_expected, "field row {row} dense value");
+        }
+    }
+    assert_eq!(parsed.hir_field_ordinal, expected_ordinal);
+    assert!(
+        parsed
+            .hir_field_name_token
+            .windows(2)
+            .all(|tokens| tokens[0] < tokens[1]),
+        "compact fields must preserve global source order"
+    );
+}
+
+#[test]
+fn parser_compact_hir_variants_remove_fixed_payload_width() {
+    let parsed = parse_resident_source(
+        r#"
+enum Wide {
+    Unit,
+    One(i32),
+    Five(i32, i32, i32, i32, i32),
+    Nested([i32; 3], bool),
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "wide enum fixture should parse");
+    let raw_enum = parsed
+        .hir_item_kind
+        .iter()
+        .position(|kind| *kind == HIR_ITEM_KIND_ENUM)
+        .expect("fixture should publish one enum item");
+    let dense_enum = parsed.hir_canonical_raw_to_dense[raw_enum];
+    assert_ne!(dense_enum, INVALID, "enum owner must have a dense HIR row");
+
+    assert_eq!(parsed.hir_compact_variant_owner.len(), 4);
+    assert_eq!(parsed.hir_compact_variant_owner, vec![dense_enum; 4]);
+    assert_eq!(parsed.hir_compact_variant_ordinal, vec![0, 1, 2, 3]);
+    assert_eq!(parsed.hir_compact_variant_file_id, vec![0; 4]);
+    assert!(
+        parsed
+            .hir_compact_variant_name_token
+            .windows(2)
+            .all(|tokens| tokens[0] < tokens[1]),
+        "variant rows must preserve source order"
+    );
+
+    assert_eq!(
+        parsed.hir_compact_variant_payload_count,
+        vec![0, 1, 5, 2],
+        "compact payload counts must not truncate at the legacy width of four"
+    );
+    assert_eq!(
+        parsed.hir_compact_variant_payload_type_node.len(),
+        8,
+        "all tuple payload types should receive compact rows"
+    );
+    let mut expected_start = 0u32;
+    for variant in 0..4 {
+        let count = parsed.hir_compact_variant_payload_count[variant];
+        if count == 0 {
+            assert_eq!(parsed.hir_compact_variant_payload_start[variant], INVALID);
+            continue;
+        }
+        assert_eq!(
+            parsed.hir_compact_variant_payload_start[variant], expected_start,
+            "variant payload ranges must be tightly packed"
+        );
+        for ordinal in 0..count {
+            let row = (expected_start + ordinal) as usize;
+            assert_eq!(
+                parsed.hir_compact_variant_payload_variant[row],
+                variant as u32
+            );
+            assert_eq!(parsed.hir_compact_variant_payload_ordinal[row], ordinal);
+            assert_eq!(parsed.hir_compact_variant_payload_file_id[row], 0);
+            let type_node = parsed.hir_compact_variant_payload_type_node[row];
+            assert_ne!(type_node, INVALID, "payload type must be dense");
+            assert!(
+                parsed.hir_canonical_raw_to_dense.contains(&type_node),
+                "payload type {type_node} must belong to the canonical HIR domain"
+            );
+        }
+        expected_start += count;
+    }
+    assert_eq!(expected_start, 8);
+}
+
+#[test]
+fn parser_compact_hir_match_arms_use_dense_references_and_packed_payloads() {
+    let parsed = parse_resident_source(
+        r#"
+enum MaybePair {
+    Pair(i32, bool),
+    Empty,
+}
+
+fn score(value: MaybePair) -> i32 {
+    return match (value) {
+        Pair(left, flag) -> left,
+        Empty -> 0,
+    };
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "match fixture should parse");
+    let raw_match = parsed
+        .hir_match_arm_count
+        .iter()
+        .position(|count| *count == 2)
+        .expect("fixture should publish one two-arm match");
+    let dense_match = parsed.hir_canonical_raw_to_dense[raw_match];
+    assert_ne!(dense_match, INVALID);
+
+    assert_eq!(parsed.hir_compact_match_arm_owner, vec![dense_match; 2]);
+    assert_eq!(parsed.hir_compact_match_arm_ordinal, vec![0, 1]);
+    assert_eq!(parsed.hir_compact_match_payload_count, vec![2, 0]);
+    assert_eq!(parsed.hir_compact_match_payload_start[0], 0);
+    assert_eq!(parsed.hir_compact_match_payload_start[1], INVALID);
+    assert_eq!(parsed.hir_compact_match_payload_arm, vec![0, 0]);
+    assert_eq!(parsed.hir_compact_match_payload_ordinal, vec![0, 1]);
+    assert_eq!(parsed.hir_compact_match_payload_file_id, vec![0, 0]);
+
+    for dense in parsed
+        .hir_compact_match_arm_pattern
+        .iter()
+        .chain(&parsed.hir_compact_match_arm_result)
+        .chain(&parsed.hir_compact_match_payload_pattern)
+    {
+        assert_ne!(*dense, INVALID, "compact match reference must be dense");
+        assert!(
+            parsed.hir_canonical_raw_to_dense.contains(dense),
+            "compact match reference {dense} must belong to the canonical HIR domain"
+        );
+    }
+}
+
+#[test]
+fn parser_compact_hir_accepts_generic_enum_match_payload_expressions() {
+    let source = r#"
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn wrap<T>(value: T) -> Maybe<T> {
+    return Some(value);
+}
+
+fn unwrap_or<T>(value: Maybe<T>, fallback: T) -> T {
+    return match (value) {
+        Some(inner) -> inner,
+        None -> fallback,
+    };
+}
+
+fn main() {
+    return unwrap_or(wrap(1), 0);
+}
+"#;
+    let parsed = parse_resident_source(source);
+
+    assert!(
+        parsed.ll1.accepted,
+        "generic enum match fixture should parse: pos={} code={} detail={}; semantic kinds={:?}",
+        parsed.ll1.error_pos,
+        parsed.ll1.error_code,
+        parsed.ll1.detail,
+        parser_semantic_token_kinds_for_source(source)
+            .into_iter()
+            .map(TokenKind::from_u32)
+            .collect::<Vec<_>>()
+    );
+    let raw_enum = parsed
+        .hir_item_kind
+        .iter()
+        .position(|kind| *kind == HIR_ITEM_KIND_ENUM)
+        .expect("generic enum should publish its item row");
+    let dense_enum = parsed.hir_canonical_raw_to_dense[raw_enum];
+    assert_ne!(dense_enum, INVALID);
+    assert_eq!(parsed.hir_compact_variant_owner, vec![dense_enum; 2]);
+    assert_eq!(parsed.hir_compact_variant_payload_count, vec![1, 0]);
+}
+
+#[test]
+fn parser_compact_hir_array_elements_use_dense_values_and_owner_spans() {
+    let source = r#"
+fn main() {
+    let seed: i32 = 1;
+    let first: [i32; 3] = [seed, seed + 3, 4];
+    let second: [i32; 1] = [5];
+    return first[1] + second[0];
+}
+"#;
+    let parsed = parse_resident_source(source);
+
+    assert!(parsed.ll1.accepted, "array fixture should parse");
+    let raw_arrays = parsed
+        .hir_array_lit_element_count
+        .iter()
+        .enumerate()
+        .filter_map(|(raw, count)| (*count != 0).then_some((raw, *count)))
+        .collect::<Vec<_>>();
+    assert_eq!(raw_arrays.len(), 2);
+
+    let mut expected_row = 0u32;
+    for (raw_array, expected_count) in raw_arrays {
+        let dense_array = parsed.hir_canonical_raw_to_dense[raw_array];
+        assert_ne!(dense_array, INVALID);
+        assert_eq!(
+            parsed.hir_compact_array_element_start[dense_array as usize],
+            expected_row
+        );
+        assert_eq!(
+            parsed.hir_compact_array_element_count[dense_array as usize],
+            expected_count
+        );
+        for ordinal in 0..expected_count {
+            let row = (expected_row + ordinal) as usize;
+            assert_eq!(parsed.hir_compact_array_element_array[row], dense_array);
+            assert_eq!(parsed.hir_compact_array_element_ordinal[row], ordinal);
+            assert_eq!(parsed.hir_compact_array_element_file_id[row], 0);
+            let value = parsed.hir_compact_array_element_value[row];
+            assert_ne!(value, INVALID);
+            assert!(parsed.hir_canonical_raw_to_dense.contains(&value));
+            let raw_value = parsed.hir_canonical_dense_to_raw[value as usize] as usize;
+            assert!(raw_value < parsed.hir_kind.len());
+            assert_eq!(
+                parsed.hir_canonical_raw_to_dense[raw_value], value,
+                "compact array element value must round-trip through the canonical identity"
+            );
+        }
+        expected_row += expected_count;
+    }
+    assert_eq!(
+        expected_row as usize,
+        parsed.hir_compact_array_element_value.len()
+    );
+}
+
+#[test]
+fn parser_compact_struct_array_element_value_is_literal() {
+    let parsed = parse_resident_source(
+        r#"
+struct Expected { value: i32 }
+struct Actual { value: i32 }
+fn main() {
+    let values: [Expected; 1] = [Actual { value: 7 }];
+    return values[0].value;
+}
+"#,
+    );
+
+    let raw_element = parsed
+        .hir_array_element_parent_lit
+        .iter()
+        .position(|owner| *owner != INVALID)
+        .expect("fixture should publish an array-element row");
+    let raw_literal = parsed
+        .hir_kind
+        .iter()
+        .position(|kind| *kind == HIR_NODE_STRUCT_LITERAL_EXPR)
+        .expect("fixture should publish a struct literal");
+    let dense_array = parsed.hir_canonical_raw_to_dense
+        [parsed.hir_array_element_parent_lit[raw_element] as usize];
+    let row = parsed.hir_compact_array_element_array
+        .iter()
+        .position(|array| *array == dense_array)
+        .expect("fixture should publish a compact array-element row");
+    assert_eq!(
+        parsed.hir_compact_array_element_value[row],
+        parsed.hir_canonical_raw_to_dense[raw_literal],
+        "compact array-element values must identify their canonical semantic value"
+    );
+}
+
+#[test]
+fn parser_array_literal_context_identifies_direct_let_initializer() {
+    let parsed = parse_resident_source(
+        r#"
+fn main() {
+    let values: [i32; 3] = [1, 2, 3];
+    return values[0];
+}
+"#,
+    );
+
+    let array = parsed
+        .hir_array_lit_element_count
+        .iter()
+        .position(|count| *count == 3)
+        .expect("fixture should publish an array literal");
+    let let_node = parsed.hir_array_lit_context_stmt_node[array] as usize;
+    assert!(let_node < parsed.hir_kind.len());
+    assert_eq!(parsed.hir_stmt_record_kind[let_node], 1);
+    let init = parsed.hir_stmt_record_operand1[let_node] as usize;
+    assert!(init < parsed.hir_kind.len());
+    assert_eq!(
+        parsed.hir_canonical_raw_to_dense[parsed.hir_expr_result_root_node[init] as usize],
+        parsed.hir_canonical_raw_to_dense[array],
+        "the let initializer and array context must identify the same compact expression"
+    );
+}
+
+#[test]
+fn parser_compact_hir_strings_use_dense_nodes_and_packed_pool_ranges() {
+    let parsed = parse_resident_source(
+        r#"
+fn first() -> str { return "alpha"; }
+fn second() -> str { return "xy"; }
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "string fixture should parse");
+    assert_eq!(parsed.hir_compact_string_node.len(), 2);
+    assert_eq!(parsed.hir_compact_string_decoded_len, vec![5, 2]);
+    assert_eq!(parsed.hir_compact_string_file_id, vec![0, 0]);
+    assert_eq!(parsed.hir_compact_string_data_offset, vec![0, 5]);
+    for dense in &parsed.hir_compact_string_node {
+        assert_ne!(*dense, INVALID, "compact string owner must be dense");
+        assert!(
+            parsed.hir_canonical_raw_to_dense.contains(dense),
+            "compact string owner {dense} must belong to the canonical HIR domain"
+        );
+    }
+}
+
+#[test]
+fn parser_compact_hir_methods_translate_all_tree_references_to_dense_ids() {
+    let parsed = parse_resident_source(
+        r#"
+struct Boxed { value: i32 }
+
+impl Boxed {
+    pub fn get(self) -> i32 { return self.value; }
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "method fixture should parse");
+    assert_eq!(parsed.hir_compact_method_node.len(), 1);
+    for dense in [
+        parsed.hir_compact_method_node[0],
+        parsed.hir_compact_method_owner[0],
+        parsed.hir_compact_method_impl_node[0],
+        parsed.hir_compact_method_impl_receiver_type[0],
+    ] {
+        assert_ne!(dense, INVALID);
+        assert!(parsed.hir_canonical_raw_to_dense.contains(&dense));
+    }
+    assert_eq!(
+        parsed.hir_compact_method_owner,
+        parsed.hir_compact_method_impl_node
+    );
+    assert_ne!(parsed.hir_compact_method_name_token[0], INVALID);
+    assert_ne!(parsed.hir_compact_method_first_param_token[0], INVALID);
+    assert_eq!(
+        parsed.hir_compact_method_receiver_mode[0],
+        HIR_METHOD_RECEIVER_SELF
+    );
+    assert_eq!(parsed.hir_compact_method_metadata[0] & 0xffff, 1);
+    assert_ne!(
+        (parsed.hir_compact_method_metadata[0] >> 16) & HIR_METHOD_SIGNATURE_INHERENT_IMPL,
+        0
+    );
+}
+
+#[test]
+fn parser_compact_hir_predicates_exclude_nested_bound_arguments_and_use_dense_types() {
+    let parsed = parse_resident_source(
+        r#"
+trait A<T> {}
+trait B {}
+struct S {}
+
+fn keep<T: A<i32> + B>(value: T) -> T where T: B {
+    return value;
+}
+
+impl A<i32> for S {}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "predicate fixture should parse");
+    assert_eq!(
+        parsed.hir_compact_predicate_owner.len(),
+        4,
+        "two inline bounds, one where bound, and one trait impl should be compacted; nested i32 arguments are types, not predicates"
+    );
+    assert_eq!(
+        parsed
+            .hir_compact_predicate_metadata
+            .iter()
+            .map(|metadata| metadata & 0xff)
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1, 2]
+    );
+    assert_eq!(
+        parsed.hir_compact_predicate_subject[0], parsed.hir_compact_predicate_subject[1],
+        "bounds in one inline list must retain the same generic-parameter subject token"
+    );
+
+    for row in 0..4 {
+        let owner = parsed.hir_compact_predicate_owner[row];
+        let bound = parsed.hir_compact_predicate_bound[row];
+        assert_ne!(owner, INVALID);
+        assert_ne!(bound, INVALID);
+        assert!(parsed.hir_canonical_raw_to_dense.contains(&owner));
+        assert!(parsed.hir_canonical_raw_to_dense.contains(&bound));
+        let bound_raw = parsed
+            .hir_canonical_raw_to_dense
+            .iter()
+            .position(|dense| *dense == bound)
+            .expect("predicate bound must have a raw-to-dense source row");
+        assert_eq!(
+            parsed.hir_kind[bound_raw], HIR_NODE_TYPE,
+            "predicate bounds must cross the phase boundary as ordinary dense type HIR"
+        );
+        assert_eq!(parsed.hir_compact_predicate_metadata[row] >> 8, 0);
+    }
+
+    for subject in &parsed.hir_compact_predicate_subject[..3] {
+        assert_ne!(*subject, INVALID);
+        assert!((*subject as usize) < parsed.hir_token_pos.len());
+    }
+    let impl_subject = parsed.hir_compact_predicate_subject[3];
+    assert!(parsed.hir_canonical_raw_to_dense.contains(&impl_subject));
+}
+
+#[test]
 fn parser_hir_generic_type_arguments_link_owner_and_argument_chain() {
     let parsed = parse_resident_source(
         r#"
@@ -6710,6 +7723,10 @@ fn free(value: i32) -> i32 {
     assert_eq!(
         parsed.hir_type_form[receiver_type], HIR_TYPE_FORM_PATH,
         "impl receiver type should publish a concrete path-type record"
+    );
+    assert_eq!(
+        parsed.hir_type_arg_count[receiver_type], 0,
+        "non-generic impl receiver type should not publish type arguments"
     );
     assert_eq!(
         parsed.hir_node_file_id[receiver_type], 0,

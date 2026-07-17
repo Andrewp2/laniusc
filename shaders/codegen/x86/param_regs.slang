@@ -1,8 +1,9 @@
-// x86_64 parameter declaration -> SysV register lookup scatter.
+// x86_64 compact parameter row -> SysV register lookup scatter.
 //
-// The parser owns hir_param_record rows. This pass scatters those sparse
-// parameter rows into declaration-token keyed backend records so function-body
-// planning can look up parameter ABI registers without scanning the whole HIR.
+// The frontend publishes one dense owner/name/type/ordinal row per parameter.
+// This pass projects those compact rows into declaration-token keyed backend
+// records so function-body planning can look up ABI registers without retaining
+// the parser's sparse raw parameter columns.
 
 import gpu_index;
 import status;
@@ -18,10 +19,20 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> method_decl_param_offset;
@@ -31,7 +42,6 @@ StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_param_type;
-StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> visible_type;
@@ -58,11 +68,6 @@ static const uint X86_ERR_ENTRYPOINT_PARAMS = 49u;
 static const uint X86_ERR_PARAM_REG_COUNT = 51u;
 static const uint X86_ERR_ENTRYPOINT_AGG_RETURN = 54u;
 static const uint ENTRYPOINT_MAIN = 1u;
-
-static const uint HIR_PARAM_RECORD_FN = 0u;
-static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
-static const uint HIR_PARAM_RECORD_NODE = 3u;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_TYPE = 5u;
@@ -108,6 +113,21 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+uint active_compact_param_count()
+{
+    return min(compact_param_count[0u], gParams.n_tokens);
 }
 
 bool valid_token(uint token)
@@ -340,6 +360,34 @@ uint decl_semantic_type(uint decl_token, uint fallback_ty)
     return fallback_ty;
 }
 
+uint type_ref_semantic_type(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+        return TY_UNKNOWN;
+
+    uint decl_token = type_instance_decl_token[payload];
+    if (!valid_token(decl_token))
+        return TY_UNKNOWN;
+    if (x86_struct_type_record[decl_token] != 0u)
+        return TY_STRUCT_BASE + decl_token;
+    if (x86_enum_type_record[decl_token] != 0u)
+        return TY_ENUM_BASE + decl_token;
+    return TY_UNKNOWN;
+}
+
+uint method_receiver_semantic_type(uint fn_decl_token, uint decl_token)
+{
+    if (!valid_token(fn_decl_token) || !valid_token(decl_token) ||
+        method_decl_receiver_mode[fn_decl_token] == METHOD_RECEIVER_NONE ||
+        method_decl_param_offset[fn_decl_token] != decl_token)
+        return TY_UNKNOWN;
+    return type_ref_semantic_type(
+        method_decl_receiver_ref_tag[fn_decl_token],
+        method_decl_receiver_ref_payload[fn_decl_token]);
+}
+
 uint decl_aggregate_kind(uint decl_token, uint semantic_ty)
 {
     if (semantic_ty == TY_STRING)
@@ -419,21 +467,29 @@ void publish_param_reg_count_error(uint param_node)
         param_node);
 }
 
-uint function_decl_token(uint fn_node)
+uint function_decl_token(uint fn_dense, uint fn_node)
 {
     if (!valid_node(fn_node))
         return INVALID;
-    uint decl_token = hir_node_decl_token[fn_node];
-    if (!valid_token(decl_token))
-        decl_token = hir_token_pos[fn_node];
+    uint decl_token = valid_dense(fn_dense) && compact_hir_core[fn_dense].kind == HIR_FN
+                          ? compact_hir_payload[fn_dense].b
+                          : hir_token_pos[fn_node];
     return valid_token(decl_token) ? decl_token : INVALID;
 }
 
-uint function_return_width(uint fn_node)
+uint function_return_width(uint fn_dense, uint fn_node)
 {
-    uint fn_decl_token = function_decl_token(fn_node);
+    uint fn_decl_token = function_decl_token(fn_dense, fn_node);
     if (!valid_token(fn_decl_token))
         return function_return_hir_width(fn_node);
+
+    // The type checker publishes one explicit return reference per function
+    // declaration. This is the ABI source of truth shared with call
+    // resolution; call-result tables describe uses and declaration type refs
+    // describe values, so neither may infer a hidden sret parameter here.
+    uint return_tag = fn_return_ref_tag[fn_decl_token];
+    if (return_tag == TYPE_REF_SCALAR || return_tag == TYPE_REF_INSTANCE)
+        return type_ref_width(return_tag, fn_return_ref_payload[fn_decl_token]);
 
     return max(
         max(
@@ -448,7 +504,7 @@ void reject_unsupported_entrypoint_return(uint fn_node)
 {
     if (!fn_is_main_entrypoint(fn_node))
         return;
-    if (function_return_width(fn_node) <= 1u)
+    if (function_return_width(INVALID, fn_node) <= 1u)
         return;
     publish_entrypoint_aggregate_return_error(fn_node);
 }
@@ -544,34 +600,41 @@ void maybe_write_explicit_receiver_param_record(
         aggregate_kind);
 }
 
-void scatter_param_reg(uint param_node)
+void scatter_param_reg(uint row)
 {
-    uint4 record = hir_param_record[param_node];
-    uint fn_node = record[HIR_PARAM_RECORD_FN];
-    uint ordinal = record[HIR_PARAM_RECORD_ORDINAL];
-    uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
-    uint source_param_node = record[HIR_PARAM_RECORD_NODE];
-    if (!valid_node(fn_node) || !valid_node(source_param_node) ||
-        !valid_token(decl_token))
+    if (row >= active_compact_param_count())
+        return;
+
+    HirParam parameter = compact_params[row];
+    uint fn_dense = parameter.owner;
+    uint ordinal = parameter.ordinal;
+    uint decl_token = parameter.name_token;
+    uint fn_decl_token = valid_dense(fn_dense) && compact_hir_core[fn_dense].kind == HIR_FN
+                             ? compact_hir_payload[fn_dense].b
+                             : INVALID;
+    uint fn_node = valid_token(fn_decl_token)
+                       ? x86_decl_node_by_token[fn_decl_token]
+                       : INVALID;
+    uint source_param_node = valid_token(decl_token)
+                                 ? x86_decl_node_by_token[decl_token]
+                                 : INVALID;
+    if (!valid_dense(fn_dense) || compact_hir_core[fn_dense].kind != HIR_FN ||
+        !valid_node(fn_node) || !valid_token(fn_decl_token) || !valid_token(decl_token))
         return;
 
     if (fn_is_main_entrypoint(fn_node))
     {
-        publish_entrypoint_param_error(source_param_node);
+        publish_entrypoint_param_error(valid_node(source_param_node) ? source_param_node : fn_node);
         return;
     }
-
-    uint fn_decl_token = function_decl_token(fn_node);
-    if (!valid_token(fn_decl_token))
-        return;
 
     if (ordinal >= X86_SYSV_MAX_INTEGER_ARGS)
     {
-        publish_param_reg_count_error(source_param_node);
+        publish_param_reg_count_error(valid_node(source_param_node) ? source_param_node : fn_node);
         return;
     }
 
-    uint fn_return_width = function_return_width(fn_node);
+    uint fn_return_width = function_return_width(fn_dense, fn_node);
     maybe_write_explicit_receiver_param_record(
         fn_decl_token,
         fn_node,
@@ -582,7 +645,7 @@ void scatter_param_reg(uint param_node)
     uint arg_reg = sysv_integer_arg_reg(abi_ordinal);
     if (arg_reg == INVALID)
     {
-        publish_param_reg_count_error(source_param_node);
+        publish_param_reg_count_error(valid_node(source_param_node) ? source_param_node : fn_node);
         return;
     }
 
@@ -593,6 +656,9 @@ void scatter_param_reg(uint param_node)
         ordinal,
         TY_UNKNOWN);
     uint semantic_ty = decl_semantic_type(decl_token, param_type);
+    uint receiver_ty = method_receiver_semantic_type(fn_decl_token, decl_token);
+    if (receiver_ty != TY_UNKNOWN)
+        semantic_ty = receiver_ty;
     uint width = decl_is_unsized_array(decl_token)
                      ? 0u
                      : max(

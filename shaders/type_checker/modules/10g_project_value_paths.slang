@@ -26,13 +26,9 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -42,7 +38,6 @@ StructuredBuffer<uint> module_value_path_expr_head;
 StructuredBuffer<uint> module_value_path_associated_method_token;
 
 RWStructuredBuffer<uint> module_value_path_status;
-RWStructuredBuffer<uint> predicate_syntax_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -64,32 +59,9 @@ uint active_path_count()
     return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
-uint active_hir_node_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
-}
-
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
-}
-
-bool predicate_bound_type_path(uint path_i)
-{
-    uint owner = path_owner_hir[path_i];
-    if (!valid_node(owner))
-        return false;
-
-    uint leaf = hir_type_path_leaf_node[owner];
-    if (!valid_node(leaf))
-        return false;
-
-    return valid_node(hir_bound_path_owner_by_leaf[leaf]);
 }
 
 [shader("compute")]
@@ -108,11 +80,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner_token = path_owner_token[path_i];
     if (owner_token >= gParams.n_tokens)
         return;
-    if (predicate_bound_type_path(path_i))
-    {
-        predicate_syntax_token[owner_token] = 1u;
-        return;
-    }
     if (resolved_type_decl[path_i] != INVALID)
         return;
     if (module_type_path_status[owner_token] == PATH_RESOLVE_STATUS_OK)

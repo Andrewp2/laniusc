@@ -22,14 +22,17 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_kind;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> hir_method_owner_node;
 
 RWStructuredBuffer<uint> predicate_owner_node;
 RWStructuredBuffer<uint> predicate_bound_token;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
 RWStructuredBuffer<uint> predicate_status;
 
-StructuredBuffer<uint> predicate_method_contract_owner_node;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_method_contract_status;
@@ -58,6 +61,16 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_hir(uint hir)
+{
+    return hir != INVALID && hir < active_compact_hir_count();
 }
 
 bool valid_token(uint token)
@@ -97,7 +110,7 @@ bool method_contract_lookup_row_valid(uint method_node)
 {
     if (!valid_node(method_node))
         return false;
-    return valid_node(predicate_method_contract_owner_node[method_node]) &&
+    return valid_hir(predicate_method_contract_owner_hir[method_node]) &&
            method_contract_name_id(method_node) != INVALID;
 }
 
@@ -119,7 +132,7 @@ public struct MethodContractFixedKey : IFixedU32RowKey<MethodContractLookupKey>
 
         if (lane == 0u)
             return fixed_key_encode_nullable_u32(
-                predicate_method_contract_owner_node[method_node],
+                predicate_method_contract_owner_hir[method_node],
                 INVALID);
         return fixed_key_encode_nullable_u32(method_contract_name_id(method_node), INVALID);
     }
@@ -156,7 +169,7 @@ QueryRange method_contract_range_for_owner_name(uint owner_node, uint name_id)
 bool method_contract_node_matches_owner_name(uint method_node, uint owner_node, uint name_id)
 {
     return method_contract_lookup_row_valid(method_node) &&
-           predicate_method_contract_owner_node[method_node] == owner_node &&
+           predicate_method_contract_owner_hir[method_node] == owner_node &&
            method_contract_name_id(method_node) == name_id;
 }
 
@@ -175,7 +188,7 @@ bool method_contract_range_matches_owner_name(
     uint name_id,
     QueryRange range)
 {
-    if (!valid_node(owner_node) || name_id == INVALID)
+    if (!valid_hir(owner_node) || name_id == INVALID)
         return false;
     if (range.begin >= range.end)
         return true;
@@ -186,21 +199,21 @@ bool method_contract_range_matches_owner_name(
            method_contract_order_row_matches_owner_name(range.end - 1u, owner_node, name_id);
 }
 
-uint trait_owner_node_for_method(uint method_node)
+uint trait_owner_hir_for_method(uint method_node)
 {
     uint owner = valid_node(method_node)
-        ? predicate_method_contract_owner_node[method_node]
+        ? predicate_method_contract_owner_hir[method_node]
         : INVALID;
-    return valid_node(owner) && hir_item_kind[owner] == HIR_ITEM_KIND_TRAIT
+    return valid_hir(owner) && compact_hir_payload[owner].a == HIR_ITEM_KIND_TRAIT
         ? owner
         : INVALID;
 }
 
 bool duplicate_trait_method_node(uint method_node)
 {
-    uint trait_node = trait_owner_node_for_method(method_node);
+    uint trait_node = trait_owner_hir_for_method(method_node);
     uint name_id = method_contract_name_id(method_node);
-    if (!valid_node(trait_node) || name_id == INVALID)
+    if (!valid_hir(trait_node) || name_id == INVALID)
         return false;
 
     QueryRange range = method_contract_range_for_owner_name(trait_node, name_id);
@@ -247,7 +260,7 @@ void validate_impl_method_contract_record_node(uint node)
 
     uint name_token = method_contract_name_token(node);
     uint diagnostic_token = valid_token(name_token) ? name_token : hir_token_pos[node];
-    uint owner_node = predicate_method_contract_owner_node[node];
+    uint owner_node = hir_method_owner_node[node];
     bool inherent_impl_method =
         valid_node(owner_node) && node_kind[owner_node] == PROD_IMPL_INHERENT;
 

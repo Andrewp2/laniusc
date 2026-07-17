@@ -291,6 +291,8 @@ pub struct GpuParseBenchmarkResult {
     pub parser_feature_flags: u32,
     /// Number of semantic HIR nodes emitted by parser HIR passes.
     pub semantic_hir_count: u32,
+    /// Number of durable token-anchored HIR nodes after grammar scaffolding is removed.
+    pub canonical_hir_count: u32,
 }
 
 /// Live frontend capacity estimate used before recording phases that need

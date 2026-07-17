@@ -17,19 +17,24 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
-StructuredBuffer<uint> hir_struct_field_ordinal;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> x86_struct_field_base_scan_local_prefix;
 StructuredBuffer<uint> x86_struct_field_base_scan_block_prefix;
 
 RWStructuredBuffer<uint> x86_struct_field_stream_width;
 RWStructuredBuffer<uint> x86_struct_field_stream_index_by_node;
+RWStructuredBuffer<uint> x86_struct_field_base_by_hir;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
+static const uint HIR_STRUCT_ITEM = 27u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -38,7 +43,7 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -60,21 +65,23 @@ uint scanned_struct_base(uint struct_node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
-    if (!valid_node(node))
+    uint field_count = min(compact_field_count[0u], gParams.n_hir_nodes);
+    if (node >= field_count)
         return;
 
-    x86_struct_field_stream_index_by_node[node] = INVALID;
-    x86_struct_field_stream_width[node] = 0u;
-
-    uint struct_node = hir_struct_field_parent_struct[node];
-    uint ordinal = hir_struct_field_ordinal[node];
-    if (!valid_node(struct_node) || ordinal == INVALID)
+    HirField field = compact_fields[node];
+    uint struct_node = field.owner;
+    uint ordinal = field.ordinal;
+    if (!valid_node(struct_node) ||
+        compact_hir_core[struct_node].kind != HIR_STRUCT_ITEM ||
+        ordinal == INVALID)
         return;
 
     uint stream_i = scanned_struct_base(struct_node) + ordinal;
     if (stream_i >= active_hir_node_count())
         return;
 
+    x86_struct_field_base_by_hir[struct_node] = stream_i - ordinal;
     x86_struct_field_stream_width[stream_i] = x86_struct_field_width_by_node[node];
     x86_struct_field_stream_index_by_node[node] = stream_i;
 }

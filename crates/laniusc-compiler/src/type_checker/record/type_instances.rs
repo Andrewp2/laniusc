@@ -49,12 +49,11 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     Ok(())
 }
 
-/// Records generic-parameter discovery, owner propagation, scans, and key sorts.
+/// Records predicate-owner propagation, compact generic ingestion, and key sorts.
 pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     type_instances: &TypeInstanceBindGroups,
-    hir_scan_n_blocks: u32,
     hir_active_dispatch_args: &wgpu::Buffer,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
@@ -84,33 +83,6 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         &mut timer,
         encoder,
         "typecheck.type_instances.generic_params.owner.done",
-    );
-
-    record_compute_indirect(
-        encoder,
-        &passes.type_instances_finalize_generic_param_flags,
-        &type_instances.finalize_generic_param_flags,
-        "type_check.resident.type_instances.finalize_generic_param_flags.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.finalize.done",
-    );
-
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        hir_scan_n_blocks,
-        hir_active_dispatch_args,
-        &type_instances.generic_param_scan,
-        "type_check.type_instances.generic_param_record_scan",
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.scan.done",
     );
 
     record_compute_indirect(
@@ -273,7 +245,7 @@ pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
 
     record_compute(
         encoder,
-        &passes.names_radix_dispatch_args,
+        &passes.struct_field_radix_dispatch_args,
         &type_instances.struct_field_key_radix_dispatch,
         "type_check.type_instances.struct_field_key_radix_dispatch_args",
         1,
@@ -288,10 +260,24 @@ pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
         )?;
         record_compute(
             encoder,
-            &passes.names_radix_bucket_prefix,
-            &type_instances.sort_struct_field_key_bucket_prefix[i],
-            "type_check.type_instances.sort_struct_field_keys_bucket_prefix",
+            &passes.struct_field_radix_bucket_local,
+            &type_instances.sort_struct_field_key_bucket_local[i],
+            "type_check.type_instances.sort_struct_field_keys_bucket_local",
+            type_instances.struct_field_radix_prefix_work_items,
+        )?;
+        record_compute(
+            encoder,
+            &passes.struct_field_radix_bucket_chunks,
+            &type_instances.sort_struct_field_key_bucket_chunks[i],
+            "type_check.type_instances.sort_struct_field_keys_bucket_chunks",
             NAME_RADIX_BUCKETS.saturating_mul(256),
+        )?;
+        record_compute(
+            encoder,
+            &passes.struct_field_radix_bucket_apply,
+            &type_instances.sort_struct_field_key_bucket_apply[i],
+            "type_check.type_instances.sort_struct_field_keys_bucket_apply",
+            type_instances.struct_field_radix_prefix_work_items,
         )?;
         record_compute(
             encoder,

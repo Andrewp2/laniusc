@@ -11,8 +11,12 @@ use std::{
 
 static LIVE_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
+static PEAK_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+static PEAK_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static BUFFER_PHASE_SNAPSHOTS: LazyLock<Mutex<Vec<TrackedBufferPhaseSnapshot>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Process-wide logical allocation totals for live buffers created through
 /// Lanius's typed GPU-buffer helpers. Cloning a buffer handle does not count as
@@ -23,11 +27,67 @@ pub struct TrackedBufferAllocationStats {
     pub bytes: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackedBufferPhaseSnapshot {
+    pub phase: Arc<str>,
+    pub stats: TrackedBufferAllocationStats,
+}
+
 pub fn tracked_buffer_allocation_stats() -> TrackedBufferAllocationStats {
     TrackedBufferAllocationStats {
         allocations: LIVE_BUFFER_ALLOCATIONS.load(Ordering::Relaxed),
         bytes: LIVE_BUFFER_BYTES.load(Ordering::Relaxed),
     }
+}
+
+/// Resets the peak window to the allocations that are live at the phase/job boundary.
+///
+/// The compiler daemon executes jobs serially, so one process-wide window captures the
+/// actual high-water mark without adding bookkeeping to every compiler subsystem.
+pub fn reset_tracked_buffer_allocation_peaks() -> TrackedBufferAllocationStats {
+    let current = tracked_buffer_allocation_stats();
+    PEAK_BUFFER_ALLOCATIONS.store(current.allocations, Ordering::Relaxed);
+    PEAK_BUFFER_BYTES.store(current.bytes, Ordering::Relaxed);
+    BUFFER_PHASE_SNAPSHOTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
+    current
+}
+
+/// Captures live tracked storage at a named job/phase boundary.
+pub fn record_tracked_buffer_phase_snapshot(
+    phase: impl Into<Arc<str>>,
+) -> TrackedBufferAllocationStats {
+    let stats = tracked_buffer_allocation_stats();
+    BUFFER_PHASE_SNAPSHOTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(TrackedBufferPhaseSnapshot {
+            phase: phase.into(),
+            stats,
+        });
+    stats
+}
+
+pub fn tracked_buffer_phase_snapshots() -> Vec<TrackedBufferPhaseSnapshot> {
+    BUFFER_PHASE_SNAPSHOTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Returns the high-water mark since the last peak-window reset.
+pub fn tracked_buffer_allocation_peak_stats() -> TrackedBufferAllocationStats {
+    TrackedBufferAllocationStats {
+        allocations: PEAK_BUFFER_ALLOCATIONS.load(Ordering::Relaxed),
+        bytes: PEAK_BUFFER_BYTES.load(Ordering::Relaxed),
+    }
+}
+
+fn record_allocation_peak(allocations: u64, bytes: u64) {
+    PEAK_BUFFER_ALLOCATIONS.fetch_max(allocations, Ordering::Relaxed);
+    PEAK_BUFFER_BYTES.fetch_max(bytes, Ordering::Relaxed);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,8 +126,9 @@ struct BufferAllocationLedger {
 impl BufferAllocationLedger {
     fn new(bytes: u64, label: impl Into<Arc<str>>) -> Arc<Self> {
         let label = label.into();
-        LIVE_BUFFER_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        LIVE_BUFFER_BYTES.fetch_add(bytes, Ordering::Relaxed);
+        let allocations = LIVE_BUFFER_ALLOCATIONS.fetch_add(1, Ordering::Relaxed) + 1;
+        let live_bytes = LIVE_BUFFER_BYTES.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        record_allocation_peak(allocations, live_bytes);
         let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -397,8 +458,29 @@ pub fn storage_rw_uninit_bytes(
 mod tests {
     use super::*;
 
+    static ALLOCATION_LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn allocation_peak_window_starts_at_live_baseline_and_tracks_high_water_mark() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK.lock().unwrap();
+        let baseline = tracked_buffer_allocation_stats();
+        assert_eq!(reset_tracked_buffer_allocation_peaks(), baseline);
+        assert_eq!(tracked_buffer_allocation_peak_stats(), baseline);
+
+        let first = BufferAllocationLedger::new(41, "test.buffer-peak.first");
+        let second = BufferAllocationLedger::new(59, "test.buffer-peak.second");
+        let peak = tracked_buffer_allocation_peak_stats();
+        assert_eq!(peak.allocations, baseline.allocations + 2);
+        assert_eq!(peak.bytes, baseline.bytes + 100);
+
+        drop(second);
+        assert_eq!(tracked_buffer_allocation_peak_stats(), peak);
+        drop(first);
+    }
+
     #[test]
     fn allocation_label_breakdown_tracks_shared_ledger_lifetime() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK.lock().unwrap();
         const LABEL: &str = "test.buffer-ledger.unique-label";
         assert!(
             tracked_buffer_allocation_stats_by_label()
@@ -427,5 +509,21 @@ mod tests {
                 .iter()
                 .all(|row| row.label.as_ref() != LABEL)
         );
+    }
+
+    #[test]
+    fn phase_snapshots_are_named_and_reset_with_the_peak_window() {
+        let baseline = reset_tracked_buffer_allocation_peaks();
+        assert!(tracked_buffer_phase_snapshots().is_empty());
+        assert_eq!(record_tracked_buffer_phase_snapshot("parse"), baseline);
+        assert_eq!(
+            tracked_buffer_phase_snapshots(),
+            vec![TrackedBufferPhaseSnapshot {
+                phase: Arc::from("parse"),
+                stats: baseline,
+            }]
+        );
+        reset_tracked_buffer_allocation_peaks();
+        assert!(tracked_buffer_phase_snapshots().is_empty());
     }
 }

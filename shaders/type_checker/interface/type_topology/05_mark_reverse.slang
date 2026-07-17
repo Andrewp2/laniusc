@@ -3,8 +3,9 @@
 
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> interface_type_root_owner;
 StructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_type_reverse_flag;
@@ -23,8 +24,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (reverse_row >= gParams.hir_capacity)
         return;
     uint node = gParams.hir_capacity - 1u - reverse_row;
-    uint active = min(hir_status[5u], gParams.hir_capacity);
-    uint root = node < active && hir_kind[node] == HIR_TYPE
+    uint active = min(compact_hir_count[0u], gParams.hir_capacity);
+    uint root = node < active && compact_hir_core[node].kind == HIR_TYPE
                     ? interface_type_root_owner[node]
                     : INVALID;
     interface_type_reverse_flag[reverse_row] =

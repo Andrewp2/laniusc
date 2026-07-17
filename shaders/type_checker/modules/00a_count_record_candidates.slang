@@ -14,25 +14,20 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_item_namespace;
-StructuredBuffer<uint> hir_item_path_start;
-StructuredBuffer<uint> hir_item_path_end;
-StructuredBuffer<uint> hir_item_import_target_kind;
-StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<uint> compact_variant_count;
 RWStructuredBuffer<uint> candidate_counts;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_PARAM = 4u;
 groupshared uint candidate_prefix[WG_SIZE];
 
 uint linear_thread_id(uint3 dtid)
@@ -42,7 +37,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]
@@ -54,16 +49,12 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     if (node < active_hir_count())
     {
         ModuleRecordCandidate row;
-        row.candidate_node_kind = node_kind[node];
-        row.candidate_hir_kind = hir_kind[node];
-        row.candidate_token_pos = hir_token_pos[node];
-        row.candidate_token_end = hir_token_end[node];
-        row.candidate_item_kind = hir_item_kind[node];
-        row.candidate_item_name_token = hir_item_name_token[node];
-        row.candidate_item_namespace = hir_item_namespace[node];
-        row.candidate_item_path_start = hir_item_path_start[node];
-        row.candidate_item_path_end = hir_item_path_end[node];
-        row.candidate_import_target_kind = hir_item_import_target_kind[node];
+        HirCore core = compact_hir_core[node];
+        HirPayload payload = compact_hir_payload[node];
+        row.hir_kind = core.kind;
+        row.item_kind = payload.a;
+        row.name_token = payload.b;
+        row.namespace_kind = payload.c;
         flag = module_record_candidate_bits(row, gParams.n_tokens) != 0u ? 1u : 0u;
     }
     uint inclusive = prefix_scan_inclusive<uint, PrefixScanU32Add, WG_SIZE>(
@@ -71,21 +62,19 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     if (ltid.x + 1u == WG_SIZE && inclusive != 0u)
         atomic_u32_add(candidate_counts, 0u, inclusive);
 
-    uint param_flag = node < active_hir_count() && hir_kind[node] == HIR_PARAM &&
-                              hir_param_record[node].x != INVALID
-                          ? 1u
-                          : 0u;
-    inclusive = prefix_scan_inclusive<uint, PrefixScanU32Add, WG_SIZE>(
-        ltid.x, param_flag, candidate_prefix);
-    if (ltid.x + 1u == WG_SIZE && inclusive != 0u)
-        atomic_u32_add(candidate_counts, 1u, inclusive);
-
-    uint arg_flag = node < active_hir_count() &&
-                            hir_call_arg_parent_call[node] != INVALID
-                        ? 1u
-                        : 0u;
-    inclusive = prefix_scan_inclusive<uint, PrefixScanU32Add, WG_SIZE>(
-        ltid.x, arg_flag, candidate_prefix);
-    if (ltid.x + 1u == WG_SIZE && inclusive != 0u)
-        atomic_u32_add(candidate_counts, 2u, inclusive);
+    if (node == 0u)
+    {
+        // Paths are already a compact family. Add their exact row count to the
+        // semantic item count so every downstream record family fits without
+        // falling back to raw-tree capacity.
+        atomic_u32_add(candidate_counts, 0u, compact_path_count[0u]);
+        // Variants are a first-class compact family and each becomes exactly
+        // one value-namespace declaration record.
+        atomic_u32_add(candidate_counts, 0u, compact_variant_count[0u]);
+        // Imported callees can contribute at most one parameter row per local
+        // call-argument row. Reserve that semantic upper bound without sizing
+        // the relation by the raw parse tree.
+        candidate_counts[1u] = compact_param_count[0u] + compact_call_arg_count[0u];
+        candidate_counts[2u] = compact_call_arg_count[0u];
+    }
 }

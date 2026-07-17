@@ -42,7 +42,7 @@ StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
 StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> predicate_method_contract_owner_node;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_key_order_in;
 StructuredBuffer<uint> radix_bucket_base;
@@ -156,7 +156,7 @@ bool valid_method_contract(uint node)
 {
     if (!valid_node(node))
         return false;
-    return valid_node(predicate_method_contract_owner_node[node]) &&
+    return valid_node(predicate_method_contract_owner_hir[node]) &&
            predicate_method_contract_name_id[node] != INVALID;
 }
 
@@ -223,7 +223,7 @@ uint method_contract_key_lane(uint node, uint lane)
         return 0u;
 
     if (lane == 0u)
-        return encode_key_value(predicate_method_contract_owner_node[node], INVALID);
+        return encode_key_value(predicate_method_contract_owner_hir[node], INVALID);
     if (lane == 1u)
         return encode_key_value(predicate_method_contract_name_id[node], INVALID);
     return encode_key_value(node, INVALID);

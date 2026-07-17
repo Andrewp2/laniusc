@@ -65,7 +65,6 @@ pub(super) struct WasmWorkingBuffers {
     pub wasm_agg_scan_block_sum_buf: LaniusBuffer<u32>,
     pub wasm_agg_scan_prefix_a_buf: LaniusBuffer<u32>,
     pub wasm_agg_scan_prefix_b_buf: LaniusBuffer<u32>,
-    pub hir_enum_match_record_buf: LaniusBuffer<u32>,
     pub wasm_const_value_record_buf: LaniusBuffer<u32>,
     pub out_buf: LaniusBuffer<u32>,
     pub packed_out_buf: LaniusBuffer<u32>,
@@ -480,12 +479,6 @@ pub(super) fn create_wasm_working_buffers(
         func_scan_blocks as usize,
         wgpu::BufferUsages::empty(),
     );
-    let hir_enum_match_record_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.hir_enum_match_record",
-        hir_node_capacity as usize * 4,
-        wgpu::BufferUsages::empty(),
-    );
     let wasm_const_value_record_buf = storage_u32_rw(
         device,
         "codegen.wasm.const_value_record",
@@ -578,7 +571,6 @@ pub(super) fn create_wasm_working_buffers(
         wasm_agg_scan_block_sum_buf,
         wasm_agg_scan_prefix_a_buf,
         wasm_agg_scan_prefix_b_buf,
-        hir_enum_match_record_buf,
         wasm_const_value_record_buf,
         out_buf,
         packed_out_buf,

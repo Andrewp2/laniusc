@@ -272,19 +272,19 @@ def build_commands(repo: Path, out: Path) -> dict[str, dict[str, object]]:
     bin_dir = Path("target") / "lanius-benchmark-artifacts" / WORKLOAD["name"]
     return {
         "rust": {
-            "compile": ["rustc", "-O", str(src / "grid_checksum.rs"), "-o", str(bin_dir / "grid_checksum_rust")],
+            "compile": ["rustc", "-O", "-C", "debuginfo=0", "-C", "strip=debuginfo", str(src / "grid_checksum.rs"), "-o", str(bin_dir / "grid_checksum_rust")],
             "run": [str(bin_dir / "grid_checksum_rust")],
         },
         "c": {
-            "compile": ["gcc", "-O2", str(src / "grid_checksum.c"), "-o", str(bin_dir / "grid_checksum_c")],
+            "compile": ["gcc", "-O2", "-g0", str(src / "grid_checksum.c"), "-o", str(bin_dir / "grid_checksum_c")],
             "run": [str(bin_dir / "grid_checksum_c")],
         },
         "cpp": {
-            "compile": ["g++", "-O2", str(src / "grid_checksum.cpp"), "-o", str(bin_dir / "grid_checksum_cpp")],
+            "compile": ["g++", "-O2", "-g0", str(src / "grid_checksum.cpp"), "-o", str(bin_dir / "grid_checksum_cpp")],
             "run": [str(bin_dir / "grid_checksum_cpp")],
         },
         "zig": {
-            "compile": ["zig", "build-exe", "-lc", "-O", "ReleaseFast", str(src / "grid_checksum.zig"), "-femit-bin=" + str(bin_dir / "grid_checksum_zig")],
+            "compile": ["zig", "build-exe", "-lc", "-O", "ReleaseFast", "-fstrip", str(src / "grid_checksum.zig"), "-femit-bin=" + str(bin_dir / "grid_checksum_zig")],
             "run": [str(bin_dir / "grid_checksum_zig")],
         },
         "lanius": {

@@ -4,6 +4,8 @@ pub mod array;
 pub mod binary;
 /// Call expression and argument record passes.
 pub mod call;
+/// Final Pareas-style compact HIR phase boundary.
+pub mod canonical;
 /// Context relation passes for nearest statement, block, and control owners.
 pub mod context;
 /// Enum, variant, and match-related HIR passes.

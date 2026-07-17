@@ -10,16 +10,19 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_type_alias_target_node;
-StructuredBuffer<uint> hir_type_arg_count;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirRange { uint start; uint count; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_type_alias_target;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_type_decl;
-StructuredBuffer<uint> type_decl_generic_param_count_by_node;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 RWStructuredBuffer<uint> alias_forwarding;
 RWStructuredBuffer<uint> alias_forwarding_target_decl;
 RWStructuredBuffer<uint> alias_decl_by_target_hir;
@@ -37,7 +40,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_decl_count()
@@ -52,6 +55,16 @@ bool alias_decl(uint decl_i)
            decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE;
 }
 
+uint alias_generic_param_count(uint alias_node)
+{
+    uint owner_token = alias_node < active_hir_count()
+        ? compact_hir_payload[alias_node].b
+        : INVALID;
+    return owner_token < gParams.n_tokens
+        ? type_decl_generic_param_count_by_owner_token[owner_token]
+        : 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -61,11 +74,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint alias_node = decl_hir_node[decl_i];
-    if (alias_node >= active_hir_count() ||
-        type_decl_generic_param_count_by_node[alias_node] == 0u)
+    if (alias_node >= active_hir_count() || alias_generic_param_count(alias_node) == 0u)
         return;
 
-    uint target_node = hir_type_alias_target_node[alias_node];
+    uint target_node = compact_type_alias_target[alias_node];
     uint path_i = target_node < active_hir_count()
         ? path_id_by_owner_hir[target_node]
         : INVALID;
@@ -74,10 +86,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint target_alias_node = decl_hir_node[target_decl];
-    uint target_arity = target_alias_node < active_hir_count()
-        ? type_decl_generic_param_count_by_node[target_alias_node]
-        : 0u;
-    if (target_arity == 0u || hir_type_arg_count[target_node] != target_arity)
+    uint target_arity = alias_generic_param_count(target_alias_node);
+    if (target_arity == 0u || compact_type_arg_ranges[target_node].count != target_arity)
         return;
 
     alias_forwarding[decl_i] = 1u;

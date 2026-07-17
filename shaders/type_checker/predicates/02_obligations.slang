@@ -28,10 +28,15 @@ struct ObligationParams
 ConstantBuffer<Params> gParams;
 ConstantBuffer<ObligationParams> gObligations;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_expr_record;
@@ -64,7 +69,7 @@ StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
@@ -201,6 +206,18 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint canonical_function_token(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense == INVALID || dense >= count)
+        return INVALID;
+    uint token = compact_hir_payload[dense].b;
+    return valid_token(token) ? token : INVALID;
 }
 
 uint first_named_bound_arg_token_after_bound(uint node)
@@ -459,6 +476,14 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
+uint generic_owner_token(uint decl_node)
+{
+    if (!valid_node(decl_node))
+        return INVALID;
+    uint name_token = hir_item_name_token[decl_node];
+    return valid_token(name_token) ? name_token : canonical_function_token(decl_node);
+}
+
 public struct GenericParamLookupKey
 {
     uint owner;
@@ -470,7 +495,7 @@ int compare_generic_param_key(uint row, GenericParamLookupKey key)
     if (row >= active_generic_param_count())
         return 1;
 
-    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_node[row], key.owner);
+    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_token[row], key.owner);
     if (owner_cmp != 0)
         return owner_cmp;
     return fixed_u32_lane_compare(generic_param_name_id[row], key.name_id);
@@ -489,7 +514,7 @@ public struct GenericParamKeyCompare : IRowQueryCompare<GenericParamLookupKey>
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
-           generic_param_owner_node[row] == owner &&
+           generic_param_owner_token[row] == owner &&
            generic_param_name_id[row] == name_id &&
            generic_param_kind[row] == kind;
 }
@@ -499,19 +524,23 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
     if (!valid_node(decl_node) || !valid_token(name_token))
         return INVALID;
 
+    uint owner_token = generic_owner_token(decl_node);
+    if (!valid_token(owner_token))
+        return INVALID;
+
     uint name_id = name_id_by_token[name_token];
     if (name_id == INVALID)
         return INVALID;
 
     uint count = active_generic_param_count();
     GenericParamLookupKey key;
-    key.owner = decl_node;
+    key.owner = owner_token;
     key.name_id = name_id;
     uint lo = lower_bound_query<GenericParamLookupKey, GenericParamKeyCompare>(count, key);
     if (lo >= count)
         return INVALID;
     uint row = generic_param_key_order[lo];
-    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+    return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
 uint generic_param_slot_for_name(uint decl_node, uint name_token)
@@ -669,7 +698,7 @@ uint actual_type_for_generic_slot_with_detail(
     if (!valid_node(call_node) || !valid_node(fn_node) || slot == INVALID)
         return TY_UNKNOWN;
 
-    uint fn_token = hir_token_pos[fn_node];
+    uint fn_token = canonical_function_token(fn_node);
     if (!valid_token(fn_token))
         return TY_UNKNOWN;
 
@@ -1181,7 +1210,7 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
     if (!valid_token(fn_token))
         return;
 
-    if (!valid_node(fn_node) || hir_token_pos[fn_node] != fn_token)
+    if (!valid_node(fn_node) || canonical_function_token(fn_node) != fn_token)
         return;
 
     uint subject_token = predicate_subject_token[pred];
@@ -1281,7 +1310,7 @@ public struct OwnerFixedKey : IFixedU32RowKey<OwnerLookupKey>
         if (!valid_node(owner) || owner == pred)
             return 0u;
 
-        return fixed_key_encode_nullable_u32(hir_token_pos[owner], INVALID);
+        return fixed_key_encode_nullable_u32(canonical_function_token(owner), INVALID);
     }
 
     public static uint key_lane(OwnerLookupKey key, uint lane)
@@ -1313,8 +1342,7 @@ bool owner_lookup_row_matches_key(uint row, uint owner_token)
     uint owner = predicate_owner_node[pred];
     return valid_node(owner) &&
            owner != pred &&
-           valid_token(hir_token_pos[owner]) &&
-           hir_token_pos[owner] == owner_token;
+           canonical_function_token(owner) == owner_token;
 }
 
 bool owner_lookup_range_matches_key(QueryRange range, uint owner_token)

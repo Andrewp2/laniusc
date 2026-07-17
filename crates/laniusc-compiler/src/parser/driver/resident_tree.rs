@@ -57,6 +57,17 @@ impl U32Readback {
         words.resize(count, fill);
         Ok(words)
     }
+
+    fn read_ranges(&self, count: usize) -> Result<(Vec<u32>, Vec<u32>)> {
+        let words = self.read_words(count.saturating_mul(2))?;
+        let mut starts = Vec::with_capacity(count);
+        let mut counts = Vec::with_capacity(count);
+        for range in words.chunks_exact(2) {
+            starts.push(range[0]);
+            counts.push(range[1]);
+        }
+        Ok((starts, counts))
+    }
 }
 
 struct ResidentTreeReadbacks {
@@ -161,6 +172,43 @@ struct ResidentTreeReadbacks {
     hir_struct_lit_field_parent_lit: U32Readback,
     hir_struct_lit_field_value_node: U32Readback,
     hir_struct_lit_field_next: U32Readback,
+    hir_canonical_count: U32Readback,
+    hir_canonical_dense_to_raw: U32Readback,
+    hir_canonical_raw_to_dense: U32Readback,
+    hir_param_ranges: U32Readback,
+    hir_type_arg_ranges: U32Readback,
+    hir_generic_param_count: U32Readback,
+    hir_generic_param_rows: U32Readback,
+    hir_generic_param_ranges: U32Readback,
+    hir_path_count: U32Readback,
+    hir_path_rows: U32Readback,
+    hir_path_segment_count: U32Readback,
+    hir_path_segment_rows: U32Readback,
+    hir_field_count: U32Readback,
+    hir_field_rows: U32Readback,
+    hir_compact_variant_count: U32Readback,
+    hir_compact_variant_rows: U32Readback,
+    hir_compact_variant_payload_start: U32Readback,
+    hir_compact_variant_payload_count: U32Readback,
+    hir_compact_variant_payload_row_count: U32Readback,
+    hir_compact_variant_payload_rows: U32Readback,
+    hir_compact_match_arm_count: U32Readback,
+    hir_compact_match_arm_rows: U32Readback,
+    hir_compact_match_payload_start: U32Readback,
+    hir_compact_match_payload_count: U32Readback,
+    hir_compact_match_payload_row_count: U32Readback,
+    hir_compact_match_payload_rows: U32Readback,
+    hir_compact_array_element_start: U32Readback,
+    hir_compact_array_element_count: U32Readback,
+    hir_compact_array_element_row_count: U32Readback,
+    hir_compact_array_element_rows: U32Readback,
+    hir_compact_string_count: U32Readback,
+    hir_compact_string_rows: U32Readback,
+    hir_compact_method_count: U32Readback,
+    hir_compact_method_cores: U32Readback,
+    hir_compact_method_signatures: U32Readback,
+    hir_compact_predicate_count: U32Readback,
+    hir_compact_predicate_rows: U32Readback,
 }
 
 impl ResidentTreeReadbacks {
@@ -671,6 +719,191 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_struct_lit_field_next",
                 bufs.hir_struct_lit_field_next.byte_size,
             ),
+            hir_canonical_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_canonical_count",
+                bufs.hir_canonical_count.byte_size,
+            ),
+            hir_canonical_dense_to_raw: rb(
+                device,
+                "rb.parser.resident_tree.hir_canonical_dense_to_raw",
+                bufs.hir_canonical_dense_to_raw.byte_size,
+            ),
+            hir_canonical_raw_to_dense: rb(
+                device,
+                "rb.parser.resident_tree.hir_canonical_raw_to_dense",
+                bufs.hir_canonical_raw_to_dense.byte_size,
+            ),
+            hir_param_ranges: rb(
+                device,
+                "rb.parser.resident_tree.hir_param_ranges",
+                bufs.hir_param_ranges.byte_size,
+            ),
+            hir_type_arg_ranges: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_arg_ranges",
+                bufs.hir_type_arg_ranges.byte_size,
+            ),
+            hir_generic_param_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_generic_param_count",
+                bufs.hir_generic_param_table_count.byte_size,
+            ),
+            hir_generic_param_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_generic_param_rows",
+                bufs.hir_generic_param_rows.byte_size,
+            ),
+            hir_generic_param_ranges: rb(
+                device,
+                "rb.parser.resident_tree.hir_generic_param_ranges",
+                bufs.hir_generic_param_ranges.byte_size,
+            ),
+            hir_path_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_path_count",
+                bufs.hir_path_table_count.byte_size,
+            ),
+            hir_path_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_path_rows",
+                bufs.hir_path_rows.byte_size,
+            ),
+            hir_path_segment_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_path_segment_count",
+                bufs.hir_path_segment_table_count.byte_size,
+            ),
+            hir_path_segment_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_path_segment_rows",
+                bufs.hir_path_segment_rows.byte_size,
+            ),
+            hir_field_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_field_count",
+                bufs.hir_field_table_count.byte_size,
+            ),
+            hir_field_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_field_rows",
+                bufs.hir_field_rows.byte_size,
+            ),
+            hir_compact_variant_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_count",
+                bufs.hir_variant_table_count.byte_size,
+            ),
+            hir_compact_variant_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_rows",
+                bufs.hir_variant_rows.byte_size,
+            ),
+            hir_compact_variant_payload_start: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_payload_start",
+                bufs.hir_variant_compact_payload_start.byte_size,
+            ),
+            hir_compact_variant_payload_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_payload_count",
+                bufs.hir_variant_compact_payload_count.byte_size,
+            ),
+            hir_compact_variant_payload_row_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_payload_row_count",
+                bufs.hir_variant_payload_table_count.byte_size,
+            ),
+            hir_compact_variant_payload_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_variant_payload_rows",
+                bufs.hir_variant_payload_rows.byte_size,
+            ),
+            hir_compact_match_arm_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_arm_count",
+                bufs.hir_match_arm_table_count.byte_size,
+            ),
+            hir_compact_match_arm_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_arm_rows",
+                bufs.hir_match_arm_rows.byte_size,
+            ),
+            hir_compact_match_payload_start: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_payload_start",
+                bufs.hir_match_compact_payload_start.byte_size,
+            ),
+            hir_compact_match_payload_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_payload_count",
+                bufs.hir_match_compact_payload_count.byte_size,
+            ),
+            hir_compact_match_payload_row_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_payload_row_count",
+                bufs.hir_match_payload_table_count.byte_size,
+            ),
+            hir_compact_match_payload_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_match_payload_rows",
+                bufs.hir_match_payload_rows.byte_size,
+            ),
+            hir_compact_array_element_start: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_array_element_start",
+                bufs.hir_array_compact_element_start.byte_size,
+            ),
+            hir_compact_array_element_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_array_element_count",
+                bufs.hir_array_compact_element_count.byte_size,
+            ),
+            hir_compact_array_element_row_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_array_element_row_count",
+                bufs.hir_array_element_table_count.byte_size,
+            ),
+            hir_compact_array_element_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_array_element_rows",
+                bufs.hir_array_element_rows.byte_size,
+            ),
+            hir_compact_string_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_string_count",
+                bufs.hir_string_count.byte_size,
+            ),
+            hir_compact_string_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_string_rows",
+                bufs.hir_canonical_string_rows.byte_size,
+            ),
+            hir_compact_method_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_method_count",
+                bufs.hir_method_table_count.byte_size,
+            ),
+            hir_compact_method_cores: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_method_cores",
+                bufs.hir_method_core_rows.byte_size,
+            ),
+            hir_compact_method_signatures: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_method_signatures",
+                bufs.hir_method_signature_rows.byte_size,
+            ),
+            hir_compact_predicate_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_predicate_count",
+                bufs.hir_predicate_table_count.byte_size,
+            ),
+            hir_compact_predicate_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_predicate_rows",
+                bufs.hir_predicate_rows.byte_size,
+            ),
         }
     }
 
@@ -1165,6 +1398,191 @@ impl ResidentTreeReadbacks {
             &bufs.hir_struct_lit_field_next,
             bufs.hir_struct_lit_field_next.byte_size as u64,
         );
+        self.hir_canonical_count.copy_from(
+            encoder,
+            &bufs.hir_canonical_count,
+            bufs.hir_canonical_count.byte_size as u64,
+        );
+        self.hir_canonical_dense_to_raw.copy_from(
+            encoder,
+            &bufs.hir_canonical_dense_to_raw,
+            bufs.hir_canonical_dense_to_raw.byte_size as u64,
+        );
+        self.hir_canonical_raw_to_dense.copy_from(
+            encoder,
+            &bufs.hir_canonical_raw_to_dense,
+            bufs.hir_canonical_raw_to_dense.byte_size as u64,
+        );
+        self.hir_param_ranges.copy_from(
+            encoder,
+            &bufs.hir_param_ranges,
+            bufs.hir_param_ranges.byte_size as u64,
+        );
+        self.hir_type_arg_ranges.copy_from(
+            encoder,
+            &bufs.hir_type_arg_ranges,
+            bufs.hir_type_arg_ranges.byte_size as u64,
+        );
+        self.hir_generic_param_count.copy_from(
+            encoder,
+            &bufs.hir_generic_param_table_count,
+            bufs.hir_generic_param_table_count.byte_size as u64,
+        );
+        self.hir_generic_param_rows.copy_from(
+            encoder,
+            &bufs.hir_generic_param_rows,
+            bufs.hir_generic_param_rows.byte_size as u64,
+        );
+        self.hir_generic_param_ranges.copy_from(
+            encoder,
+            &bufs.hir_generic_param_ranges,
+            bufs.hir_generic_param_ranges.byte_size as u64,
+        );
+        self.hir_path_count.copy_from(
+            encoder,
+            &bufs.hir_path_table_count,
+            bufs.hir_path_table_count.byte_size as u64,
+        );
+        self.hir_path_rows.copy_from(
+            encoder,
+            &bufs.hir_path_rows,
+            bufs.hir_path_rows.byte_size as u64,
+        );
+        self.hir_path_segment_count.copy_from(
+            encoder,
+            &bufs.hir_path_segment_table_count,
+            bufs.hir_path_segment_table_count.byte_size as u64,
+        );
+        self.hir_path_segment_rows.copy_from(
+            encoder,
+            &bufs.hir_path_segment_rows,
+            bufs.hir_path_segment_rows.byte_size as u64,
+        );
+        self.hir_field_count.copy_from(
+            encoder,
+            &bufs.hir_field_table_count,
+            bufs.hir_field_table_count.byte_size as u64,
+        );
+        self.hir_field_rows.copy_from(
+            encoder,
+            &bufs.hir_field_rows,
+            bufs.hir_field_rows.byte_size as u64,
+        );
+        self.hir_compact_variant_count.copy_from(
+            encoder,
+            &bufs.hir_variant_table_count,
+            bufs.hir_variant_table_count.byte_size as u64,
+        );
+        self.hir_compact_variant_rows.copy_from(
+            encoder,
+            &bufs.hir_variant_rows,
+            bufs.hir_variant_rows.byte_size as u64,
+        );
+        self.hir_compact_variant_payload_start.copy_from(
+            encoder,
+            &bufs.hir_variant_compact_payload_start,
+            bufs.hir_variant_compact_payload_start.byte_size as u64,
+        );
+        self.hir_compact_variant_payload_count.copy_from(
+            encoder,
+            &bufs.hir_variant_compact_payload_count,
+            bufs.hir_variant_compact_payload_count.byte_size as u64,
+        );
+        self.hir_compact_variant_payload_row_count.copy_from(
+            encoder,
+            &bufs.hir_variant_payload_table_count,
+            bufs.hir_variant_payload_table_count.byte_size as u64,
+        );
+        self.hir_compact_variant_payload_rows.copy_from(
+            encoder,
+            &bufs.hir_variant_payload_rows,
+            bufs.hir_variant_payload_rows.byte_size as u64,
+        );
+        self.hir_compact_match_arm_count.copy_from(
+            encoder,
+            &bufs.hir_match_arm_table_count,
+            bufs.hir_match_arm_table_count.byte_size as u64,
+        );
+        self.hir_compact_match_arm_rows.copy_from(
+            encoder,
+            &bufs.hir_match_arm_rows,
+            bufs.hir_match_arm_rows.byte_size as u64,
+        );
+        self.hir_compact_match_payload_start.copy_from(
+            encoder,
+            &bufs.hir_match_compact_payload_start,
+            bufs.hir_match_compact_payload_start.byte_size as u64,
+        );
+        self.hir_compact_match_payload_count.copy_from(
+            encoder,
+            &bufs.hir_match_compact_payload_count,
+            bufs.hir_match_compact_payload_count.byte_size as u64,
+        );
+        self.hir_compact_match_payload_row_count.copy_from(
+            encoder,
+            &bufs.hir_match_payload_table_count,
+            bufs.hir_match_payload_table_count.byte_size as u64,
+        );
+        self.hir_compact_match_payload_rows.copy_from(
+            encoder,
+            &bufs.hir_match_payload_rows,
+            bufs.hir_match_payload_rows.byte_size as u64,
+        );
+        self.hir_compact_array_element_start.copy_from(
+            encoder,
+            &bufs.hir_array_compact_element_start,
+            bufs.hir_array_compact_element_start.byte_size as u64,
+        );
+        self.hir_compact_array_element_count.copy_from(
+            encoder,
+            &bufs.hir_array_compact_element_count,
+            bufs.hir_array_compact_element_count.byte_size as u64,
+        );
+        self.hir_compact_array_element_row_count.copy_from(
+            encoder,
+            &bufs.hir_array_element_table_count,
+            bufs.hir_array_element_table_count.byte_size as u64,
+        );
+        self.hir_compact_array_element_rows.copy_from(
+            encoder,
+            &bufs.hir_array_element_rows,
+            bufs.hir_array_element_rows.byte_size as u64,
+        );
+        self.hir_compact_string_count.copy_from(
+            encoder,
+            &bufs.hir_string_count,
+            bufs.hir_string_count.byte_size as u64,
+        );
+        self.hir_compact_string_rows.copy_from(
+            encoder,
+            &bufs.hir_canonical_string_rows,
+            bufs.hir_canonical_string_rows.byte_size as u64,
+        );
+        self.hir_compact_method_count.copy_from(
+            encoder,
+            &bufs.hir_method_table_count,
+            bufs.hir_method_table_count.byte_size as u64,
+        );
+        self.hir_compact_method_cores.copy_from(
+            encoder,
+            &bufs.hir_method_core_rows,
+            bufs.hir_method_core_rows.byte_size as u64,
+        );
+        self.hir_compact_method_signatures.copy_from(
+            encoder,
+            &bufs.hir_method_signature_rows,
+            bufs.hir_method_signature_rows.byte_size as u64,
+        );
+        self.hir_compact_predicate_count.copy_from(
+            encoder,
+            &bufs.hir_predicate_table_count,
+            bufs.hir_predicate_table_count.byte_size as u64,
+        );
+        self.hir_compact_predicate_rows.copy_from(
+            encoder,
+            &bufs.hir_predicate_rows,
+            bufs.hir_predicate_rows.byte_size as u64,
+        );
     }
 
     fn map_all(&self) {
@@ -1269,6 +1687,43 @@ impl ResidentTreeReadbacks {
         self.hir_struct_lit_field_parent_lit.map();
         self.hir_struct_lit_field_value_node.map();
         self.hir_struct_lit_field_next.map();
+        self.hir_canonical_count.map();
+        self.hir_canonical_dense_to_raw.map();
+        self.hir_canonical_raw_to_dense.map();
+        self.hir_param_ranges.map();
+        self.hir_type_arg_ranges.map();
+        self.hir_generic_param_count.map();
+        self.hir_generic_param_rows.map();
+        self.hir_generic_param_ranges.map();
+        self.hir_path_count.map();
+        self.hir_path_rows.map();
+        self.hir_path_segment_count.map();
+        self.hir_path_segment_rows.map();
+        self.hir_field_count.map();
+        self.hir_field_rows.map();
+        self.hir_compact_variant_count.map();
+        self.hir_compact_variant_rows.map();
+        self.hir_compact_variant_payload_start.map();
+        self.hir_compact_variant_payload_count.map();
+        self.hir_compact_variant_payload_row_count.map();
+        self.hir_compact_variant_payload_rows.map();
+        self.hir_compact_match_arm_count.map();
+        self.hir_compact_match_arm_rows.map();
+        self.hir_compact_match_payload_start.map();
+        self.hir_compact_match_payload_count.map();
+        self.hir_compact_match_payload_row_count.map();
+        self.hir_compact_match_payload_rows.map();
+        self.hir_compact_array_element_start.map();
+        self.hir_compact_array_element_count.map();
+        self.hir_compact_array_element_row_count.map();
+        self.hir_compact_array_element_rows.map();
+        self.hir_compact_string_count.map();
+        self.hir_compact_string_rows.map();
+        self.hir_compact_method_count.map();
+        self.hir_compact_method_cores.map();
+        self.hir_compact_method_signatures.map();
+        self.hir_compact_predicate_count.map();
+        self.hir_compact_predicate_rows.map();
     }
 
     fn decode(&self, bufs: &ParserBuffers) -> Result<ResidentParseResult> {
@@ -1281,6 +1736,15 @@ impl ResidentTreeReadbacks {
 
         let hir_call_arg_parent_call = self.hir_call_arg_parent_call.read_words(tree_len)?;
         let hir_call_arg_ordinal = self.hir_call_arg_ordinal.read_words(tree_len)?;
+
+        let canonical_capacity = bufs.hir_canonical_capacity as usize;
+        let (hir_param_range_start, hir_param_range_count) =
+            self.hir_param_ranges.read_ranges(canonical_capacity)?;
+        let (hir_type_arg_range_start, hir_type_arg_range_count) =
+            self.hir_type_arg_ranges.read_ranges(canonical_capacity)?;
+        let (hir_generic_param_range_start, hir_generic_param_range_count) = self
+            .hir_generic_param_ranges
+            .read_ranges(canonical_capacity)?;
 
         let hir_stmt_record_words = self
             .hir_stmt_record
@@ -1298,6 +1762,299 @@ impl ResidentTreeReadbacks {
                 .push(*hir_stmt_record_words.get(base + 2).unwrap_or(&u32::MAX));
             hir_stmt_record_operand2
                 .push(*hir_stmt_record_words.get(base + 3).unwrap_or(&u32::MAX));
+        }
+
+        let generic_param_count = self
+            .hir_generic_param_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let generic_param_count = generic_param_count.min(bufs.hir_generic_param_rows.count);
+        let generic_param_words = self
+            .hir_generic_param_rows
+            .read_words(generic_param_count.saturating_mul(4))?;
+        let mut hir_generic_param_owner = Vec::with_capacity(generic_param_count);
+        let mut hir_generic_param_name_token = Vec::with_capacity(generic_param_count);
+        let mut hir_generic_param_kind = Vec::with_capacity(generic_param_count);
+        let mut hir_generic_param_file_id = Vec::with_capacity(generic_param_count);
+        for row in 0..generic_param_count {
+            let base = row.saturating_mul(4);
+            hir_generic_param_owner.push(generic_param_words[base]);
+            hir_generic_param_name_token.push(generic_param_words[base + 1]);
+            hir_generic_param_kind.push(generic_param_words[base + 2]);
+            hir_generic_param_file_id.push(generic_param_words[base + 3]);
+        }
+
+        let path_count = self
+            .hir_path_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let path_count = path_count.min(bufs.hir_path_rows.count);
+        let path_words = self
+            .hir_path_rows
+            .read_words(path_count.saturating_mul(4))?;
+        let mut hir_path_owner = Vec::with_capacity(path_count);
+        let mut hir_path_segment_start = Vec::with_capacity(path_count);
+        let mut hir_path_segment_count = Vec::with_capacity(path_count);
+        let mut hir_path_kind = Vec::with_capacity(path_count);
+        for row in 0..path_count {
+            let base = row.saturating_mul(4);
+            hir_path_owner.push(path_words[base]);
+            hir_path_segment_start.push(path_words[base + 1]);
+            hir_path_segment_count.push(path_words[base + 2]);
+            hir_path_kind.push(path_words[base + 3]);
+        }
+
+        let path_segment_count = self
+            .hir_path_segment_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let path_segment_count = path_segment_count.min(bufs.hir_path_segment_rows.count);
+        let path_segment_words = self
+            .hir_path_segment_rows
+            .read_words(path_segment_count.saturating_mul(4))?;
+        let mut hir_path_segment_path = Vec::with_capacity(path_segment_count);
+        let mut hir_path_segment_name_token = Vec::with_capacity(path_segment_count);
+        let mut hir_path_segment_ordinal = Vec::with_capacity(path_segment_count);
+        let mut hir_path_segment_file_id = Vec::with_capacity(path_segment_count);
+        for row in 0..path_segment_count {
+            let base = row.saturating_mul(4);
+            hir_path_segment_path.push(path_segment_words[base]);
+            hir_path_segment_name_token.push(path_segment_words[base + 1]);
+            hir_path_segment_ordinal.push(path_segment_words[base + 2]);
+            hir_path_segment_file_id.push(path_segment_words[base + 3]);
+        }
+
+        let field_count = self
+            .hir_field_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let field_count = field_count.min(bufs.hir_field_rows.count);
+        let field_words = self
+            .hir_field_rows
+            .read_words(field_count.saturating_mul(4))?;
+        let mut hir_field_owner = Vec::with_capacity(field_count);
+        let mut hir_field_name_token = Vec::with_capacity(field_count);
+        let mut hir_field_value = Vec::with_capacity(field_count);
+        let mut hir_field_ordinal = Vec::with_capacity(field_count);
+        for row in 0..field_count {
+            let base = row.saturating_mul(4);
+            hir_field_owner.push(field_words[base]);
+            hir_field_name_token.push(field_words[base + 1]);
+            hir_field_value.push(field_words[base + 2]);
+            hir_field_ordinal.push(field_words[base + 3]);
+        }
+
+        let compact_variant_count = self
+            .hir_compact_variant_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_variant_count = compact_variant_count.min(bufs.hir_variant_rows.count);
+        let variant_words = self
+            .hir_compact_variant_rows
+            .read_words(compact_variant_count.saturating_mul(4))?;
+        let mut hir_compact_variant_owner = Vec::with_capacity(compact_variant_count);
+        let mut hir_compact_variant_name_token = Vec::with_capacity(compact_variant_count);
+        let mut hir_compact_variant_ordinal = Vec::with_capacity(compact_variant_count);
+        let mut hir_compact_variant_file_id = Vec::with_capacity(compact_variant_count);
+        for row in 0..compact_variant_count {
+            let base = row.saturating_mul(4);
+            hir_compact_variant_owner.push(variant_words[base]);
+            hir_compact_variant_name_token.push(variant_words[base + 1]);
+            hir_compact_variant_ordinal.push(variant_words[base + 2]);
+            hir_compact_variant_file_id.push(variant_words[base + 3]);
+        }
+        let hir_compact_variant_payload_start = self
+            .hir_compact_variant_payload_start
+            .read_words(compact_variant_count)?;
+        let hir_compact_variant_payload_count = self
+            .hir_compact_variant_payload_count
+            .read_words(compact_variant_count)?;
+
+        let compact_payload_count = self
+            .hir_compact_variant_payload_row_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_payload_count = compact_payload_count.min(bufs.hir_variant_payload_rows.count);
+        let payload_words = self
+            .hir_compact_variant_payload_rows
+            .read_words(compact_payload_count.saturating_mul(4))?;
+        let mut hir_compact_variant_payload_variant = Vec::with_capacity(compact_payload_count);
+        let mut hir_compact_variant_payload_type_node = Vec::with_capacity(compact_payload_count);
+        let mut hir_compact_variant_payload_ordinal = Vec::with_capacity(compact_payload_count);
+        let mut hir_compact_variant_payload_file_id = Vec::with_capacity(compact_payload_count);
+        for row in 0..compact_payload_count {
+            let base = row.saturating_mul(4);
+            hir_compact_variant_payload_variant.push(payload_words[base]);
+            hir_compact_variant_payload_type_node.push(payload_words[base + 1]);
+            hir_compact_variant_payload_ordinal.push(payload_words[base + 2]);
+            hir_compact_variant_payload_file_id.push(payload_words[base + 3]);
+        }
+
+        let compact_match_arm_count = self
+            .hir_compact_match_arm_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_match_arm_count = compact_match_arm_count.min(bufs.hir_match_arm_rows.count);
+        let match_arm_words = self
+            .hir_compact_match_arm_rows
+            .read_words(compact_match_arm_count.saturating_mul(4))?;
+        let mut hir_compact_match_arm_owner = Vec::with_capacity(compact_match_arm_count);
+        let mut hir_compact_match_arm_pattern = Vec::with_capacity(compact_match_arm_count);
+        let mut hir_compact_match_arm_result = Vec::with_capacity(compact_match_arm_count);
+        let mut hir_compact_match_arm_ordinal = Vec::with_capacity(compact_match_arm_count);
+        for row in 0..compact_match_arm_count {
+            let base = row.saturating_mul(4);
+            hir_compact_match_arm_owner.push(match_arm_words[base]);
+            hir_compact_match_arm_pattern.push(match_arm_words[base + 1]);
+            hir_compact_match_arm_result.push(match_arm_words[base + 2]);
+            hir_compact_match_arm_ordinal.push(match_arm_words[base + 3]);
+        }
+        let hir_compact_match_payload_start = self
+            .hir_compact_match_payload_start
+            .read_words(compact_match_arm_count)?;
+        let hir_compact_match_payload_count = self
+            .hir_compact_match_payload_count
+            .read_words(compact_match_arm_count)?;
+
+        let compact_match_payload_count = self
+            .hir_compact_match_payload_row_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_match_payload_count =
+            compact_match_payload_count.min(bufs.hir_match_payload_rows.count);
+        let match_payload_words = self
+            .hir_compact_match_payload_rows
+            .read_words(compact_match_payload_count.saturating_mul(4))?;
+        let mut hir_compact_match_payload_arm = Vec::with_capacity(compact_match_payload_count);
+        let mut hir_compact_match_payload_pattern = Vec::with_capacity(compact_match_payload_count);
+        let mut hir_compact_match_payload_ordinal = Vec::with_capacity(compact_match_payload_count);
+        let mut hir_compact_match_payload_file_id = Vec::with_capacity(compact_match_payload_count);
+        for row in 0..compact_match_payload_count {
+            let base = row.saturating_mul(4);
+            hir_compact_match_payload_arm.push(match_payload_words[base]);
+            hir_compact_match_payload_pattern.push(match_payload_words[base + 1]);
+            hir_compact_match_payload_ordinal.push(match_payload_words[base + 2]);
+            hir_compact_match_payload_file_id.push(match_payload_words[base + 3]);
+        }
+
+        let compact_array_capacity = bufs.hir_canonical_capacity as usize;
+        let hir_compact_array_element_start = self
+            .hir_compact_array_element_start
+            .read_words(compact_array_capacity)?;
+        let hir_compact_array_element_count = self
+            .hir_compact_array_element_count
+            .read_words(compact_array_capacity)?;
+        let compact_array_element_count = self
+            .hir_compact_array_element_row_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_array_element_count =
+            compact_array_element_count.min(bufs.hir_array_element_rows.count);
+        let array_element_words = self
+            .hir_compact_array_element_rows
+            .read_words(compact_array_element_count.saturating_mul(4))?;
+        let mut hir_compact_array_element_array = Vec::with_capacity(compact_array_element_count);
+        let mut hir_compact_array_element_value = Vec::with_capacity(compact_array_element_count);
+        let mut hir_compact_array_element_ordinal = Vec::with_capacity(compact_array_element_count);
+        let mut hir_compact_array_element_file_id = Vec::with_capacity(compact_array_element_count);
+        for row in 0..compact_array_element_count {
+            let base = row.saturating_mul(4);
+            hir_compact_array_element_array.push(array_element_words[base]);
+            hir_compact_array_element_value.push(array_element_words[base + 1]);
+            hir_compact_array_element_ordinal.push(array_element_words[base + 2]);
+            hir_compact_array_element_file_id.push(array_element_words[base + 3]);
+        }
+        let compact_string_count = self
+            .hir_compact_string_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_string_count = compact_string_count.min(bufs.hir_canonical_string_rows.count);
+        let compact_string_words = self
+            .hir_compact_string_rows
+            .read_words(compact_string_count.saturating_mul(4))?;
+        let mut hir_compact_string_node = Vec::with_capacity(compact_string_count);
+        let mut hir_compact_string_data_offset = Vec::with_capacity(compact_string_count);
+        let mut hir_compact_string_decoded_len = Vec::with_capacity(compact_string_count);
+        let mut hir_compact_string_file_id = Vec::with_capacity(compact_string_count);
+        for row in 0..compact_string_count {
+            let base = row.saturating_mul(4);
+            hir_compact_string_node.push(compact_string_words[base]);
+            hir_compact_string_data_offset.push(compact_string_words[base + 1]);
+            hir_compact_string_decoded_len.push(compact_string_words[base + 2]);
+            hir_compact_string_file_id.push(compact_string_words[base + 3]);
+        }
+        let compact_method_count = self
+            .hir_compact_method_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_method_count = compact_method_count.min(bufs.hir_method_core_rows.count);
+        let method_core_words = self
+            .hir_compact_method_cores
+            .read_words(compact_method_count.saturating_mul(4))?;
+        let method_signature_words = self
+            .hir_compact_method_signatures
+            .read_words(compact_method_count.saturating_mul(4))?;
+        let mut hir_compact_method_node = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_owner = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_impl_node = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_name_token = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_first_param_token = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_impl_receiver_type = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_receiver_mode = Vec::with_capacity(compact_method_count);
+        let mut hir_compact_method_metadata = Vec::with_capacity(compact_method_count);
+        for row in 0..compact_method_count {
+            let base = row.saturating_mul(4);
+            hir_compact_method_node.push(method_core_words[base]);
+            hir_compact_method_owner.push(method_core_words[base + 1]);
+            hir_compact_method_impl_node.push(method_core_words[base + 2]);
+            hir_compact_method_name_token.push(method_core_words[base + 3]);
+            hir_compact_method_first_param_token.push(method_signature_words[base]);
+            hir_compact_method_impl_receiver_type.push(method_signature_words[base + 1]);
+            hir_compact_method_receiver_mode.push(method_signature_words[base + 2]);
+            hir_compact_method_metadata.push(method_signature_words[base + 3]);
+        }
+        let compact_predicate_count = self
+            .hir_compact_predicate_count
+            .read_words(1)?
+            .first()
+            .copied()
+            .unwrap_or(0) as usize;
+        let compact_predicate_count = compact_predicate_count.min(bufs.hir_predicate_rows.count);
+        let predicate_words = self
+            .hir_compact_predicate_rows
+            .read_words(compact_predicate_count.saturating_mul(4))?;
+        let mut hir_compact_predicate_owner = Vec::with_capacity(compact_predicate_count);
+        let mut hir_compact_predicate_subject = Vec::with_capacity(compact_predicate_count);
+        let mut hir_compact_predicate_bound = Vec::with_capacity(compact_predicate_count);
+        let mut hir_compact_predicate_metadata = Vec::with_capacity(compact_predicate_count);
+        for row in 0..compact_predicate_count {
+            let base = row.saturating_mul(4);
+            hir_compact_predicate_owner.push(predicate_words[base]);
+            hir_compact_predicate_subject.push(predicate_words[base + 1]);
+            hir_compact_predicate_bound.push(predicate_words[base + 2]);
+            hir_compact_predicate_metadata.push(predicate_words[base + 3]);
         }
 
         let result = ResidentParseResult {
@@ -1489,6 +2246,80 @@ impl ResidentTreeReadbacks {
             hir_struct_lit_field_next: self
                 .hir_struct_lit_field_next
                 .read_words_padded(tree_len, u32::MAX)?,
+            hir_canonical_count: self
+                .hir_canonical_count
+                .read_words(1)?
+                .first()
+                .copied()
+                .unwrap_or(0),
+            hir_canonical_dense_to_raw: self
+                .hir_canonical_dense_to_raw
+                .read_words(compact_array_capacity)?,
+            hir_canonical_raw_to_dense: self.hir_canonical_raw_to_dense.read_words(tree_len)?,
+            hir_param_range_start,
+            hir_param_range_count,
+            hir_type_arg_range_start,
+            hir_type_arg_range_count,
+            hir_generic_param_owner,
+            hir_generic_param_name_token,
+            hir_generic_param_kind,
+            hir_generic_param_file_id,
+            hir_generic_param_range_start,
+            hir_generic_param_range_count,
+            hir_path_owner,
+            hir_path_segment_start,
+            hir_path_segment_count,
+            hir_path_kind,
+            hir_path_segment_path,
+            hir_path_segment_name_token,
+            hir_path_segment_ordinal,
+            hir_path_segment_file_id,
+            hir_field_owner,
+            hir_field_name_token,
+            hir_field_value,
+            hir_field_ordinal,
+            hir_compact_variant_owner,
+            hir_compact_variant_name_token,
+            hir_compact_variant_ordinal,
+            hir_compact_variant_file_id,
+            hir_compact_variant_payload_start,
+            hir_compact_variant_payload_count,
+            hir_compact_variant_payload_variant,
+            hir_compact_variant_payload_type_node,
+            hir_compact_variant_payload_ordinal,
+            hir_compact_variant_payload_file_id,
+            hir_compact_match_arm_owner,
+            hir_compact_match_arm_pattern,
+            hir_compact_match_arm_result,
+            hir_compact_match_arm_ordinal,
+            hir_compact_match_payload_start,
+            hir_compact_match_payload_count,
+            hir_compact_match_payload_arm,
+            hir_compact_match_payload_pattern,
+            hir_compact_match_payload_ordinal,
+            hir_compact_match_payload_file_id,
+            hir_compact_array_element_start,
+            hir_compact_array_element_count,
+            hir_compact_array_element_array,
+            hir_compact_array_element_value,
+            hir_compact_array_element_ordinal,
+            hir_compact_array_element_file_id,
+            hir_compact_string_node,
+            hir_compact_string_data_offset,
+            hir_compact_string_decoded_len,
+            hir_compact_string_file_id,
+            hir_compact_method_node,
+            hir_compact_method_owner,
+            hir_compact_method_impl_node,
+            hir_compact_method_name_token,
+            hir_compact_method_first_param_token,
+            hir_compact_method_impl_receiver_type,
+            hir_compact_method_receiver_mode,
+            hir_compact_method_metadata,
+            hir_compact_predicate_owner,
+            hir_compact_predicate_subject,
+            hir_compact_predicate_bound,
+            hir_compact_predicate_metadata,
         };
         validate_hir_source_address_records(
             &result.hir_kind,

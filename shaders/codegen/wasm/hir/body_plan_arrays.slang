@@ -28,6 +28,8 @@ StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
+StructuredBuffer<uint2> expr_subtree_total;
+StructuredBuffer<uint2> expr_subtree_features;
 StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
@@ -53,7 +55,7 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
-StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_arg_row_node;
@@ -311,7 +313,8 @@ uint path_leaf_token_for_callee(uint callee_node)
     if (!valid_node(path_node))
         return INVALID;
 
-    uint path_i = path_id_by_owner_hir[path_node];
+    uint owner_token = hir_token_pos[path_node];
+    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
     if (!valid_path(path_i))
         return INVALID;
 
@@ -899,39 +902,10 @@ bool expr_simple_len(uint node, out uint len)
     node = resolve_expr_node(node);
     if (!valid_node(node))
         return false;
-    if (expr_atom_len(node, len))
-        return true;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_NOT)
-    {
-        uint inner_len = 0u;
-        if (!expr_atom_len(expr_record_slot(node, EXPR_RECORD_LEFT), inner_len))
-            return false;
-        len = inner_len + 2u;
-        return true;
-    }
-    if (form == HIR_EXPR_NEG)
-    {
-        uint inner_len = 0u;
-        if (!expr_atom_len(expr_record_slot(node, EXPR_RECORD_LEFT), inner_len))
-            return false;
-        len = 2u + inner_len + 1u;
-        return true;
-    }
-    if (expr_binary_op_supported(form))
-    {
-        uint left_len = 0u;
-        uint right_len = 0u;
-        if (!expr_atom_len(expr_record_slot(node, EXPR_RECORD_LEFT), left_len) ||
-            !expr_atom_len(expr_record_slot(node, EXPR_RECORD_RIGHT), right_len))
-        {
-            return false;
-        }
-        len = left_len + right_len + 1u;
-        return true;
-    }
-    return false;
+    uint2 total = expr_subtree_total[node];
+    uint2 features = expr_subtree_features[node];
+    len = total.x;
+    return total.y == 0u && features.x == 0u && len != 0u;
 }
 
 bool direct_call_arg_expr_len(uint node, out uint len)

@@ -89,11 +89,8 @@ fn create_fixed_scan_hierarchy_bind_groups(
 pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
+    resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
     enclosing_fn: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
@@ -113,11 +110,8 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
         &passes.fn_context_hierarchy_up,
         &passes.fn_context_hierarchy_down,
         &passes.fn_context_apply,
+        resources,
         params,
-        hir_kind_buf,
-        hir_token_pos_buf,
-        hir_token_end_buf,
-        hir_status_buf,
         enclosing_fn,
         enclosing_fn_end,
         fn_event_value,
@@ -141,11 +135,8 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     hierarchy_up_pass: &PassData,
     hierarchy_down_pass: &PassData,
     apply_pass: &PassData,
+    resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
     enclosing_fn: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
@@ -175,21 +166,11 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         ],
     )?;
 
-    let mark = bind_group::create_bind_group_from_bindings(
+    let mark = reflected_bind_group_from_resources(
         device,
-        Some("type_check_fn_context_02_mark"),
+        "type_check_fn_context_02_mark",
         mark_pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("fn_event_value", fn_event_value.as_entire_binding()),
-            ("fn_event_end", fn_event_end.as_entire_binding()),
-            ("fn_event_index", fn_event_index.as_entire_binding()),
-        ],
+        resources,
     )?;
 
     let local = bind_group::create_bind_group_from_bindings(

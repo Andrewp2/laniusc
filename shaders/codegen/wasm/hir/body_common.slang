@@ -62,7 +62,7 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
-StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> hir_call_callee_node;
@@ -176,6 +176,7 @@ static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
@@ -233,6 +234,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INDEX_FORM = 26u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_STRING = 28u;
 
@@ -722,7 +724,8 @@ uint path_leaf_token_for_callee(uint callee_node)
     if (!valid_node(path_node))
         return INVALID;
 
-    uint path_i = path_id_by_owner_hir[path_node];
+    uint owner_token = hir_token_pos[path_node];
+    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
     if (!valid_path(path_i))
         return INVALID;
 

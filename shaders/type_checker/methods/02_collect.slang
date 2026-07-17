@@ -74,7 +74,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (hir_method_signature_flags[node] & METHOD_SIGNATURE_INHERENT_IMPL) == 0u)
         return;
 
-    uint fn_token = hir_token_pos[node];
+    // Method metadata shares the canonical declaration-name token domain with
+    // compact function HIR, enclosing-function context, call resolution, and
+    // backend ABI records. The function span anchor is not an identity.
+    uint fn_token = hir_method_name_token[node];
     if (!valid_token(fn_token))
         return;
 

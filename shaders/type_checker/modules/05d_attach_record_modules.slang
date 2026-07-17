@@ -10,8 +10,7 @@
 
 struct Params
 {
-    // Compact record buffers are token-capacity sized, while path owners are
-    // parser HIR node ids and must be checked against the HIR node capacity.
+    // Compact record buffers and dense path-owner ids have distinct domains.
     uint record_capacity;
     uint file_capacity;
     uint hir_node_capacity;
@@ -26,7 +25,9 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_module_file_id;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_owner_hir;
-StructuredBuffer<uint> hir_item_file_id;
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_id_by_file_id;
 
@@ -102,8 +103,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < active_path_count())
     {
         uint owner_hir = path_owner_hir[i];
-        uint file_id =
-            owner_hir < hir_node_capacity() ? hir_item_file_id[owner_hir] : INVALID;
+        uint file_id = owner_hir < min(compact_hir_count[0u], hir_node_capacity())
+            ? compact_hir_links[owner_hir].file_id
+            : INVALID;
         path_owner_module_id[i] = owner_module_from_file(file_id);
     }
 }

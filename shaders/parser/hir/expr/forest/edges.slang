@@ -45,6 +45,7 @@ static const uint HIR_EXPR_GE = 12u;
 static const uint HIR_EXPR_NEG = 13u;
 static const uint HIR_EXPR_ADD = 14u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INDEX = 26u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -97,7 +98,8 @@ uint resolved_expr_node(uint node)
 bool binary_form(uint form)
 {
     return (form >= HIR_EXPR_EQ && form <= HIR_EXPR_GE) ||
-           (form >= HIR_EXPR_ADD && form <= HIR_EXPR_SHR);
+           (form >= HIR_EXPR_ADD && form <= HIR_EXPR_SHR) ||
+           form == HIR_EXPR_INDEX;
 }
 
 void publish_parent_node(uint child, uint owner)

@@ -18,3 +18,5 @@ pub mod scan;
 pub mod timer;
 /// Chrome/Perfetto trace event collection.
 pub mod trace;
+/// Checked phase-liveness planning for reusable whole-buffer workspace slots.
+pub mod workspace;

@@ -227,6 +227,22 @@ impl TypeCheckPasses {
                 "type_check_names_radix_00c_bucket_bases",
                 "type_checker/names/radix/00c/bucket/bases"
             ),
+            struct_field_radix_dispatch_args: pass!(
+                "type_check_type_instances_02a_struct_field_radix_dispatch",
+                "type_checker/type/instances/02a_struct_field_radix_dispatch"
+            ),
+            struct_field_radix_bucket_local: pass!(
+                "type_check_type_instances_02b1_struct_field_bucket_local",
+                "type_checker/type/instances/02b1_struct_field_bucket_local"
+            ),
+            struct_field_radix_bucket_chunks: pass!(
+                "type_check_type_instances_02b2_struct_field_bucket_chunks",
+                "type_checker/type/instances/02b2_struct_field_bucket_chunks"
+            ),
+            struct_field_radix_bucket_apply: pass!(
+                "type_check_type_instances_02b3_struct_field_bucket_apply",
+                "type_checker/type/instances/02b3_struct_field_bucket_apply"
+            ),
             language_names_clear: pass!(
                 "type_check_language_names_00_clear",
                 "type_checker/language/names/00_clear"
@@ -263,9 +279,9 @@ impl TypeCheckPasses {
                 "type_check_modules_01b_scatter_path_segments",
                 "type_checker/modules/01b/scatter_path_segments"
             ),
-            modules_clear_path_prefix_max: pass!(
-                "type_check_modules_01c_clear_path_prefix_max",
-                "type_checker/modules/01c_clear_path_prefix_max"
+            modules_clear_path_state: pass!(
+                "type_check_modules_01a_clear_path_state",
+                "type_checker/modules/01a_clear_path_state"
             ),
             modules_path_prefix_dispatch_args: pass!(
                 "type_check_modules_01c_path_prefix_dispatch_args",
@@ -298,6 +314,14 @@ impl TypeCheckPasses {
             modules_scatter_decl_core_records: pass!(
                 "type_check_modules_02c_scatter_decl_core_records",
                 "type_checker/modules/02c_scatter_decl_core_records"
+            ),
+            modules_append_variant_decl_count: pass!(
+                "type_check_modules_02c1_append_variant_decl_count",
+                "type_checker/modules/02c1_append_variant_decl_count"
+            ),
+            modules_scatter_variant_decl_records: pass!(
+                "type_check_modules_02c2_scatter_variant_decl_records",
+                "type_checker/modules/02c2_scatter_variant_decl_records"
             ),
             modules_clear_decl_lookup: pass!(
                 "type_check_modules_02d_clear_decl_lookup",
@@ -664,10 +688,6 @@ impl TypeCheckPasses {
             type_instances_propagate_generic_decl_owner: pass!(
                 "type_check_type_instances_00a1_propagate_generic_decl_owner",
                 "type_checker/type/instances/00a1_propagate_generic_decl_owner"
-            ),
-            type_instances_finalize_generic_param_flags: pass!(
-                "type_check_type_instances_00a2_finalize_generic_param_flags",
-                "type_checker/type/instances/00a2_finalize_generic_param_flags"
             ),
             type_instances_decl_generic_params: pass!(
                 "type_check_type_instances_00b_decl_generic_params",
@@ -1065,6 +1085,14 @@ impl TypeCheckPasses {
             visible_scatter_hir_decl_records: pass!(
                 "type_check_visible_03c_scatter_hir_decls",
                 "type_checker/visible/03c_scatter_hir_decls"
+            ),
+            visible_scatter_match_payload_decls: pass!(
+                "type_check_visible_03c2_scatter_match_payload_decls",
+                "type_checker/visible/03c2_scatter_match_payload_decls"
+            ),
+            visible_finalize_decl_count: pass!(
+                "type_check_visible_03c3_finalize_decl_count",
+                "type_checker/visible/03c3_finalize_decl_count"
             ),
             visible_seed_hir_decl_order: pass!(
                 "type_check_visible_03d_seed_hir_decl_order",

@@ -612,7 +612,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             // Expression-root pointer jumping has finished at the parser/typecheck
             // boundary. Unlike the parser list workspaces, this allocation is not
             // also exposed as retained module-path state.
-            type_decl_generic_param_count_by_node: &parse_bufs.hir_expr_result_root_scratch_node,
+            type_decl_generic_param_count_by_owner_token: &parse_bufs
+                .hir_expr_result_root_scratch_node,
             type_instance_head_token: &parse_bufs.default_token_file_id,
             // Module declaration file/end rows are consumed by the upfront
             // module-path pipeline before type-instance argument spans are
@@ -715,6 +716,11 @@ pub(super) fn type_check_error_to_compile_error_for_source(
             code,
             detail,
         } => {
+            if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+                eprintln!(
+                    "GPU type-check rejection: token={token} code={code:?} detail={detail}"
+                );
+            }
             let (start, len) = read_single_token_for_diagnostic(device, queue, bufs, token)
                 .map(|token_record| (token_record.start, token_record.len))
                 .unwrap_or_else(|_| first_nonempty_source_span(src));
@@ -737,6 +743,11 @@ fn type_check_error_to_compile_error_for_source_pack(
             code,
             detail,
         } => {
+            if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+                eprintln!(
+                    "GPU source-pack type-check rejection: token={token} code={code:?} detail={detail}"
+                );
+            }
             if let Some((path, source, start, len)) = read_single_token_from_buffer(
                 device,
                 queue,
@@ -800,15 +811,21 @@ fn source_pack_fallback_type_check_span(
 pub(in crate::compiler::gpu_compiler) fn type_check_execution_failed_for_source(
     diagnostic_path: &Path,
     source: &str,
-    err: impl std::fmt::Display,
+    err: impl std::fmt::Display + std::fmt::Debug,
 ) -> CompileError {
+    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+        eprintln!("GPU type-check detail: {err:?}");
+    }
     stage_execution_failed_for_source(type_check_execution_failure(), diagnostic_path, source, err)
 }
 
 pub(in crate::compiler::gpu_compiler) fn type_check_execution_failed_for_source_pack(
     diagnostic_files: &[DiagnosticSourceFile],
-    err: impl std::fmt::Display,
+    err: impl std::fmt::Display + std::fmt::Debug,
 ) -> CompileError {
+    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+        eprintln!("GPU type-check detail: {err:?}");
+    }
     stage_execution_failed_for_source_pack(type_check_execution_failure(), diagnostic_files, err)
 }
 
@@ -1398,6 +1415,30 @@ fn trait_impl_diagnostic(
         28 => (
             "trait impl header uses generic trait arguments that are not supported here",
             "use concrete non-nested trait arguments in impl headers for now",
+        ),
+        29 => (
+            "inherent impl target path is malformed",
+            "name the target with a source-addressable type path",
+        ),
+        30 => (
+            "inherent impl target declaration does not resolve",
+            "name a visible struct, enum, scalar, or supported alias as the impl target",
+        ),
+        31 => (
+            "inherent impl target declaration kind is unsupported",
+            "inherent impls require a struct, enum, scalar, or supported alias target",
+        ),
+        32 => (
+            "inherent impl target declaration identity is invalid",
+            "the compiler could not map the resolved declaration to compact HIR",
+        ),
+        33 => (
+            "inherent impl target has the wrong number of type arguments",
+            "match the target declaration's generic parameter count",
+        ),
+        34 => (
+            "inherent impl target contains an unsupported type argument",
+            "use scalar, generic, or concrete non-nested target arguments here",
         ),
         _ => return None,
     };

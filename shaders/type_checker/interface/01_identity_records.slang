@@ -52,13 +52,11 @@ StructuredBuffer<uint> module_segment_total;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> public_decl_index_by_local;
-StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_parent_type_decl;
-StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
 StructuredBuffer<uint> interface_signature_type_by_decl;
@@ -128,8 +126,7 @@ void write_decl(uint dst, uint decl, uint name_ref)
         atomic_u32_min(interface_status, 1u, name_ref);
         return;
     }
-    uint hir = decl_hir_node[decl];
-    if (hir >= gParams.decl_capacity || public_decl_index_by_hir[hir] != dst)
+    if (public_decl_index_by_local[decl] != dst)
     {
         atomic_u32_or(interface_status, 0u, 64u);
         atomic_u32_min(interface_status, 1u, name_ref);

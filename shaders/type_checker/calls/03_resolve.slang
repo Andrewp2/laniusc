@@ -33,13 +33,13 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
-StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
-StructuredBuffer<uint> decl_token_start;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_value_key_count_out;
 StructuredBuffer<uint> decl_value_key_to_decl_id;
 StructuredBuffer<uint> decl_module_id;
@@ -197,7 +197,8 @@ uint path_id_for_call(uint call_node)
     uint path_node = path_node_for_call(call_node);
     if (!valid_node(path_node))
         return INVALID;
-    uint path_i = path_id_by_owner_hir[path_node];
+    uint owner_token = hir_token_pos[path_node];
+    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
     return path_i < gParams.n_hir_nodes ? path_i : INVALID;
 }
 
@@ -219,7 +220,7 @@ uint resolved_function_for_call_path(uint call_node)
     uint decl_i = resolved_value_decl[path_i];
     if (decl_i >= gParams.n_tokens)
         return INVALID;
-    uint fn_i = decl_token_start[decl_i];
+    uint fn_i = decl_name_token[decl_i];
     return valid_token(fn_i) && call_fn_index[fn_i] == fn_i ? fn_i : INVALID;
 }
 
@@ -330,7 +331,7 @@ uint function_token_for_decl(uint decl_i)
 {
     if (decl_i >= gParams.n_tokens)
         return INVALID;
-    uint fn_i = decl_token_start[decl_i];
+    uint fn_i = decl_name_token[decl_i];
     return valid_token(fn_i) && call_fn_index[fn_i] == fn_i ? fn_i : INVALID;
 }
 

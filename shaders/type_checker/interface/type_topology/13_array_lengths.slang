@@ -6,9 +6,8 @@ struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_len_token;
-StructuredBuffer<uint> hir_type_len_value;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 RWStructuredBuffer<uint> interface_types;
 RWStructuredBuffer<uint> interface_status;
@@ -35,13 +34,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (index >= min(interface_type_count[0u], gParams.hir_capacity))
         return;
     uint node = interface_type_hir_order[index];
-    if (node >= gParams.hir_capacity || hir_type_form[node] != HIR_TYPE_FORM_ARRAY)
+    if (node >= gParams.hir_capacity || compact_hir_payload[node].a != HIR_TYPE_FORM_ARRAY)
         return;
     uint kind = TYPE_LEN_LITERAL;
-    uint payload = hir_type_len_value[node];
+    uint payload = compact_hir_payload[node].d;
     if (payload == INVALID)
     {
-        uint token = hir_type_len_token[node];
+        uint token = compact_hir_payload[node].c;
         payload = token < gParams.token_capacity
                     ? type_const_param_slot_by_token[token]
                     : INVALID;

@@ -40,6 +40,7 @@ StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_struct_field_width_by_node;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -624,18 +625,6 @@ bool enum_value_node_for_expr(uint expr_node, out uint value_node, out uint widt
     return false;
 }
 
-uint nth_match_arm_node(uint match_node, uint ordinal)
-{
-    if (!has_match_feature() || !valid_node(match_node))
-        return INVALID;
-    uint4 record = x86_match_record[match_node];
-    if (ordinal == 0u)
-        return record.y;
-    if (ordinal == 1u)
-        return record.w;
-    return INVALID;
-}
-
 bool match_expr_is_return_value(uint match_node, out uint return_node)
 {
     return_node = INVALID;
@@ -653,7 +642,7 @@ bool supported_return_match(uint match_node)
     uint return_node = INVALID;
     return hir_kind[match_node] == HIR_MATCH_EXPR &&
            valid_node(record.x) &&
-           valid_node(record.y) &&
+           record.y != INVALID &&
            record.z == 2u &&
            match_expr_is_return_value(match_node, return_node);
 }
@@ -946,7 +935,10 @@ bool member_aggregate_width(uint member_token, out uint width)
     width = 0u;
     if (!valid_token(member_token))
         return false;
-    uint field_node = member_result_field_node[member_token];
+    uint field_token = member_result_field_node[member_token];
+    uint field_node = valid_token(field_token)
+                          ? x86_decl_node_by_token[field_token]
+                          : INVALID;
     if (!valid_node(field_node))
         return false;
     width = x86_struct_field_width_by_node[field_node];
@@ -1121,7 +1113,6 @@ bool array_element_store_for_value_node(uint node, out uint decl_token, out uint
     uint len = 0u;
     if (!decl_array_len(decl_token, len))
         return false;
-
     return record.w == X86_AGG_STORE_ARRAY &&
            valid_node(record.z) &&
            ordinal != INVALID &&

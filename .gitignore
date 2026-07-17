@@ -2,3 +2,5 @@
 /fuzz-cases
 .VSCodeCounter/
 /traces/
+__pycache__/
+*.pyc

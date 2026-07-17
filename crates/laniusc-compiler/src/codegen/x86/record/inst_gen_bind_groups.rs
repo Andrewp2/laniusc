@@ -36,6 +36,10 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) parent: &'a wgpu::Buffer,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) array_metadata: &'a GpuX86ArrayMetadataBuffers<'a>,
+    pub(super) compact_executable_raw: &'a wgpu::Buffer,
+    pub(super) compact_expr_wrapper: &'a wgpu::Buffer,
+    pub(super) array_element_row_by_hir: &'a wgpu::Buffer,
+    pub(super) struct_literal_field_row_by_hir: &'a wgpu::Buffer,
     pub(super) enum_metadata: &'a GpuX86EnumMetadataBuffers<'a>,
     pub(super) struct_metadata: &'a GpuX86StructMetadataBuffers<'a>,
     pub(super) expr_resolved_final: &'a wgpu::Buffer,
@@ -45,6 +49,7 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) method_decl_receiver_mode: &'a wgpu::Buffer,
     pub(super) struct_type_record: &'a wgpu::Buffer,
     pub(super) struct_field_width_by_node: &'a wgpu::Buffer,
+    pub(super) decl_node_by_token: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) const_value_record: &'a wgpu::Buffer,
@@ -64,6 +69,7 @@ pub(super) struct InstGenBindGroupInputs<'a> {
     pub(super) intrinsic_call_record: &'a wgpu::Buffer,
     pub(super) enum_value_record: &'a wgpu::Buffer,
     pub(super) match_record: &'a wgpu::Buffer,
+    pub(super) match_arm_record: &'a wgpu::Buffer,
     pub(super) match_arm_owner: &'a wgpu::Buffer,
     pub(super) match_return_node: &'a wgpu::Buffer,
     pub(super) match_result_value_owner: &'a wgpu::Buffer,
@@ -110,6 +116,10 @@ pub(super) fn create_inst_gen_bind_groups(
         parent,
         expr_metadata,
         array_metadata,
+        compact_executable_raw,
+        compact_expr_wrapper,
+        array_element_row_by_hir,
+        struct_literal_field_row_by_hir,
         enum_metadata,
         struct_metadata,
         expr_resolved_final,
@@ -119,6 +129,7 @@ pub(super) fn create_inst_gen_bind_groups(
         method_decl_receiver_mode,
         struct_type_record,
         struct_field_width_by_node,
+        decl_node_by_token,
         decl_layout_record,
         decl_layout_status,
         const_value_record,
@@ -138,6 +149,7 @@ pub(super) fn create_inst_gen_bind_groups(
         intrinsic_call_record,
         enum_value_record,
         match_record,
+        match_arm_record,
         match_arm_owner,
         match_return_node,
         match_result_value_owner,
@@ -281,14 +293,34 @@ pub(super) fn create_inst_gen_bind_groups(
                         expr_metadata.float_bits.as_entire_binding(),
                     ),
                     (
-                        "hir_expr_string_len",
-                        expr_metadata.string_len.as_entire_binding(),
+                        "x86_raw_to_compact_hir",
+                        expr_metadata.raw_to_compact_hir.as_entire_binding(),
+                    ),
+                    (
+                        "x86_compact_hir_count",
+                        expr_metadata.compact_hir_count.as_entire_binding(),
+                    ),
+                    (
+                        "x86_compact_hir_payload",
+                        expr_metadata.compact_hir_payload.as_entire_binding(),
+                    ),
+                    (
+                        "x86_compact_string_count",
+                        expr_metadata.compact_string_count.as_entire_binding(),
+                    ),
+                    (
+                        "x86_compact_strings",
+                        expr_metadata.compact_strings.as_entire_binding(),
                     ),
                     ("visible_decl", visible_decl.as_entire_binding()),
                     ("visible_type", visible_type.as_entire_binding()),
                     (
                         "member_result_field_node",
                         struct_metadata.member_result_field_node.as_entire_binding(),
+                    ),
+                    (
+                        "x86_decl_node_by_token",
+                        decl_node_by_token.as_entire_binding(),
                     ),
                     (
                         "x86_struct_field_width_by_node",
@@ -354,6 +386,7 @@ pub(super) fn create_inst_gen_bind_groups(
                     ),
                     ("gX86Features", feature_params.as_entire_binding()),
                     ("x86_match_record", match_record.as_entire_binding()),
+                    ("x86_match_arm_record", match_arm_record.as_entire_binding()),
                     ("x86_match_arm_owner", match_arm_owner.as_entire_binding()),
                     (
                         "x86_match_result_value_owner",
@@ -531,8 +564,24 @@ pub(super) fn create_inst_gen_bind_groups(
                 expr_resolved_final.as_entire_binding(),
             ),
             (
-                "hir_expr_string_len",
-                expr_metadata.string_len.as_entire_binding(),
+                "x86_raw_to_compact_hir",
+                expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "x86_compact_hir_count",
+                expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "x86_compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "x86_compact_string_count",
+                expr_metadata.compact_string_count.as_entire_binding(),
+            ),
+            (
+                "x86_compact_strings",
+                expr_metadata.compact_strings.as_entire_binding(),
             ),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
@@ -770,14 +819,28 @@ pub(super) fn create_inst_gen_bind_groups(
         &[
             ("gParams", params.as_entire_binding()),
             (
-                "hir_array_element_parent_lit",
-                array_metadata.element_parent_lit.as_entire_binding(),
+                "raw_to_compact_hir",
+                array_metadata.raw_to_compact_hir.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_parent_lit",
-                struct_metadata
-                    .struct_lit_field_parent_lit
-                    .as_entire_binding(),
+                "compact_hir_count",
+                array_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw.as_entire_binding(),
+            ),
+            (
+                "x86_array_element_row_by_hir",
+                array_element_row_by_hir.as_entire_binding(),
+            ),
+            (
+                "x86_struct_literal_field_row_by_hir",
+                struct_literal_field_row_by_hir.as_entire_binding(),
             ),
             (
                 "x86_enclosing_return_node",
@@ -831,29 +894,57 @@ pub(super) fn create_inst_gen_bind_groups(
                 struct_access_record.as_entire_binding(),
             ),
             (
-                "hir_array_element_parent_lit",
-                array_metadata.element_parent_lit.as_entire_binding(),
+                "raw_to_compact_hir",
+                array_metadata.raw_to_compact_hir.as_entire_binding(),
             ),
             (
-                "hir_array_element_ordinal",
-                array_metadata.element_ordinal.as_entire_binding(),
+                "compact_hir_count",
+                array_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_parent_lit",
+                "compact_hir_core",
+                struct_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "compact_field_count",
+                struct_metadata.compact_field_count.as_entire_binding(),
+            ),
+            (
+                "compact_fields",
+                struct_metadata.compact_fields.as_entire_binding(),
+            ),
+            (
+                "compact_array_element_row_count",
+                array_metadata.compact_element_row_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_elements",
+                array_metadata.compact_elements.as_entire_binding(),
+            ),
+            (
+                "x86_compact_executable_raw",
+                compact_executable_raw.as_entire_binding(),
+            ),
+            (
+                "x86_compact_expr_wrapper",
+                compact_expr_wrapper.as_entire_binding(),
+            ),
+            (
+                "x86_array_element_row_by_hir",
+                array_element_row_by_hir.as_entire_binding(),
+            ),
+            (
+                "x86_struct_literal_field_row_by_hir",
+                struct_literal_field_row_by_hir.as_entire_binding(),
+            ),
+            (
+                "struct_init_field_ordinal_by_row",
                 struct_metadata
-                    .struct_lit_field_parent_lit
-                    .as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_field_value_node",
-                struct_metadata
-                    .struct_lit_field_value_node
-                    .as_entire_binding(),
-            ),
-            (
-                "struct_init_field_ordinal_by_node",
-                struct_metadata
-                    .struct_init_field_ordinal_by_node
+                    .struct_init_field_ordinal_by_row
                     .as_entire_binding(),
             ),
             (
@@ -911,6 +1002,10 @@ pub(super) fn create_inst_gen_bind_groups(
             (
                 "member_result_field_node",
                 struct_metadata.member_result_field_node.as_entire_binding(),
+            ),
+            (
+                "x86_decl_node_by_token",
+                decl_node_by_token.as_entire_binding(),
             ),
             (
                 "x86_struct_field_width_by_node",

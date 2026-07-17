@@ -16,7 +16,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_node;
 StructuredBuffer<uint> generic_param_key_order_in;
@@ -50,7 +50,7 @@ uint generic_param_key_field(uint row, uint field_i)
         return encode_nullable_id(generic_param_node[row], INVALID);
     if (field_i == 1u)
         return encode_nullable_id(generic_param_name_id[row], INVALID);
-    return encode_nullable_id(generic_param_owner_node[row], INVALID);
+    return encode_nullable_id(generic_param_owner_token[row], INVALID);
 }
 
 uint generic_param_radix_key(uint row, uint key_step)

@@ -68,6 +68,12 @@ pub(in crate::compiler) fn validate_gpu_source_pack_descriptor_job_source_file_r
     job: &SourcePackJob,
     source_files: &[ExplicitSourcePathFile],
 ) -> Result<(), CompileError> {
+    if job.oversized_source_file {
+        return Err(source_pack_artifact_store_error(format!(
+            "source-pack {stage} job {} contains one {}-byte source file, exceeding the configured frontend compilation-unit capacity; split the file or raise the per-unit capacity explicitly",
+            job.job_index, job.source_bytes,
+        )));
+    }
     let expected_phase = match stage {
         "library-interface" => Some(SourcePackJobPhase::LibraryFrontend),
         "codegen" => Some(SourcePackJobPhase::Codegen),
@@ -247,6 +253,11 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             GpuSourcePackArtifactStage::LibraryInterface,
             &handle.job,
             &descriptor,
+        )?;
+        self.write_planned_descriptor_artifact(
+            SourcePackArtifactKind::LibraryInterface,
+            &handle.job,
+            &descriptor,
         )
     }
 
@@ -372,6 +383,11 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         })?;
         self.write_descriptor_artifact(
             GpuSourcePackArtifactStage::CodegenObject,
+            &handle.job,
+            &descriptor,
+        )?;
+        self.write_planned_descriptor_artifact(
+            SourcePackArtifactKind::CodegenObject,
             &handle.job,
             &descriptor,
         )
@@ -509,6 +525,36 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             &path,
             &bytes,
             "source-pack descriptor artifact",
+            source_pack_artifact_store_error,
+        )?;
+        Ok(ArtifactPath { key, path })
+    }
+
+    fn write_planned_descriptor_artifact(
+        &self,
+        kind: SourcePackArtifactKind,
+        job: &SourcePackJob,
+        descriptor: &GpuSourcePackArtifactDescriptor,
+    ) -> Result<ArtifactPath, CompileError> {
+        let key = crate::codegen::unit::source_pack_artifact_key_for_output(
+            self.target,
+            kind,
+            job.library_id,
+            job.job_index,
+            job.first_source_index,
+            job.source_file_count,
+        );
+        let path = artifact_path(&self.artifact_root, &key)?;
+        let bytes = serde_json::to_vec_pretty(descriptor).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "serialize planned source-pack {kind:?} descriptor for job {}: {err}",
+                job.job_index
+            ))
+        })?;
+        write_file_atomic_with_error(
+            &path,
+            &bytes,
+            "planned source-pack descriptor artifact",
             source_pack_artifact_store_error,
         )?;
         Ok(ArtifactPath { key, path })
@@ -717,7 +763,44 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         path.display()
                     )));
                 }
-                Ok(ArtifactPath { key, path })
+                let bytes = fs::read(&path).map_err(|err| {
+                    source_pack_artifact_store_error(format!(
+                        "read hierarchical link codegen-object descriptor {key} at {}: {err}",
+                        path.display()
+                    ))
+                })?;
+                let descriptor: GpuSourcePackArtifactDescriptor =
+                    serde_json::from_slice(&bytes).map_err(|err| {
+                        source_pack_artifact_store_error(format!(
+                            "parse hierarchical link codegen-object descriptor {key}: {err}"
+                        ))
+                    })?;
+                descriptor
+                    .validate_contract_for(
+                        GpuSourcePackArtifactStage::CodegenObject,
+                        Some(self.target),
+                    )
+                    .map_err(|reason| {
+                        source_pack_artifact_store_error(format!(
+                            "validate hierarchical link codegen-object descriptor {key}: {reason}"
+                        ))
+                    })?;
+                let stable_key = gpu_source_pack_descriptor_artifact_key(
+                    self.target,
+                    GpuSourcePackArtifactStage::CodegenObject,
+                    &format!("job-{}", descriptor.job_index),
+                );
+                let stable_path = artifact_path(&self.artifact_root, &stable_key)?;
+                if !stable_path.is_file() {
+                    return Err(source_pack_artifact_store_error(format!(
+                        "durable hierarchical link codegen-object descriptor {stable_key} is missing at {}",
+                        stable_path.display()
+                    )));
+                }
+                Ok(ArtifactPath {
+                    key: stable_key,
+                    path: stable_path,
+                })
             })
             .collect()
     }

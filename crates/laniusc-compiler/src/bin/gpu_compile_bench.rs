@@ -32,7 +32,7 @@ use laniusc_compiler::{
         prepare_artifact_build_chunk,
         resume_metadata_chunk_for_target,
     },
-    gpu::{device, trace},
+    gpu::{buffers, device, trace},
     parser::tables::PrecomputedParseTables,
 };
 use sources::{SourceArtifact, make_source_artifact};
@@ -333,6 +333,10 @@ async fn run() -> Result<(), String> {
     .map_err(|err| err.to_string())?;
     device::persist_pipeline_cache();
 
+    // Compiler construction is daemon startup work. Measure the allocation
+    // high-water mark of compilation jobs from the resident startup baseline.
+    buffers::reset_tracked_buffer_allocation_peaks();
+
     for warmup_i in 0..warmups {
         let start = Instant::now();
         let result = run_phase(
@@ -397,8 +401,42 @@ async fn run() -> Result<(), String> {
         source_mode.name(),
         src.len()
     );
+    print_gpu_buffer_breakdown();
     trace::flush();
     Ok(())
+}
+
+fn print_gpu_buffer_breakdown() {
+    if std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN").as_deref() != Ok("1") {
+        return;
+    }
+    let totals = buffers::tracked_buffer_allocation_stats();
+    let peak = buffers::tracked_buffer_allocation_peak_stats();
+    println!(
+        "gpu_buffer_totals allocations={} bytes={} peak_allocations={} peak_bytes={}",
+        totals.allocations, totals.bytes, peak.allocations, peak.bytes
+    );
+    for snapshot in buffers::tracked_buffer_phase_snapshots() {
+        println!(
+            "gpu_buffer_phase phase={:?} allocations={} bytes={}",
+            snapshot.phase, snapshot.stats.allocations, snapshot.stats.bytes
+        );
+    }
+    let limit = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|&value| value != 0)
+        .unwrap_or(64)
+        .min(16_384);
+    for row in buffers::tracked_buffer_allocation_stats_by_label()
+        .into_iter()
+        .take(limit)
+    {
+        println!(
+            "gpu_buffer label={:?} allocations={} bytes={}",
+            row.label, row.allocations, row.bytes
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -720,11 +758,12 @@ async fn run_phase(
                 .await
                 .map_err(|err| err.to_string())?;
             println!(
-                "phase=parse token_count={} parser_tree_capacity={} parser_emit_len={} semantic_hir_count={}",
+                "phase=parse token_count={} parser_tree_capacity={} parser_emit_len={} semantic_hir_count={} canonical_hir_count={}",
                 result.token_count,
                 result.parser_tree_capacity,
                 result.ll1.emit_len,
-                result.semantic_hir_count
+                result.semantic_hir_count,
+                result.canonical_hir_count
             );
             Ok(Vec::new())
         }
@@ -1213,6 +1252,12 @@ fn print_help() {
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."
     );
+    for snapshot in buffers::tracked_buffer_phase_snapshots() {
+        eprintln!(
+            "gpu_buffer_phase phase=\"{}\" allocations={} bytes={}",
+            snapshot.phase, snapshot.stats.allocations, snapshot.stats.bytes,
+        );
+    }
 }
 
 #[cfg(test)]

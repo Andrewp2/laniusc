@@ -24,40 +24,25 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         hir_active_dispatch_args,
     )?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.mark_records.done");
-    record_compute_indirect(
+    record_compute(
         encoder,
-        &passes.modules_extract_record_flag,
-        &state.bind_groups.extract_path_record_flag,
-        "type_check.modules.extract_path_record_flag",
-        hir_active_dispatch_args,
+        &passes.modules_clear_path_state,
+        &state.bind_groups.clear_path_state,
+        "type_check.modules.clear_path_state",
+        hir_work,
     )?;
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        state.n_blocks,
-        hir_active_dispatch_args,
-        &state.bind_groups.path_scan,
-        "type_check.modules.path_record_scan",
-    )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.modules_scatter_paths,
         &state.bind_groups.scatter_paths,
         "type_check.modules.scatter_paths",
-        hir_active_dispatch_args,
+        hir_work,
     )?;
     record_compute(
         encoder,
         &passes.count_dispatch_args,
         &state.bind_groups.path_dispatch_args,
         "type_check.modules.path_dispatch_args",
-        1,
-    )?;
-    record_compute(
-        encoder,
-        &passes.modules_clear_path_prefix_max,
-        &state.bind_groups.clear_path_prefix_max,
-        "type_check.modules.clear_path_prefix_max",
         1,
     )?;
     record_compute_indirect(
@@ -67,20 +52,12 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.count_path_segments",
         &state.path_dispatch_args,
     )?;
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        record_n_blocks,
-        &state.path_dispatch_args,
-        &state.bind_groups.path_segment_scan,
-        "type_check.modules.path_segment_scan",
-    )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.modules_scatter_path_segments,
         &state.bind_groups.scatter_path_segments,
         "type_check.modules.scatter_path_segments",
-        hir_active_dispatch_args,
+        hir_work,
     )?;
     record_compute(
         encoder,
@@ -272,6 +249,13 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &state.bind_groups.decl_scan,
         "type_check.modules.decl_record_scan",
     )?;
+    record_compute(
+        encoder,
+        &passes.modules_append_variant_decl_count,
+        &state.bind_groups.append_variant_decl_count,
+        "type_check.modules.append_variant_decl_count",
+        1,
+    )?;
     record_compute_indirect(
         encoder,
         &passes.modules_scatter_decl_core_records,
@@ -293,12 +277,19 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.scatter_decl_span_records",
         hir_active_dispatch_args,
     )?;
-    record_compute_indirect(
+    record_compute(
+        encoder,
+        &passes.modules_scatter_variant_decl_records,
+        &state.bind_groups.scatter_variant_decl_records,
+        "type_check.modules.scatter_variant_decl_records",
+        hir_work,
+    )?;
+    record_compute(
         encoder,
         &passes.modules_attach_record_modules,
         &state.bind_groups.attach_record_modules,
         "type_check.modules.attach_record_modules",
-        hir_active_dispatch_args,
+        state.record_n_blocks.saturating_mul(256).max(1),
     )?;
     if let (Some(dependencies), Some(clear_lookup), Some(build_lookup)) = (
         state.dependency_interfaces.as_ref(),

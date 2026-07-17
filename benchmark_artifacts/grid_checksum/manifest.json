@@ -2,7 +2,7 @@
   "files": [
     {
       "path": "commands.json",
-      "sha256": "7a518c01f3442d740e73e8267f2ea8fd50fdfda54a06ba04127d6cf1ef093890"
+      "sha256": "6641d386135ea46c3f843a9f986b4ae3267d8e373f51ae665ca128eb8fb87196"
     },
     {
       "path": "generator_config.json",
@@ -10,7 +10,7 @@
     },
     {
       "path": "machine_info.json",
-      "sha256": "41ba6b8a18bde0fe43ebebdb125e3d0d7ea17d2b4db5a3150facd1401cf37071"
+      "sha256": "70027cf7258594874ed4aa106c3d254be8d372eb785c406a450e91d489fc0cf1"
     },
     {
       "path": "outputs/c.stdout",
@@ -34,7 +34,7 @@
     },
     {
       "path": "results.tsv",
-      "sha256": "ec21b655ab98100e724ab987f209f97b82a0697b32af7379de5c4a072c9d9744"
+      "sha256": "a6fb884afff8e24d967193fcbbe1f1d3cb5846cfcee74e14da6444c4deb03f14"
     },
     {
       "path": "src/grid_checksum.c",

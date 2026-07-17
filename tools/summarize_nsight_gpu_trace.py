@@ -10,6 +10,13 @@ import sys
 
 REGIME_METRICS = {
     "sm_throughput_pct": "GPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed",
+    "alu_throughput_pct": (
+        "sm__inst_executed_pipe_alu_realtime.avg.pct_of_peak_sustained_elapsed"
+    ),
+    "fma_throughput_pct": (
+        "SM_C.TriageSCG.smsp__inst_executed_pipe_fma.avg."
+        "pct_of_peak_sustained_elapsed"
+    ),
     "dram_throughput_pct": (
         "FBSP.TriageSCG.dramc__throughput.avg.pct_of_peak_sustained_elapsed"
     ),
@@ -45,6 +52,10 @@ REGIME_METRICS = {
     ),
     "not_selected_stall_pct": (
         "GPUTrace.PCSampler.tpc__warps_issue_stalled_not_selected."
+        "avg.pct_of_peak_sustained_elapsed"
+    ),
+    "math_pipe_throttle_stall_pct": (
+        "GPUTrace.PCSampler.tpc__warps_issue_stalled_math_pipe_throttle."
         "avg.pct_of_peak_sustained_elapsed"
     ),
     "register_allocation_stall_pct": (

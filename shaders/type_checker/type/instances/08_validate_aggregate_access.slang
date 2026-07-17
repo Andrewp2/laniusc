@@ -17,6 +17,9 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -25,9 +28,12 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
@@ -120,47 +126,62 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_tokens);
+}
+
+uint active_compact_field_count()
+{
+    return min(compact_field_count[0u], gParams.n_tokens);
+}
+
+bool valid_compact_field(uint row)
+{
+    return row != INVALID && row < active_compact_field_count();
+}
+
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
 }
 
-bool valid_struct_field_key_node(uint field_node)
+bool valid_struct_field_key_row(uint field_row)
 {
-    if (!valid_node(field_node))
+    if (!valid_compact_field(field_row))
         return false;
 
-    uint owner = hir_struct_field_parent_struct[field_node];
-    uint token_i = hir_token_pos[field_node];
-    return valid_node(owner) &&
-           hir_kind[owner] == HIR_STRUCT_ITEM &&
+    HirField field = compact_fields[field_row];
+    uint owner = field.owner;
+    uint token_i = field.name_token;
+    return owner < active_compact_hir_count() &&
+           compact_hir_core[owner].kind == HIR_STRUCT_ITEM &&
            valid_token(token_i) &&
            name_id_by_token[token_i] != INVALID;
 }
 
-bool same_decl_field_key(uint left_node, uint right_node)
+bool same_decl_field_key(uint left_row, uint right_row)
 {
-    if (!valid_struct_field_key_node(left_node) ||
-        !valid_struct_field_key_node(right_node))
+    if (!valid_struct_field_key_row(left_row) ||
+        !valid_struct_field_key_row(right_row))
         return false;
 
-    uint left_token = hir_token_pos[left_node];
-    uint right_token = hir_token_pos[right_node];
-    return hir_struct_field_parent_struct[left_node] ==
-               hir_struct_field_parent_struct[right_node] &&
-           name_id_by_token[left_token] == name_id_by_token[right_token];
+    HirField left = compact_fields[left_row];
+    HirField right = compact_fields[right_row];
+    return left.owner == right.owner &&
+           name_id_by_token[left.name_token] == name_id_by_token[right.name_token];
 }
 
 void validate_sorted_struct_field_key_row(uint row)
 {
-    if (row == 0u || row >= active_hir_node_count())
+    if (row == 0u || row >= active_compact_field_count())
         return;
 
-    uint left_node = struct_field_key_order[row - 1u];
-    uint right_node = struct_field_key_order[row];
-    if (same_decl_field_key(left_node, right_node))
+    uint left_row = struct_field_key_order[row - 1u];
+    uint right_row = struct_field_key_order[row];
+    if (same_decl_field_key(left_row, right_row))
     {
-        uint token_i = hir_token_pos[right_node];
+        uint token_i = compact_fields[right_row].name_token;
         record_error(valid_token(token_i) ? token_i : 0u, ERR_INVALID_MEMBER_ACCESS, 1u);
     }
 }

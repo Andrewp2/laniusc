@@ -12,9 +12,12 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_type_alias_target_node;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_type_alias_target;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
@@ -22,7 +25,7 @@ StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_slot_order;
@@ -39,7 +42,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_decl_count()
@@ -66,11 +69,19 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
+uint generic_owner_token(uint owner_node)
+{
+    if (owner_node >= active_hir_count())
+        return INVALID;
+    uint name_token = compact_hir_payload[owner_node].b;
+    return name_token < gParams.n_tokens ? name_token : compact_hir_core[owner_node].token_start;
+}
+
 bool slot_key_less(uint row, uint owner, uint kind)
 {
     if (row >= active_generic_param_count())
         return false;
-    uint row_owner = generic_param_owner_node[row];
+    uint row_owner = generic_param_owner_token[row];
     if (row_owner != owner)
         return row_owner < owner;
     return generic_param_kind[row] < kind;
@@ -96,7 +107,7 @@ uint type_parameter_token(uint owner, uint slot)
     if (ordered >= count)
         return INVALID;
     uint row = generic_param_slot_order[ordered];
-    if (row >= count || generic_param_owner_node[row] != owner ||
+    if (row >= count || generic_param_owner_token[row] != owner ||
         generic_param_kind[row] != GENERIC_PARAM_KIND_TYPE)
         return INVALID;
     uint token = generic_param_token[row];
@@ -125,7 +136,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (alias_node >= active_hir_count())
         return;
 
-    uint target_node = hir_type_alias_target_node[alias_node];
+    uint target_node = compact_type_alias_target[alias_node];
     uint target_alias = target_alias_node(target_node);
     if (target_alias != INVALID)
     {
@@ -136,11 +147,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint target_token = target_node < active_hir_count() ? hir_token_pos[target_node] : INVALID;
+    uint target_token = target_node < active_hir_count()
+        ? compact_hir_core[target_node].token_start
+        : INVALID;
     uint slot = target_token < gParams.n_tokens
         ? type_generic_param_slot_by_token[target_token]
         : INVALID;
-    uint parameter_token = slot != INVALID ? type_parameter_token(alias_node, slot) : INVALID;
+    uint parameter_token = slot != INVALID
+        ? type_parameter_token(generic_owner_token(alias_node), slot)
+        : INVALID;
     if (parameter_token != INVALID)
         alias_equiv_edge_0[alias_node] = parameter_token;
     else

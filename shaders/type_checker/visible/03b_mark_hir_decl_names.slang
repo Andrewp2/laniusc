@@ -1,8 +1,9 @@
 // Mark interned names and compact-table flags for HIR value declarations.
 //
 // The following HIR-name passes use this as GPU-resident input for declaration
-// table compaction. This stage consumes parser-owned HIR statement, parameter,
-// and match-payload records plus interned name ids; it does not inspect source
+// table compaction. This stage consumes parser-owned HIR statement and parameter
+// records plus interned name ids; compact match payload binders are appended by
+// a dedicated family-row pass after this scan. It does not inspect source
 // text or token spelling.
 
 import atomics;
@@ -24,7 +25,6 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> hir_match_payload_owner_arm;
 StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> hir_value_decl_name_present;
@@ -101,9 +101,6 @@ uint decl_token_for_hir_node(uint node)
     uint4 param = hir_param_record[node];
     if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
         return param[HIR_PARAM_RECORD_NAME_TOKEN];
-
-    if (valid_node(hir_match_payload_owner_arm[node]))
-        return node < gParams.n_hir_nodes ? hir_token_pos[node] : INVALID;
 
     uint stmt_kind = stmt_slot(node, 0u);
     if ((hir_kind[node] == HIR_STMT ||

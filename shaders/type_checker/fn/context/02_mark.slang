@@ -8,10 +8,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_status;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> fn_event_value;
 RWStructuredBuffer<uint> fn_event_end;
@@ -34,7 +36,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]
@@ -42,16 +44,22 @@ uint active_hir_node_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint hir_i = linear_thread_id(dtid);
-    if (hir_i >= active_hir_node_count() || hir_kind[hir_i] != HIR_FN)
+    if (hir_i >= active_hir_node_count() || compact_hir_core[hir_i].kind != HIR_FN)
         return;
 
-    uint fn_start = hir_token_pos[hir_i];
-    uint fn_end = min(hir_token_end[hir_i], gParams.n_tokens);
-    if (fn_start == INVALID || fn_start >= gParams.n_tokens || fn_end <= fn_start)
+    HirCore core = compact_hir_core[hir_i];
+    uint fn_start = core.token_start;
+    uint fn_end = min(core.token_end, gParams.n_tokens);
+    uint fn_decl_token = compact_hir_payload[hir_i].b;
+    if (fn_start == INVALID || fn_start >= gParams.n_tokens || fn_end <= fn_start ||
+        fn_decl_token == INVALID || fn_decl_token >= gParams.n_tokens)
         return;
 
     InterlockedMax(fn_event_index[fn_start], encode_event_key(fn_start, true));
-    fn_event_value[fn_start] = fn_start + 1u;
+    // Preserve semantic identity in the enclosing-function relation. Consumers
+    // that need a token-keyed table translate this dense HIR ID through the
+    // function payload; source-span anchors remain interval boundaries only.
+    fn_event_value[fn_start] = hir_i + 1u;
     fn_event_end[fn_start] = fn_end;
 
     if (fn_end < gParams.n_tokens)

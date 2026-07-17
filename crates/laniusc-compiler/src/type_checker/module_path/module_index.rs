@@ -74,8 +74,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.module_record_prefix.as_entire_binding(),
             ),
             (
-                "hir_item_file_id",
-                inputs.hir_items.file_id.as_entire_binding(),
+                "compact_hir_links",
+                inputs.hir_items.compact_hir_links.as_entire_binding(),
             ),
             (
                 "path_id_by_owner_hir",
@@ -365,12 +365,12 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.import_record_prefix.as_entire_binding(),
             ),
             (
-                "hir_item_file_id",
-                inputs.hir_items.file_id.as_entire_binding(),
+                "compact_hir_links",
+                inputs.hir_items.compact_hir_links.as_entire_binding(),
             ),
             (
-                "hir_item_import_target_kind",
-                inputs.hir_items.import_target_kind.as_entire_binding(),
+                "compact_hir_payload",
+                inputs.hir_items.compact_hir_payload.as_entire_binding(),
             ),
             (
                 "path_id_by_owner_hir",

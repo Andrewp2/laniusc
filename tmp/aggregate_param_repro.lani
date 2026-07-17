@@ -1,0 +1,9 @@
+fn make_pair(left: i32, right: i32) -> [i32; 2] {
+    let result: [i32; 2] = [left + 1, right - 1];
+    return result;
+}
+
+fn main() {
+    let pair: [i32; 2] = make_pair(8, 9);
+    return pair[0] * 10 + pair[1];
+}

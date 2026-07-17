@@ -299,13 +299,12 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
     pub expr_result_root_node: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub float_bits: &'a wgpu::Buffer,
-    pub string_start: &'a wgpu::Buffer,
-    pub string_len: &'a wgpu::Buffer,
-    pub string_data_offset: &'a wgpu::Buffer,
-    pub string_decoded_len: &'a wgpu::Buffer,
-    pub string_data_words: &'a wgpu::Buffer,
-    pub string_node: &'a wgpu::Buffer,
-    pub string_count: &'a wgpu::Buffer,
+    pub raw_to_compact_hir: &'a wgpu::Buffer,
+    pub compact_hir_count: &'a wgpu::Buffer,
+    pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_string_count: &'a wgpu::Buffer,
+    pub compact_strings: &'a wgpu::Buffer,
+    pub compact_string_data_words: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub nearest_loop_node: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
@@ -316,10 +315,15 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
 pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub node_decl_token: &'a wgpu::Buffer,
     pub node_name_token: &'a wgpu::Buffer,
+    pub method_decl_name_token: &'a wgpu::Buffer,
     pub hir_token_pos: &'a wgpu::Buffer,
     pub nearest_fn_node: &'a wgpu::Buffer,
     pub fn_return_type_node: &'a wgpu::Buffer,
+    pub fn_return_ref_tag: &'a wgpu::Buffer,
+    pub fn_return_ref_payload: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
+    pub compact_param_count: &'a wgpu::Buffer,
+    pub compact_params: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
     pub method_decl_receiver_mode: &'a wgpu::Buffer,
@@ -329,6 +333,13 @@ pub struct GpuX86FunctionMetadataBuffers<'a> {
 
 /// Call and call-argument metadata buffers needed by x86 lowering.
 pub struct GpuX86CallMetadataBuffers<'a> {
+    pub raw_to_compact_hir: &'a wgpu::Buffer,
+    pub compact_hir_count: &'a wgpu::Buffer,
+    pub compact_hir_core: &'a wgpu::Buffer,
+    pub compact_hir_links: &'a wgpu::Buffer,
+    pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_call_arg_count: &'a wgpu::Buffer,
+    pub compact_call_args: &'a wgpu::Buffer,
     pub name_id_by_token: &'a wgpu::Buffer,
     pub language_name_id: &'a wgpu::Buffer,
     pub path_count_out: &'a wgpu::Buffer,
@@ -367,28 +378,32 @@ pub struct GpuX86DependencySymbolBuffers<'a> {
 
 /// Array literal metadata buffers needed by x86 aggregate lowering.
 pub struct GpuX86ArrayMetadataBuffers<'a> {
-    pub lit_first_element: &'a wgpu::Buffer,
-    pub lit_element_count: &'a wgpu::Buffer,
-    pub element_parent_lit: &'a wgpu::Buffer,
-    pub element_ordinal: &'a wgpu::Buffer,
-    pub element_next: &'a wgpu::Buffer,
-    pub nearest_element: &'a wgpu::Buffer,
+    pub raw_to_compact_hir: &'a wgpu::Buffer,
+    pub compact_hir_count: &'a wgpu::Buffer,
+    pub compact_hir_core: &'a wgpu::Buffer,
+    pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_element_start: &'a wgpu::Buffer,
+    pub compact_element_count: &'a wgpu::Buffer,
+    pub compact_element_row_count: &'a wgpu::Buffer,
+    pub compact_elements: &'a wgpu::Buffer,
 }
 
 /// Enum, variant, path, and match metadata buffers needed by x86 lowering.
 pub struct GpuX86EnumMetadataBuffers<'a> {
-    pub item_decl_token: &'a wgpu::Buffer,
-    pub variant_parent_enum: &'a wgpu::Buffer,
-    pub variant_ordinal: &'a wgpu::Buffer,
-    pub variant_payload_count: &'a wgpu::Buffer,
-    pub match_scrutinee_node: &'a wgpu::Buffer,
-    pub match_arm_start: &'a wgpu::Buffer,
-    pub match_arm_count: &'a wgpu::Buffer,
-    pub match_arm_next: &'a wgpu::Buffer,
-    pub match_arm_pattern_node: &'a wgpu::Buffer,
-    pub match_arm_payload_start: &'a wgpu::Buffer,
-    pub match_arm_payload_count: &'a wgpu::Buffer,
-    pub match_arm_result_node: &'a wgpu::Buffer,
+    pub raw_to_compact_hir: &'a wgpu::Buffer,
+    pub compact_hir_count: &'a wgpu::Buffer,
+    pub compact_hir_core: &'a wgpu::Buffer,
+    pub compact_hir_links: &'a wgpu::Buffer,
+    pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_variant_count: &'a wgpu::Buffer,
+    pub compact_variants: &'a wgpu::Buffer,
+    pub compact_variant_payload_count: &'a wgpu::Buffer,
+    pub compact_match_arm_count: &'a wgpu::Buffer,
+    pub compact_match_arms: &'a wgpu::Buffer,
+    pub compact_match_payload_start: &'a wgpu::Buffer,
+    pub compact_match_payload_count: &'a wgpu::Buffer,
+    pub compact_match_payload_row_count: &'a wgpu::Buffer,
+    pub compact_match_payloads: &'a wgpu::Buffer,
     pub hir_token_pos: &'a wgpu::Buffer,
     pub path_count_out: &'a wgpu::Buffer,
     pub path_id_by_owner_hir: &'a wgpu::Buffer,
@@ -404,25 +419,16 @@ pub struct GpuX86EnumMetadataBuffers<'a> {
 
 /// Struct declaration, literal, and member metadata buffers needed by x86 lowering.
 pub struct GpuX86StructMetadataBuffers<'a> {
-    pub item_name_token: &'a wgpu::Buffer,
-    pub decl_hir_node: &'a wgpu::Buffer,
-    pub struct_decl_field_count: &'a wgpu::Buffer,
-    pub struct_lit_head_node: &'a wgpu::Buffer,
-    pub struct_lit_context_stmt_node: &'a wgpu::Buffer,
-    pub struct_field_parent_struct: &'a wgpu::Buffer,
-    pub struct_field_ordinal: &'a wgpu::Buffer,
-    pub struct_field_type_node: &'a wgpu::Buffer,
-    pub struct_decl_field_start: &'a wgpu::Buffer,
-    pub struct_lit_field_parent_lit: &'a wgpu::Buffer,
-    pub struct_lit_field_start: &'a wgpu::Buffer,
-    pub struct_lit_field_count: &'a wgpu::Buffer,
-    pub struct_lit_field_value_node: &'a wgpu::Buffer,
-    pub struct_lit_field_next: &'a wgpu::Buffer,
-    pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub raw_to_compact_hir: &'a wgpu::Buffer,
+    pub compact_hir_count: &'a wgpu::Buffer,
+    pub compact_hir_core: &'a wgpu::Buffer,
+    pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_field_count: &'a wgpu::Buffer,
+    pub compact_fields: &'a wgpu::Buffer,
+    /// Declaration field-name token selected by type checking.
     pub member_result_field_node: &'a wgpu::Buffer,
-    pub struct_init_field_ordinal: &'a wgpu::Buffer,
-    pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
-    pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal_by_row: &'a wgpu::Buffer,
+    pub struct_init_field_decl_token_by_row: &'a wgpu::Buffer,
 }
 
 /// Type reference and type-instance metadata buffers needed by x86 lowering.
@@ -979,6 +985,7 @@ pub struct GpuX86CodeGenerator {
     struct_records_pass: PassData,
     aggregate_source_init_pass: PassData,
     aggregate_source_step_pass: PassData,
+    array_element_rows_pass: PassData,
     array_records_pass: PassData,
     match_records_pass: PassData,
     match_result_owner_init_pass: PassData,
@@ -1198,6 +1205,11 @@ impl GpuX86CodeGenerator {
             "aggregate_source_step",
             "codegen/x86/aggregate/source/step.spv",
             "codegen/x86/aggregate/source/step.reflect.json"
+        );
+        let array_element_rows_pass = load_x86_pass!(
+            "array_element_rows",
+            "codegen/x86/array_element_rows.spv",
+            "codegen/x86/array_element_rows.reflect.json"
         );
         let array_records_pass = load_x86_pass!(
             "array_records",
@@ -1705,6 +1717,7 @@ impl GpuX86CodeGenerator {
             struct_records_pass,
             aggregate_source_init_pass,
             aggregate_source_step_pass,
+            array_element_rows_pass,
             array_records_pass,
             match_records_pass,
             match_result_owner_init_pass,

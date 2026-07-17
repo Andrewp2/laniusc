@@ -89,6 +89,8 @@ pub const HIR_NODE_IMPORT_ITEM: u32 = 32;
 pub const HIR_NODE_PATH_EXPR: u32 = 33;
 /// `match` expression node.
 pub const HIR_NODE_MATCH_EXPR: u32 = 34;
+/// Inherent or trait implementation declaration in compact canonical HIR.
+pub const HIR_NODE_IMPL: u32 = 35;
 
 /// Parser pass that classifies recovered tree nodes into HIR node kinds.
 pub struct HirNodesPass {

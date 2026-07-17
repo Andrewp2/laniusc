@@ -6,7 +6,7 @@
 // - Each active HIR declaration row writes one compact record keyed by
 //   (enclosing function, interned name id, declaration token), carrying the
 //   declaration HIR node for later record-based local-initializer checks.
-// - This pass consumes HIR statement-scope, parameter, match-payload, function
+// - This pass consumes HIR statement-scope, parameter, function
 //   context records, and interned name ids. It does not inspect source text,
 //   token spelling, helper names, or function body shapes.
 
@@ -29,8 +29,6 @@ StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_stmt_scope_end;
 StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> hir_match_payload_owner_arm;
-StructuredBuffer<uint> hir_match_arm_result_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> hir_visible_decl_flag;
@@ -103,9 +101,6 @@ uint decl_token_for_hir_node(uint node)
     if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
         return param[HIR_PARAM_RECORD_NAME_TOKEN];
 
-    if (valid_node(hir_match_payload_owner_arm[node]))
-        return hir_token_pos[node];
-
     uint stmt_kind = stmt_slot(node, 0u);
     if ((hir_kind[node] == HIR_STMT ||
          hir_kind[node] == HIR_LET_STMT ||
@@ -142,18 +137,6 @@ uint parser_stmt_scope_end_or_zero(uint node)
 
 uint scope_end_for_hir_decl_node(uint node)
 {
-    uint arm = valid_node(node) ? hir_match_payload_owner_arm[node] : INVALID;
-    if (valid_node(arm))
-    {
-        uint result = hir_match_arm_result_node[arm];
-        if (valid_node(result))
-        {
-            uint end = hir_token_end[result];
-            if (end != INVALID)
-                return min(end, active_token_count());
-        }
-    }
-
     uint4 param = hir_param_record[node];
     if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
         return normalized_hir_end(param[HIR_PARAM_RECORD_FN]);

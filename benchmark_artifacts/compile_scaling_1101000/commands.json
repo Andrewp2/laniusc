@@ -1,25 +1,81 @@
 {
-  "compile": {
+  "lanius_daemon": [
+    "target/release/laniusc",
+    "daemon",
+    "--stdio",
+    "--backend",
+    "x86_64",
+    "--stdlib-root",
+    "stdlib"
+  ],
+  "o0": {
+    "c": [
+      "gcc",
+      "-O0",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "cpp": [
+      "g++",
+      "-O0",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "rust": [
+      "rustc",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "debuginfo=0",
+      "-C",
+      "strip=debuginfo",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "zig": [
+      "zig",
+      "build-exe",
+      "-lc",
+      "-O",
+      "Debug",
+      "-fstrip",
+      "{source}",
+      "-femit-bin={output}"
+    ]
+  },
+  "optimized": {
     "c": [
       "gcc",
       "-O2",
-      "target/lanius-compile-scaling/fixed20/1101000/scaling.c",
+      "-g0",
+      "{source}",
       "-o",
-      "target/scale-c"
+      "{output}"
     ],
     "cpp": [
       "g++",
       "-O2",
-      "target/lanius-compile-scaling/fixed20/1101000/scaling.cpp",
+      "-g0",
+      "{source}",
       "-o",
-      "target/scale-cpp"
+      "{output}"
     ],
     "rust": [
       "rustc",
-      "-O",
-      "target/lanius-compile-scaling/fixed20/1101000/scaling.rs",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debuginfo=0",
+      "-C",
+      "strip=debuginfo",
+      "{source}",
       "-o",
-      "target/scale-rust"
+      "{output}"
     ],
     "zig": [
       "zig",
@@ -27,124 +83,10 @@
       "-lc",
       "-O",
       "ReleaseFast",
-      "target/lanius-compile-scaling/fixed20/1101000/scaling.zig",
-      "-femit-bin=target/scale-zig"
+      "-fstrip",
+      "{source}",
+      "-femit-bin={output}"
     ]
   },
-  "generator": {
-    "19": [
-      "python3",
-      "tools/generate_compile_scaling_sources.py",
-      "--out",
-      "target/lanius-compile-scaling/fixed19",
-      "--sizes",
-      "1101000",
-      "--seed",
-      "19",
-      "--functions",
-      "6927"
-    ],
-    "20": [
-      "python3",
-      "tools/generate_compile_scaling_sources.py",
-      "--out",
-      "target/lanius-compile-scaling/fixed20",
-      "--sizes",
-      "1101000",
-      "--seed",
-      "20",
-      "--functions",
-      "6927"
-    ],
-    "21": [
-      "python3",
-      "tools/generate_compile_scaling_sources.py",
-      "--out",
-      "target/lanius-compile-scaling/fixed21",
-      "--sizes",
-      "1101000",
-      "--seed",
-      "21",
-      "--functions",
-      "6927"
-    ],
-    "22": [
-      "python3",
-      "tools/generate_compile_scaling_sources.py",
-      "--out",
-      "target/lanius-compile-scaling/fixed22",
-      "--sizes",
-      "1101000",
-      "--seed",
-      "22",
-      "--functions",
-      "6927"
-    ]
-  },
-  "lanius": {
-    "daemon_start": [
-      "target/release/laniusc",
-      "daemon",
-      "--stdio",
-      "--backend",
-      "x86_64",
-      "--stdlib-root",
-      "stdlib"
-    ],
-    "runner": [
-      "python3",
-      "tools/run_daemon_benchmark.py",
-      "--commands",
-      "benchmark_artifacts/compile_scaling_1101000/commands.json",
-      "--output",
-      "target/lanius-compile-scaling/daemon-transcript.json"
-    ],
-    "runner_sha256": "b9fe2f1d65caaf73ddd912347b3adaa41e5051926b0d381a4c1b95f30416055c",
-    "scheduling_policy": "all requests are queued immediately after the ready event and before reading the first job response",
-    "requests": [
-      {
-        "command": "compile",
-        "emit": "x86_64",
-        "id": "warm19",
-        "input": "target/lanius-compile-scaling/fixed19/1101000/scaling.lani",
-        "output": "target/scale-fixed19-x86"
-      },
-      {
-        "command": "compile",
-        "emit": "x86_64",
-        "id": "variable20",
-        "input": "target/lanius-compile-scaling/fixed20/1101000/scaling.lani",
-        "output": "target/scale-fixed20-x86"
-      },
-      {
-        "command": "compile",
-        "emit": "x86_64",
-        "id": "variable21",
-        "input": "target/lanius-compile-scaling/fixed21/1101000/scaling.lani",
-        "output": "target/scale-fixed21-x86"
-      },
-      {
-        "command": "compile",
-        "emit": "x86_64",
-        "id": "variable22",
-        "input": "target/lanius-compile-scaling/fixed22/1101000/scaling.lani",
-        "output": "target/scale-fixed22-x86"
-      },
-      {
-        "command": "shutdown",
-        "id": "shutdown"
-      }
-    ]
-  },
-  "run": {
-    "c": ["target/scale-c"],
-    "cpp": ["target/scale-cpp"],
-    "lanius19": ["target/scale-fixed19-x86"],
-    "lanius20": ["target/scale-fixed20-x86"],
-    "lanius21": ["target/scale-fixed21-x86"],
-    "lanius22": ["target/scale-fixed22-x86"],
-    "rust": ["target/scale-rust"],
-    "zig": ["target/scale-zig"]
-  },
-  "schema": "lanius.compile-scaling-commands.v1"
+  "schema": "lanius.compile-scaling-command-templates.v1"
 }

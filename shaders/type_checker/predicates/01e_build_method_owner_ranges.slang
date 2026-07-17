@@ -21,7 +21,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> predicate_method_contract_owner_node;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_method_contract_key_order;
 
@@ -45,7 +45,7 @@ bool valid_node(uint node)
 bool valid_method_contract(uint node)
 {
     return valid_node(node) &&
-           valid_node(predicate_method_contract_owner_node[node]) &&
+           valid_node(predicate_method_contract_owner_hir[node]) &&
            predicate_method_contract_name_id[node] != INVALID;
 }
 
@@ -54,7 +54,7 @@ uint method_contract_owner_for_order_row(uint row)
     if (row >= active_hir_node_count())
         return INVALID;
     uint node = predicate_method_contract_key_order[row];
-    return valid_method_contract(node) ? predicate_method_contract_owner_node[node] : INVALID;
+    return valid_method_contract(node) ? predicate_method_contract_owner_hir[node] : INVALID;
 }
 
 public struct MethodOwnerLookupKey
@@ -100,7 +100,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_method_contract(method_node))
         return;
 
-    uint owner = predicate_method_contract_owner_node[method_node];
+    uint owner = predicate_method_contract_owner_hir[method_node];
     uint previous_owner = row == 0u
         ? INVALID
         : method_contract_owner_for_order_row(row - 1u);

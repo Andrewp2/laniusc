@@ -26,24 +26,47 @@ impl HirSemanticParentStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
+        self.record_steps_for_buffers(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_semantic_parent_link_a,
+            &buffers.hir_semantic_parent_value_a,
+            &buffers.hir_semantic_parent_link_b,
+            &buffers.hir_semantic_parent_value_b,
+            "hir_semantic_parent_step",
+        )
+    }
+
+    /// Propagates one nearest-ancestor relation through caller-selected
+    /// phase-local link/value slots.
+    pub fn record_steps_for_buffers(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        label: &'static str,
+    ) -> Result<()> {
         let steps = pointer_jump_steps_after_local_span(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0)?;
+            let (link_in, value_in, link_out, value_out) = if step % 2 == 0 {
+                (link_a, value_a, link_b, value_b)
+            } else {
+                (link_b, value_b, link_a, value_a)
+            };
+            self.record_step(
+                device, encoder, buffers, link_in, value_in, link_out, value_out, label,
+            )?;
         }
 
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
-            for (src, dst) in [
-                (
-                    &buffers.hir_semantic_parent_link_b,
-                    &buffers.hir_semantic_parent_link_a,
-                ),
-                (
-                    &buffers.hir_semantic_parent_value_b,
-                    &buffers.hir_semantic_parent_value_a,
-                ),
-            ] {
+            for (src, dst) in [(link_b, link_a), (value_b, value_a)] {
                 encoder.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, 0, bytes);
             }
         }
@@ -56,24 +79,12 @@ impl HirSemanticParentStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        read_from_a: bool,
+        link_in: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_in: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_out: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_out: &crate::gpu::buffers::LaniusBuffer<u32>,
+        label: &'static str,
     ) -> Result<()> {
-        let (link_in, value_in, link_out, value_out) = if read_from_a {
-            (
-                &buffers.hir_semantic_parent_link_a,
-                &buffers.hir_semantic_parent_value_a,
-                &buffers.hir_semantic_parent_link_b,
-                &buffers.hir_semantic_parent_value_b,
-            )
-        } else {
-            (
-                &buffers.hir_semantic_parent_link_b,
-                &buffers.hir_semantic_parent_value_b,
-                &buffers.hir_semantic_parent_link_a,
-                &buffers.hir_semantic_parent_value_a,
-            )
-        };
-
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gHirSemantic".into(),
@@ -107,7 +118,7 @@ impl HirSemanticParentStepPass {
 
         let bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("hir_semantic_parent_step"),
+            Some(label),
             &self.data.bind_group_layouts[0],
             &self.data.reflection,
             0,
@@ -124,7 +135,7 @@ impl HirSemanticParentStepPass {
             encoder,
             &self.data,
             &bind_group,
-            "hir_semantic_parent_step",
+            label,
             groups,
         );
         Ok(())

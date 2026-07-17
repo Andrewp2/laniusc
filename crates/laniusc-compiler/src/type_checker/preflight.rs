@@ -59,7 +59,7 @@ pub struct RecordedModuleRecordCapacity {
 }
 
 impl GpuTypeChecker {
-    /// Counts compact module, function-parameter, and call-argument rows on the GPU.
+    /// Counts compact module, parameter-capacity, and call-argument rows on the GPU.
     ///
     /// The output is a dedicated word because typechecking still consumes the
     /// parser semantic-count buffer after this boundary.
@@ -96,48 +96,33 @@ impl GpuTypeChecker {
             0,
             &[
                 ("gParams", self.params_buf.as_entire_binding()),
-                ("hir_status", parse_bufs.ll1_status.as_entire_binding()),
-                ("node_kind", parse_bufs.node_kind.as_entire_binding()),
-                ("hir_kind", parse_bufs.hir_kind.as_entire_binding()),
                 (
-                    "hir_token_pos",
-                    parse_bufs.hir_token_pos.as_entire_binding(),
+                    "compact_hir_count",
+                    parse_bufs.hir_canonical_count.as_entire_binding(),
                 ),
                 (
-                    "hir_token_end",
-                    parse_bufs.hir_token_end.as_entire_binding(),
+                    "compact_hir_core",
+                    parse_bufs.hir_core.as_entire_binding(),
                 ),
                 (
-                    "hir_item_kind",
-                    parse_bufs.hir_item_kind.as_entire_binding(),
+                    "compact_hir_payload",
+                    parse_bufs.hir_payload.as_entire_binding(),
                 ),
                 (
-                    "hir_item_name_token",
-                    parse_bufs.hir_item_name_token.as_entire_binding(),
+                    "compact_path_count",
+                    parse_bufs.hir_path_table_count.as_entire_binding(),
                 ),
                 (
-                    "hir_item_namespace",
-                    parse_bufs.hir_item_namespace.as_entire_binding(),
+                    "compact_param_count",
+                    parse_bufs.hir_param_table_count.as_entire_binding(),
                 ),
                 (
-                    "hir_item_path_start",
-                    parse_bufs.hir_item_path_start.as_entire_binding(),
+                    "compact_call_arg_count",
+                    parse_bufs.hir_call_arg_table_count.as_entire_binding(),
                 ),
                 (
-                    "hir_item_path_end",
-                    parse_bufs.hir_item_path_end.as_entire_binding(),
-                ),
-                (
-                    "hir_item_import_target_kind",
-                    parse_bufs.hir_item_import_target_kind.as_entire_binding(),
-                ),
-                (
-                    "hir_param_record",
-                    parse_bufs.hir_param_record.as_entire_binding(),
-                ),
-                (
-                    "hir_call_arg_parent_call",
-                    parse_bufs.hir_call_arg_parent_call.as_entire_binding(),
+                    "compact_variant_count",
+                    parse_bufs.hir_variant_table_count.as_entire_binding(),
                 ),
                 ("candidate_counts", candidate_counts.as_entire_binding()),
             ],

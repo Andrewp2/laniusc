@@ -576,6 +576,25 @@ impl GpuTypeChecker {
             hir_status_buf,
         ];
         if let Some(items) = hir_items {
+            fingerprint_buffers.push(items.compact_hir_count);
+            fingerprint_buffers.push(items.compact_hir_core);
+            fingerprint_buffers.push(items.compact_hir_links);
+            fingerprint_buffers.push(items.compact_hir_payload);
+            fingerprint_buffers.push(items.compact_type_arg_count);
+            fingerprint_buffers.push(items.compact_type_args);
+            fingerprint_buffers.push(items.compact_type_arg_ranges);
+            fingerprint_buffers.push(items.compact_field_count);
+            fingerprint_buffers.push(items.compact_fields);
+            fingerprint_buffers.push(items.compact_variant_count);
+            fingerprint_buffers.push(items.compact_variants);
+            fingerprint_buffers.push(items.compact_variant_payload_start);
+            fingerprint_buffers.push(items.compact_variant_payload_count);
+            fingerprint_buffers.push(items.compact_variant_payload_row_count);
+            fingerprint_buffers.push(items.compact_variant_payloads);
+            fingerprint_buffers.push(items.compact_array_element_start);
+            fingerprint_buffers.push(items.compact_array_element_count);
+            fingerprint_buffers.push(items.compact_array_element_row_count);
+            fingerprint_buffers.push(items.compact_array_elements);
             fingerprint_buffers.push(items.semantic_dense_node);
             fingerprint_buffers.push(items.semantic_count);
             fingerprint_buffers.push(items.semantic_subtree_end);
@@ -601,7 +620,7 @@ impl GpuTypeChecker {
             fingerprint_buffers.push(scratch.function_lookup_key);
             fingerprint_buffers.push(scratch.function_lookup_fn);
             fingerprint_buffers.push(scratch.type_decl_generic_param_count);
-            fingerprint_buffers.push(scratch.type_decl_generic_param_count_by_node);
+            fingerprint_buffers.push(scratch.type_decl_generic_param_count_by_owner_token);
             fingerprint_buffers.push(scratch.type_instance_arg_start);
             fingerprint_buffers.push(scratch.type_instance_arg_count);
             fingerprint_buffers.push(scratch.type_instance_arg_ref_tag);
@@ -910,7 +929,6 @@ impl GpuTypeChecker {
                     &self.passes,
                     encoder,
                     &bind_groups.type_instances,
-                    hir_node_capacity.max(1).div_ceil(256).max(1),
                     &bind_groups.hir_active_dispatch_args,
                     timer.as_deref_mut(),
                 )?;
@@ -1128,6 +1146,7 @@ impl GpuTypeChecker {
                 &self.passes,
                 encoder,
                 token_capacity,
+                bind_groups.cache_key.call_param_row_capacity,
                 n_work,
                 &bind_groups.token_active_dispatch_args,
                 &bind_groups.hir_active_dispatch_args,
@@ -2116,6 +2135,7 @@ impl GpuTypeChecker {
             path_count_out: &module_path.path_count_out,
             path_owner_token: &module_path.path_owner_token,
             path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
+            path_id_by_owner_token: &module_path.path_id_by_owner_token,
             path_segment_count: &module_path.path_segment_count,
             path_segment_base: &module_path.path_segment_base,
             path_segment_token: &module_path.path_segment_token,
@@ -2194,6 +2214,9 @@ impl GpuTypeChecker {
             struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &bind_groups.struct_init_field_ordinal_by_node,
             struct_init_field_decl_node_by_node: &bind_groups.struct_init_field_decl_node_by_node,
+            struct_init_field_ordinal_by_row: &bind_groups.struct_init_field_ordinal_by_row,
+            struct_init_field_decl_token_by_row: &bind_groups
+                .struct_init_field_decl_token_by_row,
         }))
     }
 
@@ -2234,10 +2257,6 @@ impl GpuTypeChecker {
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
             public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
-            decl_type_ref_tag: &state.decl_type_ref_tag,
-            decl_type_ref_payload: &state.decl_type_ref_payload,
-            fn_return_ref_tag: &state.fn_return_ref_tag,
-            fn_return_ref_payload: &state.fn_return_ref_payload,
             type_expr_ref_tag: &state.type_expr_ref_tag,
             type_expr_ref_payload: &state.type_expr_ref_payload,
             type_generic_param_slot_by_token: &state.type_generic_param_slot_by_token,
@@ -2254,17 +2273,18 @@ impl GpuTypeChecker {
                 .map_or(&state.type_instance_external_canonical, |dependencies| {
                     &dependencies.type_words
                 }),
-            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
+            path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
-            call_param_count: &state.call_param_count,
             generic_param_count_out: &state.generic_param_count_out,
-            generic_param_owner_node: &state.generic_param_owner_node,
+            generic_param_owner_token: &state.generic_param_owner_token,
             generic_param_name_id: &state.generic_param_name_id,
             generic_param_token: &state.generic_param_token,
             generic_param_kind: &state.generic_param_kind,
-            type_decl_generic_param_count_by_node: &state.type_decl_generic_param_count_by_node,
-            type_decl_const_param_count_by_node: &state.type_decl_const_param_count_by_node,
+            type_decl_generic_param_count_by_owner_token: &state
+                .type_decl_generic_param_count_by_owner_token,
+            type_decl_const_param_count_by_owner_token: &state
+                .type_decl_const_param_count_by_owner_token,
         }))
     }
 
@@ -2349,12 +2369,15 @@ impl GpuTypeChecker {
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
             struct_init_field_decl_node_by_node,
+            struct_init_field_ordinal_by_row,
+            struct_init_field_decl_token_by_row,
             ..
         } = bind_groups;
         let ModulePathState {
             path_count_out,
             path_owner_token,
             path_id_by_owner_hir,
+            path_id_by_owner_token,
             path_segment_count,
             path_segment_base,
             path_segment_token,
@@ -2382,6 +2405,7 @@ impl GpuTypeChecker {
             path_count_out,
             path_owner_token,
             path_id_by_owner_hir,
+            path_id_by_owner_token,
             path_segment_count,
             path_segment_base,
             path_segment_token,
@@ -2459,6 +2483,8 @@ impl GpuTypeChecker {
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
             struct_init_field_decl_node_by_node,
+            struct_init_field_ordinal_by_row,
+            struct_init_field_decl_token_by_row,
         })
     }
 
@@ -2503,12 +2529,15 @@ impl GpuTypeChecker {
             call_dependency_decl: bind_groups.call_dependency_decl.clone(),
             call_intrinsic_tag: bind_groups.call_intrinsic_tag.clone(),
             fn_entrypoint_tag: bind_groups.fn_entrypoint_tag.clone(),
+            fn_return_ref_tag: bind_groups.fn_return_ref_tag.clone(),
+            fn_return_ref_payload: bind_groups.fn_return_ref_payload.clone(),
             call_return_type: bind_groups.call_return_type.clone(),
             call_return_type_token: bind_groups.call_return_type_token.clone(),
             call_param_type: bind_groups.call_param_type.clone(),
             call_arg_row_node: bind_groups.call_arg_row_node.clone(),
             call_arg_row_start: bind_groups.call_arg_row_start.clone(),
             call_arg_row_count: bind_groups.call_arg_row_count.clone(),
+            method_decl_name_token: bind_groups.method_decl_name_token.clone(),
             method_decl_receiver_ref_tag: bind_groups.method_decl_receiver_ref_tag.clone(),
             method_decl_receiver_ref_payload: bind_groups.method_decl_receiver_ref_payload.clone(),
             method_decl_param_offset: bind_groups.method_decl_param_offset.clone(),
@@ -2527,6 +2556,12 @@ impl GpuTypeChecker {
                 .clone(),
             struct_init_field_decl_node_by_node: bind_groups
                 .struct_init_field_decl_node_by_node
+                .clone(),
+            struct_init_field_ordinal_by_row: bind_groups
+                .struct_init_field_ordinal_by_row
+                .clone(),
+            struct_init_field_decl_token_by_row: bind_groups
+                .struct_init_field_decl_token_by_row
                 .clone(),
         })
     }
@@ -2550,12 +2585,15 @@ impl GpuTypeChecker {
             call_fn_index,
             call_intrinsic_tag,
             fn_entrypoint_tag,
+            fn_return_ref_tag,
+            fn_return_ref_payload,
             call_return_type,
             call_return_type_token,
             call_param_type,
             call_arg_row_node,
             call_arg_row_start,
             call_arg_row_count,
+            method_decl_name_token,
             method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload,
             method_decl_param_offset,
@@ -2578,6 +2616,8 @@ impl GpuTypeChecker {
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
             struct_init_field_decl_node_by_node,
+            struct_init_field_ordinal_by_row,
+            struct_init_field_decl_token_by_row,
             ..
         } = bind_groups;
         let ModulePathState {
@@ -2626,12 +2666,15 @@ impl GpuTypeChecker {
             call_dependency_decl,
             call_intrinsic_tag,
             fn_entrypoint_tag,
+            fn_return_ref_tag,
+            fn_return_ref_payload,
             call_return_type,
             call_return_type_token,
             call_param_type,
             call_arg_row_node,
             call_arg_row_start,
             call_arg_row_count,
+            method_decl_name_token,
             method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload,
             method_decl_param_offset,
@@ -2647,6 +2690,8 @@ impl GpuTypeChecker {
             struct_init_field_ordinal,
             struct_init_field_ordinal_by_node,
             struct_init_field_decl_node_by_node,
+            struct_init_field_ordinal_by_row,
+            struct_init_field_decl_token_by_row,
         })
     }
 

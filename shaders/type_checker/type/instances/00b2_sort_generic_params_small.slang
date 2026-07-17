@@ -15,7 +15,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_node;
 StructuredBuffer<uint> generic_param_kind;
@@ -54,8 +54,8 @@ bool key_less(uint left, uint right, uint active_count)
     if (decided)
         return result;
 
-    uint left_owner = encoded_nullable(generic_param_owner_node[left]);
-    uint right_owner = encoded_nullable(generic_param_owner_node[right]);
+    uint left_owner = encoded_nullable(generic_param_owner_token[left]);
+    uint right_owner = encoded_nullable(generic_param_owner_token[right]);
     if (left_owner != right_owner)
         return left_owner < right_owner;
     uint left_name = encoded_nullable(generic_param_name_id[left]);
@@ -74,8 +74,8 @@ bool slot_less(uint left, uint right, uint active_count)
     if (decided)
         return result;
 
-    uint left_owner = encoded_nullable(generic_param_owner_node[left]);
-    uint right_owner = encoded_nullable(generic_param_owner_node[right]);
+    uint left_owner = encoded_nullable(generic_param_owner_token[left]);
+    uint right_owner = encoded_nullable(generic_param_owner_token[right]);
     if (left_owner != right_owner)
         return left_owner < right_owner;
     uint left_kind = generic_param_kind[left];

@@ -7,6 +7,7 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     token_capacity: u32,
+    compact_param_capacity: u32,
     n_work: u32,
     token_active_dispatch_args: &wgpu::Buffer,
     hir_active_dispatch_args: &wgpu::Buffer,
@@ -62,7 +63,7 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         &passes.calls_param_types,
         &groups.param_types,
         "type_check.calls.param_types",
-        n_work,
+        compact_param_capacity,
     )?;
     if let Some((project_calls, project_calls_group, project_params, project_params_group, _, _)) =
         dependency_params
@@ -90,12 +91,12 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         &groups.call_param_segment_scan,
         "type_check.calls.call_param_segment_scan",
     )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.calls_scatter_compact_hir_params,
         &groups.scatter_compact_hir_params,
         "type_check.calls.scatter_compact_hir_params",
-        hir_active_dispatch_args,
+        compact_param_capacity,
     )?;
     if let Some((_, _, _, _, scatter_params, scatter_group)) = dependency_params {
         record_compute_indirect(

@@ -24,9 +24,21 @@ StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_row_ordinal;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
-StructuredBuffer<uint> hir_variant_payload_count;
-StructuredBuffer<uint> hir_variant_payload_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
+struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_variant_payload_start;
+StructuredBuffer<uint> compact_variant_payload_count;
+StructuredBuffer<uint> compact_variant_payload_row_count;
+StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -37,11 +49,21 @@ StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_token;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_key_order;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -50,6 +72,8 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> module_value_path_call_head;
+StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> module_value_path_status;
 
@@ -64,6 +88,8 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint PATH_KIND_VALUE = 3u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -137,6 +163,76 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
+bool valid_compact_node(uint node)
+{
+    return node != INVALID && node < min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_variant(uint row)
+{
+    return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
+}
+
+uint active_generic_param_count()
+{
+    return min(generic_param_count_out[0u], gParams.n_tokens);
+}
+
+bool generic_param_key_less(uint row, uint owner_token, uint name_id)
+{
+    uint row_owner = generic_param_owner_token[row];
+    if (row_owner != owner_token)
+        return row_owner < owner_token;
+    return generic_param_name_id[row] < name_id;
+}
+
+bool generic_param_key_matches(uint row, uint owner_token, uint name_id)
+{
+    return row < active_generic_param_count() &&
+           generic_param_owner_token[row] == owner_token &&
+           generic_param_name_id[row] == name_id &&
+           generic_param_kind[row] == GENERIC_PARAM_KIND_TYPE;
+}
+
+uint generic_param_token_for_variant_payload(uint variant, uint type_head)
+{
+    if (!valid_variant(variant) || !valid_token(type_head))
+        return INVALID;
+
+    HirVariant variant_row = compact_variants[variant];
+    if (!valid_compact_node(variant_row.owner))
+        return INVALID;
+
+    uint owner_token = compact_hir_payload[variant_row.owner].b;
+    uint name_id = name_id_by_token[type_head];
+    if (!valid_token(owner_token) || name_id == INVALID)
+        return INVALID;
+
+    uint count = active_generic_param_count();
+    if (count == 0u)
+        return INVALID;
+    uint lo = 0u;
+    uint hi = count;
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_key_order[mid];
+        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_key_order[lo];
+    if (!generic_param_key_matches(row, owner_token, name_id))
+        return INVALID;
+    return generic_param_token[row];
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
@@ -163,7 +259,9 @@ uint function_return_instance_for_token(uint token)
         return INVALID;
 
     uint encoded_fn = enclosing_fn[token];
-    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint fn_token = fn_node < count ? compact_hir_payload[fn_node].b : INVALID;
     if (valid_token(fn_token))
     {
         uint tag = fn_return_ref_tag[fn_token];
@@ -339,14 +437,49 @@ uint contextual_instance_for_call(uint owner_token, uint call_node)
     return function_return_instance_for_call(owner_token, call_node);
 }
 
+bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+    if (!valid_token(instance_i) || slot >= type_instance_arg_count[instance_i])
+        return false;
+
+    uint start = type_instance_arg_row_start[instance_i];
+    uint row = start == INVALID ? INVALID : start + slot;
+    if (row != INVALID && row < type_instance_arg_row_count_out[0u])
+    {
+        tag = type_instance_arg_row_ref_tag[row];
+        payload = type_instance_arg_row_ref_payload[row];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+    }
+
+    if (slot >= PARAM_CACHE_STRIDE)
+        return false;
+    uint fixed = instance_i * PARAM_CACHE_STRIDE + slot;
+    tag = type_instance_arg_ref_tag[fixed];
+    payload = type_instance_arg_ref_payload[fixed];
+    return tag != TYPE_REF_INVALID;
+}
+
 void substituted_ref(
     uint context_instance,
+    uint variant,
     uint type_head,
     out uint tag,
     out uint payload)
 {
     tag = type_expr_ref_tag[type_head];
     payload = type_expr_ref_payload[type_head];
+    if (tag == TYPE_REF_INVALID)
+    {
+        uint generic_token = generic_param_token_for_variant_payload(variant, type_head);
+        if (valid_token(generic_token))
+        {
+            tag = TYPE_REF_GENERIC_PARAM;
+            payload = generic_token;
+        }
+    }
     if (tag != TYPE_REF_GENERIC_PARAM)
         return;
 
@@ -354,14 +487,16 @@ void substituted_ref(
         return;
 
     uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
-    uint arg_count = type_instance_arg_count[context_instance];
-    uint arg_start = type_instance_arg_start[context_instance];
-    if (slot == INVALID || slot >= arg_count || arg_start == INVALID)
+    if (slot == INVALID)
         return;
 
-    uint arg_i = arg_start + slot;
-    tag = type_instance_arg_ref_tag[arg_i];
-    payload = type_instance_arg_ref_payload[arg_i];
+    uint substituted_tag;
+    uint substituted_payload;
+    if (instance_arg_ref(context_instance, slot, substituted_tag, substituted_payload))
+    {
+        tag = substituted_tag;
+        payload = substituted_payload;
+    }
 }
 
 bool assignable(uint dst, uint src)
@@ -379,10 +514,10 @@ bool assignable(uint dst, uint src)
     return false;
 }
 
-bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_node)
+bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant)
 {
     enum_token = INVALID;
-    variant_node = INVALID;
+    variant = INVALID;
     if (decl_i >= gParams.n_hir_nodes || decl_kind[decl_i] != HIR_ITEM_KIND_ENUM_VARIANT)
         return false;
 
@@ -391,8 +526,8 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_
         return false;
 
     enum_token = decl_name_token[enum_decl_i];
-    variant_node = decl_hir_node[decl_i];
-    return valid_token(enum_token) && valid_node(variant_node);
+    variant = decl_hir_node[decl_i];
+    return valid_token(enum_token) && valid_variant(variant);
 }
 
 uint call_arg_count_for_call(uint owner_token, uint call_node)
@@ -421,12 +556,16 @@ uint call_arg_node_for_call(uint call_node, uint ordinal)
     return call_arg_row_node[row];
 }
 
-bool payload_matches(uint owner_token, uint enum_token, uint variant_node, uint ordinal)
+bool payload_matches(
+    uint owner_token,
+    uint enum_token,
+    uint variant,
+    uint ordinal)
 {
     uint4 arg_record = call_arg_record[owner_token];
     uint call_node = arg_record.z;
     uint actual_count = call_arg_count_for_call(owner_token, call_node);
-    uint expected_count = hir_variant_payload_count[variant_node];
+    uint expected_count = compact_variant_payload_count[variant];
     if (actual_count != expected_count ||
         actual_count > PARAM_CACHE_STRIDE ||
         expected_count > VARIANT_PAYLOAD_SLOT_STRIDE)
@@ -438,16 +577,21 @@ bool payload_matches(uint owner_token, uint enum_token, uint variant_node, uint 
     if (context_instance != INVALID && type_instance_decl_token[context_instance] != enum_token)
         return false;
 
-    uint payload_node = hir_variant_payload_node[
-        variant_node * VARIANT_PAYLOAD_SLOT_STRIDE + ordinal];
-    uint payload_head = valid_node(payload_node) ? hir_token_pos[payload_node] : INVALID;
+    uint payload_start = compact_variant_payload_start[variant];
+    uint payload_row_count = min(compact_variant_payload_row_count[0u], gParams.n_hir_nodes);
+    if (payload_start == INVALID || payload_start + ordinal >= payload_row_count)
+        return false;
+    HirVariantPayload payload_row = compact_variant_payloads[payload_start + ordinal];
+    if (payload_row.variant != variant || payload_row.ordinal != ordinal ||
+        !valid_compact_node(payload_row.type_node))
+        return false;
+    uint payload_head = compact_hir_core[payload_row.type_node].token_start;
     if (!valid_token(payload_head))
         return false;
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
-    substituted_ref(context_instance, payload_head, tag, payload);
-    if (type_expr_ref_tag[payload_head] == TYPE_REF_GENERIC_PARAM &&
-        context_instance == INVALID)
+    substituted_ref(context_instance, variant, payload_head, tag, payload);
+    if (tag == TYPE_REF_GENERIC_PARAM && context_instance == INVALID)
         return false;
     uint expected_ty = type_code_for_ref(tag, payload);
     if (context_instance == INVALID && expected_ty == TY_UNKNOWN)
@@ -469,19 +613,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint ordinal = work_i - path_i * PARAM_CACHE_STRIDE;
     if (path_i >= active_path_count())
         return;
+    if (path_kind[path_i] != PATH_KIND_VALUE)
+        return;
 
     uint owner_token = path_owner_token[path_i];
     if (!valid_token(owner_token))
+        return;
+    if (module_value_path_call_head[owner_token] == 0u)
         return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK ||
         module_value_path_status[owner_token] != PATH_RESOLVE_STATUS_OK)
         return;
 
     uint enum_token;
-    uint variant_node;
-    if (!valid_enum_variant_decl(resolved_value_decl[path_i], enum_token, variant_node))
+    uint variant;
+    if (!valid_enum_variant_decl(resolved_value_decl[path_i], enum_token, variant))
         return;
 
-    if (!payload_matches(owner_token, enum_token, variant_node, ordinal))
+    if (!payload_matches(owner_token, enum_token, variant, ordinal))
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
 }

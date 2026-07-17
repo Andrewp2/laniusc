@@ -1,7 +1,7 @@
 // GPU struct-field key radix histogram.
 //
-// Rows are HIR nodes sorted by (owner struct node, interned field name, field
-// node). Invalid rows encode to sentinel 0. Consumers range-query the sorted
+// Rows are compact field rows sorted by (dense owner, interned field name,
+// field row). Non-declaration rows encode to sentinel 0. Consumers range-query the sorted
 // table instead of scanning a struct declaration's field slice.
 
 import gpu_index;
@@ -21,15 +21,19 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_active_count;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_struct_field_parent_struct;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> struct_field_key_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_STRUCT_ITEM = 27u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
@@ -41,35 +45,37 @@ uint linear_group_id(uint3 gid)
 
 uint active_struct_field_order_count()
 {
-    return min(hir_active_count[0u], gParams.hir_node_capacity);
+    return min(compact_field_count[0u], gParams.hir_node_capacity);
 }
 
-bool valid_hir_node(uint node)
+uint active_compact_hir_count()
 {
-    return node != INVALID && node < active_struct_field_order_count();
+    return min(compact_hir_count[0u], gParams.token_capacity);
 }
 
-bool valid_field_key_node(uint node)
+bool valid_field_key_row(uint row)
 {
-    if (!valid_hir_node(node))
+    if (row == INVALID || row >= active_struct_field_order_count())
         return false;
-    uint owner = hir_struct_field_parent_struct[node];
-    if (!valid_hir_node(owner))
+    HirField field = compact_fields[row];
+    if (field.owner >= active_compact_hir_count() ||
+        compact_hir_core[field.owner].kind != HIR_STRUCT_ITEM)
         return false;
-    uint token = hir_token_pos[node];
+    uint token = field.name_token;
     return token != INVALID && token < gParams.token_capacity &&
            name_id_by_token[token] != INVALID;
 }
 
-uint struct_field_key_field(uint node, uint field_i)
+uint struct_field_key_field(uint row, uint field_i)
 {
-    if (!valid_field_key_node(node))
+    if (!valid_field_key_row(row))
         return 0u;
+    HirField field = compact_fields[row];
     if (field_i == 0u)
-        return encode_nullable_id(node, INVALID);
+        return encode_nullable_id(row, INVALID);
     if (field_i == 1u)
-        return encode_nullable_id(name_id_by_token[hir_token_pos[node]], INVALID);
-    return encode_nullable_id(hir_struct_field_parent_struct[node], INVALID);
+        return encode_nullable_id(name_id_by_token[field.name_token], INVALID);
+    return encode_nullable_id(field.owner, INVALID);
 }
 
 uint struct_field_radix_key(uint node, uint key_step)

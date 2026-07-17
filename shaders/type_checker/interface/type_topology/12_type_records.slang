@@ -9,7 +9,8 @@ StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
 StructuredBuffer<uint> interface_type_edge_prefix;
 StructuredBuffer<uint> interface_type_edge_count;
-StructuredBuffer<uint> hir_type_form;
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint4> interface_type_path_classification;
 RWStructuredBuffer<uint> interface_types;
 RWStructuredBuffer<uint> interface_status;
@@ -44,7 +45,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fail(index);
         return;
     }
-    uint form = hir_type_form[node];
+    uint form = compact_hir_payload[node].a;
     uint4 path = interface_type_path_classification[node];
     uint kind = form == HIR_TYPE_FORM_PATH ? path.x
               : form == HIR_TYPE_FORM_ARRAY ? TYPE_KIND_ARRAY

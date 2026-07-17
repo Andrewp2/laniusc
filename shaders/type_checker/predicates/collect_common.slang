@@ -35,6 +35,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+#endif
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
@@ -65,7 +73,7 @@ StructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 #endif
 StructuredBuffer<uint> name_id_by_token;
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> type_decl_generic_param_count_by_node;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 #endif
 #if PREDICATE_BOUND_DECL_RESOLUTION
@@ -73,7 +81,7 @@ StructuredBuffer<uint> generic_decl_owner_by_node;
 StructuredBuffer<uint> predicate_bound_list_by_node;
 #endif
 StructuredBuffer<uint> generic_param_count_out;
-StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> generic_param_token;
@@ -105,6 +113,7 @@ StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_prefix_id;
 #endif
 #if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
@@ -198,6 +207,12 @@ static const uint PREDICATE_STATUS_DUPLICATE_IMPL_METHOD = 24u;
 static const uint PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH = 25u;
 static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_PATH_MISSING = 29u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_MISSING = 30u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_KIND = 31u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_IDENTITY = 32u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_ARITY = 33u;
+static const uint PREDICATE_STATUS_IMPL_TARGET_ARG_SHAPE = 34u;
 static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
@@ -292,6 +307,52 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
+uint generic_owner_token_for_decl(uint decl_node)
+{
+    if (!valid_node(decl_node))
+        return INVALID;
+    uint name_token = hir_item_name_token[decl_node];
+    return valid_token(name_token) ? name_token : hir_token_pos[decl_node];
+}
+
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_compact_hir(uint hir)
+{
+    return hir != INVALID && hir < active_compact_hir_count();
+}
+#endif
+
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
+uint generic_type_param_count_for_raw_decl(uint decl_node)
+{
+    uint owner_token = generic_owner_token_for_decl(decl_node);
+    return valid_token(owner_token)
+        ? type_decl_generic_param_count_by_owner_token[owner_token]
+        : 0u;
+}
+
+uint compact_decl_name_token(uint hir)
+{
+    if (!valid_compact_hir(hir))
+        return INVALID;
+    uint token = compact_hir_payload[hir].b;
+    return valid_token(token) ? token : compact_hir_core[hir].token_start;
+}
+
+uint generic_type_param_count_for_compact_decl(uint hir)
+{
+    uint owner_token = compact_decl_name_token(hir);
+    return valid_token(owner_token)
+        ? type_decl_generic_param_count_by_owner_token[owner_token]
+        : 0u;
+}
+#endif
+
 public struct GenericParamLookupKey
 {
     uint owner;
@@ -303,7 +364,7 @@ int compare_generic_param_key(uint row, GenericParamLookupKey key)
     if (row >= active_generic_param_count())
         return 1;
 
-    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_node[row], key.owner);
+    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_token[row], key.owner);
     if (owner_cmp != 0)
         return owner_cmp;
     return fixed_u32_lane_compare(generic_param_name_id[row], key.name_id);
@@ -322,7 +383,7 @@ public struct GenericParamKeyCompare : IRowQueryCompare<GenericParamLookupKey>
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
-           generic_param_owner_node[row] == owner &&
+           generic_param_owner_token[row] == owner &&
            generic_param_name_id[row] == name_id &&
            generic_param_kind[row] == kind;
 }
@@ -332,7 +393,7 @@ bool generic_param_key_less(uint row, uint owner, uint name_id)
     if (row >= active_generic_param_count())
         return false;
 
-    uint row_owner = generic_param_owner_node[row];
+    uint row_owner = generic_param_owner_token[row];
     if (row_owner != owner)
         return row_owner < owner;
     return generic_param_name_id[row] < name_id;
@@ -341,6 +402,10 @@ bool generic_param_key_less(uint row, uint owner, uint name_id)
 uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
 {
     if (!valid_node(decl_node) || !valid_token(name_token))
+        return INVALID;
+
+    uint owner_token = generic_owner_token_for_decl(decl_node);
+    if (!valid_token(owner_token))
         return INVALID;
 
     uint name_id = name_id_by_token[name_token];
@@ -356,7 +421,7 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
             continue;
         uint mid = lo + ((hi - lo) >> 1u);
         uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
             hi = mid;
         else
             lo = mid + 1u;
@@ -366,7 +431,7 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
         return INVALID;
 
     uint row = generic_param_key_order[lo];
-    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+    return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
 bool generic_type_param_declared_on(uint decl_node, uint name_token)
@@ -380,7 +445,7 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
     if (!valid_node(decl_node) || !valid_token(name_token))
         return INVALID;
 
-    uint count = type_decl_generic_param_count_by_node[decl_node];
+    uint count = generic_type_param_count_for_raw_decl(decl_node);
     uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
     if (row == INVALID)
         return INVALID;
@@ -572,7 +637,8 @@ uint bound_path_record_id(uint expr_node)
 {
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
         return INVALID;
-    uint path_i = path_id_by_owner_hir[expr_node];
+    uint owner = raw_to_compact_hir[expr_node];
+    uint path_i = valid_compact_hir(owner) ? path_id_by_owner_hir[owner] : INVALID;
     return path_i < path_record_count() ? path_i : INVALID;
 }
 
@@ -840,8 +906,8 @@ uint trait_decl_generic_param_count(uint decl_i)
         return INVALID;
 
     uint trait_node = decl_hir_node[decl_i];
-    return valid_node(trait_node)
-        ? type_decl_generic_param_count_by_node[trait_node]
+    return valid_compact_hir(trait_node)
+        ? generic_type_param_count_for_compact_decl(trait_node)
         : INVALID;
 }
 
@@ -859,7 +925,8 @@ uint type_path_record_id(uint expr_node)
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_TYPE_IDENT)
         return INVALID;
 
-    uint path_i = path_id_by_owner_hir[expr_node];
+    uint owner = raw_to_compact_hir[expr_node];
+    uint path_i = valid_compact_hir(owner) ? path_id_by_owner_hir[owner] : INVALID;
     return path_i != INVALID && path_i < path_record_count() ? path_i : INVALID;
 }
 
@@ -956,8 +1023,8 @@ uint validate_trait_impl_target_type(uint expr_node)
         return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint expected_arg_count = valid_node(decl_node)
-        ? type_decl_generic_param_count_by_node[decl_node]
+    uint expected_arg_count = valid_compact_hir(decl_node)
+        ? generic_type_param_count_for_compact_decl(decl_node)
         : INVALID;
     if (expected_arg_count == INVALID)
         return PREDICATE_STATUS_INVALID_TARGET;
@@ -1001,7 +1068,7 @@ bool supported_predicate_type_arg_decl(uint decl_i)
         return false;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint name_token = valid_node(decl_node) ? hir_item_name_token[decl_node] : INVALID;
+    uint name_token = compact_decl_name_token(decl_node);
     return valid_token(name_token) &&
            type_expr_ref_tag[name_token] == TYPE_REF_SCALAR &&
            type_expr_ref_payload[name_token] != 0u;
@@ -1016,7 +1083,7 @@ uint alias_type_code_for_decl(uint decl_i)
         return 0u;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint name_token = valid_node(decl_node) ? hir_item_name_token[decl_node] : INVALID;
+    uint name_token = compact_decl_name_token(decl_node);
     if (!valid_token(name_token) || type_expr_ref_tag[name_token] != TYPE_REF_SCALAR)
         return 0u;
 
@@ -1030,8 +1097,8 @@ uint nominal_type_code_for_decl(uint decl_i)
     if (decl_namespace[decl_i] != HIR_ITEM_NAMESPACE_TYPE)
         return 0u;
 
-    uint name_token = decl_name_id[decl_i] != INVALID && valid_node(decl_hir_node[decl_i])
-        ? hir_item_name_token[decl_hir_node[decl_i]]
+    uint name_token = decl_name_id[decl_i] != INVALID && valid_compact_hir(decl_hir_node[decl_i])
+        ? compact_decl_name_token(decl_hir_node[decl_i])
         : INVALID;
     if (!valid_token(name_token))
         return 0u;
@@ -1153,8 +1220,8 @@ bool type_arg_requires_instance_args(uint arg_node)
         return false;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint expected_arg_count = valid_node(decl_node)
-        ? type_decl_generic_param_count_by_node[decl_node]
+    uint expected_arg_count = valid_compact_hir(decl_node)
+        ? generic_type_param_count_for_compact_decl(decl_node)
         : 0u;
     return expected_arg_count > 0u && direct_type_arg_count(arg_node) == 0u;
 }
@@ -1207,8 +1274,8 @@ bool trait_impl_type_arg_token_requires_instance_args(uint owner_type_node, uint
         return false;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint expected_arg_count = valid_node(decl_node)
-        ? type_decl_generic_param_count_by_node[decl_node]
+    uint expected_arg_count = valid_compact_hir(decl_node)
+        ? generic_type_param_count_for_compact_decl(decl_node)
         : 0u;
     return expected_arg_count > 0u;
 }
@@ -1609,11 +1676,11 @@ void mark_direct_type_arg_syntax_tokens(uint expr_node, uint arg_count)
 uint validate_inherent_impl_target_type(uint impl_node, uint expr_node)
 {
     if (!type_path_scan_supported(expr_node))
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return PREDICATE_STATUS_IMPL_TARGET_PATH_MISSING;
 
     uint segment_count = type_path_segment_count(expr_node);
     if (segment_count == 0u)
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return PREDICATE_STATUS_IMPL_TARGET_PATH_MISSING;
 
     uint leaf_token = type_path_leaf_token(expr_node);
     uint leaf_name_id = valid_token(leaf_token) ? name_id_by_token[leaf_token] : INVALID;
@@ -1625,19 +1692,20 @@ uint validate_inherent_impl_target_type(uint impl_node, uint expr_node)
 
     uint decl_i = type_decl_for_type_path(expr_node);
     if (decl_i == INVALID || decl_i >= decl_record_count())
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return PREDICATE_STATUS_IMPL_TARGET_DECL_MISSING;
     if (!supported_predicate_type_arg_decl(decl_i))
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return PREDICATE_STATUS_IMPL_TARGET_DECL_KIND;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint expected_arg_count = valid_node(decl_node)
-        ? type_decl_generic_param_count_by_node[decl_node]
+    uint expected_arg_count = valid_compact_hir(decl_node)
+        ? generic_type_param_count_for_compact_decl(decl_node)
         : INVALID;
-    if (expected_arg_count == INVALID ||
-        expected_arg_count != arg_count)
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+    if (expected_arg_count == INVALID)
+        return PREDICATE_STATUS_IMPL_TARGET_DECL_IDENTITY;
+    if (expected_arg_count != arg_count)
+        return PREDICATE_STATUS_IMPL_TARGET_ARITY;
     if (!inherent_impl_target_args_supported(impl_node, expr_node, arg_count))
-        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return PREDICATE_STATUS_IMPL_TARGET_ARG_SHAPE;
 
     return PREDICATE_STATUS_OK;
 }
@@ -1994,7 +2062,7 @@ void validate_trait_impl_node(uint node)
     }
 
     uint trait_node = trait_decl_i < decl_record_count() ? decl_hir_node[trait_decl_i] : INVALID;
-    if (!valid_node(trait_node))
+    if (!valid_compact_hir(trait_node))
     {
         predicate_status[node] = PREDICATE_STATUS_BOUND_NOT_TRAIT;
         return;
@@ -2171,8 +2239,8 @@ bool bound_arg_requires_instance_args(uint owner_decl_node, uint expr_node)
         return false;
 
     uint decl_node = decl_hir_node[decl_i];
-    uint expected_arg_count = valid_node(decl_node)
-        ? type_decl_generic_param_count_by_node[decl_node]
+    uint expected_arg_count = valid_compact_hir(decl_node)
+        ? generic_type_param_count_for_compact_decl(decl_node)
         : 0u;
     return expected_arg_count > 0u;
 }

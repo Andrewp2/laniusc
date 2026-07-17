@@ -9,9 +9,11 @@ StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> call_param_count;
-StructuredBuffer<uint> hir_variant_payload_count;
+struct HirRange { uint start; uint count; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirRange> compact_param_ranges;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<uint> compact_variant_payload_count;
 RWStructuredBuffer<uint> interface_signature_type_flag;
 RWStructuredBuffer<uint> interface_signature_edge_count;
 RWStructuredBuffer<uint> interface_signature_type_by_decl;
@@ -56,23 +58,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind == HIR_ITEM_KIND_FN || kind == HIR_ITEM_KIND_EXTERN_FN)
     {
         uint hir = decl_hir_node[local];
-        uint token = hir < gParams.hir_capacity ? hir_token_pos[hir] : INVALID;
-        if (token >= gParams.token_capacity)
+        if (hir >= min(compact_hir_count[0u], gParams.hir_capacity))
         {
             fail(persisted);
             return;
         }
         interface_signature_type_flag[persisted] = 1u;
-        interface_signature_edge_count[persisted] = call_param_count[token] + 1u;
+        interface_signature_edge_count[persisted] = compact_param_ranges[hir].count + 1u;
     }
     else if (kind == HIR_ITEM_KIND_STRUCT || kind == HIR_ITEM_KIND_ENUM)
         interface_signature_type_flag[persisted] = 1u;
     else if (kind == HIR_ITEM_KIND_ENUM_VARIANT)
     {
         uint hir = decl_hir_node[local];
-        if (hir >= gParams.hir_capacity) { fail(persisted); return; }
+        if (hir >= min(compact_variant_count[0u], gParams.hir_capacity)) { fail(persisted); return; }
         interface_signature_type_flag[persisted] = 1u;
-        interface_signature_edge_count[persisted] = hir_variant_payload_count[hir] + 1u;
+        interface_signature_edge_count[persisted] = compact_variant_payload_count[hir] + 1u;
     }
     else if (kind != HIR_ITEM_KIND_CONST && kind != HIR_ITEM_KIND_TYPE_ALIAS)
         fail(persisted);
