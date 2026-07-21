@@ -1069,7 +1069,7 @@ pub(crate) use make_traced_main_pass;
 
 /// Helpers for creating bind groups from reflected Slang parameter names.
 pub mod bind_group {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use anyhow::anyhow;
     use wgpu;
@@ -1185,6 +1185,44 @@ pub mod bind_group {
             layout: &pass.bind_group_layouts[set_index],
             entries: &entries,
         }))
+    }
+
+    /// Proves that a graph-managed pass binds exactly the resources present in
+    /// shader reflection. This catches stale shader artifacts and optimizer
+    /// changes which would otherwise make a named resource silently disappear.
+    pub fn validate_exact_binding_names(
+        pass: &PassData,
+        set_index: usize,
+        bindings: &[(&str, wgpu::BindingResource<'_>)],
+    ) -> Result<()> {
+        let reflected = reflected_parameters_for_set(&pass.reflection, set_index)
+            .iter()
+            .filter(|parameter| parameter.binding.index.is_some() && parameter.ty.kind.is_some())
+            .map(|parameter| parameter.name.as_str())
+            .collect::<HashSet<_>>();
+        let provided = bindings
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<HashSet<_>>();
+        if provided.len() != bindings.len() {
+            return Err(anyhow!(
+                "duplicate named resource in graph-managed bind group for '{}'",
+                pass.shader_id
+            ));
+        }
+        if reflected != provided {
+            let mut missing = reflected.difference(&provided).copied().collect::<Vec<_>>();
+            let mut unexpected = provided.difference(&reflected).copied().collect::<Vec<_>>();
+            missing.sort_unstable();
+            unexpected.sort_unstable();
+            return Err(anyhow!(
+                "graph-managed shader '{}' binding contract differs from reflection: missing {:?}, unexpected {:?}",
+                pass.shader_id,
+                missing,
+                unexpected
+            ));
+        }
+        Ok(())
     }
 
     #[cfg(test)]

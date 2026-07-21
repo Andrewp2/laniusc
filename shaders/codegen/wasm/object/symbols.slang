@@ -15,7 +15,9 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> interface_public_decl_count;
 StructuredBuffer<uint> interface_public_decl_local_id;
 StructuredBuffer<uint> decl_hir_node;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> wasm_func_slot_by_token;
 StructuredBuffer<uint> object_body_len_by_slot;
 RWStructuredBuffer<uint4> object_symbol_record;
@@ -45,9 +47,10 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (local_decl >= gParams.n_tokens)
         return;
     uint hir = decl_hir_node[local_decl];
-    if (hir >= gParams.n_hir_nodes)
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (hir >= hir_count)
         return;
-    uint fn_token = hir_token_pos[hir];
+    uint fn_token = compact_hir_core[hir].token_start;
     if (fn_token >= gParams.n_tokens)
         return;
     uint slot = wasm_func_slot_by_token[fn_token];

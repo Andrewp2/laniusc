@@ -411,7 +411,9 @@ bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
     decl_token = INVALID;
     if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
         return false;
-    uint path_i = path_id_by_owner_hir[name_node];
+    uint dense = x86_raw_to_compact_hir[name_node];
+    uint dense_count = min(x86_compact_hir_count[0u], gParams.n_hir_nodes);
+    uint path_i = dense < dense_count ? path_id_by_owner_hir[dense] : INVALID;
     if (path_i < active_path_count() &&
         resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK)
     {

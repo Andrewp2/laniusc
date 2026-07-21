@@ -92,6 +92,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
     enclosing_fn: &wgpu::Buffer,
+    enclosing_fn_start_token: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
     fn_event_end: &wgpu::Buffer,
@@ -113,6 +114,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
         resources,
         params,
         enclosing_fn,
+        enclosing_fn_start_token,
         enclosing_fn_end,
         fn_event_value,
         fn_event_end,
@@ -138,6 +140,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
     enclosing_fn: &wgpu::Buffer,
+    enclosing_fn_start_token: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
     fn_event_end: &wgpu::Buffer,
@@ -156,6 +159,10 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         &[
             ("gParams", params.as_entire_binding()),
             ("enclosing_fn", enclosing_fn.as_entire_binding()),
+            (
+                "enclosing_fn_start_token",
+                enclosing_fn_start_token.as_entire_binding(),
+            ),
             ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
             ("fn_event_value", fn_event_value.as_entire_binding()),
             ("fn_event_end", fn_event_end.as_entire_binding()),
@@ -212,7 +219,12 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
             ("fn_event_end", fn_event_end.as_entire_binding()),
             ("fn_event_inblock", fn_event_inblock.as_entire_binding()),
             ("block_prefix", fn_block_prefix.as_entire_binding()),
+            ("compact_hir_core", resources["compact_hir_core"].clone()),
             ("enclosing_fn", enclosing_fn.as_entire_binding()),
+            (
+                "enclosing_fn_start_token",
+                enclosing_fn_start_token.as_entire_binding(),
+            ),
             ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
         ],
     )?;

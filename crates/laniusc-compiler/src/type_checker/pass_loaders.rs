@@ -171,6 +171,14 @@ impl TypeCheckPasses {
                 "type_check_semantic_features_01_dispatch_args",
                 "type_checker/semantic/features/01_dispatch_args"
             ),
+            expression_types_init: pass!(
+                "type_check_expression_types_00_init",
+                "type_checker/semantic/expression_types/00_init"
+            ),
+            expression_types_step: pass!(
+                "type_check_expression_types_01_step",
+                "type_checker/semantic/expression_types/01_step"
+            ),
             names_mark_lexemes: pass!(
                 "type_check_names_00_mark_lexemes",
                 "type_checker/names/00_mark_lexemes"
@@ -874,10 +882,6 @@ impl TypeCheckPasses {
                 "type_check_predicates_01g_reduce_method_validation_errors",
                 "type_checker/predicates/01g_reduce_method_validation_errors"
             ),
-            predicates_apply_method_validation_errors: pass!(
-                "type_check_predicates_01h_apply_method_validation_errors",
-                "type_checker/predicates/01h_apply_method_validation_errors"
-            ),
             predicates_obligations: pass!(
                 "type_check_predicates_02_obligations",
                 "type_checker/predicates/02_obligations"
@@ -953,6 +957,10 @@ impl TypeCheckPasses {
             calls_resolve: pass!(
                 "type_check_calls_03_resolve",
                 "type_checker/calls/03_resolve"
+            ),
+            calls_backend_targets: pass!(
+                "type_check_calls_04_backend_targets",
+                "type_checker/calls/04_backend_targets"
             ),
             calls_match_arg_params_init: pass!(
                 "type_check_calls_03a0_match_arg_params_init",

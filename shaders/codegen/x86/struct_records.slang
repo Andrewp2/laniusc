@@ -277,6 +277,13 @@ void publish_member_access_record(uint node)
     uint dense = raw_to_compact_hir[node];
     if (!valid_dense(dense) || compact_hir_core[dense].kind != HIR_MEMBER_EXPR)
         return;
+    // raw_to_hir intentionally maps forwarding grammar rows to their durable
+    // semantic node. Emit the backend record only on that dense node's chosen
+    // executable representative; otherwise wrapper rows become duplicate
+    // member operations during instruction planning.
+    uint member_executable = x86_compact_executable_raw[dense];
+    if (!valid_node(member_executable) || node != member_executable)
+        return;
     HirPayload payload = compact_hir_payload[dense];
     uint member_token = payload.c;
     if (!valid_token(member_token))

@@ -198,8 +198,11 @@ pub(super) fn stage_execution_failed_for_source(
     failure: StageExecutionFailure<'_>,
     diagnostic_path: &Path,
     source: &str,
-    _err: impl std::fmt::Display,
+    err: impl std::fmt::Display,
 ) -> CompileError {
+    if std::env::var_os("LANIUS_DEBUG_STAGE_EXECUTION").is_some() {
+        eprintln!("[laniusc][stage-execution] {err}");
+    }
     let (start, len) = first_nonempty_source_span(source);
     CompileError::Diagnostic(
         Diagnostic::error(failure.code, failure.message)
@@ -218,8 +221,11 @@ pub(super) fn stage_execution_failed_for_source(
 pub(super) fn stage_execution_failed_for_source_pack(
     failure: StageExecutionFailure<'_>,
     diagnostic_files: &[DiagnosticSourceFile],
-    _err: impl std::fmt::Display,
+    err: impl std::fmt::Display,
 ) -> CompileError {
+    if std::env::var_os("LANIUS_DEBUG_STAGE_EXECUTION").is_some() {
+        eprintln!("[laniusc][stage-execution] {err}");
+    }
     let diagnostic = Diagnostic::error(failure.code, failure.message)
         .with_note(format!("source file count: {}", diagnostic_files.len()))
         .with_note(failure.source_pack_help);

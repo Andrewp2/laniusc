@@ -6,6 +6,7 @@
 // interned name id). This avoids scanning declaration subtrees for every use.
 
 import status;
+import fixed.compact_method;
 
 struct Params
 {
@@ -24,6 +25,9 @@ struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<CompactMethodCore> compact_method_cores;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
@@ -35,7 +39,6 @@ StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_token;
 StructuredBuffer<uint> hir_nearest_fn_node;
-StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
@@ -114,6 +117,26 @@ bool owner_has_generic_params(uint owner_token)
             type_decl_const_param_count_by_owner_token[owner_token] != 0u);
 }
 
+uint compact_impl_owner_token(uint fn_node)
+{
+    if (!valid_node(fn_node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[fn_node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= hir_count)
+        return INVALID;
+    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint row = compact_method_row_for_hir(
+        compact_method_cores, method_count, dense);
+    if (row >= method_count)
+        return INVALID;
+    CompactMethodCore method = compact_method_cores[row];
+    if (method.node != dense || method.impl_node >= hir_count)
+        return INVALID;
+    uint token = compact_hir_core[method.impl_node].token_start;
+    return valid_token(token) ? token : INVALID;
+}
+
 uint generic_decl_scope_token_for_type_node(uint node)
 {
     uint decl_node = generic_decl_owner_by_node[node];
@@ -122,8 +145,7 @@ uint generic_decl_scope_token_for_type_node(uint node)
         return owner_token;
 
     uint fn_node = valid_node(node) ? hir_nearest_fn_node[node] : INVALID;
-    uint impl_node = valid_node(fn_node) ? hir_method_impl_node[fn_node] : INVALID;
-    uint impl_token = generic_owner_token(impl_node);
+    uint impl_token = compact_impl_owner_token(fn_node);
     return owner_has_generic_params(impl_token) ? impl_token : owner_token;
 }
 

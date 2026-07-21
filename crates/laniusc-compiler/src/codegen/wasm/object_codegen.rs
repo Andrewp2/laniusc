@@ -6,7 +6,8 @@ pub(super) struct WasmObjectInputBuffers {
     public_decl_index_by_local: wgpu::Buffer,
     decl_id_by_name_token: wgpu::Buffer,
     decl_hir_node: wgpu::Buffer,
-    hir_token_pos: wgpu::Buffer,
+    compact_hir_count: wgpu::Buffer,
+    compact_hir_core: wgpu::Buffer,
 }
 
 impl WasmObjectInputBuffers {
@@ -17,7 +18,8 @@ impl WasmObjectInputBuffers {
             public_decl_index_by_local: inputs.public_decl_index_by_local.clone(),
             decl_id_by_name_token: inputs.decl_id_by_name_token.clone(),
             decl_hir_node: inputs.decl_hir_node.clone(),
-            hir_token_pos: inputs.hir_token_pos.clone(),
+            compact_hir_count: inputs.canonical_hir.count.clone(),
+            compact_hir_core: inputs.canonical_hir.core.clone(),
         }
     }
 }
@@ -285,8 +287,12 @@ impl GpuWasmCodeGenerator {
                     bufs.object_inputs.decl_hir_node.as_entire_binding(),
                 ),
                 (
-                    "hir_token_pos",
-                    bufs.object_inputs.hir_token_pos.as_entire_binding(),
+                    "compact_hir_count",
+                    bufs.object_inputs.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_core",
+                    bufs.object_inputs.compact_hir_core.as_entire_binding(),
                 ),
                 (
                     "wasm_func_slot_by_token",

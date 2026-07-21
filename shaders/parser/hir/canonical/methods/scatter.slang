@@ -37,9 +37,11 @@ uint semantic_anchor(uint raw)
     uint right = hir_expr_record[raw * 4u + 2u];
     uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
     uint kind = hir_kind[raw];
+    uint expr_form = hir_expr_record[raw * 4u];
+    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, false);
     uint operator_token = canonical_hir_operator_anchor(
-        kind, right_start, gCanonical.canonical_capacity);
-    return canonical_hir_anchor(kind, hir_token_pos[raw], hir_token_end[raw], open,
+        identity_kind, right_start, gCanonical.canonical_capacity);
+    return canonical_hir_anchor(identity_kind, hir_token_pos[raw], hir_token_end[raw], open,
                                 hir_expr_record[raw * 4u + 3u], operator_token,
                                 gCanonical.canonical_capacity);
 }

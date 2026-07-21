@@ -10,6 +10,7 @@
 //   consumers; it does not scan declaration subtrees.
 
 import generated_parse_production_ids;
+import fixed.compact_method;
 
 struct Params
 {
@@ -21,13 +22,23 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirMethodSignature
+{
+    uint first_param_token;
+    uint impl_receiver_type;
+    uint receiver_mode;
+    uint metadata;
+};
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<CompactMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_method_signature_flags;
+StructuredBuffer<uint> hir_item_name_token;
 
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
@@ -81,14 +92,41 @@ bool impl_node_kind(uint kind)
     return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
+uint compact_item_kind_for_raw_decl(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint token = hir_item_name_token[node];
+    if (!valid_token(token))
+        return INVALID;
+    uint dense = type_decl_hir_node_by_token[token];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count ? compact_hir_payload[dense].a : INVALID;
+}
+
+uint compact_method_signature_flags_for_raw_decl(uint node)
+{
+    if (!valid_node(node))
+        return 0u;
+    uint dense = raw_to_compact_hir[node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= hir_count)
+        return 0u;
+    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint row = compact_method_row_for_hir(
+        compact_method_cores, method_count, dense);
+    return row < method_count ? compact_method_signatures[row].metadata >> 16u : 0u;
+}
+
 bool generic_decl_node(uint node)
 {
     if (!valid_node(node))
         return false;
     uint prod = node_kind[node];
     if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
-        return (hir_method_signature_flags[node] & METHOD_SIGNATURE_HAS_GENERICS) != 0u;
-    return generic_decl_item_kind(hir_item_kind[node]) ||
+        return (compact_method_signature_flags_for_raw_decl(node) &
+                METHOD_SIGNATURE_HAS_GENERICS) != 0u;
+    return generic_decl_item_kind(compact_item_kind_for_raw_decl(node)) ||
            prod == PROD_IMPL_INHERENT ||
            prod == PROD_IMPL_TRAIT;
 }

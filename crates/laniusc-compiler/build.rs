@@ -17,6 +17,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
 
     let workspace_root = workspace_root();
+    generate_lowering_ir_opcodes(&workspace_root);
     let slangc_version_timeout = timeout_from_env_ms(
         "LANIUS_SLANGC_VERSION_TIMEOUT_MS",
         DEFAULT_SLANGC_VERSION_TIMEOUT_MS,
@@ -56,6 +57,45 @@ fn main() {
         "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_ROOT={}",
         shader_artifact_root(&workspace_root).display()
     );
+}
+
+fn generate_lowering_ir_opcodes(workspace_root: &Path) {
+    let source = workspace_root.join("shaders/codegen/lowering_ir.slang");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let text = fs::read_to_string(&source)
+        .unwrap_or_else(|err| panic!("read lowering IR schema {}: {err}", source.display()));
+    let mut generated = String::from("// Generated from shaders/codegen/lowering_ir.slang.\n");
+    let mut marked = false;
+    let mut count = 0usize;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "// IR_OPCODE" {
+            marked = true;
+            continue;
+        }
+        if !marked {
+            continue;
+        }
+        marked = false;
+        let declaration = line
+            .strip_prefix("static const uint ")
+            .unwrap_or_else(|| panic!("IR_OPCODE must precede a uint constant, found {line:?}"));
+        let (name, value) = declaration
+            .split_once('=')
+            .unwrap_or_else(|| panic!("malformed lowering IR opcode {line:?}"));
+        let name = name.trim();
+        let value = value
+            .trim()
+            .strip_suffix(';')
+            .and_then(|value| value.strip_suffix('u'))
+            .unwrap_or_else(|| panic!("lowering IR opcode must end in `u;`: {line:?}"));
+        generated.push_str(&format!("pub const {name}: u32 = {value};\n"));
+        count += 1;
+    }
+    assert!(count > 0, "lowering IR schema contains no marked opcodes");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
+    fs::write(out_dir.join("lowering_ir_opcodes.rs"), generated)
+        .expect("write generated lowering IR opcodes");
 }
 
 fn workspace_root() -> PathBuf {

@@ -134,14 +134,6 @@ pub(in crate::type_checker) fn create_path_sequences(
                     "path_prefix_table_state",
                     buffers.path_prefix_table_state.as_entire_binding(),
                 ),
-                (
-                    "path_prefix_table_left",
-                    buffers.path_prefix_table_left.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_table_right",
-                    buffers.path_prefix_table_right.as_entire_binding(),
-                ),
             ],
         )?;
         let lookup = bind_group::create_bind_group_from_bindings(
@@ -163,14 +155,6 @@ pub(in crate::type_checker) fn create_path_sequences(
                 (
                     "path_prefix_table_state",
                     buffers.path_prefix_table_state.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_table_left",
-                    buffers.path_prefix_table_left.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_table_right",
-                    buffers.path_prefix_table_right.as_entire_binding(),
                 ),
                 ("path_prefix_id_out", write_ids.as_entire_binding()),
                 ("status", inputs.status_buf.as_entire_binding()),

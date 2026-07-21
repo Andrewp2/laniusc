@@ -28,6 +28,7 @@ pub(super) struct WasmWorkingBuffers {
     pub wasm_func_scan_prefix_a_buf: LaniusBuffer<u32>,
     pub wasm_func_scan_prefix_b_buf: LaniusBuffer<u32>,
     pub body_let_init_expr_by_decl_token_buf: LaniusBuffer<u32>,
+    pub body_let_init_hir_by_decl_token_buf: LaniusBuffer<u32>,
     pub body_fragment_len_buf: LaniusBuffer<u32>,
     pub body_fragment_meta_buf: LaniusBuffer<u32>,
     pub body_fragment_aux_buf: LaniusBuffer<u32>,
@@ -37,6 +38,8 @@ pub(super) struct WasmWorkingBuffers {
     pub body_scan_prefix_b_buf: LaniusBuffer<u32>,
     pub expr_subtree_total_buf: LaniusBuffer<u32>,
     pub expr_subtree_features_buf: LaniusBuffer<u32>,
+    pub compact_expr_subtree_total_buf: LaniusBuffer<u32>,
+    pub compact_expr_subtree_features_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_by_fragment_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_local_prefix_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_count_block_sum_buf: LaniusBuffer<u32>,
@@ -50,14 +53,6 @@ pub(super) struct WasmWorkingBuffers {
     pub wasm_agg_call_arg_byte_prefix_a_buf: LaniusBuffer<u32>,
     pub wasm_agg_call_arg_byte_prefix_b_buf: LaniusBuffer<u32>,
     pub body_status_buf: LaniusBuffer<u32>,
-    pub struct_field_count_by_decl_token_buf: LaniusBuffer<u32>,
-    pub struct_field_index_by_token_buf: LaniusBuffer<u32>,
-    pub struct_field_decl_by_token_buf: LaniusBuffer<u32>,
-    pub struct_field_name_id_buf: LaniusBuffer<u32>,
-    pub struct_field_ref_tag_buf: LaniusBuffer<u32>,
-    pub struct_field_ref_payload_buf: LaniusBuffer<u32>,
-    pub struct_field_scalar_offset_buf: LaniusBuffer<u32>,
-    pub struct_field_scalar_width_buf: LaniusBuffer<u32>,
     pub struct_init_field_index_buf: LaniusBuffer<u32>,
     pub member_result_field_index_buf: LaniusBuffer<u32>,
     pub wasm_agg_local_width_by_token_buf: LaniusBuffer<u32>,
@@ -255,6 +250,12 @@ pub(super) fn create_wasm_working_buffers(
         token_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
+    let body_let_init_hir_by_decl_token_buf = storage_u32_rw(
+        device,
+        "codegen.wasm.body_let_init_hir_by_decl_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
     let body_fragment_len_buf = storage_u32_rw(
         device,
         "codegen.wasm.body_fragment_len",
@@ -308,6 +309,20 @@ pub(super) fn create_wasm_working_buffers(
     let expr_subtree_features_buf = storage_u32_rw(
         device,
         "codegen.wasm.expr_subtree_features",
+        hir_node_capacity.max(1) as usize * 2,
+        wgpu::BufferUsages::empty(),
+    );
+    // Differential-migration outputs in dense compact-HIR identity space.
+    // These replace the raw-node tables once every fragment consumer moves.
+    let compact_expr_subtree_total_buf = storage_u32_rw(
+        device,
+        "codegen.wasm.compact_expr_subtree_total",
+        hir_node_capacity.max(1) as usize * 2,
+        wgpu::BufferUsages::empty(),
+    );
+    let compact_expr_subtree_features_buf = storage_u32_rw(
+        device,
+        "codegen.wasm.compact_expr_subtree_features",
         hir_node_capacity.max(1) as usize * 2,
         wgpu::BufferUsages::empty(),
     );
@@ -387,54 +402,6 @@ pub(super) fn create_wasm_working_buffers(
         device,
         "codegen.wasm.body_status",
         4,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_count_by_decl_token_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_count_by_decl_token",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_index_by_token_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_index_by_token",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_decl_by_token_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_decl_by_token",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_name_id_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_name_id",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_ref_tag_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_ref_tag",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_ref_payload_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_ref_payload",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_scalar_offset_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_scalar_offset",
-        token_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let struct_field_scalar_width_buf = storage_u32_rw(
-        device,
-        "codegen.wasm.agg.struct_field_scalar_width",
-        token_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
     let struct_init_field_index_buf = storage_u32_rw(
@@ -534,6 +501,7 @@ pub(super) fn create_wasm_working_buffers(
         wasm_func_scan_prefix_a_buf,
         wasm_func_scan_prefix_b_buf,
         body_let_init_expr_by_decl_token_buf,
+        body_let_init_hir_by_decl_token_buf,
         body_fragment_len_buf,
         body_fragment_meta_buf,
         body_fragment_aux_buf,
@@ -543,6 +511,8 @@ pub(super) fn create_wasm_working_buffers(
         body_scan_prefix_b_buf,
         expr_subtree_total_buf,
         expr_subtree_features_buf,
+        compact_expr_subtree_total_buf,
+        compact_expr_subtree_features_buf,
         wasm_agg_call_arg_count_by_fragment_buf,
         wasm_agg_call_arg_count_local_prefix_buf,
         wasm_agg_call_arg_count_block_sum_buf,
@@ -556,14 +526,6 @@ pub(super) fn create_wasm_working_buffers(
         wasm_agg_call_arg_byte_prefix_a_buf,
         wasm_agg_call_arg_byte_prefix_b_buf,
         body_status_buf,
-        struct_field_count_by_decl_token_buf,
-        struct_field_index_by_token_buf,
-        struct_field_decl_by_token_buf,
-        struct_field_name_id_buf,
-        struct_field_ref_tag_buf,
-        struct_field_ref_payload_buf,
-        struct_field_scalar_offset_buf,
-        struct_field_scalar_width_buf,
         struct_init_field_index_buf,
         member_result_field_index_buf,
         wasm_agg_local_width_by_token_buf,

@@ -20,6 +20,23 @@ static const uint CANONICAL_HIR_ARRAY_EXPR = 24u;
 static const uint CANONICAL_HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint CANONICAL_HIR_PATH_EXPR = 33u;
 static const uint CANONICAL_HIR_MATCH_EXPR = 34u;
+static const uint CANONICAL_HIR_EXPR_RANGE = 30u;
+static const uint CANONICAL_HIR_EXPR_RANGE_FROM = 31u;
+static const uint CANONICAL_HIR_EXPR_RANGE_INCLUSIVE = 34u;
+
+uint canonical_hir_identity_kind(uint kind, uint expr_form, bool assignment_stmt)
+{
+    if (assignment_stmt) return CANONICAL_HIR_ASSIGN_EXPR;
+    // A range beginning with an explicit operand shares its default source
+    // token with that operand. Treat it as an operator-anchored expression so
+    // both the range and its first operand retain distinct compact identities.
+    if (kind == CANONICAL_HIR_EXPR &&
+        (expr_form == CANONICAL_HIR_EXPR_RANGE ||
+         expr_form == CANONICAL_HIR_EXPR_RANGE_FROM ||
+         expr_form == CANONICAL_HIR_EXPR_RANGE_INCLUSIVE))
+        return CANONICAL_HIR_BINARY_EXPR;
+    return kind;
+}
 
 uint canonical_hir_priority(uint kind)
 {
@@ -48,7 +65,8 @@ uint canonical_hir_operator_anchor(uint kind, uint right_start, uint canonical_c
     // Assignment and binary productions are `operator + right operand`.
     // Raw grammar spans can include the operator in the left subtree, so the
     // right operand is the stable boundary from which to recover its token.
-    if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR) &&
+    if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR ||
+         kind == CANONICAL_HIR_INDEX_EXPR) &&
         right_start != CANONICAL_HIR_INVALID && right_start > 0u &&
         right_start <= canonical_capacity)
         return right_start - 1u;
@@ -75,7 +93,8 @@ uint canonical_hir_anchor(
     if (kind == CANONICAL_HIR_MEMBER_EXPR && token_end > default_token &&
         token_end <= canonical_capacity)
         return token_end - 1u;
-    if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR) &&
+    if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR ||
+         kind == CANONICAL_HIR_INDEX_EXPR) &&
         operator_token < canonical_capacity)
         return operator_token;
     if (value_token < canonical_capacity && canonical_hir_uses_value_anchor(kind))

@@ -17,16 +17,16 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_name_token;
-StructuredBuffer<uint> hir_fn_return_type_node;
-StructuredBuffer<uint> hir_method_owner_node;
-StructuredBuffer<uint> hir_method_name_token;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_type_code_by_name_id;
+StructuredBuffer<uint> language_entrypoint_tag_by_name_id;
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
@@ -35,7 +35,6 @@ StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_key_order;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -53,6 +52,7 @@ StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 
 RWStructuredBuffer<uint> call_fn_index;
+RWStructuredBuffer<uint> fn_start_token_by_decl_token;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> function_lookup_key;
@@ -80,6 +80,8 @@ static const uint TY_ENUM_BASE = 6144u;
 
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
+static const uint HIR_FN = 3u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -92,7 +94,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint lookup_capacity()
@@ -110,17 +112,19 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+bool main_entrypoint(uint fn_decl_token)
+{
+    if (!valid_token(fn_decl_token))
+        return false;
+    uint name_id = name_id_by_token[fn_decl_token];
+    return name_id != INVALID &&
+           name_id < gParams.n_tokens + LANGUAGE_SYMBOL_COUNT &&
+           language_entrypoint_tag_by_name_id[name_id] == ENTRYPOINT_MAIN;
+}
+
 uint active_generic_param_count()
 {
     return min(generic_param_count_out[0u], gParams.n_tokens);
-}
-
-uint generic_owner_token(uint decl_node)
-{
-    if (!valid_node(decl_node))
-        return INVALID;
-    uint name_token = hir_item_name_token[decl_node];
-    return valid_token(name_token) ? name_token : hir_token_pos[decl_node];
 }
 
 bool generic_param_key_less(uint row, uint owner, uint name_id)
@@ -142,13 +146,9 @@ bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
            generic_param_kind[row] == kind;
 }
 
-uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
+uint generic_param_row_for_name(uint owner_token, uint name_token, uint kind)
 {
-    if (!valid_node(decl_node) || !valid_token(name_token))
-        return INVALID;
-
-    uint owner_token = generic_owner_token(decl_node);
-    if (!valid_token(owner_token))
+    if (!valid_token(owner_token) || !valid_token(name_token))
         return INVALID;
 
     uint name_id = name_id_by_token[name_token];
@@ -176,9 +176,9 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
     return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
-uint generic_param_decl_token_for_name(uint decl_node, uint name_token)
+uint generic_param_decl_token_for_name(uint owner_token, uint name_token)
 {
-    uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
+    uint row = generic_param_row_for_name(owner_token, name_token, GENERIC_PARAM_KIND_TYPE);
     if (row == INVALID)
         return INVALID;
     uint token = generic_param_token[row];
@@ -206,20 +206,6 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
     tag = type_instance_arg_ref_tag[fixed];
     payload = type_instance_arg_ref_payload[fixed];
     return tag != TYPE_REF_INVALID;
-}
-
-uint declaration_token_for_function(uint fn_node)
-{
-    uint decl_token = hir_item_name_token[fn_node];
-    if (!valid_token(decl_token))
-        decl_token = hir_method_name_token[fn_node];
-    return valid_token(decl_token) ? decl_token : INVALID;
-}
-
-uint name_token_for_function(uint fn_node)
-{
-    uint name_token = hir_item_name_token[fn_node];
-    return valid_token(name_token) ? name_token : INVALID;
 }
 
 uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
@@ -397,7 +383,7 @@ uint return_type_node(uint fn_node)
 {
     if (!valid_node(fn_node))
         return INVALID;
-    uint type_node = hir_fn_return_type_node[fn_node];
+    uint type_node = compact_fn_return_type[fn_node];
     return valid_node(type_node) ? type_node : INVALID;
 }
 
@@ -407,7 +393,7 @@ uint scalar_return_type_for_function(uint fn_node)
     if (!valid_node(type_node))
         return TY_UNKNOWN;
 
-    uint type_token = hir_token_pos[type_node];
+    uint type_token = compact_hir_core[type_node].token_start;
     if (!valid_token(type_token))
         return TY_UNKNOWN;
 
@@ -419,7 +405,7 @@ uint scalar_return_type_for_function(uint fn_node)
     return name_id == INVALID ? TY_UNKNOWN : language_type_code_by_name_id[name_id];
 }
 
-void return_ref_for_function(uint fn_node, uint fn_decl_token, out uint tag, out uint payload)
+void return_ref_for_function(uint fn_decl_token, out uint tag, out uint payload)
 {
     tag = fn_return_ref_tag[fn_decl_token];
     payload = fn_return_ref_payload[fn_decl_token];
@@ -427,7 +413,7 @@ void return_ref_for_function(uint fn_node, uint fn_decl_token, out uint tag, out
         valid_token(payload) &&
         type_generic_param_slot_by_token[payload] == INVALID)
     {
-        uint decl_token = generic_param_decl_token_for_name(fn_node, payload);
+        uint decl_token = generic_param_decl_token_for_name(fn_decl_token, payload);
         if (valid_token(decl_token))
             payload = decl_token;
     }
@@ -437,34 +423,50 @@ uint return_type_for_function(uint fn_node, uint fn_decl_token)
 {
     uint tag;
     uint payload;
-    return_ref_for_function(fn_node, fn_decl_token, tag, payload);
+    return_ref_for_function(fn_decl_token, tag, payload);
     if (tag != TYPE_REF_INVALID)
         return semantic_type_code_for_ref(tag, payload);
     uint scalar_ty = scalar_return_type_for_function(fn_node);
     if (scalar_ty != TY_UNKNOWN)
         return scalar_ty;
-    if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN)
+    if (main_entrypoint(fn_decl_token))
         return TY_INT;
     return TY_VOID;
 }
 
 void publish_function_lookup(uint fn_node)
 {
-    uint fn_decl_token = declaration_token_for_function(fn_node);
+    HirCore core = compact_hir_core[fn_node];
+    HirPayload fn = compact_hir_payload[fn_node];
+    uint fn_decl_token = fn.b;
     if (!valid_token(fn_decl_token))
         return;
 
     call_fn_index[fn_decl_token] = fn_decl_token;
     uint tag;
     uint payload;
-    return_ref_for_function(fn_node, fn_decl_token, tag, payload);
-    call_return_type_token[fn_decl_token] = return_type_token_for_ref(tag, payload);
-    call_return_type[fn_decl_token] = return_type_for_function(fn_node, fn_decl_token);
+    return_ref_for_function(fn_decl_token, tag, payload);
+    uint return_type_token = return_type_token_for_ref(tag, payload);
+    uint return_type = return_type_for_function(fn_node, fn_decl_token);
+    call_return_type_token[fn_decl_token] = return_type_token;
+    call_return_type[fn_decl_token] = return_type;
 
-    if (!function_item_kind(hir_item_kind[fn_node]))
+    // Backend body records are keyed by the function's source-span start,
+    // while semantic name lookup is keyed by its declaration-name token.
+    // Publish both token-domain projections from the same HIR function row.
+    uint fn_start_token = core.token_start;
+    if (valid_token(fn_start_token))
+    {
+        fn_start_token_by_decl_token[fn_decl_token] = fn_start_token;
+        call_fn_index[fn_start_token] = fn_decl_token;
+        call_return_type_token[fn_start_token] = return_type_token;
+        call_return_type[fn_start_token] = return_type;
+    }
+
+    if (!function_item_kind(fn.a))
         return;
 
-    uint fn_name_token = name_token_for_function(fn_node);
+    uint fn_name_token = fn_decl_token;
     if (!valid_token(fn_name_token))
         return;
 
@@ -487,18 +489,12 @@ bool function_item_kind(uint item_kind)
     return item_kind == HIR_ITEM_KIND_FN || item_kind == HIR_ITEM_KIND_EXTERN_FN;
 }
 
-bool function_decl_node(uint node)
-{
-    return function_item_kind(hir_item_kind[node]) ||
-           valid_node(hir_method_owner_node[node]);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (node >= active_hir_node_count() || !function_decl_node(node))
+    if (node >= active_hir_node_count() || compact_hir_core[node].kind != HIR_FN)
         return;
 
     publish_function_lookup(node);

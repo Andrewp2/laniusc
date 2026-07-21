@@ -14,9 +14,11 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_active_count;
+StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<uint> semantic_feature_flags;
 RWStructuredBuffer<uint> method_token_dispatch_args;
 RWStructuredBuffer<uint> method_hir_dispatch_args;
+RWStructuredBuffer<uint> method_compact_dispatch_args;
 RWStructuredBuffer<uint> method_token_hir_dispatch_args;
 RWStructuredBuffer<uint> method_radix_prefix_dispatch_args;
 RWStructuredBuffer<uint> method_radix_bases_dispatch_args;
@@ -74,12 +76,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint active_tokens = active_token_count();
     uint active_hir = active_hir_node_count();
+    uint active_methods = min(compact_method_count[0u], gParams.n_hir_nodes);
     bool methods = feature_enabled(SEMANTIC_FEATURE_METHODS);
     bool predicates = feature_enabled(SEMANTIC_FEATURE_PREDICATES);
     bool match_syntax = feature_enabled(SEMANTIC_FEATURE_MATCH);
 
     write_record_args(method_token_dispatch_args, active_tokens, methods);
     write_record_args(method_hir_dispatch_args, active_hir, methods);
+    write_record_args(method_compact_dispatch_args, active_methods, methods);
     write_record_args(method_token_hir_dispatch_args, max(active_tokens, active_hir), methods);
     write_fixed_args(method_radix_prefix_dispatch_args, RADIX_BUCKETS, methods);
     write_fixed_args(method_radix_bases_dispatch_args, 1u, methods);

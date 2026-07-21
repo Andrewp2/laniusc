@@ -352,16 +352,7 @@ fn x86_rodata_offsets_follow_parser_string_literal_ranges() {
             device,
             "x86_rodata.compact_strings",
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            &[
-                0,
-                0,
-                3,
-                0,
-                2,
-                3,
-                1,
-                0,
-            ],
+            &[0, 0, 3, 0, 2, 3, 1, 0],
         );
         let compact_executable_raw = x86_buffer_from_u32s(
             device,
@@ -5259,6 +5250,27 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_local_struct_members_in_assignment_rhs() {
+    assert_source_exit(
+        "local_struct_members_assignment_rhs",
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main() -> i32 {
+    let value: i32 = 3;
+    let pair: Pair = Pair { left: value + 5, right: value * 2 };
+    value = (pair.left * 3 + pair.right * 7 + 2) & 255;
+    return value;
+}
+"#,
+        68,
+    );
+}
+
+#[test]
 fn x86_executes_struct_parameter_member_reads() {
     assert_source_exit(
         "struct_parameter_member_reads",
@@ -6081,6 +6093,24 @@ fn main() {
     let small: f32 = .25;
     let copy: f32 = HALF;
     return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_negative_float_constant() {
+    assert_source_exit(
+        "negative_float_constant",
+        r#"
+const NEGATIVE_HALF: f32 = -0.5;
+
+fn main() {
+    if (NEGATIVE_HALF < 0.0) {
+        return 0;
+    }
+    return 1;
 }
 "#,
         0,

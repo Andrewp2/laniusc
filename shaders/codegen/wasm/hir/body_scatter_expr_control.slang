@@ -76,15 +76,11 @@ static const uint BODY_FRAGMENT_PRINT_LOCAL_I64 = 7u;
 static const uint BODY_FRAGMENT_RETURN_LOCAL_I32 = 8u;
 static const uint BODY_FRAGMENT_ASSIGN_EXPR_I32 = 10u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 = 11u;
-static const uint BODY_FRAGMENT_PRINT_EXPR_I64 = 12u;
 static const uint BODY_FRAGMENT_RETURN_EXPR_I32 = 13u;
-static const uint BODY_FRAGMENT_WHILE_OPEN_I32 = 14u;
 static const uint BODY_FRAGMENT_WHILE_CLOSE = 15u;
-static const uint BODY_FRAGMENT_IF_OPEN_I32 = 16u;
 static const uint BODY_FRAGMENT_IF_ELSE = 17u;
 static const uint BODY_FRAGMENT_IF_END = 18u;
 static const uint BODY_FRAGMENT_BRANCH = 19u;
-static const uint BODY_FRAGMENT_FOR_OPEN_RANGE_I32 = 20u;
 static const uint BODY_FRAGMENT_FOR_CLOSE_RANGE_I32 = 21u;
 static const uint BODY_FRAGMENT_FUNCTION_HEADER = 22u;
 static const uint BODY_FRAGMENT_PRINT_DIRECT_CALL_I64 = 23u;
@@ -967,48 +963,12 @@ uint assign_compound_expr_i32_fragment_byte(uint local_index, uint expr_node, ui
     return local_set_byte(local_index, byte_i - op_i - 1u);
 }
 
-uint print_expr_i64_fragment_byte(uint expr_node, uint byte_i)
-{
-    uint expr_len = expr_simple_len(expr_node);
-    if (byte_i < expr_len)
-        return expr_simple_byte(expr_node, byte_i);
-    if (byte_i == expr_len)
-        return WASM_I64_EXTEND_I32_S;
-    if (byte_i == expr_len + 1u)
-        return WASM_CALL;
-    return WASM_PRINT_I64_FUNC_INDEX;
-}
-
 uint return_expr_i32_fragment_byte(uint expr_node, uint byte_i)
 {
     uint expr_len = expr_simple_len(expr_node);
     if (byte_i < expr_len)
         return expr_simple_byte(expr_node, byte_i);
     return WASM_RETURN;
-}
-
-uint while_open_i32_fragment_byte(uint fragment_len, uint byte_i)
-{
-    if (byte_i == 0u)
-        return WASM_BLOCK;
-    if (byte_i == 1u)
-        return WASM_BLOCK_TYPE_EMPTY;
-    if (byte_i == 2u)
-        return WASM_LOOP;
-    if (byte_i == 3u)
-        return WASM_BLOCK_TYPE_EMPTY;
-
-    uint condition_start = 4u;
-    uint condition_len = fragment_len >= 7u ? fragment_len - 7u : 0u;
-    if (byte_i < condition_start + condition_len)
-        return 0u;
-
-    uint eqz_i = condition_start + condition_len;
-    if (byte_i == eqz_i)
-        return WASM_I32_EQZ;
-    if (byte_i == eqz_i + 1u)
-        return WASM_BR_IF;
-    return 1u;
 }
 
 uint while_close_fragment_byte(uint byte_i)
@@ -1020,86 +980,11 @@ uint while_close_fragment_byte(uint byte_i)
     return WASM_END;
 }
 
-uint if_open_i32_fragment_byte(uint condition_node, uint byte_i)
-{
-    uint condition_len = expr_simple_len(condition_node);
-    if (byte_i < condition_len)
-        return expr_simple_byte(condition_node, byte_i);
-    if (byte_i == condition_len)
-        return WASM_IF;
-    return WASM_BLOCK_TYPE_EMPTY;
-}
-
 uint branch_fragment_byte(uint depth, uint byte_i)
 {
     if (byte_i == 0u)
         return WASM_BR;
     return u32_leb_byte(depth, byte_i - 1u);
-}
-
-uint for_range_start_node(uint range_node)
-{
-    return expr_record_slot(resolve_expr_node(range_node), EXPR_RECORD_LEFT);
-}
-
-uint for_range_end_node(uint range_node)
-{
-    return expr_record_slot(resolve_expr_node(range_node), EXPR_RECORD_RIGHT);
-}
-
-uint for_open_range_i32_fragment_byte(uint binding_token, uint range_node, uint end_local_token, uint byte_i)
-{
-    uint start_node = for_range_start_node(range_node);
-    uint start_len = expr_simple_len(start_node);
-    if (byte_i < start_len)
-        return expr_simple_byte(start_node, byte_i);
-
-    uint binding_set_start = start_len;
-    uint binding_set_len = 1u + u32_leb_len(binding_token);
-    if (byte_i < binding_set_start + binding_set_len)
-        return local_set_byte(binding_token, byte_i - binding_set_start);
-
-    uint end_node = for_range_end_node(range_node);
-    uint end_start = binding_set_start + binding_set_len;
-    uint end_len = expr_simple_len(end_node);
-    if (byte_i < end_start + end_len)
-        return expr_simple_byte(end_node, byte_i - end_start);
-
-    uint end_set_start = end_start + end_len;
-    uint end_set_len = 1u + u32_leb_len(end_local_token);
-    if (byte_i < end_set_start + end_set_len)
-        return local_set_byte(end_local_token, byte_i - end_set_start);
-
-    uint block_start = end_set_start + end_set_len;
-    if (byte_i == block_start + 0u)
-        return WASM_BLOCK;
-    if (byte_i == block_start + 1u)
-        return WASM_BLOCK_TYPE_EMPTY;
-    if (byte_i == block_start + 2u)
-        return WASM_LOOP;
-    if (byte_i == block_start + 3u)
-        return WASM_BLOCK_TYPE_EMPTY;
-
-    uint condition_start = block_start + 4u;
-    uint binding_get_len = 1u + u32_leb_len(binding_token);
-    if (byte_i < condition_start + binding_get_len)
-        return local_get_byte(binding_token, byte_i - condition_start);
-
-    uint end_get_start = condition_start + binding_get_len;
-    uint end_get_len = 1u + u32_leb_len(end_local_token);
-    if (byte_i < end_get_start + end_get_len)
-        return local_get_byte(end_local_token, byte_i - end_get_start);
-
-    uint ge_i = end_get_start + end_get_len;
-    if (byte_i == ge_i)
-        return WASM_I32_GE_S;
-    if (byte_i == ge_i + 1u)
-        return WASM_BR_IF;
-    if (byte_i == ge_i + 2u)
-        return 1u;
-    if (byte_i == ge_i + 3u)
-        return WASM_BLOCK;
-    return WASM_BLOCK_TYPE_EMPTY;
 }
 
 uint for_close_range_i32_fragment_byte(uint binding_token, uint byte_i)
@@ -1139,11 +1024,7 @@ bool scatter_handles_kind(uint kind)
 {
     return kind == BODY_FRAGMENT_ASSIGN_EXPR_I32 ||
            kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 ||
-           kind == BODY_FRAGMENT_PRINT_EXPR_I64 ||
            kind == BODY_FRAGMENT_RETURN_EXPR_I32 ||
-           kind == BODY_FRAGMENT_WHILE_OPEN_I32 ||
-           kind == BODY_FRAGMENT_IF_OPEN_I32 ||
-           kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32 ||
            kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32;
 }
 
@@ -1156,16 +1037,8 @@ uint fragment_byte(uint4 meta, uint4 aux, uint fragment_len, uint byte_i)
         return assign_expr_i32_fragment_byte(meta.y, meta.z, byte_i);
     if (kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32)
         return assign_compound_expr_i32_fragment_byte(meta.y, meta.z, meta.w, byte_i);
-    if (kind == BODY_FRAGMENT_PRINT_EXPR_I64)
-        return print_expr_i64_fragment_byte(value, byte_i);
     if (kind == BODY_FRAGMENT_RETURN_EXPR_I32)
         return return_expr_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_WHILE_OPEN_I32)
-        return while_open_i32_fragment_byte(fragment_len, byte_i);
-    if (kind == BODY_FRAGMENT_IF_OPEN_I32)
-        return if_open_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32)
-        return for_open_range_i32_fragment_byte(meta.y, meta.z, meta.w, byte_i);
     if (kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32)
         return for_close_range_i32_fragment_byte(value, byte_i);
 

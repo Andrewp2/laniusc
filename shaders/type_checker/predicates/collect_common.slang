@@ -62,9 +62,6 @@ StructuredBuffer<uint> hir_type_arg_count;
 #if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_type_arg_next;
 #endif
-#if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_item_kind;
-#endif
 StructuredBuffer<uint> hir_item_name_token;
 #if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_item_visibility;
@@ -288,6 +285,15 @@ bool callable_generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_EXTERN_FN;
 }
 
+uint compact_item_kind_for_raw(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count ? compact_hir_payload[dense].a : INVALID;
+}
+
 uint generic_decl_owner_for_node(uint node)
 {
     if (!valid_node(node))
@@ -296,7 +302,7 @@ uint generic_decl_owner_for_node(uint node)
     uint owner = generic_decl_owner_by_node[node];
     // Owner records also include impl headers; this pass only supports item-style
     // generic owners for bound predicates, so impl-bound predicates fail closed.
-    return valid_node(owner) && generic_decl_item_kind(hir_item_kind[owner])
+    return valid_node(owner) && generic_decl_item_kind(compact_item_kind_for_raw(owner))
         ? owner
         : INVALID;
 }
@@ -1716,7 +1722,7 @@ uint trait_owner_node_for_method(uint method_node)
     uint owner = valid_node(method_node)
         ? predicate_method_contract_owner_node[method_node]
         : INVALID;
-    return valid_node(owner) && hir_item_kind[owner] == HIR_ITEM_KIND_TRAIT
+    return valid_node(owner) && compact_item_kind_for_raw(owner) == HIR_ITEM_KIND_TRAIT
         ? owner
         : INVALID;
 }

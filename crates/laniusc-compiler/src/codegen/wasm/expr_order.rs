@@ -15,6 +15,8 @@ struct ExprDepthTreeStep {
 }
 
 pub(super) struct ResidentWasmExprOrder {
+    compact: bool,
+    root_identity: wgpu::Buffer,
     _radix_params: Vec<LaniusBuffer<WasmExprRadixParams>>,
     _scan_params: Vec<LaniusBuffer<WasmScanParams>>,
     _contribution_scan_params: Vec<LaniusBuffer<WasmScanParams>>,
@@ -35,6 +37,9 @@ pub(super) struct ResidentWasmExprOrder {
     pub node_span: LaniusBuffer<u32>,
     pub root_total: LaniusBuffer<u32>,
     pub root_total_readback: wgpu::Buffer,
+    pub order_readback: wgpu::Buffer,
+    pub contribution_readback: wgpu::Buffer,
+    pub root_identity_readback: wgpu::Buffer,
     init: wgpu::BindGroup,
     histograms: Vec<wgpu::BindGroup>,
     scan_local: wgpu::BindGroup,
@@ -62,8 +67,11 @@ impl GpuWasmCodeGenerator {
         device: &wgpu::Device,
         hir_node_capacity: u32,
         forest_root: &wgpu::Buffer,
+        expr_parent: &wgpu::Buffer,
+        compact_hir_core: Option<&wgpu::Buffer>,
         inputs: GpuWasmCodegenInputs<'_>,
         working: &WasmWorkingBuffers,
+        compact: bool,
     ) -> Result<ResidentWasmExprOrder> {
         let n_items = hir_node_capacity.max(1);
         let item_blocks = n_items.div_ceil(256).max(1);
@@ -162,7 +170,7 @@ impl GpuWasmCodeGenerator {
             device,
             "codegen.wasm.expr_contribution",
             n_items as usize * 4,
-            wgpu::BufferUsages::empty(),
+            wgpu::BufferUsages::COPY_SRC,
         );
         let contribution_local_prefix = storage_u32_rw(
             device,
@@ -228,14 +236,53 @@ impl GpuWasmCodeGenerator {
             n_items as usize * 2,
             wgpu::BufferUsages::COPY_SRC,
         );
-        let subtree_total = &working.expr_subtree_total_buf;
-        let subtree_features = &working.expr_subtree_features_buf;
+        let subtree_total = if compact {
+            &working.compact_expr_subtree_total_buf
+        } else {
+            &working.expr_subtree_total_buf
+        };
+        let subtree_features = if compact {
+            &working.compact_expr_subtree_features_buf
+        } else {
+            &working.expr_subtree_features_buf
+        };
         let root_total_readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("codegen.wasm.expr_root_total.readback"),
             size: if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
                 (n_items as u64 * 8).max(8)
             } else {
                 8
+            },
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let trace_expr = crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false);
+        let order_readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("codegen.wasm.expr_order.readback"),
+            size: if trace_expr {
+                (n_items as u64 * 4).max(4)
+            } else {
+                4
+            },
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let contribution_readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("codegen.wasm.expr_contribution.readback"),
+            size: if trace_expr {
+                (n_items as u64 * 16).max(16)
+            } else {
+                16
+            },
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let root_identity_readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("codegen.wasm.expr_root_identity.readback"),
+            size: if trace_expr {
+                (n_items as u64 * 4).max(4)
+            } else {
+                4
             },
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
@@ -250,24 +297,35 @@ impl GpuWasmCodeGenerator {
                 ("expr_order", order_a.as_entire_binding()),
             ],
         )?;
+        let mut same_end_rank_init_bindings = vec![
+            ("gExprRadix", radix_params[0].as_entire_binding()),
+            ("expr_same_end_link", contribution.as_entire_binding()),
+            (
+                "expr_same_end_rank",
+                contribution_local_prefix.as_entire_binding(),
+            ),
+        ];
+        if let Some(core) = compact_hir_core {
+            same_end_rank_init_bindings.extend([
+                ("compact_expr_parent", expr_parent.as_entire_binding()),
+                ("compact_hir_core", core.as_entire_binding()),
+            ]);
+        } else {
+            same_end_rank_init_bindings.extend([
+                ("hir_expr_parent_node", expr_parent.as_entire_binding()),
+                ("hir_token_end", inputs.hir_token_end.as_entire_binding()),
+            ]);
+        }
         let same_end_rank_init = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_expr_same_end_rank_init"),
-            &self.hir_expr_same_end_rank_init_pass,
+            if compact {
+                &self.hir_expr_same_end_rank_init_compact_pass
+            } else {
+                &self.hir_expr_same_end_rank_init_pass
+            },
             0,
-            &[
-                ("gExprRadix", radix_params[0].as_entire_binding()),
-                (
-                    "hir_expr_parent_node",
-                    inputs.expressions.parent_node.as_entire_binding(),
-                ),
-                ("hir_token_end", inputs.hir_token_end.as_entire_binding()),
-                ("expr_same_end_link", contribution.as_entire_binding()),
-                (
-                    "expr_same_end_rank",
-                    contribution_local_prefix.as_entire_binding(),
-                ),
-            ],
+            &same_end_rank_init_bindings,
         )?;
         let same_end_rank_steps = (0..same_end_rank_step_count)
             .map(|step| {
@@ -313,10 +371,7 @@ impl GpuWasmCodeGenerator {
             0,
             &[
                 ("gExprRadix", radix_params[0].as_entire_binding()),
-                (
-                    "hir_expr_parent_node",
-                    inputs.expressions.parent_node.as_entire_binding(),
-                ),
+                ("hir_expr_parent_node", expr_parent.as_entire_binding()),
                 ("expr_depth_state", node_span.as_entire_binding()),
             ],
         )?;
@@ -434,45 +489,73 @@ impl GpuWasmCodeGenerator {
             } else {
                 (&order_b, &order_a)
             };
+            let mut histogram_bindings = vec![
+                ("gExprRadix", radix_params[key_step].as_entire_binding()),
+                (
+                    "expr_same_end_rank",
+                    contribution_local_prefix.as_entire_binding(),
+                ),
+                ("expr_order_in", input.as_entire_binding()),
+                ("expr_radix_histogram", histogram.as_entire_binding()),
+            ];
+            if let Some(core) = compact_hir_core {
+                histogram_bindings.extend([
+                    ("compact_expr_root", forest_root.as_entire_binding()),
+                    ("compact_hir_core", core.as_entire_binding()),
+                ]);
+            } else {
+                histogram_bindings.extend([
+                    ("hir_expr_forest_root_node", forest_root.as_entire_binding()),
+                    ("hir_token_end", inputs.hir_token_end.as_entire_binding()),
+                ]);
+            }
             histograms.push(create_wasm_bind_group(
                 device,
                 Some("codegen_wasm_hir_expr_order_histogram"),
-                &self.hir_expr_order_histogram_pass,
+                if compact {
+                    &self.hir_expr_order_histogram_compact_pass
+                } else {
+                    &self.hir_expr_order_histogram_pass
+                },
                 0,
-                &[
-                    ("gExprRadix", radix_params[key_step].as_entire_binding()),
+                &histogram_bindings,
+            )?);
+            let mut scatter_bindings = vec![
+                ("gExprRadix", radix_params[key_step].as_entire_binding()),
+                (
+                    "expr_same_end_rank",
+                    contribution_local_prefix.as_entire_binding(),
+                ),
+                ("expr_order_in", input.as_entire_binding()),
+                ("expr_radix_histogram_prefix", histogram.as_entire_binding()),
+                (
+                    "expr_radix_block_prefix",
+                    final_prefix(&scan_params, &block_prefix_a, &block_prefix_b)
+                        .as_entire_binding(),
+                ),
+                ("expr_order_out", output.as_entire_binding()),
+            ];
+            if let Some(core) = compact_hir_core {
+                scatter_bindings.extend([
+                    ("compact_expr_root", forest_root.as_entire_binding()),
+                    ("compact_hir_core", core.as_entire_binding()),
+                ]);
+            } else {
+                scatter_bindings.extend([
                     ("hir_expr_forest_root_node", forest_root.as_entire_binding()),
                     ("hir_token_end", inputs.hir_token_end.as_entire_binding()),
-                    (
-                        "expr_same_end_rank",
-                        contribution_local_prefix.as_entire_binding(),
-                    ),
-                    ("expr_order_in", input.as_entire_binding()),
-                    ("expr_radix_histogram", histogram.as_entire_binding()),
-                ],
-            )?);
+                ]);
+            }
             scatters.push(create_wasm_bind_group(
                 device,
                 Some("codegen_wasm_hir_expr_order_scatter"),
-                &self.hir_expr_order_scatter_pass,
+                if compact {
+                    &self.hir_expr_order_scatter_compact_pass
+                } else {
+                    &self.hir_expr_order_scatter_pass
+                },
                 0,
-                &[
-                    ("gExprRadix", radix_params[key_step].as_entire_binding()),
-                    ("hir_expr_forest_root_node", forest_root.as_entire_binding()),
-                    ("hir_token_end", inputs.hir_token_end.as_entire_binding()),
-                    (
-                        "expr_same_end_rank",
-                        contribution_local_prefix.as_entire_binding(),
-                    ),
-                    ("expr_order_in", input.as_entire_binding()),
-                    ("expr_radix_histogram_prefix", histogram.as_entire_binding()),
-                    (
-                        "expr_radix_block_prefix",
-                        final_prefix(&scan_params, &block_prefix_a, &block_prefix_b)
-                            .as_entire_binding(),
-                    ),
-                    ("expr_order_out", output.as_entire_binding()),
-                ],
+                &scatter_bindings,
             )?);
         }
         let scan_local = create_wasm_bind_group(
@@ -517,28 +600,33 @@ impl GpuWasmCodeGenerator {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let body_binding_context = WasmBodyBindingContext::new(inputs, working);
         let final_agg_prefix = if (working.func_scan_param_bufs.len() - 1) % 2 == 0 {
             &working.wasm_agg_scan_prefix_a_buf
         } else {
             &working.wasm_agg_scan_prefix_b_buf
         };
+        let body_binding_context = WasmBodyBindingContext::new(inputs, working);
         let mut contribution_bindings = Vec::new();
         body_binding_context.extend(&mut contribution_bindings, final_agg_prefix);
         contribution_bindings.extend([
-            ("hir_expr_forest_root_node", forest_root.as_entire_binding()),
-            (
-                "hir_expr_parent_node",
-                inputs.expressions.parent_node.as_entire_binding(),
-            ),
             ("expr_order", order_a.as_entire_binding()),
             ("expr_contribution", contribution.as_entire_binding()),
             ("expr_node_emission", node_emission.as_entire_binding()),
         ]);
+        if !compact {
+            contribution_bindings.extend([
+                ("hir_expr_forest_root_node", forest_root.as_entire_binding()),
+                ("hir_expr_parent_node", expr_parent.as_entire_binding()),
+            ]);
+        }
         let contribution_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_expr_contribution"),
-            &self.hir_expr_contribution_pass,
+            if compact {
+                &self.hir_expr_contribution_compact_pass
+            } else {
+                &self.hir_expr_contribution_pass
+            },
             0,
             &contribution_bindings,
         )?;
@@ -696,6 +784,8 @@ impl GpuWasmCodeGenerator {
         )?;
 
         Ok(ResidentWasmExprOrder {
+            compact,
+            root_identity: forest_root.clone(),
             _radix_params: radix_params,
             _scan_params: scan_params,
             _contribution_scan_params: contribution_scan_params,
@@ -716,6 +806,9 @@ impl GpuWasmCodeGenerator {
             node_span,
             root_total,
             root_total_readback,
+            order_readback,
+            contribution_readback,
+            root_identity_readback,
             init,
             histograms,
             scan_local,
@@ -743,9 +836,14 @@ impl GpuWasmCodeGenerator {
         encoder: &mut wgpu::CommandEncoder,
         order: &ResidentWasmExprOrder,
     ) -> Result<()> {
+        let same_end_init_pipeline = if order.compact {
+            self.hir_expr_same_end_rank_init_compact_pass.pipeline()?
+        } else {
+            self.hir_expr_same_end_rank_init_pass.pipeline()?
+        };
         record_expr_order_pass(
             encoder,
-            self.hir_expr_same_end_rank_init_pass.pipeline()?.as_ref(),
+            same_end_init_pipeline.as_ref(),
             &order.same_end_rank_init,
             order.item_blocks,
             "codegen.wasm.expr_same_end_rank.init",
@@ -766,10 +864,20 @@ impl GpuWasmCodeGenerator {
             order.item_blocks,
             "codegen.wasm.expr_order.init",
         );
+        let histogram_pipeline = if order.compact {
+            self.hir_expr_order_histogram_compact_pass.pipeline()?
+        } else {
+            self.hir_expr_order_histogram_pass.pipeline()?
+        };
+        let scatter_pipeline = if order.compact {
+            self.hir_expr_order_scatter_compact_pass.pipeline()?
+        } else {
+            self.hir_expr_order_scatter_pass.pipeline()?
+        };
         for step in 0..RADIX_STEPS as usize {
             record_expr_order_pass(
                 encoder,
-                self.hir_expr_order_histogram_pass.pipeline()?.as_ref(),
+                histogram_pipeline.as_ref(),
                 &order.histograms[step],
                 order.item_blocks,
                 "codegen.wasm.expr_order.histogram",
@@ -792,7 +900,7 @@ impl GpuWasmCodeGenerator {
             }
             record_expr_order_pass(
                 encoder,
-                self.hir_expr_order_scatter_pass.pipeline()?.as_ref(),
+                scatter_pipeline.as_ref(),
                 &order.scatters[step],
                 order.item_blocks,
                 "codegen.wasm.expr_order.scatter",
@@ -838,9 +946,14 @@ impl GpuWasmCodeGenerator {
                 "codegen.wasm.expr_depth.build_min_tree",
             );
         }
+        let contribution_pipeline = if order.compact {
+            self.hir_expr_contribution_compact_pass.pipeline()?
+        } else {
+            self.hir_expr_contribution_pass.pipeline()?
+        };
         record_expr_order_pass(
             encoder,
-            self.hir_expr_contribution_pass.pipeline()?.as_ref(),
+            contribution_pipeline.as_ref(),
             &order.contribution,
             order.item_blocks,
             "codegen.wasm.expr_contribution",
@@ -893,6 +1006,27 @@ impl GpuWasmCodeGenerator {
                 &order.root_total_readback,
                 0,
                 order.root_total.size(),
+            );
+            encoder.copy_buffer_to_buffer(
+                &order.order_a,
+                0,
+                &order.order_readback,
+                0,
+                order.order_a.size(),
+            );
+            encoder.copy_buffer_to_buffer(
+                &order._contribution,
+                0,
+                &order.contribution_readback,
+                0,
+                order._contribution.size(),
+            );
+            encoder.copy_buffer_to_buffer(
+                &order.root_identity,
+                0,
+                &order.root_identity_readback,
+                0,
+                order.order_a.size(),
             );
         }
         Ok(())

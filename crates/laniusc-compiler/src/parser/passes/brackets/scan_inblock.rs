@@ -58,6 +58,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScanInbl
                 b.b_block_minpref.as_entire_binding(),
             ),
             (
+                "block_row_min".into(),
+                b.b_block_row_min.as_entire_binding(),
+            ),
+            (
                 "block_maxdepth".into(),
                 b.b_block_maxdepth.as_entire_binding(),
             ),

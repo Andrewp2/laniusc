@@ -64,6 +64,16 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         "type_check.resident.type_instances.mark_generic_param_records.pass",
         hir_active_dispatch_args,
     )?;
+    // The first pass publishes compact declaration name-token -> dense-HIR
+    // rows. The second pass joins raw propagation owners against that compact
+    // table, avoiding semantic classification from raw parser item columns.
+    record_compute_indirect(
+        encoder,
+        &passes.type_instances_mark_generic_param_records,
+        &type_instances.mark_generic_param_records,
+        "type_check.resident.type_instances.mark_generic_param_owners.pass",
+        hir_active_dispatch_args,
+    )?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,

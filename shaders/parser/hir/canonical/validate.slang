@@ -66,10 +66,14 @@ StructuredBuffer<HirMethodCore> hir_method_cores;
 StructuredBuffer<HirMethodSignature> hir_method_signatures;
 StructuredBuffer<uint> hir_predicate_count;
 StructuredBuffer<HirPredicate> hir_predicates;
+StructuredBuffer<uint> hir_expr_parent;
+StructuredBuffer<uint> hir_expr_root;
+StructuredBuffer<uint> hir_expr_forest_status;
 RWStructuredBuffer<uint> canonical_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_MEMBER_EXPR = 21u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 
 [shader("compute")]
@@ -371,6 +375,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         HirMethodCore method = hir_method_cores[row];
         HirMethodSignature signature = hir_method_signatures[row];
         if (method.node >= count || hir_core[method.node].kind != 3u) method_reason |= 67108864u;
+        if (row != 0u && hir_method_cores[row - 1u].node >= method.node)
+            method_reason |= 67108864u;
         if (method.owner >= count) method_reason |= 134217728u;
         if (method.impl_node != INVALID &&
             (method.impl_node >= count || hir_core[method.impl_node].kind != 35u))
@@ -435,6 +441,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     HirCore core = hir_core[row];
     HirLinks links = hir_links[row];
+    HirPayload payload = hir_payload[row];
     bool parent_ok = core.parent == INVALID || core.parent < row;
     bool span_ok = core.token_start < gCanonical.canonical_capacity &&
                    core.token_end != INVALID && core.token_end >= core.token_start;
@@ -445,9 +452,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool sibling_ok = links.next_sibling == INVALID ||
                       (links.next_sibling > row && links.next_sibling < count &&
                        hir_core[links.next_sibling].parent == core.parent);
+    bool payload_ok = core.kind != HIR_MEMBER_EXPR ||
+                      (payload.b < count && payload.b != row);
+    uint expr_parent = hir_expr_parent[row];
+    uint expr_root = hir_expr_root[row];
+    bool expr_parent_ok = expr_parent == INVALID ||
+                          (expr_parent < count && expr_parent != row);
+    bool expr_root_ok = expr_root < count &&
+                        (expr_parent == INVALID ? expr_root == row
+                                                : hir_expr_root[expr_parent] == expr_root);
+    bool expr_forest_ok = row != 0u || hir_expr_forest_status[0u] == 0u;
     uint reason = (parent_ok ? 0u : 1u) | (span_ok ? 0u : 2u) |
                   (subtree_ok ? 0u : 4u) | (child_ok ? 0u : 8u) |
-                  (sibling_ok ? 0u : 16u) | arg_reason | param_reason | type_arg_reason |
+                  (sibling_ok ? 0u : 16u) | (payload_ok ? 0u : 32u) |
+                  (expr_parent_ok ? 0u : 64u) | (expr_root_ok ? 0u : 128u) |
+                  (expr_forest_ok ? 0u : 256u) |
+                  arg_reason | param_reason | type_arg_reason |
                   generic_param_reason | path_reason | path_segment_reason;
     reason |= field_reason;
     reason |= variant_reason | variant_payload_reason;

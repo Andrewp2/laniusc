@@ -2,7 +2,6 @@ use encase::ShaderType;
 
 use super::{
     BracketsBlockPrefixScanStep,
-    BracketsHistogramScanStep,
     HirSemanticPrefixScanStep,
     PackOffsetScanStep,
     PackTotalReduceStep,
@@ -241,12 +240,20 @@ pub struct GpuHirView {
     pub core: LaniusBuffer<HirCore>,
     pub links: LaniusBuffer<HirLinks>,
     pub payload: LaniusBuffer<HirPayload>,
+    /// Dense nearest enclosing loop keyed by dense HIR id.
+    pub nearest_loop: LaniusBuffer<u32>,
     /// Dense return-type HIR id keyed by dense function HIR id.
     pub fn_return_type: LaniusBuffer<u32>,
     /// Dense target-type HIR id keyed by dense type-alias declaration HIR id.
     pub type_alias_target: LaniusBuffer<u32>,
     /// Dense annotated-type HIR id keyed by dense constant declaration HIR id.
     pub const_type: LaniusBuffer<u32>,
+    /// Dense initializer-expression HIR id keyed by dense constant declaration HIR id.
+    pub const_value: LaniusBuffer<u32>,
+    /// Dense expression owner keyed by dense expression HIR id.
+    pub expr_parent: LaniusBuffer<u32>,
+    /// Final dense expression-tree root keyed by dense expression HIR id.
+    pub expr_root: LaniusBuffer<u32>,
     pub call_arg_count: LaniusBuffer<u32>,
     pub call_args: LaniusBuffer<HirCallArg>,
     pub param_count: LaniusBuffer<u32>,
@@ -423,16 +430,16 @@ pub struct ParserBuffers {
     pub b02_params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,
     pub b02_scan_steps: Vec<BracketsBlockPrefixScanStep>,
     pub b03_params: LaniusBuffer<super::super::passes::brackets::apply_prefix::Params>,
-    pub b04_params: LaniusBuffer<super::super::passes::brackets::histogram_layers::Params>,
-    pub b05_params: LaniusBuffer<super::super::passes::brackets::scan_histograms::Params>,
-    pub b06_params: LaniusBuffer<super::super::passes::brackets::scatter_by_layer::Params>,
     pub b07_params: LaniusBuffer<super::super::passes::brackets::pse_pair::Params>, // PSE-style pair-by-layer
-    pub b05_scan_steps: Vec<BracketsHistogramScanStep>,
-    pub b_pair_radix_steps: Vec<super::BracketsPairRadixStep>,
-
+    pub b_clear_matches_params: LaniusBuffer<super::super::passes::brackets::clear_matches::Params>,
+    pub emit_stack_matches: bool,
+    pub b_min_tree_base: u32,
+    pub b_min_tree: LaniusBuffer<i32>,
+    pub b_min_tree_steps: Vec<TreePrefixMaxBuildStep>,
     pub b_exscan_inblock: LaniusBuffer<i32>,
     pub b_block_sum: LaniusBuffer<i32>,
     pub b_block_minpref: LaniusBuffer<i32>,
+    pub b_block_row_min: LaniusBuffer<i32>,
     pub b_block_maxdepth: LaniusBuffer<i32>,
     pub b_block_prefix: LaniusBuffer<i32>,
     pub b_block_prefix_sum_a: LaniusBuffer<i32>,
@@ -443,27 +450,11 @@ pub struct ParserBuffers {
     pub depths_out: LaniusBuffer<i32>, // [final, min, conservative max active layer]
     pub valid_out: LaniusBuffer<u32>,
 
-    pub b_depth_exscan: LaniusBuffer<i32>,
     pub b_layer: LaniusBuffer<u32>,
-
-    pub b_hist_push: LaniusBuffer<u32>,
-    pub b_hist_pop: LaniusBuffer<u32>,
-    pub b_off_push: LaniusBuffer<u32>,
-    pub b_off_pop: LaniusBuffer<u32>,
-    pub b_cur_push: LaniusBuffer<u32>,
-    pub b_cur_pop: LaniusBuffer<u32>,
-    pub b_pushes_by_layer: LaniusBuffer<u32>,
-    pub b_pops_by_layer: LaniusBuffer<u32>,
-    pub b_slot_for_index: LaniusBuffer<u32>,
-    pub b_pair_radix_block_histogram: LaniusBuffer<u32>,
-    pub b_pair_radix_block_bucket_prefix: LaniusBuffer<u32>,
-    pub b_pair_radix_bucket_total: LaniusBuffer<u32>,
-    pub b_pair_radix_bucket_base: LaniusBuffer<u32>,
     pub match_for_index: LaniusBuffer<u32>,
 
     // counts used at dispatch
     pub b_n_blocks: u32,
-    pub b_n_layers: u32,
 
     // -------- Tree parent recovery --------
     pub tree_prefix_params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
@@ -560,9 +551,16 @@ pub struct ParserBuffers {
     pub hir_core: LaniusBuffer<HirCore>,
     pub hir_links: LaniusBuffer<HirLinks>,
     pub hir_payload: LaniusBuffer<HirPayload>,
+    pub hir_canonical_nearest_loop: LaniusBuffer<u32>,
     pub hir_canonical_fn_return_type: LaniusBuffer<u32>,
     pub hir_canonical_type_alias_target: LaniusBuffer<u32>,
     pub hir_canonical_const_type: LaniusBuffer<u32>,
+    pub hir_canonical_const_value: LaniusBuffer<u32>,
+    pub hir_canonical_expr_parent_encoded: LaniusBuffer<u32>,
+    pub hir_canonical_expr_parent: LaniusBuffer<u32>,
+    pub hir_canonical_expr_root: LaniusBuffer<u32>,
+    pub hir_canonical_expr_root_scratch: LaniusBuffer<u32>,
+    pub hir_canonical_expr_forest_status: LaniusBuffer<u32>,
     pub hir_call_arg_table_count: LaniusBuffer<u32>,
     pub hir_call_arg_family_flag: LaniusBuffer<u32>,
     pub hir_call_args: LaniusBuffer<HirCallArg>,
@@ -886,9 +884,13 @@ impl GpuHirView {
             core: buffers.hir_core.clone(),
             links: buffers.hir_links.clone(),
             payload: buffers.hir_payload.clone(),
+            nearest_loop: buffers.hir_canonical_nearest_loop.clone(),
             fn_return_type: buffers.hir_canonical_fn_return_type.clone(),
             type_alias_target: buffers.hir_canonical_type_alias_target.clone(),
             const_type: buffers.hir_canonical_const_type.clone(),
+            const_value: buffers.hir_canonical_const_value.clone(),
+            expr_parent: buffers.hir_canonical_expr_parent.clone(),
+            expr_root: buffers.hir_canonical_expr_root.clone(),
             call_arg_count: buffers.hir_call_arg_table_count.clone(),
             call_args: buffers.hir_call_args.clone(),
             param_count: buffers.hir_param_table_count.clone(),

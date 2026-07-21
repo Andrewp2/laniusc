@@ -1,7 +1,7 @@
 // Publish one byte-count/error contribution per root-sorted expression row.
 
 import body_common;
-import expr_tree_metadata_common;
+import expr_tree_metadata_raw_common;
 import expr_emission_common;
 
 StructuredBuffer<uint> hir_expr_forest_root_node;
@@ -34,7 +34,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool aggregate_address_context = valid_node(parent_node) &&
         (hir_kind[parent_node] == HIR_MEMBER_EXPR ||
          hir_kind[parent_node] == HIR_CALL_EXPR);
-    bool supported = wasm_expr_node_contribution(
+    bool supported = raw_wasm_expr_node_contribution(
         node,
         aggregate_address_context,
         len,

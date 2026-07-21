@@ -41,6 +41,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalLoca
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
+                "hir_stmt_record".into(),
+                b.hir_stmt_record.as_entire_binding(),
+            ),
+            (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),

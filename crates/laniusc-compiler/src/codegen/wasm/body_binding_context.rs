@@ -6,6 +6,7 @@ pub(super) struct WasmBodyBindingContext<'a> {
     pub params_buf: &'a LaniusBuffer<WasmParams>,
     pub wasm_const_value_record_buf: &'a LaniusBuffer<u32>,
     pub body_let_init_expr_by_decl_token_buf: &'a LaniusBuffer<u32>,
+    pub body_let_init_hir_by_decl_token_buf: &'a LaniusBuffer<u32>,
     pub wasm_agg_local_width_by_token_buf: &'a LaniusBuffer<u32>,
     pub wasm_agg_local_base_by_token_buf: &'a LaniusBuffer<u32>,
     pub struct_init_field_index_buf: &'a LaniusBuffer<u32>,
@@ -34,6 +35,7 @@ impl WasmBodyBindingContext<'_> {
             params_buf: &working.params_buf,
             wasm_const_value_record_buf: &working.wasm_const_value_record_buf,
             body_let_init_expr_by_decl_token_buf: &working.body_let_init_expr_by_decl_token_buf,
+            body_let_init_hir_by_decl_token_buf: &working.body_let_init_hir_by_decl_token_buf,
             wasm_agg_local_width_by_token_buf: &working.wasm_agg_local_width_by_token_buf,
             wasm_agg_local_base_by_token_buf: &working.wasm_agg_local_base_by_token_buf,
             struct_init_field_index_buf: &working.struct_init_field_index_buf,
@@ -63,6 +65,17 @@ impl WasmBodyBindingContext<'_> {
         context
     }
 
+    pub(super) fn new_with_compact_expr_order<'a>(
+        inputs: GpuWasmCodegenInputs<'a>,
+        working: &'a WasmWorkingBuffers,
+        expr_order: &'a ResidentWasmExprOrder,
+    ) -> WasmBodyBindingContext<'a> {
+        let mut context = Self::new_with_expr_order(inputs, working, expr_order);
+        context.expr_subtree_total_buf = &working.compact_expr_subtree_total_buf;
+        context.expr_subtree_features_buf = &working.compact_expr_subtree_features_buf;
+        context
+    }
+
     pub(super) fn extend<'a>(
         &'a self,
         bindings: &mut Vec<(&'static str, wgpu::BindingResource<'a>)>,
@@ -77,6 +90,7 @@ impl WasmBodyBindingContext<'_> {
             hir_status: hir_status_buf,
             visible_decl: visible_decl_buf,
             visible_type: visible_type_buf,
+            compact_expr_scalar_type,
             name_id_by_token: name_id_by_token_buf,
             language_name_id: language_name_id_buf,
             enclosing_fn: enclosing_fn_buf,
@@ -85,6 +99,8 @@ impl WasmBodyBindingContext<'_> {
             expressions: expr_metadata,
             arrays: array_metadata,
             paths: path_metadata,
+            canonical_hir,
+            path_id_by_owner_hir,
             call_fn_index: call_fn_index_buf,
             call_dependency_decl: call_dependency_decl_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
@@ -99,6 +115,7 @@ impl WasmBodyBindingContext<'_> {
         let params_buf = self.params_buf;
         let wasm_const_value_record_buf = self.wasm_const_value_record_buf;
         let body_let_init_expr_by_decl_token_buf = self.body_let_init_expr_by_decl_token_buf;
+        let body_let_init_hir_by_decl_token_buf = self.body_let_init_hir_by_decl_token_buf;
         let wasm_agg_local_width_by_token_buf = self.wasm_agg_local_width_by_token_buf;
         let wasm_agg_local_base_by_token_buf = self.wasm_agg_local_base_by_token_buf;
         let struct_init_field_index_buf = self.struct_init_field_index_buf;
@@ -117,6 +134,84 @@ impl WasmBodyBindingContext<'_> {
         let expr_subtree_features_buf = self.expr_subtree_features_buf;
         bindings.extend([
             ("gParams", params_buf.as_entire_binding()),
+            ("compact_hir_count", canonical_hir.count.as_entire_binding()),
+            ("compact_hir_core", canonical_hir.core.as_entire_binding()),
+            ("compact_hir_links", canonical_hir.links.as_entire_binding()),
+            (
+                "compact_hir_payload",
+                canonical_hir.payload.as_entire_binding(),
+            ),
+            (
+                "compact_const_value",
+                canonical_hir.const_value.as_entire_binding(),
+            ),
+            (
+                "compact_expr_parent",
+                canonical_hir.expr_parent.as_entire_binding(),
+            ),
+            (
+                "compact_expr_root",
+                canonical_hir.expr_root.as_entire_binding(),
+            ),
+            (
+                "compact_call_arg_count",
+                canonical_hir.call_arg_count.as_entire_binding(),
+            ),
+            (
+                "compact_call_args",
+                canonical_hir.call_args.as_entire_binding(),
+            ),
+            (
+                "compact_field_count",
+                canonical_hir.field_count.as_entire_binding(),
+            ),
+            ("compact_fields", canonical_hir.fields.as_entire_binding()),
+            (
+                "compact_array_element_start",
+                canonical_hir.array_element_start.as_entire_binding(),
+            ),
+            (
+                "compact_array_element_count",
+                canonical_hir.array_element_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_element_row_count",
+                canonical_hir.array_element_row_count.as_entire_binding(),
+            ),
+            (
+                "compact_array_elements",
+                canonical_hir.array_elements.as_entire_binding(),
+            ),
+            (
+                "compact_string_count",
+                canonical_hir.string_count.as_entire_binding(),
+            ),
+            ("compact_strings", canonical_hir.strings.as_entire_binding()),
+            (
+                "compact_string_data_words",
+                canonical_hir.string_data_words.as_entire_binding(),
+            ),
+            (
+                "compact_string_pool_len",
+                canonical_hir.string_pool_len.as_entire_binding(),
+            ),
+            (
+                "compact_path_count",
+                canonical_hir.path_count.as_entire_binding(),
+            ),
+            ("compact_paths", canonical_hir.paths.as_entire_binding()),
+            (
+                "compact_path_segment_count",
+                canonical_hir.path_segment_count.as_entire_binding(),
+            ),
+            (
+                "compact_path_segments",
+                canonical_hir.path_segments.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
             (
                 "expr_subtree_total",
                 expr_subtree_total_buf.as_entire_binding(),
@@ -146,12 +241,20 @@ impl WasmBodyBindingContext<'_> {
             ("visible_decl", visible_decl_buf.as_entire_binding()),
             ("visible_type", visible_type_buf.as_entire_binding()),
             (
+                "compact_expr_scalar_type",
+                compact_expr_scalar_type.as_entire_binding(),
+            ),
+            (
                 "wasm_const_value_record",
                 wasm_const_value_record_buf.as_entire_binding(),
             ),
             (
                 "body_let_init_expr_by_decl_token",
                 body_let_init_expr_by_decl_token_buf.as_entire_binding(),
+            ),
+            (
+                "body_let_init_hir_by_decl_token",
+                body_let_init_hir_by_decl_token_buf.as_entire_binding(),
             ),
             (
                 "wasm_agg_local_width_by_token",
@@ -235,30 +338,12 @@ impl WasmBodyBindingContext<'_> {
                 struct_metadata.lit_field_parent_lit.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_start",
-                struct_metadata.lit_field_start.as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_field_count",
-                struct_metadata.lit_field_count.as_entire_binding(),
-            ),
-            (
                 "hir_struct_lit_field_value_node",
                 struct_metadata.lit_field_value_node.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_next",
-                struct_metadata.lit_field_next.as_entire_binding(),
-            ),
-            (
                 "struct_init_field_index",
                 struct_init_field_index_buf.as_entire_binding(),
-            ),
-            (
-                "struct_init_field_decl_node_by_node",
-                struct_metadata
-                    .struct_init_field_decl_node_by_node
-                    .as_entire_binding(),
             ),
             (
                 "member_result_field_index",

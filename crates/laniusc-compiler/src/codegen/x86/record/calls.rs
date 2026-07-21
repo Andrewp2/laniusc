@@ -30,7 +30,6 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) feature_params_buf: &'a wgpu::Buffer,
     pub(super) hir_status_buf: &'a wgpu::Buffer,
     pub(super) hir_kind_buf: &'a wgpu::Buffer,
-    pub(super) hir_item_kind_buf: &'a wgpu::Buffer,
     pub(super) parent_buf: &'a wgpu::Buffer,
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
@@ -85,7 +84,6 @@ pub(super) fn create_call_record_bind_groups(
         feature_params_buf,
         hir_status_buf,
         hir_kind_buf,
-        hir_item_kind_buf,
         parent_buf,
         function_metadata,
         expr_metadata,
@@ -294,24 +292,21 @@ pub(super) fn create_call_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "hir_expr_result_root_node",
-                expr_metadata.expr_result_root_node.as_entire_binding(),
+                "compact_hir_count",
+                expr_metadata.compact_hir_count.as_entire_binding(),
             ),
             (
-                "hir_expr_int_value",
-                expr_metadata.int_value.as_entire_binding(),
+                "compact_hir_core",
+                expr_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
-                "hir_expr_float_bits",
-                expr_metadata.float_bits.as_entire_binding(),
+                "compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
             ),
             (
-                "hir_stmt_record",
-                expr_metadata.stmt_record.as_entire_binding(),
+                "compact_const_value",
+                expr_metadata.compact_const_value.as_entire_binding(),
             ),
             (
                 "x86_const_value_record",
@@ -577,7 +572,6 @@ pub(super) fn create_call_record_bind_groups(
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_item_kind", hir_item_kind_buf.as_entire_binding()),
             (
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
@@ -595,8 +589,22 @@ pub(super) fn create_call_record_bind_groups(
                 "x86_decl_node_by_token",
                 decl_node_by_token_buf.as_entire_binding(),
             ),
-            ("raw_to_compact_hir", raw_to_compact_hir_buf.as_entire_binding()),
-            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                expr_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
             (
                 "x86_compact_executable_raw",
                 compact_executable_raw_buf.as_entire_binding(),

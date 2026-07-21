@@ -1,56 +1,107 @@
 use crate::gpu::{
     buffers::{LaniusBuffer, storage_rw_for_array},
-    workspace::{
-        WorkspacePhase,
-        WorkspacePlan,
-        WorkspaceRequest,
-        WorkspaceUsageClass,
-        plan_workspace,
+    compiler_graph::{
+        CompilerGraphBuilder,
+        CompilerPhase,
+        PassAccess,
+        PassDesc,
+        ResourceClass,
+        ResourceDesc,
+        ResourceDomain,
     },
+    workspace::{WorkspacePlan, WorkspaceUsageClass},
 };
 
 pub(super) fn parser_phase_workspace_plan(tree_capacity: u32) -> WorkspacePlan {
     let tree_bytes = u64::from(tree_capacity) * 4;
-    let requests = [
-        WorkspaceRequest {
+    let mut graph = CompilerGraphBuilder::new();
+    let tree_prefix_inblock = graph
+        .add_resource(ResourceDesc {
             name: "tree.prefix_inblock",
+            domain: ResourceDomain::RawNodes,
+            class: ResourceClass::Workspace,
             bytes: tree_bytes,
             usage: WorkspaceUsageClass::Storage,
-            first: WorkspacePhase::RawTree,
-            last: WorkspacePhase::RawTree,
-        },
-        WorkspaceRequest {
+        })
+        .expect("parser graph resource names are unique");
+    let tree_prefix = graph
+        .add_resource(ResourceDesc {
             name: "tree.prefix",
+            domain: ResourceDomain::RawNodes,
+            class: ResourceClass::Workspace,
             bytes: tree_bytes + 4,
             usage: WorkspaceUsageClass::Storage,
-            first: WorkspacePhase::RawTree,
-            last: WorkspacePhase::RawTree,
-        },
-        WorkspaceRequest {
+        })
+        .expect("parser graph resource names are unique");
+    let hir_family_flag = graph
+        .add_resource(ResourceDesc {
             name: "hir.family_flag",
+            domain: ResourceDomain::HirNodes,
+            class: ResourceClass::Workspace,
             bytes: tree_bytes,
             usage: WorkspaceUsageClass::Storage,
-            first: WorkspacePhase::Hir,
-            last: WorkspacePhase::Hir,
-        },
-        WorkspaceRequest {
+        })
+        .expect("parser graph resource names are unique");
+    let hir_family_local_prefix = graph
+        .add_resource(ResourceDesc {
             name: "hir.family_local_prefix",
+            domain: ResourceDomain::HirNodes,
+            class: ResourceClass::Workspace,
             // Reserve the full slot inherited from `tree.prefix`; the final
             // word is padding during HIR scans.
             bytes: tree_bytes + 4,
             usage: WorkspaceUsageClass::Storage,
-            first: WorkspacePhase::Hir,
-            last: WorkspacePhase::Hir,
-        },
-        WorkspaceRequest {
+        })
+        .expect("parser graph resource names are unique");
+    let typecheck_fn_entrypoint_tag = graph
+        .add_resource(ResourceDesc {
             name: "typecheck.fn_entrypoint_tag",
+            domain: ResourceDomain::HirNodes,
+            class: ResourceClass::Workspace,
             bytes: tree_bytes,
             usage: WorkspaceUsageClass::Storage,
-            first: WorkspacePhase::TypeCheck,
-            last: WorkspacePhase::TypeCheck,
-        },
-    ];
-    plan_workspace(&requests).expect("parser phase workspace liveness table must be valid")
+        })
+        .expect("parser graph resource names are unique");
+
+    graph
+        .add_pass(PassDesc {
+            name: "parser.raw_tree_prefix",
+            phase: CompilerPhase::Parse,
+            dispatch_domain: ResourceDomain::RawNodes,
+            accesses: vec![
+                PassAccess::write("prefix_inblock", tree_prefix_inblock),
+                PassAccess::write("tree_prefix", tree_prefix),
+            ],
+        })
+        .expect("parser graph pass is valid");
+    graph
+        .add_pass(PassDesc {
+            name: "parser.hir_family_compaction",
+            phase: CompilerPhase::Hir,
+            dispatch_domain: ResourceDomain::HirNodes,
+            accesses: vec![
+                PassAccess::write("hir_family_flag", hir_family_flag),
+                PassAccess::write("hir_family_local_prefix", hir_family_local_prefix),
+            ],
+        })
+        .expect("parser graph pass is valid");
+    graph
+        .add_pass(PassDesc {
+            name: "typecheck.function_entrypoint_tags",
+            phase: CompilerPhase::TypeCheck,
+            dispatch_domain: ResourceDomain::HirNodes,
+            accesses: vec![PassAccess::write(
+                "fn_entrypoint_tag",
+                typecheck_fn_entrypoint_tag,
+            )],
+        })
+        .expect("parser graph pass is valid");
+
+    graph
+        .build()
+        .expect("parser compiler graph must be valid")
+        .workspace_plan()
+        .clone()
 }
 
 /// Reinterprets one typed storage buffer as another typed buffer with a new element count.

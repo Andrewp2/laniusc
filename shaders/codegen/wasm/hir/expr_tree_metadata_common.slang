@@ -1,6 +1,7 @@
 // Target-independent expression-forest rows reduced to WASM byte contributions.
 
-import body_common;
+import compact_expr_common;
+import host_call_target_common;
 import call_relocation;
 import expr_emission_common;
 
@@ -11,30 +12,25 @@ public bool wasm_call_expr_record(uint node, out uint wasm_func_index, out uint 
     wasm_func_index = INVALID;
     arg_count = 0u;
     node = resolve_expr_node(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_CALL_EXPR)
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR)
         return false;
     uint callee_token = call_callee_token(node);
     uint fn_token = call_fn_token_for_call(node, callee_token);
-    if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_READ_I32) ||
-        token_has_language_name(fn_token, LANGUAGE_SYMBOL_READ_I32))
-        wasm_func_index = WASM_STD_READ_I32_FUNC_INDEX;
-    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_WRITE_TEXT) ||
-             token_has_language_name(fn_token, LANGUAGE_SYMBOL_WRITE_TEXT))
-        wasm_func_index = WASM_STD_WRITE_TEXT_FUNC_INDEX;
-    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_WRITE_I32) ||
-             token_has_language_name(fn_token, LANGUAGE_SYMBOL_WRITE_I32))
-        wasm_func_index = WASM_STD_WRITE_I32_FUNC_INDEX;
-    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_WRITE_BYTE) ||
-             token_has_language_name(fn_token, LANGUAGE_SYMBOL_WRITE_BYTE))
-        wasm_func_index = WASM_STD_WRITE_BYTE_FUNC_INDEX;
-    else if (token_has_language_name(callee_token, LANGUAGE_SYMBOL_WRITE_NEWLINE) ||
-             token_has_language_name(fn_token, LANGUAGE_SYMBOL_WRITE_NEWLINE))
-        wasm_func_index = WASM_STD_WRITE_NEWLINE_FUNC_INDEX;
+    uint return_ty = call_return_type_for_call(node, callee_token, fn_token);
+    bool statement_void = return_ty == TY_VOID &&
+        (compact_hir_payload[node].d & HIR_CALL_CONTEXT_STMT_BIT) != 0u;
+    if (!type_is_i32_value(return_ty) && return_ty != TY_FLOAT && !statement_void)
+        return false;
+    if (wasm_host_import_for_call(callee_token, fn_token, wasm_func_index))
+    {
+        // The fixed runtime ABI is resolved from semantic language names, not
+        // from a statement or source shape.
+    }
     else if (supported_call_target_token(fn_token))
         wasm_func_index = wasm_call_target_for_call(node, fn_token);
     else
         return false;
-    arg_count = hir_call_arg_count[node];
+    arg_count = compact_hir_payload[node].c;
     return true;
 }
 
@@ -42,8 +38,8 @@ public bool wasm_i32_to_f32_expr_node(uint node)
 {
     node = resolve_expr_node(node);
     if (!valid_node(node) ||
-        hir_kind[node] != HIR_CALL_EXPR ||
-        hir_call_arg_count[node] != 1u)
+        compact_hir_core[node].kind != HIR_CALL_EXPR ||
+        compact_hir_payload[node].c != 1u)
     {
         return false;
     }
@@ -71,9 +67,9 @@ public bool wasm_expr_node_contribution(
     // Member HIR nodes use a forwarding expression record for their receiver,
     // but the member row itself is semantic: it emits the field load after the
     // receiver subtree. Handle it before filtering generic forwarding aliases.
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
     {
-        uint member_name = hir_member_name_token[node];
+        uint member_name = compact_hir_payload[node].c;
         uint field_index = valid_token(member_name)
                                ? member_result_field_index[member_name]
                                : INVALID;
@@ -90,10 +86,10 @@ public bool wasm_expr_node_contribution(
     }
     if (form == HIR_EXPR_FORWARD)
         return false;
-    if (hir_kind[node] == HIR_INDEX_EXPR && form == HIR_EXPR_INDEX_FORM)
+    if (compact_hir_core[node].kind == HIR_INDEX_EXPR && form == HIR_EXPR_INDEX_FORM)
     {
         len = 7u;
-        uint token = hir_token_pos[node];
+        uint token = compact_hir_core[node].token_start;
         emission = wasm_expr_index_load_emission(
             valid_token(token) && visible_type_for_token(token) == TY_FLOAT);
         return true;
@@ -116,6 +112,11 @@ public bool wasm_expr_node_contribution(
         emission = wasm_expr_call_emission(call_index);
         return true;
     }
+    // A call node's payload.a is its dense callee HIR ID, not an expression
+    // form. An unsupported call remains unsupported instead of allowing that
+    // identity to collide with an arithmetic-form number.
+    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
+        return false;
     if (aggregate_address_context)
     {
         uint address_opcode = 0u;

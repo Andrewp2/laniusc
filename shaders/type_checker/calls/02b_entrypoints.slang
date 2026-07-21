@@ -7,10 +7,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_name_token;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_entrypoint_tag_by_name_id;
 
@@ -29,9 +30,9 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
+uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint entrypoint_tag_for_name_id(uint name_id)
@@ -46,10 +47,15 @@ uint entrypoint_tag_for_name_id(uint name_id)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_hir_node_count() || hir_item_kind[i] != HIR_ITEM_KIND_FN)
+    if (i >= active_hir_count())
         return;
 
-    uint fn_name_token = hir_item_name_token[i];
+    HirCore core = compact_hir_core[i];
+    HirPayload payload = compact_hir_payload[i];
+    if (core.kind != 3u || payload.a != HIR_ITEM_KIND_FN)
+        return;
+
+    uint fn_name_token = payload.b;
     if (fn_name_token == INVALID || fn_name_token >= gParams.n_tokens)
         return;
 
@@ -57,7 +63,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint entrypoint_tag = entrypoint_tag_for_name_id(fn_name_id);
     if (entrypoint_tag == ENTRYPOINT_MAIN)
     {
-        // HIR node keyed. Token-keyed writes alias unrelated node rows in large modules.
-        fn_entrypoint_tag[i] = entrypoint_tag;
+        // Semantic consumers key functions by their declaration-name token;
+        // backends key bodies by the function span's first token. Publish both
+        // token-domain projections from this one dense HIR function row.
+        fn_entrypoint_tag[fn_name_token] = entrypoint_tag;
+        if (core.token_start < gParams.n_tokens)
+            fn_entrypoint_tag[core.token_start] = entrypoint_tag;
     }
 }

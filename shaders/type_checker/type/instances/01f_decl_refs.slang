@@ -20,6 +20,7 @@ struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_const_type;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> hir_status;
@@ -42,6 +43,7 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
@@ -51,6 +53,7 @@ static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
+static const uint HIR_ITEM_KIND_CONST = 3u;
 
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_ERROR = 4u;
@@ -171,6 +174,16 @@ void publish_compact_stmt_decl_ref(uint node)
     publish_compact_decl_ref(statement.b, statement.d);
 }
 
+void publish_compact_item_decl_ref(uint node)
+{
+    if (!valid_compact_node(node) || compact_hir_core[node].kind != HIR_CONST_ITEM)
+        return;
+    HirPayload item = compact_hir_payload[node];
+    if (item.a != HIR_ITEM_KIND_CONST)
+        return;
+    publish_compact_decl_ref(item.b, compact_const_type[node]);
+}
+
 void publish_for_decl_ref(uint node)
 {
     if (!valid_node(node) ||
@@ -219,6 +232,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (valid_node(node))
         publish_for_decl_ref(node);
+    publish_compact_item_decl_ref(node);
     publish_compact_stmt_decl_ref(node);
     publish_param_decl_ref(node);
 }

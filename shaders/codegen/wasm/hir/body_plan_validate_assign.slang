@@ -93,6 +93,11 @@ void validate_main_assign(uint node, uint token)
         publish_func_invalid(owner_fn, INVALID);
         return;
     }
+    // Compact planners run first during differential migration. An occupied
+    // token slot is already fully owned and must not be overwritten by this
+    // raw-parser consumer.
+    if (body_fragment_len[token * 2u] != 0u)
+        return;
 
     uint member_target = INVALID;
     uint member_receiver = INVALID;

@@ -34,10 +34,15 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_field_node;
 StructuredBuffer<uint> x86_decl_node_by_token;
@@ -124,9 +129,6 @@ static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
-static const uint HIR_PARAM_RECORD_NODE = 3u;
-
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_KIND_BITS = 4u;
@@ -373,10 +375,12 @@ uint param_node_decl_token(uint param_node)
 {
     if (!valid_node(param_node))
         return INVALID;
-    uint4 record = hir_param_record[param_node];
-    if (record[HIR_PARAM_RECORD_NODE] != param_node)
+    uint dense = raw_to_compact_hir[param_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= count || compact_hir_core[dense].kind != HIR_PARAM)
         return INVALID;
-    uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
+    // Parameter payloads are { owner, ordinal, name_token, type_node }.
+    uint decl_token = compact_hir_payload[dense].c;
     return valid_token(decl_token) ? decl_token : INVALID;
 }
 
@@ -501,7 +505,10 @@ bool path_literal_value_candidate(uint node)
     if (!valid_node(node))
         return false;
 
-    uint path_i = path_id_by_owner_hir[node];
+    uint dense = raw_to_compact_hir[node];
+    uint path_i = dense < gParams.n_hir_nodes
+                      ? path_id_by_owner_hir[dense]
+                      : INVALID;
     if (path_i >= active_path_count() ||
         resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return false;
@@ -786,7 +793,10 @@ bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
     if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
         return false;
 
-    uint path_i = path_id_by_owner_hir[name_node];
+    uint dense = raw_to_compact_hir[name_node];
+    uint path_i = dense < gParams.n_hir_nodes
+                      ? path_id_by_owner_hir[dense]
+                      : INVALID;
     if (path_i < active_path_count() &&
         resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK)
     {

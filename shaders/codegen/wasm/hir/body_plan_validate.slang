@@ -6,7 +6,6 @@ import body_plan_validate_common;
 
 static const uint LANGUAGE_SYMBOL_I32_TO_F32 = 28u;
 static const uint BODY_FRAGMENT_LET_CONVERSION_EXPR_I32 = 50u;
-static const uint BODY_FRAGMENT_IF_OPEN_EXPR_I32 = 51u;
 
 StructuredBuffer<uint> hir_expr_forest_root_node;
 StructuredBuffer<uint2> expr_root_total;
@@ -98,54 +97,6 @@ bool supported_let_composite_call_fragment(
     return true;
 }
 
-void validate_main_if_expr(uint node, uint token)
-{
-    if (hir_kind[node] != HIR_IF_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_IF)
-    {
-        return;
-    }
-
-    uint owner_fn = node_enclosing_fn_token(node);
-    uint condition_node = stmt_record_slot(node, 1u);
-    uint condition_len = 0u;
-    uint end_token = INVALID;
-    uint end_len = 0u;
-    uint else_token = INVALID;
-    uint else_len = 0u;
-    if (!valid_token(token) ||
-        !expr_tree_with_calls_and_len(condition_node, condition_len) ||
-        !if_end_token_and_len(node, end_token, end_len) ||
-        (valid_node(stmt_record_slot(node, 3u)) &&
-         !if_else_token_and_len(node, else_token, else_len)))
-    {
-        publish_func_invalid(owner_fn, valid_token(token) ? token : INVALID);
-        return;
-    }
-
-    uint open_len = condition_len + 2u;
-    add_func_body_len(owner_fn, open_len + else_len + end_len);
-    publish_fragment(
-        token,
-        open_len,
-        uint4(BODY_FRAGMENT_IF_OPEN_EXPR_I32, condition_node, open_len, token),
-        uint4(INVALID, 0u, 0u, 0u));
-    if (else_len != 0u)
-    {
-        publish_fragment(
-            else_token,
-            else_len,
-            uint4(BODY_FRAGMENT_IF_ELSE, 0u, 0u, else_token),
-            uint4(INVALID, 0u, 0u, 0u));
-    }
-    publish_fragment(
-        end_token,
-        end_len,
-        uint4(BODY_FRAGMENT_IF_END, 0u, 0u, end_token),
-        uint4(INVALID, 0u, 0u, 0u));
-    publish_body_features(BODY_FEATURE_MEMBER_EXPR_SCATTER);
-}
-
 bool supported_let_string_literal_fragment(
     uint node,
     out uint decl_token,
@@ -203,6 +154,11 @@ void validate_main_let(uint node, uint token)
         publish_func_invalid(owner_fn, INVALID);
         return;
     }
+    // Compact let planning runs first during differential migration. Preserve
+    // its dense-HIR fragment instead of reinterpreting the same statement
+    // through raw parser columns.
+    if (stmt_kind == STMT_RECORD_KIND_LET && body_fragment_len[token * 2u] != 0u)
+        return;
 
     if (stmt_kind == STMT_RECORD_KIND_LET && hir_kind[node] == HIR_LET_STMT)
     {
@@ -323,6 +279,5 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!supported_function_token(owner_fn))
         return;
     uint token = hir_token_pos[node];
-    validate_main_if_expr(node, token);
     validate_main_let(node, token);
 }

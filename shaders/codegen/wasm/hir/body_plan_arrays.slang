@@ -17,7 +17,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> status;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> parser_feature_flags;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -34,14 +33,9 @@ StructuredBuffer<uint> body_let_init_expr_by_decl_token;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
-StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
-StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
-StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> member_result_field_index;
-StructuredBuffer<uint> struct_init_field_index;
-StructuredBuffer<uint> struct_init_field_ordinal_by_node;
 StructuredBuffer<uint> wasm_agg_local_width_by_token;
 StructuredBuffer<uint> wasm_agg_local_base_by_token;
 StructuredBuffer<uint> wasm_agg_local_block_prefix;
@@ -63,9 +57,7 @@ StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_decl;
-StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
-StructuredBuffer<uint> call_param_type;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_fn_token;
 StructuredBuffer<uint> call_param_row_ordinal;
@@ -94,15 +86,12 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
 static const uint WASM_IMPORT_FUNCTION_COUNT = 42u;
-static const uint HIR_NONE = 0u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
-static const uint HIR_EXPR = 14u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_ARRAY_EXPR = 24u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -124,14 +113,12 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
-static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_EQ = 7u;
 static const uint HIR_EXPR_NE = 8u;
 static const uint HIR_EXPR_LT = 9u;
 static const uint HIR_EXPR_GT = 10u;
 static const uint HIR_EXPR_LE = 11u;
 static const uint HIR_EXPR_GE = 12u;
-static const uint HIR_EXPR_NEG = 13u;
 static const uint HIR_EXPR_ADD = 14u;
 static const uint HIR_EXPR_SUB = 15u;
 static const uint HIR_EXPR_MUL = 16u;
@@ -159,8 +146,6 @@ static const uint BODY_FRAGMENT_AGG_DIRECT_COPY_I32 = 43u;
 static const uint BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32 = 44u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 static const uint BODY_FEATURE_EXPR_CONTROL = 1u << 0u;
-static const uint BODY_FEATURE_DIRECT = 1u << 1u;
-static const uint BODY_FEATURE_HOST = 1u << 2u;
 static const uint BODY_FEATURE_ARRAYS = 1u << 3u;
 static const uint BODY_FEATURE_MEMBER_EXPR = 1u << 4u;
 static const uint BODY_FEATURE_BINARY_DIRECT = 1u << 5u;
@@ -908,75 +893,6 @@ bool expr_simple_len(uint node, out uint len)
     return total.y == 0u && features.x == 0u && len != 0u;
 }
 
-bool direct_call_arg_expr_len(uint node, out uint len)
-{
-    return expr_simple_len(node, len);
-}
-
-bool aggregate_direct_call_expr_len(
-    uint node,
-    out uint len,
-    out uint fn_token,
-    out uint wasm_func_index,
-    out uint arg_count,
-    out uint detail)
-{
-    len = 0u;
-    fn_token = INVALID;
-    wasm_func_index = INVALID;
-    arg_count = 0u;
-    detail = INVALID;
-
-    node = resolve_expr_node(node);
-    detail = valid_node(node) ? hir_token_pos[node] : INVALID;
-    if (!valid_node(node) || hir_kind[node] != HIR_CALL_EXPR)
-        return false;
-
-    uint callee_token = call_callee_token(node);
-    if (valid_token(callee_token))
-        detail = callee_token;
-    if (!valid_token(callee_token) || call_intrinsic_tag[callee_token] != 0u)
-        return false;
-
-    fn_token = call_fn_token_for_call(node, callee_token);
-    if (valid_token(fn_token))
-        detail = fn_token;
-    if (!supported_call_target_token(fn_token))
-        return false;
-
-    uint return_ty = call_return_type_for_call(node, callee_token, fn_token);
-    if (return_ty < TY_ARRAY_BASE)
-        return false;
-
-    uint explicit_arg_count = hir_call_arg_count[node];
-    bool has_receiver_arg = direct_call_has_receiver_arg(node, fn_token);
-    arg_count = explicit_arg_count + (has_receiver_arg ? 1u : 0u);
-    if (call_param_count[fn_token] != arg_count)
-        return false;
-
-    uint target = wasm_call_target_for_call(node, fn_token);
-    uint total = 1u + u32_leb_len(target);
-    for (uint i = 0u; i < arg_count; i += 1u)
-    {
-        uint arg_node = direct_call_abi_arg_node(node, fn_token, i);
-        if (valid_node(arg_node))
-            detail = hir_token_pos[arg_node];
-        uint arg_len = 0u;
-        uint param_ty = call_param_type_value(fn_token, i);
-        bool ok = param_ty >= TY_ARRAY_BASE
-                      ? aggregate_address_expr_len(arg_node, arg_len)
-                      : direct_call_arg_expr_len(arg_node, arg_len);
-        if (!ok || arg_len == 0u)
-            return false;
-        total += arg_len;
-    }
-
-    wasm_func_index = target;
-    len = total;
-    detail = INVALID;
-    return true;
-}
-
 bool index_expr_len(uint node, out uint len)
 {
     len = 0u;
@@ -1040,40 +956,12 @@ void publish_fragment(uint token_i, uint len, uint4 meta)
     publish_fragment_features(meta.x);
 }
 
-void publish_fragment_with_aux(uint token_i, uint len, uint4 meta, uint4 aux)
-{
-    uint slot = token_i * 2u;
-    body_fragment_len[slot] = len;
-    body_fragment_meta[slot] = meta;
-    body_fragment_aux[slot] = aux;
-    publish_fragment_features(meta.x);
-}
-
 void publish_fragment_slot(uint slot, uint len, uint4 meta, uint4 aux)
 {
     body_fragment_len[slot] = len;
     body_fragment_meta[slot] = meta;
     body_fragment_aux[slot] = aux;
     publish_fragment_features(meta.x);
-}
-
-bool aggregate_lit_let_decl(uint lit_node, out uint let_node, out uint decl_token)
-{
-    let_node = INVALID;
-    decl_token = INVALID;
-    if (!valid_node(lit_node) || hir_kind[lit_node] != HIR_STRUCT_LITERAL_EXPR)
-        return false;
-
-    uint current = hir_struct_lit_context_stmt_node[lit_node];
-    if (valid_node(current) &&
-        hir_kind[current] == HIR_LET_STMT &&
-        stmt_record_slot(current, 0u) == STMT_RECORD_KIND_LET)
-    {
-        decl_token = stmt_record_slot(current, 1u);
-        let_node = current;
-        return valid_token(decl_token);
-    }
-    return false;
 }
 
 void account_let_array(uint node, uint owner_fn, uint token)
@@ -1104,104 +992,6 @@ void account_let_array(uint node, uint owner_fn, uint token)
         token * 2u + 1u,
         len,
         uint4(BODY_FRAGMENT_LET_ARRAY_I32, local_index, base_address, token),
-        uint4(0u, 0u, 0u, 0u));
-}
-
-void account_let_struct_literal(uint node, uint owner_fn, uint token)
-{
-    if (hir_kind[node] != HIR_STRUCT_LITERAL_EXPR)
-        return;
-
-    uint let_node = INVALID;
-    uint decl_token = INVALID;
-    if (!aggregate_lit_let_decl(node, let_node, decl_token))
-        return;
-
-    if (!valid_token(decl_token) || wasm_agg_local_width_by_token[decl_token] == 0u)
-        return;
-
-    uint local_index = INVALID;
-    if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-    {
-        publish_func_invalid(owner_fn, token);
-        return;
-    }
-
-    uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
-    uint len = 1u + i32_sleb_len(base_address) + local_set_len(local_index);
-    uint let_token = hir_token_pos[let_node];
-    if (!valid_token(let_token))
-        let_token = token;
-    add_func_local_token(owner_fn, decl_token);
-    add_func_body_len(owner_fn, len);
-    publish_fragment_slot(
-        let_token * 2u + 1u,
-        len,
-        uint4(BODY_FRAGMENT_LET_ARRAY_I32, local_index, base_address, let_token),
-        uint4(0u, 0u, 0u, 0u));
-}
-
-void account_let_aggregate_direct_call(uint node, uint owner_fn, uint token)
-{
-    if (hir_kind[node] != HIR_LET_STMT ||
-        stmt_record_slot(node, 0u) != STMT_RECORD_KIND_LET)
-    {
-        return;
-    }
-
-    uint decl_token = stmt_record_slot(node, 1u);
-    if (!valid_token(decl_token) || visible_type_for_token(decl_token) < TY_ARRAY_BASE)
-        return;
-
-    uint call_node = resolve_expr_node(stmt_record_slot(node, 2u));
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
-        return;
-
-    uint call_len = 0u;
-    uint fn_token = INVALID;
-    uint wasm_func_index = INVALID;
-    uint arg_count = 0u;
-    uint detail = token;
-    if (!aggregate_direct_call_expr_len(
-            call_node,
-            call_len,
-            fn_token,
-            wasm_func_index,
-            arg_count,
-            detail))
-    {
-        publish_func_invalid(owner_fn, valid_token(detail) ? detail : token);
-        return;
-    }
-
-    uint local_index = INVALID;
-    if (!function_non_param_local_index(decl_token, owner_fn, local_index))
-    {
-        publish_func_invalid(owner_fn, token);
-        return;
-    }
-
-    uint width = wasm_agg_local_width_by_token[decl_token];
-    uint base_address = aggregate_data_base() + agg_local_base_slots(decl_token) * 4u;
-    uint copy_len =
-        (1u + i32_sleb_len(base_address)) +
-        local_get_len(local_index) +
-        (1u + i32_sleb_len(width * 4u)) +
-        4u +
-        (1u + i32_sleb_len(base_address)) +
-        local_set_len(local_index);
-    uint call_set_len = call_len + local_set_len(local_index);
-    add_func_local_token(owner_fn, decl_token);
-    add_func_body_len(owner_fn, call_set_len + copy_len);
-    publish_fragment_slot(
-        token * 2u,
-        call_set_len,
-        uint4(BODY_FRAGMENT_LET_AGG_DIRECT_CALL_I32, local_index, call_node, token),
-        uint4(wasm_func_index, arg_count, fn_token, 0u));
-    publish_fragment_slot(
-        token * 2u + 1u,
-        copy_len,
-        uint4(BODY_FRAGMENT_AGG_DIRECT_COPY_I32, local_index, decl_token, token),
         uint4(0u, 0u, 0u, 0u));
 }
 
@@ -1248,50 +1038,6 @@ void account_array_element(uint node, uint owner_fn, uint token)
         uint4(kind, address, node, token));
 }
 
-void account_struct_field_store(uint node, uint owner_fn, uint token)
-{
-    if (hir_kind[node] != HIR_NONE)
-        return;
-
-    uint lit_node = hir_struct_lit_field_parent_lit[node];
-    if (!valid_node(lit_node))
-        return;
-    if (lit_node == node)
-        return;
-    if (hir_kind[lit_node] != HIR_STRUCT_LITERAL_EXPR)
-    {
-        publish_func_invalid(owner_fn, token);
-        return;
-    }
-
-    uint let_node = INVALID;
-    uint decl_token = INVALID;
-    if (!aggregate_lit_let_decl(lit_node, let_node, decl_token))
-    {
-        publish_func_invalid(owner_fn, token);
-        return;
-    }
-
-    uint field_index = struct_init_field_ordinal_by_node[node];
-    uint value_node = hir_struct_lit_field_value_node[node];
-    uint expr_len = 0u;
-    if (field_index == INVALID ||
-        !valid_node(value_node) ||
-        !expr_simple_len(value_node, expr_len))
-    {
-        publish_func_invalid(owner_fn, token);
-        return;
-    }
-
-    uint address = aggregate_data_base() + (agg_local_base_slots(decl_token) + field_index) * 4u;
-    uint len = 1u + i32_sleb_len(address) + expr_len + 3u;
-    add_func_body_len(owner_fn, len);
-    publish_fragment(
-        token,
-        len,
-        uint4(BODY_FRAGMENT_AGG_FIELD_STORE_I32, address, value_node, token));
-}
-
 void account_assign_index(uint node, uint owner_fn, uint token)
 {
     if (hir_kind[node] != HIR_STMT ||
@@ -1299,6 +1045,11 @@ void account_assign_index(uint node, uint owner_fn, uint token)
     {
         return;
     }
+    // The compact assignment planner runs first and owns the full indexed
+    // expression when it can lower it. Never add the same statement length a
+    // second time through the legacy array-specialized path.
+    if (body_fragment_len[token * 2u] != 0u)
+        return;
 
     uint rhs_node = stmt_record_slot(node, 2u);
     rhs_node = resolve_expr_node(rhs_node);

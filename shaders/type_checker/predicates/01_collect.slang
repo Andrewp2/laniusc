@@ -30,7 +30,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : hir_token_pos[node];
             predicate_status[node] =
                 valid_node(owner_decl) &&
-                !callable_generic_decl_item_kind(hir_item_kind[owner_decl])
+                !callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl))
                     ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
                     : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
         }
@@ -59,13 +59,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         predicate_status[node] =
             valid_node(owner_decl) &&
-            !callable_generic_decl_item_kind(hir_item_kind[owner_decl])
+            !callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl))
                 ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
                 : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
         return;
     }
 
-    if (!callable_generic_decl_item_kind(hir_item_kind[owner_decl]))
+    if (!callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl)))
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND;
         return;

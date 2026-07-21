@@ -9,6 +9,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> enclosing_fn;
+RWStructuredBuffer<uint> enclosing_fn_start_token;
 RWStructuredBuffer<uint> enclosing_fn_end;
 RWStructuredBuffer<uint> fn_event_value;
 RWStructuredBuffer<uint> fn_event_end;
@@ -33,6 +34,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < gParams.n_tokens)
     {
         enclosing_fn[i] = 0u;
+        enclosing_fn_start_token[i] = 0u;
         enclosing_fn_end[i] = 0u;
         fn_event_value[i] = 0u;
         fn_event_end[i] = 0u;

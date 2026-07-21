@@ -17,42 +17,32 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
+struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
+struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
+
 StructuredBuffer<uint> status;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> hir_semantic_prefix_before_node;
-StructuredBuffer<uint> hir_semantic_dense_node;
-StructuredBuffer<uint> hir_semantic_subtree_end;
-StructuredBuffer<uint> hir_semantic_parent;
-StructuredBuffer<uint> hir_semantic_first_child;
-StructuredBuffer<uint> hir_semantic_next_sibling;
-StructuredBuffer<uint> hir_semantic_depth;
-StructuredBuffer<uint> hir_semantic_child_index;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_expr_root;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> compact_path_segment_count;
+StructuredBuffer<HirPathSegment> compact_path_segments;
+StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> wasm_agg_local_width_by_token;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> path_count_out;
-StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_segment_token;
-StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_context_stmt_node;
-StructuredBuffer<uint> hir_call_arg_start;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_count;
-StructuredBuffer<uint> hir_call_arg_ordinal;
-StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -63,7 +53,6 @@ StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
-StructuredBuffer<uint2> expr_subtree_features;
 StructuredBuffer<uint> method_decl_receiver_mode;
 RWStructuredBuffer<uint> body_plan;
 RWStructuredBuffer<uint> wasm_func_flag;
@@ -73,7 +62,6 @@ RWStructuredBuffer<uint> wasm_func_invalid_count_by_token;
 RWStructuredBuffer<uint> wasm_func_detail_by_token;
 
 static const uint BODY_PLAN_FEATURE_MASK = 35u;
-static const uint BODY_PLAN_SEMANTIC_MAX_DEPTH = 36u;
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 static const uint TY_UNKNOWN = 0u;
@@ -208,6 +196,8 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint MAX_PATH_SEGMENTS = 9u;
+static const uint HIR_CALL_CONTEXT_STMT_BIT = 0x80000000u;
+static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -217,7 +207,7 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -240,12 +230,18 @@ bool token_has_language_name(uint token, uint symbol)
 
 uint stmt_record_slot(uint node, uint slot)
 {
-    return row_major_load<uint>(hir_stmt_record, node, STMT_RECORD_STRIDE, slot, INVALID);
+    if (!valid_node(node) || slot >= 4u)
+        return INVALID;
+    HirPayload payload = compact_hir_payload[node];
+    if (slot == 0u) return payload.a;
+    if (slot == 1u) return payload.b;
+    if (slot == 2u) return payload.c;
+    return payload.d;
 }
 
 uint expr_record_slot(uint node, uint slot)
 {
-    return row_major_load<uint>(hir_expr_record, node, EXPR_RECORD_STRIDE, slot, INVALID);
+    return stmt_record_slot(node, slot);
 }
 
 uint expr_form(uint node)
@@ -255,17 +251,17 @@ uint expr_form(uint node)
 
 uint resolve_expr_node(uint node)
 {
-    if (!valid_node(node))
-        return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    if (valid_node(root))
-        return root;
-    return expr_form(node) == HIR_EXPR_FORWARD ? INVALID : node;
+    return valid_node(node) ? node : INVALID;
 }
 
 uint active_path_count()
 {
-    return min(path_count_out[0u], gParams.n_hir_nodes);
+    return min(compact_path_count[0u], gParams.n_hir_nodes);
+}
+
+uint active_path_segment_count()
+{
+    return min(compact_path_segment_count[0u], gParams.n_tokens);
 }
 
 bool valid_path(uint path_i)
@@ -277,15 +273,14 @@ uint path_node_for_callee(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-    if (hir_kind[callee_node] == HIR_PATH_EXPR)
+    if (compact_hir_core[callee_node].kind == HIR_PATH_EXPR)
         return callee_node;
-    if (hir_kind[callee_node] == HIR_NAME_EXPR)
-    {
-        uint child = first_child[callee_node];
-        if (valid_node(child) && hir_kind[child] == HIR_PATH_EXPR)
-            return child;
-    }
-    return INVALID;
+    if (compact_hir_core[callee_node].kind != HIR_NAME_EXPR)
+        return INVALID;
+    uint child = compact_hir_links[callee_node].first_child;
+    return valid_node(child) && compact_hir_core[child].kind == HIR_PATH_EXPR
+        ? child
+        : INVALID;
 }
 
 uint path_leaf_token_for_callee(uint callee_node)
@@ -294,28 +289,30 @@ uint path_leaf_token_for_callee(uint callee_node)
     if (!valid_node(path_node))
         return INVALID;
 
-    uint owner_token = hir_token_pos[path_node];
-    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
+    uint path_i = path_id_by_owner_hir[path_node];
     if (!valid_path(path_i))
         return INVALID;
 
-    uint count = min(path_segment_count[path_i], MAX_PATH_SEGMENTS);
-    if (count == 0u)
+    HirPath path = compact_paths[path_i];
+    uint count = min(path.segment_count, MAX_PATH_SEGMENTS);
+    if (path.owner != path_node || count == 0u || path.segment_start == INVALID)
         return INVALID;
 
-    uint slot = path_segment_base[path_i] + count - 1u;
-    if (slot >= gParams.n_tokens * MAX_PATH_SEGMENTS)
+    uint slot = path.segment_start + count - 1u;
+    if (slot < path.segment_start || slot >= active_path_segment_count())
         return INVALID;
 
-    uint token = path_segment_token[slot];
-    return valid_token(token) ? token : INVALID;
+    HirPathSegment segment = compact_path_segments[slot];
+    return segment.path == path_i && valid_token(segment.name_token)
+        ? segment.name_token
+        : INVALID;
 }
 
 uint node_enclosing_fn_token(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
         return INVALID;
     uint encoded_fn = enclosing_fn[token];
@@ -324,46 +321,45 @@ uint node_enclosing_fn_token(uint node)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint raw_callee_node = hir_call_callee_node[call_node];
-    uint path_leaf = path_leaf_token_for_callee(raw_callee_node);
+    uint callee_node = compact_hir_payload[call_node].a;
+    uint path_leaf = path_leaf_token_for_callee(callee_node);
     if (valid_token(path_leaf))
         return path_leaf;
 
-    uint callee_node = resolve_expr_node(raw_callee_node);
     if (!valid_node(callee_node))
         return INVALID;
-    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[callee_node];
+        uint member_token = compact_hir_payload[callee_node].c;
         return valid_token(member_token) ? member_token : INVALID;
     }
     uint callee_token = expr_record_slot(callee_node, EXPR_RECORD_VALUE_TOKEN);
     if (!valid_token(callee_token))
-        callee_token = hir_token_pos[callee_node];
+        callee_token = compact_hir_core[callee_node].token_start;
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
 uint call_site_token(uint call_node)
 {
-    return valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
+    return valid_node(call_node) ? compact_hir_core[call_node].token_start : INVALID;
 }
 
 uint semantic_callee_token_for_call(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
     uint call_token = call_site_token(call_node);
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return valid_token(call_token) ? call_token : INVALID;
 
-    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[callee_node];
+        uint member_token = compact_hir_payload[callee_node].c;
         return valid_token(member_token) ? member_token : INVALID;
     }
 
@@ -372,7 +368,7 @@ uint semantic_callee_token_for_call(uint call_node)
 
     uint callee_token = expr_record_slot(callee_node, EXPR_RECORD_VALUE_TOKEN);
     if (!valid_token(callee_token))
-        callee_token = hir_token_pos[callee_node];
+        callee_token = compact_hir_core[callee_node].token_start;
     if (!valid_token(callee_token))
         callee_token = call_token;
     return valid_token(callee_token) ? callee_token : INVALID;
@@ -420,10 +416,17 @@ bool dependency_call_token(uint token)
 
 bool statement_position_call(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return false;
-    uint context = hir_call_context_stmt_node[call_node];
-    return valid_node(context) && hir_kind[context] == HIR_STMT;
+    return (compact_hir_payload[call_node].d & HIR_CALL_CONTEXT_STMT_BIT) != 0u;
+}
+
+uint call_context_node(uint call_node)
+{
+    if (!valid_node(call_node))
+        return INVALID;
+    uint context = compact_hir_payload[call_node].d & HIR_CALL_CONTEXT_ID_MASK;
+    return valid_node(context) ? context : INVALID;
 }
 
 bool print_call_node(uint call_node)
@@ -432,7 +435,7 @@ bool print_call_node(uint call_node)
     return valid_token(callee_token) &&
            statement_position_call(call_node) &&
            call_intrinsic_tag[callee_token] == INTRINSIC_TEXT_WRITE &&
-           hir_call_arg_count[call_node] == 1u;
+           compact_hir_payload[call_node].c == 1u;
 }
 
 uint call_arg0_node(uint call_node)
@@ -440,11 +443,14 @@ uint call_arg0_node(uint call_node)
     if (!print_call_node(call_node))
         return INVALID;
 
-    uint arg = hir_call_arg_start[call_node];
-    if (valid_node(arg) &&
-        hir_call_arg_parent_call[arg] == call_node &&
-        hir_call_arg_ordinal[arg] == 0u)
-        return arg;
+    uint row = compact_hir_payload[call_node].b;
+    uint count = min(compact_call_arg_count[0u], gParams.n_hir_nodes);
+    if (row < count)
+    {
+        HirCallArg arg = compact_call_args[row];
+        if (arg.call == call_node && arg.ordinal == 0u && valid_node(arg.value))
+            return arg.value;
+    }
     return INVALID;
 }
 
@@ -507,36 +513,9 @@ bool expr_binary_form(uint form)
 
 bool expr_contains_member(uint node)
 {
-    if (valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR)
-        return valid_token(hir_member_name_token[node]);
-    node = resolve_expr_node(node);
-    if (!valid_node(node))
-        return false;
-    return expr_subtree_features[node].y != 0u;
-}
-
-uint active_semantic_hir_count()
-{
-    return min(hir_semantic_count[0u], active_hir_node_count());
-}
-
-bool valid_semantic_hir_row(uint row)
-{
-    return row != INVALID && row < active_semantic_hir_count();
-}
-
-bool semantic_hir_row_for_node(uint node, out uint row)
-{
-    row = INVALID;
-    if (!valid_node(node))
-        return false;
-    uint candidate = hir_semantic_prefix_before_node[node];
-    if (!valid_semantic_hir_row(candidate))
-        return false;
-    if (hir_semantic_dense_node[candidate] != node)
-        return false;
-    row = candidate;
-    return true;
+    return valid_node(node) &&
+           compact_hir_core[node].kind == HIR_MEMBER_EXPR &&
+           valid_token(compact_hir_payload[node].c);
 }
 
 bool token_has_host_language_name(uint token)
@@ -624,7 +603,7 @@ uint host_token_feature_mask(uint token)
 
 uint host_call_feature_mask(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return 0u;
 
     uint callee_token = call_callee_token(call_node);
@@ -640,7 +619,7 @@ uint host_call_feature_mask(uint call_node)
 
 bool known_host_call_node(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return false;
 
     uint callee_token = call_callee_token(call_node);
@@ -657,7 +636,7 @@ bool known_host_call_node(uint call_node)
 
 bool host_void_call_node_for_symbol(uint call_node, uint language_symbol)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return false;
 
     uint callee_token = call_callee_token(call_node);
@@ -672,8 +651,8 @@ bool host_void_call_node_for_symbol(uint call_node, uint language_symbol)
 bool i32_to_f32_call_node(uint call_node)
 {
     if (!valid_node(call_node) ||
-        hir_kind[call_node] != HIR_CALL_EXPR ||
-        hir_call_arg_count[call_node] != 1u)
+        compact_hir_core[call_node].kind != HIR_CALL_EXPR ||
+        compact_hir_payload[call_node].c != 1u)
     {
         return false;
     }
@@ -687,7 +666,7 @@ bool i32_to_f32_call_node(uint call_node)
 bool print_call_requires_expr_control(uint call_node)
 {
     uint arg0 = resolve_expr_node(call_arg0_node(call_node));
-    if (!valid_node(arg0) || hir_kind[arg0] == HIR_CALL_EXPR)
+    if (!valid_node(arg0) || compact_hir_core[arg0].kind == HIR_CALL_EXPR)
         return false;
 
     uint form = expr_form(arg0);
@@ -706,7 +685,7 @@ bool print_call_requires_expr_control(uint call_node)
 
 bool potential_user_call_node(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return false;
 
     uint callee_token = call_callee_token(call_node);
@@ -739,13 +718,23 @@ uint collect_feature_mask(uint node)
     if (!valid_node(node))
         return 0u;
 
-    uint kind = hir_kind[node];
+    uint kind = compact_hir_core[node].kind;
     if (kind == HIR_ARRAY_EXPR)
         return BODY_FEATURE_ARRAY_ALLOC | BODY_FEATURE_MEMBER_EXPR;
     if (kind == HIR_STRUCT_LITERAL_EXPR)
         return BODY_FEATURE_ARRAY_ALLOC | BODY_FEATURE_MEMBER_EXPR;
     if (kind == HIR_MEMBER_EXPR)
-        return BODY_FEATURE_MEMBER_EXPR;
+    {
+        uint mask = BODY_FEATURE_MEMBER_EXPR;
+        uint root = compact_expr_root[node];
+        uint owner = valid_node(root) ? compact_hir_core[root].parent : INVALID;
+        uint owner_stmt = valid_node(owner) ? stmt_record_slot(owner, 0u) : STMT_RECORD_KIND_NONE;
+        if (owner_stmt == STMT_RECORD_KIND_LET)
+            mask |= BODY_FEATURE_MEMBER_EXPR_SCATTER;
+        else if (owner_stmt == STMT_RECORD_KIND_RETURN && root == node)
+            mask |= BODY_FEATURE_RETURN_MEMBER_EXPR;
+        return mask;
+    }
     if (kind == HIR_IF_STMT)
         // The always-dispatched scalar validator sizes every IF condition from
         // the parallel expression forest. It publishes the expression-scatter
@@ -767,7 +756,7 @@ uint collect_feature_mask(uint node)
             if (print_call_node(node))
             {
                 uint arg0 = resolve_expr_node(call_arg0_node(node));
-                if (valid_node(arg0) && hir_kind[arg0] == HIR_CALL_EXPR)
+                if (valid_node(arg0) && compact_hir_core[arg0].kind == HIR_CALL_EXPR)
                     mask |= BODY_FEATURE_STMT_PRINT_DIRECT;
                 else
                 {
@@ -787,7 +776,7 @@ uint collect_feature_mask(uint node)
             mask |= BODY_FEATURE_EXPR_CONTROL;
         if (potential_user_call_node(node))
         {
-            uint context = hir_call_context_stmt_node[node];
+            uint context = call_context_node(node);
             uint context_stmt_kind = valid_node(context) ? stmt_record_slot(context, 0u) : STMT_RECORD_KIND_NONE;
             if (context_stmt_kind == STMT_RECORD_KIND_LET)
             {
@@ -834,7 +823,7 @@ uint collect_feature_mask(uint node)
             }
         }
         uint expr_node = resolve_expr_node(stmt_record_slot(node, is_let_stmt ? 2u : 1u));
-        if (valid_node(expr_node) && hir_kind[expr_node] == HIR_CALL_EXPR)
+        if (valid_node(expr_node) && compact_hir_core[expr_node].kind == HIR_CALL_EXPR)
         {
             if (potential_user_call_node(expr_node))
             {
@@ -852,17 +841,17 @@ uint collect_feature_mask(uint node)
                 host_mask |= BODY_FEATURE_HOST_IO_RETURN;
             mask |= host_mask;
         }
-        if (valid_node(expr_node) && hir_kind[expr_node] == HIR_ARRAY_EXPR)
+        if (valid_node(expr_node) && compact_hir_core[expr_node].kind == HIR_ARRAY_EXPR)
             mask |= BODY_FEATURE_ARRAY_ALLOC | BODY_FEATURE_MEMBER_EXPR;
         if (valid_node(expr_node) && expr_contains_member(expr_node))
         {
             mask |= BODY_FEATURE_MEMBER_EXPR;
-            if (is_return_stmt && hir_kind[expr_node] == HIR_MEMBER_EXPR)
+            if (is_return_stmt && compact_hir_core[expr_node].kind == HIR_MEMBER_EXPR)
                 mask |= BODY_FEATURE_RETURN_MEMBER_EXPR;
             else if (!is_return_stmt)
                 mask |= BODY_FEATURE_MEMBER_EXPR_SCATTER;
         }
-        if (valid_node(expr_node) && hir_kind[expr_node] == HIR_EXPR)
+        if (valid_node(expr_node) && compact_hir_core[expr_node].kind == HIR_EXPR)
             mask |= BODY_FEATURE_EXPR_CONTROL | BODY_FEATURE_BINARY_DIRECT;
         return mask;
     }
@@ -875,14 +864,6 @@ void collect_body_features(uint node)
     uint mask = collect_feature_mask(node);
     if (mask != 0u)
         atomic_u32_or(body_plan, BODY_PLAN_FEATURE_MASK, mask);
-}
-
-void collect_semantic_hir_shape(uint node)
-{
-    uint row = INVALID;
-    if (!semantic_hir_row_for_node(node, row))
-        return;
-    atomic_u32_max(body_plan, BODY_PLAN_SEMANTIC_MAX_DEPTH, hir_semantic_depth[row]);
 }
 
 void collect_function_param_row(uint row)
@@ -908,13 +889,11 @@ void collect_function_param_row(uint row)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_id(tid);
+    uint row = linear_dispatch_id(tid);
     if (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE)
         return;
-    if (node >= active_hir_node_count())
-        return;
 
-    collect_semantic_hir_shape(node);
-    collect_body_features(node);
-    collect_function_param_row(node);
+    if (row < active_hir_node_count())
+        collect_body_features(row);
+    collect_function_param_row(row);
 }

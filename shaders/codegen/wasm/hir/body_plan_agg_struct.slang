@@ -5,7 +5,6 @@ import body_common;
 import body_plan_validate_common;
 
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
-StructuredBuffer<uint> struct_init_field_ordinal_by_node;
 StructuredBuffer<uint> parser_feature_flags;
 
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
@@ -245,7 +244,7 @@ void account_struct_field_store(uint node, uint owner_fn, uint token)
         return;
     }
 
-    uint field_index = struct_init_field_ordinal_by_node[node];
+    uint field_index = struct_init_field_index[token];
     uint value_node = hir_struct_lit_field_value_node[node];
     uint expr_len = 0u;
     if (field_index == INVALID ||

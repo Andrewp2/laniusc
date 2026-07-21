@@ -13,6 +13,7 @@ static LIVE_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
+static NEXT_BUFFER_ALLOCATION_ID: AtomicU64 = AtomicU64::new(1);
 static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static BUFFER_PHASE_SNAPSHOTS: LazyLock<Mutex<Vec<TrackedBufferPhaseSnapshot>>> =
@@ -119,6 +120,7 @@ pub fn tracked_buffer_allocation_stats_by_label() -> Vec<TrackedBufferLabelStats
 }
 
 struct BufferAllocationLedger {
+    id: u64,
     bytes: u64,
     label: Arc<str>,
 }
@@ -136,7 +138,11 @@ impl BufferAllocationLedger {
         entry.0 += 1;
         entry.1 += bytes;
         drop(labels);
-        Arc::new(Self { bytes, label })
+        Arc::new(Self {
+            id: NEXT_BUFFER_ALLOCATION_ID.fetch_add(1, Ordering::Relaxed),
+            bytes,
+            label,
+        })
     }
 }
 
@@ -173,6 +179,12 @@ pub struct LaniusBuffer<T> {
 }
 
 impl<T> LaniusBuffer<T> {
+    /// Stable identity of the physical GPU allocation shared by all aliases.
+    /// Buffers wrapped through `untracked_alias` have no compiler-owned id.
+    pub fn allocation_id(&self) -> Option<u64> {
+        self._allocation.as_ref().map(|allocation| allocation.id)
+    }
+
     /// Wraps a raw `wgpu::Buffer` plus byte size and logical element count.
     pub fn new((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
         Self::new_labeled((buffer, byte_size), count, "<unlabeled>")

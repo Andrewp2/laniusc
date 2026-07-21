@@ -10,6 +10,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> call_fn_index;
+RWStructuredBuffer<uint> fn_start_token_by_decl_token;
+RWStructuredBuffer<uint> backend_call_fn_index;
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> fn_entrypoint_tag;
 RWStructuredBuffer<uint> call_return_type;
@@ -95,6 +97,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < gParams.n_tokens)
     {
         call_fn_index[i] = INVALID;
+        fn_start_token_by_decl_token[i] = INVALID;
+        backend_call_fn_index[i] = INVALID;
         call_intrinsic_tag[i] = 0u;
         call_return_type[i] = TY_UNKNOWN;
         call_return_type_token[i] = INVALID;

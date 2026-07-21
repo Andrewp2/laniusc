@@ -30,9 +30,9 @@ StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> method_decl_receiver_mode;
+StructuredBuffer<uint> method_decl_signature_flags;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
-StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
@@ -583,7 +583,7 @@ void resolve_method_member_node(uint member_node)
     if (receiver_ty == TY_UNKNOWN)
         receiver_ty = call_return_type[receiver_i];
 
-    uint signature_flags = valid_node(fn_i) ? hir_method_signature_flags[fn_i] : 0u;
+    uint signature_flags = valid_token(fn_i) ? method_decl_signature_flags[fn_i] : 0u;
     if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC);
@@ -665,7 +665,7 @@ void resolve_associated_call_node(uint call_node)
         return;
     }
 
-    uint signature_flags = valid_node(fn_i) ? hir_method_signature_flags[fn_i] : 0u;
+    uint signature_flags = valid_token(fn_i) ? method_decl_signature_flags[fn_i] : 0u;
     if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC);

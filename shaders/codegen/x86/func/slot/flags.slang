@@ -25,10 +25,11 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_kind;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> method_decl_param_offset;
 
@@ -60,17 +61,28 @@ uint canonical_function_token(uint node_i)
         return INVALID;
     uint dense = raw_to_compact_hir[node_i];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense == INVALID || dense >= count)
+    if (dense == INVALID || dense >= count || compact_hir_core[dense].kind != HIR_FN)
         return INVALID;
     uint token = compact_hir_payload[dense].b;
     return valid_token(token) ? token : INVALID;
+}
+
+uint canonical_function_item_kind(uint node_i)
+{
+    if (node_i >= active_hir_node_count())
+        return 0u;
+    uint dense = raw_to_compact_hir[node_i];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count && compact_hir_core[dense].kind == HIR_FN
+               ? compact_hir_payload[dense].a
+               : 0u;
 }
 
 bool is_compiled_function_node(uint node_i)
 {
     if (node_i >= active_hir_node_count() || hir_kind[node_i] != HIR_FN)
         return false;
-    if (hir_item_kind[node_i] == HIR_ITEM_KIND_FN)
+    if (canonical_function_item_kind(node_i) == HIR_ITEM_KIND_FN)
         return true;
 
     uint fn_token = canonical_function_token(node_i);

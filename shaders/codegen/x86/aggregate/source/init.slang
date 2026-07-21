@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> x86_aggregate_source_offset_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
@@ -73,6 +74,17 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         x86_aggregate_source_node_out[node] = receiver;
         x86_aggregate_source_offset_out[node] = offset;
+        return;
+    }
+
+    // A semantic name row is already the terminal storage identity. Following
+    // its legacy expression-resolution edge can escape through a forwarding
+    // grammar wrapper into the surrounding binary/assignment result root.
+    // Aggregate-source composition must retain the declaration-bearing name.
+    if (hir_kind[node] == HIR_NAME_EXPR)
+    {
+        x86_aggregate_source_node_out[node] = node;
+        x86_aggregate_source_offset_out[node] = 0u;
         return;
     }
 

@@ -301,7 +301,6 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     items.type_arg_count.as_entire_binding(),
                 ),
                 ("hir_type_arg_next", items.type_arg_next.as_entire_binding()),
-                ("hir_item_kind", items.kind.as_entire_binding()),
                 ("hir_item_name_token", items.name_token.as_entire_binding()),
                 ("hir_item_visibility", items.visibility.as_entire_binding()),
                 (
@@ -658,7 +657,6 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 items.raw_to_compact_hir.as_entire_binding(),
             ),
             ("node_kind", items.node_kind.as_entire_binding()),
-            ("hir_item_kind", items.kind.as_entire_binding()),
             ("hir_token_pos", input.hir_token_pos.as_entire_binding()),
             (
                 "hir_method_owner_node",
@@ -801,6 +799,14 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             ("hir_status", input.hir_status.as_entire_binding()),
             ("node_kind", items.node_kind.as_entire_binding()),
             (
+                "compact_hir_count",
+                items.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                items.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
                 "predicate_method_validation_owner_node",
                 resident_resources["predicate_method_validation_owner_node"].clone(),
             ),
@@ -812,38 +818,6 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                 "predicate_method_validation_first_error_row",
                 resident_resources["predicate_method_validation_first_error_row"].clone(),
             ),
-        ],
-    )?;
-    let apply_method_validation_errors = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_predicates_apply_method_validation_errors"),
-        &passes.predicates_apply_method_validation_errors,
-        0,
-        &[
-            ("gParams", input.params.as_entire_binding()),
-            ("hir_status", input.hir_status.as_entire_binding()),
-            ("node_kind", items.node_kind.as_entire_binding()),
-            (
-                "predicate_method_validation_first_error_row",
-                resident_resources["predicate_method_validation_first_error_row"].clone(),
-            ),
-            (
-                "predicate_method_validation_status",
-                resident_resources["predicate_method_validation_status"].clone(),
-            ),
-            (
-                "predicate_method_validation_detail_token",
-                resident_resources["predicate_method_validation_detail_token"].clone(),
-            ),
-            (
-                "predicate_bound_first_arg_token",
-                rows.first_arg_token.as_entire_binding(),
-            ),
-            (
-                "predicate_bound_second_arg_token",
-                rows.second_arg_token.as_entire_binding(),
-            ),
-            ("predicate_status", rows.status.as_entire_binding()),
         ],
     )?;
     let owner_keys = create_predicate_key_bind_groups(
@@ -1009,7 +983,6 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         emit_method_validation_rows,
         validate_method_type_arg_rows,
         reduce_method_validation_errors,
-        apply_method_validation_errors,
         _owner_key_radix_steps: owner_keys.steps,
         seed_owner_key_order: owner_keys.seed_key_order,
         sort_owner_keys_small: owner_keys.sort_keys_small,

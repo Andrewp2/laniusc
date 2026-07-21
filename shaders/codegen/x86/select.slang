@@ -132,6 +132,7 @@ static const uint X86_VINST_HOST_TIME_SYSTEM_READ = 70u;
 static const uint X86_VINST_HOST_TIME_SLEEP_MS_I32 = 71u;
 static const uint X86_VINST_HOST_REALLOC = 72u;
 static const uint X86_VINST_HOST_ALLOC_FAILED = 73u;
+static const uint X86_VINST_LABEL = 74u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -1717,6 +1718,18 @@ bool select_virtual_inst(uint row, uint inst_count)
     {
         x86_inst_kind[out_row] = X86_INST_RET;
         x86_inst_arg0[out_row] = 0u;
+        x86_inst_arg1[out_row] = 0u;
+        x86_inst_arg2[out_row] = 0u;
+        return true;
+    }
+
+    if (op == X86_VINST_LABEL)
+    {
+        // Labels remain addressable virtual rows. Selection turns them into
+        // a jump-through marker; the uniform backend can later erase these
+        // while retargeting branches without changing semantic lowering.
+        x86_inst_kind[out_row] = X86_INST_V_JMP;
+        x86_inst_arg0[out_row] = selected_target(min(row + 1u, inst_count), inst_count);
         x86_inst_arg1[out_row] = 0u;
         x86_inst_arg2[out_row] = 0u;
         return true;

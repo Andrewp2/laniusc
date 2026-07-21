@@ -6,7 +6,7 @@
 // - Each active HIR declaration row writes one compact record keyed by
 //   (enclosing function, interned name id, declaration token), carrying the
 //   declaration HIR node for later record-based local-initializer checks.
-// - This pass consumes HIR statement-scope, parameter, function
+// - This pass consumes HIR statement-scope, compact parameter, function
 //   context records, and interned name ids. It does not inspect source text,
 //   token spelling, helper names, or function body shapes.
 
@@ -28,7 +28,12 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_stmt_scope_end;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> hir_visible_decl_flag;
@@ -56,9 +61,6 @@ static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
-
-static const uint HIR_PARAM_RECORD_FN = 0u;
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -90,6 +92,26 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint dense)
+{
+    return dense != INVALID && dense < active_compact_hir_count();
+}
+
+uint compact_param_dense(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    return valid_dense(dense) && compact_hir_core[dense].kind == HIR_PARAM
+               ? dense
+               : INVALID;
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
@@ -97,9 +119,13 @@ uint stmt_slot(uint node, uint slot)
 
 uint decl_token_for_hir_node(uint node)
 {
-    uint4 param = hir_param_record[node];
-    if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
-        return param[HIR_PARAM_RECORD_NAME_TOKEN];
+    uint dense = compact_param_dense(node);
+    if (valid_dense(dense))
+    {
+        HirPayload param = compact_hir_payload[dense];
+        if (valid_dense(param.a) && compact_hir_core[param.a].kind == HIR_FN)
+            return param.c;
+    }
 
     uint stmt_kind = stmt_slot(node, 0u);
     if ((hir_kind[node] == HIR_STMT ||
@@ -137,9 +163,17 @@ uint parser_stmt_scope_end_or_zero(uint node)
 
 uint scope_end_for_hir_decl_node(uint node)
 {
-    uint4 param = hir_param_record[node];
-    if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
-        return normalized_hir_end(param[HIR_PARAM_RECORD_FN]);
+    uint dense = compact_param_dense(node);
+    if (valid_dense(dense))
+    {
+        uint owner = compact_hir_payload[dense].a;
+        if (valid_dense(owner) && compact_hir_core[owner].kind == HIR_FN)
+        {
+            uint end = compact_hir_core[owner].token_end;
+            return end == INVALID || end == 0u ? active_token_count()
+                                               : min(end, active_token_count());
+        }
+    }
 
     uint stmt_kind = stmt_slot(node, 0u);
     if (stmt_kind == STMT_RECORD_KIND_FOR)

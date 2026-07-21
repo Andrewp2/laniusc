@@ -1741,6 +1741,24 @@ fn main() {
 }
 "#,
     );
+
+    assert_gpu_type_check_rejects(
+        r#"
+struct Scalar {
+    value: f32,
+}
+
+impl Scalar {
+    fn value(self) -> f32 {
+        let ignored: f32 = self.value;
+    }
+}
+
+fn main() {
+    return;
+}
+"#,
+    );
 }
 
 #[test]

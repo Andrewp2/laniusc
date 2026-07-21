@@ -28,7 +28,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_method_key_order;
-StructuredBuffer<uint> method_decl_impl_node;
+StructuredBuffer<uint> method_decl_method_row;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_module_id;
@@ -89,7 +89,7 @@ uint active_method_capacity()
 
 bool is_method_decl(uint fn_i)
 {
-    return fn_i < active_method_capacity() && method_decl_impl_node[fn_i] != INVALID;
+    return fn_i < active_method_capacity() && method_decl_method_row[fn_i] != INVALID;
 }
 
 uint decl_token_from_type_code(uint ty)

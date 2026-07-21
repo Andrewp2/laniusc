@@ -1,5 +1,4 @@
 import generated_parse_production_ids;
-import canonical_hir_identity;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
@@ -8,10 +7,9 @@ struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;
-StructuredBuffer<uint> canonical_flag;
-StructuredBuffer<uint> canonical_anchor_owner;
 StructuredBuffer<uint> canonical_prefix_before_raw;
 StructuredBuffer<uint> canonical_dense_to_raw;
+StructuredBuffer<uint> canonical_raw_to_dense;
 StructuredBuffer<uint> parent_value;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> node_kind;
@@ -35,6 +33,8 @@ StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_int_value;
+StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
@@ -45,12 +45,15 @@ StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> hir_match_scrutinee_node;
+StructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<HirCore> hir_core;
 RWStructuredBuffer<HirLinks> hir_links;
 RWStructuredBuffer<HirPayload> hir_payload;
+RWStructuredBuffer<uint> hir_canonical_nearest_loop;
 RWStructuredBuffer<uint> hir_canonical_fn_return_type;
 RWStructuredBuffer<uint> hir_canonical_type_alias_target;
 RWStructuredBuffer<uint> hir_canonical_const_type;
+RWStructuredBuffer<uint> hir_canonical_const_value;
 
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
@@ -67,6 +70,7 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_FILE = 1u;
+static const uint HIR_STMT = 7u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_BINARY_EXPR = 16u;
@@ -75,37 +79,16 @@ static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_IMPL = 35u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_CALL_CONTEXT_STMT_BIT = 0x80000000u;
+static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 bool valid_raw(uint raw) { return raw != INVALID && raw < gCanonical.raw_capacity; }
 
-uint semantic_anchor(uint raw)
-{
-    uint kind = hir_kind[raw];
-    uint callee = hir_call_callee_node[raw];
-    uint open = valid_raw(callee) ? hir_token_end[callee] : INVALID;
-    uint right = hir_expr_record[raw * 4u + 2u];
-    uint right_start = valid_raw(right) ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(
-        kind, right_start, gCanonical.canonical_capacity);
-    uint value_token = hir_expr_record[raw * 4u + 3u];
-    return canonical_hir_anchor(
-        kind, hir_token_pos[raw], hir_token_end[raw], open, value_token,
-        operator_token, gCanonical.canonical_capacity);
-}
-
 uint dense_id(uint raw)
 {
-    if (!valid_raw(raw)) return INVALID;
-    if (canonical_flag[raw] != 0u) return canonical_prefix_before_raw[raw];
-    uint anchor = semantic_anchor(raw);
-    if (anchor >= gCanonical.canonical_capacity) return INVALID;
-    uint encoded = canonical_anchor_owner[anchor];
-    uint winner_plus_one = encoded & 0x0fffffffu;
-    if (winner_plus_one == 0u) return INVALID;
-    uint winner = winner_plus_one - 1u;
-    return valid_raw(winner) && canonical_flag[winner] != 0u
-        ? canonical_prefix_before_raw[winner]
-        : INVALID;
+    return valid_raw(raw) ? canonical_raw_to_dense[raw] : INVALID;
 }
 
 uint expression_id(uint raw)
@@ -119,6 +102,15 @@ uint expression_id(uint raw)
 uint dense_boundary(uint raw)
 {
     return raw >= gCanonical.raw_capacity ? canonical_count[0u] : canonical_prefix_before_raw[raw];
+}
+
+uint encoded_call_context(uint raw_context)
+{
+    uint context = dense_id(raw_context);
+    uint encoded = context == INVALID ? HIR_CALL_CONTEXT_ID_MASK : context;
+    if (valid_raw(raw_context) && hir_kind[raw_context] == HIR_STMT)
+        encoded |= HIR_CALL_CONTEXT_STMT_BIT;
+    return encoded;
 }
 
 [shader("compute")]
@@ -249,7 +241,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.a = dense_id(hir_call_callee_node[raw]);
         payload.b = INVALID;
         payload.c = hir_call_arg_count[raw];
-        payload.d = dense_id(hir_call_context_stmt_node[raw]);
+        payload.d = encoded_call_context(hir_call_context_stmt_node[raw]);
     }
     else if (core.kind == HIR_MEMBER_EXPR)
     {
@@ -290,14 +282,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.b = expression_id(hir_expr_record[stmt_base + 1u]);
         payload.c = expression_id(hir_expr_record[stmt_base + 2u]);
         payload.d = hir_expr_record[stmt_base + 3u];
+        // Literal values are semantic payload, not parser scratch. Keeping
+        // the decoded scalar beside the compact literal node lets typecheck
+        // and codegen release the raw-node-keyed literal columns.
+        if (expr_form == HIR_EXPR_INT)
+            payload.b = hir_expr_int_value[raw];
+        else if (expr_form == HIR_EXPR_FLOAT)
+            payload.b = hir_expr_float_bits[raw];
     }
 
     hir_core[row] = core;
     hir_links[row] = links;
     hir_payload[row] = payload;
+    hir_canonical_nearest_loop[row] = dense_id(hir_nearest_loop_node[raw]);
     hir_canonical_fn_return_type[row] = dense_id(hir_fn_return_type_node[raw]);
     hir_canonical_type_alias_target[row] = dense_id(hir_type_alias_target_node[raw]);
     hir_canonical_const_type[row] = item_kind == 3u
         ? dense_id(hir_stmt_record[stmt_base + 3u])
+        : INVALID;
+    hir_canonical_const_value[row] = item_kind == 3u
+        ? expression_id(hir_stmt_record[stmt_base + 2u])
         : INVALID;
 }

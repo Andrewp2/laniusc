@@ -12,8 +12,10 @@ use crate::{
 /// Uniform parameters for bracket pairing by layer/rank.
 pub struct Params {
     pub n_sc: u32,
-    pub n_layers: u32,
+    pub n_blocks: u32,
+    pub leaf_base: u32,
     pub typed_check: u32,
+    pub emit_matches: u32,
 }
 
 /// Pass that pairs bracket pushes and pops by layer/rank.
@@ -44,18 +46,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairP
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
             ("gParams".into(), b.b07_params.as_entire_binding()),
-            ("hist_push".into(), b.b_hist_push.as_entire_binding()),
-            ("hist_pop".into(), b.b_hist_pop.as_entire_binding()),
-            ("off_push".into(), b.b_off_push.as_entire_binding()),
-            ("off_pop".into(), b.b_off_pop.as_entire_binding()),
-            (
-                "pushes_by_layer".into(),
-                b.b_pushes_by_layer.as_entire_binding(),
-            ),
-            (
-                "pops_by_layer".into(),
-                b.b_pops_by_layer.as_entire_binding(),
-            ),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
             (
                 "partial_parse_status".into(),
@@ -63,9 +53,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairP
             ),
             ("layer".into(), b.b_layer.as_entire_binding()),
             (
-                "slot_for_index".into(),
-                b.b_slot_for_index.as_entire_binding(),
+                "block_row_min".into(),
+                b.b_block_row_min.as_entire_binding(),
             ),
+            ("block_prefix".into(), b.b_block_prefix.as_entire_binding()),
+            ("min_tree".into(), b.b_min_tree.as_entire_binding()),
             (
                 "match_for_index".into(),
                 b.match_for_index.as_entire_binding(),

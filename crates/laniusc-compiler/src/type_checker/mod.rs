@@ -163,6 +163,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub compact_hir_payload: &'a wgpu::Buffer,
     pub compact_fn_return_type: &'a wgpu::Buffer,
     pub compact_type_alias_target: &'a wgpu::Buffer,
+    pub compact_const_type: &'a wgpu::Buffer,
     pub compact_param_count: &'a wgpu::Buffer,
     pub compact_params: &'a wgpu::Buffer,
     pub compact_param_ranges: &'a wgpu::Buffer,
@@ -204,7 +205,6 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub first_child: &'a wgpu::Buffer,
     pub next_sibling: &'a wgpu::Buffer,
     pub subtree_end: &'a wgpu::Buffer,
-    pub kind: &'a wgpu::Buffer,
     pub name_token: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
     pub type_value_node: &'a wgpu::Buffer,
@@ -336,7 +336,7 @@ pub struct GpuTypeCheckExternalScratchBuffers<'a> {
     pub decl_type_key_to_decl_id: &'a wgpu::Buffer,
     pub decl_value_key_to_decl_id: &'a wgpu::Buffer,
     pub method_decl_module_id: &'a wgpu::Buffer,
-    pub method_decl_impl_node: &'a wgpu::Buffer,
+    pub method_decl_method_row: &'a wgpu::Buffer,
     pub method_decl_name_token: &'a wgpu::Buffer,
     pub method_decl_name_id: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
@@ -523,6 +523,8 @@ struct TypeCheckPasses {
     hir_active_dispatch_args: PassData,
     semantic_features_collect: PassData,
     semantic_features_dispatch_args: PassData,
+    expression_types_init: PassData,
+    expression_types_step: PassData,
     names_mark_lexemes: PassData,
     counted_scan_local: PassData,
     counted_scan_hierarchy_up: PassData,
@@ -663,7 +665,6 @@ struct TypeCheckPasses {
     predicates_emit_method_validation_rows: PassData,
     predicates_validate_method_type_arg_rows: PassData,
     predicates_reduce_method_validation_errors: PassData,
-    predicates_apply_method_validation_errors: PassData,
     predicates_obligations: PassData,
     returns_clear: PassData,
     returns_mark: PassData,
@@ -686,6 +687,7 @@ struct TypeCheckPasses {
     calls_scatter_compact_hir_call_args: PassData,
     calls_scatter_compact_hir_params: PassData,
     calls_resolve: PassData,
+    calls_backend_targets: PassData,
     calls_match_arg_params_init: PassData,
     calls_match_arg_params_copy: PassData,
     calls_match_arg_params_step: PassData,
@@ -795,6 +797,11 @@ struct DependencyCanonicalTypePasses {
 #[allow(dead_code)]
 struct ResidentTypeCheckState {
     cache_key: ResidentTypeCheckCacheKey,
+    compact_expr_scalar_type_a: LaniusBuffer<u32>,
+    compact_expr_scalar_type_b: LaniusBuffer<u32>,
+    compact_expr_scalar_type: LaniusBuffer<u32>,
+    compact_expr_scalar_type_init: wgpu::BindGroup,
+    compact_expr_scalar_type_steps: Vec<wgpu::BindGroup>,
     name_capacity: u32,
     name_n_blocks: u32,
     if_depth_n_blocks: u32,
@@ -891,6 +898,7 @@ struct ResidentTypeCheckState {
     semantic_feature_flags: LaniusBuffer<u32>,
     method_token_dispatch_args: LaniusBuffer<u32>,
     method_hir_dispatch_args: LaniusBuffer<u32>,
+    method_compact_dispatch_args: LaniusBuffer<u32>,
     method_token_hir_dispatch_args: LaniusBuffer<u32>,
     method_radix_prefix_dispatch_args: LaniusBuffer<u32>,
     method_radix_bases_dispatch_args: LaniusBuffer<u32>,
@@ -910,6 +918,8 @@ struct ResidentTypeCheckState {
     if_block_prefix: LaniusBuffer<i32>,
     if_depth: LaniusBuffer<i32>,
     enclosing_fn: LaniusBuffer<u32>,
+    /// Function-start-token backend ABI projection of the dense enclosing-function HIR.
+    enclosing_fn_start_token: LaniusBuffer<u32>,
     enclosing_fn_end: LaniusBuffer<u32>,
     fn_event_value: LaniusBuffer<u32>,
     fn_event_end: LaniusBuffer<u32>,
@@ -920,6 +930,8 @@ struct ResidentTypeCheckState {
     fn_prefix_b: LaniusBuffer<u32>,
     fn_block_prefix: LaniusBuffer<u32>,
     call_fn_index: LaniusBuffer<u32>,
+    fn_start_token_by_decl_token: LaniusBuffer<u32>,
+    backend_call_fn_index: LaniusBuffer<u32>,
     call_dependency_decl: LaniusBuffer<u32>,
     call_intrinsic_tag: LaniusBuffer<u32>,
     fn_entrypoint_tag: LaniusBuffer<u32>,
@@ -1015,12 +1027,13 @@ struct ResidentTypeCheckState {
     method_decl_receiver_ref_tag: LaniusBuffer<u32>,
     method_decl_receiver_ref_payload: LaniusBuffer<u32>,
     method_decl_module_id: LaniusBuffer<u32>,
-    method_decl_impl_node: LaniusBuffer<u32>,
+    method_decl_method_row: LaniusBuffer<u32>,
     method_decl_name_token: LaniusBuffer<u32>,
     method_decl_name_id: LaniusBuffer<u32>,
     method_decl_param_offset: LaniusBuffer<u32>,
     method_decl_receiver_mode: LaniusBuffer<u32>,
     method_decl_visibility: LaniusBuffer<u32>,
+    method_decl_signature_flags: LaniusBuffer<u32>,
     method_module_count_out_implicit_root: LaniusBuffer<u32>,
     method_key_to_fn_token: LaniusBuffer<u32>,
     method_key_order_tmp: LaniusBuffer<u32>,
@@ -1203,6 +1216,8 @@ impl ResidentTypeCheckState {
 /// state directly. The fields are borrowed from retained buffers whose lifetime
 /// is owned by `OwnedGpuCodegenBuffers`.
 pub struct GpuCodegenBuffers<'a> {
+    pub(crate) lowering: GpuSemanticLoweringBuffers<'a>,
+    pub compact_expr_scalar_type: &'a wgpu::Buffer,
     pub name_id_by_token: &'a wgpu::Buffer,
     pub language_name_id: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
@@ -1300,6 +1315,28 @@ pub struct GpuCodegenBuffers<'a> {
     pub struct_init_field_decl_token_by_row: &'a wgpu::Buffer,
 }
 
+/// Typed allocation-preserving view used by the shared semantic lowering
+/// stage. Keeping this narrow prevents the new backend boundary from
+/// inheriting the legacy backend's token-indexed metadata surface.
+#[derive(Clone, Copy)]
+pub(crate) struct GpuSemanticLoweringBuffers<'a> {
+    pub compact_expr_scalar_type: &'a LaniusBuffer<u32>,
+    pub name_id_by_token: &'a LaniusBuffer<u32>,
+    pub language_name_id: &'a LaniusBuffer<u32>,
+    pub enclosing_fn: &'a LaniusBuffer<u32>,
+    pub if_depth: &'a LaniusBuffer<i32>,
+    pub visible_decl: &'a LaniusBuffer<u32>,
+    pub visible_type: &'a LaniusBuffer<u32>,
+    pub backend_call_fn_index: &'a LaniusBuffer<u32>,
+    pub call_intrinsic_tag: &'a LaniusBuffer<u32>,
+    pub call_return_type: &'a LaniusBuffer<u32>,
+    pub fn_entrypoint_tag: &'a LaniusBuffer<u32>,
+    /// Canonical field ordinal for a checked member-name token.
+    pub member_result_field_ordinal: &'a LaniusBuffer<u32>,
+    /// Canonical declaration-order ordinal for each compact literal-field row.
+    pub struct_init_field_ordinal_by_row: &'a LaniusBuffer<u32>,
+}
+
 /// Borrowed GPU tables required to canonicalize a bounded unit's public
 /// semantic interface. Source bytes and parser-owned signature/member tables
 /// are supplied separately by the compiler orchestration layer.
@@ -1377,8 +1414,10 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
 /// This wrapper is the lifetime boundary between the type-check resident cache
 /// and later backend recording.
 pub struct OwnedGpuCodegenBuffers {
+    compact_expr_scalar_type: LaniusBuffer<u32>,
     name_id_by_token: LaniusBuffer<u32>,
     language_name_id: LaniusBuffer<u32>,
+    enclosing_fn_hir: LaniusBuffer<u32>,
     enclosing_fn: LaniusBuffer<u32>,
     if_depth: LaniusBuffer<i32>,
     visible_decl: LaniusBuffer<u32>,
@@ -1657,6 +1696,22 @@ impl OwnedGpuCodegenBuffers {
     /// Borrows the owned metadata as the full backend-facing view.
     pub fn as_ref(&self) -> GpuCodegenBuffers<'_> {
         GpuCodegenBuffers {
+            lowering: GpuSemanticLoweringBuffers {
+                compact_expr_scalar_type: &self.compact_expr_scalar_type,
+                name_id_by_token: &self.name_id_by_token,
+                language_name_id: &self.language_name_id,
+                enclosing_fn: &self.enclosing_fn_hir,
+                if_depth: &self.if_depth,
+                visible_decl: &self.visible_decl,
+                visible_type: &self.visible_type,
+                backend_call_fn_index: &self.call_fn_index,
+                call_intrinsic_tag: &self.call_intrinsic_tag,
+                call_return_type: &self.call_return_type,
+                fn_entrypoint_tag: &self.fn_entrypoint_tag,
+                member_result_field_ordinal: &self.member_result_field_ordinal,
+                struct_init_field_ordinal_by_row: &self.struct_init_field_ordinal_by_row,
+            },
+            compact_expr_scalar_type: &self.compact_expr_scalar_type,
             name_id_by_token: &self.name_id_by_token,
             language_name_id: &self.language_name_id,
             enclosing_fn: &self.enclosing_fn,

@@ -64,7 +64,6 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) enum_metadata: &'a GpuX86EnumMetadataBuffers<'a>,
     pub(super) struct_metadata: &'a GpuX86StructMetadataBuffers<'a>,
     pub(super) type_metadata: &'a GpuX86TypeMetadataBuffers<'a>,
-    pub(super) hir_param_record: &'a wgpu::Buffer,
     pub(super) expr_resolved_final: &'a wgpu::Buffer,
     pub(super) final_node_func: &'a wgpu::Buffer,
     pub(super) visible_decl: &'a wgpu::Buffer,
@@ -168,7 +167,6 @@ pub(super) fn create_inst_plan_bind_groups(
         enum_metadata,
         struct_metadata,
         type_metadata,
-        hir_param_record,
         expr_resolved_final,
         final_node_func,
         visible_decl,
@@ -395,13 +393,28 @@ pub(super) fn create_inst_plan_bind_groups(
                 "hir_expr_result_root_node",
                 expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
-            ("hir_param_record", hir_param_record.as_entire_binding()),
+            (
+                "compact_hir_count",
+                expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                expr_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
             ("x86_tree_parent", parent.as_entire_binding()),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final.as_entire_binding(),
             ),
             ("x86_node_func", final_node_func.as_entire_binding()),
+            (
+                "raw_to_compact_hir",
+                expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
                 "member_result_field_node",
@@ -885,7 +898,22 @@ pub(super) fn create_inst_plan_bind_groups(
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-            ("hir_param_record", hir_param_record.as_entire_binding()),
+            (
+                "compact_hir_count",
+                expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                expr_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                expr_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final.as_entire_binding(),

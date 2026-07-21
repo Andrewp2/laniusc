@@ -30,7 +30,25 @@ impl GpuWasmCodeGenerator {
         }
         let early_features = WasmBodyFeatures::from_body_plan(&early_prefix.body_plan);
         if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
-            trace_expr_root_total_readback(device, &bufs.expr_order.root_total_readback)?;
+            trace_expr_root_total_readback(
+                device,
+                &bufs.expr_order.root_total_readback,
+                &bufs.expr_order.root_identity_readback,
+                "raw",
+            )?;
+            trace_expr_root_total_readback(
+                device,
+                &bufs.compact_expr_order.root_total_readback,
+                &bufs.compact_expr_order.root_identity_readback,
+                "compact",
+            )?;
+            trace_expr_order_readback(
+                device,
+                &bufs.compact_expr_order.order_readback,
+                &bufs.compact_expr_order.root_identity_readback,
+                &bufs.compact_expr_order.contribution_readback,
+                "compact",
+            )?;
             eprintln!(
                 "[laniusc][wasm-codegen] body_plan.features mask=0x{:08x}",
                 early_features.mask()

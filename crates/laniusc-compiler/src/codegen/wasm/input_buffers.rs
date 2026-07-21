@@ -2,20 +2,15 @@
 /// Struct declaration/member metadata buffers needed by WASM lowering.
 pub struct GpuWasmStructMetadataBuffers<'a> {
     pub member_receiver_node: &'a wgpu::Buffer,
-    pub struct_decl_field_count: &'a wgpu::Buffer,
     pub lit_field_parent_lit: &'a wgpu::Buffer,
     pub lit_context_stmt_node: &'a wgpu::Buffer,
-    pub lit_field_start: &'a wgpu::Buffer,
-    pub lit_field_count: &'a wgpu::Buffer,
     pub lit_field_value_node: &'a wgpu::Buffer,
-    pub lit_field_next: &'a wgpu::Buffer,
     pub member_name_token: &'a wgpu::Buffer,
     pub member_result_field_ordinal: &'a wgpu::Buffer,
     /// Declaration field-name token selected by type checking.
     pub member_result_field_node: &'a wgpu::Buffer,
-    pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
-    /// Declaration field-name token selected by type checking.
-    pub struct_init_field_decl_node_by_node: &'a wgpu::Buffer,
+    /// Compact literal-field-row keyed ordinal selected by type checking.
+    pub struct_init_field_ordinal_by_row: &'a wgpu::Buffer,
 }
 
 #[derive(Clone, Copy)]
@@ -25,7 +20,6 @@ pub struct GpuWasmCallMetadataBuffers<'a> {
     pub context_stmt: &'a wgpu::Buffer,
     pub arg_start: &'a wgpu::Buffer,
     pub arg_parent_call: &'a wgpu::Buffer,
-    pub arg_end: &'a wgpu::Buffer,
     pub arg_count: &'a wgpu::Buffer,
     pub arg_ordinal: &'a wgpu::Buffer,
     pub param_row_count_out: &'a wgpu::Buffer,
@@ -35,8 +29,6 @@ pub struct GpuWasmCallMetadataBuffers<'a> {
     pub param_row_start: &'a wgpu::Buffer,
     pub param_row_count: &'a wgpu::Buffer,
     pub arg_row_node: &'a wgpu::Buffer,
-    pub arg_row_call_node: &'a wgpu::Buffer,
-    pub arg_row_ordinal: &'a wgpu::Buffer,
     pub arg_row_start: &'a wgpu::Buffer,
     pub arg_row_count: &'a wgpu::Buffer,
 }
@@ -48,7 +40,6 @@ pub struct GpuWasmExprMetadataBuffers<'a> {
     pub result_root_node: &'a wgpu::Buffer,
     pub parent_node: &'a wgpu::Buffer,
     pub forest_root_node: &'a wgpu::Buffer,
-    pub forest_status: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub float_bits: &'a wgpu::Buffer,
     pub string_start: &'a wgpu::Buffer,
@@ -58,7 +49,6 @@ pub struct GpuWasmExprMetadataBuffers<'a> {
     pub stmt_record: &'a wgpu::Buffer,
     pub nearest_stmt_node: &'a wgpu::Buffer,
     pub nearest_block_node: &'a wgpu::Buffer,
-    pub nearest_enclosing_control_node: &'a wgpu::Buffer,
     pub nearest_loop_node: &'a wgpu::Buffer,
 }
 
@@ -84,17 +74,34 @@ pub struct GpuWasmPathMetadataBuffers<'a> {
 }
 
 #[derive(Clone, Copy)]
-/// Dense semantic-HIR tree buffers needed by WASM lowering.
-pub struct GpuWasmSemanticHirBuffers<'a> {
+/// Compact canonical HIR rows consumed directly by migrated WASM passes.
+pub struct GpuWasmCanonicalHirBuffers<'a> {
     pub count: &'a wgpu::Buffer,
-    pub prefix_before_node: &'a wgpu::Buffer,
-    pub dense_node: &'a wgpu::Buffer,
-    pub subtree_end: &'a wgpu::Buffer,
-    pub parent: &'a wgpu::Buffer,
-    pub first_child: &'a wgpu::Buffer,
-    pub next_sibling: &'a wgpu::Buffer,
-    pub depth: &'a wgpu::Buffer,
-    pub child_index: &'a wgpu::Buffer,
+    pub core: &'a wgpu::Buffer,
+    pub links: &'a wgpu::Buffer,
+    pub payload: &'a wgpu::Buffer,
+    pub nearest_loop: &'a wgpu::Buffer,
+    pub const_value: &'a wgpu::Buffer,
+    pub expr_parent: &'a wgpu::Buffer,
+    pub expr_root: &'a wgpu::Buffer,
+    pub call_arg_count: &'a wgpu::Buffer,
+    pub call_args: &'a wgpu::Buffer,
+    pub param_count: &'a wgpu::Buffer,
+    pub params: &'a wgpu::Buffer,
+    pub field_count: &'a wgpu::Buffer,
+    pub fields: &'a wgpu::Buffer,
+    pub array_element_start: &'a wgpu::Buffer,
+    pub array_element_count: &'a wgpu::Buffer,
+    pub array_element_row_count: &'a wgpu::Buffer,
+    pub array_elements: &'a wgpu::Buffer,
+    pub string_count: &'a wgpu::Buffer,
+    pub strings: &'a wgpu::Buffer,
+    pub string_data_words: &'a wgpu::Buffer,
+    pub string_pool_len: &'a wgpu::Buffer,
+    pub path_count: &'a wgpu::Buffer,
+    pub paths: &'a wgpu::Buffer,
+    pub path_segment_count: &'a wgpu::Buffer,
+    pub path_segments: &'a wgpu::Buffer,
 }
 
 /// Canonical exact identities for dependency declarations referenced by a
@@ -111,20 +118,19 @@ pub struct GpuWasmDependencySymbolBuffers<'a> {
 /// Complete GPU-resident frontend and type-check input contract for WASM lowering.
 pub struct GpuWasmCodegenInputs<'a> {
     pub token: &'a wgpu::Buffer,
-    pub token_count: &'a wgpu::Buffer,
     pub active_hir_dispatch_args: &'a wgpu::Buffer,
-    pub node_kind: &'a wgpu::Buffer,
     pub parent: &'a wgpu::Buffer,
     pub first_child: &'a wgpu::Buffer,
     pub next_sibling: &'a wgpu::Buffer,
     pub hir_kind: &'a wgpu::Buffer,
-    pub hir_item_kind: &'a wgpu::Buffer,
     pub hir_token_pos: &'a wgpu::Buffer,
     pub hir_token_end: &'a wgpu::Buffer,
     pub hir_status: &'a wgpu::Buffer,
     pub parser_feature_flags: &'a wgpu::Buffer,
     pub visible_decl: &'a wgpu::Buffer,
     pub visible_type: &'a wgpu::Buffer,
+    /// Type-checker-owned scalar result type for each dense compact-HIR row.
+    pub compact_expr_scalar_type: &'a wgpu::Buffer,
     pub public_decl_count: &'a wgpu::Buffer,
     pub public_decl_local_id: &'a wgpu::Buffer,
     pub public_decl_index_by_local: &'a wgpu::Buffer,
@@ -140,14 +146,11 @@ pub struct GpuWasmCodegenInputs<'a> {
     pub expressions: GpuWasmExprMetadataBuffers<'a>,
     pub arrays: GpuWasmArrayMetadataBuffers<'a>,
     pub paths: GpuWasmPathMetadataBuffers<'a>,
-    pub semantic_hir: GpuWasmSemanticHirBuffers<'a>,
-    pub hir_param_record: &'a wgpu::Buffer,
-    pub type_expr_ref_tag: &'a wgpu::Buffer,
-    pub type_expr_ref_payload: &'a wgpu::Buffer,
-    pub module_value_path_call_head: &'a wgpu::Buffer,
-    pub module_value_path_call_open: &'a wgpu::Buffer,
-    pub module_value_path_const_head: &'a wgpu::Buffer,
-    pub module_value_path_const_end: &'a wgpu::Buffer,
+    pub canonical_hir: GpuWasmCanonicalHirBuffers<'a>,
+    /// Compact path-family row keyed by dense canonical HIR owner.
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
+    pub decl_type_ref_tag: &'a wgpu::Buffer,
+    pub decl_type_ref_payload: &'a wgpu::Buffer,
     pub call_fn_index: &'a wgpu::Buffer,
     /// Flattened dependency declaration selected for each semantic callee token.
     /// When dependency interfaces are absent this aliases `call_fn_index`, whose
@@ -156,20 +159,11 @@ pub struct GpuWasmCodegenInputs<'a> {
     pub call_intrinsic_tag: &'a wgpu::Buffer,
     pub fn_entrypoint_tag: &'a wgpu::Buffer,
     pub call_return_type: &'a wgpu::Buffer,
-    pub call_return_type_token: &'a wgpu::Buffer,
     pub call_param_count: &'a wgpu::Buffer,
     pub call_param_type: &'a wgpu::Buffer,
-    pub method_decl_receiver_ref_tag: &'a wgpu::Buffer,
-    pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
     pub method_decl_receiver_mode: &'a wgpu::Buffer,
-    pub method_call_receiver_ref_tag: &'a wgpu::Buffer,
-    pub method_call_receiver_ref_payload: &'a wgpu::Buffer,
     pub type_instance_decl_token: &'a wgpu::Buffer,
-    pub type_instance_arg_start: &'a wgpu::Buffer,
-    pub type_instance_arg_count: &'a wgpu::Buffer,
-    pub type_instance_arg_ref_tag: &'a wgpu::Buffer,
-    pub type_instance_arg_ref_payload: &'a wgpu::Buffer,
     pub type_decl_hir_node_by_token: &'a wgpu::Buffer,
     pub fn_return_ref_tag: &'a wgpu::Buffer,
     pub fn_return_ref_payload: &'a wgpu::Buffer,

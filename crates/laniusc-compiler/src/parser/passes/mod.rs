@@ -63,10 +63,8 @@ pub struct ParserPasses {
     pub b01: brackets::scan_inblock::BracketsScanInblockPass,
     pub b02: brackets::scan_block_prefix::BracketsScanBlockPrefixPass,
     pub b03: brackets::apply_prefix::BracketsApplyPrefixPass,
-    pub b04: brackets::histogram_layers::BracketsHistogramLayersPass,
-    pub b05: brackets::scan_histograms::BracketsScanHistogramsPass,
-    pub b06: brackets::scatter_by_layer::BracketsScatterByLayerPass,
-    pub pair_radix: brackets::pair_radix::BracketsPairRadixPass,
+    pub b_clear_matches: brackets::clear_matches::BracketsClearMatchesPass,
+    pub b_min_tree: brackets::min_tree::BracketsMinTreePass,
     pub pse04: brackets::pse_pair::BracketsPsePairPass, // Replaces b07
 
     // Tree building pass
@@ -142,6 +140,12 @@ pub struct ParserPasses {
     pub hir_canonical_parent_init: hir::canonical::parent_init::HirCanonicalParentInitPass,
     pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
     pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
+    pub hir_canonical_expr_forest_edges:
+        hir::canonical::expr_forest::edges::HirCanonicalExprForestEdgesPass,
+    pub hir_canonical_expr_forest_root_init:
+        hir::canonical::expr_forest::root_init::HirCanonicalExprForestRootInitPass,
+    pub hir_canonical_expr_forest_root_step:
+        hir::canonical::expr_forest::root_step::HirCanonicalExprForestRootStepPass,
     pub hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass,
     pub hir_canonical_call_arg_mark: hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass,
     pub hir_canonical_call_arg_local:
@@ -303,10 +307,8 @@ impl ParserPasses {
             b01: brackets::scan_inblock::BracketsScanInblockPass::new(device)?,
             b02: brackets::scan_block_prefix::BracketsScanBlockPrefixPass::new(device)?,
             b03: brackets::apply_prefix::BracketsApplyPrefixPass::new(device)?,
-            b04: brackets::histogram_layers::BracketsHistogramLayersPass::new(device)?,
-            b05: brackets::scan_histograms::BracketsScanHistogramsPass::new(device)?,
-            b06: brackets::scatter_by_layer::BracketsScatterByLayerPass::new(device)?,
-            pair_radix: brackets::pair_radix::BracketsPairRadixPass::new(device)?,
+            b_clear_matches: brackets::clear_matches::BracketsClearMatchesPass::new(device)?,
+            b_min_tree: brackets::min_tree::BracketsMinTreePass::new(device)?,
             pse04: brackets::pse_pair::BracketsPsePairPass::new(device)?,
 
             tree_parent: tree::parent::TreeParentPass::new(device)?,
@@ -425,6 +427,18 @@ impl ParserPasses {
                 hir::canonical::parent_init::HirCanonicalParentInitPass::new(device)?,
             hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
             hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
+            hir_canonical_expr_forest_edges:
+                hir::canonical::expr_forest::edges::HirCanonicalExprForestEdgesPass::new(
+                    device,
+                )?,
+            hir_canonical_expr_forest_root_init:
+                hir::canonical::expr_forest::root_init::HirCanonicalExprForestRootInitPass::new(
+                    device,
+                )?,
+            hir_canonical_expr_forest_root_step:
+                hir::canonical::expr_forest::root_step::HirCanonicalExprForestRootStepPass::new(
+                    device,
+                )?,
             hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass::new(
                 device,
             )?,
@@ -1080,6 +1094,25 @@ pub fn record_canonical_hir(
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,
+        &ctx.buffers.hir_canonical_expr_parent_encoded.buffer,
+        0,
+        None,
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_expr_forest_status.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_expr_forest_edges
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_expr_forest_root_init
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    p.hir_canonical_expr_forest_root_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    parser_clear_buffer(
+        ctx.encoder,
         &ctx.buffers.hir_param_table_count.buffer,
         0,
         None,
@@ -1314,10 +1347,6 @@ pub fn record_stack_effect_validation(
     use InputElements::Elements1D as E1D;
 
     let n_sc = ctx.buffers.total_sc.max(1);
-    let n_layers = ctx.buffers.b_n_layers.max(1);
-
-    parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_push, 0, None);
-    parser_clear_buffer(ctx.encoder, &ctx.buffers.b_hist_pop, 0, None);
     parser_clear_buffer(ctx.encoder, &ctx.buffers.depths_out, 0, None);
 
     p.b01.record_pass(ctx, E1D(n_sc))?;
@@ -1326,45 +1355,14 @@ pub fn record_stack_effect_validation(
     stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
     p.b03.record_pass(ctx, E1D(n_sc))?;
     stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
-    p.b04.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(
-        timer_ref,
-        ctx.encoder,
-        "parser.stack_effect.layer_histogram",
-    );
-    p.b05.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.layer_scan");
-
-    let bytes = (n_layers * 4) as u64;
-    parser_copy_buffer_to_buffer(
-        ctx.encoder,
-        &ctx.buffers.b_off_push,
-        0,
-        &ctx.buffers.b_cur_push,
-        0,
-        bytes,
-    );
-    parser_copy_buffer_to_buffer(
-        ctx.encoder,
-        &ctx.buffers.b_off_pop,
-        0,
-        &ctx.buffers.b_cur_pop,
-        0,
-        bytes,
-    );
-
-    p.b06.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.scatter");
-    let mut temporary_pair_radix_cache = crate::gpu::passes_core::BindGroupCache::new();
-    let pair_radix_cache = ctx
-        .bg_cache
-        .as_deref_mut()
-        .unwrap_or(&mut temporary_pair_radix_cache);
-    p.pair_radix
-        .record_sort(ctx.device, ctx.encoder, ctx.buffers, pair_radix_cache)?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_radix");
+    p.b_min_tree
+        .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.min_tree");
+    if ctx.buffers.emit_stack_matches {
+        p.b_clear_matches.record_pass(ctx, E1D(n_sc))?;
+    }
     p.pse04.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_by_layer");
+    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_pse");
     p.status_from_brackets.record_pass(ctx, E1D(1))?;
     stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.status");
 

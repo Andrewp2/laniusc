@@ -90,7 +90,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMatc
                 "payload_count".into(),
                 b.hir_match_compact_payload_count.as_entire_binding(),
             ),
-            ("hir_payload_words".into(), b.hir_payload.as_entire_binding()),
+            (
+                "hir_payload_words".into(),
+                b.hir_payload.as_entire_binding(),
+            ),
             (
                 "family_count".into(),
                 b.hir_match_arm_table_count.as_entire_binding(),

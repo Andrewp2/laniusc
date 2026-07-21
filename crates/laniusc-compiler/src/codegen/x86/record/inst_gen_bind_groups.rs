@@ -684,6 +684,10 @@ pub(super) fn create_inst_gen_bind_groups(
                 "x86_expr_resolved_node",
                 expr_resolved_final.as_entire_binding(),
             ),
+            (
+                "raw_to_compact_hir",
+                expr_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
                 "path_count_out",

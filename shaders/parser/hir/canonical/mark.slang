@@ -58,6 +58,7 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_EXPR_FORWARD = 1u;
+static const uint STMT_ASSIGN = 5u;
 
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical.raw_capacity, tree_count_status[5u]) : gCanonical.raw_capacity; }
@@ -107,15 +108,20 @@ uint canonical_kind(uint node)
 uint anchor_for(uint node)
 {
     uint kind = hir_kind[node];
+    bool assignment_stmt = hir_stmt_record[node * 4u] == STMT_ASSIGN;
+    uint expr_form = hir_expr_record[node * 4u];
+    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, assignment_stmt);
     uint callee = hir_call_callee_node[node];
     uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
-    uint right = hir_expr_record[node * 4u + 2u];
+    uint right = assignment_stmt
+        ? hir_stmt_record[node * 4u + 2u]
+        : hir_expr_record[node * 4u + 2u];
     uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
     uint operator_token = canonical_hir_operator_anchor(
-        kind, right_start, gCanonical.canonical_capacity);
+        identity_kind, right_start, gCanonical.canonical_capacity);
     uint value_token = hir_expr_record[node * 4u + 3u];
     return canonical_hir_anchor(
-        kind, hir_token_pos[node], hir_token_end[node], open, value_token,
+        identity_kind, hir_token_pos[node], hir_token_end[node], open, value_token,
         operator_token, gCanonical.canonical_capacity);
 }
 

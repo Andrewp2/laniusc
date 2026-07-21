@@ -1,8 +1,8 @@
 // Mark interned names and compact-table flags for HIR value declarations.
 //
 // The following HIR-name passes use this as GPU-resident input for declaration
-// table compaction. This stage consumes parser-owned HIR statement and parameter
-// records plus interned name ids; compact match payload binders are appended by
+// table compaction. This stage consumes parser-owned HIR statement records,
+// compact HIR parameter payloads, and interned name ids; compact match payload binders are appended by
 // a dedicated family-row pass after this scan. It does not inspect source
 // text or token spelling.
 
@@ -24,7 +24,12 @@ StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> hir_value_decl_name_present;
@@ -44,9 +49,6 @@ static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
-
-static const uint HIR_PARAM_RECORD_FN = 0u;
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -78,6 +80,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+uint active_compact_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_dense(uint dense)
+{
+    return dense != INVALID && dense < active_compact_hir_count();
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
@@ -98,9 +110,16 @@ bool valid_decl_name_token(uint token)
 
 uint decl_token_for_hir_node(uint node)
 {
-    uint4 param = hir_param_record[node];
-    if (hir_kind[node] == HIR_PARAM && valid_node(param[HIR_PARAM_RECORD_FN]))
-        return param[HIR_PARAM_RECORD_NAME_TOKEN];
+    if (hir_kind[node] == HIR_PARAM)
+    {
+        uint dense = raw_to_compact_hir[node];
+        if (valid_dense(dense) && compact_hir_core[dense].kind == HIR_PARAM)
+        {
+            HirPayload param = compact_hir_payload[dense];
+            if (valid_dense(param.a) && compact_hir_core[param.a].kind == 3u)
+                return param.c;
+        }
+    }
 
     uint stmt_kind = stmt_slot(node, 0u);
     if ((hir_kind[node] == HIR_STMT ||

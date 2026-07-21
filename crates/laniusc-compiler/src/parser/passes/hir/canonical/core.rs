@@ -39,20 +39,16 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_canonical_count.as_entire_binding(),
             ),
             (
-                "canonical_flag".into(),
-                b.hir_semantic_flag.as_entire_binding(),
-            ),
-            (
-                "canonical_anchor_owner".into(),
-                b.hir_canonical_anchor_owner.as_entire_binding(),
-            ),
-            (
                 "canonical_prefix_before_raw".into(),
                 b.hir_canonical_prefix_before_raw.as_entire_binding(),
             ),
             (
                 "canonical_dense_to_raw".into(),
                 b.hir_canonical_dense_to_raw.as_entire_binding(),
+            ),
+            (
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             (
                 "parent_value".into(),
@@ -126,6 +122,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_expr_record.as_entire_binding(),
             ),
             (
+                "hir_expr_int_value".into(),
+                b.hir_expr_int_value.as_entire_binding(),
+            ),
+            (
+                "hir_expr_float_bits".into(),
+                b.hir_expr_float_bits.as_entire_binding(),
+            ),
+            (
                 "hir_expr_result_root_node".into(),
                 b.hir_expr_result_root_node.as_entire_binding(),
             ),
@@ -165,9 +169,17 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 "hir_match_scrutinee_node".into(),
                 b.hir_match_scrutinee_node.as_entire_binding(),
             ),
+            (
+                "hir_nearest_loop_node".into(),
+                b.hir_nearest_loop_node.as_entire_binding(),
+            ),
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
             ("hir_payload".into(), b.hir_payload.as_entire_binding()),
+            (
+                "hir_canonical_nearest_loop".into(),
+                b.hir_canonical_nearest_loop.as_entire_binding(),
+            ),
             (
                 "hir_canonical_fn_return_type".into(),
                 b.hir_canonical_fn_return_type.as_entire_binding(),
@@ -179,6 +191,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_canonical_const_type".into(),
                 b.hir_canonical_const_type.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_const_value".into(),
+                b.hir_canonical_const_value.as_entire_binding(),
             ),
         ])
     }

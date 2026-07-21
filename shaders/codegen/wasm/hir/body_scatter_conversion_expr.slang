@@ -88,13 +88,11 @@ static const uint BODY_FRAGMENT_LET_PROCESS_ARG_READ_I32 = 36u;
 static const uint BODY_FRAGMENT_LET_HOST_CALL_I32 = 37u;
 static const uint BODY_FRAGMENT_HOST_CALL_VOID = 38u;
 static const uint BODY_FRAGMENT_RETURN_HOST_CALL_I32 = 47u;
-static const uint BODY_FRAGMENT_IF_OPEN_EXPR_I32 = 51u;
 static const uint BODY_FRAGMENT_LET_CONVERSION_EXPR_I32 = 50u;
 static const uint BODY_FRAGMENT_ASSIGN_MEMBER_EXPR_I32 = 53u;
 static const uint BODY_FRAGMENT_ASSIGN_MEMBER_COMPOUND_EXPR_I32 = 54u;
 static const uint BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 = 46u;
 static const uint BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32 = 29u;
-static const uint BODY_FRAGMENT_WHILE_OPEN_I32 = 14u;
 static const uint LANGUAGE_SYMBOL_I32_TO_F32 = 28u;
 static const uint LANGUAGE_SYMBOL_READ_I32 = 22u;
 static const uint LANGUAGE_SYMBOL_WRITE_TEXT = 23u;
@@ -869,15 +867,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint4 meta = body_fragment_meta[item];
     uint4 aux = body_fragment_aux[item];
     uint byte_i = body_byte_i - offset;
-    if (meta.x == BODY_FRAGMENT_WHILE_OPEN_I32)
-    {
-        uint condition_len = expr_len(meta.y);
-        if (condition_len == 0u || condition_len + 7u != len)
-            return;
-        if (byte_i >= 4u && byte_i < 4u + condition_len)
-            body_words[offset + byte_i] = expr_byte(meta.y, byte_i - 4u);
-        return;
-    }
     if (meta.x == BODY_FRAGMENT_LET_BINARY_DIRECT_CALL_I32 ||
         meta.x == BODY_FRAGMENT_RETURN_BINARY_DIRECT_CALL_I32)
     {
@@ -981,17 +970,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         else
             body_words[offset + byte_i] =
                 local_set_byte(meta.y, byte_i - get_len - rhs_len - 1u);
-        return;
-    }
-    if (meta.x == BODY_FRAGMENT_IF_OPEN_EXPR_I32)
-    {
-        uint condition_len = expr_len(meta.y);
-        if (condition_len == 0u || condition_len + 2u != len) return;
-        if (byte_i < condition_len)
-            body_words[offset + byte_i] = expr_byte(meta.y, byte_i);
-        else
-            body_words[offset + byte_i] =
-                byte_i == condition_len ? WASM_IF : WASM_BLOCK_TYPE_EMPTY;
         return;
     }
     if (meta.x != BODY_FRAGMENT_LET_EXPR_I32 &&

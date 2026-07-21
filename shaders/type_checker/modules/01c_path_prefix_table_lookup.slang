@@ -13,8 +13,6 @@ StructuredBuffer<uint> path_segment_count_out;
 StructuredBuffer<uint> path_prefix_base;
 StructuredBuffer<uint> path_prefix_id_in;
 StructuredBuffer<uint> path_prefix_table_state;
-StructuredBuffer<uint> path_prefix_table_left;
-StructuredBuffer<uint> path_prefix_table_right;
 RWStructuredBuffer<uint> path_prefix_id_out;
 RWStructuredBuffer<uint> status;
 
@@ -40,9 +38,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint state = path_prefix_table_state[slot];
         if (state == PATH_PREFIX_TABLE_EMPTY)
             break;
-        if (state == PATH_PREFIX_TABLE_OCCUPIED &&
-            path_prefix_table_left[slot] == key.x &&
-            path_prefix_table_right[slot] == key.y)
+        uint owner = path_prefix_table_owner(state);
+        uint2 occupied_key = path_prefix_pair(
+            owner,
+            gParams.step,
+            path_prefix_base,
+            path_prefix_id_in);
+        if (occupied_key.x == key.x && occupied_key.y == key.y)
         {
             path_prefix_id_out[row] = slot;
             return;

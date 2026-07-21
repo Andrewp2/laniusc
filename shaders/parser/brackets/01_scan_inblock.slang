@@ -16,6 +16,7 @@ StructuredBuffer<uint> partial_parse_status;  // [4]=actual stack-change count
 RWStructuredBuffer<int> exscan_inblock; // len = n_sc (exclusive prefix inside block)
 RWStructuredBuffer<int> block_sum;      // len = n_blocks
 RWStructuredBuffer<int> block_minpref;  // len = n_blocks (min prefix within block)
+RWStructuredBuffer<int> block_row_min;  // len = n_blocks (exact min adjusted bracket layer)
 RWStructuredBuffer<int> block_maxdepth; // len = n_blocks (max depth within block)
 
 groupshared int s_val[256];
@@ -72,6 +73,8 @@ void main(uint3 tid: SV_DispatchThreadID,
     int inc = prefix_scan_i32_256(ltid.x, v);
     s_val[ltid.x] = inc;
     GroupMemoryBarrierWithGroupSync();
+    int block_total = s_val[GSIZE - 1u];
+    int inclusive_depth = s_val[ltid.x];
 
     // Convert to exclusive scan (ex = inc - val) and track min-prefix / max-depth in-block
     int ex = inc - v;
@@ -83,10 +86,15 @@ void main(uint3 tid: SV_DispatchThreadID,
         ltid.x,
         min(ex, 0),
         s_minp);
+    int row_layer = i < n ? ex + (v > 0 ? 1 : 0) : 2147483647;
+    int row_min = prefix_scan_inclusive<int, BracketScanI32Min, 256>(
+        ltid.x,
+        row_layer,
+        s_depth);
     int max_depth = prefix_scan_inclusive<int, BracketScanI32Max, 256>(
         ltid.x,
-        max(ex + ((s_val[ltid.x] > 0) ? 1 : 0), ex), // cheap upper bound proxy for max depth
-        s_depth);
+        max(ex + ((inclusive_depth > 0) ? 1 : 0), ex), // cheap upper bound proxy for max depth
+        s_val);
 
     if (i < n)
     {
@@ -94,9 +102,9 @@ void main(uint3 tid: SV_DispatchThreadID,
     }
     if (ltid.x + 1u == GSIZE)
     {
-        int sum = s_val[GSIZE - 1];
-        block_sum[block] = sum;
+        block_sum[block] = block_total;
         block_minpref[block] = minp;
+        block_row_min[block] = row_min;
         block_maxdepth[block] = max_depth;
     }
 }

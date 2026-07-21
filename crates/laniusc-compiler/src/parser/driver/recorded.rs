@@ -148,8 +148,9 @@ impl GpuParser {
         }
         if words[2] == 2 {
             anyhow::bail!(
-                "canonical HIR structural invariant failed at or before dense row {}",
+                "canonical HIR structural invariant failed at or before dense row {} (reason mask {:#010x})",
                 words[5].saturating_sub(1),
+                words[10],
             );
         }
         if words[2] == 3 {

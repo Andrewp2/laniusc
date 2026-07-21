@@ -28,7 +28,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_method_owner_node;
 StructuredBuffer<uint4> hir_param_record;

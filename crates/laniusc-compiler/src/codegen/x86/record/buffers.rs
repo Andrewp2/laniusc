@@ -119,7 +119,6 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) local_literal_record_buf: LaniusBuffer<u32>,
     pub(super) local_literal_status_buf: PooledStorageBuffer,
     pub(super) local_literal_status_uniform_buf: LaniusBuffer<u32>,
-    pub(super) empty_param_record_buf: Option<LaniusBuffer<u32>>,
     pub(super) node_inst_order_record_buf: LaniusBuffer<u32>,
     pub(super) intrinsic_call_status_buf: PooledStorageBuffer,
     pub(super) call_abi_record_buf: LaniusBuffer<u32>,
@@ -417,11 +416,8 @@ pub(super) fn create_metadata_record_buffers(
         external_scratch,
     } = inputs;
 
-    let compact_executable_raw_buf = storage_u32_copy(
-        device,
-        "codegen.x86.compact_executable_raw",
-        hir_words,
-    );
+    let compact_executable_raw_buf =
+        storage_u32_copy(device, "codegen.x86.compact_executable_raw", hir_words);
     let match_pattern_first_use_node_buf = external_or_storage_u32_copy(
         device,
         "codegen.x86.match_pattern_first_use_node",
@@ -622,8 +618,6 @@ pub(super) fn create_metadata_record_buffers(
         "codegen.x86.local_literal_status.uniform",
         &[1, 0, u32::MAX, 0],
     );
-    let empty_param_record_buf = (!feature_summary.has_param())
-        .then(|| storage_u32_copy(device, "codegen.x86.empty_param_record", 4));
     allocation_scope.checkpoint("metadata record buffer allocation")?;
 
     let node_inst_order_record_words =
@@ -704,7 +698,6 @@ pub(super) fn create_metadata_record_buffers(
         local_literal_record_buf,
         local_literal_status_buf,
         local_literal_status_uniform_buf,
-        empty_param_record_buf,
         node_inst_order_record_buf,
         intrinsic_call_status_buf,
         call_abi_record_buf,

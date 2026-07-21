@@ -1,10 +1,46 @@
 // Finalize per-function WASM body aggregates into global body-plan totals.
+//
+// This pass is deliberately token-domain only. Body collection has already
+// reduced compact HIR rows into per-function semantic aggregates, so pulling
+// the raw-tree body helper surface into this shader would retain parser inputs
+// after their lifetime and dramatically enlarge the generated pipeline.
 
 import atomics;
-import body_common;
+import gpu_index;
+
+struct Params
+{
+    uint n_tokens;
+    uint source_len;
+    uint out_capacity;
+    uint n_hir_nodes;
+    uint artifact_flags;
+};
+
+ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> status;
+StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> wasm_func_flag;
+StructuredBuffer<uint> wasm_func_slot_by_token;
+RWStructuredBuffer<uint> wasm_func_body_len_by_token;
+StructuredBuffer<uint> wasm_func_local_max_by_token;
+StructuredBuffer<uint> wasm_func_return_count_by_token;
+StructuredBuffer<uint> wasm_func_invalid_count_by_token;
+StructuredBuffer<uint> wasm_func_return_token_by_token;
+StructuredBuffer<uint> wasm_func_detail_by_token;
 RWStructuredBuffer<uint> body_plan;
+
+static const uint INVALID = 0xffffffffu;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint TY_VOID = 1u;
+static const uint TY_BOOL = 2u;
+static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_ARRAY_BASE = 128u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 static const uint BODY_PLAN_BODY_LEN_AGG = 32u;
 static const uint BODY_PLAN_FUNCTION_INVALID_COUNT = 33u;
@@ -15,6 +51,48 @@ static const uint BODY_PLAN_ERROR_DETAIL_MIN = 23u;
 static const uint BODY_PLAN_DEBUG_SLOT_INVALID = 37u;
 static const uint BODY_PLAN_DEBUG_MISSING_RETURN = 38u;
 static const uint BODY_PLAN_DEBUG_UNSUPPORTED_SIGNATURE = 39u;
+
+uint linear_dispatch_id(uint3 tid)
+{
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
+}
+
+bool type_is_i32_value(uint ty)
+{
+    return ty == TY_BOOL || ty == TY_INT || ty == TY_UINT;
+}
+
+uint u32_leb_len(uint value)
+{
+    for (uint i = 0u; i < 5u; i += 1u)
+    {
+        value >>= 7u;
+        if (value == 0u)
+            return i + 1u;
+    }
+    return 5u;
+}
+
+uint local_decl_count_for_function_token(uint fn_token)
+{
+    if (!valid_token(fn_token))
+        return 0u;
+    uint local_max = wasm_func_local_max_by_token[fn_token];
+    return local_max == INVALID ? 0u : local_max + 1u;
+}
+
+uint local_decl_fragment_len_from_count(uint local_count)
+{
+    if (local_count == 0u)
+        return 1u;
+    uint i32_count = local_count * 2u;
+    return 1u + u32_leb_len(i32_count) + 1u + u32_leb_len(local_count) + 1u;
+}
 
 void publish_function_invalid(uint detail)
 {

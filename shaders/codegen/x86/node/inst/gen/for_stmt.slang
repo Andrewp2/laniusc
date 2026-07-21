@@ -20,6 +20,7 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -371,7 +372,10 @@ bool resolved_decl_token_for_name_node(uint name_node, out uint decl_token)
     decl_token = INVALID;
     if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
         return false;
-    uint path_i = path_id_by_owner_hir[name_node];
+    uint dense = raw_to_compact_hir[name_node];
+    uint path_i = dense < gParams.n_hir_nodes
+                      ? path_id_by_owner_hir[dense]
+                      : INVALID;
     if (path_i < active_path_count() &&
         resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK)
     {

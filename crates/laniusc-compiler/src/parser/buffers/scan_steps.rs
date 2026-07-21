@@ -29,20 +29,6 @@ pub struct HirSemanticPrefixScanStep {
     pub write_to_a: bool,
 }
 
-/// One scan step over bracket layer histograms.
-pub struct BracketsHistogramScanStep {
-    pub params: LaniusBuffer<super::super::passes::brackets::scan_histograms::Params>,
-    pub read_from_offsets: bool,
-    pub write_to_offsets: bool,
-}
-
-/// One stable radix byte used to order bracket events by layer and kind.
-pub struct BracketsPairRadixStep {
-    pub params: LaniusBuffer<super::super::passes::brackets::pair_radix::Params>,
-    pub read_from_pushes: bool,
-    pub key_step: u32,
-}
-
 /// One ping-pong scan step over bracket block prefixes.
 pub struct BracketsBlockPrefixScanStep {
     pub params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,

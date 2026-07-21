@@ -478,19 +478,64 @@ pub(super) fn trace_body_fragment_len_readback(
 pub(super) fn trace_expr_root_total_readback(
     device: &wgpu::Device,
     readback: &wgpu::Buffer,
+    root_identity_readback: &wgpu::Buffer,
+    identity_space: &str,
 ) -> Result<()> {
     let words = read_u32_vec_from_readback(device, readback, "codegen.wasm.expr_root_total")?;
+    let root_identity = read_u32_vec_from_readback(
+        device,
+        root_identity_readback,
+        "codegen.wasm.expr_root_identity",
+    )?;
     let nonzero = words
         .chunks_exact(2)
         .enumerate()
-        .filter(|(_, pair)| pair[0] != 0 || pair[1] != 0)
+        .filter(|(root, pair)| {
+            root_identity.get(*root).copied() == Some(*root as u32)
+                && (pair[0] != 0 || pair[1] != 0)
+        })
         .map(|(root, pair)| format!("{root}:{}:{}", pair[0], pair[1]))
         .collect::<Vec<_>>()
         .join(",");
     eprintln!(
-        "[laniusc][wasm-codegen] readback.expr_root_total roots={} nonzero=[{nonzero}]",
+        "[laniusc][wasm-codegen] readback.expr_root_total space={identity_space} roots={} nonzero=[{nonzero}]",
         words.len() / 2
     );
+    Ok(())
+}
+
+pub(super) fn trace_expr_order_readback(
+    device: &wgpu::Device,
+    order_readback: &wgpu::Buffer,
+    root_readback: &wgpu::Buffer,
+    contribution_readback: &wgpu::Buffer,
+    identity_space: &str,
+) -> Result<()> {
+    let order = read_u32_vec_from_readback(device, order_readback, "codegen.wasm.expr_order")?;
+    let roots =
+        read_u32_vec_from_readback(device, root_readback, "codegen.wasm.expr_root_identity")?;
+    let contribution = read_u32_vec_from_readback(
+        device,
+        contribution_readback,
+        "codegen.wasm.expr_contribution",
+    )?;
+    let rows = order
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, node)| {
+            let root = roots.get(node as usize).copied().unwrap_or(u32::MAX);
+            let base = i * 4;
+            let c = contribution.get(base..base + 4).unwrap_or(&[]);
+            if c.len() == 4 {
+                format!("{i}:{node}:{root}:{},{},{},{}", c[0], c[1], c[2], c[3])
+            } else {
+                format!("{i}:{node}:{root}:missing")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!("[laniusc][wasm-codegen] readback.expr_order space={identity_space} rows=[{rows}]");
     Ok(())
 }
 

@@ -460,8 +460,14 @@ impl<'gpu> GpuCompiler<'gpu> {
 
 #[cfg(test)]
 mod tests {
-    use super::SourcePackTreeCapacityCache;
-    use crate::type_checker::TypeCheckPreflightCapacities;
+    use super::{GpuCompiler, GpuCompilerBackends, SourcePackTreeCapacityCache};
+    use crate::{
+        codegen::{
+            lowering_ir::{LoweringCapacities, LoweringTarget},
+            lowering_pipeline::GpuLoweringPipeline,
+        },
+        type_checker::TypeCheckPreflightCapacities,
+    };
 
     #[test]
     fn source_pack_tree_capacity_cache_requires_exact_source_contents() {
@@ -504,5 +510,241 @@ mod tests {
                 .typecheck_preflight_for(&["fn a() {}", "fn c() {}"])
                 .is_none()
         );
+    }
+
+    #[test]
+    fn physical_gpu_lowers_the_compilers_checked_compact_hir_for_both_targets() {
+        std::thread::Builder::new()
+            .name("checked-hir lowering integration".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_checked_hir_lowering_integration)
+            .expect("spawn checked-HIR lowering integration")
+            .join()
+            .expect("checked-HIR lowering integration panicked");
+    }
+
+    fn run_checked_hir_lowering_integration() {
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::x86_only(),
+        ))
+        .expect("initialize compiler");
+        let capacities = LoweringCapacities {
+            source_bytes: 64 * 1024,
+            tokens: 16 * 1024,
+            hir_nodes: 16 * 1024,
+            semantic_instructions: 96 * 1024,
+            call_arguments: 4 * 1024,
+            parameters: 4 * 1024,
+            aggregate_elements: 16 * 1024,
+            target_instructions: 192 * 1024,
+            artifact_bytes: 2 << 20,
+        };
+        let pipelines = [
+            (
+                LoweringTarget::X86_64,
+                GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::X86_64)
+                    .expect("x86 lowering graph"),
+            ),
+            (
+                LoweringTarget::Wasm,
+                GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::Wasm)
+                    .expect("Wasm lowering graph"),
+            ),
+        ];
+        let cases = [
+            ("constant", "fn main() -> i32 { return 42; }", 42),
+            (
+                "locals_arithmetic",
+                "fn main() -> i32 { let x: i32 = 6; let y: i32 = 7; return x * y; }",
+                42,
+            ),
+            (
+                "direct_call",
+                "fn add(a: i32, b: i32) -> i32 { return a + b; } fn main() -> i32 { return add(20, 22); }",
+                42,
+            ),
+            (
+                "if_else",
+                "fn main() -> i32 { if (1 < 2) { return 42; } else { return 7; } }",
+                42,
+            ),
+            (
+                "nested_expression",
+                "fn main() -> i32 { return (2 + 3) * (4 + 5); }",
+                45,
+            ),
+            (
+                "while_assignment",
+                "fn main() -> i32 { let i: i32 = 0; let total: i32 = 0; while (i < 4) { total = total + i; i = i + 1; } return total; }",
+                6,
+            ),
+            (
+                "float_arithmetic_compare",
+                "fn main() -> i32 { let x: f32 = 1.5; let y: f32 = 2.0; if (x * y == 3.0) { return 42; } else { return 7; } }",
+                42,
+            ),
+            (
+                "i32_to_f32_conversion",
+                "extern \"lanius_std\" fn i32_to_f32(value: i32) -> f32; fn main() -> i32 { if (i32_to_f32(7) == 7.0) { return 42; } else { return 7; } }",
+                42,
+            ),
+            (
+                "break_continue",
+                "fn main() -> i32 { let i: i32 = 0; let total: i32 = 0; while (i < 8) { i = i + 1; if (i == 3) { continue; } if (i == 6) { break; } total = total + i; } return total; }",
+                12,
+            ),
+            (
+                "for_range",
+                "fn main() -> i32 { let total: i32 = 0; for value in 2 .. 5 { total = total + value; } return total; }",
+                9,
+            ),
+            (
+                "for_range_control",
+                "fn main() -> i32 { let total: i32 = 0; for value in 2 .. 8 { if (value == 3) { continue; } if (value == 6) { break; } total = total + value; } return total; }",
+                11,
+            ),
+            (
+                "for_snapshots_end_bound",
+                "fn main() -> i32 { let end: i32 = 5; let total: i32 = 0; for value in 2 .. end { end = 3; total = total + value; } return total; }",
+                9,
+            ),
+            (
+                "array_literal_index",
+                "fn main() -> i32 { let values: [i32; 3] = [10, 20, 12]; return values[2]; }",
+                12,
+            ),
+            (
+                "array_dynamic_index",
+                "fn main() -> i32 { let index: i32 = 1; let values: [i32; 3] = [10, 20, 12]; return values[index]; }",
+                20,
+            ),
+            (
+                "float_array_dynamic_index",
+                "fn main() -> i32 { let index: i32 = 1; let values: [f32; 3] = [1.5, 2.5, 3.5]; if (values[index] == 2.5) { return 42; } else { return 7; } }",
+                42,
+            ),
+            (
+                "array_parameter",
+                "fn pick(values: [i32; 3], index: i32) -> i32 { return values[index]; } fn main() -> i32 { let values: [i32; 3] = [10, 20, 12]; return pick(values, 2); }",
+                12,
+            ),
+            (
+                "array_allocation_in_loop",
+                "fn main() -> i32 { let i: i32 = 0; let total: i32 = 0; while (i < 3) { let values: [i32; 3] = [i, i + 1, i + 2]; total = total + values[1]; i = i + 1; } return total; }",
+                6,
+            ),
+            (
+                "struct_literal_checked_field_order",
+                "struct Pair { left: i32, right: i32, } fn main() -> i32 { let pair: Pair = Pair { right: 25, left: 17 }; return pair.left + pair.right; }",
+                42,
+            ),
+            (
+                "struct_return",
+                "struct Pair { left: i32, right: i32, } fn make() -> Pair { return Pair { right: 25, left: 17 }; } fn main() -> i32 { let pair: Pair = make(); return pair.left + pair.right; }",
+                42,
+            ),
+        ];
+
+        for (case, source, expected) in cases {
+            pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap_or_else(|error| {
+                panic!("produce checked frontend artifacts for {case}: {error}")
+            });
+            let hir = compiler
+                .parser
+                .current_resident_hir()
+                .unwrap_or_else(|| panic!("parser should retain compact HIR for {case}"));
+
+            for (target, pipeline) in &pipelines {
+                let mut encoder =
+                    gpu.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("checked-hir lowering integration"),
+                        });
+                compiler
+                    .type_checker
+                    .with_codegen_buffers(|semantic| {
+                        pipeline.record_checked_hir(&gpu.device, &mut encoder, &hir, semantic)
+                    })
+                    .expect("type checker should retain semantic artifact")
+                    .unwrap_or_else(|error| {
+                        panic!("record {target:?} lowering for {case}: {error}")
+                    });
+                crate::gpu::passes_core::submit_with_progress(
+                    &gpu.queue,
+                    "checked-hir lowering integration",
+                    encoder.finish(),
+                );
+
+                let artifact = match target {
+                    LoweringTarget::X86_64 => pipeline.finish_x86_artifact(&gpu.device),
+                    LoweringTarget::Wasm => pipeline.finish_wasm_artifact(&gpu.device),
+                }
+                .unwrap_or_else(|error| panic!("finish {target:?} artifact for {case}: {error}"));
+                assert_lowered_program_result(*target, case, &artifact, expected);
+            }
+        }
+    }
+
+    fn assert_lowered_program_result(
+        target: LoweringTarget,
+        case: &str,
+        artifact: &[u8],
+        expected: i32,
+    ) {
+        match target {
+            LoweringTarget::X86_64 => {
+                assert_eq!(&artifact[..4], b"\x7fELF");
+                #[cfg(all(unix, target_arch = "x86_64"))]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+
+                    let path = std::env::temp_dir()
+                        .join(format!("lanius-checked-hir-{}-{case}", std::process::id()));
+                    std::fs::write(&path, artifact).expect("write x86 artifact");
+                    let mut permissions = std::fs::metadata(&path)
+                        .expect("stat x86 artifact")
+                        .permissions();
+                    permissions.set_mode(0o755);
+                    std::fs::set_permissions(&path, permissions)
+                        .expect("make x86 artifact executable");
+                    let status = std::process::Command::new(&path)
+                        .status()
+                        .expect("run x86 artifact");
+                    if status.code() == Some(expected) {
+                        let _ = std::fs::remove_file(&path);
+                    } else {
+                        panic!("x86 case {case} artifact {path:?} exited with {status}");
+                    }
+                }
+            }
+            LoweringTarget::Wasm => {
+                assert_eq!(&artifact[..4], b"\0asm");
+                let path = std::env::temp_dir().join(format!(
+                    "lanius-checked-hir-{}-{case}.wasm",
+                    std::process::id()
+                ));
+                std::fs::write(&path, artifact).expect("write Wasm artifact");
+                let output = std::process::Command::new("node")
+                    .arg("-e")
+                    .arg(
+                        "const fs=require('fs');WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(({instance})=>process.exit(instance.exports.main()===Number(process.argv[2])?0:1)).catch(error=>{console.error(error);process.exit(2)})",
+                    )
+                    .arg(&path)
+                    .arg(expected.to_string())
+                    .output();
+                if let Ok(output) = output {
+                    if output.status.success() {
+                        let _ = std::fs::remove_file(&path);
+                    } else {
+                        panic!(
+                            "Wasm case {case} artifact {path:?} did not return {expected}: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                }
+            }
+        }
     }
 }

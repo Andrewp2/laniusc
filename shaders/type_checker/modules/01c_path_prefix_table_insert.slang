@@ -1,8 +1,8 @@
 // Inserts exact prefix-pair keys into an open-addressed GPU table.
 //
-// Hashes select probe positions only. Keys are always retained in full. A
-// claimed slot is skipped rather than waited on, avoiding cross-workgroup
-// spin waits; a following lookup pass canonicalizes any duplicate inserts.
+// Each atomically published table value is the source row plus one. The pair
+// is reconstructed from immutable round inputs, so no separately written key
+// payload has to become visible to another workgroup after publication.
 
 import atomics;
 import gpu_index;
@@ -15,8 +15,6 @@ StructuredBuffer<uint> path_segment_count_out;
 StructuredBuffer<uint> path_prefix_base;
 StructuredBuffer<uint> path_prefix_id_in;
 RWStructuredBuffer<uint> path_prefix_table_state;
-RWStructuredBuffer<uint> path_prefix_table_left;
-RWStructuredBuffer<uint> path_prefix_table_right;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -37,32 +35,34 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint slot = (first + probe) % capacity;
         uint state = path_prefix_table_state[slot];
-        if (state == PATH_PREFIX_TABLE_OCCUPIED)
+        if (state != PATH_PREFIX_TABLE_EMPTY)
         {
-            if (path_prefix_table_left[slot] == key.x &&
-                path_prefix_table_right[slot] == key.y)
+            uint owner = path_prefix_table_owner(state);
+            uint2 occupied_key = path_prefix_pair(
+                owner,
+                gParams.step,
+                path_prefix_base,
+                path_prefix_id_in);
+            if (occupied_key.x == key.x && occupied_key.y == key.y)
                 return;
             continue;
         }
-        if (state != PATH_PREFIX_TABLE_EMPTY)
-            continue;
 
         uint prior = atomic_u32_compare_exchange(
             path_prefix_table_state,
             slot,
             PATH_PREFIX_TABLE_EMPTY,
-            PATH_PREFIX_TABLE_CLAIMED);
-        if (prior != PATH_PREFIX_TABLE_EMPTY)
-            continue;
+            path_prefix_table_state_for_owner(row));
+        if (prior == PATH_PREFIX_TABLE_EMPTY)
+            return;
 
-        path_prefix_table_left[slot] = key.x;
-        path_prefix_table_right[slot] = key.y;
-        DeviceMemoryBarrier();
-        uint ignored;
-        InterlockedExchange(
-            path_prefix_table_state[slot],
-            PATH_PREFIX_TABLE_OCCUPIED,
-            ignored);
-        return;
+        uint prior_owner = path_prefix_table_owner(prior);
+        uint2 prior_key = path_prefix_pair(
+            prior_owner,
+            gParams.step,
+            path_prefix_base,
+            path_prefix_id_in);
+        if (prior_key.x == key.x && prior_key.y == key.y)
+            return;
     }
 }

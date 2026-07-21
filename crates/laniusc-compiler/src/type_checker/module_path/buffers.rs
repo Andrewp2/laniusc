@@ -137,8 +137,6 @@ pub(super) struct Buffers {
     pub(super) path_prefix_id_a: LaniusBuffer<u32>,
     pub(super) path_prefix_id_b: LaniusBuffer<u32>,
     pub(super) path_prefix_table_state: LaniusBuffer<u32>,
-    pub(super) path_prefix_table_left: LaniusBuffer<u32>,
-    pub(super) path_prefix_table_right: LaniusBuffer<u32>,
     pub(super) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_owner_hir: LaniusBuffer<u32>,
@@ -924,18 +922,6 @@ impl Buffers {
             path_prefix_table_capacity,
             wgpu::BufferUsages::empty(),
         );
-        let path_prefix_table_left = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_table_left",
-            path_prefix_table_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_prefix_table_right = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_table_right",
-            path_prefix_table_capacity,
-            wgpu::BufferUsages::empty(),
-        );
         let path_prefix_round_count =
             u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
         let path_prefix_row_dispatch_args = typed_storage_u32_rw(
@@ -1141,8 +1127,6 @@ impl Buffers {
             path_prefix_id_a,
             path_prefix_id_b,
             path_prefix_table_state,
-            path_prefix_table_left,
-            path_prefix_table_right,
             path_prefix_row_dispatch_args,
             path_prefix_round_dispatch_args,
             path_owner_hir,

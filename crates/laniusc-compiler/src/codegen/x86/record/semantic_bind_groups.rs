@@ -111,7 +111,6 @@ pub(super) struct SemanticRecordInputs<'a> {
     pub(super) struct_record_status_buf: &'a wgpu::Buffer,
     pub(super) enum_type_record_buf: &'a wgpu::Buffer,
     pub(super) enum_record_status_buf: &'a wgpu::Buffer,
-    pub(super) hir_param_record_buf: &'a wgpu::Buffer,
     pub(super) final_node_func_buf: &'a wgpu::Buffer,
     pub(super) node_inst_scan_input_buf: &'a wgpu::Buffer,
     pub(super) decl_node_by_token_buf: &'a wgpu::Buffer,
@@ -200,7 +199,6 @@ pub(super) fn create_semantic_record_bind_groups(
         struct_record_status_buf,
         enum_type_record_buf,
         enum_record_status_buf,
-        hir_param_record_buf,
         final_node_func_buf,
         node_inst_scan_input_buf,
         decl_node_by_token_buf,
@@ -372,7 +370,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 "x86_enclosing_return_node",
                 enclosing_return_step_final_buf.as_entire_binding(),
             ),
-            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
             ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
             (
                 "compact_hir_payload",
@@ -403,7 +404,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 match_return_node_buf.as_entire_binding(),
             ),
             ("x86_match_record", match_record_buf.as_entire_binding()),
-            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+            (
+                "x86_match_arm_record",
+                match_arm_record_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_arm_owner",
                 match_arm_owner_buf.as_entire_binding(),
@@ -418,7 +422,10 @@ pub(super) fn create_semantic_record_bind_groups(
         &[
             ("gParams", params_buf.as_entire_binding()),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
             ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
             (
                 "x86_match_result_root_owner",
@@ -479,14 +486,35 @@ pub(super) fn create_semantic_record_bind_groups(
             ),
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("x86_match_record", match_record_buf.as_entire_binding()),
-            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
-            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
-            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
-            ("raw_to_compact_hir", raw_to_compact_hir_buf.as_entire_binding()),
-            ("x86_match_result_dense_owner", match_result_dense_owner_buf.as_entire_binding()),
-            ("compact_hir_links", compact_hir_links_buf.as_entire_binding()),
+            (
+                "x86_match_arm_record",
+                match_arm_record_buf.as_entire_binding(),
+            ),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
+            (
+                "compact_match_arm_count",
+                compact_match_arm_count_buf.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
+            (
+                "x86_match_result_dense_owner",
+                match_result_dense_owner_buf.as_entire_binding(),
+            ),
+            (
+                "compact_hir_links",
+                compact_hir_links_buf.as_entire_binding(),
+            ),
             ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
-            ("compact_match_arms", compact_match_arms_buf.as_entire_binding()),
+            (
+                "compact_match_arms",
+                compact_match_arms_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_pattern_owner",
                 match_pattern_owner_buf.as_entire_binding(),
@@ -504,11 +532,20 @@ pub(super) fn create_semantic_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
-            ("compact_hir_count", compact_hir_count_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
             ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
-            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
+            (
+                "x86_match_arm_record",
+                match_arm_record_buf.as_entire_binding(),
+            ),
+            (
+                "compact_match_arm_count",
+                compact_match_arm_count_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_pattern_owner",
                 match_pattern_owner_buf.as_entire_binding(),
@@ -552,7 +589,10 @@ pub(super) fn create_semantic_record_bind_groups(
         &[
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
-            ("compact_match_arm_count", compact_match_arm_count_buf.as_entire_binding()),
+            (
+                "compact_match_arm_count",
+                compact_match_arm_count_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_pattern_node_variant",
                 match_pattern_node_variant_buf.as_entire_binding(),
@@ -574,7 +614,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 match_pattern_first_payload_node_buf.as_entire_binding(),
             ),
             ("gX86Features", feature_params_buf.as_entire_binding()),
-            ("x86_match_arm_record", match_arm_record_buf.as_entire_binding()),
+            (
+                "x86_match_arm_record",
+                match_arm_record_buf.as_entire_binding(),
+            ),
         ],
     )?;
     let array_element_rows = reflected_bind_group(
@@ -1016,7 +1059,19 @@ pub(super) fn create_semantic_record_bind_groups(
                 "hir_type_len_value",
                 expr_metadata.type_len_value.as_entire_binding(),
             ),
-            ("hir_param_record", hir_param_record_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
+            (
+                "compact_hir_payload",
+                array_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),
@@ -1126,7 +1181,19 @@ pub(super) fn create_semantic_record_bind_groups(
                 "hir_type_len_value",
                 expr_metadata.type_len_value.as_entire_binding(),
             ),
-            ("hir_param_record", hir_param_record_buf.as_entire_binding()),
+            (
+                "compact_hir_count",
+                compact_hir_count_buf.as_entire_binding(),
+            ),
+            ("compact_hir_core", compact_hir_core_buf.as_entire_binding()),
+            (
+                "compact_hir_payload",
+                array_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                raw_to_compact_hir_buf.as_entire_binding(),
+            ),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),

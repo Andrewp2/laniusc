@@ -79,10 +79,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalStri
                 "hir_strings".into(),
                 b.hir_canonical_string_rows.as_entire_binding(),
             ),
-            (
-                "hir_payload".into(),
-                b.hir_payload.as_entire_binding(),
-            ),
+            ("hir_payload".into(), b.hir_payload.as_entire_binding()),
             (
                 "canonical_status".into(),
                 b.hir_canonical_status.as_entire_binding(),

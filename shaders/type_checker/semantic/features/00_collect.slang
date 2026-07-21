@@ -17,11 +17,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_method_owner_node;
 StructuredBuffer<uint> hir_member_name_token;
 RWStructuredBuffer<uint> semantic_feature_flags;
 
@@ -45,10 +48,19 @@ uint active_hir_node_count()
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+uint compact_item_kind_for_raw(uint node)
+{
+    if (node >= active_hir_node_count())
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count ? compact_hir_payload[dense].a : INVALID;
+}
+
 bool predicate_syntax(uint node)
 {
     uint production = node_kind[node];
-    return hir_item_kind[node] == HIR_ITEM_KIND_TRAIT ||
+    return compact_item_kind_for_raw(node) == HIR_ITEM_KIND_TRAIT ||
            production == PROD_IMPL_INHERENT ||
            production == PROD_IMPL_TRAIT ||
            production == PROD_BOUND_TYPE_IDENT ||
@@ -64,7 +76,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint flags = 0u;
-    if (hir_method_owner_node[node] != INVALID || hir_member_name_token[node] != INVALID)
+    if ((node == 0u && compact_method_count[0u] != 0u) ||
+        hir_member_name_token[node] != INVALID)
         flags |= SEMANTIC_FEATURE_METHODS;
     if (predicate_syntax(node))
         flags |= SEMANTIC_FEATURE_PREDICATES;

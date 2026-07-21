@@ -11,7 +11,6 @@ pub struct RecordElfInputs<'a, 'timer> {
     pub active_hir_dispatch_args_buf: &'a wgpu::Buffer,
     pub pointer_jump_dispatch_args_buf: &'a wgpu::Buffer,
     pub hir_kind_buf: &'a wgpu::Buffer,
-    pub hir_item_kind_buf: &'a wgpu::Buffer,
     pub parent_buf: &'a wgpu::Buffer,
     pub subtree_end_buf: &'a wgpu::Buffer,
     pub function_metadata: GpuX86FunctionMetadataBuffers<'a>,

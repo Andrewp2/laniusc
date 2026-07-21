@@ -5,6 +5,10 @@ pub(super) struct WasmBodyScatterBindGroups {
     pub hir_body_scatter_frame_bind_group: wgpu::BindGroup,
     pub hir_body_scatter_return_scalar_bind_group: wgpu::BindGroup,
     pub hir_body_scatter_return_expr_bind_group: wgpu::BindGroup,
+    pub hir_body_scatter_return_expr_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_scatter_control_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_scatter_range_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_scatter_print_compact_bind_group: wgpu::BindGroup,
     pub hir_body_scatter_conversion_expr_bind_group: wgpu::BindGroup,
     pub hir_body_scatter_let_const_bind_group: wgpu::BindGroup,
     pub hir_body_scatter_expr_control_bind_group: wgpu::BindGroup,
@@ -32,6 +36,7 @@ impl GpuWasmCodeGenerator {
         inputs: GpuWasmCodegenInputs<'_>,
         working: &WasmWorkingBuffers,
         expr_order: &ResidentWasmExprOrder,
+        compact_expr_order: &ResidentWasmExprOrder,
     ) -> Result<WasmBodyScatterBindGroups> {
         let GpuWasmCodegenInputs {
             first_child: first_child_buf,
@@ -423,6 +428,65 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_body_scatter_return_expr",
             &self.hir_body_scatter_return_expr_pass,
         )?;
+        let compact_body_binding_context = WasmBodyBindingContext::new_with_compact_expr_order(
+            inputs,
+            working,
+            compact_expr_order,
+        );
+        let mut compact_return_expr_bindings = Vec::new();
+        compact_body_binding_context.extend(
+            &mut compact_return_expr_bindings,
+            final_agg_scan_block_prefix,
+        );
+        compact_return_expr_bindings.extend([
+            ("gScan", body_scan_param_bufs[0].as_entire_binding()),
+            (
+                "body_fragment_len",
+                body_fragment_len_buf.as_entire_binding(),
+            ),
+            (
+                "body_fragment_meta",
+                body_fragment_meta_buf.as_entire_binding(),
+            ),
+            (
+                "body_scan_local_prefix",
+                body_scan_local_prefix_buf.as_entire_binding(),
+            ),
+            (
+                "body_scan_block_prefix",
+                final_body_scan_block_prefix.as_entire_binding(),
+            ),
+            ("status", status_buf.as_entire_binding()),
+            ("body_words", body_buf.as_entire_binding()),
+        ]);
+        let hir_body_scatter_return_expr_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_return_expr_compact"),
+            &self.hir_body_scatter_return_expr_compact_pass,
+            0,
+            &compact_return_expr_bindings,
+        )?;
+        let hir_body_scatter_control_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_control_compact"),
+            &self.hir_body_scatter_control_compact_pass,
+            0,
+            &compact_return_expr_bindings,
+        )?;
+        let hir_body_scatter_range_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_range_compact"),
+            &self.hir_body_scatter_range_compact_pass,
+            0,
+            &compact_return_expr_bindings,
+        )?;
+        let hir_body_scatter_print_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_scatter_print_compact"),
+            &self.hir_body_scatter_print_compact_pass,
+            0,
+            &compact_return_expr_bindings,
+        )?;
         let hir_body_scatter_conversion_expr_bind_group = create_hir_body_scatter_bind_group(
             "codegen_wasm_hir_body_scatter_conversion_expr",
             &self.hir_body_scatter_conversion_expr_pass,
@@ -594,6 +658,10 @@ impl GpuWasmCodeGenerator {
             hir_body_scatter_frame_bind_group,
             hir_body_scatter_return_scalar_bind_group,
             hir_body_scatter_return_expr_bind_group,
+            hir_body_scatter_return_expr_compact_bind_group,
+            hir_body_scatter_control_compact_bind_group,
+            hir_body_scatter_range_compact_bind_group,
+            hir_body_scatter_print_compact_bind_group,
             hir_body_scatter_conversion_expr_bind_group,
             hir_body_scatter_let_const_bind_group,
             hir_body_scatter_expr_control_bind_group,

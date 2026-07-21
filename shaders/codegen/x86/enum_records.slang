@@ -25,6 +25,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
@@ -240,7 +241,10 @@ bool variant_record_for_path_node(
     if (!valid_node(path_node))
         return false;
 
-    uint path_i = path_id_by_owner_hir[path_node];
+    uint dense = raw_to_compact_hir[path_node];
+    uint path_i = dense < gParams.n_hir_nodes
+                      ? path_id_by_owner_hir[dense]
+                      : INVALID;
     if (path_i >= active_path_count() ||
         resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return false;

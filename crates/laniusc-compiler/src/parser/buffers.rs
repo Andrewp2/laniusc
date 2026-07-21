@@ -627,76 +627,42 @@ impl ParserBuffers {
             },
         );
 
-        // layers upper bound = #pushes <= total_sc; +2 for safety.
-        let n_layers = total_sc.saturating_add(2).max(1);
-
-        let b04_params = uniform_from_val(
-            device,
-            "brackets.b04.params",
-            &super::passes::brackets::histogram_layers::Params {
-                n_sc: total_sc,
-                n_layers,
-            },
-        );
-        let b05_params = uniform_from_val(
-            device,
-            "brackets.b05.params",
-            &super::passes::brackets::scan_histograms::Params {
-                n_layers,
-                scan_step: 0,
-            },
-        );
-        let b05_scan_steps = make_brackets_histogram_scan_steps(device, n_layers);
-        let b_pair_radix_steps =
-            make_brackets_pair_radix_steps(device, total_sc, n_layers, n_blocks);
-        let b06_params = uniform_from_val(
-            device,
-            "brackets.b06.params",
-            &super::passes::brackets::scatter_by_layer::Params {
-                n_sc: total_sc,
-                n_layers,
-            },
-        );
+        let emit_stack_matches = retain_debug_hir_buffers || !resident_partial_parse_capacity;
         let b07_params = uniform_from_val(
             device,
             "brackets.b07.params",
             &super::passes::brackets::pse_pair::Params {
                 n_sc: total_sc,
-                n_layers,
+                n_blocks,
+                leaf_base: next_power_of_two_u32(n_blocks).max(1),
                 typed_check: 1,
+                emit_matches: u32::from(emit_stack_matches),
             },
         );
-
-        let pair_radix_slots = n_blocks.saturating_mul(256).max(1) as usize;
-
-        // These bracket workspaces form two non-overlapping lifetime chains:
-        //
-        //   in-block exscan -> push scatter cursor -> radix bucket prefix
-        //   pop scatter cursor -> radix block histogram
-        //
-        // Each transition fully overwrites the allocation before its next
-        // reader. Keeping distinct typed views preserves the pass contracts
-        // while avoiding three full-stack-capacity physical buffers.
-        let b_push_phase_scratch = storage_rw_for_array::<u32>(
+        let b_clear_matches_params = uniform_from_val(
             device,
-            "brackets.phase_scratch.exscan_cur_push_bucket_prefix",
-            pair_radix_slots.max(n_layers as usize),
+            "brackets.clear_matches.params",
+            &super::passes::brackets::clear_matches::Params { n_sc: total_sc },
         );
-        let b_exscan_inblock = b_push_phase_scratch.alias::<i32>(bracket_capacity as usize);
-        let b_cur_push = b_push_phase_scratch.alias::<u32>(n_layers as usize);
-        let b_pair_radix_block_bucket_prefix = b_push_phase_scratch.alias::<u32>(pair_radix_slots);
-
-        let b_pop_phase_scratch = storage_rw_for_array::<u32>(
+        let b_min_tree_base = next_power_of_two_u32(n_blocks).max(1);
+        let b_min_tree = storage_rw_for_array::<i32>(
             device,
-            "brackets.phase_scratch.cur_pop_block_histogram",
-            pair_radix_slots.max(n_layers as usize),
+            "brackets.min_tree",
+            b_min_tree_base.saturating_mul(2) as usize,
         );
-        let b_cur_pop = b_pop_phase_scratch.alias::<u32>(n_layers as usize);
-        let b_pair_radix_block_histogram = b_pop_phase_scratch.alias::<u32>(pair_radix_slots);
+        let b_min_tree_steps = make_tree_prefix_max_build_steps(device, n_blocks, b_min_tree_base);
+
+        let b_exscan_inblock = storage_rw_for_array::<i32>(
+            device,
+            "brackets.exscan_inblock",
+            bracket_capacity as usize,
+        );
         let b_block_sum =
             storage_rw_for_array::<i32>(device, "brackets.block_sum", n_blocks as usize);
         let b_block_minpref =
             storage_rw_for_array::<i32>(device, "brackets.block_minpref", n_blocks as usize);
+        let b_block_row_min =
+            storage_rw_for_array::<i32>(device, "brackets.block_row_min", n_blocks as usize);
         let b_block_maxdepth =
             storage_rw_for_array::<i32>(device, "brackets.block_maxdepth", n_blocks as usize);
         let b_block_prefix =
@@ -713,48 +679,20 @@ impl ParserBuffers {
         let depths_out = storage_rw_for_array::<i32>(device, "brackets.depths_out", 3);
         let valid_out = storage_rw_for_array::<u32>(device, "brackets.valid_out", 1);
 
-        // The global depth values are produced alongside `layer` for the
-        // bracket-pass contract, but no later pass reads them. They are dead
-        // before scatter initializes the first radix order buffer.
-        // Reuse that storage across the phase boundary; the large path writes
-        // every live order element, while the small path only reads the compact
-        // push range that scatter writes.
-        let b_depth_pushes_phase_scratch = storage_rw_for_array::<u32>(
-            device,
-            "brackets.phase_scratch.depth_exscan_pushes_by_layer",
-            bracket_capacity as usize,
-        );
-        let b_depth_exscan = b_depth_pushes_phase_scratch.alias::<i32>(bracket_capacity as usize);
         let b_layer =
             storage_rw_for_array::<u32>(device, "brackets.layer", bracket_capacity as usize);
-
-        let b_hist_push =
-            storage_rw_for_array::<u32>(device, "brackets.hist_push", n_layers as usize);
-        let b_hist_pop =
-            storage_rw_for_array::<u32>(device, "brackets.hist_pop", n_layers as usize);
-        let b_off_push =
-            storage_rw_for_array::<u32>(device, "brackets.off_push", n_layers as usize);
-        let b_off_pop = storage_rw_for_array::<u32>(device, "brackets.off_pop", n_layers as usize);
-        let b_pushes_by_layer =
-            b_depth_pushes_phase_scratch.alias::<u32>(bracket_capacity as usize);
-        let b_pops_by_layer = storage_rw_for_array::<u32>(
-            device,
-            "brackets.pops_by_layer",
-            bracket_capacity as usize,
-        );
-        let b_slot_for_index = storage_rw_for_array::<u32>(
-            device,
-            "brackets.slot_for_index",
-            bracket_capacity as usize,
-        );
-        let b_pair_radix_bucket_total =
-            storage_rw_for_array::<u32>(device, "brackets.pair_radix.bucket_total", 256);
-        let b_pair_radix_bucket_base =
-            storage_rw_for_array::<u32>(device, "brackets.pair_radix.bucket_base", 256);
+        // Production validation only writes the match table when a later raw
+        // tree consumer or a debug readback needs it. Otherwise its allocation
+        // is phase-colored HIR scratch and only needs dense tree capacity.
+        let match_capacity = if emit_stack_matches {
+            bracket_capacity
+        } else {
+            tree_capacity
+        };
         let match_for_index = storage_rw_for_array::<u32>(
             device,
             "brackets.match_for_index",
-            bracket_capacity as usize,
+            match_capacity as usize,
         );
 
         // ---------- Tree parent recovery ----------
@@ -1097,43 +1035,43 @@ impl ParserBuffers {
             device,
             "parser.hir_list0_owner_b",
             tree_capacity as usize,
-            reusable(&b_pair_radix_block_bucket_prefix),
+            None,
         );
         let hir_list0_link_a = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list0_link_a",
             tree_capacity as usize,
-            reusable(&b_pair_radix_block_histogram),
+            None,
         );
         let hir_list0_link_b = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list0_link_b",
             tree_capacity as usize,
-            reusable(&b_hist_push),
+            None,
         );
         let hir_list0_rank_a = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list0_rank_a",
             tree_capacity as usize,
-            reusable(&b_hist_pop),
+            None,
         );
         let hir_list0_rank_b = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list0_rank_b",
             tree_capacity as usize,
-            reusable(&b_off_push),
+            None,
         );
         let hir_list1_owner_a = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list1_owner_a",
             tree_capacity as usize,
-            reusable(&b_off_pop),
+            None,
         );
         let hir_list1_owner_b = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list1_owner_b",
             tree_capacity as usize,
-            reusable(&b_pushes_by_layer),
+            None,
         );
         let hir_list1_link_a = reuse_or_allocate_u32_workspace(
             device,
@@ -1145,13 +1083,13 @@ impl ParserBuffers {
             device,
             "parser.hir_list1_link_b",
             tree_capacity as usize,
-            reusable(&b_pops_by_layer),
+            None,
         );
         let hir_list1_rank_a = reuse_or_allocate_u32_workspace(
             device,
             "parser.hir_list1_rank_a",
             tree_capacity as usize,
-            reusable(&b_slot_for_index),
+            None,
         );
         let hir_list1_rank_b = reuse_or_allocate_u32_workspace(
             device,
@@ -2089,8 +2027,22 @@ impl ParserBuffers {
         );
         let hir_canonical_prefix_before_raw =
             alias_storage_buffer::<u32, u32>(&hir_node_dense_id, tree_capacity as usize);
-        let hir_canonical_dense_to_raw =
-            alias_storage_buffer::<u32, u32>(&match_for_index, hir_canonical_capacity as usize);
+        let hir_canonical_dense_to_raw = if retain_debug_hir_buffers {
+            // Debug/readback consumers require the stack-match relation after
+            // canonical HIR construction, so keep its output distinct.
+            storage_rw_for_array::<u32>(
+                device,
+                "parser.hir_canonical_dense_to_raw.debug",
+                hir_canonical_capacity as usize,
+            )
+        } else {
+            reuse_or_allocate_u32_workspace(
+                device,
+                "parser.hir_canonical_dense_to_raw",
+                hir_canonical_capacity as usize,
+                Some(&match_for_index),
+            )
+        };
         let hir_canonical_raw_to_dense = storage_rw_for_array::<u32>(
             device,
             "parser.hir_canonical_raw_to_dense",
@@ -2111,6 +2063,11 @@ impl ParserBuffers {
             "parser.hir_payload",
             hir_canonical_capacity as usize,
         );
+        let hir_canonical_nearest_loop = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_nearest_loop",
+            hir_canonical_capacity as usize,
+        );
         let hir_canonical_fn_return_type = storage_rw_for_array::<u32>(
             device,
             "parser.hir_canonical_fn_return_type",
@@ -2126,6 +2083,35 @@ impl ParserBuffers {
             "parser.hir_canonical_const_type",
             hir_canonical_capacity as usize,
         );
+        let hir_canonical_const_value = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_const_value",
+            hir_canonical_capacity as usize,
+        );
+        // Parent publication uses owner-plus-one so the buffer can be reset
+        // with a native zero clear. Once root initialization has decoded it,
+        // the same physical slot becomes the pointer-jump scratch buffer.
+        let hir_canonical_expr_parent_encoded = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_expr_parent_encoded",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_expr_parent = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_expr_parent",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_expr_root = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_expr_root",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_expr_root_scratch = alias_storage_buffer::<u32, u32>(
+            &hir_canonical_expr_parent_encoded,
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_expr_forest_status =
+            storage_rw_for_array::<u32>(device, "parser.hir_canonical_expr_forest_status", 1);
         let hir_call_arg_table_count =
             storage_rw_for_array::<u32>(device, "parser.hir_call_arg_table_count", 1);
         let hir_call_arg_family_flag = storage_rw_for_array::<u32>(
@@ -2439,16 +2425,17 @@ impl ParserBuffers {
             b02_params,
             b02_scan_steps,
             b03_params,
-            b04_params,
-            b05_params,
-            b06_params,
             b07_params,
-            b05_scan_steps,
-            b_pair_radix_steps,
+            b_clear_matches_params,
+            emit_stack_matches,
+            b_min_tree_base,
+            b_min_tree,
+            b_min_tree_steps,
 
             b_exscan_inblock,
             b_block_sum,
             b_block_minpref,
+            b_block_row_min,
             b_block_maxdepth,
             b_block_prefix,
             b_block_prefix_sum_a,
@@ -2459,26 +2446,10 @@ impl ParserBuffers {
             depths_out,
             valid_out,
 
-            b_depth_exscan,
             b_layer,
-
-            b_hist_push,
-            b_hist_pop,
-            b_off_push,
-            b_off_pop,
-            b_cur_push,
-            b_cur_pop,
-            b_pushes_by_layer,
-            b_pops_by_layer,
-            b_slot_for_index,
-            b_pair_radix_block_histogram,
-            b_pair_radix_block_bucket_prefix,
-            b_pair_radix_bucket_total,
-            b_pair_radix_bucket_base,
             match_for_index,
 
             b_n_blocks: n_blocks,
-            b_n_layers: n_layers,
 
             // Tree parent recovery
             tree_prefix_params,
@@ -2615,9 +2586,16 @@ impl ParserBuffers {
             hir_core,
             hir_links,
             hir_payload,
+            hir_canonical_nearest_loop,
             hir_canonical_fn_return_type,
             hir_canonical_type_alias_target,
             hir_canonical_const_type,
+            hir_canonical_const_value,
+            hir_canonical_expr_parent_encoded,
+            hir_canonical_expr_parent,
+            hir_canonical_expr_root,
+            hir_canonical_expr_root_scratch,
+            hir_canonical_expr_forest_status,
             hir_call_arg_table_count,
             hir_call_arg_family_flag,
             hir_call_args,

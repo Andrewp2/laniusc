@@ -82,12 +82,6 @@ uint body_fragment_feature_mask(uint kind)
     if (kind == BODY_FRAGMENT_LET_EXPR_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_EXPR_I32 ||
         kind == BODY_FRAGMENT_ASSIGN_COMPOUND_EXPR_I32 ||
-        kind == BODY_FRAGMENT_PRINT_EXPR_I64 ||
-        kind == BODY_FRAGMENT_WHILE_OPEN_I32 ||
-        kind == BODY_FRAGMENT_IF_OPEN_I32 ||
-        kind == BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32 ||
-        kind == BODY_FRAGMENT_IF_OPEN_LOCAL_I32 ||
-        kind == BODY_FRAGMENT_FOR_OPEN_RANGE_I32 ||
         kind == BODY_FRAGMENT_FOR_OPEN_AGG_RANGE_I32 ||
         kind == BODY_FRAGMENT_FOR_OPEN_ARRAY_I32 ||
         kind == BODY_FRAGMENT_FOR_CLOSE_RANGE_I32)
@@ -176,7 +170,9 @@ uint4 direct_call_aux(uint call_node)
     call_node = resolve_expr_node(call_node);
     if (!direct_user_call_node(call_node, fn_token, wasm_func_index, arg_count))
         return uint4(INVALID, 0u, 0u, 0u);
-    return uint4(wasm_func_index, arg_count, fn_token, 0u);
+    uint callee_token = call_callee_token(call_node);
+    uint return_ty = call_return_type_for_call(call_node, callee_token, fn_token);
+    return uint4(wasm_func_index, arg_count, fn_token, return_ty);
 }
 
 void publish_detail(uint detail)

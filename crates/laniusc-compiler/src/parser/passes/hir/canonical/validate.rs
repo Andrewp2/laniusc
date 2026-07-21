@@ -193,6 +193,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalVali
                 b.hir_predicate_rows.as_entire_binding(),
             ),
             (
+                "hir_expr_parent".into(),
+                b.hir_canonical_expr_parent.as_entire_binding(),
+            ),
+            (
+                "hir_expr_root".into(),
+                b.hir_canonical_expr_root.as_entire_binding(),
+            ),
+            (
+                "hir_expr_forest_status".into(),
+                b.hir_canonical_expr_forest_status.as_entire_binding(),
+            ),
+            (
                 "canonical_status".into(),
                 b.hir_canonical_status.as_entire_binding(),
             ),

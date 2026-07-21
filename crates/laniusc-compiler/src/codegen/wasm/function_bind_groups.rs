@@ -22,20 +22,14 @@ impl GpuWasmCodeGenerator {
         working: &WasmWorkingBuffers,
     ) -> Result<WasmFunctionBindGroups> {
         let GpuWasmCodegenInputs {
-            first_child: first_child_buf,
             hir_kind: hir_kind_buf,
-            hir_item_kind: hir_item_kind_buf,
-            hir_token_pos: hir_token_pos_buf,
-            hir_token_end: hir_token_end_buf,
             hir_status: hir_status_buf,
             name_id_by_token: name_id_by_token_buf,
             language_name_id: language_name_id_buf,
             enclosing_fn: enclosing_fn_buf,
-            structs: struct_metadata,
-            calls: call_metadata,
             expressions: expr_metadata,
-            paths: path_metadata,
-            hir_param_record: hir_param_record_buf,
+            canonical_hir,
+            path_id_by_owner_hir: path_id_by_owner_hir_buf,
             call_fn_index: call_fn_index_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
             fn_entrypoint_tag: fn_entrypoint_tag_buf,
@@ -46,6 +40,7 @@ impl GpuWasmCodeGenerator {
             body_plan_buf,
             func_scan_param_bufs,
             body_let_init_expr_by_decl_token_buf,
+            body_let_init_hir_by_decl_token_buf,
             wasm_agg_local_width_by_token_buf,
             wasm_agg_local_base_by_token_buf,
             wasm_agg_scan_block_sum_buf,
@@ -79,6 +74,10 @@ impl GpuWasmCodeGenerator {
                     "body_let_init_expr_by_decl_token",
                     body_let_init_expr_by_decl_token_buf.as_entire_binding(),
                 ),
+                (
+                    "body_let_init_hir_by_decl_token",
+                    body_let_init_hir_by_decl_token_buf.as_entire_binding(),
+                ),
             ],
         )?;
 
@@ -89,21 +88,30 @@ impl GpuWasmCodeGenerator {
             0,
             &[
                 ("gParams", params_buf.as_entire_binding()),
+                ("compact_hir_count", canonical_hir.count.as_entire_binding()),
+                ("compact_hir_core", canonical_hir.core.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    canonical_hir.payload.as_entire_binding(),
+                ),
+                (
+                    "compact_expr_root",
+                    canonical_hir.expr_root.as_entire_binding(),
+                ),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
                 (
                     "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
-                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-                (
-                    "hir_expr_result_root_node",
-                    expr_metadata.result_root_node.as_entire_binding(),
-                ),
                 ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
                 (
                     "body_let_init_expr_by_decl_token",
                     body_let_init_expr_by_decl_token_buf.as_entire_binding(),
+                ),
+                (
+                    "body_let_init_hir_by_decl_token",
+                    body_let_init_hir_by_decl_token_buf.as_entire_binding(),
                 ),
                 (
                     "wasm_func_local_max_by_token",
@@ -170,15 +178,21 @@ impl GpuWasmCodeGenerator {
             0,
             &[
                 ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_item_kind", hir_item_kind_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+                ("compact_hir_count", canonical_hir.count.as_entire_binding()),
+                ("compact_hir_core", canonical_hir.core.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    canonical_hir.payload.as_entire_binding(),
+                ),
+                (
+                    "compact_param_count",
+                    canonical_hir.param_count.as_entire_binding(),
+                ),
+                ("compact_params", canonical_hir.params.as_entire_binding()),
                 (
                     "fn_entrypoint_tag",
                     fn_entrypoint_tag_buf.as_entire_binding(),
                 ),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 ("body_plan", body_plan_buf.as_entire_binding()),
                 (
                     "wasm_func_decl_flag",
@@ -199,38 +213,29 @@ impl GpuWasmCodeGenerator {
             0,
             &[
                 ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("first_child", first_child_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                ("compact_hir_count", canonical_hir.count.as_entire_binding()),
+                ("compact_hir_core", canonical_hir.core.as_entire_binding()),
+                ("compact_hir_links", canonical_hir.links.as_entire_binding()),
                 (
-                    "path_count_out",
-                    path_metadata.count_out.as_entire_binding(),
+                    "compact_hir_payload",
+                    canonical_hir.payload.as_entire_binding(),
                 ),
                 (
-                    "path_segment_count",
-                    path_metadata.segment_count.as_entire_binding(),
+                    "path_id_by_owner_hir",
+                    path_id_by_owner_hir_buf.as_entire_binding(),
                 ),
                 (
-                    "path_segment_base",
-                    path_metadata.segment_base.as_entire_binding(),
+                    "compact_path_count",
+                    canonical_hir.path_count.as_entire_binding(),
+                ),
+                ("compact_paths", canonical_hir.paths.as_entire_binding()),
+                (
+                    "compact_path_segment_count",
+                    canonical_hir.path_segment_count.as_entire_binding(),
                 ),
                 (
-                    "path_segment_token",
-                    path_metadata.segment_token.as_entire_binding(),
-                ),
-                (
-                    "path_id_by_owner_token",
-                    path_metadata.id_by_owner_token.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node",
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_member_name_token",
-                    struct_metadata.member_name_token.as_entire_binding(),
+                    "compact_path_segments",
+                    canonical_hir.path_segments.as_entire_binding(),
                 ),
                 ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
                 ("call_fn_index", call_fn_index_buf.as_entire_binding()),

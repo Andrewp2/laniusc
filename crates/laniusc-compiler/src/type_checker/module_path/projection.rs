@@ -100,10 +100,7 @@ fn create_project_type_alias_instances_bind_group(
                 "compact_hir_count",
                 hir.compact_hir_count.as_entire_binding(),
             ),
-            (
-                "compact_hir_core",
-                hir.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
             (
                 "compact_hir_payload",
                 hir.compact_hir_payload.as_entire_binding(),
@@ -1552,10 +1549,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             "generic_param_token",
             generic_param_token.as_entire_binding(),
         ),
-        (
-            "generic_param_kind",
-            generic_param_kind.as_entire_binding(),
-        ),
+        ("generic_param_kind", generic_param_kind.as_entire_binding()),
         (
             "generic_param_key_order",
             generic_param_key_order.as_entire_binding(),
@@ -1695,7 +1689,9 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_match_payload_row_count",
-                hir_items.compact_match_payload_row_count.as_entire_binding(),
+                hir_items
+                    .compact_match_payload_row_count
+                    .as_entire_binding(),
             ),
             (
                 "compact_match_payloads",
@@ -1777,7 +1773,9 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_match_payload_row_count",
-                hir_items.compact_match_payload_row_count.as_entire_binding(),
+                hir_items
+                    .compact_match_payload_row_count
+                    .as_entire_binding(),
             ),
             (
                 "compact_match_payloads",
@@ -1797,7 +1795,9 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_variant_payload_row_count",
-                hir_items.compact_variant_payload_row_count.as_entire_binding(),
+                hir_items
+                    .compact_variant_payload_row_count
+                    .as_entire_binding(),
             ),
             (
                 "compact_variant_payloads",

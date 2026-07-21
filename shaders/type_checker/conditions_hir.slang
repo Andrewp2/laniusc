@@ -6,6 +6,7 @@
 // than scanning condition token ranges.
 
 import generated_parse_production_ids;
+import fixed.compact_method;
 import hir_expr_semantics;
 import hir_records;
 import status;
@@ -22,6 +23,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct CompactFnPayload { uint a; uint b; uint c; uint d; };
+struct CompactMethodSignature
+{
+    uint first_param_token;
+    uint impl_receiver_type;
+    uint receiver_mode;
+    uint metadata;
+};
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
@@ -33,7 +41,6 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_array_lit_context_stmt_node;
@@ -77,6 +84,10 @@ StructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<CompactFnPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<CompactMethodCore> compact_method_cores;
+StructuredBuffer<CompactMethodSignature> compact_method_signatures;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -118,9 +129,9 @@ StructuredBuffer<uint> predicate_status;
 StructuredBuffer<uint> predicate_syntax_token;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_status;
-StructuredBuffer<uint> hir_method_signature_flags;
-StructuredBuffer<uint> hir_method_owner_node;
-StructuredBuffer<uint> hir_method_name_token;
+StructuredBuffer<uint> predicate_method_validation_first_error_row;
+StructuredBuffer<uint> predicate_method_validation_status;
+StructuredBuffer<uint> predicate_method_validation_detail_token;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> generic_decl_owner_by_node;
 
@@ -2191,12 +2202,45 @@ void validate_unsupported_generic_decl_node(uint node)
     }
 }
 
+bool predicate_status_accepts_method_validation(uint status_value)
+{
+    return status_value == INVALID ||
+           status_value == PREDICATE_STATUS_OK ||
+           status_value == PREDICATE_STATUS_MISSING_METHOD ||
+           status_value == PREDICATE_STATUS_METHOD_ARITY_MISMATCH ||
+           status_value == PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH ||
+           status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC ||
+           status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE ||
+           status_value == PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD ||
+           status_value == PREDICATE_STATUS_EXTRA_IMPL_METHOD ||
+           status_value == PREDICATE_STATUS_DUPLICATE_IMPL_METHOD ||
+           status_value == PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH ||
+           status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW;
+}
+
 void validate_unsupported_trait_node(uint node)
 {
     uint prod = node_kind[node];
     if (prod == PROD_IMPL_TRAIT || prod == PROD_IMPL_INHERENT)
     {
         uint status_value = predicate_status[node];
+        uint method_detail_token = INVALID;
+        uint owner_hir = raw_to_compact_hir[node];
+        if (owner_hir != INVALID && owner_hir < min(compact_hir_count[0u], gParams.n_hir_nodes))
+        {
+            uint error_row = predicate_method_validation_first_error_row[owner_hir];
+            if (error_row != INVALID && error_row < active_hir_node_count())
+            {
+                uint method_status = predicate_method_validation_status[error_row];
+                if (method_status != INVALID &&
+                    method_status != PREDICATE_STATUS_OK &&
+                    predicate_status_accepts_method_validation(status_value))
+                {
+                    status_value = method_status;
+                    method_detail_token = predicate_method_validation_detail_token[error_row];
+                }
+            }
+        }
         if (status_value != INVALID && status_value != PREDICATE_STATUS_OK)
         {
             uint token_i = hir_token_pos[node];
@@ -2231,6 +2275,10 @@ void validate_unsupported_trait_node(uint node)
             if (trait_impl_arg_status && valid_token(predicate_bound_second_arg_token[node]))
             {
                 token_i = predicate_bound_second_arg_token[node];
+            }
+            else if (valid_token(method_detail_token))
+            {
+                token_i = method_detail_token;
             }
             else if ((status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH ||
                       status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
@@ -2268,7 +2316,15 @@ bool generic_param_decl_node(uint node)
 
 uint parser_method_signature_status(uint node)
 {
-    uint flags = hir_method_signature_flags[node];
+    uint dense = valid_node(node) ? raw_to_compact_hir[node] : INVALID;
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint row = dense < hir_count
+        ? compact_method_row_for_hir(compact_method_cores, method_count, dense)
+        : INVALID;
+    uint flags = row < method_count
+        ? compact_method_signatures[row].metadata >> 16u
+        : 0u;
     if ((flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
         return PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC;
     if ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
@@ -2278,7 +2334,13 @@ uint parser_method_signature_status(uint node)
 
 uint method_contract_name_token_from_rows(uint node)
 {
-    uint token_i = hir_method_name_token[node];
+    uint dense = valid_node(node) ? raw_to_compact_hir[node] : INVALID;
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint row = dense < hir_count
+        ? compact_method_row_for_hir(compact_method_cores, method_count, dense)
+        : INVALID;
+    uint token_i = row < method_count ? compact_method_cores[row].name_token : INVALID;
     if (valid_token(token_i))
         return token_i;
 

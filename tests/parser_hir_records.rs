@@ -4268,7 +4268,9 @@ fn parser_compact_hir_maps_colliding_nested_qualified_callees_to_dense_owners() 
 
     assert_eq!(qualified_callee_owners.len(), 2);
     assert!(
-        qualified_callee_owners.iter().all(|owner| *owner != INVALID),
+        qualified_callee_owners
+            .iter()
+            .all(|owner| *owner != INVALID),
         "every raw callee must translate through raw_to_hir even when another expression wins its token anchor"
     );
     assert_eq!(
@@ -4327,7 +4329,10 @@ fn main() {
         .expect("fixture should publish the main return statement");
     let parsed_return_value = parsed.hir_stmt_record_operand0[parsed_main_return] as usize;
     let parsed_root = parsed.hir_expr_result_root_node[parsed_return_value] as usize;
-    assert!(parsed_root < parsed.hir_kind.len(), "main return root must be valid");
+    assert!(
+        parsed_root < parsed.hir_kind.len(),
+        "main return root must be valid"
+    );
     let root_dense = parsed.hir_canonical_raw_to_dense[parsed_root];
     let callee_dense = calls
         .iter()
@@ -4337,7 +4342,9 @@ fn main() {
         })
         .collect::<Vec<_>>();
     assert!(
-        callee_dense.iter().all(|dense| *dense != INVALID && *dense != root_dense),
+        callee_dense
+            .iter()
+            .all(|dense| *dense != INVALID && *dense != root_dense),
         "callee names and the enclosing binary expression must have distinct dense identities: callees={callee_dense:?} root={root_dense}"
     );
     assert_ne!(
@@ -4371,8 +4378,151 @@ fn main() {
     ]
     .map(|operand| resolve_forward_expr_record(&records, operand as usize, "call operand"));
     assert_eq!(
-        operands, [record_calls[0], record_calls[1]],
+        operands,
+        [record_calls[0], record_calls[1]],
         "binary operands must resolve to the same raw call rows projected by x86"
+    );
+}
+
+#[test]
+fn parser_compact_hir_index_identity_preserves_base_operand() {
+    let parsed = parse_resident_source(
+        r#"
+fn main(values: [i32; 2], slot: i32) -> i32 {
+    return values[slot];
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "index fixture should parse");
+    let index = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(raw, kind)| (*kind == HIR_NODE_INDEX_EXPR).then_some(raw))
+        .expect("fixture should publish one index expression");
+    let base = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(raw, kind)| {
+            (*kind == HIR_NODE_NAME_EXPR
+                && parsed.hir_node_file_id[raw] == parsed.hir_node_file_id[index]
+                && parsed.hir_token_pos[raw] == parsed.hir_token_pos[index]
+                && parsed.hir_token_end[raw] <= parsed.hir_token_end[index])
+                .then_some(raw)
+        })
+        .expect("fixture should publish the index base name at the index span start");
+
+    assert_eq!(
+        parsed.hir_kind[base], HIR_NODE_NAME_EXPR,
+        "the index base should remain the semantic name-expression operand"
+    );
+    let index_dense = parsed.hir_canonical_raw_to_dense[index];
+    let base_dense = parsed.hir_canonical_raw_to_dense[base];
+    assert_ne!(
+        index_dense, INVALID,
+        "index expression must have a dense HIR id"
+    );
+    assert_ne!(base_dense, INVALID, "index base must have a dense HIR id");
+    assert_ne!(
+        index_dense, base_dense,
+        "the base name and index operation must use distinct source anchors and dense identities"
+    );
+    assert_eq!(
+        parsed.hir_canonical_dense_to_raw[index_dense as usize], index as u32,
+        "index identity should round-trip through the canonical mapping"
+    );
+    let canonical_base = parsed.hir_canonical_dense_to_raw[base_dense as usize] as usize;
+    assert!(
+        matches!(
+            parsed.hir_kind[canonical_base],
+            HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR
+        ),
+        "the projected base identity must remain a semantic name/path expression, got kind {}",
+        parsed.hir_kind[canonical_base]
+    );
+}
+
+#[test]
+fn parser_compact_hir_range_identity_preserves_explicit_start_operand() {
+    let parsed = parse_resident_source(
+        r#"
+fn main(end: i32) -> i32 {
+    for value in 2..end {
+        return value;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "range fixture should parse");
+    let for_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(raw, kind)| (*kind == STMT_RECORD_KIND_FOR).then_some(raw))
+        .expect("fixture should publish one for statement");
+    let range_wrapper = parsed.hir_stmt_record_operand1[for_node] as usize;
+    let range = parsed.hir_expr_result_root_node[range_wrapper] as usize;
+    assert!(
+        range < parsed.hir_kind.len(),
+        "range expression root must be valid"
+    );
+    let start_root = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(raw, kind)| {
+            (*kind == HIR_NODE_LITERAL_EXPR
+                && parsed.hir_node_file_id[raw] == parsed.hir_node_file_id[range]
+                && parsed.hir_token_pos[raw] == parsed.hir_token_pos[range]
+                && parsed.hir_token_end[raw] <= parsed.hir_token_end[range])
+                .then_some(raw)
+        })
+        .expect("fixture should publish the explicit range-start literal");
+
+    let range_dense = parsed.hir_canonical_raw_to_dense[range];
+    let start_dense = parsed.hir_canonical_raw_to_dense[start_root];
+    assert_ne!(range_dense, INVALID, "range must have a dense HIR identity");
+    assert_ne!(
+        start_dense, INVALID,
+        "explicit range start must have a dense HIR identity"
+    );
+    assert_ne!(
+        range_dense, start_dense,
+        "the range operator and its explicit start operand must use distinct token anchors"
+    );
+    assert_eq!(
+        parsed.hir_canonical_dense_to_raw[range_dense as usize], range as u32,
+        "range identity should round-trip through the canonical mapping"
+    );
+    assert_eq!(
+        parsed.hir_canonical_dense_to_raw[start_dense as usize], start_root as u32,
+        "range-start identity should round-trip through the canonical mapping"
+    );
+}
+
+#[test]
+fn parser_compact_hir_nested_call_arguments_have_valid_owner_ranges() {
+    let parsed = parse_resident_source(
+        r#"
+fn inc(value: i32) -> i32 { return value + 1; }
+fn weighted(a: i32, b: i32, c: i32) -> i32 { return a + b * 2 + c * 3; }
+fn main() { return weighted(inc(1), inc(2), inc(3)); }
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "nested-call fixture should parse");
+    assert_eq!(
+        parsed
+            .hir_kind
+            .iter()
+            .filter(|kind| **kind == HIR_NODE_CALL_EXPR)
+            .count(),
+        4,
+        "the outer call and all three nested calls should retain distinct HIR rows"
     );
 }
 
@@ -4409,7 +4559,8 @@ fn main() {
         "call, member, and receiver must all translate to compact identities"
     );
     assert_ne!(
-        receiver_dense, member_dense,
+        receiver_dense,
+        member_dense,
         "receiver and member identities must differ: receiver_span={}..{} member_span={}..{} member_name_token={}",
         parsed.hir_token_pos[receiver],
         parsed.hir_token_end[receiver],
@@ -4417,7 +4568,48 @@ fn main() {
         parsed.hir_token_end[member],
         parsed.hir_member_name_token[member],
     );
-    assert_ne!(member_dense, call_dense, "member and call identities must differ");
+    assert_ne!(
+        member_dense, call_dense,
+        "member and call identities must differ"
+    );
+}
+
+#[test]
+fn parser_compact_hir_assignment_member_preserves_receiver_operand() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair { left: i32, right: i32 }
+fn main() {
+    let pair: Pair = Pair { left: 7, right: 5 };
+    pair.right += 10;
+    return pair.left;
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "member-assignment fixture should parse"
+    );
+    let members = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(raw, kind)| (*kind == HIR_NODE_MEMBER_EXPR).then_some(raw))
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 2, "fixture should publish both member reads");
+    for member in members {
+        let receiver = parsed.hir_member_receiver_node[member] as usize;
+        assert!(receiver < parsed.hir_kind.len());
+        assert_ne!(receiver, member, "a member cannot be its own receiver");
+        assert_eq!(
+            parsed.hir_kind[receiver], HIR_NODE_NAME_EXPR,
+            "a local member receiver must be the semantic name expression"
+        );
+        assert_ne!(
+            parsed.hir_canonical_raw_to_dense[receiver], parsed.hir_canonical_raw_to_dense[member],
+            "member and receiver must have distinct compact identities"
+        );
+    }
 }
 
 #[test]
@@ -4431,14 +4623,21 @@ impl Counter {
 "#,
     );
 
-    assert!(parsed.ll1.accepted, "repeated member receiver fixture should parse");
+    assert!(
+        parsed.ll1.accepted,
+        "repeated member receiver fixture should parse"
+    );
     let members = parsed
         .hir_kind
         .iter()
         .enumerate()
         .filter_map(|(raw, kind)| (*kind == HIR_NODE_MEMBER_EXPR).then_some(raw))
         .collect::<Vec<_>>();
-    assert_eq!(members.len(), 2, "fixture should publish exactly two member expressions");
+    assert_eq!(
+        members.len(),
+        2,
+        "fixture should publish exactly two member expressions"
+    );
 
     let mut receiver_dense = Vec::new();
     for member in members {
@@ -4465,8 +4664,7 @@ impl Counter {
                 return None;
             }
             let dense = parsed.hir_canonical_raw_to_dense[raw] as usize;
-            (dense < parsed.hir_param_range_count.len()
-                && parsed.hir_param_range_count[dense] == 1)
+            (dense < parsed.hir_param_range_count.len() && parsed.hir_param_range_count[dense] == 1)
                 .then_some(raw)
         })
         .expect("fixture should publish its method function");
@@ -4568,7 +4766,10 @@ fn forward(value: Token) -> Token { return value; }
 "#,
     );
 
-    assert!(parsed.ll1.accepted, "nominal type-path fixture should parse");
+    assert!(
+        parsed.ll1.accepted,
+        "nominal type-path fixture should parse"
+    );
     assert_eq!(
         parsed
             .hir_path_kind
@@ -4955,13 +5156,13 @@ fn main() {
         .expect("fixture should publish a struct literal");
     let dense_array = parsed.hir_canonical_raw_to_dense
         [parsed.hir_array_element_parent_lit[raw_element] as usize];
-    let row = parsed.hir_compact_array_element_array
+    let row = parsed
+        .hir_compact_array_element_array
         .iter()
         .position(|array| *array == dense_array)
         .expect("fixture should publish a compact array-element row");
     assert_eq!(
-        parsed.hir_compact_array_element_value[row],
-        parsed.hir_canonical_raw_to_dense[raw_literal],
+        parsed.hir_compact_array_element_value[row], parsed.hir_canonical_raw_to_dense[raw_literal],
         "compact array-element values must identify their canonical semantic value"
     );
 }
@@ -5051,6 +5252,37 @@ impl Boxed {
         HIR_METHOD_RECEIVER_SELF
     );
     assert_eq!(parsed.hir_compact_method_metadata[0] & 0xffff, 1);
+    assert_ne!(
+        (parsed.hir_compact_method_metadata[0] >> 16) & HIR_METHOD_SIGNATURE_INHERENT_IMPL,
+        0
+    );
+}
+
+#[test]
+fn parser_compact_hir_methods_preserve_explicit_receiver_metadata() {
+    let parsed = parse_resident_source(
+        r#"
+struct Range { start: i32, end: i32 }
+
+impl Range {
+    fn contains(receiver: Range, value: i32) -> bool {
+        return value >= receiver.start && value < receiver.end;
+    }
+}
+"#,
+    );
+
+    assert!(
+        parsed.ll1.accepted,
+        "explicit-receiver fixture should parse"
+    );
+    assert_eq!(parsed.hir_compact_method_node.len(), 1);
+    assert_ne!(parsed.hir_compact_method_first_param_token[0], INVALID);
+    assert_eq!(
+        parsed.hir_compact_method_receiver_mode[0],
+        HIR_METHOD_RECEIVER_EXPLICIT
+    );
+    assert_ne!(parsed.hir_compact_method_impl_receiver_type[0], INVALID);
     assert_ne!(
         (parsed.hir_compact_method_metadata[0] >> 16) & HIR_METHOD_SIGNATURE_INHERENT_IMPL,
         0

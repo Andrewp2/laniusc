@@ -123,7 +123,7 @@ pub(in crate::type_checker) struct VisibleRows<'a> {
 /// Borrowed method-declaration rows used while building method key tables.
 #[derive(Clone, Copy)]
 pub(in crate::type_checker) struct MethodDeclRows<'a> {
-    pub(in crate::type_checker) impl_node: &'a wgpu::Buffer,
+    pub(in crate::type_checker) method_row: &'a wgpu::Buffer,
     pub(in crate::type_checker) recv_tag: &'a wgpu::Buffer,
     pub(in crate::type_checker) recv_payload: &'a wgpu::Buffer,
     pub(in crate::type_checker) module_id: &'a wgpu::Buffer,
@@ -400,6 +400,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) call_param_segment_scan_n_blocks: u32,
     pub(in crate::type_checker) scatter_compact_hir_params: wgpu::BindGroup,
     pub(in crate::type_checker) resolve: wgpu::BindGroup,
+    pub(in crate::type_checker) backend_targets: wgpu::BindGroup,
     pub(in crate::type_checker) match_arg_params_init: wgpu::BindGroup,
     pub(in crate::type_checker) match_arg_params_copy_main_to_tmp: wgpu::BindGroup,
     pub(in crate::type_checker) match_arg_params_copy_tmp_to_main: wgpu::BindGroup,
@@ -498,7 +499,6 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) emit_method_validation_rows: wgpu::BindGroup,
     pub(in crate::type_checker) validate_method_type_arg_rows: wgpu::BindGroup,
     pub(in crate::type_checker) reduce_method_validation_errors: wgpu::BindGroup,
-    pub(in crate::type_checker) apply_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) seed_owner_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) sort_owner_keys_small: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_histogram: Vec<wgpu::BindGroup>,

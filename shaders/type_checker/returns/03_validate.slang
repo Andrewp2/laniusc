@@ -1,6 +1,7 @@
 // Validate that concrete non-void functions have parser-owned return evidence.
 
 import status;
+import fixed.compact_method;
 
 struct Params
 {
@@ -15,10 +16,10 @@ struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<CompactMethodCore> compact_method_cores;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_method_impl_node;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> return_fn_flags;
 
@@ -67,12 +68,36 @@ uint canonical_function_token(uint node)
     return valid_token(token) ? token : INVALID;
 }
 
+uint canonical_item_kind(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count ? compact_hir_payload[dense].a : INVALID;
+}
+
+bool compact_impl_method(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    uint dense = raw_to_compact_hir[node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= hir_count)
+        return false;
+    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint row = compact_method_row_for_hir(
+        compact_method_cores, method_count, dense);
+    return row < method_count && compact_method_cores[row].node == dense &&
+           compact_method_cores[row].impl_node < hir_count;
+}
+
 bool function_with_body(uint node)
 {
     return valid_node(node) &&
            hir_kind[node] == HIR_FN &&
-           (hir_item_kind[node] == HIR_ITEM_KIND_FN ||
-            valid_node(hir_method_impl_node[node]));
+           (canonical_item_kind(node) == HIR_ITEM_KIND_FN ||
+            compact_impl_method(node));
 }
 
 void record_error(uint token_i, uint code, uint detail)

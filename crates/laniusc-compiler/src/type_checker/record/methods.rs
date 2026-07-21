@@ -25,6 +25,7 @@ pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     method_token_dispatch_args: &wgpu::Buffer,
+    method_compact_dispatch_args: &wgpu::Buffer,
     method_hir_dispatch_args: &wgpu::Buffer,
     groups: &MethodBindGroups,
 ) -> Result<()> {
@@ -33,7 +34,7 @@ pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
         &passes.methods_collect,
         &groups.collect,
         "type_check.methods.collect",
-        method_hir_dispatch_args,
+        method_compact_dispatch_args,
     )?;
     record_compute_indirect(
         encoder,

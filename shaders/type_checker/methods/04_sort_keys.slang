@@ -30,7 +30,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> method_decl_impl_node;
+StructuredBuffer<uint> method_decl_method_row;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_module_id;
@@ -69,7 +69,7 @@ uint active_method_capacity()
 
 bool valid_method_record(uint fn_i)
 {
-    return fn_i < active_method_capacity() && method_decl_impl_node[fn_i] != INVALID &&
+    return fn_i < active_method_capacity() && method_decl_method_row[fn_i] != INVALID &&
            method_decl_module_id[fn_i] != INVALID &&
            method_decl_receiver_ref_tag[fn_i] != TYPE_REF_INVALID &&
            method_decl_receiver_ref_payload[fn_i] != INVALID &&

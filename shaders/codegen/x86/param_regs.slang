@@ -440,7 +440,8 @@ bool fn_is_main_entrypoint(uint fn_node)
 {
     return valid_node(fn_node) &&
            hir_kind[fn_node] == HIR_FN &&
-           fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN;
+           valid_token(hir_token_pos[fn_node]) &&
+           fn_entrypoint_tag[hir_token_pos[fn_node]] == ENTRYPOINT_MAIN;
 }
 
 void publish_entrypoint_param_error(uint param_node)

@@ -28,10 +28,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
                 b.hir_canonical_params.as_entire_binding(),
             ),
             (
-                "family_flag".into(),
-                b.hir_call_arg_family_flag.as_entire_binding(),
-            ),
-            (
                 "family_local_prefix".into(),
                 b.hir_semantic_local_prefix.as_entire_binding(),
             ),
@@ -69,6 +65,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
             (
                 "hir_call_arg_ordinal".into(),
                 b.hir_call_arg_ordinal.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_end".into(),
+                b.hir_call_arg_end.as_entire_binding(),
             ),
             (
                 "hir_call_arg_count".into(),

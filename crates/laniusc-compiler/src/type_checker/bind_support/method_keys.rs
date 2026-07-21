@@ -20,7 +20,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups(
         input.blocks,
         input.token_count,
         input.module_count,
-        input.decl.impl_node,
+        input.decl.method_row,
         input.decl.recv_tag,
         input.decl.recv_payload,
         input.decl.module_id,
@@ -66,7 +66,7 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
     n_blocks: u32,
     token_count: &wgpu::Buffer,
     module_count_out: &wgpu::Buffer,
-    method_decl_impl_node: &wgpu::Buffer,
+    method_decl_method_row: &wgpu::Buffer,
     method_decl_receiver_ref_tag: &wgpu::Buffer,
     method_decl_receiver_ref_payload: &wgpu::Buffer,
     method_decl_module_id: &wgpu::Buffer,
@@ -134,8 +134,8 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                 ("gParams", seed_params.as_entire_binding()),
                 ("token_count", token_count.as_entire_binding()),
                 (
-                    "method_decl_impl_node",
-                    method_decl_impl_node.as_entire_binding(),
+                    "method_decl_method_row",
+                    method_decl_method_row.as_entire_binding(),
                 ),
                 (
                     "method_decl_receiver_ref_tag",
@@ -218,8 +218,8 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                 ("gParams", step_params.as_entire_binding()),
                 ("token_count", token_count.as_entire_binding()),
                 (
-                    "method_decl_impl_node",
-                    method_decl_impl_node.as_entire_binding(),
+                    "method_decl_method_row",
+                    method_decl_method_row.as_entire_binding(),
                 ),
                 (
                     "method_decl_receiver_ref_tag",
@@ -323,8 +323,8 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                 ("gParams", step_params.as_entire_binding()),
                 ("token_count", token_count.as_entire_binding()),
                 (
-                    "method_decl_impl_node",
-                    method_decl_impl_node.as_entire_binding(),
+                    "method_decl_method_row",
+                    method_decl_method_row.as_entire_binding(),
                 ),
                 (
                     "method_decl_receiver_ref_tag",
@@ -411,8 +411,8 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                 method_key_to_fn_token.as_entire_binding(),
             ),
             (
-                "method_decl_impl_node",
-                method_decl_impl_node.as_entire_binding(),
+                "method_decl_method_row",
+                method_decl_method_row.as_entire_binding(),
             ),
             (
                 "method_decl_receiver_ref_tag",

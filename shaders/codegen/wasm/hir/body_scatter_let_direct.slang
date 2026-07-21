@@ -755,8 +755,16 @@ uint direct_call_abi_arg_node(uint call_node, uint fn_token, uint arg_count, uin
     return direct_call_arg_node(call_node, ordinal);
 }
 
-uint assign_op_byte(uint op)
+uint assign_op_byte(uint op, uint value_ty)
 {
+    if (value_ty == TY_FLOAT)
+    {
+        if (op == ASSIGN_OP_ADD) return WASM_F32_ADD;
+        if (op == ASSIGN_OP_SUB) return WASM_F32_SUB;
+        if (op == ASSIGN_OP_MUL) return WASM_F32_MUL;
+        if (op == ASSIGN_OP_DIV) return WASM_F32_DIV;
+        return 0u;
+    }
     if (op == ASSIGN_OP_ADD) return WASM_I32_ADD;
     if (op == ASSIGN_OP_SUB) return WASM_I32_SUB;
     if (op == ASSIGN_OP_MUL) return WASM_I32_MUL;
@@ -815,7 +823,7 @@ uint assign_compound_direct_call_i32_fragment_byte(uint local_index, uint call_n
 
     uint op_i = call_start + call_len;
     if (byte_i == op_i)
-        return assign_op_byte(op);
+        return assign_op_byte(op, aux.w);
 
     return local_set_byte(local_index, byte_i - op_i - 1u);
 }

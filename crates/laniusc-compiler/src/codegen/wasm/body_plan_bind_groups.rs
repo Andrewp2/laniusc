@@ -3,10 +3,13 @@ use super::*;
 pub(super) struct WasmBodyPlanBindGroups {
     pub hir_body_plan_collect_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_bind_group: wgpu::BindGroup,
-    pub hir_body_plan_validate_return_bind_group: wgpu::BindGroup,
+    pub hir_body_plan_validate_return_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_plan_validate_let_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_plan_validate_stmt_expr_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_plan_validate_assign_compact_bind_group: wgpu::BindGroup,
+    pub hir_body_plan_validate_control_compact_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_return_call_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_return_agg_call_bind_group: wgpu::BindGroup,
-    pub hir_body_plan_validate_return_nested_call_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_assign_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_control_bind_group: wgpu::BindGroup,
     pub hir_body_plan_validate_agg_range_control_bind_group: wgpu::BindGroup,
@@ -36,6 +39,7 @@ impl GpuWasmCodeGenerator {
         inputs: GpuWasmCodegenInputs<'_>,
         working: &WasmWorkingBuffers,
         expr_order: &ResidentWasmExprOrder,
+        compact_expr_order: &ResidentWasmExprOrder,
     ) -> Result<WasmBodyPlanBindGroups> {
         let GpuWasmCodegenInputs {
             parent: parent_buf,
@@ -53,7 +57,6 @@ impl GpuWasmCodeGenerator {
             expressions: expr_metadata,
             arrays: array_metadata,
             paths: path_metadata,
-            semantic_hir,
             call_fn_index: call_fn_index_buf,
             call_dependency_decl: call_dependency_decl_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
@@ -103,36 +106,6 @@ impl GpuWasmCodeGenerator {
         );
         hir_body_plan_collect_bindings.extend([
             ("status", status_buf.as_entire_binding()),
-            ("hir_semantic_count", semantic_hir.count.as_entire_binding()),
-            (
-                "hir_semantic_prefix_before_node",
-                semantic_hir.prefix_before_node.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_dense_node",
-                semantic_hir.dense_node.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_subtree_end",
-                semantic_hir.subtree_end.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_parent",
-                semantic_hir.parent.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_first_child",
-                semantic_hir.first_child.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_next_sibling",
-                semantic_hir.next_sibling.as_entire_binding(),
-            ),
-            ("hir_semantic_depth", semantic_hir.depth.as_entire_binding()),
-            (
-                "hir_semantic_child_index",
-                semantic_hir.child_index.as_entire_binding(),
-            ),
             ("body_plan", body_plan_buf.as_entire_binding()),
         ]);
         let hir_body_plan_collect_bind_group = create_wasm_bind_group(
@@ -172,12 +145,6 @@ impl GpuWasmCodeGenerator {
                 "hir_struct_lit_context_stmt_node",
                 struct_metadata.lit_context_stmt_node.as_entire_binding(),
             ),
-            (
-                "struct_init_field_ordinal_by_node",
-                struct_metadata
-                    .struct_init_field_ordinal_by_node
-                    .as_entire_binding(),
-            ),
         ]);
         let hir_body_plan_validate_bind_group = create_wasm_bind_group(
             device,
@@ -186,12 +153,80 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
-        let hir_body_plan_validate_return_bind_group = create_wasm_bind_group(
+        let compact_body_binding_context = WasmBodyBindingContext::new_with_compact_expr_order(
+            inputs,
+            working,
+            compact_expr_order,
+        );
+        let mut hir_body_plan_validate_return_compact_bindings = Vec::new();
+        compact_body_binding_context.extend(
+            &mut hir_body_plan_validate_return_compact_bindings,
+            final_agg_scan_block_prefix,
+        );
+        hir_body_plan_validate_return_compact_bindings.extend([
+            ("status", status_buf.as_entire_binding()),
+            ("body_plan", body_plan_buf.as_entire_binding()),
+            (
+                "body_fragment_len",
+                body_fragment_len_buf.as_entire_binding(),
+            ),
+            (
+                "body_fragment_meta",
+                body_fragment_meta_buf.as_entire_binding(),
+            ),
+            (
+                "body_fragment_aux",
+                body_fragment_aux_buf.as_entire_binding(),
+            ),
+        ]);
+        let hir_body_plan_validate_return_compact_bind_group = create_wasm_bind_group(
             device,
-            Some("codegen_wasm_hir_body_plan_validate_return"),
-            &self.hir_body_plan_validate_return_pass,
+            Some("codegen_wasm_hir_body_plan_validate_return_compact"),
+            &self.hir_body_plan_validate_return_compact_pass,
             0,
-            &hir_body_plan_validate_bindings,
+            &hir_body_plan_validate_return_compact_bindings,
+        )?;
+        let hir_body_plan_validate_let_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_let_compact"),
+            &self.hir_body_plan_validate_let_compact_pass,
+            0,
+            &hir_body_plan_validate_return_compact_bindings,
+        )?;
+        let hir_body_plan_validate_stmt_expr_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_stmt_expr_compact"),
+            &self.hir_body_plan_validate_stmt_expr_compact_pass,
+            0,
+            &hir_body_plan_validate_return_compact_bindings,
+        )?;
+        let hir_body_plan_validate_assign_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_assign_compact"),
+            &self.hir_body_plan_validate_assign_compact_pass,
+            0,
+            &hir_body_plan_validate_return_compact_bindings,
+        )?;
+        let hir_body_plan_validate_print_simple_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_print_simple"),
+            &self.hir_body_plan_validate_print_simple_pass,
+            0,
+            &hir_body_plan_validate_return_compact_bindings,
+        )?;
+        hir_body_plan_validate_return_compact_bindings.extend([
+            (
+                "compact_hir_nearest_loop",
+                inputs.canonical_hir.nearest_loop.as_entire_binding(),
+            ),
+            ("if_depth", if_depth_buf.as_entire_binding()),
+        ]);
+        let hir_body_plan_validate_control_compact_bind_group = create_wasm_bind_group(
+            device,
+            Some("codegen_wasm_hir_body_plan_validate_control_compact"),
+            &self.hir_body_plan_validate_control_compact_pass,
+            0,
+            &hir_body_plan_validate_return_compact_bindings,
         )?;
         let hir_body_plan_validate_return_call_bind_group = create_wasm_bind_group(
             device,
@@ -207,13 +242,6 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
-        let hir_body_plan_validate_return_nested_call_bind_group = create_wasm_bind_group(
-            device,
-            Some("codegen_wasm_hir_body_plan_validate_return_nested_call"),
-            &self.hir_body_plan_validate_return_nested_call_pass,
-            0,
-            &hir_body_plan_validate_bindings,
-        )?;
         let hir_body_plan_validate_assign_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_assign"),
@@ -221,14 +249,6 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
-        let shared_validate_binding_count = hir_body_plan_validate_bindings.len();
-        hir_body_plan_validate_bindings.extend([
-            (
-                "hir_nearest_loop_node",
-                expr_metadata.nearest_loop_node.as_entire_binding(),
-            ),
-            ("if_depth", if_depth_buf.as_entire_binding()),
-        ]);
         let hir_body_plan_validate_control_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_control"),
@@ -236,18 +256,10 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_plan_validate_bindings,
         )?;
-        hir_body_plan_validate_bindings.truncate(shared_validate_binding_count);
         let hir_body_plan_validate_agg_range_control_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_plan_validate_agg_range_control"),
             &self.hir_body_plan_validate_agg_range_control_pass,
-            0,
-            &hir_body_plan_validate_bindings,
-        )?;
-        let hir_body_plan_validate_print_simple_bind_group = create_wasm_bind_group(
-            device,
-            Some("codegen_wasm_hir_body_plan_validate_print_simple"),
-            &self.hir_body_plan_validate_print_simple_pass,
             0,
             &hir_body_plan_validate_bindings,
         )?;
@@ -433,12 +445,6 @@ impl GpuWasmCodeGenerator {
                     struct_init_field_index_buf.as_entire_binding(),
                 ),
                 (
-                    "struct_init_field_ordinal_by_node",
-                    struct_metadata
-                        .struct_init_field_ordinal_by_node
-                        .as_entire_binding(),
-                ),
-                (
                     "wasm_agg_local_width_by_token",
                     wasm_agg_local_width_by_token_buf.as_entire_binding(),
                 ),
@@ -614,10 +620,13 @@ impl GpuWasmCodeGenerator {
         Ok(WasmBodyPlanBindGroups {
             hir_body_plan_collect_bind_group,
             hir_body_plan_validate_bind_group,
-            hir_body_plan_validate_return_bind_group,
+            hir_body_plan_validate_return_compact_bind_group,
+            hir_body_plan_validate_let_compact_bind_group,
+            hir_body_plan_validate_stmt_expr_compact_bind_group,
+            hir_body_plan_validate_assign_compact_bind_group,
+            hir_body_plan_validate_control_compact_bind_group,
             hir_body_plan_validate_return_call_bind_group,
             hir_body_plan_validate_return_agg_call_bind_group,
-            hir_body_plan_validate_return_nested_call_bind_group,
             hir_body_plan_validate_assign_bind_group,
             hir_body_plan_validate_control_bind_group,
             hir_body_plan_validate_agg_range_control_bind_group,

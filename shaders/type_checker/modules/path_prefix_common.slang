@@ -2,8 +2,16 @@
 
 static const uint PATH_PREFIX_INVALID = 0xffffffffu;
 static const uint PATH_PREFIX_TABLE_EMPTY = 0u;
-static const uint PATH_PREFIX_TABLE_CLAIMED = 1u;
-static const uint PATH_PREFIX_TABLE_OCCUPIED = 2u;
+
+uint path_prefix_table_owner(uint state)
+{
+    return state == PATH_PREFIX_TABLE_EMPTY ? PATH_PREFIX_INVALID : state - 1u;
+}
+
+uint path_prefix_table_state_for_owner(uint owner)
+{
+    return owner + 1u;
+}
 
 uint path_prefix_mix(uint value)
 {

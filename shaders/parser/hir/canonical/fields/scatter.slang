@@ -40,14 +40,16 @@ uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
 uint semantic_anchor(uint raw)
 {
     uint kind = hir_kind[raw];
+    uint expr_form = hir_expr_record[raw * 4u];
+    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, false);
     uint callee = hir_call_callee_node[raw];
     uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
     uint right = hir_expr_record[raw * 4u + 2u];
     uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
     uint operator_token = canonical_hir_operator_anchor(
-        kind, right_start, gCanonical.canonical_capacity);
+        identity_kind, right_start, gCanonical.canonical_capacity);
     uint value_token = hir_expr_record[raw * 4u + 3u];
-    return canonical_hir_anchor(kind, hir_token_pos[raw], hir_token_end[raw], open, value_token,
+    return canonical_hir_anchor(identity_kind, hir_token_pos[raw], hir_token_end[raw], open, value_token,
                                 operator_token, gCanonical.canonical_capacity);
 }
 uint mapped(uint raw)

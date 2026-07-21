@@ -172,22 +172,27 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_std_process_exit_from_nested_helper_with_node() {
     common::require_node();
-    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
-        include_str!("../stdlib/std/process.lani"),
-        r#"
+    let app_source = r#"
 module app::main;
 
 import std::process;
+
+fn bump(code: i32) -> i32 {
+    return code + 1;
+}
 
 fn finish(code: i32) {
     std::process::exit(code);
 }
 
 fn main() -> i32 {
-    finish(7);
+    finish(bump(6));
     return 99;
 }
-"#,
+"#;
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/std/process.lani"),
+        app_source,
     ])
     .expect("nested std::process exit should compile to WASM");
 
@@ -894,6 +899,29 @@ fn main() {
     let stdout =
         common::run_wasm_main_with_node("WASM scalar local assignments", "local_assigns", &wasm);
     assert_eq!(stdout, "3\n");
+}
+
+#[test]
+fn wasm_executes_scalar_let_expression_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let x: i32 = 2;
+    let y: i32 = 3;
+    let value: i32 = x + y * 2;
+    return value;
+}
+"#,
+    )
+    .expect("scalar let expression should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM scalar let expression",
+        "scalar_let_expression",
+        &wasm,
+    );
+    assert_eq!(status, 8);
 }
 
 #[test]
@@ -2312,8 +2340,7 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_let_binary_expr_with_direct_call_operand() {
     common::require_node();
-    let wasm = common::compile_source_to_wasm_with_timeout(
-        r#"
+    let source = r#"
 struct Vec3 {
     x: f32,
     y: f32,
@@ -2326,18 +2353,27 @@ impl Vec3 {
     }
 }
 
+fn bump(value: i32) -> i32 {
+    return value + 1;
+}
+
 fn main() -> i32 {
     let left: Vec3 = Vec3 { x: 3.0, y: 0.0, z: 0.0 };
     let right: Vec3 = Vec3 { x: 2.0, y: 0.0, z: 0.0 };
-    let c: f32 = left.dot(right) - right.x * right.x;
-    if (c > 1.9 && c < 2.1) {
+    let float_left: f32 = left.dot(right) - right.x * right.x;
+    let float_right: f32 = right.x * right.x - left.dot(right);
+    let int_left: i32 = bump(10) - 4;
+    let int_right: i32 = 20 - bump(5);
+    if (float_left > 1.9 && float_left < 2.1 &&
+        float_right > -2.1 && float_right < -1.9 &&
+        int_left == 7 && int_right == 14) {
         return 0;
     }
     return 1;
 }
-"#,
-    )
-    .expect("let binary expression with direct-call operand should compile to WASM");
+"#;
+    let wasm = common::compile_source_to_wasm_with_timeout(source)
+        .expect("let binary expression with direct-call operand should compile to WASM");
 
     let status = common::run_wasm_main_return_with_node(
         "WASM let binary direct-call operand",
@@ -2350,29 +2386,166 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_compound_assignment_with_direct_call_rhs() {
     common::require_node();
-    let wasm = common::compile_source_to_wasm_with_timeout(
-        r#"
+    let source = r#"
 fn add(x: i32, y: i32) -> i32 {
     return x + y;
 }
 
 fn main() -> i32 {
     let total: i32 = 1;
-    let x: i32 = 2;
-    let y: i32 = 3;
-    total += add(x, y);
+    total += add(2, 3) + 4;
+    total += 20 - add(2, 3);
     return total;
 }
-"#,
-    )
-    .expect("compound assignment with a direct-call RHS should compile to WASM");
+"#;
+    let wasm = common::compile_source_to_wasm_with_timeout(source)
+        .expect("compound assignment with a direct-call RHS should compile to WASM");
 
     let status = common::run_wasm_main_return_with_node(
         "WASM compound assignment with direct-call RHS",
         "compound_assign_direct_call_rhs",
         &wasm,
     );
-    assert_eq!(status, 6);
+    assert_eq!(status, 25);
+}
+
+#[test]
+fn wasm_executes_plain_assignment_with_direct_call_rhs() {
+    common::require_node();
+    let source = r#"
+fn add(x: i32, y: i32) -> i32 {
+    return x + y;
+}
+
+fn main() -> i32 {
+    let total: i32 = 0;
+    total = add(2, 3) + 4;
+    total = 20 - add(2, 3);
+    return total;
+}
+"#;
+    let wasm = common::compile_source_to_wasm_with_timeout(source)
+        .expect("plain assignment with a direct-call RHS should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM plain assignment with direct-call RHS",
+        "plain_assign_direct_call_rhs",
+        &wasm,
+    );
+    assert_eq!(status, 15);
+}
+
+#[test]
+fn wasm_executes_float_compound_assignment_with_direct_call_rhs() {
+    common::require_node();
+    let source = r#"
+fn adjust(x: f32) -> f32 {
+    return x + 1.5;
+}
+
+fn main() -> i32 {
+    let total: f32 = 2.0;
+    let plain: f32 = 0.0;
+    total += adjust(3.0) - 1.0;
+    total += 10.0 - adjust(3.0);
+    plain = adjust(3.0) - 1.0;
+    plain = 10.0 - adjust(3.0);
+    if (total > 10.9 && total < 11.1 && plain > 5.4 && plain < 5.6) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let wasm = common::compile_source_to_wasm_with_timeout(source)
+        .expect("float compound assignment with a direct-call RHS should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM float compound assignment with direct-call RHS",
+        "float_compound_assign_direct_call_rhs",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_plain_scalar_assignment_expression() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let total: i32 = 0;
+    let x: i32 = 2;
+    let y: i32 = 3;
+    total = x + y * 2;
+    return total;
+}
+"#,
+    )
+    .expect("plain scalar assignment expression should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM plain scalar assignment expression",
+        "plain_scalar_assignment_expression",
+        &wasm,
+    );
+    assert_eq!(status, 8);
+}
+
+#[test]
+fn wasm_executes_general_scalar_call_expression_forest() {
+    common::require_node();
+    let source = r#"
+fn bump(x: i32) -> i32 {
+    return x + 1;
+}
+
+fn twice(x: i32) -> i32 {
+    return x * 2;
+}
+
+fn main() -> i32 {
+    let a: i32 = (bump(3) + bump(4)) * (twice(2) + 1);
+    let b: i32 = 0;
+    b = (bump(1) + twice(3)) * (bump(2) + 1);
+    b += (bump(0) + bump(1)) * 2;
+    return (a + b) + bump(twice(2));
+}
+"#;
+    let wasm = common::compile_source_to_wasm_with_timeout(source)
+        .expect("general scalar call expression forest should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM general scalar call expression forest",
+        "general_scalar_call_expression_forest",
+        &wasm,
+    );
+    assert_eq!(status, 88);
+}
+
+#[test]
+fn wasm_executes_float_compound_scalar_assignment_expression() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let total: f32 = 1.5;
+    let delta: f32 = 2.0;
+    total += delta * 2.0;
+    if (total > 5.4 && total < 5.6) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("float compound scalar assignment expression should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM float compound scalar assignment expression",
+        "float_compound_scalar_assignment_expression",
+        &wasm,
+    );
+    assert_eq!(status, 0);
 }
 
 #[test]
@@ -3184,7 +3357,24 @@ fn call_on_right(value: i32) -> i32 {
     return 4 + bump(value);
 }
 
+fn bump_float(value: f32) -> f32 {
+    return value + 1.0;
+}
+
+fn float_call_on_left(value: f32) -> f32 {
+    return bump_float(value) - 4.0;
+}
+
+fn float_call_on_right(value: f32) -> f32 {
+    return 10.0 - bump_float(value);
+}
+
 fn main() {
+    let left: f32 = float_call_on_left(5.0);
+    let right: f32 = float_call_on_right(7.0);
+    if (!(left > 1.9 && left < 2.1 && right > 1.9 && right < 2.1)) {
+        return 1;
+    }
     print(call_on_left(37));
     print(call_on_right(37));
     return 0;

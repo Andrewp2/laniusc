@@ -32,7 +32,12 @@ ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
@@ -65,8 +70,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_WHILE_STMT = 11u;
 static const uint HIR_FOR_STMT = 30u;
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
-static const uint HIR_PARAM_RECORD_NODE = 3u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_IF = 3u;
 static const uint STMT_RECORD_KIND_WHILE = 6u;
@@ -459,10 +462,12 @@ uint param_node_decl_token(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
         return INVALID;
-    uint4 record = hir_param_record[node];
-    if (record[HIR_PARAM_RECORD_NODE] != node)
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= count || compact_hir_core[dense].kind != HIR_PARAM)
         return INVALID;
-    uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
+    // Parameter payloads are { owner, ordinal, name_token, type_node }.
+    uint decl_token = compact_hir_payload[dense].c;
     return valid_token(decl_token) ? decl_token : INVALID;
 }
 

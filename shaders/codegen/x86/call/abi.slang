@@ -29,7 +29,6 @@ ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
@@ -37,6 +36,10 @@ StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> x86_compact_executable_raw;
 StructuredBuffer<uint> x86_enclosing_let_node;
 StructuredBuffer<uint> x86_decl_layout_record;
@@ -86,6 +89,7 @@ static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 static const uint INTRINSIC_NONE = 0u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
+static const uint HIR_FN = 3u;
 static const uint X86_CALL_TARGET_HOST_TEXT_WRITE = 0xfffffffeu;
 static const uint X86_CALL_TARGET_HOST_I32_TO_F32 = 0xfffffffdu;
 static const uint X86_CALL_TARGET_HOST_OPEN_READ_PATH = 0xfffffffcu;
@@ -210,6 +214,17 @@ bool valid_token(uint token)
     return valid_index_or_invalid(token, gParams.n_tokens, INVALID);
 }
 
+uint function_item_kind(uint raw_node)
+{
+    if (!valid_node(raw_node))
+        return 0u;
+    uint dense = raw_to_compact_hir[raw_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count && compact_hir_core[dense].kind == HIR_FN
+               ? compact_hir_payload[dense].a
+               : 0u;
+}
+
 uint call_record_slot(uint call_node)
 {
     if (!valid_node(call_node))
@@ -328,7 +343,7 @@ bool host_text_write_call(uint resolver_fn_token, uint callee_token, uint target
     bool host_signature = param0 == TY_INT && param1 == TY_STRING;
     return host_signature &&
            ((!valid_node(target_fn)) ||
-           hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN);
+           function_item_kind(target_fn) == HIR_ITEM_KIND_EXTERN_FN);
 }
 
 bool host_i32_to_f32_call(uint call_node, uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width)
@@ -347,7 +362,7 @@ bool host_i32_to_f32_call(uint call_node, uint resolver_fn_token, uint callee_to
         TY_UNKNOWN);
     return param0 == TY_INT &&
            ((!valid_node(target_fn)) ||
-            hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN);
+            function_item_kind(target_fn) == HIR_ITEM_KIND_EXTERN_FN);
 }
 
 uint host_param(uint resolver_fn_token, uint ordinal)
@@ -362,7 +377,8 @@ uint host_param(uint resolver_fn_token, uint ordinal)
 
 bool extern_or_unlowered_target(uint target_fn)
 {
-    return (!valid_node(target_fn)) || hir_item_kind[target_fn] == HIR_ITEM_KIND_EXTERN_FN;
+    return (!valid_node(target_fn)) ||
+           function_item_kind(target_fn) == HIR_ITEM_KIND_EXTERN_FN;
 }
 
 bool host_string_i32_return_call(uint resolver_fn_token, uint callee_token, uint target_fn, uint arg_count, uint return_width, uint language_symbol)

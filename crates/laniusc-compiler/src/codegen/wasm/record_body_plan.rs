@@ -88,6 +88,75 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_clear.done");
 
+        {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_let_compact.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_let_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_let_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_let_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_let_compact.done");
+
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_stmt_expr_compact.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_stmt_expr_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_stmt_expr_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_stmt_expr_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_stmt_expr_compact.done",
+            );
+
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_control_compact.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_control_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_control_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_control_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_control_compact.done",
+            );
+        }
+
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.hir_body_plan_validate"),
@@ -99,16 +168,30 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate.done");
 
-        trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_return.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_body_plan_validate_return"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(self.hir_body_plan_validate_return_pass.pipeline()?.as_ref());
-        compute.set_bind_group(0, Some(&bufs.hir_body_plan_validate_return_bind_group), &[]);
-        compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_return.done");
+        {
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_compact.start",
+            );
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_plan_validate_return_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_plan_validate_return_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_plan_validate_return_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+            drop(compute);
+            trace_wasm_codegen(
+                "record.body_plan.dispatch.hir_body_plan_validate_return_compact.done",
+            );
+        }
 
         if has_return_call_planning {
             trace_wasm_codegen(
@@ -159,6 +242,30 @@ impl GpuWasmCodeGenerator {
         }
 
         if has_assign {
+            {
+                trace_wasm_codegen(
+                    "record.body_plan.dispatch.hir_body_plan_validate_assign_compact.start",
+                );
+                let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("codegen.wasm.hir_body_plan_validate_assign_compact"),
+                    timestamp_writes: None,
+                });
+                compute.set_pipeline(
+                    self.hir_body_plan_validate_assign_compact_pass
+                        .pipeline()?
+                        .as_ref(),
+                );
+                compute.set_bind_group(
+                    0,
+                    Some(&bufs.hir_body_plan_validate_assign_compact_bind_group),
+                    &[],
+                );
+                compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
+                drop(compute);
+                trace_wasm_codegen(
+                    "record.body_plan.dispatch.hir_body_plan_validate_assign_compact.done",
+                );
+            }
             trace_wasm_codegen("record.body_plan.dispatch.hir_body_plan_validate_assign.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("codegen.wasm.hir_body_plan_validate_assign"),
@@ -598,7 +705,6 @@ impl GpuWasmCodeGenerator {
             } else {
                 "record.body_plan.dispatch.hir_body_agg_call_arg_records.done"
             });
-
             trace_wasm_codegen(
                 "record.body_plan.dispatch.hir_body_agg_call_arg_byte_scan_local.start",
             );

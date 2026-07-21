@@ -13,6 +13,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> body_let_init_expr_by_decl_token;
+RWStructuredBuffer<uint> body_let_init_hir_by_decl_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -31,4 +32,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     body_let_init_expr_by_decl_token[token_i] = INVALID;
+    body_let_init_hir_by_decl_token[token_i] = INVALID;
 }

@@ -148,6 +148,85 @@ impl GpuWasmCodeGenerator {
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_expr.done");
         }
+        if features.has(WASM_BODY_FEATURE_RETURN_EXPR)
+            || features.has(WASM_BODY_FEATURE_EXPR_CONTROL)
+        {
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_expr_compact.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_return_expr_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_return_expr_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_return_expr_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_return_expr_compact.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_control_compact.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_control_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_control_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_control_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_control_compact.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_range_compact.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_range_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_range_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_range_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_range_compact.done");
+
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_print_compact.start");
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("codegen.wasm.hir_body_scatter_print_compact"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(
+                self.hir_body_scatter_print_compact_pass
+                    .pipeline()?
+                    .as_ref(),
+            );
+            compute.set_bind_group(
+                0,
+                Some(&bufs.hir_body_scatter_print_compact_bind_group),
+                &[],
+            );
+            compute.dispatch_workgroups(body_scatter_groups_x, body_scatter_groups_y, 1);
+            drop(compute);
+            trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_print_compact.done");
+        }
 
         if features.has(WASM_BODY_FEATURE_DIRECT)
             || features.has(WASM_BODY_FEATURE_LET_DIRECT)
@@ -165,7 +244,6 @@ impl GpuWasmCodeGenerator {
             drop(compute);
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_let_direct.done");
         }
-
         if features.has(WASM_BODY_FEATURE_HOST_IO) {
             trace_wasm_codegen("record.phase2.dispatch.hir_body_scatter_host_io.start");
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

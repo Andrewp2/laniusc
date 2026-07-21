@@ -64,15 +64,12 @@ static const uint BODY_FRAGMENT_ASSIGN_CONST_I32 = 5u;
 static const uint BODY_FRAGMENT_ASSIGN_COMPOUND_CONST_I32 = 6u;
 static const uint BODY_FRAGMENT_PRINT_LOCAL_I64 = 7u;
 static const uint BODY_FRAGMENT_RETURN_LOCAL_I32 = 8u;
-static const uint BODY_FRAGMENT_IF_OPEN_I32 = 16u;
 static const uint BODY_FRAGMENT_WHILE_CLOSE = 15u;
 static const uint BODY_FRAGMENT_IF_ELSE = 17u;
 static const uint BODY_FRAGMENT_IF_END = 18u;
 static const uint BODY_FRAGMENT_BRANCH = 19u;
 static const uint BODY_FRAGMENT_FUNCTION_HEADER = 22u;
 static const uint BODY_FRAGMENT_FUNCTION_END = 28u;
-static const uint BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32 = 41u;
-static const uint BODY_FRAGMENT_IF_OPEN_LOCAL_I32 = 42u;
 
 static const uint WASM_PRINT_I64_FUNC_INDEX = 0u;
 static const uint WASM_UNREACHABLE = 0x00u;
@@ -672,16 +669,6 @@ uint expr_simple_byte(uint root_node, uint byte_i)
     return expr_node_contribution_byte(owner_node, owner_byte_i);
 }
 
-uint if_open_i32_fragment_byte(uint condition_node, uint byte_i)
-{
-    uint condition_len = expr_simple_len(condition_node);
-    if (byte_i < condition_len)
-        return expr_simple_byte(condition_node, byte_i);
-    if (byte_i == condition_len)
-        return WASM_IF;
-    return WASM_BLOCK_TYPE_EMPTY;
-}
-
 uint local_decl_fragment_byte(uint local_count, uint byte_i)
 {
     if (local_count == 0u)
@@ -791,30 +778,6 @@ uint assign_compound_const_i32_fragment_byte(uint local_index, uint value, uint 
     return local_set_byte(local_index, byte_i - op_i - 1u);
 }
 
-uint while_open_local_i32_fragment_byte(uint local_index, uint byte_i)
-{
-    if (byte_i == 0u)
-        return WASM_BLOCK;
-    if (byte_i == 1u)
-        return WASM_BLOCK_TYPE_EMPTY;
-    if (byte_i == 2u)
-        return WASM_LOOP;
-    if (byte_i == 3u)
-        return WASM_BLOCK_TYPE_EMPTY;
-
-    uint condition_start = 4u;
-    uint get_len = 1u + u32_leb_len(local_index);
-    if (byte_i < condition_start + get_len)
-        return local_get_byte(local_index, byte_i - condition_start);
-
-    uint eqz_i = condition_start + get_len;
-    if (byte_i == eqz_i)
-        return WASM_I32_EQZ;
-    if (byte_i == eqz_i + 1u)
-        return WASM_BR_IF;
-    return 1u;
-}
-
 uint while_close_fragment_byte(uint byte_i)
 {
     if (byte_i == 0u)
@@ -822,16 +785,6 @@ uint while_close_fragment_byte(uint byte_i)
     if (byte_i == 1u)
         return 0u;
     return WASM_END;
-}
-
-uint if_open_local_i32_fragment_byte(uint local_index, uint byte_i)
-{
-    uint get_len = 1u + u32_leb_len(local_index);
-    if (byte_i < get_len)
-        return local_get_byte(local_index, byte_i);
-    if (byte_i == get_len)
-        return WASM_IF;
-    return WASM_BLOCK_TYPE_EMPTY;
 }
 
 uint branch_fragment_byte(uint depth, uint byte_i)
@@ -853,9 +806,6 @@ bool scatter_handles_kind(uint kind)
            kind == BODY_FRAGMENT_ASSIGN_COMPOUND_CONST_I32 ||
            kind == BODY_FRAGMENT_PRINT_LOCAL_I64 ||
            kind == BODY_FRAGMENT_RETURN_LOCAL_I32 ||
-           kind == BODY_FRAGMENT_IF_OPEN_I32 ||
-           kind == BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32 ||
-           kind == BODY_FRAGMENT_IF_OPEN_LOCAL_I32 ||
            kind == BODY_FRAGMENT_WHILE_CLOSE ||
            kind == BODY_FRAGMENT_IF_ELSE ||
            kind == BODY_FRAGMENT_IF_END ||
@@ -886,12 +836,6 @@ uint fragment_byte(uint4 meta, uint fragment_len, uint byte_i)
         return print_local_i64_fragment_byte(value, byte_i);
     if (kind == BODY_FRAGMENT_RETURN_LOCAL_I32)
         return return_local_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_IF_OPEN_I32)
-        return if_open_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_WHILE_OPEN_LOCAL_I32)
-        return while_open_local_i32_fragment_byte(value, byte_i);
-    if (kind == BODY_FRAGMENT_IF_OPEN_LOCAL_I32)
-        return if_open_local_i32_fragment_byte(value, byte_i);
     if (kind == BODY_FRAGMENT_WHILE_CLOSE)
         return while_close_fragment_byte(byte_i);
     if (kind == BODY_FRAGMENT_IF_ELSE)

@@ -10,6 +10,7 @@ StructuredBuffer<uint> canonical_anchor_owner;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_call_callee_node;
 RWStructuredBuffer<uint> parent_link_a;
@@ -18,21 +19,28 @@ RWStructuredBuffer<uint> raw_to_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint STMT_ASSIGN = 5u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical.raw_capacity, tree_count_status[5u]) : gCanonical.raw_capacity; }
 bool valid(uint node) { return node != INVALID && node < active_count(); }
 
 uint semantic_anchor(uint node)
 {
+    bool assignment_stmt = hir_stmt_record[node * 4u] == STMT_ASSIGN;
     uint callee = hir_call_callee_node[node];
     uint open = valid(callee) ? hir_token_end[callee] : INVALID;
-    uint right = hir_expr_record[node * 4u + 2u];
+    uint right = assignment_stmt
+        ? hir_stmt_record[node * 4u + 2u]
+        : hir_expr_record[node * 4u + 2u];
     uint right_start = valid(right) ? hir_token_pos[right] : INVALID;
     uint kind = hir_kind[node];
+    uint expr_form = hir_expr_record[node * 4u];
+    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, assignment_stmt);
     uint operator_token = canonical_hir_operator_anchor(
-        kind, right_start, gCanonical.canonical_capacity);
+        identity_kind, right_start, gCanonical.canonical_capacity);
     uint value_token = hir_expr_record[node * 4u + 3u];
-    return canonical_hir_anchor(kind, hir_token_pos[node], hir_token_end[node],
+    return canonical_hir_anchor(identity_kind, hir_token_pos[node], hir_token_end[node],
                                 open, value_token, operator_token,
                                 gCanonical.canonical_capacity);
 }

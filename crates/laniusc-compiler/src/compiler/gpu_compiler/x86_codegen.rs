@@ -188,7 +188,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         let external_scratch = Self::x86_external_scratch_from_frontend_buffers(
             parse_bufs,
             token_capacity,
-            feature_summary,
+            x86_hir_node_count,
         );
         let generator = self
             .x86_generator
@@ -204,7 +204,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             active_hir_dispatch_args_buf: &parse_bufs.tree_active_dispatch_args,
             pointer_jump_dispatch_args_buf: &parse_bufs.tree_pointer_jump_dispatch_args,
             hir_kind_buf: &parse_bufs.hir_kind,
-            hir_item_kind_buf: &parse_bufs.hir_item_kind,
             parent_buf: &parse_bufs.parent,
             subtree_end_buf: &parse_bufs.subtree_end,
             function_metadata: x86::GpuX86FunctionMetadataBuffers {
@@ -216,7 +215,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 fn_return_type_node: &parse_bufs.hir_fn_return_type_node,
                 fn_return_ref_tag: codegen.fn_return_ref_tag,
                 fn_return_ref_payload: codegen.fn_return_ref_payload,
-                param_record: &parse_bufs.hir_param_record,
                 compact_param_count: &parse_bufs.hir.param_count,
                 compact_params: &parse_bufs.hir.params,
                 enclosing_fn: codegen.enclosing_fn,
@@ -232,7 +230,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 float_bits: &parse_bufs.hir_expr_float_bits,
                 raw_to_compact_hir: &parse_bufs.raw_to_compact_hir,
                 compact_hir_count: &parse_bufs.hir.count,
+                compact_hir_core: &parse_bufs.hir.core,
                 compact_hir_payload: &parse_bufs.hir.payload,
+                compact_const_value: &parse_bufs.hir.const_value,
                 compact_string_count: &parse_bufs.hir.string_count,
                 compact_strings: &parse_bufs.hir.strings,
                 compact_string_data_words: &parse_bufs.hir.string_data_words,
@@ -322,8 +322,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 compact_fields: &parse_bufs.hir.fields,
                 member_result_field_node: codegen.member_result_field_node,
                 struct_init_field_ordinal_by_row: codegen.struct_init_field_ordinal_by_row,
-                struct_init_field_decl_token_by_row: codegen
-                    .struct_init_field_decl_token_by_row,
+                struct_init_field_decl_token_by_row: codegen.struct_init_field_decl_token_by_row,
             },
             type_metadata: x86::GpuX86TypeMetadataBuffers {
                 type_value_node: &parse_bufs.hir_type_value_node,
@@ -370,7 +369,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     fn x86_external_scratch_from_frontend_buffers<'a>(
         parse_bufs: &'a OwnedX86ParserBuffers,
         token_capacity: u32,
-        feature_summary: x86::X86FeatureSummary,
+        hir_node_capacity: u32,
     ) -> x86::GpuX86ExternalScratchBuffers<'a> {
         // x86 backend recording starts only after typecheck has finished. Borrow
         // only parser workspaces whose values are absent from both the retained
@@ -398,11 +397,13 @@ impl<'gpu> GpuCompiler<'gpu> {
             node_inst_same_end_link_a: Some(&parse_bufs.hir_variant_payload_owner_a),
             node_inst_same_end_link_b: Some(&parse_bufs.hir_variant_payload_owner_b),
             node_inst_scan_local_prefix: None,
-            call_record: if !feature_summary.has_call() && !feature_summary.has_param() {
-                Some(&parse_bufs.hir_param_record)
-            } else {
-                None
-            },
+            // Parser action headers are dead once compact HIR exists. Reuse
+            // them only when their token-pair capacity actually covers the
+            // four-word-per-HIR call table; raw HIR can be wider than tokens.
+            call_record: buffer_if_wgpu_u32_words(
+                &parse_bufs.out_headers,
+                hir_node_capacity.max(1) as usize * 4,
+            ),
             call_type_record: None,
             // x86 function discovery reads fn_entrypoint_tag as frontend
             // evidence; do not alias it into backend scratch that is cleared
@@ -418,9 +419,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             node_inst_subtree_bound_start: Some(&parse_bufs.hir_type_arg_rank_a),
             node_inst_subtree_bound_end: None,
             node_inst_gen_node_record: None,
-            // Function discovery reads hir_item_kind before layout lowering.
             // The decl-layout scratch is initialized at backend start, so it
-            // must not alias that live parser HIR input.
+            // must not alias any parser HIR input still used by layout passes.
             decl_layout_record: None,
             const_value_record: buffer_if_wgpu_u32_words(
                 &parse_bufs.hir_item_namespace,
@@ -922,6 +922,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         |err| type_check_execution_failed_for_source_pack(&diagnostic_files, err),
                     )?;
                     host_timer.stamp("typecheck_recorded");
+                    crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
+                        "typecheck_recorded",
+                    );
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
@@ -1469,6 +1472,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 timer.resolve(&mut x86_encoder);
                             }
                             host_timer.stamp("x86_recorded");
+                            crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
+                                "x86_recorded",
+                            );
                             crate::gpu::passes_core::submit_with_progress(
                                 queue,
                                 "compiler.x86.source_pack.backend",
@@ -1750,6 +1756,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         |err| type_check_execution_failed_for_source(&diagnostic_path, src, err),
                     )?;
                     host_timer.stamp("typecheck_recorded");
+                    crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
+                        "typecheck_recorded",
+                    );
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
@@ -1886,6 +1895,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         timer.resolve(&mut x86_encoder);
                     }
                     host_timer.stamp("x86_recorded");
+                    crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
+                        "x86_recorded",
+                    );
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
                         "compiler.x86.backend",

@@ -3,6 +3,7 @@ use encase::ShaderType;
 pub mod array_elements;
 pub mod call_args;
 pub mod core;
+pub mod expr_forest;
 pub mod fields;
 pub mod generic_params;
 pub mod local;

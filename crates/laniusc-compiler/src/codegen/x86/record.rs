@@ -160,7 +160,6 @@ impl GpuX86CodeGenerator {
             active_hir_dispatch_args_buf,
             pointer_jump_dispatch_args_buf,
             hir_kind_buf,
-            hir_item_kind_buf,
             parent_buf,
             subtree_end_buf,
             function_metadata,
@@ -345,7 +344,6 @@ impl GpuX86CodeGenerator {
             local_literal_record_buf,
             local_literal_status_buf,
             local_literal_status_uniform_buf,
-            empty_param_record_buf,
             node_inst_order_record_buf,
             intrinsic_call_status_buf,
             call_abi_record_buf,
@@ -382,9 +380,6 @@ impl GpuX86CodeGenerator {
         // before call-record projection. Reuse the alternate ping-pong storage
         // for call-callee-root markers produced by call_records.
         let call_callee_root_call_buf = &enclosing_let_node_b_buf;
-        let hir_param_record_buf: &wgpu::Buffer = empty_param_record_buf
-            .as_ref()
-            .map_or(function_metadata.param_record, |buffer| buffer);
         // Match-pattern owner records are consumed before call projection.
         // Reuse that HIR-sized table for per-call intrinsic metadata.
         let intrinsic_call_record_buf = &match_pattern_owner_buf;
@@ -819,7 +814,6 @@ impl GpuX86CodeGenerator {
                 params: &params_buf,
                 hir_status: hir_status_buf,
                 hir_kind: hir_kind_buf,
-                hir_item_kind: hir_item_kind_buf,
                 parent: parent_buf,
                 subtree_end: subtree_end_buf,
                 function_metadata: &function_metadata,
@@ -975,7 +969,6 @@ impl GpuX86CodeGenerator {
                 struct_record_status_buf: &struct_record_status_buf,
                 enum_type_record_buf: &enum_type_record_buf,
                 enum_record_status_buf: &enum_record_status_buf,
-                hir_param_record_buf,
                 final_node_func_buf,
                 node_inst_scan_input_buf: &node_inst_scan_input_buf,
                 decl_node_by_token_buf: &decl_node_by_token_buf,
@@ -1002,7 +995,6 @@ impl GpuX86CodeGenerator {
                 feature_params_buf: &feature_params_buf,
                 hir_status_buf,
                 hir_kind_buf,
-                hir_item_kind_buf,
                 parent_buf,
                 function_metadata: &function_metadata,
                 expr_metadata: &expr_metadata,
@@ -1087,7 +1079,6 @@ impl GpuX86CodeGenerator {
                 enum_metadata: &enum_metadata,
                 struct_metadata: &struct_metadata,
                 type_metadata: &type_metadata,
-                hir_param_record: hir_param_record_buf,
                 expr_resolved_final: &expr_resolved_final_buf,
                 final_node_func: final_node_func_buf,
                 visible_decl: visible_decl_buf,
@@ -1889,9 +1880,6 @@ impl GpuX86CodeGenerator {
             retained_buffers.push(RetainedX86Buffer::from(buffer));
         }
         if let Some(buffer) = match_pattern_first_payload_node_storage_buf {
-            retained_buffers.push(RetainedX86Buffer::from(buffer));
-        }
-        if let Some(buffer) = empty_param_record_buf {
             retained_buffers.push(RetainedX86Buffer::from(buffer));
         }
         retained_buffers.push(RetainedX86Buffer::from(

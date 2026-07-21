@@ -804,6 +804,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             &passes.calls_resolve,
             resources,
         )?,
+        backend_targets: reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_calls_backend_targets",
+            &passes.calls_backend_targets,
+            resources,
+        )?,
         match_arg_params_init,
         match_arg_params_copy_main_to_tmp,
         match_arg_params_copy_tmp_to_main,

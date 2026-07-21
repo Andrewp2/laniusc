@@ -89,8 +89,9 @@ fn main() -> Result<()> {
         let report_downstream_time = env_truthy("LANIUS_SHADER_REPORT_DOWNSTREAM_TIME");
         let report_perf = env_truthy("LANIUS_SHADER_REPORT_PERF");
         let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
+        let source_digest = shader_source_digest(&shader_root, &ep)?;
         let compile_stamp = format!(
-            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nextra={}\n",
+            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
             opt_level,
             minimum_slang_opt,
@@ -99,6 +100,7 @@ fn main() -> Result<()> {
             report_downstream_time,
             report_perf,
             report_detailed_perf,
+            source_digest,
             extra
         );
         if shader_outputs_fresh(
@@ -314,7 +316,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "codegen/wasm/hir/body_plan_validate_return"
             | "codegen/wasm/hir/body_plan_validate_return_call"
             | "codegen/wasm/hir/body_plan_validate_return_agg_call"
-            | "codegen/wasm/hir/body_plan_validate_return_nested_call"
             | "codegen/wasm/hir/body_plan_validate_assign"
             | "codegen/wasm/hir/body_plan_validate_control"
             | "codegen/wasm/hir/body_plan_validate_agg_range_control"
@@ -985,6 +986,32 @@ fn shader_outputs_fresh(
         }
     }
     Ok(true)
+}
+
+fn shader_source_digest(shader_root: &Path, ep: &Path) -> Result<String> {
+    let mut dependencies = Vec::new();
+    let mut seen = HashSet::new();
+    collect_shader_dependencies(shader_root, ep, &mut seen, &mut dependencies)?;
+    dependencies.sort();
+
+    let mut hash = StableHasher::new();
+    for dependency in dependencies {
+        let relative = dependency.strip_prefix(shader_root).with_context(|| {
+            format!(
+                "shader dependency {} is outside {}",
+                dependency.display(),
+                shader_root.display()
+            )
+        })?;
+        hash.update(relative.to_string_lossy().as_bytes());
+        hash.update(&[0]);
+        hash.update(
+            &fs::read(&dependency)
+                .with_context(|| format!("read shader dependency {}", dependency.display()))?,
+        );
+        hash.update(&[0xff]);
+    }
+    Ok(hash.finish_hex())
 }
 
 fn oldest_mtime<const N: usize>(paths: [&Path; N]) -> Option<SystemTime> {

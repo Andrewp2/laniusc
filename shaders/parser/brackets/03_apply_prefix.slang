@@ -1,5 +1,6 @@
 // shaders/parser/brackets_03_apply_prefix.slang
-// Apply block_prefix to exscan_inblock → global depth; also compute layer[i].
+// Apply block_prefix to exscan_inblock and publish the bracket layer. The
+// global exclusive depth is phase-local and no longer retained by this pass.
 
 import gpu_index;
 
@@ -18,7 +19,6 @@ StructuredBuffer<int> block_prefix;
 // NEW: read min_depth to offset layers to non-negative range
 StructuredBuffer<int> out_depths_ro; // [0]=final, [1]=min (written by pass 02)
 
-RWStructuredBuffer<int> depth_exscan; // len = n_sc (global exclusive)
 RWStructuredBuffer<uint> layer;       // len = n_sc (depth layer: push→d+1, pop→d)
 
 static const uint MAX_GROUPS_X = 65535u;
@@ -41,8 +41,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     int md = out_depths_ro[1];
     int off = (md < 0) ? -md : 0;
     int d = d0 + off;
-
-    depth_exscan[i] = d0;
 
     uint code = sc_stream[i];
     bool is_push = (code & 1u) == 1u;

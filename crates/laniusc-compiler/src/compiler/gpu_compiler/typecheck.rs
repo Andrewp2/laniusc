@@ -636,7 +636,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             decl_type_key_to_decl_id: &lexer_bufs.dfa_chunk_summaries.buffer,
             decl_value_key_to_decl_id: &parse_bufs.hir_variant_payload_link_b,
             method_decl_module_id: &parse_bufs.hir_type_alias_owner_value_b,
-            method_decl_impl_node: &parse_bufs.hir_type_alias_owner_link_a,
+            method_decl_method_row: &parse_bufs.hir_type_alias_owner_link_a,
             method_decl_name_token: &parse_bufs.match_for_index,
             method_decl_name_id: &parse_bufs.hir_variant_payload_rank_a,
             method_decl_param_offset: &parse_bufs.hir_semantic_parent,
@@ -717,9 +717,7 @@ pub(super) fn type_check_error_to_compile_error_for_source(
             detail,
         } => {
             if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
-                eprintln!(
-                    "GPU type-check rejection: token={token} code={code:?} detail={detail}"
-                );
+                eprintln!("GPU type-check rejection: token={token} code={code:?} detail={detail}");
             }
             let (start, len) = read_single_token_for_diagnostic(device, queue, bufs, token)
                 .map(|token_record| (token_record.start, token_record.len))

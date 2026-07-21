@@ -19,7 +19,7 @@ const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
     },
     WasmRecordBoundary {
         stage: "const_values",
-        reads: &["hir_status", "hir_expr_records", "hir_stmt_records"],
+        reads: &["compact_hir_records", "compact_const_value_records"],
         writes: &["wasm_const_value_records"],
     },
     WasmRecordBoundary {

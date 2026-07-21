@@ -100,10 +100,7 @@ impl GpuTypeChecker {
                     "compact_hir_count",
                     parse_bufs.hir_canonical_count.as_entire_binding(),
                 ),
-                (
-                    "compact_hir_core",
-                    parse_bufs.hir_core.as_entire_binding(),
-                ),
+                ("compact_hir_core", parse_bufs.hir_core.as_entire_binding()),
                 (
                     "compact_hir_payload",
                     parse_bufs.hir_payload.as_entire_binding(),

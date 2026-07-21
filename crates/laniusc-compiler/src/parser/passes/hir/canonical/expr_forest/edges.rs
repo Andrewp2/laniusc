@@ -1,0 +1,61 @@
+use std::collections::HashMap;
+
+use crate::{
+    gpu::passes_core::{DispatchDim, Pass, PassData},
+    parser::buffers::ParserBuffers,
+};
+
+/// Publishes compact expression-parent edges without raw-node translation.
+pub struct HirCanonicalExprForestEdgesPass {
+    data: PassData,
+}
+
+crate::gpu::passes_core::impl_static_shader_pass!(
+    HirCanonicalExprForestEdgesPass,
+    label: "hir_canonical_expr_forest_edges",
+    shader: "parser/hir/canonical/expr_forest/edges"
+);
+
+impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalExprForestEdgesPass {
+    const NAME: &'static str = "hir_canonical_expr_forest_edges";
+    const DIM: DispatchDim = DispatchDim::D1;
+
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+
+    fn data(&self) -> &PassData {
+        &self.data
+    }
+
+    fn create_resource_map<'a>(
+        &self,
+        b: &'a ParserBuffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        HashMap::from([
+            (
+                "gCanonical".into(),
+                b.hir_canonical_params.as_entire_binding(),
+            ),
+            (
+                "canonical_count".into(),
+                b.hir_canonical_count.as_entire_binding(),
+            ),
+            ("hir_core".into(), b.hir_core.as_entire_binding()),
+            ("hir_payload".into(), b.hir_payload.as_entire_binding()),
+            (
+                "call_arg_count".into(),
+                b.hir_call_arg_table_count.as_entire_binding(),
+            ),
+            ("call_args".into(), b.hir_call_args.as_entire_binding()),
+            (
+                "expr_parent_encoded".into(),
+                b.hir_canonical_expr_parent_encoded.as_entire_binding(),
+            ),
+            (
+                "expr_forest_status".into(),
+                b.hir_canonical_expr_forest_status.as_entire_binding(),
+            ),
+        ])
+    }
+}

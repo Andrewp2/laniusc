@@ -105,6 +105,23 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
+        if hir_node_capacity >= 0x0fff_ffff {
+            anyhow::bail!(
+                "compact HIR capacity {hir_node_capacity} exceeds scalar-type link encoding"
+            );
+        }
+        let compact_expr_scalar_type_a = typed_storage_u32_rw(
+            device,
+            "type_check.resident.compact_expr_scalar_type.a",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let compact_expr_scalar_type_b = typed_storage_u32_rw(
+            device,
+            "type_check.resident.compact_expr_scalar_type.b",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let module_type_path_type = typed_storage_u32_rw(
             device,
             "type_check.resident.module_type_path_type",
@@ -717,6 +734,12 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
+        let enclosing_fn_start_token = typed_storage_u32_rw(
+            device,
+            "type_check.resident.enclosing_fn_start_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let enclosing_fn_end = typed_storage_u32_rw(
             device,
             "type_check.resident.enclosing_fn_end",
@@ -774,6 +797,18 @@ impl GpuTypeChecker {
         let call_fn_index = typed_storage_u32_rw(
             device,
             "type_check.resident.call_fn_index",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let fn_start_token_by_decl_token = typed_storage_u32_rw(
+            device,
+            "type_check.resident.fn_start_token_by_decl_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let backend_call_fn_index = typed_storage_u32_rw(
+            device,
+            "type_check.resident.backend_call_fn_index",
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
@@ -1408,11 +1443,11 @@ impl GpuTypeChecker {
             token_capacity as usize,
             external_scratch.map(|scratch| scratch.method_decl_module_id),
         );
-        let method_decl_impl_node = typed_reuse_storage_u32(
+        let method_decl_method_row = typed_reuse_storage_u32(
             device,
-            "type_check.resident.method_decl_impl_node",
+            "type_check.resident.method_decl_method_row",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.method_decl_impl_node),
+            external_scratch.map(|scratch| scratch.method_decl_method_row),
         );
         let method_decl_name_token = typed_reuse_storage_u32(
             device,
@@ -1443,6 +1478,12 @@ impl GpuTypeChecker {
             "type_check.resident.method_decl_visibility",
             token_capacity as usize,
             external_scratch.map(|scratch| scratch.method_decl_visibility),
+        );
+        let method_decl_signature_flags = typed_storage_u32_rw(
+            device,
+            "type_check.resident.method_decl_signature_flags",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
         );
         let method_module_id_by_file_id_implicit_root = typed_storage_u32_fill_rw(
             device,
@@ -2439,6 +2480,8 @@ impl GpuTypeChecker {
             semantic_indirect_args("type_check.resident.method_token_dispatch_args");
         let method_hir_dispatch_args =
             semantic_indirect_args("type_check.resident.method_hir_dispatch_args");
+        let method_compact_dispatch_args =
+            semantic_indirect_args("type_check.resident.method_compact_dispatch_args");
         let method_token_hir_dispatch_args =
             semantic_indirect_args("type_check.resident.method_token_hir_dispatch_args");
         let method_radix_prefix_dispatch_args =
@@ -2480,6 +2523,10 @@ impl GpuTypeChecker {
         resources.buffer("semantic_feature_flags", &semantic_feature_flags);
         resources.buffer("method_token_dispatch_args", &method_token_dispatch_args);
         resources.buffer("method_hir_dispatch_args", &method_hir_dispatch_args);
+        resources.buffer(
+            "method_compact_dispatch_args",
+            &method_compact_dispatch_args,
+        );
         resources.buffer(
             "method_token_hir_dispatch_args",
             &method_token_hir_dispatch_args,
@@ -2540,6 +2587,11 @@ impl GpuTypeChecker {
         resources.buffer("block_sum", &fn_block_sum);
         resources.buffer("block_prefix", &fn_block_prefix);
         resources.buffer("call_fn_index", &call_fn_index);
+        resources.buffer(
+            "fn_start_token_by_decl_token",
+            &fn_start_token_by_decl_token,
+        );
+        resources.buffer("backend_call_fn_index", &backend_call_fn_index);
         resources.buffer("call_intrinsic_tag", &call_intrinsic_tag);
         resources.buffer("fn_entrypoint_tag", &fn_entrypoint_tag);
         resources.buffer("call_return_type", &call_return_type);
@@ -2739,12 +2791,13 @@ impl GpuTypeChecker {
             &method_decl_receiver_ref_payload,
         );
         resources.buffer("method_decl_module_id", &method_decl_module_id);
-        resources.buffer("method_decl_impl_node", &method_decl_impl_node);
+        resources.buffer("method_decl_method_row", &method_decl_method_row);
         resources.buffer("method_decl_name_token", &method_decl_name_token);
         resources.buffer("method_decl_name_id", &method_decl_name_id);
         resources.buffer("method_decl_param_offset", &method_decl_param_offset);
         resources.buffer("method_decl_receiver_mode", &method_decl_receiver_mode);
         resources.buffer("method_decl_visibility", &method_decl_visibility);
+        resources.buffer("method_decl_signature_flags", &method_decl_signature_flags);
         resources.buffer("method_key_to_fn_token", &method_key_to_fn_token);
         resources.buffer("sorted_method_key_order", &method_key_to_fn_token);
         resources.buffer("method_key_status", &method_key_status);
@@ -3318,6 +3371,85 @@ impl GpuTypeChecker {
             "module_value_path_associated_receiver_token",
             &module_value_path_associated_receiver_token,
         );
+        let compact_hir_count = buffer_from_resources(&resources, "compact_hir_count")?;
+        let compact_hir_core = buffer_from_resources(&resources, "compact_hir_core")?;
+        let compact_hir_links = buffer_from_resources(&resources, "compact_hir_links")?;
+        let compact_hir_payload = buffer_from_resources(&resources, "compact_hir_payload")?;
+        let compact_path_count = buffer_from_resources(&resources, "compact_path_count")?;
+        let compact_paths = buffer_from_resources(&resources, "compact_paths")?;
+        let compact_path_segment_count =
+            buffer_from_resources(&resources, "compact_path_segment_count")?;
+        let compact_path_segments = buffer_from_resources(&resources, "compact_path_segments")?;
+        let path_id_by_owner_hir = buffer_from_resources(&resources, "path_id_by_owner_hir")?;
+        let compact_expr_scalar_type_init = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check.expression_types.init"),
+            &passes.expression_types_init,
+            0,
+            &[
+                ("gParams", self.params_buf.as_entire_binding()),
+                ("compact_hir_count", compact_hir_count.as_entire_binding()),
+                ("compact_hir_core", compact_hir_core.as_entire_binding()),
+                ("compact_hir_links", compact_hir_links.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    compact_hir_payload.as_entire_binding(),
+                ),
+                ("compact_path_count", compact_path_count.as_entire_binding()),
+                ("compact_paths", compact_paths.as_entire_binding()),
+                (
+                    "compact_path_segment_count",
+                    compact_path_segment_count.as_entire_binding(),
+                ),
+                (
+                    "compact_path_segments",
+                    compact_path_segments.as_entire_binding(),
+                ),
+                (
+                    "path_id_by_owner_hir",
+                    path_id_by_owner_hir.as_entire_binding(),
+                ),
+                ("visible_decl", visible_decl.as_entire_binding()),
+                ("visible_type", visible_type.as_entire_binding()),
+                ("call_return_type", call_return_type.as_entire_binding()),
+                (
+                    "backend_call_fn_index",
+                    backend_call_fn_index.as_entire_binding(),
+                ),
+                (
+                    "compact_expr_scalar_type_out",
+                    compact_expr_scalar_type_a.as_entire_binding(),
+                ),
+            ],
+        )?;
+        let compact_expr_scalar_type_step_count =
+            (u32::BITS - hir_node_capacity.max(1).saturating_sub(1).leading_zeros()) as usize;
+        let compact_expr_scalar_type_steps = (0..compact_expr_scalar_type_step_count)
+            .map(|step| {
+                let (input, output) = if step % 2 == 0 {
+                    (&compact_expr_scalar_type_a, &compact_expr_scalar_type_b)
+                } else {
+                    (&compact_expr_scalar_type_b, &compact_expr_scalar_type_a)
+                };
+                bind_group::create_bind_group_from_bindings(
+                    device,
+                    Some("type_check.expression_types.step"),
+                    &passes.expression_types_step,
+                    0,
+                    &[
+                        ("gParams", self.params_buf.as_entire_binding()),
+                        ("compact_hir_count", compact_hir_count.as_entire_binding()),
+                        ("compact_expr_scalar_type_in", input.as_entire_binding()),
+                        ("compact_expr_scalar_type_out", output.as_entire_binding()),
+                    ],
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let compact_expr_scalar_type = if compact_expr_scalar_type_steps.len() % 2 == 0 {
+            compact_expr_scalar_type_a.clone()
+        } else {
+            compact_expr_scalar_type_b.clone()
+        };
         let conditions_hir = reflected_bind_group_from_resources(
             device,
             "type_check_resident_conditions_hir",
@@ -3664,7 +3796,7 @@ impl GpuTypeChecker {
                 token_count: token_count_buf,
                 module_count: method_module_count_out,
                 decl: MethodDeclRows {
-                    impl_node: &method_decl_impl_node,
+                    method_row: &method_decl_method_row,
                     recv_tag: &method_decl_receiver_ref_tag,
                     recv_payload: &method_decl_receiver_ref_payload,
                     module_id: &method_decl_module_id,
@@ -3762,6 +3894,7 @@ impl GpuTypeChecker {
             &resources,
             &fn_params,
             &enclosing_fn,
+            &enclosing_fn_start_token,
             &enclosing_fn_end,
             &fn_event_value,
             &fn_event_end,
@@ -3831,6 +3964,11 @@ impl GpuTypeChecker {
                 input_fingerprint,
                 uses_hir_items,
             },
+            compact_expr_scalar_type_a,
+            compact_expr_scalar_type_b,
+            compact_expr_scalar_type,
+            compact_expr_scalar_type_init,
+            compact_expr_scalar_type_steps,
             name_capacity,
             name_n_blocks,
             if_depth_n_blocks,
@@ -3927,6 +4065,7 @@ impl GpuTypeChecker {
             semantic_feature_flags,
             method_token_dispatch_args,
             method_hir_dispatch_args,
+            method_compact_dispatch_args,
             method_token_hir_dispatch_args,
             method_radix_prefix_dispatch_args,
             method_radix_bases_dispatch_args,
@@ -3946,6 +4085,7 @@ impl GpuTypeChecker {
             if_block_prefix,
             if_depth,
             enclosing_fn,
+            enclosing_fn_start_token,
             enclosing_fn_end,
             fn_event_value,
             fn_event_end,
@@ -3956,6 +4096,8 @@ impl GpuTypeChecker {
             fn_prefix_b,
             fn_block_prefix,
             call_fn_index,
+            fn_start_token_by_decl_token,
+            backend_call_fn_index,
             call_dependency_decl,
             call_intrinsic_tag,
             fn_entrypoint_tag,
@@ -4051,12 +4193,13 @@ impl GpuTypeChecker {
             method_decl_receiver_ref_tag,
             method_decl_receiver_ref_payload,
             method_decl_module_id,
-            method_decl_impl_node,
+            method_decl_method_row,
             method_decl_name_token,
             method_decl_name_id,
             method_decl_param_offset,
             method_decl_receiver_mode,
             method_decl_visibility,
+            method_decl_signature_flags,
             method_module_count_out_implicit_root,
             method_key_to_fn_token,
             method_key_order_tmp,

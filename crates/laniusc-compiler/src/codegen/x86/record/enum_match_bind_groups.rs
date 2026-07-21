@@ -99,7 +99,9 @@ pub(super) fn create_enum_match_bind_groups(
             ),
             (
                 "compact_variant_payload_count",
-                enum_metadata.compact_variant_payload_count.as_entire_binding(),
+                enum_metadata
+                    .compact_variant_payload_count
+                    .as_entire_binding(),
             ),
             ("hir_status", hir_status.as_entire_binding()),
             ("hir_kind", hir_kind.as_entire_binding()),
@@ -111,6 +113,10 @@ pub(super) fn create_enum_match_bind_groups(
             (
                 "hir_call_callee_node",
                 call_metadata.callee_node.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                enum_metadata.raw_to_compact_hir.as_entire_binding(),
             ),
             (
                 "path_count_out",
@@ -168,16 +174,52 @@ pub(super) fn create_enum_match_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", enum_metadata.compact_hir_count.as_entire_binding()),
-            ("compact_hir_core", enum_metadata.compact_hir_core.as_entire_binding()),
-            ("compact_hir_payload", enum_metadata.compact_hir_payload.as_entire_binding()),
-            ("raw_to_compact_hir", enum_metadata.raw_to_compact_hir.as_entire_binding()),
-            ("compact_match_arm_count", enum_metadata.compact_match_arm_count.as_entire_binding()),
-            ("compact_match_arms", enum_metadata.compact_match_arms.as_entire_binding()),
-            ("compact_match_payload_start", enum_metadata.compact_match_payload_start.as_entire_binding()),
-            ("compact_match_payload_count", enum_metadata.compact_match_payload_count.as_entire_binding()),
-            ("compact_match_payload_row_count", enum_metadata.compact_match_payload_row_count.as_entire_binding()),
-            ("compact_match_payloads", enum_metadata.compact_match_payloads.as_entire_binding()),
+            (
+                "compact_hir_count",
+                enum_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                enum_metadata.compact_hir_core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                enum_metadata.compact_hir_payload.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                enum_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "compact_match_arm_count",
+                enum_metadata.compact_match_arm_count.as_entire_binding(),
+            ),
+            (
+                "compact_match_arms",
+                enum_metadata.compact_match_arms.as_entire_binding(),
+            ),
+            (
+                "compact_match_payload_start",
+                enum_metadata
+                    .compact_match_payload_start
+                    .as_entire_binding(),
+            ),
+            (
+                "compact_match_payload_count",
+                enum_metadata
+                    .compact_match_payload_count
+                    .as_entire_binding(),
+            ),
+            (
+                "compact_match_payload_row_count",
+                enum_metadata
+                    .compact_match_payload_row_count
+                    .as_entire_binding(),
+            ),
+            (
+                "compact_match_payloads",
+                enum_metadata.compact_match_payloads.as_entire_binding(),
+            ),
             ("hir_kind", hir_kind.as_entire_binding()),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             ("x86_node_func", node_func.as_entire_binding()),
@@ -189,7 +231,10 @@ pub(super) fn create_enum_match_bind_groups(
                 match_result_dense_owner.as_entire_binding(),
             ),
             ("x86_match_arm_owner", match_arm_owner.as_entire_binding()),
-            ("x86_match_pattern_owner", match_pattern_owner.as_entire_binding()),
+            (
+                "x86_match_pattern_owner",
+                match_pattern_owner.as_entire_binding(),
+            ),
             (
                 "x86_compact_executable_raw",
                 compact_executable_raw.as_entire_binding(),
@@ -265,12 +310,30 @@ pub(super) fn create_enum_match_bind_groups(
                 enum_metadata.decl_parent_type_decl.as_entire_binding(),
             ),
             ("gX86Features", feature_params.as_entire_binding()),
-            ("compact_match_arm_count", enum_metadata.compact_match_arm_count.as_entire_binding()),
-            ("raw_to_compact_hir", enum_metadata.raw_to_compact_hir.as_entire_binding()),
-            ("x86_match_pattern_dense_owner", match_pattern_dense_owner.as_entire_binding()),
-            ("x86_match_pattern_root_owner", match_pattern_root_owner.as_entire_binding()),
-            ("compact_hir_links", enum_metadata.compact_hir_links.as_entire_binding()),
-            ("compact_hir_core", enum_metadata.compact_hir_core.as_entire_binding()),
+            (
+                "compact_match_arm_count",
+                enum_metadata.compact_match_arm_count.as_entire_binding(),
+            ),
+            (
+                "raw_to_compact_hir",
+                enum_metadata.raw_to_compact_hir.as_entire_binding(),
+            ),
+            (
+                "x86_match_pattern_dense_owner",
+                match_pattern_dense_owner.as_entire_binding(),
+            ),
+            (
+                "x86_match_pattern_root_owner",
+                match_pattern_root_owner.as_entire_binding(),
+            ),
+            (
+                "compact_hir_links",
+                enum_metadata.compact_hir_links.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                enum_metadata.compact_hir_core.as_entire_binding(),
+            ),
             ("x86_match_arm_record", match_arm_record.as_entire_binding()),
             (
                 "x86_match_pattern_node_owner",

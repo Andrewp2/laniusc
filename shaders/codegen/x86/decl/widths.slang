@@ -24,7 +24,12 @@ StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
-StructuredBuffer<uint4> hir_param_record;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -62,9 +67,6 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
-
-static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
-static const uint HIR_PARAM_RECORD_NODE = 3u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -186,8 +188,13 @@ uint param_decl_token_for_node(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
         return INVALID;
-    uint4 record = hir_param_record[node];
-    return record[HIR_PARAM_RECORD_NODE] == node ? record[HIR_PARAM_RECORD_NAME_TOKEN] : INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= count || compact_hir_core[dense].kind != HIR_PARAM)
+        return INVALID;
+    // Parameter payloads are { owner, ordinal, name_token, type_node }.
+    uint decl_token = compact_hir_payload[dense].c;
+    return valid_token(decl_token) ? decl_token : INVALID;
 }
 
 bool type_instance_is_unsized_array(uint ty)

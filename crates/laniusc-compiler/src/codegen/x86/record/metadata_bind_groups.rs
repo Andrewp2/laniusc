@@ -196,7 +196,6 @@ pub(super) struct FunctionDiscoveryInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) hir_status: &'a wgpu::Buffer,
     pub(super) hir_kind: &'a wgpu::Buffer,
-    pub(super) hir_item_kind: &'a wgpu::Buffer,
     pub(super) parent: &'a wgpu::Buffer,
     pub(super) subtree_end: &'a wgpu::Buffer,
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
@@ -249,7 +248,6 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gParams", inputs.params.as_entire_binding()),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
-            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
                 "x86_node_tree_status",
                 inputs.node_tree_status.as_entire_binding(),
@@ -265,6 +263,10 @@ pub(super) fn create_function_discovery_bind_groups(
             (
                 "compact_hir_count",
                 inputs.expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                inputs.expr_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
                 "compact_hir_payload",
@@ -317,7 +319,6 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gParams", inputs.params.as_entire_binding()),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
-            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
                 "raw_to_compact_hir",
                 inputs.expr_metadata.raw_to_compact_hir.as_entire_binding(),
@@ -325,6 +326,10 @@ pub(super) fn create_function_discovery_bind_groups(
             (
                 "compact_hir_count",
                 inputs.expr_metadata.compact_hir_count.as_entire_binding(),
+            ),
+            (
+                "compact_hir_core",
+                inputs.expr_metadata.compact_hir_core.as_entire_binding(),
             ),
             (
                 "compact_hir_payload",

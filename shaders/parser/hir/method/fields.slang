@@ -21,7 +21,6 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> semantic_token_kinds;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> hir_token_end;
@@ -55,8 +54,6 @@ static const uint METHOD_RECEIVER_NONE = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
 static const uint METHOD_RECEIVER_EXPLICIT = 3u;
-static const uint TK_SELF_VALUE = 105u;
-
 static const uint METHOD_VIS_PRIVATE = 0u;
 static const uint METHOD_VIS_PUBLIC = 1u;
 static const uint METHOD_SIGNATURE_INHERENT_IMPL = 4u;
@@ -204,16 +201,18 @@ uint method_owner_node_for_decl(uint method_node)
     return INVALID;
 }
 
-uint receiver_mode_for_param(uint param_node, uint name_token)
+uint receiver_mode_for_param(uint param_node)
 {
     uint prod = valid_node(param_node) ? node_kind[param_node] : INVALID;
     if (prod == PROD_PARAM_SELF)
         return METHOD_RECEIVER_SELF;
     if (prod == PROD_PARAM_SELF_REF)
         return METHOD_RECEIVER_REF_SELF;
-    if (prod == PROD_PARAM_NAMED &&
-        name_token != INVALID &&
-        semantic_token_kinds[name_token] == TK_SELF_VALUE)
+    // Every typed ordinal-zero parameter is an explicit receiver candidate.
+    // Type checking decides whether its type matches the impl receiver. This
+    // keeps receiver classification structural and permits ordinary associated
+    // functions whose first parameter has a different type.
+    if (prod == PROD_PARAM_NAMED)
         return METHOD_RECEIVER_EXPLICIT;
     return METHOD_RECEIVER_NONE;
 }
@@ -279,7 +278,7 @@ void publish_method_first_param(uint param_node)
         return;
 
     hir_method_first_param_token[owner_fn] = name_token;
-    hir_method_receiver_mode[owner_fn] = receiver_mode_for_param(param_node, name_token);
+    hir_method_receiver_mode[owner_fn] = receiver_mode_for_param(param_node);
 }
 
 void publish_impl_receiver_type(uint type_node)

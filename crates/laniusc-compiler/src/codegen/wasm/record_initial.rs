@@ -15,14 +15,10 @@ impl GpuWasmCodeGenerator {
     ) -> Result<RecordedWasmCodegen> {
         let GpuWasmCodegenInputs {
             token: token_buf,
-            token_count: token_count_buf,
-            active_hir_dispatch_args: _,
-            node_kind: node_kind_buf,
             parent: parent_buf,
             first_child: first_child_buf,
             next_sibling: next_sibling_buf,
             hir_kind: hir_kind_buf,
-            hir_item_kind: hir_item_kind_buf,
             hir_token_pos: hir_token_pos_buf,
             hir_token_end: hir_token_end_buf,
             hir_status: hir_status_buf,
@@ -37,32 +33,19 @@ impl GpuWasmCodeGenerator {
             expressions: expr_metadata,
             arrays: array_metadata,
             paths: path_metadata,
-            semantic_hir,
-            hir_param_record: hir_param_record_buf,
-            type_expr_ref_tag: type_expr_ref_tag_buf,
-            type_expr_ref_payload: type_expr_ref_payload_buf,
-            module_value_path_call_head: module_value_path_call_head_buf,
-            module_value_path_call_open: module_value_path_call_open_buf,
-            module_value_path_const_head: module_value_path_const_head_buf,
-            module_value_path_const_end: module_value_path_const_end_buf,
+            canonical_hir,
+            path_id_by_owner_hir: path_id_by_owner_hir_buf,
+            decl_type_ref_tag: decl_type_ref_tag_buf,
+            decl_type_ref_payload: decl_type_ref_payload_buf,
             call_fn_index: call_fn_index_buf,
             call_intrinsic_tag: call_intrinsic_tag_buf,
             fn_entrypoint_tag: fn_entrypoint_tag_buf,
             call_return_type: call_return_type_buf,
-            call_return_type_token: call_return_type_token_buf,
             call_param_count: call_param_count_buf,
             call_param_type: call_param_type_buf,
-            method_decl_receiver_ref_tag: method_decl_receiver_ref_tag_buf,
-            method_decl_receiver_ref_payload: method_decl_receiver_ref_payload_buf,
             method_decl_param_offset: method_decl_param_offset_buf,
             method_decl_receiver_mode: method_decl_receiver_mode_buf,
-            method_call_receiver_ref_tag: method_call_receiver_ref_tag_buf,
-            method_call_receiver_ref_payload: method_call_receiver_ref_payload_buf,
             type_instance_decl_token: type_instance_decl_token_buf,
-            type_instance_arg_start: type_instance_arg_start_buf,
-            type_instance_arg_count: type_instance_arg_count_buf,
-            type_instance_arg_ref_tag: type_instance_arg_ref_tag_buf,
-            type_instance_arg_ref_payload: type_instance_arg_ref_payload_buf,
             type_decl_hir_node_by_token: type_decl_hir_node_by_token_buf,
             fn_return_ref_tag: fn_return_ref_tag_buf,
             fn_return_ref_payload: fn_return_ref_payload_buf,
@@ -81,13 +64,10 @@ impl GpuWasmCodeGenerator {
         trace_wasm_codegen("record.fingerprint.start");
         let input_fingerprint = buffer_fingerprint(&[
             token_buf,
-            token_count_buf,
-            node_kind_buf,
             parent_buf,
             first_child_buf,
             next_sibling_buf,
             hir_kind_buf,
-            hir_item_kind_buf,
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_status_buf,
@@ -100,12 +80,11 @@ impl GpuWasmCodeGenerator {
             struct_metadata.lit_field_parent_lit,
             struct_metadata.member_name_token,
             struct_metadata.member_result_field_ordinal,
-            struct_metadata.struct_init_field_ordinal_by_node,
+            struct_metadata.struct_init_field_ordinal_by_row,
             call_metadata.callee_node,
             call_metadata.context_stmt,
             call_metadata.arg_start,
             call_metadata.arg_parent_call,
-            call_metadata.arg_end,
             call_metadata.arg_count,
             call_metadata.arg_ordinal,
             call_metadata.arg_row_node,
@@ -115,7 +94,6 @@ impl GpuWasmCodeGenerator {
             expr_metadata.result_root_node,
             expr_metadata.parent_node,
             expr_metadata.forest_root_node,
-            expr_metadata.forest_status,
             expr_metadata.int_value,
             expr_metadata.float_bits,
             expr_metadata.string_start,
@@ -132,40 +110,43 @@ impl GpuWasmCodeGenerator {
             path_metadata.segment_base,
             path_metadata.segment_token,
             path_metadata.id_by_owner_token,
-            semantic_hir.count,
-            semantic_hir.prefix_before_node,
-            semantic_hir.dense_node,
-            semantic_hir.subtree_end,
-            semantic_hir.parent,
-            semantic_hir.first_child,
-            semantic_hir.next_sibling,
-            semantic_hir.depth,
-            semantic_hir.child_index,
-            hir_param_record_buf,
-            type_expr_ref_tag_buf,
-            type_expr_ref_payload_buf,
-            module_value_path_call_head_buf,
-            module_value_path_call_open_buf,
-            module_value_path_const_head_buf,
-            module_value_path_const_end_buf,
+            canonical_hir.count,
+            canonical_hir.core,
+            canonical_hir.links,
+            canonical_hir.payload,
+            canonical_hir.const_value,
+            canonical_hir.expr_parent,
+            canonical_hir.expr_root,
+            canonical_hir.call_arg_count,
+            canonical_hir.call_args,
+            canonical_hir.param_count,
+            canonical_hir.params,
+            canonical_hir.field_count,
+            canonical_hir.fields,
+            canonical_hir.array_element_start,
+            canonical_hir.array_element_count,
+            canonical_hir.array_element_row_count,
+            canonical_hir.array_elements,
+            canonical_hir.string_count,
+            canonical_hir.strings,
+            canonical_hir.string_data_words,
+            canonical_hir.string_pool_len,
+            canonical_hir.path_count,
+            canonical_hir.paths,
+            canonical_hir.path_segment_count,
+            canonical_hir.path_segments,
+            path_id_by_owner_hir_buf,
+            decl_type_ref_tag_buf,
+            decl_type_ref_payload_buf,
             call_fn_index_buf,
             call_intrinsic_tag_buf,
             fn_entrypoint_tag_buf,
             call_return_type_buf,
-            call_return_type_token_buf,
             call_param_count_buf,
             call_param_type_buf,
-            method_decl_receiver_ref_tag_buf,
-            method_decl_receiver_ref_payload_buf,
             method_decl_param_offset_buf,
             method_decl_receiver_mode_buf,
-            method_call_receiver_ref_tag_buf,
-            method_call_receiver_ref_payload_buf,
             type_instance_decl_token_buf,
-            type_instance_arg_start_buf,
-            type_instance_arg_count_buf,
-            type_instance_arg_ref_tag_buf,
-            type_instance_arg_ref_payload_buf,
             type_decl_hir_node_by_token_buf,
             fn_return_ref_tag_buf,
             fn_return_ref_payload_buf,
@@ -327,7 +308,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(self.wasm_const_values_pass.pipeline()?.as_ref());
         compute.set_bind_group(0, Some(&bufs.wasm_const_values_bind_group), &[]);
-        compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
+        compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
         drop(compute);
         trace_wasm_codegen("record.dispatch.const_values.done");
 
@@ -363,7 +344,7 @@ impl GpuWasmCodeGenerator {
             });
             compute.set_pipeline(self.hir_functions_reach_pass.pipeline()?.as_ref());
             compute.set_bind_group(0, Some(&bufs.hir_functions_reach_bind_group), &[]);
-            compute.dispatch_workgroups(hir_node_groups_x, hir_node_groups_y, 1);
+            compute.dispatch_workgroups_indirect(&bufs.active_hir_dispatch_args_buf, 0);
             drop(compute);
             trace_wasm_codegen(&format!(
                 "record.dispatch.hir_functions_reach.{iteration}.done"
@@ -449,6 +430,13 @@ impl GpuWasmCodeGenerator {
         trace_wasm_codegen("record.dispatch.hir_expr_contributions.start");
         self.record_wasm_expr_contributions(encoder, &bufs.expr_order)?;
         trace_wasm_codegen("record.dispatch.hir_expr_contributions.done");
+
+        trace_wasm_codegen("record.dispatch.compact_hir_expr_order.start");
+        self.record_wasm_expr_order(encoder, &bufs.compact_expr_order)?;
+        trace_wasm_codegen("record.dispatch.compact_hir_expr_order.done");
+        trace_wasm_codegen("record.dispatch.compact_hir_expr_contributions.start");
+        self.record_wasm_expr_contributions(encoder, &bufs.compact_expr_order)?;
+        trace_wasm_codegen("record.dispatch.compact_hir_expr_contributions.done");
 
         trace_wasm_codegen("record.dispatch.hir_body_plan_collect.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

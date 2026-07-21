@@ -2,8 +2,6 @@ use log::warn;
 
 use super::{
     BracketsBlockPrefixScanStep,
-    BracketsHistogramScanStep,
-    BracketsPairRadixStep,
     HirSemanticPrefixScanStep,
     PackOffsetScanStep,
     PackTotalReduceStep,
@@ -43,31 +41,6 @@ pub(super) fn make_pack_offset_scan_steps(
                 read_from_a: plan.read_from_a,
                 write_to_a: plan.write_to_a,
             }
-        })
-        .collect()
-}
-
-/// Creates the four stable LSD radix steps for the packed `(layer, kind)` key.
-pub(super) fn make_brackets_pair_radix_steps(
-    device: &wgpu::Device,
-    n_sc: u32,
-    n_layers: u32,
-    n_blocks: u32,
-) -> Vec<BracketsPairRadixStep> {
-    (0..4)
-        .map(|key_step| BracketsPairRadixStep {
-            params: uniform_from_val(
-                device,
-                "brackets.pair_radix.params",
-                &super::super::passes::brackets::pair_radix::Params {
-                    n_sc,
-                    n_layers,
-                    n_blocks,
-                    key_step,
-                },
-            ),
-            read_from_pushes: key_step % 2 == 0,
-            key_step,
         })
         .collect()
 }
@@ -163,37 +136,6 @@ pub(super) fn make_brackets_block_prefix_scan_steps(
                 ),
                 read_from_a: plan.read_from_a,
                 write_to_a: plan.write_to_a,
-            }
-        })
-        .collect()
-}
-
-/// Creates scan steps for prefixing bracket histogram counts by layer.
-pub(super) fn make_brackets_histogram_scan_steps(
-    device: &wgpu::Device,
-    n_layers: u32,
-) -> Vec<BracketsHistogramScanStep> {
-    ping_pong_scan_steps(n_layers, ScanFinalize::CopyToAIfNeeded(n_layers))
-        .into_iter()
-        .map(|plan| {
-            let label = if plan.scan_step == 0 {
-                "brackets.b05.scan.params.init"
-            } else if plan.scan_step == n_layers {
-                "brackets.b05.scan.params.copy"
-            } else {
-                "brackets.b05.scan.params.step"
-            };
-            BracketsHistogramScanStep {
-                params: uniform_from_val(
-                    device,
-                    label,
-                    &super::super::passes::brackets::scan_histograms::Params {
-                        n_layers,
-                        scan_step: plan.scan_step,
-                    },
-                ),
-                read_from_offsets: plan.read_from_a,
-                write_to_offsets: plan.write_to_a,
             }
         })
         .collect()

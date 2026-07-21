@@ -2,6 +2,8 @@
 
 /// Typed buffer wrappers and allocation helpers.
 pub mod buffers;
+/// Logical compiler-pass ownership, access, and lifetime graph.
+pub mod compiler_graph;
 /// Optional debug readback buffer helpers.
 pub mod debug;
 /// Global device, queue, and pipeline-cache management.

@@ -702,6 +702,21 @@ impl GpuParser {
         consume(bufs)
     }
 
+    /// Clones the compact HIR handles from the parser's current resident job.
+    ///
+    /// This is the phase boundary used by graph-owned consumers after parsing:
+    /// it cannot allocate a differently sized parser cache and it exposes none
+    /// of the raw production/tree scratch that compact HIR replaced.
+    pub(crate) fn current_resident_hir(&self) -> Option<crate::parser::buffers::GpuHirView> {
+        let resident_guard = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        resident_guard.as_ref().map(|resident| {
+            crate::parser::buffers::GpuHirView::from_parser_buffers(&resident.buffers)
+        })
+    }
+
     /// Borrows current resident parser buffers with an explicit tree capacity.
     pub fn with_current_resident_buffers_with_tree_capacity<R>(
         &self,

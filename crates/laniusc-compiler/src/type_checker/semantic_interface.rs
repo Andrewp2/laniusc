@@ -254,13 +254,16 @@ impl GpuTypeChecker {
             1,
             "module key segment names",
         )?;
-        let member_capacity = u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?
-            .checked_add(u32_capacity(
-                inputs.type_expr_ref_tag,
-                1,
-                "semantic-interface member tokens",
-            )?)
-            .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
+        let member_capacity =
+            u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?
+                .checked_add(u32_capacity(
+                    inputs.type_expr_ref_tag,
+                    1,
+                    "semantic-interface member tokens",
+                )?)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("semantic-interface member capacity overflows u32")
+                })?;
         let name_ref_count = module_segment_capacity
             .checked_add(decl_capacity)
             .and_then(|value| value.checked_add(member_capacity))
@@ -1375,11 +1378,23 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_attach_unary,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
-                ("compact_type_arg_count", hir.compact_type_arg_count.as_entire_binding()),
-                ("compact_type_args", hir.compact_type_args.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    hir.compact_hir_payload.as_entire_binding(),
+                ),
+                (
+                    "compact_type_arg_count",
+                    hir.compact_type_arg_count.as_entire_binding(),
+                ),
+                (
+                    "compact_type_args",
+                    hir.compact_type_args.as_entire_binding(),
+                ),
                 ("interface_type_parent", parent.as_entire_binding()),
                 (
                     "interface_type_child_ordinal",
@@ -1393,7 +1408,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_declarations,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "public_decl_count",
@@ -1413,7 +1431,10 @@ impl GpuTypeChecker {
                     "compact_type_alias_target",
                     hir.compact_type_alias_target.as_entire_binding(),
                 ),
-                ("compact_const_type", hir.compact_const_type.as_entire_binding()),
+                (
+                    "compact_const_type",
+                    hir.compact_const_type.as_entire_binding(),
+                ),
                 ("interface_type_parent", parent.as_entire_binding()),
                 ("interface_type_seed_owner", seed_owner.as_entire_binding()),
                 (
@@ -1428,9 +1449,15 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_params,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                (
+                    "compact_param_count",
+                    hir.compact_param_count.as_entire_binding(),
+                ),
                 ("compact_params", hir.compact_params.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
@@ -1446,9 +1473,15 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_fields,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                (
+                    "compact_field_count",
+                    hir.compact_field_count.as_entire_binding(),
+                ),
                 ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
@@ -1464,17 +1497,20 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_seed_variants,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.compact_variant_count.as_entire_binding(),
+                ),
                 (
                     "compact_variant_payload_row_count",
                     hir.compact_variant_payload_row_count.as_entire_binding(),
                 ),
-                (
-                    "compact_variants",
-                    hir.compact_variants.as_entire_binding(),
-                ),
+                ("compact_variants", hir.compact_variants.as_entire_binding()),
                 (
                     "compact_variant_payloads",
                     hir.compact_variant_payloads.as_entire_binding(),
@@ -1497,7 +1533,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_root_init,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 ("interface_type_parent", parent.as_entire_binding()),
                 ("interface_type_root_link", root_link_a.as_entire_binding()),
@@ -1564,7 +1603,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_mark_reverse,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "interface_type_root_owner",
@@ -1604,8 +1646,14 @@ impl GpuTypeChecker {
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
                 ("interface_type_hir_order", hir_order.as_entire_binding()),
-                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
-                ("compact_type_arg_ranges", hir.compact_type_arg_ranges.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    hir.compact_hir_payload.as_entire_binding(),
+                ),
+                (
+                    "compact_type_arg_ranges",
+                    hir.compact_type_arg_ranges.as_entire_binding(),
+                ),
                 ("interface_type_edge_count", edge_count.as_entire_binding()),
                 ("interface_status", status.as_entire_binding()),
             ],
@@ -1643,7 +1691,10 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_resolve_local_decl,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
                 (
                     "type_expr_ref_tag",
@@ -1680,9 +1731,15 @@ impl GpuTypeChecker {
             &self.passes.interface_type_topology_classify_path,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
                 ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    hir.compact_hir_payload.as_entire_binding(),
+                ),
                 (
                     "type_expr_ref_tag",
                     inputs.type_expr_ref_tag.as_entire_binding(),
@@ -1730,7 +1787,10 @@ impl GpuTypeChecker {
                     edge_prefix.as_entire_binding(),
                 ),
                 ("interface_type_edge_count", edge_count.as_entire_binding()),
-                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    hir.compact_hir_payload.as_entire_binding(),
+                ),
                 (
                     "interface_type_path_classification",
                     path_classification.as_entire_binding(),
@@ -1746,7 +1806,10 @@ impl GpuTypeChecker {
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
                 ("interface_type_hir_order", hir_order.as_entire_binding()),
-                ("compact_hir_payload", hir.compact_hir_payload.as_entire_binding()),
+                (
+                    "compact_hir_payload",
+                    hir.compact_hir_payload.as_entire_binding(),
+                ),
                 (
                     "type_const_param_slot_by_token",
                     inputs.type_const_param_slot_by_token.as_entire_binding(),
@@ -1770,9 +1833,18 @@ impl GpuTypeChecker {
                 ),
                 ("decl_kind", inputs.decl_kind.as_entire_binding()),
                 ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
-                ("compact_param_ranges", hir.compact_param_ranges.as_entire_binding()),
-                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_param_ranges",
+                    hir.compact_param_ranges.as_entire_binding(),
+                ),
+                (
+                    "compact_variant_count",
+                    hir.compact_variant_count.as_entire_binding(),
+                ),
                 (
                     "compact_variant_payload_count",
                     hir.compact_variant_payload_count.as_entire_binding(),
@@ -1891,7 +1963,10 @@ impl GpuTypeChecker {
             &self.passes.interface_signature_param_edges,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                (
+                    "compact_param_count",
+                    hir.compact_param_count.as_entire_binding(),
+                ),
                 ("compact_params", hir.compact_params.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
@@ -1979,11 +2054,11 @@ impl GpuTypeChecker {
                     "compact_variant_payload_row_count",
                     hir.compact_variant_payload_row_count.as_entire_binding(),
                 ),
-                ("compact_variant_count", hir.compact_variant_count.as_entire_binding()),
                 (
-                    "compact_variants",
-                    hir.compact_variants.as_entire_binding(),
+                    "compact_variant_count",
+                    hir.compact_variant_count.as_entire_binding(),
                 ),
+                ("compact_variants", hir.compact_variants.as_entire_binding()),
                 (
                     "compact_variant_payloads",
                     hir.compact_variant_payloads.as_entire_binding(),
@@ -2022,16 +2097,16 @@ impl GpuTypeChecker {
             &self.passes.interface_members_variant_counts,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                (
+                    "compact_field_count",
+                    hir.compact_field_count.as_entire_binding(),
+                ),
                 ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
                     "compact_variant_count",
                     hir.compact_variant_count.as_entire_binding(),
                 ),
-                (
-                    "compact_variants",
-                    hir.compact_variants.as_entire_binding(),
-                ),
+                ("compact_variants", hir.compact_variants.as_entire_binding()),
                 (
                     "interface_field_count_by_hir",
                     field_count_by_hir.as_entire_binding(),
@@ -2104,9 +2179,18 @@ impl GpuTypeChecker {
                 ),
                 ("decl_kind", inputs.decl_kind.as_entire_binding()),
                 ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                ("compact_hir_count", hir.compact_hir_count.as_entire_binding()),
-                ("compact_param_ranges", hir.compact_param_ranges.as_entire_binding()),
-                ("interface_field_count_by_hir", field_count_by_hir.as_entire_binding()),
+                (
+                    "compact_hir_count",
+                    hir.compact_hir_count.as_entire_binding(),
+                ),
+                (
+                    "compact_param_ranges",
+                    hir.compact_param_ranges.as_entire_binding(),
+                ),
+                (
+                    "interface_field_count_by_hir",
+                    field_count_by_hir.as_entire_binding(),
+                ),
                 (
                     "interface_variant_count_by_hir",
                     variant_count_by_hir.as_entire_binding(),
@@ -2128,18 +2212,21 @@ impl GpuTypeChecker {
             &self.passes.interface_members_scatter_hir,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("compact_param_count", hir.compact_param_count.as_entire_binding()),
+                (
+                    "compact_param_count",
+                    hir.compact_param_count.as_entire_binding(),
+                ),
                 ("compact_params", hir.compact_params.as_entire_binding()),
-                ("compact_field_count", hir.compact_field_count.as_entire_binding()),
+                (
+                    "compact_field_count",
+                    hir.compact_field_count.as_entire_binding(),
+                ),
                 ("compact_fields", hir.compact_fields.as_entire_binding()),
                 (
                     "compact_variant_count",
                     hir.compact_variant_count.as_entire_binding(),
                 ),
-                (
-                    "compact_variants",
-                    hir.compact_variants.as_entire_binding(),
-                ),
+                ("compact_variants", hir.compact_variants.as_entire_binding()),
                 (
                     "public_decl_index_by_hir",
                     inputs.public_decl_index_by_hir.as_entire_binding(),

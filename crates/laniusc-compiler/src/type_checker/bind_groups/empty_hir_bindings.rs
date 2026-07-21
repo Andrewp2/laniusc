@@ -136,9 +136,16 @@ pub(super) fn register_hir_item_resources<'a>(
         "compact_type_alias_target",
         &hir_items.compact_type_alias_target,
     );
+    resources.buffer("compact_const_type", &hir_items.compact_const_type);
     resources.buffer("compact_param_count", &hir_items.compact_param_count);
     resources.buffer("compact_params", &hir_items.compact_params);
     resources.buffer("compact_param_ranges", &hir_items.compact_param_ranges);
+    resources.buffer("compact_method_count", &hir_items.compact_method_count);
+    resources.buffer("compact_method_cores", &hir_items.compact_method_cores);
+    resources.buffer(
+        "compact_method_signatures",
+        &hir_items.compact_method_signatures,
+    );
     resources.buffer("compact_type_arg_count", &hir_items.compact_type_arg_count);
     resources.buffer("compact_type_args", &hir_items.compact_type_args);
     resources.buffer(
@@ -218,7 +225,6 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("first_child", &hir_items.first_child);
     resources.buffer("next_sibling", &hir_items.next_sibling);
     resources.buffer("subtree_end", &hir_items.subtree_end);
-    resources.buffer("hir_item_kind", &hir_items.kind);
     resources.buffer("hir_item_name_token", &hir_items.name_token);
     resources.buffer("hir_type_form", &hir_items.type_form);
     resources.buffer("hir_type_value_node", &hir_items.type_value_node);
@@ -383,9 +389,13 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("compact_hir_payload", &empty_hir.compact_generic_params);
     resources.buffer("compact_fn_return_type", &empty_hir.parent);
     resources.buffer("compact_type_alias_target", &empty_hir.parent);
+    resources.buffer("compact_const_type", &empty_hir.parent);
     resources.buffer("compact_param_count", &empty_hir.compact_param_count);
     resources.buffer("compact_params", &empty_hir.compact_params);
     resources.buffer("compact_param_ranges", &empty_hir.compact_param_ranges);
+    resources.buffer("compact_method_count", &empty_hir.compact_param_count);
+    resources.buffer("compact_method_cores", &empty_hir.compact_params);
+    resources.buffer("compact_method_signatures", &empty_hir.compact_params);
     resources.buffer("compact_type_arg_count", &empty_hir.compact_param_count);
     resources.buffer("compact_type_args", &empty_hir.compact_params);
     resources.buffer("compact_type_arg_ranges", &empty_hir.compact_param_ranges);
@@ -468,7 +478,6 @@ pub(super) fn register_empty_hir_resources<'a>(
     resources.buffer("first_child", &empty_hir.first_child);
     resources.buffer("next_sibling", &empty_hir.next_sibling);
     resources.buffer("subtree_end", &empty_hir.node_kind);
-    resources.buffer("hir_item_kind", &empty_hir.node_kind);
     resources.buffer("hir_item_name_token", &empty_hir.parent);
     resources.buffer("hir_type_form", &empty_hir.node_kind);
     resources.buffer("hir_type_value_node", &empty_hir.parent);

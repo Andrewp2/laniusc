@@ -324,7 +324,6 @@ impl GpuWasmCodeGenerator {
             0,
             &hir_body_agg_call_arg_records_bindings,
         )?;
-
         let hir_body_agg_call_arg_byte_scan_local_bind_group = create_wasm_bind_group(
             device,
             Some("codegen_wasm_hir_body_agg_call_arg_byte_scan_local"),

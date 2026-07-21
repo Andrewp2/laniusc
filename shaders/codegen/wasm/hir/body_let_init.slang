@@ -1,6 +1,6 @@
-// Publish token-indexed let-initializer records and per-function local bounds
-// from HIR statement rows. Expression contribution metadata consumes the
-// completed local bounds, so both facts are owned by this prepass.
+// Publish dense-HIR let-initializer identities and per-function local bounds
+// from compact statement rows. No raw parser node may enter this table: every
+// later expression pass indexes the compact expression forest with its value.
 
 import atomics;
 import gpu_index;
@@ -15,25 +15,31 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_expr_root;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> enclosing_fn;
 
 RWStructuredBuffer<uint> body_let_init_expr_by_decl_token;
+RWStructuredBuffer<uint> body_let_init_hir_by_decl_token;
 RWStructuredBuffer<uint> wasm_func_local_max_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_STMT = 7u;
-static const uint HIR_EXPR = 14u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_EXPR = 14u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
-static const uint STMT_RECORD_KIND_FOR = 6u;
+static const uint STMT_RECORD_KIND_FOR = 7u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -42,12 +48,22 @@ uint linear_dispatch_id(uint3 tid)
 
 uint active_hir_node_count()
 {
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
+}
+
+bool valid_hir(uint node)
+{
+    return node != INVALID && node < active_hir_node_count();
+}
+
+uint active_raw_node_count()
+{
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-bool valid_node(uint node)
+bool valid_raw_node(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return node != INVALID && node < active_raw_node_count();
 }
 
 bool valid_token(uint token)
@@ -55,7 +71,7 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint stmt_record_slot(uint node, uint slot)
+uint raw_stmt_record_slot(uint node, uint slot)
 {
     return row_major_load<uint>(
         hir_stmt_record,
@@ -63,6 +79,22 @@ uint stmt_record_slot(uint node, uint slot)
         STMT_RECORD_STRIDE,
         slot,
         INVALID);
+}
+
+void publish_legacy_raw_initializer(uint raw)
+{
+    if (!valid_raw_node(raw) || hir_kind[raw] != HIR_LET_STMT ||
+        raw_stmt_record_slot(raw, 0u) != STMT_RECORD_KIND_LET)
+    {
+        return;
+    }
+    uint decl_token = raw_stmt_record_slot(raw, 1u);
+    uint init_expr = raw_stmt_record_slot(raw, 2u);
+    if (valid_token(decl_token) && valid_raw_node(init_expr) &&
+        hir_kind[init_expr] == HIR_EXPR)
+    {
+        body_let_init_expr_by_decl_token[decl_token] = init_expr;
+    }
 }
 
 void publish_function_local(uint decl_token)
@@ -87,33 +119,33 @@ void publish_function_local(uint decl_token)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
-    if (!valid_node(node))
+    publish_legacy_raw_initializer(node);
+    if (!valid_hir(node))
         return;
 
-    uint stmt_kind = stmt_record_slot(node, 0u);
-    bool is_let = hir_kind[node] == HIR_LET_STMT && stmt_kind == STMT_RECORD_KIND_LET;
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    uint stmt_kind = payload.a;
+    bool is_let = core.kind == HIR_LET_STMT && stmt_kind == STMT_RECORD_KIND_LET;
     bool is_for =
-        (hir_kind[node] == HIR_FOR_STMT || hir_kind[node] == HIR_STMT) &&
+        (core.kind == HIR_FOR_STMT || core.kind == HIR_STMT) &&
         stmt_kind == STMT_RECORD_KIND_FOR;
     if (!is_let && !is_for)
         return;
-    uint decl_token = stmt_record_slot(node, 1u);
+    uint decl_token = payload.b;
     publish_function_local(decl_token);
     if (!is_let)
     {
-        uint iterable = stmt_record_slot(node, 2u);
-        uint resolved = valid_node(iterable) ? hir_expr_result_root_node[iterable] : INVALID;
-        if (valid_node(resolved))
-            iterable = resolved;
-        publish_function_local(valid_node(iterable) ? hir_token_end[iterable] : INVALID);
+        uint iterable = payload.c;
+        uint root = valid_hir(iterable) ? compact_expr_root[iterable] : INVALID;
+        if (valid_hir(root))
+            iterable = root;
+        publish_function_local(
+            valid_hir(iterable) ? compact_hir_core[iterable].token_end : INVALID);
         return;
     }
 
-    uint init_expr = stmt_record_slot(node, 2u);
-    if (valid_token(decl_token) &&
-        valid_node(init_expr) &&
-        hir_kind[init_expr] == HIR_EXPR)
-    {
-        body_let_init_expr_by_decl_token[decl_token] = init_expr;
-    }
+    uint init_expr = payload.c;
+    if (valid_token(decl_token) && valid_hir(init_expr))
+        body_let_init_hir_by_decl_token[decl_token] = init_expr;
 }
