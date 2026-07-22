@@ -10,19 +10,12 @@ StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
-StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> semantic_param_type_by_row;
 RWStructuredBuffer<uint> semantic_lir_param_total;
 RWStructuredBuffer<SemanticLirParam> semantic_lir_params;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
-
-bool valid_token(uint token) { return token != LIR_INVALID && token < gParams.n_tokens; }
-uint checked_type(uint token)
-{
-    if (!valid_token(token)) return 0u;
-    return visible_type[token];
-}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -49,6 +42,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? semantic_function_prefix[source.owner] : LIR_INVALID;
     result.declaration_id = source.name_token;
     result.ordinal = source.ordinal;
-    result.type_id = checked_type(source.name_token);
+    result.type_id = semantic_param_type_by_row[row];
     semantic_lir_params[row] = result;
 }

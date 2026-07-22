@@ -26,10 +26,11 @@ struct NameSpan
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> name_id_by_token;
@@ -64,12 +65,11 @@ static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint VALUE_NAMESPACE = 2u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count()
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    return min(gParams.hir_capacity, compact_hir_count[0u]);
 }
 
 uint mix(uint hash, uint value)
@@ -162,13 +162,17 @@ uint scalar_type(uint type_i)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call_node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (call_node >= active_hir_count() || hir_kind[call_node] != HIR_CALL_EXPR)
+    uint call_node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (call_node >= active_hir_count() ||
+        compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
-    uint callee_node = hir_call_callee_node[call_node];
-    if (callee_node >= active_hir_count() || hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    uint callee_node = compact_hir_payload[call_node].a;
+    if (callee_node >= active_hir_count() ||
+        compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
         return;
-    uint callee_token = hir_token_pos[callee_node];
+    uint callee_token = compact_hir_payload[callee_node].d;
+    if (callee_token >= gParams.visible_capacity)
+        callee_token = compact_hir_core[callee_node].token_start;
     if (callee_token >= gParams.visible_capacity)
         return;
     call_dependency_decl[callee_token] = INVALID;

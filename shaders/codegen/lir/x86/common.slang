@@ -1,5 +1,26 @@
 import codegen.lowering_ir;
 
+bool x86_semantic_type_is_aggregate(SemanticLirCore core)
+{
+    // TYPE_REF_SCALAR means a fully concrete type reference, not necessarily
+    // a scalar machine value: monomorphic arrays/structs/enums retain their
+    // canonical aggregate type code in the payload. Instantiated generic
+    // aggregates instead carry TYPE_REF_INSTANCE. Keep the invalid-reference
+    // fallback only for partially projected producers that still have a
+    // checked concrete type code.
+    return core.type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
+        (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
+         core.type_ref_payload >= 128u) ||
+        (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u);
+}
+
+bool x86_semantic_type_is_string(SemanticLirCore core)
+{
+    return (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
+            core.type_ref_payload == 7u) ||
+        (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id == 7u);
+}
+
 static const uint X86_LIR_INVALID = 0xffffffffu;
 static const uint X86_LIR_TY_FLOAT = 5u;
 
@@ -7,6 +28,7 @@ uint x86_lir_count(SemanticLirCore core, SemanticLirOperands operands)
 {
     // Expansion is explicit and will become >1 for ABI/control records that
     // require payload rows. Scalar rows currently map one-to-one.
+    if (core.op == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     return core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW
         ? 1u + operands.b
         : 1u;
@@ -44,6 +66,8 @@ uint x86_lir_opcode(SemanticLirCore core)
     if (core.op == SEMANTIC_LIR_OP_NEGATE || core.op == SEMANTIC_LIR_OP_LOGICAL_NOT)
         return X86_LIR_OP_UNARY;
     if (core.op == SEMANTIC_LIR_OP_CALL_HOST) return X86_LIR_OP_CALL_HOST;
+    if (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL) return X86_LIR_OP_CALL_SYMBOL;
+    if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC) return X86_LIR_OP_PRINT_I32;
     if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW) return X86_LIR_OP_ARRAY_ADDR;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
@@ -68,9 +92,8 @@ bool x86_lir_supported(SemanticLirCore core)
 {
     // Semantic branch targets are stable LIR control-row identities. They
     // become x86 relative targets only in the control-label resolver.
-    // Host and compiler-intrinsic calls have target records but remain
-    // unsupported until their target ABI expansion has been materialized.
+    // Host calls require service-specific ABI validation in scatter. Compiler
+    // intrinsics likewise validate their stable tag there.
     return x86_lir_opcode(core) != 0u &&
-        core.op != SEMANTIC_LIR_OP_CALL_HOST &&
-        core.op != SEMANTIC_LIR_OP_CALL_INTRINSIC;
+        core.op != SEMANTIC_LIR_OP_CALL_HOST;
 }

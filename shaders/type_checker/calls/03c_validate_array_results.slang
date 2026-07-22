@@ -1,11 +1,11 @@
-// HIR-record array call-result validation.
+// Compact-HIR array call-result validation.
 //
 // This pass runs after bounded generic array call inference. It keeps
 // array-valued call results length-aware by comparing the annotated destination
 // declaration's array instance with either the callee's declared return array
 // instance or the declaration-backed actual array argument instance. It consumes
-// HIR statement/call records, parser-published expression-result roots, and
-// type-instance refs; it does not inspect source bytes, token spelling, helper
+// dense statement/call payloads and type-instance refs; it does not inspect
+// source bytes, token spelling, helper
 // names, or callee function bodies. Over-width call/parameter windows fail
 // closed before bounded cache slots are consumed.
 
@@ -21,14 +21,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;
@@ -37,7 +34,7 @@ StructuredBuffer<uint> call_arg_row_ordinal;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_arg_param_row;
-StructuredBuffer<uint> call_array_return_arg_instance;
+StructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
@@ -75,7 +72,9 @@ static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_CALL_MISMATCH = 10u;
 
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_EXPR_NAME = 2u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -108,7 +107,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes;
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -123,30 +122,41 @@ bool valid_token(uint token)
 
 uint stmt_slot(uint node, uint slot)
 {
-    return node * STMT_RECORD_STRIDE + slot;
+    if (!valid_node(node)) return INVALID;
+    HirPayload payload = compact_hir_payload[node];
+    if (slot == 0u) return payload.a;
+    if (slot == 1u) return payload.b;
+    if (slot == 2u) return payload.c;
+    return payload.d;
 }
 
 uint expr_slot(uint node, uint slot)
 {
-    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
+    if (!valid_node(node)) return INVALID;
+    HirPayload payload = compact_hir_payload[node];
+    if (slot == 0u) return payload.a;
+    if (slot == 1u) return payload.b;
+    if (slot == 2u) return payload.c;
+    return payload.d;
 }
 
 uint resolve_expr(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : node;
+    return node;
 }
 
 uint name_token_for_expr(uint root)
 {
     uint node = resolve_expr(root);
-    if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
+    if (!valid_node(node) ||
+        (compact_hir_core[node].kind != HIR_NAME_EXPR &&
+         expr_slot(node, 0u) != HIR_EXPR_NAME))
         return INVALID;
 
     uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-    return valid_token(token) ? token : hir_token_pos[node];
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 bool is_array_type(uint ty)
@@ -163,18 +173,21 @@ bool is_symbolic_array_type(uint ty)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = hir_token_pos[call_node];
+    uint call_token = compact_hir_core[call_node].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
-    uint token = hir_token_pos[callee_node];
+    HirCore callee = compact_hir_core[callee_node];
+    HirPayload payload = compact_hir_payload[callee_node];
+    uint token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token)) token = callee.token_start;
     return valid_token(token) ? token : INVALID;
 }
 
@@ -216,7 +229,7 @@ uint call_arg_count_for_callee(uint callee_token, uint call_node)
     uint record_count = call_arg_record[callee_token].w;
     if (!valid_node(call_node))
         return record_count;
-    return max(max(record_count, hir_call_arg_count[call_node]), call_arg_row_count[call_node]);
+    return max(max(record_count, compact_hir_payload[call_node].c), call_arg_row_count[call_node]);
 }
 
 bool call_window_fits_cache(uint callee_token, uint call_node)
@@ -263,8 +276,13 @@ uint array_instance_from_decl_token(uint decl_token)
 
 uint array_instance_from_name_token(uint name_token)
 {
-    return valid_token(name_token) ? array_instance_from_decl_token(visible_decl[name_token])
-                                   : INVALID;
+    if (!valid_token(name_token))
+        return INVALID;
+    uint decl_token = visible_decl[name_token];
+    uint instance = array_instance_from_decl_token(decl_token);
+    return instance != INVALID || decl_token == name_token
+        ? instance
+        : array_instance_from_decl_token(name_token);
 }
 
 uint array_instance_from_callee_return(uint callee_token)
@@ -484,7 +502,7 @@ void validate_array_call_arg_row(uint row)
         return;
 
     uint call_node = call_arg_row_call_node[row];
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(call_node);
@@ -516,10 +534,10 @@ void validate_array_call_arg_row(uint row)
 void validate_array_call_let(uint node)
 {
     if (!valid_node(node) ||
-        hir_stmt_record[stmt_slot(node, 0u)] != STMT_RECORD_KIND_LET)
+        stmt_slot(node, 0u) != STMT_RECORD_KIND_LET)
         return;
 
-    uint decl_token = hir_stmt_record[stmt_slot(node, 1u)];
+    uint decl_token = stmt_slot(node, 1u);
     uint expected_ty = valid_token(decl_token) ? visible_type[decl_token] : TY_UNKNOWN;
     uint expected_instance = array_instance_from_decl_token(decl_token);
     if (expected_instance != INVALID)
@@ -531,9 +549,9 @@ void validate_array_call_let(uint node)
     if (expected_instance == INVALID && !is_array_type(expected_ty))
         return;
 
-    uint expr_node = hir_stmt_record[stmt_slot(node, 2u)];
+    uint expr_node = stmt_slot(node, 2u);
     uint call_node = resolve_expr(expr_node);
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(call_node);
@@ -563,7 +581,7 @@ void validate_array_call_let(uint node)
     uint actual_instance = INVALID;
     if (declared_instance != INVALID)
     {
-        actual_instance = call_array_return_arg_instance[call_node];
+        actual_instance = call_result_instance[call_node];
     }
     else if (specialize_symbolic_result)
     {

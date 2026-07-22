@@ -2844,6 +2844,11 @@ fn x86_executes_representative_scalar_programs() {
             "fn main() -> bool {\n    let left: u32 = 4294967295;\n    let right: u32 = 1;\n    return left > right;\n}\n",
             1,
         ),
+        (
+            "constant_expression",
+            "const BASE: i32 = 3 + 4;\nfn main() {\n    return BASE + 35;\n}\n",
+            42,
+        ),
     ];
 
     for (name, source, expected) in cases {
@@ -3854,65 +3859,18 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_char_literal_until_native_literal_layout_exists() {
-    let source = r#"
-fn main() {
+fn x86_executes_char_literals() {
+    assert_source_exit(
+        "char_literals",
+        r#"
+fn main() -> bool {
     let digit: char = '7';
-    return 0;
+    let newline: char = '\n';
+    return digit == '7' && newline == '\n';
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 char literal", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("char literals should fail closed until native x86 literal layout exists");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "char literal rejection should use the stable x86 backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "char literal rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 literal expression")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the native literal boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the literal source line");
-            assert_eq!(
-                source_line, "    let digit: char = '7';",
-                "diagnostic should point at the unsupported char literal: {message}"
-            );
-            let literal_start = source_line
-                .find("'7'")
-                .map(|column| column + 1)
-                .expect("fixture should contain the char literal");
-            let literal_end = literal_start + "'7'".len();
-            assert!(
-                (literal_start..=literal_end).contains(&label.column),
-                "diagnostic column should fall inside the char literal: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 char literal diagnostic, got {other:?}"),
-    }
+"#,
+        1,
+    );
 }
 
 #[test]

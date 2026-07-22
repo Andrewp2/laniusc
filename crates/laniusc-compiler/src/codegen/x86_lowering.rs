@@ -9,6 +9,7 @@ use super::{
     lowering_ir::{LoweringCapacities, LoweringStatus, X86LirCore, X86LirOperands},
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     x86_artifact::{GpuX86ArtifactStage, GpuX86ArtifactView},
+    x86_object_artifact::GpuX86ObjectStage,
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
@@ -93,6 +94,7 @@ pub(crate) struct GpuX86LirStage {
     frame_slot_by_decl_token: LaniusBuffer<u32>,
     decl_slot_dispatch_capacity: u32,
     artifact: GpuX86ArtifactStage,
+    object: GpuX86ObjectStage,
 }
 
 impl GpuX86LirStage {
@@ -220,8 +222,28 @@ impl GpuX86LirStage {
                     semantic_order.as_entire_binding(),
                 ),
                 (
+                    "semantic_lir_schedule",
+                    semantic.schedule.as_entire_binding(),
+                ),
+                (
                     "semantic_lir_call_arg_count_by_instruction",
                     semantic.call_arg_count_by_instruction.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_call_arg_start_by_instruction",
+                    semantic.call_arg_start_by_instruction.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_call_args",
+                    semantic.call_args.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_function_total",
+                    semantic.function_count.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_functions",
+                    semantic.functions.as_entire_binding(),
                 ),
                 ("target_lir_count", counts.as_entire_binding()),
             ],
@@ -268,6 +290,10 @@ impl GpuX86LirStage {
                     semantic_order.as_entire_binding(),
                 ),
                 (
+                    "semantic_lir_schedule",
+                    semantic.schedule.as_entire_binding(),
+                ),
+                (
                     "semantic_lir_call_arg_count_by_instruction",
                     semantic.call_arg_count_by_instruction.as_entire_binding(),
                 ),
@@ -286,6 +312,18 @@ impl GpuX86LirStage {
                 (
                     "semantic_lir_aggregate_elements",
                     semantic.aggregate_elements.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_string_total",
+                    semantic.string_count.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_function_total",
+                    semantic.function_count.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_functions",
+                    semantic.functions.as_entire_binding(),
                 ),
                 ("target_lir_offset", offsets.as_entire_binding()),
                 ("target_lir_total", total.as_entire_binding()),
@@ -445,6 +483,20 @@ impl GpuX86LirStage {
             functions.output(),
             &frame_slot_by_decl_token,
         )?;
+        let object = GpuX86ObjectStage::new(
+            device,
+            graph,
+            workspace,
+            &allocations,
+            capacities,
+            semantic,
+            &total,
+            &core,
+            &operands,
+            &scheduled_function_ids,
+            functions.output(),
+            artifact.object_view(),
+        )?;
         Ok(Self {
             semantic_capacity,
             count_pass,
@@ -479,6 +531,7 @@ impl GpuX86LirStage {
                 .max(capacities.semantic_instructions)
                 .max(1),
             artifact,
+            object,
         })
     }
 
@@ -495,6 +548,21 @@ impl GpuX86LirStage {
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.record_lir(encoder)?;
         self.artifact.record(encoder)
+    }
+
+    pub(crate) fn record_object(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.object.set_identity(queue, library_id, unit_id);
+        self.record_lir(encoder)?;
+        self.artifact.record_layout(encoder)?;
+        self.object.record_status_normalization(encoder)?;
+        self.artifact.record_emission(encoder)?;
+        self.object.record_projection(encoder)
     }
 
     fn record_lir(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
@@ -544,6 +612,15 @@ impl GpuX86LirStage {
 
     pub(crate) fn finish_artifact(&self, device: &wgpu::Device) -> Result<Vec<u8>> {
         self.artifact.finish(device)
+    }
+
+    pub(crate) fn finish_object(
+        &self,
+        device: &wgpu::Device,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<super::x86::GpuX86RelocatableObject> {
+        self.object.finish(device, library_id, unit_id)
     }
 }
 
@@ -746,9 +823,34 @@ fn validate(
                 semantic.execution_order.unwrap(),
             )?,
             bound(
+                "semantic_lir_schedule",
+                resource("lir.semantic.schedule"),
+                semantic.schedule,
+            )?,
+            bound(
                 "semantic_lir_call_arg_count_by_instruction",
                 resource("lir.semantic.call_arg_count_by_instruction"),
                 semantic.call_arg_count_by_instruction,
+            )?,
+            bound(
+                "semantic_lir_call_arg_start_by_instruction",
+                resource("lir.semantic.call_arg_start_by_instruction"),
+                semantic.call_arg_start_by_instruction,
+            )?,
+            bound(
+                "semantic_lir_call_args",
+                resource("lir.semantic.call_args"),
+                semantic.call_args,
+            )?,
+            bound(
+                "semantic_lir_function_total",
+                resource("lir.semantic.function_total"),
+                semantic.function_count,
+            )?,
+            bound(
+                "semantic_lir_functions",
+                resource("lir.semantic.functions"),
+                semantic.functions,
             )?,
             bound(
                 "target_lir_count",
@@ -781,6 +883,11 @@ fn validate(
                 semantic.execution_order.unwrap(),
             )?,
             bound(
+                "semantic_lir_schedule",
+                resource("lir.semantic.schedule"),
+                semantic.schedule,
+            )?,
+            bound(
                 "semantic_lir_call_arg_count_by_instruction",
                 resource("lir.semantic.call_arg_count_by_instruction"),
                 semantic.call_arg_count_by_instruction,
@@ -804,6 +911,21 @@ fn validate(
                 "semantic_lir_aggregate_elements",
                 resource("lir.semantic.aggregate_elements"),
                 semantic.aggregate_elements,
+            )?,
+            bound(
+                "semantic_lir_string_total",
+                resource("lir.semantic.string_total"),
+                semantic.string_count,
+            )?,
+            bound(
+                "semantic_lir_function_total",
+                resource("lir.semantic.function_total"),
+                semantic.function_count,
+            )?,
+            bound(
+                "semantic_lir_functions",
+                resource("lir.semantic.functions"),
+                semantic.functions,
             )?,
             bound(
                 "target_lir_offset",
@@ -903,19 +1025,19 @@ mod tests {
         let status: LaniusBuffer<LoweringStatus> = workspace
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
-        let total = storage_ro_from_u32s(&gpu.device, "test.x86_lir.total", &[7]);
+        let total = storage_ro_from_u32s(&gpu.device, "test.x86_lir.total", &[8]);
         let core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.x86_lir.core",
             &record_bytes(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 1, 0],
-                [opcode::SEMANTIC_LIR_OP_ADD, 3, 2, 0],
-                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 3, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL, 3, 4, 0],
-                [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 5, 0],
-                [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 6, 0],
-                [0, 0, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0],
+                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0],
+                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 3, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0],
+                [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 0, u32::MAX, 5, 0],
+                [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 6, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0],
             ]),
             8,
         );
@@ -930,7 +1052,7 @@ mod tests {
                 [4, 42, 0, 2],
                 [5, 6, u32::MAX, u32::MAX],
                 [6, u32::MAX, u32::MAX, u32::MAX],
-                [u32::MAX; 4],
+                [7, 7, 11, 23],
             ]),
             8,
         );
@@ -945,7 +1067,7 @@ mod tests {
                 [0, 10, 10, 0],
                 [0, 8, 8, 0],
                 [0, 9, 9, 0],
-                [u32::MAX; 4],
+                [0, 11, 11, 0],
             ]),
             8,
         );
@@ -996,8 +1118,8 @@ mod tests {
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
             &gpu.device,
             "test.x86_lir.strings",
-            &record_bytes(&[[u32::MAX; 4]]),
-            1,
+            &record_bytes(&[[u32::MAX; 4]; 4]),
+            4,
         );
         let empty_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.empty_count", &[0]);
         let string_data = storage_ro_from_u32s(&gpu.device, "test.x86_lir.string_data", &[0; 2]);
@@ -1113,7 +1235,7 @@ mod tests {
         );
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &total_rb)[0], 9);
+        assert_eq!(read_words(&gpu.device, &total_rb)[0], 10);
         let core_words = read_words(&gpu.device, &core_rb);
         assert_eq!(
             [
@@ -1126,6 +1248,7 @@ mod tests {
                 core_words[26],
                 core_words[30],
                 core_words[34],
+                core_words[38],
             ],
             [
                 opcode::X86_LIR_OP_IMM_I32,
@@ -1137,6 +1260,7 @@ mod tests {
                 opcode::X86_LIR_OP_CALL_ARG,
                 opcode::X86_LIR_OP_CALL_ARG,
                 opcode::X86_LIR_OP_CALL,
+                opcode::X86_LIR_OP_CALL_SYMBOL,
             ]
         );
         let operand_words = read_words(&gpu.device, &operands_rb);
@@ -1147,9 +1271,10 @@ mod tests {
         );
         assert_eq!(read_words(&gpu.device, &function_count_rb)[0], 1);
         assert_eq!(&operand_words[16..20], &[u32::MAX, 5, 0, 0]);
-        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 9, 0]);
+        assert_eq!(&operand_words[36..39], &[7, 11, 23]);
+        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 10, 0]);
         let frame_slots = read_words(&gpu.device, &frame_slots_rb);
-        assert_eq!((frame_slots[3], frame_slots[4]), (9, 10));
+        assert_eq!((frame_slots[3], frame_slots[4]), (10, 11));
         assert_eq!(
             read_words(&gpu.device, &status_rb)[0] & opcode::LOWERING_STATUS_UNSUPPORTED_TARGET,
             0

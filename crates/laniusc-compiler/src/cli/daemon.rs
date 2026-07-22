@@ -463,7 +463,7 @@ async fn run_session(
         }
         if request.command == "trim" {
             let before = tracked_gpu_buffer_metrics();
-            let trimmed = compiler.release_resident_job_buffers().await;
+            compiler.release_resident_job_buffers().await;
             reaper.disarm();
             write_response(
                 &mut output,
@@ -474,8 +474,6 @@ async fn run_session(
                     "event": "trimmed",
                     "tracked_gpu_buffers_before": before,
                     "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
-                    "x86_pooled_buffers_released": trimmed.x86_pooled_buffer_count,
-                    "x86_pooled_buffer_bytes_released": trimmed.x86_pooled_buffer_bytes,
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),
                 }),

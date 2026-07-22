@@ -118,6 +118,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_stmt_record.as_entire_binding(),
             ),
             (
+                "hir_stmt_scope_end".into(),
+                b.hir_stmt_scope_end.as_entire_binding(),
+            ),
+            (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),
@@ -173,12 +177,40 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 "hir_nearest_loop_node".into(),
                 b.hir_nearest_loop_node.as_entire_binding(),
             ),
+            (
+                "hir_nearest_block_node".into(),
+                b.hir_nearest_block_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_enclosing_control_node".into(),
+                b.hir_nearest_enclosing_control_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_fn_node".into(),
+                b.hir_nearest_fn_node.as_entire_binding(),
+            ),
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
             ("hir_payload".into(), b.hir_payload.as_entire_binding()),
             (
+                "hir_canonical_scope_end".into(),
+                b.hir_canonical_scope_end.as_entire_binding(),
+            ),
+            (
                 "hir_canonical_nearest_loop".into(),
                 b.hir_canonical_nearest_loop.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_block".into(),
+                b.hir_canonical_nearest_block.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_control".into(),
+                b.hir_canonical_nearest_control.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_fn".into(),
+                b.hir_canonical_nearest_fn.as_entire_binding(),
             ),
             (
                 "hir_canonical_fn_return_type".into(),

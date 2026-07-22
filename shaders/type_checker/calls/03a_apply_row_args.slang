@@ -12,11 +12,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
@@ -34,9 +34,6 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
@@ -60,7 +57,7 @@ uint active_token_count()
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -98,28 +95,21 @@ uint array_or_slice_generic_slot(uint ty)
         : INVALID;
 }
 
-uint expr_value_token(uint node)
-{
-    return valid_node(node)
-        ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + HIR_EXPR_RECORD_VALUE_TOKEN]
-        : INVALID;
-}
-
 bool call_record_is_member_call(uint call_node)
 {
     if (!valid_node(call_node))
         return false;
-    uint callee_node = hir_call_callee_node[call_node];
-    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
+    uint callee_node = compact_hir_payload[call_node].a;
+    return valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR;
 }
 
 uint callee_token_for_hir_call(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = hir_token_pos[call_node];
-    uint callee_node = hir_call_callee_node[call_node];
+    uint call_token = compact_hir_core[call_node].token_start;
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
     {
         return valid_token(call_token) ? call_token : INVALID;
@@ -128,11 +118,13 @@ uint callee_token_for_hir_call(uint call_node)
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_token = expr_value_token(callee_node);
+    HirCore callee = compact_hir_core[callee_node];
+    HirPayload payload = compact_hir_payload[callee_node];
+    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
     if (!valid_token(callee_token))
-        callee_token = hir_token_pos[callee_node];
+        callee_token = callee.token_start;
     if (!valid_token(callee_token))
-        callee_token = hir_token_pos[call_node];
+        callee_token = call_token;
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
@@ -158,7 +150,7 @@ bool check_required_generic_slot(uint callee_i, uint generic_count, uint slot)
 
 void apply_row_argument_call(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
     if (call_record_is_member_call(call_node))
         return;

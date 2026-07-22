@@ -15,8 +15,10 @@ pub(crate) mod scan;
 pub(crate) mod schedule;
 pub(crate) mod wasm_lowering;
 pub(crate) mod wasm_module;
+pub(crate) mod wasm_object_artifact;
 pub(crate) mod x86_artifact;
 pub(crate) mod x86_lowering;
+pub(crate) mod x86_object_artifact;
 pub(crate) use link_byte_source::GpuLinkByteSource;
 
 /// Target-independent source-pack unit, job, artifact, and shard planning.

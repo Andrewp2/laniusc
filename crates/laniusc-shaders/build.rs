@@ -1,7 +1,7 @@
 // build.rs — compile Slang entrypoints (no duplicate module sources).
 
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     env,
     fs,
     io,
@@ -33,7 +33,9 @@ fn main() -> Result<()> {
 
     let workspace_root = workspace_root()?;
     let shader_root = workspace_root.join("shaders");
+    let compiler_source_root = workspace_root.join("crates/laniusc-compiler/src");
     track_dir_recursively(&shader_root);
+    track_dir_recursively(&compiler_source_root);
     let slangc = find_slangc()
         .context("could not locate `slangc` binary. Set $SLANGC or add it to PATH.")?;
     let shader_compile_timeout = timeout_from_env_ms(
@@ -51,7 +53,7 @@ fn main() -> Result<()> {
     let mut sources =
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
-    validate_body_fragment_ids(&sources)?;
+    let runtime_shader_keys = collect_runtime_shader_keys(&compiler_source_root)?;
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
@@ -65,13 +67,10 @@ fn main() -> Result<()> {
             // Still tracked for rebuild via track_dir_recursively; just not compiled as an entrypoint.
             continue;
         }
-        if is_unwired_shader_entrypoint(&shader_root, &ep)? {
-            // These are retained as source/audit fixtures, but the default compiler no longer
-            // loads their SPIR-V. Skipping them keeps clean builds from paying for dead pipelines.
+        let artifact_key = shader_artifact_key(&shader_root, &ep)?;
+        if !runtime_shader_keys.contains(&artifact_key) {
             continue;
         }
-
-        let artifact_key = shader_artifact_key(&shader_root, &ep)?;
         let spv_out = shader_out_dir.join(format!("{artifact_key}.spv"));
         let refl_out = shader_out_dir.join(format!("{artifact_key}.reflect.json"));
         let stamp_out = shader_out_dir.join(format!("{artifact_key}.stamp"));
@@ -167,64 +166,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn validate_body_fragment_ids(sources: &[PathBuf]) -> Result<()> {
-    let mut id_by_name = BTreeMap::<String, (u32, PathBuf, usize)>::new();
-    let mut name_by_id = BTreeMap::<u32, (String, PathBuf, usize)>::new();
-
-    for source_path in sources {
-        let source = fs::read_to_string(source_path)
-            .with_context(|| format!("read shader source {}", source_path.display()))?;
-        for (line_i, line) in source.lines().enumerate() {
-            let declaration = line.split("//").next().unwrap_or("").trim();
-            let Some((lhs, rhs)) = declaration.split_once('=') else {
-                continue;
-            };
-            let Some(name) = lhs.split_whitespace().last() else {
-                continue;
-            };
-            if !name.starts_with("BODY_FRAGMENT_") || name == "BODY_FRAGMENT_MAX_BYTES" {
-                continue;
-            }
-            let Some(value) = rhs.trim().strip_suffix(';') else {
-                continue;
-            };
-            let Some(value) = value.trim().strip_suffix('u') else {
-                continue;
-            };
-            let Ok(id) = value.trim().parse::<u32>() else {
-                continue;
-            };
-            let line_number = line_i + 1;
-
-            if let Some((prior_id, prior_path, prior_line)) = id_by_name.get(name) {
-                if *prior_id != id {
-                    return Err(anyhow!(
-                        "Wasm body fragment {name} has conflicting ids {prior_id} at {}:{prior_line} and {id} at {}:{line_number}",
-                        prior_path.display(),
-                        source_path.display(),
-                    ));
-                }
-            } else {
-                id_by_name.insert(name.to_string(), (id, source_path.clone(), line_number));
-            }
-
-            if let Some((prior_name, prior_path, prior_line)) = name_by_id.get(&id) {
-                if prior_name != name {
-                    return Err(anyhow!(
-                        "Wasm body fragment id {id} is shared by {prior_name} at {}:{prior_line} and {name} at {}:{line_number}",
-                        prior_path.display(),
-                        source_path.display(),
-                    ));
-                }
-            } else {
-                name_by_id.insert(id, (name.to_string(), source_path.clone(), line_number));
-            }
-        }
-    }
-
-    Ok(())
-}
-
 fn workspace_root() -> Result<PathBuf> {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -295,7 +236,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
         artifact_key,
         "parser/tokens/to/kinds"
             | "parser/syntax/tokens"
-            | "type_checker/conditions_hir"
             | "type_checker/predicates/01_collect"
             | "type_checker/predicates/01a_validate_bound_args"
             | "type_checker/predicates/01_collect_impls"
@@ -906,29 +846,41 @@ impl StableHasher {
     }
 }
 
-fn is_unwired_shader_entrypoint(shader_root: &Path, path: &Path) -> Result<bool> {
-    let rel = path.strip_prefix(shader_root).with_context(|| {
-        format!(
-            "shader path {} is outside {}",
-            path.display(),
-            shader_root.display()
-        )
-    })?;
-    let rel = rel.to_string_lossy().replace('\\', "/");
-    Ok(matches!(
-        rel.as_str(),
-        "codegen/x86_virtual_liveness_dispatch_args.slang"
-            | "codegen/x86_virtual_use_counts.slang"
-            | "codegen/x86_virtual_use_edges.slang"
-            | "codegen/x86_virtual_use_scan_blocks.slang"
-            | "codegen/x86_virtual_use_scan_local.slang"
-            | "codegen/x86/virtual/liveness/dispatch_args.slang"
-            | "codegen/x86/virtual/use/counts.slang"
-            | "codegen/x86/virtual/use/edges.slang"
-            | "codegen/x86/virtual/use/scan/blocks.slang"
-            | "codegen/x86/virtual/use/scan/local.slang"
-            | "codegen/wasm/hir/body_scatter_direct.slang"
-    ))
+fn collect_runtime_shader_keys(compiler_source_root: &Path) -> Result<HashSet<String>> {
+    let mut source_files = Vec::new();
+    collect_files_with_extension(compiler_source_root, "rs", &mut source_files)?;
+    let mut literals = HashSet::new();
+    for source_file in source_files {
+        let source = fs::read_to_string(&source_file)
+            .with_context(|| format!("read Rust shader consumer {}", source_file.display()))?;
+        // Shader keys are required to be ordinary string literals by the pass
+        // construction macros. Taking quoted segments is intentionally a
+        // lexical superset: a comment may keep an extra artifact active, but
+        // no runtime-referenced artifact can silently disappear.
+        literals.extend(source.split('"').skip(1).step_by(2).map(str::to_owned));
+    }
+    Ok(literals
+        .into_iter()
+        .map(|literal| {
+            let key = literal
+                .strip_suffix(".spv")
+                .or_else(|| literal.strip_suffix(".reflect.json"))
+                .unwrap_or(&literal);
+            key.strip_prefix("shaders/").unwrap_or(key).to_owned()
+        })
+        .collect())
+}
+
+fn collect_files_with_extension(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_files_with_extension(&path, extension, out)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some(extension) {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn shader_artifact_key(shader_root: &Path, path: &Path) -> Result<String> {

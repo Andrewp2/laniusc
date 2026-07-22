@@ -100,8 +100,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         // Qualified value-path status is carried in module_value_path_status so
         // later value consumers can clear it for non-value-path forms such as
-        // type-qualified associated calls. conditions_hir reports any status
-        // still left after those consumers run.
+        // type-qualified associated calls. The compact name-condition reducer
+        // reports any status still left after those consumers run.
         return;
     }
 

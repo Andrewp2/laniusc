@@ -126,7 +126,7 @@ fn compiler_initialization_error_preserves_typed_gpu_pass_limit() {
         "the compiler stopped while initializing GPU type-check pipelines",
         "initialize type checker",
         anyhow::Error::new(crate::gpu::passes_core::GpuPassResourceLimitError {
-            pass_label: "type_check_conditions_hir".into(),
+            pass_label: "type_check_conditions_compact_predicates".into(),
             required_storage_buffers: 94,
             adapter_storage_buffer_limit: 48,
         }),
@@ -142,7 +142,7 @@ fn compiler_initialization_error_preserves_typed_gpu_pass_limit() {
         diagnostic
             .notes
             .iter()
-            .any(|note| note == "GPU pass: type_check_conditions_hir")
+            .any(|note| note == "GPU pass: type_check_conditions_compact_predicates")
     );
     assert!(
         diagnostic

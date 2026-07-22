@@ -31,122 +31,6 @@ fn generic_claim_radix_steps(token_capacity: u32, claim_capacity: u32) -> u32 {
     even_steps.min(GENERIC_CLAIM_KEY_MAX_RADIX_STEPS)
 }
 
-fn even_list_match_steps(capacity: u32) -> u32 {
-    let steps = if capacity <= 1 {
-        0
-    } else {
-        u32::BITS - (capacity - 1).leading_zeros()
-    };
-
-    if steps % 2 == 0 { steps } else { steps + 1 }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::even_list_match_steps;
-
-    const INVALID: u32 = u32::MAX;
-
-    fn next_row(row: usize, capacity: usize) -> u32 {
-        let next = row + 1;
-        if next < capacity {
-            next as u32
-        } else {
-            INVALID
-        }
-    }
-
-    fn propagate_linear_list_match(capacity: usize) -> Vec<u32> {
-        let steps = even_list_match_steps(capacity as u32);
-        let mut friend = vec![INVALID; capacity];
-        let mut arg_jump = (0..capacity)
-            .map(|row| next_row(row, capacity))
-            .collect::<Vec<_>>();
-        let mut param_jump = arg_jump.clone();
-        if capacity > 0 {
-            friend[0] = 0;
-        }
-
-        for _ in 0..steps {
-            let mut next_friend = friend.clone();
-            let mut next_arg_jump = vec![INVALID; capacity];
-            let mut next_param_jump = vec![INVALID; capacity];
-
-            for row in 0..capacity {
-                let next_arg = arg_jump[row];
-                if next_arg != INVALID {
-                    next_arg_jump[row] = arg_jump[next_arg as usize];
-                }
-
-                let matched_param = friend[row];
-                if matched_param != INVALID && next_arg != INVALID {
-                    let next_param = param_jump[matched_param as usize];
-                    if next_param != INVALID {
-                        next_friend[next_arg as usize] = next_param;
-                    }
-                }
-
-                let next_param = param_jump[row];
-                if next_param != INVALID {
-                    next_param_jump[row] = param_jump[next_param as usize];
-                }
-            }
-
-            friend = next_friend;
-            arg_jump = next_arg_jump;
-            param_jump = next_param_jump;
-        }
-
-        friend
-    }
-
-    #[test]
-    fn list_match_steps_cover_65k_rows_and_land_in_main_buffer() {
-        for capacity in [0u32, 1, 2, 3, 4, 5, 257, 65_535, 65_536, 65_537] {
-            let steps = even_list_match_steps(capacity);
-            assert_eq!(
-                steps % 2,
-                0,
-                "capacity {capacity} should finish in the main relation buffer"
-            );
-
-            if capacity <= 1 {
-                assert_eq!(steps, 0);
-                continue;
-            }
-
-            let covered_distance = 1u128 << steps;
-            assert!(
-                covered_distance >= u128::from(capacity - 1),
-                "capacity {capacity} should cover every row in one linked list"
-            );
-        }
-
-        assert_eq!(
-            even_list_match_steps(65_535),
-            16,
-            "65,535 rows should require 16 logarithmic propagation dispatches"
-        );
-    }
-
-    #[test]
-    fn list_match_propagates_65k_linear_argument_parameter_rows() {
-        let matched = propagate_linear_list_match(65_535);
-        assert_eq!(
-            matched.len(),
-            65_535,
-            "test fixture should model the requested row limit"
-        );
-
-        for (arg_row, param_row) in matched.iter().copied().enumerate() {
-            assert_eq!(
-                param_row, arg_row as u32,
-                "argument row {arg_row} should match parameter row {arg_row}"
-            );
-        }
-    }
-}
-
 /// Scan wiring for compact call-row families such as params, args, and claims.
 pub(in crate::type_checker) struct CompactCallRowScanInput<'a> {
     pub(in crate::type_checker) scan_steps: &'a [NameScanStep],
@@ -167,7 +51,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     passes: &TypeCheckPasses,
     resources: &HashMap<String, wgpu::BindingResource<'_>>,
     token_capacity: u32,
-    call_arg_row_capacity: u32,
     claim_capacity: u32,
     call_generic_claim_radix_dispatch_args: &LaniusBuffer<u32>,
     call_const_claim_radix_dispatch_args: &LaniusBuffer<u32>,
@@ -565,140 +448,11 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         });
     }
 
-    let match_arg_param_steps = even_list_match_steps(call_arg_row_capacity);
     let match_arg_params_init = reflected_bind_group_from_resources(
         device,
         "type_check_resident_calls_match_arg_params_init",
         &passes.calls_match_arg_params_init,
         resources,
-    )?;
-    let match_arg_params_copy_main_to_tmp = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_calls_match_arg_params_copy_main_to_tmp"),
-        &passes.calls_match_arg_params_copy,
-        0,
-        &[
-            ("gParams", resources["gParams"].clone()),
-            ("hir_status", resources["hir_status"].clone()),
-            (
-                "call_arg_row_count_out",
-                resources["call_arg_row_count_out"].clone(),
-            ),
-            (
-                "call_arg_param_row_in",
-                resources["call_arg_param_row"].clone(),
-            ),
-            (
-                "call_arg_param_row_out",
-                resources["call_arg_param_row_tmp"].clone(),
-            ),
-        ],
-    )?;
-    let match_arg_params_copy_tmp_to_main = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_calls_match_arg_params_copy_tmp_to_main"),
-        &passes.calls_match_arg_params_copy,
-        0,
-        &[
-            ("gParams", resources["gParams"].clone()),
-            ("hir_status", resources["hir_status"].clone()),
-            (
-                "call_arg_row_count_out",
-                resources["call_arg_row_count_out"].clone(),
-            ),
-            (
-                "call_arg_param_row_in",
-                resources["call_arg_param_row_tmp"].clone(),
-            ),
-            (
-                "call_arg_param_row_out",
-                resources["call_arg_param_row"].clone(),
-            ),
-        ],
-    )?;
-    let match_arg_params_step_main_to_tmp = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_calls_match_arg_params_step_main_to_tmp"),
-        &passes.calls_match_arg_params_step,
-        0,
-        &[
-            ("gParams", resources["gParams"].clone()),
-            ("hir_status", resources["hir_status"].clone()),
-            (
-                "call_arg_row_count_out",
-                resources["call_arg_row_count_out"].clone(),
-            ),
-            (
-                "call_param_row_count_out",
-                resources["call_param_row_count_out"].clone(),
-            ),
-            (
-                "call_arg_param_row_in",
-                resources["call_arg_param_row"].clone(),
-            ),
-            (
-                "call_arg_match_jump_in",
-                resources["call_arg_match_jump_a"].clone(),
-            ),
-            (
-                "call_param_match_jump_in",
-                resources["call_param_match_jump_a"].clone(),
-            ),
-            (
-                "call_arg_param_row_out",
-                resources["call_arg_param_row_tmp"].clone(),
-            ),
-            (
-                "call_arg_match_jump_out",
-                resources["call_arg_match_jump_b"].clone(),
-            ),
-            (
-                "call_param_match_jump_out",
-                resources["call_param_match_jump_b"].clone(),
-            ),
-        ],
-    )?;
-    let match_arg_params_step_tmp_to_main = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_resident_calls_match_arg_params_step_tmp_to_main"),
-        &passes.calls_match_arg_params_step,
-        0,
-        &[
-            ("gParams", resources["gParams"].clone()),
-            ("hir_status", resources["hir_status"].clone()),
-            (
-                "call_arg_row_count_out",
-                resources["call_arg_row_count_out"].clone(),
-            ),
-            (
-                "call_param_row_count_out",
-                resources["call_param_row_count_out"].clone(),
-            ),
-            (
-                "call_arg_param_row_in",
-                resources["call_arg_param_row_tmp"].clone(),
-            ),
-            (
-                "call_arg_match_jump_in",
-                resources["call_arg_match_jump_b"].clone(),
-            ),
-            (
-                "call_param_match_jump_in",
-                resources["call_param_match_jump_b"].clone(),
-            ),
-            (
-                "call_arg_param_row_out",
-                resources["call_arg_param_row"].clone(),
-            ),
-            (
-                "call_arg_match_jump_out",
-                resources["call_arg_match_jump_a"].clone(),
-            ),
-            (
-                "call_param_match_jump_out",
-                resources["call_param_match_jump_a"].clone(),
-            ),
-        ],
     )?;
 
     Ok(CallBindGroups {
@@ -811,11 +565,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             resources,
         )?,
         match_arg_params_init,
-        match_arg_params_copy_main_to_tmp,
-        match_arg_params_copy_tmp_to_main,
-        match_arg_params_step_main_to_tmp,
-        match_arg_params_step_tmp_to_main,
-        match_arg_param_steps,
         collect_row_args: reflected_bind_group_from_resources(
             device,
             "type_check_resident_calls_collect_row_args",
@@ -928,6 +677,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             device,
             "type_check_resident_calls_mark_array_args",
             &passes.calls_mark_array_args,
+            resources,
+        )?,
+        project_result_instances: reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_calls_project_result_instances",
+            &passes.calls_project_result_instances,
             resources,
         )?,
         erase_generic_params: reflected_bind_group_from_resources(

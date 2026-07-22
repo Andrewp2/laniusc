@@ -89,6 +89,21 @@ pub(super) fn typed_reuse_storage_u32(
     }
 }
 
+/// Reuses a tracked typed allocation while preserving its ledger identity.
+pub(super) fn typed_reuse_tracked_storage_u32(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    candidate: Option<&LaniusBuffer<u32>>,
+) -> LaniusBuffer<u32> {
+    let byte_count = count.max(1).saturating_mul(4);
+    if let Some(buffer) = candidate.filter(|buffer| buffer.byte_size >= byte_count) {
+        buffer.alias(count)
+    } else {
+        typed_storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+    }
+}
+
 /// Uses a candidate `u32` storage buffer when supplied, otherwise allocates one.
 pub(super) fn typed_alias_or_storage_u32(
     device: &wgpu::Device,

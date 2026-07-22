@@ -33,6 +33,18 @@ pub(crate) struct GpuWasmModuleView<'a> {
     pub words: &'a LaniusBuffer<u32>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct GpuWasmModuleObjectView<'a> {
+    pub type_lengths: &'a LaniusBuffer<u32>,
+    pub type_offsets: &'a LaniusBuffer<u32>,
+    pub type_total: &'a LaniusBuffer<u32>,
+    pub code_lengths: &'a LaniusBuffer<u32>,
+    pub code_offsets: &'a LaniusBuffer<u32>,
+    pub code_total: &'a LaniusBuffer<u32>,
+    pub layout: &'a LaniusBuffer<WasmModuleLayout>,
+    pub words: &'a LaniusBuffer<u32>,
+}
+
 pub(crate) struct GpuWasmModuleStage {
     function_capacity: u32,
     artifact_capacity: u32,
@@ -103,7 +115,7 @@ impl GpuWasmModuleStage {
             &WasmModuleParams {
                 function_capacity,
                 artifact_capacity,
-                reserved0: 0,
+                reserved0: capacities.source_bytes.max(16 * 65_536).div_ceil(65_536),
                 reserved1: 0,
             },
         );
@@ -226,6 +238,10 @@ impl GpuWasmModuleStage {
                     "wasm_module_entrypoint_state",
                     entrypoint_state.as_entire_binding(),
                 ),
+                (
+                    "semantic_lir_string_pool_len",
+                    semantic.string_pool_len.as_entire_binding(),
+                ),
                 ("wasm_module_layout", layout.as_entire_binding()),
                 ("wasm_module_length", length.as_entire_binding()),
                 ("lowering_status", semantic.status.as_entire_binding()),
@@ -238,6 +254,14 @@ impl GpuWasmModuleStage {
             &[
                 ("gParams", params.as_entire_binding()),
                 ("wasm_module_layout", layout.as_entire_binding()),
+                (
+                    "semantic_lir_string_pool_len",
+                    semantic.string_pool_len.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_string_data",
+                    semantic.string_data_words.as_entire_binding(),
+                ),
                 ("wasm_module_bytes", words.as_entire_binding()),
             ],
         )?;
@@ -313,6 +337,19 @@ impl GpuWasmModuleStage {
     pub(crate) fn output(&self) -> GpuWasmModuleView<'_> {
         GpuWasmModuleView {
             length: &self.length,
+            words: &self.words,
+        }
+    }
+
+    pub(crate) fn object_projection_inputs(&self) -> GpuWasmModuleObjectView<'_> {
+        GpuWasmModuleObjectView {
+            type_lengths: &self._type_lengths,
+            type_offsets: &self._type_offsets,
+            type_total: &self._type_total,
+            code_lengths: &self._code_lengths,
+            code_offsets: &self._code_offsets,
+            code_total: &self._code_total,
+            layout: &self._layout,
             words: &self.words,
         }
     }
@@ -434,6 +471,11 @@ fn validate(
                 entrypoint_state,
             )?,
             bound(
+                "semantic_lir_string_pool_len",
+                resource("lir.semantic.string_pool_len"),
+                semantic.string_pool_len,
+            )?,
+            bound(
                 "wasm_module_layout",
                 resource("lir.wasm.module.layout"),
                 layout,
@@ -453,6 +495,16 @@ fn validate(
                 "wasm_module_layout",
                 resource("lir.wasm.module.layout"),
                 layout,
+            )?,
+            bound(
+                "semantic_lir_string_pool_len",
+                resource("lir.semantic.string_pool_len"),
+                semantic.string_pool_len,
+            )?,
+            bound(
+                "semantic_lir_string_data",
+                resource("lir.semantic.string_data"),
+                semantic.string_data_words,
             )?,
             bound("wasm_module_bytes", resource("artifact.wasm.bytes"), words)?,
         ],

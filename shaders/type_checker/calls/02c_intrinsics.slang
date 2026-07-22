@@ -9,15 +9,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_callee_path_node;
-StructuredBuffer<uint> hir_call_parent_by_callee;
-StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> path_id_by_owner_token;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -34,9 +33,8 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint TY_VOID = 1u;
 
@@ -50,7 +48,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint intrinsic_tag_for_name_id(uint name_id)
@@ -70,39 +68,28 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint expr_record_slot(uint node, uint slot)
-{
-    if (!valid_node(node))
-        return INVALID;
-    return row_major_load<uint>(
-        hir_expr_record,
-        node,
-        HIR_EXPR_RECORD_STRIDE,
-        slot,
-        INVALID);
-}
-
 uint path_node_for_callee(uint callee_node)
 {
     if (!valid_node(callee_node))
         return INVALID;
-    uint call_node = hir_call_parent_by_callee[callee_node];
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (compact_hir_core[callee_node].kind == HIR_PATH_EXPR)
+        return callee_node;
+    if (compact_hir_core[callee_node].kind != HIR_NAME_EXPR)
         return INVALID;
-    uint path_node = hir_call_callee_path_node[call_node];
-    return valid_node(path_node) && hir_kind[path_node] == HIR_PATH_EXPR
-        ? path_node
-        : INVALID;
+    uint child = compact_hir_links[callee_node].first_child;
+    return valid_node(child) && compact_hir_core[child].kind == HIR_PATH_EXPR ? child : INVALID;
 }
 
 uint path_leaf_token_for_callee(uint callee_node)
 {
-    uint path_node = path_node_for_callee(callee_node);
-    if (!valid_node(path_node))
+    if (!valid_node(callee_node))
         return INVALID;
-
-    uint owner_token = hir_token_pos[path_node];
-    uint path_i = valid_token(owner_token) ? path_id_by_owner_token[owner_token] : INVALID;
+    uint path_i = path_id_by_owner_hir[callee_node];
+    if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
+    {
+        uint path_node = path_node_for_callee(callee_node);
+        path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+    }
     if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
         return INVALID;
 
@@ -121,13 +108,15 @@ uint path_leaf_token_for_callee(uint callee_node)
 
 uint call_callee_token(uint call_node)
 {
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
-    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    HirCore callee = compact_hir_core[callee_node];
+    HirPayload payload = compact_hir_payload[callee_node];
+    if (callee.kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[callee_node];
+        uint member_token = payload.c;
         return valid_token(member_token) ? member_token : INVALID;
     }
 
@@ -135,9 +124,9 @@ uint call_callee_token(uint call_node)
     if (valid_token(leaf_token))
         return leaf_token;
 
-    uint callee_token = expr_record_slot(callee_node, HIR_EXPR_RECORD_VALUE_TOKEN);
+    uint callee_token = payload.d;
     if (!valid_token(callee_token))
-        callee_token = hir_token_pos[callee_node];
+        callee_token = callee.token_start;
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
@@ -146,14 +135,17 @@ uint call_callee_token(uint call_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_hir_node_count() || hir_kind[i] != HIR_CALL_EXPR)
+    if (i >= active_hir_node_count() || compact_hir_core[i].kind != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(i);
     if (callee_token == INVALID || callee_token >= gParams.n_tokens)
         return;
 
-    uint intrinsic_tag = intrinsic_tag_for_name_id(name_id_by_token[callee_token]);
+    uint name_id = name_id_by_token[callee_token];
+    if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
+        return;
+    uint intrinsic_tag = intrinsic_tag_for_name_id(name_id);
     if (intrinsic_tag == INTRINSIC_NONE)
         return;
 

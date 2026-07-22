@@ -11,7 +11,7 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> compact_hir_count;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> aggregate_compare_expected_instance;
 RWStructuredBuffer<uint> aggregate_compare_actual_instance;
@@ -29,7 +29,8 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u
+        ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]

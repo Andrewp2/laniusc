@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.wasm.host_abi;
 import gpu_index;
 
 struct Params { uint function_capacity; uint param_capacity; uint local_capacity; uint n_tokens; };
@@ -38,7 +39,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_count = min(semantic_lir_local_total[0u], gParams.local_capacity);
     WasmLirFunction result;
     result.semantic_function = function_id;
-    result.type_index = function_id;
+    result.type_index = WASM_HOST_TYPE_COUNT + function_id;
     result.param_value_count = range_total(
         source.param_start, source.param_count, param_count,
         wasm_param_prefix, wasm_param_value_total);

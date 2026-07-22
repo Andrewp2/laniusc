@@ -1,5 +1,4 @@
-// Scatter dependency parameter staging rows after the shared parameter-count
-// scan. A call-site token is the local function identity for imported calls.
+// Scatter dependency parameter rows from compact call-argument rows.
 
 import gpu_index;
 
@@ -14,13 +13,15 @@ struct Params
     uint namespace;
     uint hir_capacity;
 };
-
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> dependency_declaration_words;
 StructuredBuffer<uint> dependency_type_words;
@@ -47,45 +48,47 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint active_hir_count()
+uint hir_count() { return min(gParams.hir_capacity, compact_hir_count[0u]); }
+uint arg_count() { return min(gParams.hir_capacity, compact_call_arg_count[0u]); }
+bool valid_hir(uint node) { return node != INVALID && node < hir_count(); }
+uint callee_token(uint call)
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee)) return INVALID;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (token >= gParams.visible_capacity) token = core.token_start;
+    return token < gParams.visible_capacity ? token : INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint arg_node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (arg_node >= active_hir_count())
-        return;
-    uint call_node = hir_call_arg_parent_call[arg_node];
-    if (call_node >= active_hir_count())
-        return;
-    uint callee_node = hir_call_callee_node[call_node];
-    if (callee_node >= active_hir_count())
-        return;
-    uint callee_token = hir_token_pos[callee_node];
-    if (callee_token >= gParams.visible_capacity)
-        return;
-    uint declaration_i = call_dependency_decl[callee_token];
-    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count)
-        return;
-    uint ordinal = hir_call_arg_ordinal[arg_node];
-    uint count = call_param_count[callee_token];
-    uint start = call_param_row_start[callee_token];
-    uint row = start + ordinal;
-    if (start == INVALID || ordinal >= count || row < start ||
-        row >= call_param_row_count_out[0u] || row >= active_hir_count())
-        return;
+    uint arg_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (arg_row >= arg_count()) return;
+    HirCallArg arg = compact_call_args[arg_row];
+    if (!valid_hir(arg.call) || !valid_hir(arg.value)) return;
+    uint token = callee_token(arg.call);
+    if (token == INVALID) return;
+    uint declaration_i = call_dependency_decl[token];
+    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count) return;
+    uint count = call_param_count[token];
+    uint start = call_param_row_start[token];
+    uint row = start + arg.ordinal;
+    if (start == INVALID || arg.ordinal >= count || row < start ||
+        row >= call_param_row_count_out[0u] || row >= gParams.hir_capacity) return;
 
     uint signature_i = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
     uint signature_base = signature_i * TYPE_WORDS;
     uint edge_start = dependency_type_words[signature_base + 3u];
-    uint type_i = canonical_type_roots[dependency_type_edge_words[edge_start + ordinal]];
+    uint type_i = canonical_type_roots[dependency_type_edge_words[edge_start + arg.ordinal]];
     uint type_base = type_i * TYPE_WORDS;
     uint kind = dependency_type_words[type_base];
     uint tag = TYPE_REF_EXTERNAL_CANONICAL;
@@ -103,13 +106,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload = dependency_type_words[type_base + 1u];
         type_code = TY_GENERIC_BASE;
     }
-
-    call_param_row_node[row] = arg_node;
-    call_param_row_fn_token[row] = callee_token;
-    call_param_row_ordinal[row] = ordinal;
+    call_param_row_node[row] = arg.value;
+    call_param_row_fn_token[row] = token;
+    call_param_row_ordinal[row] = arg.ordinal;
     call_param_row_type[row] = type_code;
     call_param_row_ref_tag[row] = tag;
     call_param_row_ref_payload[row] = payload;
-    if (ordinal == 0u)
-        call_param_row_count[callee_token] = count;
+    if (arg.ordinal == 0u) call_param_row_count[token] = count;
 }

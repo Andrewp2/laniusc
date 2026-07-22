@@ -222,6 +222,57 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_compact_hir_scalar_statement_mismatches() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() {
+    let value: i32 = 1;
+    value = false;
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn wrong() -> i32 {
+    return false;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_unresolved_calls_from_compact_hir() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn main() {
+    return missing_function(1);
+}
+"#,
+        "LNC0005",
+        &["unresolved identifier", "missing_function"],
+    );
+}
+
+#[test]
+fn type_checker_rejects_unresolved_value_names_from_compact_hir() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn main() {
+    let value: i32 = missing_value;
+    return value;
+}
+"#,
+        "LNC0005",
+        &["unresolved identifier", "missing_value"],
+    );
+}
+
+#[test]
 fn type_checker_source_pack_reports_scope_and_type_errors_as_diagnostics() {
     let unresolved = common::type_check_source_pack_with_timeout(&[
         r#"
@@ -966,6 +1017,36 @@ fn main() -> i32 {
     return value;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_names_after_their_compact_scope_ends() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn main() -> i32 {
+    if (true) {
+        let scoped: i32 = 1;
+    }
+    return scoped;
+}
+"#,
+        "LNC0005",
+        &["unresolved identifier", "return scoped;"],
+    );
+}
+
+#[test]
+fn type_checker_rejects_local_self_initializers_from_compact_hir() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn main() -> i32 {
+    let value: i32 = value;
+    return value;
+}
+"#,
+        "LNC0005",
+        &["unresolved identifier", "let value: i32 = value;"],
     );
 }
 
@@ -5786,7 +5867,11 @@ fn main() {
 }
 "#,
     );
-    assert_gpu_type_check_diagnostic(
+}
+
+#[test]
+fn type_checker_accepts_array_call_returns_with_multiple_arguments_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
 fn choose(left: [i32; 4], right: [i32; 4]) -> [i32; 4] {
     return left;
@@ -5800,12 +5885,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0043",
-        &[
-            "error[LNC0043]: invalid array return",
-            "return choose(left, right);",
-            "array return value is not valid in this context",
-        ],
     );
 }
 

@@ -6,9 +6,16 @@ use encase::ShaderType;
 use super::{
     functions::{GpuTargetFunctionTable, GpuTargetFunctionView},
     lowering::{GpuSemanticLirView, bound, make_group, record_direct, target_lowering_allocations},
-    lowering_ir::{LoweringCapacities, LoweringStatus, WasmLirFunction, WasmLirInstruction},
+    lowering_ir::{
+        LoweringCapacities,
+        LoweringStatus,
+        WasmLirFunction,
+        WasmLirInstruction,
+        WasmLirOperands,
+    },
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     wasm_module::GpuWasmModuleStage,
+    wasm_object_artifact::{GpuWasmObjectStage, GpuWasmObjectView},
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
@@ -91,6 +98,7 @@ struct WasmAttachBodyParams {
 pub(crate) struct GpuWasmLirView<'a> {
     pub total: &'a LaniusBuffer<u32>,
     pub instructions: &'a LaniusBuffer<WasmLirInstruction>,
+    pub operands: &'a LaniusBuffer<WasmLirOperands>,
     pub functions: GpuTargetFunctionView<'a>,
     pub abi_functions: &'a LaniusBuffer<WasmLirFunction>,
     pub abi_function_count: &'a LaniusBuffer<u32>,
@@ -147,6 +155,7 @@ pub(crate) struct GpuWasmLirStage {
     _offsets: LaniusBuffer<u32>,
     total: LaniusBuffer<u32>,
     instructions: LaniusBuffer<WasmLirInstruction>,
+    operands: LaniusBuffer<WasmLirOperands>,
     scheduled_function_ids: LaniusBuffer<u32>,
     byte_lengths: LaniusBuffer<u32>,
     byte_offsets: LaniusBuffer<u32>,
@@ -162,6 +171,7 @@ pub(crate) struct GpuWasmLirStage {
     abi_function_count: LaniusBuffer<u32>,
     local_index_by_token: LaniusBuffer<u32>,
     module: GpuWasmModuleStage,
+    object: GpuWasmObjectStage,
     artifact_length_readback: LaniusBuffer<u8>,
     artifact_readback: LaniusBuffer<u8>,
 }
@@ -199,6 +209,13 @@ impl GpuWasmLirStage {
             .alias(
                 graph,
                 resource("lir.wasm.instructions")?,
+                target_capacity as usize,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let operands = workspace
+            .alias(
+                graph,
+                resource("lir.wasm.operands")?,
                 target_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
@@ -416,6 +433,11 @@ impl GpuWasmLirStage {
                     "semantic_lir_aggregate_elements",
                     semantic.aggregate_elements.as_entire_binding(),
                 ),
+                (
+                    "semantic_lir_string_total",
+                    semantic.string_count.as_entire_binding(),
+                ),
+                ("semantic_lir_strings", semantic.strings.as_entire_binding()),
                 ("target_lir_offset", offsets.as_entire_binding()),
                 ("target_lir_total", total.as_entire_binding()),
                 (
@@ -423,6 +445,7 @@ impl GpuWasmLirStage {
                     semantic_to_target.as_entire_binding(),
                 ),
                 ("target_lir_core", instructions.as_entire_binding()),
+                ("target_lir_operands", operands.as_entire_binding()),
             ],
         )?;
         let param_width_group = make_group(
@@ -629,6 +652,7 @@ impl GpuWasmLirStage {
             &semantic_to_target,
             &total,
             &instructions,
+            &operands,
         )?;
         validate_target_status(
             graph,
@@ -785,6 +809,22 @@ impl GpuWasmLirStage {
             &abi_functions,
             &artifact_words,
         )?;
+        let object = GpuWasmObjectStage::new(
+            device,
+            graph,
+            workspace,
+            &allocations,
+            capacities,
+            semantic,
+            &total,
+            &instructions,
+            &operands,
+            &scheduled_function_ids,
+            &byte_offsets,
+            functions.output(),
+            &abi_functions,
+            module.object_projection_inputs(),
+        )?;
         let artifact_readback_bytes = capacities.artifact_bytes.max(4).next_multiple_of(4);
         let artifact_length_readback =
             readback_bytes(device, "artifact.wasm.length.readback", 4, 4);
@@ -837,6 +877,7 @@ impl GpuWasmLirStage {
             _offsets: offsets,
             total,
             instructions,
+            operands,
             scheduled_function_ids,
             byte_lengths,
             byte_offsets,
@@ -852,6 +893,7 @@ impl GpuWasmLirStage {
             abi_function_count: semantic.function_count.clone(),
             local_index_by_token,
             module,
+            object,
             artifact_length_readback,
             artifact_readback,
         })
@@ -861,6 +903,7 @@ impl GpuWasmLirStage {
         GpuWasmLirView {
             total: &self.total,
             instructions: &self.instructions,
+            operands: &self.operands,
             functions: self.functions.output(),
             abi_functions: &self.abi_functions,
             abi_function_count: &self.abi_function_count,
@@ -873,6 +916,10 @@ impl GpuWasmLirStage {
             length: module.length,
             words: module.words,
         }
+    }
+
+    pub(crate) fn object(&self) -> GpuWasmObjectView<'_> {
+        self.object.output()
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
@@ -894,6 +941,31 @@ impl GpuWasmLirStage {
             self.artifact_readback.byte_size as u64,
         );
         Ok(())
+    }
+
+    /// Records the same lowering and module layout as executable mode, then
+    /// projects relocatable columns. Pipelines and bind groups are resident;
+    /// the per-job object identity is the only updated value.
+    pub(crate) fn record_object(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.object.set_identity(queue, library_id, unit_id);
+        self.record_lir(encoder)?;
+        self.module.record(encoder)?;
+        self.object.record(encoder)
+    }
+
+    pub(crate) fn finish_object(
+        &self,
+        device: &wgpu::Device,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<super::wasm::GpuWasmRelocatableObject> {
+        self.object.finish(device, library_id, unit_id)
     }
 
     /// Maps the daemon-resident readback buffers after the command buffer has
@@ -1334,6 +1406,7 @@ fn validate(
     semantic_to_target: &LaniusBuffer<u32>,
     total: &LaniusBuffer<u32>,
     instructions: &LaniusBuffer<WasmLirInstruction>,
+    operands: &LaniusBuffer<WasmLirOperands>,
 ) -> Result<()> {
     let resource = |name: &str| graph.resource_id(name).unwrap();
     let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
@@ -1405,6 +1478,16 @@ fn validate(
                 semantic.aggregate_elements,
             )?,
             bound(
+                "semantic_lir_string_total",
+                resource("lir.semantic.string_total"),
+                semantic.string_count,
+            )?,
+            bound(
+                "semantic_lir_strings",
+                resource("lir.semantic.strings"),
+                semantic.strings,
+            )?,
+            bound(
                 "target_lir_offset",
                 resource("lir.wasm.offset_by_semantic"),
                 offsets,
@@ -1419,6 +1502,11 @@ fn validate(
                 "target_lir_core",
                 resource("lir.wasm.instructions"),
                 instructions,
+            )?,
+            bound(
+                "target_lir_operands",
+                resource("lir.wasm.operands"),
+                operands,
             )?,
         ],
     )?;
@@ -1487,8 +1575,8 @@ mod tests {
             call_arguments: 1,
             parameters: 4,
             aggregate_elements: 1,
-            target_instructions: 8,
-            artifact_bytes: 256,
+            target_instructions: 10,
+            artifact_bytes: 2048,
         };
         let graph = lowering_compiler_graph(capacities, LoweringTarget::Wasm).unwrap();
         let workspace =
@@ -1497,25 +1585,27 @@ mod tests {
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
         let semantic_total =
-            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_total", &[7]);
+            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_total", &[8]);
         let semantic_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.wasm_stage.semantic_core",
             &words(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 1, 0],
-                [opcode::SEMANTIC_LIR_OP_ADD, 3, 2, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0],
+                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0],
                 [
                     opcode::SEMANTIC_LIR_OP_BRANCH_IF,
                     0,
+                    0,
+                    u32::MAX,
                     3,
                     opcode::SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID
                         | opcode::SEMANTIC_LIR_FLAG_BRANCH_FALSE,
                 ],
-                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 4, 0],
-                [opcode::SEMANTIC_LIR_OP_VALUE_GET, 7, 5, 0],
-                [opcode::SEMANTIC_LIR_OP_VALUE_SET, 3, 6, 0],
-                [0; 4],
+                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 4, 0],
+                [opcode::SEMANTIC_LIR_OP_VALUE_GET, 7, 0, u32::MAX, 5, 0],
+                [opcode::SEMANTIC_LIR_OP_VALUE_SET, 3, 0, u32::MAX, 6, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0],
             ]),
             8,
         );
@@ -1530,7 +1620,7 @@ mod tests {
                 [4, 2, u32::MAX, u32::MAX],
                 [5, 4, u32::MAX, u32::MAX],
                 [6, 8, 5, u32::MAX],
-                [u32::MAX; 4],
+                [7, 7, 11, 23],
             ]),
             8,
         );
@@ -1545,7 +1635,7 @@ mod tests {
                 [0, 6, 6, 0],
                 [0, 0, 5, 10],
                 [0, 0, 5, 12],
-                [u32::MAX; 4],
+                [0, 0, 5, 14],
             ]),
             8,
         );
@@ -1559,7 +1649,7 @@ mod tests {
         gpu.queue.write_buffer(
             &semantic_order.buffer,
             0,
-            &words(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]),
+            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
         );
         let semantic_call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
@@ -1588,8 +1678,8 @@ mod tests {
         let semantic_string_rows = storage_ro_from_bytes::<SemanticLirString>(
             &gpu.device,
             "test.wasm_stage.strings",
-            &words(&[[u32::MAX; 4]]),
-            1,
+            &words(&[[u32::MAX; 4]; 4]),
+            4,
         );
         let semantic_empty_count =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.empty_count", &[0]);
@@ -1678,7 +1768,7 @@ mod tests {
         let output = stage.output();
         let artifact = stage.artifact();
         let total_readback = readback_bytes(&gpu.device, "test.wasm_stage.total.rb", 4, 1);
-        let core_readback = readback_bytes(&gpu.device, "test.wasm_stage.core.rb", 128, 32);
+        let core_readback = readback_bytes(&gpu.device, "test.wasm_stage.core.rb", 160, 40);
         let function_count_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.function_count.rb", 4, 1);
         let functions_readback =
@@ -1687,7 +1777,8 @@ mod tests {
             readback_bytes(&gpu.device, "test.wasm_stage.abi_functions.rb", 224, 56);
         let artifact_length_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.artifact_length.rb", 4, 1);
-        let artifact_readback = readback_bytes(&gpu.device, "test.wasm_stage.artifact.rb", 256, 64);
+        let artifact_readback =
+            readback_bytes(&gpu.device, "test.wasm_stage.artifact.rb", 2048, 512);
         let body_length_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.body_length.rb", 4, 1);
         let body_readback = readback_bytes(&gpu.device, "test.wasm_stage.body.rb", 64, 16);
@@ -1697,7 +1788,7 @@ mod tests {
             0,
             &core_readback.buffer,
             0,
-            128,
+            160,
         );
         encoder.copy_buffer_to_buffer(
             &output.functions.count.buffer,
@@ -1742,14 +1833,21 @@ mod tests {
             0,
             4,
         );
-        encoder.copy_buffer_to_buffer(&artifact.words.buffer, 0, &artifact_readback.buffer, 0, 256);
+        encoder.copy_buffer_to_buffer(
+            &artifact.words.buffer,
+            0,
+            &artifact_readback.buffer,
+            0,
+            2048,
+        );
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &total_readback)[0], 8);
+        assert_eq!(read_words(&gpu.device, &total_readback)[0], 9);
         let core = read_words(&gpu.device, &core_readback);
         assert_eq!(
             [
                 core[0], core[4], core[8], core[12], core[16], core[20], core[24], core[28],
+                core[32],
             ],
             [
                 opcode::WASM_LIR_OP_I32_CONST,
@@ -1759,25 +1857,36 @@ mod tests {
                 opcode::WASM_LIR_OP_BRANCH_IF,
                 opcode::WASM_LIR_OP_LOCAL_GET,
                 opcode::WASM_LIR_OP_LOCAL_SET,
+                opcode::WASM_LIR_OP_CALL_SYMBOL,
                 opcode::WASM_LIR_OP_RETURN,
             ]
         );
         assert_eq!(core[21], 1);
         assert_eq!(core[25], 5);
+        assert_eq!(
+            core[23],
+            1u32 << 8,
+            "resolved local.get must remain supported"
+        );
+        assert_eq!(
+            core[27],
+            1u32 << 8,
+            "resolved local.set must remain supported"
+        );
         assert_eq!(read_words(&gpu.device, &function_count_readback)[0], 1);
         assert_eq!(
             &read_words(&gpu.device, &functions_readback)[0..4],
-            &[0, 0, 8, 0]
+            &[0, 0, 9, 0]
         );
         let abi = read_words(&gpu.device, &abi_functions_readback);
-        assert_eq!(&abi[0..14], &[0, 0, 3, 3, 0, 8, 0, 13, 1, 0, 0, 2, 0, 2]);
-        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 13);
+        assert_eq!(&abi[0..14], &[0, 10, 3, 3, 0, 9, 0, 19, 1, 0, 0, 2, 0, 2]);
+        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 19);
         let body_bytes = read_words(&gpu.device, &body_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<_>>();
         assert_eq!(
-            &body_bytes[..13],
+            &body_bytes[..19],
             &[
                 opcode::WASM_LIR_OP_I32_CONST as u8,
                 9,
@@ -1791,12 +1900,18 @@ mod tests {
                 1,
                 opcode::WASM_LIR_OP_LOCAL_SET as u8,
                 5,
+                opcode::WASM_LIR_OP_CALL as u8,
+                0x80,
+                0x80,
+                0x80,
+                0x80,
+                0,
                 opcode::WASM_LIR_OP_RETURN as u8,
             ]
         );
         // The module includes the target runtime's memory and mutable heap-pointer
         // global in addition to the function/table/export/code sections.
-        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 143);
+        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 1018);
         let artifact_bytes = read_words(&gpu.device, &artifact_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
@@ -1809,7 +1924,7 @@ mod tests {
         gpu.queue.write_buffer(
             &semantic_order.buffer,
             0,
-            &words(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]),
+            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
         );
         let mut encoder = gpu
             .device
@@ -1820,7 +1935,86 @@ mod tests {
         assert_eq!(tracked_buffer_allocation_stats(), allocations_before);
         gpu.queue.submit(Some(encoder.finish()));
         let resident_artifact = stage.finish_artifact(&gpu.device).unwrap();
-        assert_eq!(resident_artifact.len(), 143);
+        assert_eq!(resident_artifact.len(), 1018);
         assert_eq!(&resident_artifact[..8], b"\0asm\x01\0\0\0");
+
+        // Object projection is a separate recording mode over the same
+        // resident lowering graph. This fixture has one public function and
+        // one imported call, exercising definition, symbol, and relocation
+        // compaction together.
+        gpu.queue.write_buffer(
+            &semantic_order.buffer,
+            0,
+            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
+        );
+        let object = stage.object();
+        let object_counts = readback_bytes(&gpu.device, "test.wasm_object.counts.rb", 12, 3);
+        let object_function = readback_bytes(&gpu.device, "test.wasm_object.function.rb", 24, 6);
+        let object_definition =
+            readback_bytes(&gpu.device, "test.wasm_object.definition.rb", 32, 8);
+        let object_relocation =
+            readback_bytes(&gpu.device, "test.wasm_object.relocation.rb", 32, 8);
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("test.wasm_object.encoder"),
+            });
+        stage
+            .record_object(&gpu.queue, &mut encoder, 7, 11)
+            .unwrap();
+        encoder.copy_buffer_to_buffer(
+            &object.relocation_count.buffer,
+            0,
+            &object_counts.buffer,
+            0,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(&object.symbol_count.buffer, 0, &object_counts.buffer, 4, 4);
+        encoder.copy_buffer_to_buffer(
+            &object.definition_count.buffer,
+            0,
+            &object_counts.buffer,
+            8,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(&object.functions.buffer, 0, &object_function.buffer, 0, 24);
+        encoder.copy_buffer_to_buffer(
+            &object.definitions.buffer,
+            0,
+            &object_definition.buffer,
+            0,
+            32,
+        );
+        encoder.copy_buffer_to_buffer(
+            &object.relocations.buffer,
+            0,
+            &object_relocation.buffer,
+            0,
+            32,
+        );
+        gpu.queue.submit(Some(encoder.finish()));
+        assert_eq!(read_words(&gpu.device, &object_counts), &[1, 1, 1]);
+        assert_eq!(
+            read_words(&gpu.device, &object_function),
+            &[0, 14, 0, 54, 1, 1]
+        );
+        assert_eq!(
+            read_words(&gpu.device, &object_definition),
+            &[7, 11, 0, 0, 19, 0, 0, 0]
+        );
+        assert_eq!(
+            read_words(&gpu.device, &object_relocation),
+            &[47, 2, 0, 0, 7, 11, 23, 0]
+        );
+        let durable = stage.finish_object(&gpu.device, 7, 11).unwrap();
+        assert_eq!(durable.functions.len(), 1);
+        assert_eq!(durable.functions[0].symbol_index, 1);
+        assert_eq!(durable.type_bytes.len(), 14);
+        assert_eq!(durable.body_bytes.len(), 54);
+        assert_eq!(durable.relocations.len(), 1);
+        assert_eq!(durable.relocations[0].body_byte_offset, 47);
+        assert_eq!(durable.relocations[0].target_index, 0);
+        assert_eq!(durable.symbols.len(), 2);
+        assert_eq!(durable.identity_bytes, words(&[[7, 11, 23], [7, 11, 0]]));
     }
 }

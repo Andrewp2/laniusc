@@ -1,6 +1,4 @@
-// Publish imported function parameter counts before the shared token scan.
-// Type projection happens in the dependency scatter pass so dependency raw
-// argument IDs never alias compact local-parameter staging rows.
+// Publish imported function parameter counts from compact call-argument rows.
 
 import gpu_index;
 
@@ -15,13 +13,15 @@ struct Params
     uint namespace;
     uint hir_capacity;
 };
-
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> dependency_declaration_words;
 StructuredBuffer<uint> dependency_type_words;
@@ -31,43 +31,40 @@ static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint active_hir_count()
+uint hir_count() { return min(gParams.hir_capacity, compact_hir_count[0u]); }
+uint arg_count() { return min(gParams.hir_capacity, compact_call_arg_count[0u]); }
+bool valid_hir(uint node) { return node != INVALID && node < hir_count(); }
+uint callee_token(uint call)
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee)) return INVALID;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (token >= gParams.visible_capacity) token = core.token_start;
+    return token < gParams.visible_capacity ? token : INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint arg_node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (arg_node >= active_hir_count())
-        return;
-    uint call_node = hir_call_arg_parent_call[arg_node];
-    if (call_node >= active_hir_count())
-        return;
-    uint callee_node = hir_call_callee_node[call_node];
-    if (callee_node >= active_hir_count())
-        return;
-    uint callee_token = hir_token_pos[callee_node];
-    if (callee_token >= gParams.visible_capacity)
-        return;
-    uint declaration_i = call_dependency_decl[callee_token];
-    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count)
-        return;
-
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (row >= arg_count()) return;
+    HirCallArg arg = compact_call_args[row];
+    uint token = callee_token(arg.call);
+    if (token == INVALID) return;
+    uint declaration_i = call_dependency_decl[token];
+    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count) return;
     uint signature_i = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
     uint signature_base = signature_i * TYPE_WORDS;
-    if (dependency_type_words[signature_base] != INTERFACE_TYPE_FUNCTION)
-        return;
+    if (dependency_type_words[signature_base] != INTERFACE_TYPE_FUNCTION) return;
     uint edge_count = dependency_type_words[signature_base + 4u];
-    uint ordinal = hir_call_arg_ordinal[arg_node];
     uint param_count = edge_count == 0u ? 0u : edge_count - 1u;
-    if (ordinal >= param_count)
-        return;
-
-    call_param_count[callee_token] = param_count;
+    if (arg.ordinal < param_count) call_param_count[token] = param_count;
 }

@@ -255,8 +255,8 @@ mod tests {
     use crate::{
         codegen::wasm::{
             GPU_WASM_OBJECT_VERSION,
-            GpuWasmCodeGenerator,
             GpuWasmFunctionRecord,
+            GpuWasmLinker,
             GpuWasmObjectSymbolRecord,
             GpuWasmRelocationRecord,
             GpuWasmRelocationTargetKind,
@@ -511,7 +511,7 @@ mod tests {
         };
         let input = GpuWasmLinkInput::for_executable(&[app, dep]).unwrap();
         let gpu = crate::gpu::device::global();
-        let generator = GpuWasmCodeGenerator::new_with_device(gpu).expect("Wasm generator");
+        let generator = GpuWasmLinker::new_with_device(gpu).expect("Wasm linker");
         let module = generator
             .link_executable(&gpu.device, &gpu.queue, &input)
             .expect("GPU Wasm link");

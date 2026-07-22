@@ -20,13 +20,14 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_subtree_end;
 StructuredBuffer<uint> call_dependency_decl;
@@ -70,12 +71,28 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count()
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    return min(gParams.hir_capacity, compact_hir_count[0u]);
+}
+
+uint active_arg_count() { return min(gParams.hir_capacity, compact_call_arg_count[0u]); }
+bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
+
+uint callee_token(uint call)
+{
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee)) return INVALID;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (token >= gParams.visible_capacity) token = core.token_start;
+    return token < gParams.visible_capacity ? token : INVALID;
 }
 
 bool canonical_nominal_matches(uint expected_type_i, uint actual_type_i)
@@ -108,7 +125,7 @@ uint local_type_subtree_count(uint instance)
     if (instance >= gParams.visible_capacity)
         return INVALID;
     uint root = type_semantic_row_by_token[instance];
-    uint semantic_count = min(hir_semantic_count[0u], active_hir_count());
+    uint semantic_count = min(hir_semantic_count[0u], gParams.hir_capacity);
     if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
         return INVALID;
     uint end = hir_semantic_subtree_end[root];
@@ -125,23 +142,14 @@ uint local_type_subtree_count(uint instance)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint arg_node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (arg_node >= active_hir_count())
-        return;
-    dependency_call_compare_scan_input[arg_node] = 0u;
-    dependency_call_compare_expected_type[arg_node] = INVALID;
-    dependency_call_compare_actual_instance[arg_node] = INVALID;
-    dependency_call_compare_error_token[arg_node] = INVALID;
-    uint call_node = hir_call_arg_parent_call[arg_node];
-    if (call_node >= active_hir_count())
-        return;
-    uint callee_node = hir_call_callee_node[call_node];
-    if (callee_node >= active_hir_count())
-        return;
-    uint callee_token = hir_token_pos[callee_node];
-    if (callee_token >= gParams.visible_capacity)
-        return;
-    uint declaration_i = call_dependency_decl[callee_token];
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (row >= active_arg_count()) return;
+    HirCallArg arg = compact_call_args[row];
+    if (!valid_hir(arg.call) || !valid_hir(arg.value)) return;
+    uint arg_node = arg.value;
+    uint callee = callee_token(arg.call);
+    if (callee == INVALID) return;
+    uint declaration_i = call_dependency_decl[callee];
     if (declaration_i == INVALID || declaration_i >= gParams.declaration_count)
         return;
 
@@ -151,7 +159,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint first_edge = dependency_type_words[signature_base + 3u];
     uint edge_count = dependency_type_words[signature_base + 4u];
-    uint ordinal = hir_call_arg_ordinal[arg_node];
+    uint ordinal = arg.ordinal;
     if (edge_count == 0u || ordinal >= edge_count - 1u)
         return;
     uint expected_type_i = canonical_type_roots[dependency_type_edge_words[first_edge + ordinal]];
@@ -164,12 +172,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (expected_kind == INTERFACE_TYPE_GENERIC_PARAMETER)
         return;
 
-    uint expr_node = hir_expr_result_root_node[arg_node];
-    if (expr_node >= active_hir_count())
-        expr_node = arg_node;
-    uint form = hir_expr_record[expr_node * EXPR_WORDS];
+    uint expr_node = arg_node;
+    uint form = compact_hir_payload[expr_node].a;
     uint actual = hir_scalar_type_for_expr_form(form);
-    uint arg_token = hir_token_pos[expr_node];
+    uint arg_token = compact_hir_core[expr_node].token_start;
     if (expected_kind != INTERFACE_TYPE_SCALAR)
     {
         uint actual_ref_token = arg_token;
@@ -210,7 +216,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 dependency_call_compare_expected_type[arg_node] = expected_type_i;
                 dependency_call_compare_actual_instance[arg_node] = actual_payload;
                 dependency_call_compare_error_token[arg_node] =
-                    arg_token < gParams.visible_capacity ? arg_token : callee_token;
+                    arg_token < gParams.visible_capacity ? arg_token : callee;
             }
         }
         else if ((expected_kind == INTERFACE_TYPE_ARRAY ||
@@ -240,13 +246,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 dependency_call_compare_expected_type[arg_node] = expected_type_i;
                 dependency_call_compare_actual_instance[arg_node] = actual_payload;
                 dependency_call_compare_error_token[arg_node] =
-                    arg_token < gParams.visible_capacity ? arg_token : callee_token;
+                    arg_token < gParams.visible_capacity ? arg_token : callee;
             }
         }
         if (!matches)
             record_min_token_error(
                 status,
-                arg_token < gParams.visible_capacity ? arg_token : callee_token,
+                arg_token < gParams.visible_capacity ? arg_token : callee,
                 ERR_ASSIGN_MISMATCH,
                 HIR_SEM_TY_UNKNOWN);
         return;
@@ -257,7 +263,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (actual != expected)
         record_min_token_error(
             status,
-            arg_token < gParams.visible_capacity ? arg_token : callee_token,
+            arg_token < gParams.visible_capacity ? arg_token : callee,
             ERR_ASSIGN_MISMATCH,
             expected * 256u + actual);
 }

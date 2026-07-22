@@ -32,6 +32,7 @@ StructuredBuffer<uint> hir_type_alias_target_node;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_stmt_scope_end;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
@@ -46,10 +47,17 @@ StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> hir_match_scrutinee_node;
 StructuredBuffer<uint> hir_nearest_loop_node;
+StructuredBuffer<uint> hir_nearest_block_node;
+StructuredBuffer<uint> hir_nearest_enclosing_control_node;
+StructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<HirCore> hir_core;
 RWStructuredBuffer<HirLinks> hir_links;
 RWStructuredBuffer<HirPayload> hir_payload;
+RWStructuredBuffer<uint> hir_canonical_scope_end;
 RWStructuredBuffer<uint> hir_canonical_nearest_loop;
+RWStructuredBuffer<uint> hir_canonical_nearest_block;
+RWStructuredBuffer<uint> hir_canonical_nearest_control;
+RWStructuredBuffer<uint> hir_canonical_nearest_fn;
 RWStructuredBuffer<uint> hir_canonical_fn_return_type;
 RWStructuredBuffer<uint> hir_canonical_type_alias_target;
 RWStructuredBuffer<uint> hir_canonical_const_type;
@@ -81,6 +89,7 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_CALL_CONTEXT_STMT_BIT = 0x80000000u;
 static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
@@ -285,7 +294,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Literal values are semantic payload, not parser scratch. Keeping
         // the decoded scalar beside the compact literal node lets typecheck
         // and codegen release the raw-node-keyed literal columns.
-        if (expr_form == HIR_EXPR_INT)
+        if (expr_form == HIR_EXPR_INT || expr_form == HIR_EXPR_CHAR)
             payload.b = hir_expr_int_value[raw];
         else if (expr_form == HIR_EXPR_FLOAT)
             payload.b = hir_expr_float_bits[raw];
@@ -294,7 +303,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_core[row] = core;
     hir_links[row] = links;
     hir_payload[row] = payload;
+    hir_canonical_scope_end[row] = hir_stmt_scope_end[raw];
     hir_canonical_nearest_loop[row] = dense_id(hir_nearest_loop_node[raw]);
+    hir_canonical_nearest_block[row] = dense_id(hir_nearest_block_node[raw]);
+    hir_canonical_nearest_control[row] = dense_id(hir_nearest_enclosing_control_node[raw]);
+    hir_canonical_nearest_fn[row] = dense_id(hir_nearest_fn_node[raw]);
     hir_canonical_fn_return_type[row] = dense_id(hir_fn_return_type_node[raw]);
     hir_canonical_type_alias_target[row] = dense_id(hir_type_alias_target_node[raw]);
     hir_canonical_const_type[row] = item_kind == 3u

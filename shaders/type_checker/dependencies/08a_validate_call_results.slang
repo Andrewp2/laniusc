@@ -18,15 +18,11 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_subtree_end;
 StructuredBuffer<uint> enclosing_fn;
@@ -70,9 +66,9 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_WORDS = 9u;
-static const uint STMT_WORDS = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
@@ -89,7 +85,7 @@ static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
 uint active_hir_count()
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    return min(gParams.hir_capacity, compact_hir_count[0u]);
 }
 
 uint enclosing_function_decl_token(uint token)
@@ -145,7 +141,7 @@ uint local_type_subtree_count(uint instance)
     if (!valid_token(instance))
         return INVALID;
     uint root = type_semantic_row_by_token[instance];
-    uint semantic_count = min(hir_semantic_count[0u], active_hir_count());
+    uint semantic_count = min(hir_semantic_count[0u], gParams.hir_capacity);
     if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
         return INVALID;
     uint end = hir_semantic_subtree_end[root];
@@ -180,10 +176,15 @@ bool claim_key_less(uint row, uint callee, uint slot)
 
 void substitute_direct_generic_call(uint call_node)
 {
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return;
-    uint callee_token = hir_token_pos[callee_node];
+    HirCore callee_core = compact_hir_core[callee_node];
+    HirPayload callee_payload = compact_hir_payload[callee_node];
+    uint callee_token = callee_core.kind == HIR_MEMBER_EXPR
+        ? callee_payload.c
+        : callee_payload.d;
+    if (!valid_token(callee_token)) callee_token = callee_core.token_start;
     if (!valid_token(callee_token) || call_dependency_decl[callee_token] == INVALID ||
         decl_type_ref_tag[callee_token] != TYPE_REF_EXTERNAL_CANONICAL)
         return;
@@ -241,30 +242,34 @@ void substitute_direct_generic_call(uint call_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (valid_node(node) && hir_kind[node] == HIR_CALL_EXPR)
+    if (valid_node(node) && compact_hir_core[node].kind == HIR_CALL_EXPR)
     {
         substitute_direct_generic_call(node);
         return;
     }
-    if (!valid_node(node) || hir_stmt_record[node * STMT_WORDS] != STMT_RECORD_KIND_RETURN)
+    if (!valid_node(node) ||
+        compact_hir_payload[node].a != STMT_RECORD_KIND_RETURN)
         return;
-    uint expr = hir_stmt_record[node * STMT_WORDS + 1u];
+    uint expr = compact_hir_payload[node].b;
     if (!valid_node(expr))
         return;
-    uint root = hir_expr_result_root_node[expr];
-    if (!valid_node(root))
-        root = expr;
-    if (hir_kind[root] != HIR_CALL_EXPR)
+    uint root = expr;
+    if (compact_hir_core[root].kind != HIR_CALL_EXPR)
         return;
-    uint callee_node = hir_call_callee_node[root];
+    uint callee_node = compact_hir_payload[root].a;
     if (!valid_node(callee_node))
         return;
-    uint callee_token = hir_token_pos[callee_node];
+    HirCore callee_core = compact_hir_core[callee_node];
+    HirPayload callee_payload = compact_hir_payload[callee_node];
+    uint callee_token = callee_core.kind == HIR_MEMBER_EXPR
+        ? callee_payload.c
+        : callee_payload.d;
+    if (!valid_token(callee_token)) callee_token = callee_core.token_start;
     if (!valid_token(callee_token) || call_dependency_decl[callee_token] == INVALID)
         return;
     uint actual_tag = decl_type_ref_tag[callee_token];
     uint actual_payload = decl_type_ref_payload[callee_token];
-    uint return_token = hir_token_pos[node];
+    uint return_token = compact_hir_core[node].token_start;
     uint fn_token = enclosing_function_decl_token(return_token);
     if (!valid_token(fn_token))
         return;

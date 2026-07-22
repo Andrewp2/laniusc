@@ -34,8 +34,18 @@ pub(crate) struct GpuX86ArtifactView<'a> {
     pub words: &'a LaniusBuffer<u32>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct GpuX86ArtifactObjectView<'a> {
+    pub byte_lengths: &'a LaniusBuffer<u32>,
+    pub byte_offsets: &'a LaniusBuffer<u32>,
+    pub entrypoint_state: &'a LaniusBuffer<u32>,
+    pub layout: &'a LaniusBuffer<X86ArtifactLayout>,
+    pub words: &'a LaniusBuffer<u32>,
+}
+
 pub(crate) struct GpuX86ArtifactStage {
     target_capacity: u32,
+    emit_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
     byte_count_pass: PassData,
@@ -52,11 +62,11 @@ pub(crate) struct GpuX86ArtifactStage {
     emit_group: wgpu::BindGroup,
     byte_scan: GpuResidentExclusiveScan,
     _params: LaniusBuffer<X86ArtifactParams>,
-    _byte_lengths: LaniusBuffer<u32>,
-    _byte_offsets: LaniusBuffer<u32>,
-    _body_length: LaniusBuffer<u32>,
-    _entrypoint_state: LaniusBuffer<u32>,
-    _layout: LaniusBuffer<X86ArtifactLayout>,
+    byte_lengths: LaniusBuffer<u32>,
+    byte_offsets: LaniusBuffer<u32>,
+    body_length: LaniusBuffer<u32>,
+    entrypoint_state: LaniusBuffer<u32>,
+    layout: LaniusBuffer<X86ArtifactLayout>,
     length: LaniusBuffer<u32>,
     words: LaniusBuffer<u32>,
     length_readback: LaniusBuffer<u8>,
@@ -90,6 +100,7 @@ impl GpuX86ArtifactStage {
                 .map_err(anyhow::Error::msg)
         };
         let target_capacity = capacities.target_instructions.max(1);
+        let emit_capacity = target_capacity.max(capacities.source_bytes.max(1).div_ceil(4));
         let artifact_capacity = capacities.artifact_bytes.max(4).next_multiple_of(4);
         let byte_lengths = alias_u32("lir.x86.byte_lengths", target_capacity)?;
         let byte_offsets = alias_u32("lir.x86.byte_offsets", target_capacity)?;
@@ -231,6 +242,10 @@ impl GpuX86ArtifactStage {
                     functions.index_by_semantic.as_entire_binding(),
                 ),
                 ("target_byte_offset", byte_offsets.as_entire_binding()),
+                (
+                    "semantic_lir_string_pool_len",
+                    semantic.string_pool_len.as_entire_binding(),
+                ),
                 ("x86_artifact_layout", layout.as_entire_binding()),
                 ("x86_artifact_length", length.as_entire_binding()),
                 ("lowering_status", semantic.status.as_entire_binding()),
@@ -273,6 +288,19 @@ impl GpuX86ArtifactStage {
                     semantic.functions.as_entire_binding(),
                 ),
                 (
+                    "semantic_lir_string_total",
+                    semantic.string_count.as_entire_binding(),
+                ),
+                ("semantic_lir_strings", semantic.strings.as_entire_binding()),
+                (
+                    "semantic_lir_string_pool_len",
+                    semantic.string_pool_len.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_string_data",
+                    semantic.string_data_words.as_entire_binding(),
+                ),
+                (
                     "x86_frame_slot_by_decl_token",
                     frame_slot_by_decl_token.as_entire_binding(),
                 ),
@@ -311,6 +339,7 @@ impl GpuX86ArtifactStage {
         );
         Ok(Self {
             target_capacity,
+            emit_capacity,
             function_capacity: capacities.hir_nodes.max(1),
             artifact_capacity,
             byte_count_pass,
@@ -327,11 +356,11 @@ impl GpuX86ArtifactStage {
             emit_group,
             byte_scan,
             _params: params,
-            _byte_lengths: byte_lengths,
-            _byte_offsets: byte_offsets,
-            _body_length: body_length,
-            _entrypoint_state: entrypoint_state,
-            _layout: layout,
+            byte_lengths,
+            byte_offsets,
+            body_length,
+            entrypoint_state,
+            layout,
             length,
             words,
             length_readback,
@@ -340,6 +369,11 @@ impl GpuX86ArtifactStage {
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_layout(encoder)?;
+        self.record_emission(encoder)
+    }
+
+    pub(crate) fn record_layout(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         record_direct(
             encoder,
             &self.byte_count_pass,
@@ -360,6 +394,10 @@ impl GpuX86ArtifactStage {
             self.function_capacity,
         )?;
         record_direct(encoder, &self.layout_pass, &self.layout_group, 1)?;
+        Ok(())
+    }
+
+    pub(crate) fn record_emission(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         record_direct(
             encoder,
             &self.clear_pass,
@@ -370,7 +408,7 @@ impl GpuX86ArtifactStage {
             encoder,
             &self.emit_pass,
             &self.emit_group,
-            self.target_capacity,
+            self.emit_capacity,
         )?;
         encoder.copy_buffer_to_buffer(&self.length.buffer, 0, &self.length_readback.buffer, 0, 4);
         encoder.copy_buffer_to_buffer(
@@ -386,6 +424,16 @@ impl GpuX86ArtifactStage {
     pub(crate) fn output(&self) -> GpuX86ArtifactView<'_> {
         GpuX86ArtifactView {
             length: &self.length,
+            words: &self.words,
+        }
+    }
+
+    pub(crate) fn object_view(&self) -> GpuX86ArtifactObjectView<'_> {
+        GpuX86ArtifactObjectView {
+            byte_lengths: &self.byte_lengths,
+            byte_offsets: &self.byte_offsets,
+            entrypoint_state: &self.entrypoint_state,
+            layout: &self.layout,
             words: &self.words,
         }
     }
@@ -556,6 +604,11 @@ fn validate(
                 byte_offsets,
             )?,
             bound(
+                "semantic_lir_string_pool_len",
+                resource("lir.semantic.string_pool_len"),
+                semantic.string_pool_len,
+            )?,
+            bound(
                 "x86_artifact_layout",
                 resource("lir.x86.artifact_layout"),
                 layout,
@@ -619,6 +672,26 @@ fn validate(
                 "semantic_lir_functions",
                 resource("lir.semantic.functions"),
                 semantic.functions,
+            )?,
+            bound(
+                "semantic_lir_string_total",
+                resource("lir.semantic.string_total"),
+                semantic.string_count,
+            )?,
+            bound(
+                "semantic_lir_strings",
+                resource("lir.semantic.strings"),
+                semantic.strings,
+            )?,
+            bound(
+                "semantic_lir_string_pool_len",
+                resource("lir.semantic.string_pool_len"),
+                semantic.string_pool_len,
+            )?,
+            bound(
+                "semantic_lir_string_data",
+                resource("lir.semantic.string_data"),
+                semantic.string_data_words,
             )?,
             bound(
                 "x86_frame_slot_by_decl_token",
@@ -711,7 +784,7 @@ mod tests {
         let semantic_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.x86_artifact.sem.core",
-            &records(&[[0; 4]; 12]),
+            &records(&[[0; 6]; 12]),
             12,
         );
         let semantic_operands = storage_ro_from_bytes::<SemanticLirOperands>(

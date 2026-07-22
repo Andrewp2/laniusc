@@ -10,7 +10,7 @@ use super::{
     buffers::LaniusBuffer,
     workspace::{WorkspaceAssignment, WorkspacePlan, WorkspaceSlotPlan, WorkspaceUsageClass},
 };
-use crate::reflection::{ParameterReflection, SlangReflection};
+use crate::reflection::{ParameterReflection, SlangReflection, slang_category_and_type_to_wgpu};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CompilerPhase {
@@ -47,10 +47,25 @@ pub enum ResourceDomain {
 pub enum ResourceClass {
     /// Initialized outside the graph and immutable inside it.
     Input,
+    /// Mutable storage owned by another graph or compiler stage.
+    ///
+    /// External resources participate in access, liveness, reflection, and
+    /// alias validation, but this graph neither allocates nor recolors them.
+    /// This is the explicit boundary for incremental graph composition; it is
+    /// not an escape hatch for untracked writable scratch.
+    External,
     /// Initialized by exactly one pass and immutable afterwards.
     Artifact,
     /// Mutable scratch whose storage may be reused after its final access.
     Workspace,
+    /// Mutable graph-owned storage with a dedicated physical slot.
+    ///
+    /// Use this while a resource crosses a composition boundary whose full
+    /// pass schedule is not yet represented in this graph. It preserves
+    /// allocation ownership and binding validation without making an
+    /// unsound liveness claim. Once the complete schedule is registered, the
+    /// resource can become `Workspace` and participate in phase coloring.
+    Resident,
     /// Mutable graph result retained after the final pass.
     Output,
 }
@@ -151,6 +166,18 @@ pub struct PassDesc {
     pub phase: CompilerPhase,
     pub dispatch_domain: ResourceDomain,
     pub accesses: Vec<PassAccess>,
+}
+
+/// Maps one reflected storage binding to its logical graph resource.
+///
+/// `mode = None` conservatively derives `Read` or `ReadWrite` from Slang.
+/// A precise override may narrow `ReadWrite` to `Write` for initialization
+/// passes, but may never hide shader-visible reads or writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReflectedResourceBinding {
+    pub binding: &'static str,
+    pub resource: ResourceId,
+    pub mode: Option<AccessMode>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -396,9 +423,9 @@ impl CompilerGraphAllocations {
         let desc = graph
             .resource(resource)
             .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
-        if desc.class == ResourceClass::Input {
+        if matches!(desc.class, ResourceClass::Input | ResourceClass::External) {
             return Err(format!(
-                "compiler resource {} is already a graph input and does not need an allocation import",
+                "compiler resource {} is externally owned and does not need an allocation import",
                 desc.name
             ));
         }
@@ -430,7 +457,10 @@ impl CompilerGraphAllocations {
             let resource = graph
                 .resource(access.resource)
                 .ok_or_else(|| format!("unknown compiler resource {}", access.resource.index()))?;
-            if resource.class == ResourceClass::Input {
+            if matches!(
+                resource.class,
+                ResourceClass::Input | ResourceClass::External
+            ) {
                 continue;
             }
             let expected = self
@@ -518,6 +548,89 @@ impl CompilerGraph {
             .iter()
             .position(|pass| pass.name == name)
             .map(PassId)
+    }
+
+    /// Binds a caller-owned raw WGPU buffer as an immutable graph input.
+    ///
+    /// Some public compiler entry points receive `wgpu::Buffer` rather than a
+    /// `LaniusBuffer`, so no allocation-ledger identity exists to preserve.
+    /// Such buffers may only satisfy `Input` resources: the graph still checks
+    /// their extent and read-only lifetime, while graph-owned writable storage
+    /// continues to require a tracked allocation identity.
+    pub fn bind_external_input(
+        &self,
+        binding: &'static str,
+        resource: ResourceId,
+        buffer: &wgpu::Buffer,
+    ) -> Result<BoundGraphResource, String> {
+        let desc = self
+            .resource(resource)
+            .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
+        if desc.class != ResourceClass::Input {
+            return Err(format!(
+                "graph binding {binding} cannot use an untracked external buffer for writable resource {}",
+                desc.name,
+            ));
+        }
+        Ok(BoundGraphResource::whole(
+            binding,
+            resource,
+            0,
+            buffer.size(),
+        ))
+    }
+
+    /// Binds a tracked caller-owned allocation to a mutable `External`
+    /// resource. Unlike raw immutable inputs, external writable resources must
+    /// preserve Lanius allocation identity so alias validation remains sound.
+    pub fn bind_external_resource<T>(
+        &self,
+        binding: &'static str,
+        resource: ResourceId,
+        buffer: &LaniusBuffer<T>,
+    ) -> Result<BoundGraphResource, String> {
+        let desc = self
+            .resource(resource)
+            .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
+        if desc.class != ResourceClass::External {
+            return Err(format!(
+                "graph binding {binding} expects an External resource, but {} is {:?}",
+                desc.name, desc.class,
+            ));
+        }
+        BoundGraphResource::buffer(binding, resource, buffer)
+    }
+
+    /// Converts allocation metadata retained by a reflected resource registry
+    /// into a concrete graph binding. Immutable raw inputs may lack a Lanius
+    /// allocation identity; every writable or graph-owned resource must keep
+    /// one so overlap and workspace-ownership checks remain sound.
+    pub fn bind_registered_resource(
+        &self,
+        binding: &'static str,
+        resource: ResourceId,
+        allocation_id: Option<u64>,
+        byte_size: u64,
+    ) -> Result<BoundGraphResource, String> {
+        let desc = self
+            .resource(resource)
+            .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
+        let allocation_id = match (desc.class, allocation_id) {
+            (ResourceClass::Input, allocation_id) => allocation_id.unwrap_or(0),
+            (_, Some(allocation_id)) => allocation_id,
+            (_, None) => {
+                return Err(format!(
+                    "graph binding {binding} for {:?} resource {} has no tracked Lanius allocation identity",
+                    desc.class, desc.name,
+                ));
+            }
+        };
+        Ok(BoundGraphResource::whole(
+            binding,
+            resource,
+            allocation_id,
+            byte_size,
+        ))
     }
 
     /// Validates the concrete allocation ranges used to record one pass.
@@ -709,6 +822,50 @@ impl CompilerGraph {
         }
         Ok(())
     }
+
+    /// Proves that a graph pass describes the shader's complete reflected
+    /// storage-buffer surface. Uniforms remain outside buffer ownership, but
+    /// every read-only or writable storage binding must have exactly one graph
+    /// access. Use this gate before declaring a resource lifetime complete and
+    /// eligible for workspace coloring.
+    pub fn validate_complete_pass_reflection(
+        &self,
+        pass: PassId,
+        reflection: &SlangReflection,
+    ) -> Result<(), String> {
+        self.validate_pass_reflection(pass, reflection)?;
+        let desc = self
+            .passes
+            .get(pass.index())
+            .ok_or_else(|| format!("unknown compiler pass {}", pass.index()))?;
+        for parameter in reflected_parameters(reflection) {
+            let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+            else {
+                continue;
+            };
+            if !matches!(
+                binding_type,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { .. },
+                    ..
+                }
+            ) {
+                continue;
+            }
+            let count = desc
+                .accesses
+                .iter()
+                .filter(|access| access.binding == parameter.name)
+                .count();
+            if count != 1 {
+                return Err(format!(
+                    "compiler pass {} must describe reflected storage binding {} exactly once, found {count}",
+                    desc.name, parameter.name,
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 fn reflected_parameters(reflection: &SlangReflection) -> Vec<&ParameterReflection> {
@@ -833,6 +990,146 @@ impl CompilerGraphBuilder {
         Ok(id)
     }
 
+    /// Adds a compute pass whose complete storage-buffer surface is checked
+    /// against Slang reflection at graph construction time.
+    ///
+    /// Unlike post-hoc reflection validation, this rejects omitted storage
+    /// bindings. That makes the graph's input/output surface complete by
+    /// construction while still leaving uniforms outside ownership tracking.
+    pub fn add_reflected_compute_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        reflection: &SlangReflection,
+        bindings: &[ReflectedResourceBinding],
+    ) -> Result<PassId, String> {
+        let reflected = reflected_parameters(reflection)
+            .into_iter()
+            .filter_map(|parameter| {
+                let ty = slang_category_and_type_to_wgpu(parameter, &parameter.ty)?;
+                matches!(
+                    ty,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { .. },
+                        ..
+                    }
+                )
+                .then_some(parameter)
+            })
+            .collect::<Vec<_>>();
+        let mut supplied = BTreeMap::new();
+        for binding in bindings {
+            if supplied.insert(binding.binding, *binding).is_some() {
+                return Err(format!(
+                    "compiler pass {name} maps storage binding {} more than once",
+                    binding.binding,
+                ));
+            }
+        }
+        let mut accesses = Vec::with_capacity(reflected.len());
+        for parameter in reflected {
+            let binding = supplied.remove(parameter.name.as_str()).ok_or_else(|| {
+                format!(
+                    "compiler pass {name} omits reflected storage binding {}",
+                    parameter.name,
+                )
+            })?;
+            let writable = parameter
+                .ty
+                .access
+                .as_deref()
+                .is_some_and(|access| access.eq_ignore_ascii_case("readWrite"));
+            let mode = binding.mode.unwrap_or(if writable {
+                AccessMode::ReadWrite
+            } else {
+                AccessMode::Read
+            });
+            if mode.writes() && !writable {
+                return Err(format!(
+                    "compiler pass {name} writes {} but Slang reflects it read-only",
+                    binding.binding,
+                ));
+            }
+            if mode == AccessMode::Read && writable {
+                return Err(format!(
+                    "compiler pass {name} hides reflected writes through {}",
+                    binding.binding,
+                ));
+            }
+            accesses.push(PassAccess {
+                binding: binding.binding,
+                resource: binding.resource,
+                mode,
+            });
+        }
+        if let Some((extra, _)) = supplied.into_iter().next() {
+            return Err(format!(
+                "compiler pass {name} maps {extra}, which is not a reflected storage binding",
+            ));
+        }
+        self.add_pass(PassDesc {
+            name,
+            phase,
+            dispatch_domain,
+            accesses,
+        })
+    }
+
+    /// Adds a reflected compute pass by matching storage-binding names to
+    /// logical resource names. Callers provide overrides only for deliberate
+    /// aliases (or a precise `Write` initialization mode), so ordinary shader
+    /// interfaces do not require a second handwritten binding inventory.
+    pub fn add_reflected_compute_pass_by_name(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        reflection: &SlangReflection,
+        overrides: &[ReflectedResourceBinding],
+    ) -> Result<PassId, String> {
+        let mut bindings = Vec::new();
+        for parameter in reflected_parameters(reflection) {
+            let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+            else {
+                continue;
+            };
+            if !matches!(
+                binding_type,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { .. },
+                    ..
+                }
+            ) {
+                continue;
+            }
+            if let Some(binding) = overrides
+                .iter()
+                .find(|binding| binding.binding == parameter.name)
+            {
+                bindings.push(*binding);
+                continue;
+            }
+            let (resource_index, resource) = self
+                .resources
+                .iter()
+                .enumerate()
+                .find(|(_, resource)| resource.name == parameter.name)
+                .ok_or_else(|| {
+                    format!(
+                        "compiler pass {name} has reflected storage binding {} with no same-named graph resource or override",
+                        parameter.name,
+                    )
+                })?;
+            bindings.push(ReflectedResourceBinding {
+                binding: resource.name,
+                resource: ResourceId(resource_index),
+                mode: None,
+            });
+        }
+        self.add_reflected_compute_pass(name, phase, dispatch_domain, reflection, &bindings)
+    }
+
     /// Adds one contiguous loop body to the graph. Pass descriptors remain
     /// individually addressable for reflection/binding validation.
     pub fn add_repeated_region(
@@ -924,7 +1221,12 @@ impl CompilerGraphBuilder {
         let mut initialized = self
             .resources
             .iter()
-            .map(|resource| resource.class == ResourceClass::Input)
+            .map(|resource| {
+                matches!(
+                    resource.class,
+                    ResourceClass::Input | ResourceClass::External
+                )
+            })
             .collect::<Vec<_>>();
         let mut producers = vec![None; self.resources.len()];
         let mut first_pass = vec![None; self.resources.len()];
@@ -954,6 +1256,7 @@ impl CompilerGraphBuilder {
                             pass.name, resource.name,
                         ));
                     }
+                    ResourceClass::External => {}
                     ResourceClass::Artifact if producers[resource_index].is_some() => {
                         return Err(format!(
                             "compiler artifact {} has more than one producer",
@@ -961,7 +1264,7 @@ impl CompilerGraphBuilder {
                         ));
                     }
                     ResourceClass::Artifact => producers[resource_index] = Some(pass_id),
-                    ResourceClass::Workspace | ResourceClass::Output => {
+                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output => {
                         producers[resource_index].get_or_insert(pass_id);
                     }
                 }
@@ -971,8 +1274,7 @@ impl CompilerGraphBuilder {
 
         for (index, resource) in self.resources.iter().enumerate() {
             match resource.class {
-                ResourceClass::Input if first_pass[index].is_none() => {}
-                ResourceClass::Input => {}
+                ResourceClass::Input | ResourceClass::External => {}
                 _ if producers[index].is_none() => {
                     return Err(format!(
                         "compiler resource {} has no producing pass",
@@ -1059,13 +1361,24 @@ fn plan_graph_workspace(
     struct SlotState {
         plan: WorkspaceSlotPlan,
         last_pass: PassId,
+        dedicated: bool,
     }
 
+    // `Resident` is a per-resource incomplete-composition boundary. Keep that
+    // allocation dedicated, but do not let one partially tracked family
+    // suppress coloring for unrelated `Workspace` resources whose complete
+    // pass lifetimes are already represented by this graph. This makes graph
+    // migration compositional: a resource becomes colorable only when its own
+    // class changes from `Resident` to `Workspace`.
     let mut order = resources
         .iter()
         .enumerate()
         .filter_map(|(index, resource)| {
-            (resource.class != ResourceClass::Input).then_some((index, resource, lifetimes[index]?))
+            (!matches!(
+                resource.class,
+                ResourceClass::Input | ResourceClass::External
+            ))
+            .then_some((index, resource, lifetimes[index]?))
         })
         .collect::<Vec<_>>();
     order.sort_unstable_by_key(|(_, resource, lifetime)| {
@@ -1079,9 +1392,15 @@ fn plan_graph_workspace(
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
-        let reusable = slots.iter().position(|slot| {
-            slot.plan.usage == resource.usage && slot.last_pass < lifetime.first_pass
-        });
+        let reusable = (resource.class != ResourceClass::Resident)
+            .then(|| {
+                slots.iter().position(|slot| {
+                    !slot.dedicated
+                        && slot.plan.usage == resource.usage
+                        && slot.last_pass < lifetime.first_pass
+                })
+            })
+            .flatten();
         let slot_index = reusable.unwrap_or_else(|| {
             let index = slots.len();
             slots.push(SlotState {
@@ -1091,6 +1410,7 @@ fn plan_graph_workspace(
                     usage: resource.usage,
                 },
                 last_pass: lifetime.last_pass,
+                dedicated: resource.class == ResourceClass::Resident,
             });
             index
         });
@@ -1133,6 +1453,53 @@ mod tests {
     }
 
     #[test]
+    fn mutable_external_resources_are_tracked_but_not_allocated() {
+        let mut builder = CompilerGraphBuilder::new();
+        let external = builder
+            .add_resource(ResourceDesc {
+                name: "upstream.semantic_state",
+                domain: ResourceDomain::HirNodes,
+                class: ResourceClass::External,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let scratch = builder
+            .add_resource(workspace("local.scratch", ResourceDomain::HirNodes, 64))
+            .unwrap();
+        let pass = builder
+            .add_pass(PassDesc {
+                name: "compose.external",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::HirNodes,
+                accesses: vec![
+                    PassAccess::read_write("semantic_state", external),
+                    PassAccess::write("scratch", scratch),
+                ],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+
+        assert_eq!(graph.workspace_plan().slots.len(), 1);
+        assert!(
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .all(|assignment| assignment.name != "upstream.semantic_state")
+        );
+        graph
+            .validate_pass_bindings(
+                pass,
+                &[
+                    BoundGraphResource::whole("semantic_state", external, 11, 64),
+                    BoundGraphResource::whole("scratch", scratch, 12, 64),
+                ],
+            )
+            .unwrap();
+    }
+
+    #[test]
     fn graph_derives_ownership_and_aliases_non_overlapping_resources() {
         let mut builder = CompilerGraphBuilder::new();
         let raw = builder
@@ -1171,6 +1538,63 @@ mod tests {
         assert_eq!(graph.lifetime(hir).unwrap().producer, Some(hir_pass));
         assert_eq!(graph.workspace_plan().slots.len(), 1);
         assert_eq!(graph.workspace_plan().slots[0].bytes, 96);
+    }
+
+    #[test]
+    fn resident_resource_is_dedicated_without_suppressing_complete_workspace_coloring() {
+        let mut builder = CompilerGraphBuilder::new();
+        let early = builder
+            .add_resource(workspace("early", ResourceDomain::Types, 64))
+            .unwrap();
+        let resident = builder
+            .add_resource(ResourceDesc {
+                name: "resident",
+                domain: ResourceDomain::Types,
+                class: ResourceClass::Resident,
+                bytes: 32,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let late = builder
+            .add_resource(workspace("late", ResourceDomain::Types, 16))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "early.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("early", early)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "resident.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("resident", resident)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "late.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("late", late)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let slot = |name| {
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap()
+                .slot
+        };
+        assert_ne!(slot("early"), slot("resident"));
+        assert_ne!(slot("resident"), slot("late"));
+        assert_eq!(slot("early"), slot("late"));
     }
 
     #[test]
@@ -1310,6 +1734,121 @@ mod tests {
     }
 
     #[test]
+    fn reflected_pass_requires_the_complete_storage_surface() {
+        let reflection = SlangReflection {
+            parameters: vec![
+                reflected_storage("hir_core", false),
+                reflected_storage("semantic_out", true),
+            ],
+            ..Default::default()
+        };
+        let mut builder = CompilerGraphBuilder::new();
+        let input = builder
+            .add_resource(ResourceDesc {
+                name: "hir.core",
+                domain: ResourceDomain::HirNodes,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let output = builder
+            .add_resource(workspace("semantic.out", ResourceDomain::HirNodes, 64))
+            .unwrap();
+        builder
+            .add_reflected_compute_pass(
+                "semantic.project",
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                &reflection,
+                &[
+                    ReflectedResourceBinding {
+                        binding: "hir_core",
+                        resource: input,
+                        mode: None,
+                    },
+                    ReflectedResourceBinding {
+                        binding: "semantic_out",
+                        resource: output,
+                        mode: Some(AccessMode::Write),
+                    },
+                ],
+            )
+            .unwrap();
+        builder.build().unwrap();
+
+        let mut missing = CompilerGraphBuilder::new();
+        let input = missing
+            .add_resource(ResourceDesc {
+                name: "hir.core",
+                domain: ResourceDomain::HirNodes,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        assert!(
+            missing
+                .add_reflected_compute_pass(
+                    "semantic.incomplete",
+                    CompilerPhase::TypeCheck,
+                    ResourceDomain::HirNodes,
+                    &reflection,
+                    &[ReflectedResourceBinding {
+                        binding: "hir_core",
+                        resource: input,
+                        mode: None,
+                    }],
+                )
+                .unwrap_err()
+                .contains("omits reflected storage binding semantic_out")
+        );
+    }
+
+    #[test]
+    fn reflected_pass_matches_same_named_resources_and_only_requires_alias_overrides() {
+        let reflection = SlangReflection {
+            parameters: vec![
+                reflected_storage("compact_hir_core", false),
+                reflected_storage("semantic_out", true),
+            ],
+            ..Default::default()
+        };
+        let mut builder = CompilerGraphBuilder::new();
+        builder
+            .add_resource(ResourceDesc {
+                name: "compact_hir_core",
+                domain: ResourceDomain::HirNodes,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let output = builder
+            .add_resource(workspace("semantic.rows", ResourceDomain::HirNodes, 64))
+            .unwrap();
+        let pass = builder
+            .add_reflected_compute_pass_by_name(
+                "semantic.project.by_name",
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                &reflection,
+                &[ReflectedResourceBinding {
+                    binding: "semantic_out",
+                    resource: output,
+                    mode: Some(AccessMode::Write),
+                }],
+            )
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let accesses = &graph.pass(pass).unwrap().accesses;
+        assert_eq!(accesses.len(), 2);
+        assert_eq!(accesses[0].binding, "compact_hir_core");
+        assert_eq!(accesses[1].resource, output);
+        assert_eq!(accesses[1].mode, AccessMode::Write);
+    }
+
+    #[test]
     fn graph_checks_declared_access_against_slang_reflection() {
         let mut builder = CompilerGraphBuilder::new();
         let input = builder
@@ -1344,6 +1883,24 @@ mod tests {
             ..Default::default()
         };
         graph.validate_pass_reflection(pass, &reflection).unwrap();
+        graph
+            .validate_complete_pass_reflection(pass, &reflection)
+            .unwrap();
+
+        let incomplete_graph_reflection = SlangReflection {
+            parameters: vec![
+                reflected_storage("hir_core", false),
+                reflected_storage("lir_count", true),
+                reflected_storage("forgotten_scratch", true),
+            ],
+            ..Default::default()
+        };
+        assert!(
+            graph
+                .validate_complete_pass_reflection(pass, &incomplete_graph_reflection)
+                .unwrap_err()
+                .contains("forgotten_scratch exactly once")
+        );
 
         let bad_reflection = SlangReflection {
             parameters: vec![
@@ -1457,6 +2014,60 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("64 are required"));
+    }
+
+    #[test]
+    fn registered_resources_require_identity_for_writable_external_state() {
+        let mut builder = CompilerGraphBuilder::new();
+        let input = builder
+            .add_resource(ResourceDesc {
+                name: "raw.input",
+                domain: ResourceDomain::Tokens,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let external = builder
+            .add_resource(ResourceDesc {
+                name: "tracked.output",
+                domain: ResourceDomain::Tokens,
+                class: ResourceClass::External,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "registered.pass",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Tokens,
+                accesses: vec![
+                    PassAccess::read("input", input),
+                    PassAccess::write("output", external),
+                ],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+
+        assert_eq!(
+            graph
+                .bind_registered_resource("input", input, None, 64)
+                .unwrap()
+                .allocation_id,
+            0,
+        );
+        let error = graph
+            .bind_registered_resource("output", external, None, 64)
+            .unwrap_err();
+        assert!(error.contains("no tracked Lanius allocation identity"));
+        assert_eq!(
+            graph
+                .bind_registered_resource("output", external, Some(17), 64)
+                .unwrap()
+                .allocation_id,
+            17,
+        );
     }
 
     #[test]

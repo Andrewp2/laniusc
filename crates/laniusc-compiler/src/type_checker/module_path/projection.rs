@@ -96,15 +96,9 @@ fn create_project_type_alias_instances_bind_group(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir.compact_hir_count.as_entire_binding(),
-            ),
-            ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir.compact_hir_payload.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir.hir.core.as_entire_binding()),
+            ("compact_hir_payload", hir.hir.payload.as_entire_binding()),
             ("path_count_out", path_count_out.as_entire_binding()),
             (
                 "path_id_by_owner_hir",
@@ -248,6 +242,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         path_segment_base,
         path_segment_token,
         path_owner_hir,
+        path_call_hir,
         path_owner_token,
         path_id_by_owner_hir,
         path_kind,
@@ -489,21 +484,18 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_type_alias_target",
-                hir_items.compact_type_alias_target.as_entire_binding(),
+                hir_items.hir.type_alias_target.as_entire_binding(),
             ),
             (
                 "compact_type_arg_ranges",
-                hir_items.compact_type_arg_ranges.as_entire_binding(),
+                hir_items.hir.type_arg_ranges.as_entire_binding(),
             ),
             ("decl_count_out", decl_count_out.as_entire_binding()),
             ("decl_kind", decl_kind.as_entire_binding()),
@@ -536,21 +528,15 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_type_arg_count",
-                hir_items.compact_type_arg_count.as_entire_binding(),
+                hir_items.hir.type_arg_count.as_entire_binding(),
             ),
             (
                 "compact_type_args",
-                hir_items.compact_type_args.as_entire_binding(),
+                hir_items.hir.type_args.as_entire_binding(),
             ),
             (
                 "type_generic_param_slot_by_token",
@@ -574,17 +560,14 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_type_alias_target",
-                hir_items.compact_type_alias_target.as_entire_binding(),
+                hir_items.hir.type_alias_target.as_entire_binding(),
             ),
             ("decl_count_out", decl_count_out.as_entire_binding()),
             ("decl_kind", decl_kind.as_entire_binding()),
@@ -601,7 +584,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_type_arg_ranges",
-                hir_items.compact_type_arg_ranges.as_entire_binding(),
+                hir_items.hir.type_arg_ranges.as_entire_binding(),
             ),
             ("alias_forwarding", alias_forwarding.as_entire_binding()),
             (
@@ -677,21 +660,15 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_type_alias_target",
-                hir_items.compact_type_alias_target.as_entire_binding(),
+                hir_items.hir.type_alias_target.as_entire_binding(),
             ),
             ("decl_count_out", decl_count_out.as_entire_binding()),
             ("decl_kind", decl_kind.as_entire_binding()),
@@ -737,25 +714,19 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_type_arg_count",
-                hir_items.compact_type_arg_count.as_entire_binding(),
+                hir_items.hir.type_arg_count.as_entire_binding(),
             ),
             (
                 "compact_type_args",
-                hir_items.compact_type_args.as_entire_binding(),
+                hir_items.hir.type_args.as_entire_binding(),
             ),
             (
                 "alias_source_hir_by_target_hir",
@@ -898,14 +869,8 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
             (
                 "alias_equiv_parent",
@@ -924,14 +889,8 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             ("decl_count_out", decl_count_out.as_entire_binding()),
             ("decl_kind", decl_kind.as_entire_binding()),
             ("decl_namespace", decl_namespace.as_entire_binding()),
@@ -992,17 +951,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_type_alias_target",
-                hir_items.compact_type_alias_target.as_entire_binding(),
+                hir_items.hir.type_alias_target.as_entire_binding(),
             ),
             ("decl_count_out", decl_count_out.as_entire_binding()),
             ("decl_kind", decl_kind.as_entire_binding()),
@@ -1115,21 +1068,12 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_links",
-                hir_items.compact_hir_links.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
+            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             ("path_count_out", path_count_out.as_entire_binding()),
             (
@@ -1196,11 +1140,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_count",
-                hir_items.compact_variant_payload_count.as_entire_binding(),
+                hir_items.hir.variant_payload_count.as_entire_binding(),
             ),
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_kind", path_kind.as_entire_binding()),
@@ -1341,11 +1285,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("hir_stmt_record", hir_items.stmt_record.as_entire_binding()),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_count",
-                hir_items.compact_variant_payload_count.as_entire_binding(),
+                hir_items.hir.variant_payload_count.as_entire_binding(),
             ),
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_kind", path_kind.as_entire_binding()),
@@ -1417,11 +1361,11 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_count",
-                hir_items.compact_variant_payload_count.as_entire_binding(),
+                hir_items.hir.variant_payload_count.as_entire_binding(),
             ),
             (
                 "module_value_path_call_head",
@@ -1445,58 +1389,40 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     )?;
     let enum_call_bindings = [
         ("gParams", params.as_entire_binding()),
-        (
-            "compact_hir_count",
-            hir_items.compact_hir_count.as_entire_binding(),
-        ),
-        (
-            "compact_hir_core",
-            hir_items.compact_hir_core.as_entire_binding(),
-        ),
+        ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+        ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
         (
             "compact_hir_payload",
-            hir_items.compact_hir_payload.as_entire_binding(),
+            hir_items.hir.payload.as_entire_binding(),
         ),
         (
             "compact_variant_count",
-            hir_items.compact_variant_count.as_entire_binding(),
+            hir_items.hir.variant_count.as_entire_binding(),
         ),
         (
             "compact_variants",
-            hir_items.compact_variants.as_entire_binding(),
+            hir_items.hir.variants.as_entire_binding(),
         ),
         (
             "compact_variant_payload_start",
-            hir_items.compact_variant_payload_start.as_entire_binding(),
+            hir_items.hir.variant_payload_start.as_entire_binding(),
         ),
         (
             "compact_variant_payload_count",
-            hir_items.compact_variant_payload_count.as_entire_binding(),
+            hir_items.hir.variant_payload_count.as_entire_binding(),
         ),
         (
             "compact_variant_payload_row_count",
-            hir_items
-                .compact_variant_payload_row_count
-                .as_entire_binding(),
+            hir_items.hir.variant_payload_row_count.as_entire_binding(),
         ),
         (
             "compact_variant_payloads",
-            hir_items.compact_variant_payloads.as_entire_binding(),
+            hir_items.hir.variant_payloads.as_entire_binding(),
         ),
         ("node_kind", hir_items.node_kind.as_entire_binding()),
-        ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-        ("hir_expr_record", hir_items.expr_record.as_entire_binding()),
-        (
-            "hir_expr_result_root_node",
-            hir_items.expr_result_root_node.as_entire_binding(),
-        ),
-        ("hir_stmt_record", hir_items.stmt_record.as_entire_binding()),
-        (
-            "hir_call_context_stmt_node",
-            hir_items.call_context_stmt_node.as_entire_binding(),
-        ),
         ("path_count_out", path_count_out.as_entire_binding()),
         ("path_kind", path_kind.as_entire_binding()),
+        ("path_call_hir", path_call_hir.as_entire_binding()),
         ("path_segment_count", path_segment_count.as_entire_binding()),
         ("path_segment_base", path_segment_base.as_entire_binding()),
         ("path_segment_token", path_segment_token.as_entire_binding()),
@@ -1613,7 +1539,6 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         ("enclosing_fn", enclosing_fn.as_entire_binding()),
         ("visible_type", visible_type.as_entire_binding()),
         ("name_id_by_token", name_id_by_token.as_entire_binding()),
-        ("call_arg_record", call_arg_record.as_entire_binding()),
         ("call_arg_row_node", call_arg_row_node.as_entire_binding()),
         (
             "call_arg_row_call_node",
@@ -1659,51 +1584,40 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_links",
-                hir_items.compact_hir_links.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
+            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
             (
                 "compact_match_arm_count",
-                hir_items.compact_match_arm_count.as_entire_binding(),
+                hir_items.hir.match_arm_count.as_entire_binding(),
             ),
             (
                 "compact_match_arms",
-                hir_items.compact_match_arms.as_entire_binding(),
+                hir_items.hir.match_arms.as_entire_binding(),
             ),
             (
                 "compact_match_payload_start",
-                hir_items.compact_match_payload_start.as_entire_binding(),
+                hir_items.hir.match_payload_start.as_entire_binding(),
             ),
             (
                 "compact_match_payload_count",
-                hir_items.compact_match_payload_count.as_entire_binding(),
+                hir_items.hir.match_payload_count.as_entire_binding(),
             ),
             (
                 "compact_match_payload_row_count",
-                hir_items
-                    .compact_match_payload_row_count
-                    .as_entire_binding(),
+                hir_items.hir.match_payload_row_count.as_entire_binding(),
             ),
             (
                 "compact_match_payloads",
-                hir_items.compact_match_payloads.as_entire_binding(),
+                hir_items.hir.match_payloads.as_entire_binding(),
             ),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_count",
-                hir_items.compact_variant_payload_count.as_entire_binding(),
+                hir_items.hir.variant_payload_count.as_entire_binding(),
             ),
             ("token_words", token_buf.as_entire_binding()),
             ("language_name_id", language_name_id.as_entire_binding()),
@@ -1751,57 +1665,47 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_match_arm_count",
-                hir_items.compact_match_arm_count.as_entire_binding(),
+                hir_items.hir.match_arm_count.as_entire_binding(),
             ),
             (
                 "compact_match_arms",
-                hir_items.compact_match_arms.as_entire_binding(),
+                hir_items.hir.match_arms.as_entire_binding(),
             ),
             (
                 "compact_match_payload_row_count",
-                hir_items
-                    .compact_match_payload_row_count
-                    .as_entire_binding(),
+                hir_items.hir.match_payload_row_count.as_entire_binding(),
             ),
             (
                 "compact_match_payloads",
-                hir_items.compact_match_payloads.as_entire_binding(),
+                hir_items.hir.match_payloads.as_entire_binding(),
             ),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_start",
-                hir_items.compact_variant_payload_start.as_entire_binding(),
+                hir_items.hir.variant_payload_start.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_count",
-                hir_items.compact_variant_payload_count.as_entire_binding(),
+                hir_items.hir.variant_payload_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payload_row_count",
-                hir_items
-                    .compact_variant_payload_row_count
-                    .as_entire_binding(),
+                hir_items.hir.variant_payload_row_count.as_entire_binding(),
             ),
             (
                 "compact_variant_payloads",
-                hir_items.compact_variant_payloads.as_entire_binding(),
+                hir_items.hir.variant_payloads.as_entire_binding(),
             ),
             ("token_words", token_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
@@ -1885,25 +1789,19 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "compact_match_arm_count",
-                hir_items.compact_match_arm_count.as_entire_binding(),
+                hir_items.hir.match_arm_count.as_entire_binding(),
             ),
             (
                 "compact_match_arms",
-                hir_items.compact_match_arms.as_entire_binding(),
+                hir_items.hir.match_arms.as_entire_binding(),
             ),
             ("token_count", token_count_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),

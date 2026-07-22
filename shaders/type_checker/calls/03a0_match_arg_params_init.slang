@@ -1,9 +1,8 @@
-// Seed compact argument-to-parameter list matching.
+// Match compact arguments to compact parameter rows.
 //
-// This is the first phase of a Hillis-Steele linked-list match over compact
-// call-argument rows and compact function-parameter rows. It initializes each
-// list's one-step jump pointer and seeds the first argument of each resolved
-// call with the first matching parameter row.
+// Both families already carry dense start/count/ordinal metadata, so every
+// argument lane projects its parameter row directly. No serial list walk or
+// pointer-jump scratch is needed.
 
 struct Params
 {
@@ -14,11 +13,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_member_name_token;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> method_call_name_id;
@@ -36,8 +35,6 @@ StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
 
 RWStructuredBuffer<uint> call_arg_param_row;
-RWStructuredBuffer<uint> call_arg_match_jump_a;
-RWStructuredBuffer<uint> call_param_match_jump_a;
 
 static const uint INVALID = 0xffffffffu;
 static const uint INTRINSIC_NONE = 0u;
@@ -55,7 +52,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_arg_row_count()
@@ -80,16 +77,18 @@ bool valid_token(uint token)
 
 uint callee_token_for_hir_call(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
-    uint callee_token = hir_kind[callee_node] == HIR_MEMBER_EXPR
-        ? hir_member_name_token[callee_node]
-        : hir_token_pos[callee_node];
+    HirCore callee = compact_hir_core[callee_node];
+    HirPayload payload = compact_hir_payload[callee_node];
+    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(callee_token))
+        callee_token = callee.token_start;
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
@@ -136,62 +135,15 @@ uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal
     return param_row_matches(row, fn_i, param_ordinal) ? row : INVALID;
 }
 
-uint next_arg_row(uint row)
-{
-    if (row >= active_arg_row_count())
-        return INVALID;
-    uint call_node = call_arg_row_call_node[row];
-    uint ordinal = call_arg_row_ordinal[row];
-    if (!valid_node(call_node))
-        return INVALID;
-    uint start = call_arg_row_start[call_node];
-    uint count = call_arg_row_count[call_node];
-    uint next = row + 1u;
-    if (start == INVALID ||
-        ordinal == INVALID ||
-        ordinal + 1u >= count ||
-        next < start ||
-        next >= active_arg_row_count() ||
-        call_arg_row_call_node[next] != call_node ||
-        call_arg_row_ordinal[next] != ordinal + 1u)
-        return INVALID;
-    return next;
-}
-
-uint next_param_row(uint row)
-{
-    if (row >= active_param_row_count())
-        return INVALID;
-    uint fn_i = call_param_row_fn_token[row];
-    uint ordinal = call_param_row_ordinal[row];
-    if (!valid_token(fn_i))
-        return INVALID;
-    uint start = call_param_row_start[fn_i];
-    uint count = call_param_row_count[fn_i];
-    uint next = row + 1u;
-    if (start == INVALID ||
-        ordinal == INVALID ||
-        ordinal + 1u >= count ||
-        next < start ||
-        next >= active_param_row_count() ||
-        call_param_row_fn_token[next] != fn_i ||
-        call_param_row_ordinal[next] != ordinal + 1u)
-        return INVALID;
-    return next;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
     uint arg_rows = active_arg_row_count();
-    uint param_rows = active_param_row_count();
-
     if (row < arg_rows)
     {
         call_arg_param_row[row] = INVALID;
-        call_arg_match_jump_a[row] = next_arg_row(row);
 
         uint call_node = call_arg_row_call_node[row];
         uint arg_count = valid_node(call_node) ? call_arg_row_count[call_node] : 0u;
@@ -200,7 +152,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
             arg_count,
             call_arg_row_ordinal[row]);
     }
-
-    if (row < param_rows)
-        call_param_match_jump_a[row] = next_param_row(row);
 }

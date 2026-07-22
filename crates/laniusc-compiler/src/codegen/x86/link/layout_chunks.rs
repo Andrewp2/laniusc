@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow, bail};
 
 use super::GpuX86LinkInput;
 use crate::codegen::x86::{
-    GpuX86CodeGenerator,
+    GpuX86Linker,
     support::{
         dispatch_compute_pass,
         reflected_bind_group,
@@ -21,7 +21,7 @@ pub(super) struct GpuX86ResolvedObjectLayout {
     pub layout_status: wgpu::Buffer,
 }
 
-impl GpuX86CodeGenerator {
+impl GpuX86Linker {
     pub(super) fn resolve_object_layout_chunks(
         &self,
         device: &wgpu::Device,

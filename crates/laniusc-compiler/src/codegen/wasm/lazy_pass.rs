@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
-use super::support::trace_wasm_codegen;
+use super::trace_wasm_codegen;
 use crate::{
     gpu::{
         device,
@@ -15,7 +15,7 @@ use crate::{
     reflection::{SlangReflection, parse_reflection_from_bytes},
 };
 
-pub(super) struct LazyWasmPass {
+pub(crate) struct LazyWasmPass {
     stage: &'static str,
     label: &'static str,
     entry: &'static str,
@@ -116,7 +116,7 @@ impl LazyWasmPass {
     }
 }
 
-pub(super) fn create_wasm_bind_group<'a>(
+pub(crate) fn create_wasm_bind_group<'a>(
     device: &wgpu::Device,
     label: Option<&str>,
     pass: &LazyWasmPass,

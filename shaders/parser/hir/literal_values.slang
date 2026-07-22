@@ -42,6 +42,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_STRING = 28u;
 static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
@@ -105,6 +106,27 @@ uint parse_uint_token(uint token_i)
     consume_decimal_digit(start, len, 8u, value, active);
     consume_decimal_digit(start, len, 9u, value, active);
     return value;
+}
+
+uint decoded_escape_byte(uint escaped)
+{
+    if (escaped == 110u) return 10u;
+    if (escaped == 114u) return 13u;
+    if (escaped == 116u) return 9u;
+    if (escaped == 48u) return 0u;
+    if (escaped == 34u) return 34u;
+    if (escaped == 92u) return 92u;
+    return escaped;
+}
+
+uint parse_char_token(uint token_i)
+{
+    uint start = token_words[token_i].start;
+    uint len = token_words[token_i].len;
+    if (len < 3u) return 0u;
+    uint first = source_at(start, 1u);
+    return first == 92u && len >= 4u
+        ? decoded_escape_byte(source_at(start, 2u)) : first;
 }
 
 uint parse_float_token_bits(uint token_i)
@@ -217,6 +239,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             hir_expr_string_start[i] = token_start + 1u;
             hir_expr_string_len[i] = token_len - 2u;
         }
+        return;
+    }
+
+    if (form == HIR_EXPR_CHAR)
+    {
+        uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
+        if (value_token != INVALID)
+            hir_expr_int_value[i] = parse_char_token(value_token);
         return;
     }
 

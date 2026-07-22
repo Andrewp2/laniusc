@@ -17,12 +17,12 @@ use std::{
 mod bind_groups;
 mod bind_models;
 mod bind_support;
+mod compiler_graph;
 mod dependency_interface;
 mod module_path;
 mod params;
 mod pass_loaders;
 mod preflight;
-pub(crate) use preflight::{RecordedModuleRecordCapacity, TypeCheckPreflightCapacities};
 mod record;
 mod resident;
 mod semantic_interface;
@@ -154,52 +154,12 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub call_param_row_capacity: u32,
     /// Exact GPU-counted number of compact call-argument rows.
     pub call_arg_row_capacity: u32,
-    /// Compact generic-parameter artifact used during the raw-HIR differential
-    /// migration. These rows are source ordered and use dense HIR owners.
-    pub compact_hir_count: &'a wgpu::Buffer,
-    pub compact_hir_core: &'a wgpu::Buffer,
+    /// The parser's compact semantic artifact. Keeping this as one typed view
+    /// preserves allocation identity for compiler-graph validation and makes
+    /// it impossible for type-check code to assemble a partial HIR from raw
+    /// parser rows.
+    pub hir: &'a crate::parser::buffers::GpuHirView,
     pub raw_to_compact_hir: &'a wgpu::Buffer,
-    pub compact_hir_links: &'a wgpu::Buffer,
-    pub compact_hir_payload: &'a wgpu::Buffer,
-    pub compact_fn_return_type: &'a wgpu::Buffer,
-    pub compact_type_alias_target: &'a wgpu::Buffer,
-    pub compact_const_type: &'a wgpu::Buffer,
-    pub compact_param_count: &'a wgpu::Buffer,
-    pub compact_params: &'a wgpu::Buffer,
-    pub compact_param_ranges: &'a wgpu::Buffer,
-    pub compact_method_count: &'a wgpu::Buffer,
-    pub compact_method_cores: &'a wgpu::Buffer,
-    pub compact_method_signatures: &'a wgpu::Buffer,
-    pub compact_predicate_count: &'a wgpu::Buffer,
-    pub compact_predicates: &'a wgpu::Buffer,
-    pub compact_type_arg_count: &'a wgpu::Buffer,
-    pub compact_type_args: &'a wgpu::Buffer,
-    pub compact_type_arg_ranges: &'a wgpu::Buffer,
-    pub compact_path_count: &'a wgpu::Buffer,
-    pub compact_paths: &'a wgpu::Buffer,
-    pub compact_path_segment_count: &'a wgpu::Buffer,
-    pub compact_path_segments: &'a wgpu::Buffer,
-    pub compact_generic_param_count: &'a wgpu::Buffer,
-    pub compact_generic_params: &'a wgpu::Buffer,
-    pub compact_generic_param_ranges: &'a wgpu::Buffer,
-    pub compact_field_count: &'a wgpu::Buffer,
-    pub compact_fields: &'a wgpu::Buffer,
-    pub compact_variant_count: &'a wgpu::Buffer,
-    pub compact_variants: &'a wgpu::Buffer,
-    pub compact_variant_payload_start: &'a wgpu::Buffer,
-    pub compact_variant_payload_count: &'a wgpu::Buffer,
-    pub compact_variant_payload_row_count: &'a wgpu::Buffer,
-    pub compact_variant_payloads: &'a wgpu::Buffer,
-    pub compact_match_arm_count: &'a wgpu::Buffer,
-    pub compact_match_arms: &'a wgpu::Buffer,
-    pub compact_match_payload_start: &'a wgpu::Buffer,
-    pub compact_match_payload_count: &'a wgpu::Buffer,
-    pub compact_match_payload_row_count: &'a wgpu::Buffer,
-    pub compact_match_payloads: &'a wgpu::Buffer,
-    pub compact_array_element_start: &'a wgpu::Buffer,
-    pub compact_array_element_count: &'a wgpu::Buffer,
-    pub compact_array_element_row_count: &'a wgpu::Buffer,
-    pub compact_array_elements: &'a wgpu::Buffer,
     pub node_kind: &'a wgpu::Buffer,
     pub parent: &'a wgpu::Buffer,
     pub first_child: &'a wgpu::Buffer,
@@ -267,10 +227,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub call_parent_by_callee: &'a wgpu::Buffer,
     pub call_context_stmt_node: &'a wgpu::Buffer,
     pub call_arg_start: &'a wgpu::Buffer,
-    pub call_arg_end: &'a wgpu::Buffer,
     pub call_arg_count: &'a wgpu::Buffer,
-    pub call_arg_parent_call: &'a wgpu::Buffer,
-    pub call_arg_ordinal: &'a wgpu::Buffer,
     pub struct_field_parent_struct: &'a wgpu::Buffer,
     pub struct_field_ordinal: &'a wgpu::Buffer,
     pub struct_field_type_node: &'a wgpu::Buffer,
@@ -300,9 +257,9 @@ pub struct GpuTypeCheckExternalScratchBuffers<'a> {
     pub type_expr_ref_payload: &'a wgpu::Buffer,
     pub type_generic_param_slot_by_token: &'a wgpu::Buffer,
     pub type_const_param_slot_by_token: &'a wgpu::Buffer,
-    pub record_family_flag: Option<&'a wgpu::Buffer>,
-    pub module_record_prefix: &'a wgpu::Buffer,
-    pub record_scan_local_prefix: &'a wgpu::Buffer,
+    pub record_family_flag: Option<&'a LaniusBuffer<u32>>,
+    pub module_record_prefix: &'a LaniusBuffer<u32>,
+    pub record_scan_local_prefix: &'a LaniusBuffer<u32>,
     pub module_path_key_radix_block_histogram: &'a wgpu::Buffer,
     pub module_path_key_radix_block_bucket_prefix: &'a wgpu::Buffer,
     pub path_id_by_owner_hir: &'a wgpu::Buffer,
@@ -344,8 +301,8 @@ pub struct GpuTypeCheckExternalScratchBuffers<'a> {
     pub method_decl_visibility: &'a wgpu::Buffer,
     pub method_key_to_fn_token: &'a wgpu::Buffer,
     pub method_key_status: &'a wgpu::Buffer,
-    pub method_key_radix_block_histogram: &'a wgpu::Buffer,
-    pub method_key_radix_block_bucket_prefix: &'a wgpu::Buffer,
+    pub method_key_radix_block_histogram: &'a LaniusBuffer<u32>,
+    pub method_key_radix_block_bucket_prefix: &'a LaniusBuffer<u32>,
     pub method_call_receiver_ref_tag: &'a wgpu::Buffer,
     pub method_call_receiver_ref_payload: &'a wgpu::Buffer,
     pub method_call_name_id: &'a wgpu::Buffer,
@@ -448,7 +405,15 @@ pub struct GpuTypeChecker {
 
 /// Marker returned when type-check work has been recorded into a command
 /// encoder and must still be submitted/read back by the caller.
-pub struct RecordedTypeCheck;
+pub struct RecordedTypeCheck {
+    debug_semantic_rows: Option<TypeCheckSemanticDebugReadback>,
+}
+
+struct TypeCheckSemanticDebugReadback {
+    buffer: wgpu::Buffer,
+    hir_rows: u32,
+    token_rows: u32,
+}
 
 #[derive(Clone, Copy)]
 struct ResidentTypeCheckCacheKey {
@@ -525,6 +490,8 @@ struct TypeCheckPasses {
     semantic_features_dispatch_args: PassData,
     expression_types_init: PassData,
     expression_types_step: PassData,
+    semantic_calls_project: PassData,
+    semantic_artifact_project: PassData,
     names_mark_lexemes: PassData,
     counted_scan_local: PassData,
     counted_scan_hierarchy_up: PassData,
@@ -666,14 +633,25 @@ struct TypeCheckPasses {
     predicates_validate_method_type_arg_rows: PassData,
     predicates_reduce_method_validation_errors: PassData,
     predicates_obligations: PassData,
+    semantic_predicate_diagnostics_clear: PassData,
+    semantic_predicate_diagnostics_claim: PassData,
+    semantic_predicate_diagnostics_project: PassData,
     returns_clear: PassData,
     returns_mark: PassData,
     returns_mark_if: PassData,
     returns_validate: PassData,
-    conditions_hir: PassData,
+    conditions_compact_expr: PassData,
+    conditions_compact_stmt: PassData,
+    conditions_compact_calls: PassData,
+    conditions_compact_types: PassData,
+    conditions_compact_methods: PassData,
+    conditions_compact_predicates: PassData,
+    conditions_compact_names: PassData,
+    conditions_compact_aggregate_requests: PassData,
+    semantic_expression_refs_project: PassData,
+    semantic_struct_literal_refs_project: PassData,
     conditions_aggregate_args: PassData,
     conditions_type_subtree: Box<PassData>,
-    control_hir: PassData,
     scope_hir: PassData,
     calls_clear: PassData,
     calls_return_refs: PassData,
@@ -689,8 +667,6 @@ struct TypeCheckPasses {
     calls_resolve: PassData,
     calls_backend_targets: PassData,
     calls_match_arg_params_init: PassData,
-    calls_match_arg_params_copy: PassData,
-    calls_match_arg_params_step: PassData,
     calls_collect_row_args: PassData,
     calls_emit_generic_claims: PassData,
     calls_sort_generic_claims: PassData,
@@ -704,6 +680,7 @@ struct TypeCheckPasses {
     calls_infer_array_generics: PassData,
     calls_validate_array_results: PassData,
     calls_mark_array_args: PassData,
+    calls_project_result_instances: PassData,
     calls_erase_generic_params: PassData,
     methods_clear: PassData,
     methods_collect: PassData,
@@ -797,8 +774,7 @@ struct DependencyCanonicalTypePasses {
 #[allow(dead_code)]
 struct ResidentTypeCheckState {
     cache_key: ResidentTypeCheckCacheKey,
-    compact_expr_scalar_type_a: LaniusBuffer<u32>,
-    compact_expr_scalar_type_b: LaniusBuffer<u32>,
+    typecheck_graph: compiler_graph::TypeCheckCompilerGraph,
     compact_expr_scalar_type: LaniusBuffer<u32>,
     compact_expr_scalar_type_init: wgpu::BindGroup,
     compact_expr_scalar_type_steps: Vec<wgpu::BindGroup>,
@@ -973,11 +949,6 @@ struct ResidentTypeCheckState {
     call_arg_row_start: LaniusBuffer<u32>,
     call_arg_row_count: LaniusBuffer<u32>,
     call_arg_param_row: LaniusBuffer<u32>,
-    call_arg_param_row_tmp: LaniusBuffer<u32>,
-    call_arg_match_jump_a: LaniusBuffer<u32>,
-    call_arg_match_jump_b: LaniusBuffer<u32>,
-    call_param_match_jump_a: LaniusBuffer<u32>,
-    call_param_match_jump_b: LaniusBuffer<u32>,
     call_generic_claim_count_out: Box<LaniusBuffer<u32>>,
     call_generic_claim_scan_input: Box<LaniusBuffer<u32>>,
     call_generic_claim_prefix: Box<LaniusBuffer<u32>>,
@@ -1013,7 +984,7 @@ struct ResidentTypeCheckState {
     call_required_generic_scan_prefix_b: LaniusBuffer<u32>,
     call_required_generic_dispatch_args: LaniusBuffer<u32>,
     call_has_array_arg: LaniusBuffer<u32>,
-    call_array_return_arg_instance: LaniusBuffer<u32>,
+    call_result_instance: LaniusBuffer<u32>,
     call_arg_row_scan_local_prefix: LaniusBuffer<u32>,
     call_arg_row_scan_block_sum: LaniusBuffer<u32>,
     call_arg_row_scan_prefix_a: LaniusBuffer<u32>,
@@ -1182,7 +1153,21 @@ struct ResidentTypeCheckState {
     returns_mark: wgpu::BindGroup,
     returns_mark_if: wgpu::BindGroup,
     returns_validate: wgpu::BindGroup,
-    conditions_hir: wgpu::BindGroup,
+    semantic_predicate_diagnostics_clear: wgpu::BindGroup,
+    semantic_predicate_diagnostics_claim: wgpu::BindGroup,
+    semantic_predicate_diagnostics_project: wgpu::BindGroup,
+    conditions_compact_expr: wgpu::BindGroup,
+    conditions_compact_stmt: wgpu::BindGroup,
+    conditions_compact_calls: wgpu::BindGroup,
+    conditions_compact_types: wgpu::BindGroup,
+    conditions_compact_methods: wgpu::BindGroup,
+    conditions_compact_predicates: wgpu::BindGroup,
+    conditions_compact_names: wgpu::BindGroup,
+    conditions_compact_aggregate_requests: wgpu::BindGroup,
+    semantic_expression_refs_project: wgpu::BindGroup,
+    semantic_struct_literal_refs_project: wgpu::BindGroup,
+    semantic_calls_project: wgpu::BindGroup,
+    semantic_artifact_project: wgpu::BindGroup,
     aggregate_compare_scan: U32ScanBindGroups,
     aggregate_compare_scan_n_blocks: u32,
     aggregate_compare_dispatch: wgpu::BindGroup,
@@ -1191,7 +1176,6 @@ struct ResidentTypeCheckState {
     type_subtree_compare_scan_n_blocks: u32,
     type_subtree_compare_dispatch: Box<wgpu::BindGroup>,
     conditions_type_subtree: Box<wgpu::BindGroup>,
-    control: wgpu::BindGroup,
     scope_hir: wgpu::BindGroup,
 }
 
@@ -1319,22 +1303,66 @@ pub struct GpuCodegenBuffers<'a> {
 /// stage. Keeping this narrow prevents the new backend boundary from
 /// inheriting the legacy backend's token-indexed metadata surface.
 #[derive(Clone, Copy)]
+#[repr(C)]
+#[derive(encase::ShaderType)]
+pub(crate) struct GpuCheckedCallArtifact {
+    pub target_token: u32,
+    pub dependency_decl: u32,
+    pub intrinsic_tag: u32,
+    pub return_type: u32,
+    pub receiver_hir: u32,
+    pub arg_count: u32,
+    pub return_ref_tag: u32,
+    pub return_ref_payload: u32,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct GpuCheckedSemanticArtifact<'a> {
+    /// Resolved declaration identity for each compact HIR value row.
+    pub value_decl_by_hir: &'a LaniusBuffer<u32>,
+    /// Resolved type identity for each compact HIR value row.
+    pub value_type_by_hir: &'a LaniusBuffer<u32>,
+    /// Resolved type identity for each compact parameter row.
+    pub param_type_by_row: &'a LaniusBuffer<u32>,
+    /// Encoded enclosing compact-HIR function identity for each HIR row.
+    pub enclosing_fn_by_hir: &'a LaniusBuffer<u32>,
+    /// Canonical checked call resolution keyed by call-expression HIR row.
+    pub calls_by_hir: &'a LaniusBuffer<GpuCheckedCallArtifact>,
+    /// Canonical checked type-reference tag keyed by dense expression HIR row.
+    pub expr_ref_tag_by_hir: &'a LaniusBuffer<u32>,
+    /// Canonical checked type-reference payload keyed by dense expression HIR row.
+    pub expr_ref_payload_by_hir: &'a LaniusBuffer<u32>,
+}
+
+/// Typed allocation-preserving view used by the shared semantic lowering
+/// stage. Token-indexed tables remain private to unfinished type-checking and
+/// legacy backend paths; the new lowering boundary consumes compact artifacts.
+#[derive(Clone, Copy)]
 pub(crate) struct GpuSemanticLoweringBuffers<'a> {
+    pub checked: GpuCheckedSemanticArtifact<'a>,
     pub compact_expr_scalar_type: &'a LaniusBuffer<u32>,
     pub name_id_by_token: &'a LaniusBuffer<u32>,
     pub language_name_id: &'a LaniusBuffer<u32>,
-    pub enclosing_fn: &'a LaniusBuffer<u32>,
     pub if_depth: &'a LaniusBuffer<i32>,
-    pub visible_decl: &'a LaniusBuffer<u32>,
-    pub visible_type: &'a LaniusBuffer<u32>,
-    pub backend_call_fn_index: &'a LaniusBuffer<u32>,
-    pub call_intrinsic_tag: &'a LaniusBuffer<u32>,
     pub call_return_type: &'a LaniusBuffer<u32>,
     pub fn_entrypoint_tag: &'a LaniusBuffer<u32>,
+    /// Persisted public-declaration index keyed by dense compact HIR node.
+    pub public_decl_index_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical field ordinal for a checked member-name token.
     pub member_result_field_ordinal: &'a LaniusBuffer<u32>,
     /// Canonical declaration-order ordinal for each compact literal-field row.
     pub struct_init_field_ordinal_by_row: &'a LaniusBuffer<u32>,
+}
+
+/// Canonical identities for declarations imported by one bounded unit.
+/// Semantic lowering reads only these columns; the larger dependency
+/// type-check state remains outside the backend contract.
+#[derive(Clone, Copy)]
+pub(crate) struct GpuDependencySymbolBuffers<'a> {
+    pub counts: &'a LaniusBuffer<u32>,
+    pub declaration_library_id: &'a LaniusBuffer<u32>,
+    pub declaration_unit_id: &'a LaniusBuffer<u32>,
+    pub declaration_local_index: &'a LaniusBuffer<u32>,
 }
 
 /// Borrowed GPU tables required to canonicalize a bounded unit's public
@@ -1414,10 +1442,16 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
 /// This wrapper is the lifetime boundary between the type-check resident cache
 /// and later backend recording.
 pub struct OwnedGpuCodegenBuffers {
+    semantic_value_decl_by_hir: LaniusBuffer<u32>,
+    semantic_value_type_by_hir: LaniusBuffer<u32>,
+    semantic_param_type_by_row: LaniusBuffer<u32>,
+    semantic_enclosing_fn_by_hir: LaniusBuffer<u32>,
+    semantic_calls_by_hir: LaniusBuffer<GpuCheckedCallArtifact>,
+    semantic_expr_ref_tag_by_hir: LaniusBuffer<u32>,
+    semantic_expr_ref_payload_by_hir: LaniusBuffer<u32>,
     compact_expr_scalar_type: LaniusBuffer<u32>,
     name_id_by_token: LaniusBuffer<u32>,
     language_name_id: LaniusBuffer<u32>,
-    enclosing_fn_hir: LaniusBuffer<u32>,
     enclosing_fn: LaniusBuffer<u32>,
     if_depth: LaniusBuffer<i32>,
     visible_decl: LaniusBuffer<u32>,
@@ -1440,6 +1474,7 @@ pub struct OwnedGpuCodegenBuffers {
     public_decl_count: LaniusBuffer<u32>,
     public_decl_local_id: LaniusBuffer<u32>,
     public_decl_index_by_local: LaniusBuffer<u32>,
+    public_decl_index_by_hir: LaniusBuffer<u32>,
     decl_type_ref_tag: LaniusBuffer<u32>,
     decl_type_ref_payload: LaniusBuffer<u32>,
     type_expr_ref_tag: LaniusBuffer<u32>,
@@ -1697,17 +1732,22 @@ impl OwnedGpuCodegenBuffers {
     pub fn as_ref(&self) -> GpuCodegenBuffers<'_> {
         GpuCodegenBuffers {
             lowering: GpuSemanticLoweringBuffers {
+                checked: GpuCheckedSemanticArtifact {
+                    value_decl_by_hir: &self.semantic_value_decl_by_hir,
+                    value_type_by_hir: &self.semantic_value_type_by_hir,
+                    param_type_by_row: &self.semantic_param_type_by_row,
+                    enclosing_fn_by_hir: &self.semantic_enclosing_fn_by_hir,
+                    calls_by_hir: &self.semantic_calls_by_hir,
+                    expr_ref_tag_by_hir: &self.semantic_expr_ref_tag_by_hir,
+                    expr_ref_payload_by_hir: &self.semantic_expr_ref_payload_by_hir,
+                },
                 compact_expr_scalar_type: &self.compact_expr_scalar_type,
                 name_id_by_token: &self.name_id_by_token,
                 language_name_id: &self.language_name_id,
-                enclosing_fn: &self.enclosing_fn_hir,
                 if_depth: &self.if_depth,
-                visible_decl: &self.visible_decl,
-                visible_type: &self.visible_type,
-                backend_call_fn_index: &self.call_fn_index,
-                call_intrinsic_tag: &self.call_intrinsic_tag,
                 call_return_type: &self.call_return_type,
                 fn_entrypoint_tag: &self.fn_entrypoint_tag,
+                public_decl_index_by_hir: &self.public_decl_index_by_hir,
                 member_result_field_ordinal: &self.member_result_field_ordinal,
                 struct_init_field_ordinal_by_row: &self.struct_init_field_ordinal_by_row,
             },

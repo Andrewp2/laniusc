@@ -16,7 +16,7 @@ use crate::{
         passes_core::map_readback_blocking,
     },
     parser::buffers::GpuHirView,
-    type_checker::{GpuCodegenBuffers, GpuSemanticLoweringBuffers},
+    type_checker::{GpuCodegenBuffers, GpuDependencySymbolBuffers, GpuSemanticLoweringBuffers},
 };
 
 enum TargetStage {
@@ -46,7 +46,14 @@ pub(crate) struct GpuLoweringPipeline {
     semantic: GpuSemanticLoweringStage,
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
+    debug_lowering_readback: Option<LaniusBuffer<u8>>,
 }
+
+const DEBUG_HIR_ROWS: u64 = 64;
+const DEBUG_HIR_CORE_OFFSET: u64 = 0;
+const DEBUG_HIR_PAYLOAD_OFFSET: u64 = 1024;
+const DEBUG_SEMANTIC_CORE_OFFSET: u64 = 2048;
+const DEBUG_HIR_COUNT_OFFSET: u64 = 4080;
 
 impl GpuLoweringPipeline {
     pub(crate) fn new(
@@ -80,12 +87,15 @@ impl GpuLoweringPipeline {
             )?),
         };
         let status_readback = readback_bytes(device, "lowering.status.readback", 16, 16);
+        let debug_lowering_readback = std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS")
+            .map(|_| readback_bytes(device, "lowering.debug.readback", 4096, 4096));
         Ok(Self {
             graph,
             _workspace: workspace,
             semantic,
             target,
             status_readback,
+            debug_lowering_readback,
         })
     }
 
@@ -95,9 +105,40 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         hir: GpuSemanticHirInputs<'_>,
         semantic_inputs: GpuSemanticLoweringBuffers<'_>,
+        dependencies: Option<GpuDependencySymbolBuffers<'_>>,
     ) -> Result<()> {
         self.semantic
-            .record(device, encoder, hir, semantic_inputs)?;
+            .record(device, encoder, hir, semantic_inputs, dependencies)?;
+        if let Some(readback) = &self.debug_lowering_readback {
+            encoder.copy_buffer_to_buffer(
+                &hir.core.buffer,
+                0,
+                &readback.buffer,
+                DEBUG_HIR_CORE_OFFSET,
+                (hir.core.byte_size as u64).min(DEBUG_HIR_ROWS * 16),
+            );
+            encoder.copy_buffer_to_buffer(
+                &hir.payload.buffer,
+                0,
+                &readback.buffer,
+                DEBUG_HIR_PAYLOAD_OFFSET,
+                (hir.payload.byte_size as u64).min(DEBUG_HIR_ROWS * 16),
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.semantic.output().core.buffer,
+                0,
+                &readback.buffer,
+                DEBUG_SEMANTIC_CORE_OFFSET,
+                (self.semantic.output().core.byte_size as u64).min(DEBUG_HIR_ROWS * 24),
+            );
+            encoder.copy_buffer_to_buffer(
+                &hir.count.buffer,
+                0,
+                &readback.buffer,
+                DEBUG_HIR_COUNT_OFFSET,
+                4,
+            );
+        }
         match &self.target {
             TargetStage::X86_64(stage) => stage.record(encoder),
             TargetStage::Wasm(stage) => stage.record(encoder),
@@ -122,8 +163,71 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         hir: &GpuHirView,
         semantic: GpuCodegenBuffers<'_>,
+        dependencies: Option<GpuDependencySymbolBuffers<'_>>,
     ) -> Result<()> {
-        self.record(device, encoder, hir.into(), semantic.lowering)
+        self.record(device, encoder, hir.into(), semantic.lowering, dependencies)
+    }
+
+    pub(crate) fn record_checked_hir_wasm_object(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        hir: &GpuHirView,
+        semantic: GpuCodegenBuffers<'_>,
+        dependencies: Option<GpuDependencySymbolBuffers<'_>>,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.semantic
+            .record(device, encoder, hir.into(), semantic.lowering, dependencies)?;
+        match &self.target {
+            TargetStage::Wasm(stage) => {
+                stage.record_object(queue, encoder, library_id, unit_id)?;
+            }
+            TargetStage::X86_64(_) => {
+                anyhow::bail!("the selected lowering pipeline cannot record a Wasm object")
+            }
+        }
+        encoder.copy_buffer_to_buffer(
+            &self.semantic.status().buffer,
+            0,
+            &self.status_readback.buffer,
+            0,
+            16,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn record_checked_hir_x86_object(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        hir: &GpuHirView,
+        semantic: GpuCodegenBuffers<'_>,
+        dependencies: Option<GpuDependencySymbolBuffers<'_>>,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.semantic
+            .record(device, encoder, hir.into(), semantic.lowering, dependencies)?;
+        match &self.target {
+            TargetStage::X86_64(stage) => {
+                stage.record_object(queue, encoder, library_id, unit_id)?;
+            }
+            TargetStage::Wasm(_) => {
+                anyhow::bail!("the selected lowering pipeline cannot record an x86 object")
+            }
+        }
+        encoder.copy_buffer_to_buffer(
+            &self.semantic.status().buffer,
+            0,
+            &self.status_readback.buffer,
+            0,
+            16,
+        );
+        Ok(())
     }
 
     pub(crate) fn output(&self) -> GpuTargetLirView<'_> {
@@ -166,6 +270,54 @@ impl GpuLoweringPipeline {
         }
     }
 
+    pub(crate) fn finish_wasm_object(
+        &self,
+        device: &wgpu::Device,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<super::wasm::GpuWasmRelocatableObject> {
+        let status = self.finish_status(device)?;
+        if status.flags != 0 {
+            anyhow::bail!(
+                "GPU lowering failed (flags=0x{:x}, first HIR={}, required capacity={}, available capacity={})",
+                status.flags,
+                status.first_unsupported_hir,
+                status.required_capacity,
+                status.available_capacity,
+            );
+        }
+        match &self.target {
+            TargetStage::Wasm(stage) => stage.finish_object(device, library_id, unit_id),
+            TargetStage::X86_64(_) => {
+                anyhow::bail!("the selected lowering pipeline does not produce a Wasm object")
+            }
+        }
+    }
+
+    pub(crate) fn finish_x86_object(
+        &self,
+        device: &wgpu::Device,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<super::x86::GpuX86RelocatableObject> {
+        let status = self.finish_status(device)?;
+        if status.flags != 0 {
+            anyhow::bail!(
+                "GPU lowering failed (flags=0x{:x}, first HIR={}, required capacity={}, available capacity={})",
+                status.flags,
+                status.first_unsupported_hir,
+                status.required_capacity,
+                status.available_capacity,
+            );
+        }
+        match &self.target {
+            TargetStage::X86_64(stage) => stage.finish_object(device, library_id, unit_id),
+            TargetStage::Wasm(_) => {
+                anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
+            }
+        }
+    }
+
     pub(crate) fn finish_x86_artifact(&self, device: &wgpu::Device) -> Result<Vec<u8>> {
         let status = self.finish_status(device)?;
         if status.flags != 0 {
@@ -199,7 +351,52 @@ impl GpuLoweringPipeline {
         };
         drop(mapped);
         self.status_readback.unmap();
+        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            eprintln!(
+                "GPU lowering status: flags=0x{:x}, first HIR={}, required capacity={}, available capacity={}",
+                status.flags,
+                status.first_unsupported_hir,
+                status.required_capacity,
+                status.available_capacity,
+            );
+            self.print_debug_lowering_rows(device)?;
+        }
         Ok(status)
+    }
+
+    fn print_debug_lowering_rows(&self, device: &wgpu::Device) -> Result<()> {
+        let Some(readback) = &self.debug_lowering_readback else {
+            return Ok(());
+        };
+        let slice = readback.slice(..);
+        map_readback_blocking(device, &slice, "lowering debug readback")?;
+        let mapped = slice.get_mapped_range();
+        let word = |offset: u64, index: usize| {
+            let start = offset as usize + index * 4;
+            u32::from_le_bytes(mapped[start..start + 4].try_into().unwrap())
+        };
+        let hir_count = word(DEBUG_HIR_COUNT_OFFSET, 0).min(DEBUG_HIR_ROWS as u32);
+        for row in 0..hir_count as usize {
+            let core = [0, 1, 2, 3].map(|field| word(DEBUG_HIR_CORE_OFFSET, row * 4 + field));
+            let payload = [0, 1, 2, 3].map(|field| word(DEBUG_HIR_PAYLOAD_OFFSET, row * 4 + field));
+            eprintln!("compact HIR {row}: core={core:?}, payload={payload:?}");
+        }
+        let semantic_total = self
+            .semantic
+            .output()
+            .core
+            .count
+            .min(DEBUG_HIR_ROWS as usize);
+        for row in 0..semantic_total {
+            let core =
+                [0, 1, 2, 3, 4, 5].map(|field| word(DEBUG_SEMANTIC_CORE_OFFSET, row * 6 + field));
+            if core[0] != 0 || core[4] != 0 {
+                eprintln!("semantic LIR {row}: core={core:?}");
+            }
+        }
+        drop(mapped);
+        readback.unmap();
+        Ok(())
     }
 }
 

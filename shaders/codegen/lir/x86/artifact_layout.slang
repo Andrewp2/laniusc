@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.runtime_abi;
 
 struct Params { uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity; };
 ConstantBuffer<Params> gParams;
@@ -8,12 +9,13 @@ StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
 StructuredBuffer<uint> target_byte_offset;
+StructuredBuffer<uint> semantic_lir_string_pool_len;
 RWStructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
 RWStructuredBuffer<uint> x86_artifact_length;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint ELF_TEXT_OFFSET = 0x78u;
-static const uint ENTRY_WRAPPER_BYTES = 14u;
+static const uint ENTRY_WRAPPER_BYTES = 17u;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
@@ -25,7 +27,11 @@ void main()
     layout.entrypoint_function = x86_entrypoint_state[1u];
     layout.text_offset = ELF_TEXT_OFFSET;
     layout.body_offset = ELF_TEXT_OFFSET + ENTRY_WRAPPER_BYTES;
-    layout.file_length = layout.body_offset + layout.body_length;
+    layout.runtime_offset = layout.body_offset + layout.body_length;
+    layout.runtime_length = X86_RUNTIME_LENGTH;
+    layout.rodata_offset = layout.runtime_offset + layout.runtime_length;
+    layout.rodata_length = semantic_lir_string_pool_len[0u];
+    layout.file_length = layout.rodata_offset + layout.rodata_length;
     layout.entrypoint_body_offset = 0xffffffffu;
     layout.status = 0u;
 

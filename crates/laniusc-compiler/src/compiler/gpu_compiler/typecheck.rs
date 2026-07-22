@@ -61,6 +61,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             0,
             dependency_interfaces,
             false,
+            None,
+            None,
         )
         .await
         .map(|_| ())
@@ -84,8 +86,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             0,
             &[],
             true,
+            None,
+            None,
         )
         .await?
+        .semantic_interface
         .ok_or_else(|| {
             CompileError::GpuFrontend(
                 "semantic-interface export did not produce an artifact".to_string(),
@@ -131,8 +136,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             unit_id,
             dependency_interfaces,
             true,
+            None,
+            None,
         )
         .await?
+        .semantic_interface
         .ok_or_else(|| {
             CompileError::GpuFrontend(
                 "semantic-interface export did not produce an artifact".to_string(),
@@ -170,6 +178,21 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: PathBuf,
     ) -> Result<(), CompileError> {
+        self.compile_checked_source_with_lowering(src, diagnostic_path, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Shared production frontend boundary. A selected target appends the
+    /// graph-owned semantic and target lowering passes to the same ordered job
+    /// that produced the checked compact HIR. With no target this is the
+    /// ordinary type-check operation.
+    pub(super) async fn compile_checked_source_with_lowering(
+        &self,
+        src: &str,
+        diagnostic_path: PathBuf,
+        target: Option<LoweringTarget>,
+    ) -> Result<Option<Vec<u8>>, CompileError> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
             .with_recorded_resident_tokens_after_count(
@@ -276,6 +299,35 @@ impl<'gpu> GpuCompiler<'gpu> {
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
+                    if let Some(target) = target {
+                        self.ensure_lowering_capacity(
+                            bufs.n,
+                            token_capacity,
+                            typecheck_parse.hir.capacity,
+                        )
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        let pipeline = match target {
+                            LoweringTarget::X86_64 => self.x86_lowering_pipeline(),
+                            LoweringTarget::Wasm => self.wasm_lowering_pipeline(),
+                        }
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        self.type_checker
+                            .with_codegen_buffers(|semantic| {
+                                pipeline.record_checked_hir(
+                                    device,
+                                    encoder,
+                                    &typecheck_parse.hir,
+                                    semantic,
+                                    None,
+                                )
+                            })
+                            .ok_or_else(|| {
+                                CompileError::GpuCodegen(
+                                    "semantic lowering buffers are unavailable".into(),
+                                )
+                            })?
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                    }
                     Ok(type_check)
                 },
                 |device, queue, bufs, type_check| {
@@ -290,7 +342,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 &diagnostic_path,
                                 err,
                             )
-                        })
+                        })?;
+                    match target {
+                        None => Ok(None),
+                        Some(LoweringTarget::X86_64) => self
+                            .x86_lowering_pipeline()
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                            .finish_x86_artifact(device)
+                            .map(Some)
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string())),
+                        Some(LoweringTarget::Wasm) => self
+                            .wasm_lowering_pipeline()
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                            .finish_wasm_artifact(device)
+                            .map(Some)
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string())),
+                    }
                 },
             )
             .await
@@ -318,9 +385,84 @@ impl<'gpu> GpuCompiler<'gpu> {
             0,
             &[],
             false,
+            None,
+            None,
         )
         .await
         .map(|_| ())
+    }
+
+    /// Compiles one already-bounded source-pack unit through the same compact
+    /// HIR and graph-owned lowering boundary used by a single source file.
+    pub(super) async fn compile_checked_source_pack_with_lowering<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+        target: LoweringTarget,
+    ) -> Result<Vec<u8>, CompileError> {
+        self.type_check_explicit_source_pack_with_paths_and_interface(
+            sources,
+            source_paths,
+            None,
+            0,
+            &[],
+            false,
+            Some(target),
+            None,
+        )
+        .await?
+        .target_artifact
+        .ok_or_else(|| CompileError::GpuCodegen("lowering produced no target artifact".into()))
+    }
+
+    pub(super) async fn compile_checked_source_pack_to_wasm_object_with_lowering<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        library_id: u32,
+        unit_id: u32,
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+    ) -> Result<crate::codegen::wasm::GpuWasmRelocatableObject, CompileError> {
+        self.type_check_explicit_source_pack_with_paths_and_interface(
+            sources,
+            None,
+            Some(library_id),
+            unit_id,
+            dependency_interfaces,
+            false,
+            None,
+            Some(LoweringObjectRequest::Wasm {
+                library_id,
+                unit_id,
+            }),
+        )
+        .await?
+        .wasm_object
+        .ok_or_else(|| CompileError::GpuCodegen("lowering produced no Wasm object".into()))
+    }
+
+    pub(super) async fn compile_checked_source_pack_to_x86_object_with_lowering<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        library_id: u32,
+        unit_id: u32,
+        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+    ) -> Result<crate::codegen::x86::GpuX86RelocatableObject, CompileError> {
+        self.type_check_explicit_source_pack_with_paths_and_interface(
+            sources,
+            None,
+            Some(library_id),
+            unit_id,
+            dependency_interfaces,
+            false,
+            None,
+            Some(LoweringObjectRequest::X86_64 {
+                library_id,
+                unit_id,
+            }),
+        )
+        .await?
+        .x86_object
+        .ok_or_else(|| CompileError::GpuCodegen("lowering produced no x86 object".into()))
     }
 
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
@@ -331,7 +473,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
         emit_semantic_interface: bool,
-    ) -> Result<Option<crate::compiler::GpuSemanticInterfaceArtifact>, CompileError> {
+        lowering_target: Option<LoweringTarget>,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<CheckedSourcePackArtifacts, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         let dependency_state = match library_id {
@@ -481,6 +625,96 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 })
                         })
                         .transpose()?;
+                    if lowering_target.is_some() && object_request.is_some() {
+                        return Err(CompileError::GpuCodegen(
+                            "one lowering job cannot request both an executable and an object"
+                                .into(),
+                        ));
+                    }
+                    if let Some(target) = lowering_target {
+                        self.ensure_lowering_capacity(
+                            bufs.n,
+                            token_capacity,
+                            typecheck_parse.hir.capacity,
+                        )
+                        .map_err(CompileError::GpuCodegen)?;
+                        let pipeline = match target {
+                            LoweringTarget::X86_64 => self.x86_lowering_pipeline(),
+                            LoweringTarget::Wasm => self.wasm_lowering_pipeline(),
+                        }
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        self.type_checker
+                            .with_codegen_buffers(|semantic| {
+                                pipeline.record_checked_hir(
+                                    device,
+                                    encoder,
+                                    &typecheck_parse.hir,
+                                    semantic,
+                                    dependency_state
+                                        .as_ref()
+                                        .map(|dependencies| dependencies.symbol_buffers()),
+                                )
+                            })
+                            .ok_or_else(|| {
+                                CompileError::GpuCodegen(
+                                    "semantic lowering buffers are unavailable".into(),
+                                )
+                            })?
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                    }
+                    if let Some(request) = object_request {
+                        self.ensure_lowering_capacity(
+                            bufs.n,
+                            token_capacity,
+                            typecheck_parse.hir.capacity,
+                        )
+                        .map_err(CompileError::GpuCodegen)?;
+                        let pipeline = match request {
+                            LoweringObjectRequest::X86_64 { .. } => self.x86_lowering_pipeline(),
+                            LoweringObjectRequest::Wasm { .. } => self.wasm_lowering_pipeline(),
+                        }
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        self.type_checker
+                            .with_codegen_buffers(|semantic| {
+                                let dependencies = dependency_state
+                                    .as_ref()
+                                    .map(|dependencies| dependencies.symbol_buffers());
+                                match request {
+                                    LoweringObjectRequest::X86_64 {
+                                        library_id,
+                                        unit_id,
+                                    } => pipeline.record_checked_hir_x86_object(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        &typecheck_parse.hir,
+                                        semantic,
+                                        dependencies,
+                                        library_id,
+                                        unit_id,
+                                    ),
+                                    LoweringObjectRequest::Wasm {
+                                        library_id,
+                                        unit_id,
+                                    } => pipeline.record_checked_hir_wasm_object(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        &typecheck_parse.hir,
+                                        semantic,
+                                        dependencies,
+                                        library_id,
+                                        unit_id,
+                                    ),
+                                }
+                            })
+                            .ok_or_else(|| {
+                                CompileError::GpuCodegen(
+                                    "semantic lowering buffers are unavailable".into(),
+                                )
+                            })?
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                    }
                     Ok(RecordedTypeCheckWithDiagnosticBuffers {
                         type_check,
                         diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
@@ -499,7 +733,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 err,
                             )
                         })?;
-                    recorded
+                    let semantic_interface = recorded
                         .semantic_interface
                         .as_ref()
                         .map(|identity| {
@@ -511,7 +745,58 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     ))
                                 })
                         })
-                        .transpose()
+                        .transpose()?;
+                    let target_artifact = match lowering_target {
+                        None => None,
+                        Some(LoweringTarget::X86_64) => Some(
+                            self.x86_lowering_pipeline()
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                                .finish_x86_artifact(device)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?,
+                        ),
+                        Some(LoweringTarget::Wasm) => Some(
+                            self.wasm_lowering_pipeline()
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                                .finish_wasm_artifact(device)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?,
+                        ),
+                    };
+                    let x86_object = object_request
+                        .and_then(|request| match request {
+                            LoweringObjectRequest::X86_64 {
+                                library_id,
+                                unit_id,
+                            } => Some((library_id, unit_id)),
+                            LoweringObjectRequest::Wasm { .. } => None,
+                        })
+                        .map(|(library_id, unit_id)| {
+                            self.x86_lowering_pipeline()
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                                .finish_x86_object(device, library_id, unit_id)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        })
+                        .transpose()?;
+                    let wasm_object = object_request
+                        .and_then(|request| match request {
+                            LoweringObjectRequest::Wasm {
+                                library_id,
+                                unit_id,
+                            } => Some((library_id, unit_id)),
+                            LoweringObjectRequest::X86_64 { .. } => None,
+                        })
+                        .map(|(library_id, unit_id)| {
+                            self.wasm_lowering_pipeline()
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                                .finish_wasm_object(device, library_id, unit_id)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        })
+                        .transpose()?;
+                    Ok(CheckedSourcePackArtifacts {
+                        semantic_interface,
+                        target_artifact,
+                        x86_object,
+                        wasm_object,
+                    })
                 },
             )
             .await
@@ -685,6 +970,19 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
     diagnostic_tokens: DiagnosticTokenBuffer,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
+}
+
+#[derive(Clone, Copy)]
+enum LoweringObjectRequest {
+    X86_64 { library_id: u32, unit_id: u32 },
+    Wasm { library_id: u32, unit_id: u32 },
+}
+
+struct CheckedSourcePackArtifacts {
+    semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
+    target_artifact: Option<Vec<u8>>,
+    x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
+    wasm_object: Option<crate::codegen::wasm::GpuWasmRelocatableObject>,
 }
 
 struct DiagnosticTokenBuffer {

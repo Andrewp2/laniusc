@@ -9,17 +9,11 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> semantic_local_flag;
 StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_function_id;
-StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
-
-uint checked_type(uint token)
-{
-    if (token == LIR_INVALID || token >= gParams.n_tokens) return 0u;
-    return visible_type[token];
-}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -43,7 +37,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // disjoint n_tokens + HIR domain names compiler-generated slots.
         result.declaration_id = local == 0u ? payload.b : gParams.n_tokens + hir;
         result.ordinal = row + local - function.local_start;
-        result.type_id = local == 0u ? checked_type(payload.b) : 3u;
+        result.type_id = local == 0u ? semantic_value_type_by_hir[hir] : 3u;
         semantic_lir_locals[row + local] = result;
     }
 }

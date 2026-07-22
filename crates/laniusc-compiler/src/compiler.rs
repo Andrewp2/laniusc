@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 use crate::codegen::unit::artifact_key_for_output as source_pack_artifact_key_for_output;
 use crate::{
     codegen::{
+        lowering_ir::{LoweringCapacities, LoweringTarget},
+        lowering_pipeline::GpuLoweringPipeline,
         unit::{
             CodegenUnit,
             CodegenUnitLimits,
@@ -76,7 +78,7 @@ use crate::{
     },
     parser::{
         buffers::ParserBuffers,
-        driver::{GpuParser, Ll1AcceptResult, ResidentParserCapacity},
+        driver::{GpuParser, Ll1AcceptResult},
         tables::PrecomputedParseTables,
     },
     type_checker as gpu_type_checker,

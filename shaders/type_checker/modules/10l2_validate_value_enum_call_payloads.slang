@@ -14,11 +14,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_call_context_stmt_node;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_row_ordinal;
@@ -39,6 +34,7 @@ StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
+StructuredBuffer<uint> path_call_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -71,7 +67,6 @@ StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> enclosing_fn;
-StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> name_id_by_token;
 
@@ -89,17 +84,12 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_KIND_VALUE = 3u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
-
-static const uint EXPR_RECORD_STRIDE = 4u;
-static const uint EXPR_RECORD_FORM = 0u;
-static const uint EXPR_RECORD_LEFT = 1u;
-static const uint EXPR_RECORD_RIGHT = 2u;
-static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
+static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 
 static const uint HIR_EXPR_NONE = 0u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -233,24 +223,17 @@ uint generic_param_token_for_variant_payload(uint variant, uint type_head)
     return generic_param_token[row];
 }
 
-uint stmt_slot(uint node, uint slot)
-{
-    return node * STMT_RECORD_STRIDE + slot;
-}
-
-uint expr_record_slot(uint node, uint slot)
-{
-    return hir_expr_record[node * EXPR_RECORD_STRIDE + slot];
-}
-
 uint expr_form(uint node)
 {
-    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_FORM) : HIR_EXPR_NONE;
+    return valid_compact_node(node) ? compact_hir_payload[node].a : HIR_EXPR_NONE;
 }
 
 uint expr_value_token(uint node)
 {
-    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
+    if (!valid_compact_node(node))
+        return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint function_return_instance_for_token(uint token)
@@ -277,16 +260,9 @@ uint function_return_instance_for_call(uint owner_token, uint call_node)
     uint instance = function_return_instance_for_token(owner_token);
     if (instance != INVALID)
         return instance;
-    return valid_node(call_node) ? function_return_instance_for_token(hir_token_pos[call_node])
+    return valid_compact_node(call_node)
+               ? function_return_instance_for_token(compact_hir_core[call_node].token_start)
                                  : INVALID;
-}
-
-uint result_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : INVALID;
 }
 
 uint type_code_for_ref(uint tag, uint payload)
@@ -332,8 +308,7 @@ uint visible_type_for_token(uint token)
 
 uint direct_arithmetic_operand_type(uint node)
 {
-    node = result_expr(node);
-    if (!valid_node(node))
+    if (!valid_compact_node(node))
         return TY_UNKNOWN;
 
     uint form = expr_form(node);
@@ -347,7 +322,7 @@ uint direct_arithmetic_operand_type(uint node)
     {
         uint token = expr_value_token(node);
         if (!valid_token(token))
-            token = hir_token_pos[node];
+            token = compact_hir_core[node].token_start;
         return visible_type_for_token(token);
     }
 
@@ -356,8 +331,7 @@ uint direct_arithmetic_operand_type(uint node)
 
 uint direct_expr_type(uint node)
 {
-    node = result_expr(node);
-    if (!valid_node(node))
+    if (!valid_compact_node(node))
         return TY_UNKNOWN;
 
     uint form = expr_form(node);
@@ -371,7 +345,7 @@ uint direct_expr_type(uint node)
     {
         uint token = expr_value_token(node);
         if (!valid_token(token))
-            token = hir_token_pos[node];
+            token = compact_hir_core[node].token_start;
         return visible_type_for_token(token);
     }
 
@@ -392,8 +366,9 @@ uint direct_expr_type(uint node)
         form == HIR_EXPR_MUL ||
         form == HIR_EXPR_DIV)
     {
-        uint left_ty = direct_arithmetic_operand_type(expr_record_slot(node, EXPR_RECORD_LEFT));
-        uint right_ty = direct_arithmetic_operand_type(expr_record_slot(node, EXPR_RECORD_RIGHT));
+        HirPayload record = compact_hir_payload[node];
+        uint left_ty = direct_arithmetic_operand_type(record.b);
+        uint right_ty = direct_arithmetic_operand_type(record.c);
         return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
     }
 
@@ -410,14 +385,19 @@ uint direct_expr_type(uint node)
 
 uint contextual_instance_for_call(uint owner_token, uint call_node)
 {
-    uint context_node = valid_node(call_node) ? hir_call_context_stmt_node[call_node] : INVALID;
-    if (!valid_node(context_node))
+    uint encoded_context = valid_compact_node(call_node) ? compact_hir_payload[call_node].d
+                                                         : HIR_CALL_CONTEXT_ID_MASK;
+    uint context_node = (encoded_context & HIR_CALL_CONTEXT_ID_MASK) != HIR_CALL_CONTEXT_ID_MASK
+        ? encoded_context & HIR_CALL_CONTEXT_ID_MASK
+        : INVALID;
+    if (!valid_compact_node(context_node))
         return function_return_instance_for_call(owner_token, call_node);
 
-    uint context_kind = hir_stmt_record[stmt_slot(context_node, 0u)];
+    HirPayload context = compact_hir_payload[context_node];
+    uint context_kind = context.a;
     if (context_kind == STMT_RECORD_KIND_LET)
     {
-        uint decl_token = hir_stmt_record[stmt_slot(context_node, 1u)];
+        uint decl_token = context.b;
         if (valid_token(decl_token))
         {
             uint tag = decl_type_ref_tag[decl_token];
@@ -530,12 +510,13 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant)
     return valid_token(enum_token) && valid_variant(variant);
 }
 
-uint call_arg_count_for_call(uint owner_token, uint call_node)
+uint dense_call_for_path(uint path_i)
 {
-    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
-    if (!valid_node(call_node))
-        return record_count;
-    return max(record_count, call_arg_row_count[call_node]);
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint call_node = path_i < active_path_count() ? path_call_hir[path_i] : INVALID;
+    return call_node < hir_count && compact_hir_core[call_node].kind == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
 }
 
 uint call_arg_node_for_call(uint call_node, uint ordinal)
@@ -557,14 +538,14 @@ uint call_arg_node_for_call(uint call_node, uint ordinal)
 }
 
 bool payload_matches(
+    uint path_i,
     uint owner_token,
     uint enum_token,
     uint variant,
     uint ordinal)
 {
-    uint4 arg_record = call_arg_record[owner_token];
-    uint call_node = arg_record.z;
-    uint actual_count = call_arg_count_for_call(owner_token, call_node);
+    uint call_node = dense_call_for_path(path_i);
+    uint actual_count = valid_compact_node(call_node) ? call_arg_row_count[call_node] : 0u;
     uint expected_count = compact_variant_payload_count[variant];
     if (actual_count != expected_count ||
         actual_count > PARAM_CACHE_STRIDE ||
@@ -630,6 +611,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_enum_variant_decl(resolved_value_decl[path_i], enum_token, variant))
         return;
 
-    if (!payload_matches(owner_token, enum_token, variant, ordinal))
+    if (!payload_matches(path_i, owner_token, enum_token, variant, ordinal))
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
 }

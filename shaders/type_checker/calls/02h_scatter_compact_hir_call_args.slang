@@ -1,4 +1,4 @@
-// Scatter compact parser-owned HIR call-argument rows.
+// Scatter parser-produced compact HIR call-argument rows directly.
 //
 // Per-call argument counts have already been prefix-scanned, so each argument
 // row writes to row_start[call] + ordinal. That makes `(call_node, ordinal)`
@@ -13,12 +13,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_call_arg_count;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
-StructuredBuffer<uint> call_arg_row_prefix;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 
 RWStructuredBuffer<uint> call_arg_row_node;
 RWStructuredBuffer<uint> call_arg_row_call_node;
@@ -38,7 +40,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node, uint n)
@@ -50,23 +52,26 @@ bool valid_node(uint node, uint n)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
     uint n = active_hir_node_count();
-    if (node >= n)
+    uint row_count = min(compact_call_arg_count[0u], gParams.n_hir_nodes);
+    if (row >= row_count)
         return;
 
-    uint call_node = hir_call_arg_parent_call[node];
-    uint ordinal = hir_call_arg_ordinal[node];
-    if (!valid_node(call_node, n) || hir_kind[call_node] != HIR_CALL_EXPR)
+    HirCallArg arg = compact_call_args[row];
+    uint call_node = arg.call;
+    uint node = arg.value;
+    uint ordinal = arg.ordinal;
+    if (!valid_node(call_node, n) || !valid_node(node, n) ||
+        compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
 
-    uint count = hir_call_arg_count[call_node];
+    HirPayload call = compact_hir_payload[call_node];
+    uint start = call.b;
+    uint count = call.c;
     if (count == 0u || ordinal >= count)
         return;
-
-    uint start = call_arg_row_prefix[call_node];
-    uint row = start + ordinal;
-    if (row < start || row >= n)
+    if (row != start + ordinal || row < start || row >= row_count)
         return;
 
     call_arg_row_node[row] = node;

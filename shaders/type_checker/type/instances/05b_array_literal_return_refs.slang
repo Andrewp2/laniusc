@@ -28,10 +28,10 @@ struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<uint> compact_array_element_row_count;
 StructuredBuffer<HirArrayElement> compact_array_elements;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
@@ -101,6 +101,7 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_INVALID_ARRAY_RETURN = 9u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -149,12 +150,7 @@ uint function_return_array_instance(uint return_node)
         compact_hir_core[return_node].kind != HIR_RETURN_STMT ||
         compact_hir_payload[return_node].a != STMT_RECORD_KIND_RETURN)
         return INVALID;
-    uint return_token = compact_hir_core[return_node].token_start;
-    if (!valid_token(return_token))
-        return INVALID;
-
-    uint encoded_fn = enclosing_fn[return_token];
-    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    uint fn_node = compact_hir_nearest_fn[return_node];
     uint fn_token = valid_compact_node(fn_node) ? compact_hir_payload[fn_node].b : INVALID;
     if (!valid_token(fn_token))
         return INVALID;
@@ -416,8 +412,22 @@ void publish_array_literal_return(uint return_node)
         return;
 
     uint dst_instance = function_return_array_instance(return_node);
+    if (dst_instance == INVALID)
+        return;
     if (array_literal_length_matches_instance(array_node, dst_instance))
+    {
         call_return_type[return_token] = ARRAY_RETURN_OK;
+        return;
+    }
+
+    uint error_token = compact_hir_core[array_node].token_start;
+    if (!valid_token(error_token))
+        error_token = return_token;
+    record_min_token_error(
+        status,
+        valid_token(error_token) ? error_token : 0u,
+        ERR_INVALID_ARRAY_RETURN,
+        type_instance_len_payload[dst_instance]);
 }
 
 void record_array_literal_element_mismatch(

@@ -7,9 +7,9 @@ use super::{
     executable::{bytemuck_words, dispatch, input_u32, link_params_words, rw_u32},
     symbol_partitions::GpuWasmSymbolPartitionPlan,
 };
-use crate::codegen::wasm::{GpuWasmCodeGenerator, create_wasm_bind_group};
+use crate::codegen::wasm::{GpuWasmLinker, create_wasm_bind_group};
 
-impl GpuWasmCodeGenerator {
+impl GpuWasmLinker {
     pub(super) fn resolve_symbol_relocations(
         &self,
         device: &wgpu::Device,
@@ -56,7 +56,7 @@ impl GpuWasmCodeGenerator {
 }
 
 fn resolve_partition(
-    generator: &GpuWasmCodeGenerator,
+    generator: &GpuWasmLinker,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     input: &GpuWasmLinkInput,

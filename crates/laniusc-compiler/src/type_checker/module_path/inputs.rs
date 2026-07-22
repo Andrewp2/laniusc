@@ -121,8 +121,8 @@ pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) decl_type_ref_payload: &'a wgpu::Buffer,
     pub(in crate::type_checker) fn_return_ref_tag: &'a wgpu::Buffer,
     pub(in crate::type_checker) fn_return_ref_payload: &'a wgpu::Buffer,
-    pub(in crate::type_checker) record_family_bits_scratch: &'a wgpu::Buffer,
-    pub(in crate::type_checker) record_family_flag_scratch: &'a wgpu::Buffer,
+    pub(in crate::type_checker) record_family_bits_scratch: &'a LaniusBuffer<u32>,
+    pub(in crate::type_checker) record_family_flag_scratch: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'a>>,
     pub(in crate::type_checker) dependency_interfaces: Option<&'a GpuDependencyInterfaceState>,
 }

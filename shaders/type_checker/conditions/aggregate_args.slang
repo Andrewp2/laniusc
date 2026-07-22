@@ -1,10 +1,10 @@
-// Validate named aggregate type-argument equality requests emitted by
-// conditions_hir.
+// Validate named aggregate type-argument equality requests emitted from dense
+// compact HIR.
 //
-// conditions_hir writes one request per HIR node and a counted scan turns each
-// request's argument count into a compact comparison span. This pass runs one
-// lane per argument pair and maps the row back to its request with a logarithmic
-// prefix search.
+// The compact producer writes one request per HIR row and a counted scan turns
+// each request's argument count into a compact comparison span. This pass runs
+// one lane per argument pair and maps the row back to its request with a
+// logarithmic prefix search.
 
 import status;
 
@@ -219,6 +219,15 @@ void validate_compare_row(uint row)
 {
     if (row >= active_compare_count())
         return;
+
+    // One lane exclusively owns this downstream request row. Initialize it
+    // before deciding whether this argument pair needs recursive comparison so
+    // no previous job or earlier request can survive into the counted scan.
+    type_subtree_compare_scan_input[row] = 0u;
+    type_subtree_compare_left_root[row] = INVALID;
+    type_subtree_compare_right_root[row] = INVALID;
+    type_subtree_compare_error_token[row] = INVALID;
+    type_subtree_compare_error_detail[row] = 0u;
 
     uint request_node = request_node_for_compare(row);
     if (request_node == INVALID)

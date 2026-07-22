@@ -1,10 +1,9 @@
-// Pack parser-owned HIR call argument records into GPU call summaries.
+// Publish token-keyed call summaries from the compact semantic HIR.
 //
-// Input records come from `hir_call_fields.slang`, which is derived from
-// production ids and inverted tree arrays. This pass preserves that structure
-// for type checking without requiring call resolvers to scan comma/parens. The
-// summary record is keyed by callee token; compact call-argument row passes
-// publish the complete per-call argument relation.
+// One dense call row handles zero-argument calls. The first row of each
+// compact `HirCallArg` segment publishes the non-empty summary, so nested or
+// wide argument lists require no raw-tree reconstruction and no contended
+// per-argument writes.
 
 import gpu_index;
 
@@ -15,104 +14,89 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
+
 ConstantBuffer<Params> gParams;
-
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_call_arg_end;
-StructuredBuffer<uint> hir_call_arg_count;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
-
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 RWStructuredBuffer<uint4> call_arg_record;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint linear_thread_id(uint3 dtid)
+uint active_hir_count()
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
-uint active_hir_node_count()
+uint active_arg_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_call_arg_count[0u]);
 }
 
-bool valid_node(uint node, uint n)
+bool valid_hir(uint node)
 {
-    return node != INVALID && node < n;
+    return node != INVALID && node < active_hir_count();
 }
 
-uint callee_token_for_call(uint call_node, uint n)
+bool valid_token(uint token)
 {
-    if (!valid_node(call_node, n))
+    return token != INVALID && token < gParams.n_tokens;
+}
+
+uint callee_token(uint call)
+{
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
         return INVALID;
-    if (hir_kind[call_node] != HIR_CALL_EXPR)
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee))
         return INVALID;
-
-    uint callee_node = hir_call_callee_node[call_node];
-    if (!valid_node(callee_node, n))
-        return INVALID;
-
-    uint callee_token = hir_kind[callee_node] == HIR_MEMBER_EXPR
-        ? hir_member_name_token[callee_node]
-        : hir_token_pos[callee_node];
-    return callee_token != INVALID && callee_token < gParams.n_tokens ? callee_token : INVALID;
-}
-
-void publish_zero_arg_call(uint call_node, uint n)
-{
-    uint callee_token = callee_token_for_call(call_node, n);
-    if (callee_token == INVALID || hir_call_arg_count[call_node] != 0u)
-        return;
-
-    call_arg_record[callee_token] = uint4(INVALID, INVALID, call_node, 0u);
-}
-
-void publish_arg_record(uint callee_token, uint call_node, uint arg_node, uint arg_count)
-{
-    uint ordinal = hir_call_arg_ordinal[arg_node];
-    call_arg_record[callee_token].z = call_node;
-    call_arg_record[callee_token].w = arg_count;
-
-    uint arg_start = hir_token_pos[arg_node];
-    uint arg_end = hir_call_arg_end[arg_node];
-    if (ordinal == 0u)
-    {
-        if (arg_start == INVALID || arg_end == INVALID || arg_start >= arg_end)
-            call_arg_record[callee_token] = uint4(INVALID, INVALID, call_node, arg_count);
-        else
-            call_arg_record[callee_token] = uint4(arg_start, arg_end, call_node, arg_count);
-    }
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token))
+        token = core.token_start;
+    return valid_token(token) ? token : INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    uint n = active_hir_node_count();
-    if (node >= n)
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint hir_count = active_hir_count();
+    if (row < hir_count && compact_hir_core[row].kind == HIR_CALL_EXPR)
+    {
+        HirPayload call = compact_hir_payload[row];
+        uint token = callee_token(row);
+        if (call.c == 0u && valid_token(token))
+            call_arg_record[token] = uint4(INVALID, INVALID, row, 0u);
+    }
+
+    if (row >= active_arg_count())
         return;
-
-    if (hir_kind[node] == HIR_CALL_EXPR)
-        publish_zero_arg_call(node, n);
-
-    uint call_node = hir_call_arg_parent_call[node];
-    if (!valid_node(call_node, n) || hir_kind[call_node] != HIR_CALL_EXPR)
+    HirCallArg arg = compact_call_args[row];
+    if (arg.ordinal != 0u || !valid_hir(arg.call) || !valid_hir(arg.value))
         return;
-
-    uint callee_token = callee_token_for_call(call_node, n);
-    if (callee_token == INVALID)
+    HirPayload call = compact_hir_payload[arg.call];
+    if (call.b != row || call.c == 0u)
         return;
-
-    uint arg_count = hir_call_arg_count[call_node];
-    publish_arg_record(callee_token, call_node, node, arg_count);
+    uint token = callee_token(arg.call);
+    if (!valid_token(token))
+        return;
+    HirCore value = compact_hir_core[arg.value];
+    uint start = valid_token(value.token_start) ? value.token_start : INVALID;
+    uint end = value.token_end != INVALID && value.token_end <= gParams.n_tokens
+        ? value.token_end
+        : INVALID;
+    call_arg_record[token] = start != INVALID && end != INVALID && start < end
+        ? uint4(start, end, arg.call, call.c)
+        : uint4(INVALID, INVALID, arg.call, call.c);
 }

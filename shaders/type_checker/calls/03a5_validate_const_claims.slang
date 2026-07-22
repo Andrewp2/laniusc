@@ -12,8 +12,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> compact_hir_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_const_claim_callee;
@@ -42,7 +43,8 @@ uint active_token_count()
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u
+        ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -65,7 +67,7 @@ uint claim_error_token(uint row, uint fallback_token)
     uint arg_node = call_arg_row_node[row];
     if (valid_node(arg_node))
     {
-        uint token = hir_token_pos[arg_node];
+        uint token = compact_hir_core[arg_node].token_start;
         if (valid_token(token))
             return token;
     }

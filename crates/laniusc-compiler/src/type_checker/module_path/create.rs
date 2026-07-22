@@ -251,6 +251,7 @@ pub(in crate::type_checker) fn create_with_passes(
         path_prefix_row_dispatch_args,
         path_prefix_round_dispatch_args,
         path_owner_hir,
+        path_call_hir,
         path_owner_token,
         path_id_by_owner_hir,
         path_id_by_owner_token,
@@ -365,14 +366,8 @@ pub(in crate::type_checker) fn create_with_passes(
             ),
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_owner_hir", path_owner_hir.as_entire_binding()),
-            (
-                "compact_hir_count",
-                hir_items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_links",
-                hir_items.compact_hir_links.as_entire_binding(),
-            ),
+            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
+            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
             ("module_count_out", module_count_out.as_entire_binding()),
             (
                 "module_id_by_file_id",
@@ -1902,17 +1897,11 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_links",
-                hir_items.compact_hir_links.as_entire_binding(),
-            ),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
+            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             ("name_id_by_token", name_id_by_token.as_entire_binding()),
             (
@@ -1940,7 +1929,7 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             ("decl_count_out", decl_count_out.as_entire_binding()),
         ],
@@ -1969,13 +1958,10 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            (
-                "compact_hir_core",
-                hir_items.compact_hir_core.as_entire_binding(),
-            ),
+            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             ("decl_name_token", decl_name_token.as_entire_binding()),
             ("decl_token_start", decl_token_start.as_entire_binding()),
@@ -1996,15 +1982,15 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             (
                 "compact_variant_count",
-                hir_items.compact_variant_count.as_entire_binding(),
+                hir_items.hir.variant_count.as_entire_binding(),
             ),
             (
                 "compact_variants",
-                hir_items.compact_variants.as_entire_binding(),
+                hir_items.hir.variants.as_entire_binding(),
             ),
             (
                 "compact_hir_payload",
-                hir_items.compact_hir_payload.as_entire_binding(),
+                hir_items.hir.payload.as_entire_binding(),
             ),
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
@@ -2198,6 +2184,7 @@ pub(in crate::type_checker) fn create_with_passes(
         path_prefix_row_dispatch_args,
         path_prefix_round_dispatch_args,
         path_owner_hir,
+        path_call_hir,
         path_owner_token,
         path_id_by_owner_hir,
         path_id_by_owner_token,

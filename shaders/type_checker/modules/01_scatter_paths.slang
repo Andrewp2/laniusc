@@ -8,6 +8,7 @@ struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_path_segment_count;
@@ -16,6 +17,7 @@ StructuredBuffer<HirPathSegment> compact_path_segments;
 RWStructuredBuffer<uint> path_start;
 RWStructuredBuffer<uint> path_len;
 RWStructuredBuffer<uint> path_owner_hir;
+RWStructuredBuffer<uint> path_call_hir;
 RWStructuredBuffer<uint> path_owner_token;
 RWStructuredBuffer<uint> path_id_by_owner_hir;
 RWStructuredBuffer<uint> path_id_by_owner_token;
@@ -23,6 +25,8 @@ RWStructuredBuffer<uint> path_kind;
 RWStructuredBuffer<uint> path_count_out;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_NAME_EXPR = 22u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -52,6 +56,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     path_start[row] = owner_token;
     path_len[row] = path.segment_count;
     path_owner_hir[row] = path.owner;
+    uint call = compact_hir_expr_parent[path.owner];
+    if (call >= hir_count || compact_hir_core[call].kind != HIR_CALL_EXPR)
+    {
+        uint wrapper = compact_hir_core[path.owner].parent;
+        call = wrapper < hir_count && compact_hir_core[wrapper].kind == HIR_NAME_EXPR
+            ? compact_hir_expr_parent[wrapper]
+            : INVALID;
+    }
+    path_call_hir[row] = call < hir_count && compact_hir_core[call].kind == HIR_CALL_EXPR
+        ? call
+        : INVALID;
     path_owner_token[row] = owner_token;
     path_id_by_owner_hir[path.owner] = row;
     path_id_by_owner_token[owner_token] = row;

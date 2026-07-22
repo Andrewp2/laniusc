@@ -1,21 +1,12 @@
 use laniusc_compiler::{
     codegen::{
+        lowering_ir::{LoweringCapacities, LoweringTarget, lowering_compiler_graph},
         unit::{
             CodegenUnitLimits,
             SourcePackArtifactTarget,
             SourcePackJobBatchLimits,
             SourcePackJobPlan,
             SourcePackLibraryDependency,
-        },
-        x86::{
-            X86CapacityEstimate,
-            x86_call_type_record_words,
-            x86_capacity_estimate_for_hir_and_tokens,
-            x86_capacity_estimate_for_hir_tokens_and_inst_basis,
-            x86_function_slot_capacity,
-            x86_node_inst_count_record_words,
-            x86_node_inst_gen_node_record_words,
-            x86_node_inst_order_record_words,
         },
     },
     compiler::GpuLiveCapacityEstimateResult,
@@ -194,20 +185,19 @@ pub(super) fn reject_large_interactive_run(
     );
     let frontend_floor = parser_floor.total.saturating_add(typecheck_floor.total);
     if phase == Phase::X86 {
-        let x86_capacity = x86_capacity_estimate_for_hir_and_tokens(
-            estimate.tree_capacity,
+        let x86_capacity = x86_graph_capacity_estimate(
+            source_bytes,
             token_capacity.lexer_token_capacity,
+            estimate.tree_capacity,
         );
-        let x86_floor =
-            x86_allocation_floor_bytes(token_capacity.lexer_token_capacity, &x86_capacity);
-        let compile_floor = frontend_floor.saturating_add(x86_floor.total);
+        let compile_floor = frontend_floor.saturating_add(x86_capacity.workspace_bytes);
         if compile_floor > MAX_INTERACTIVE_COMPILE_FLOOR_BYTES {
             return Err(format!(
                 "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated compile allocation floor={} (parser={} typecheck={} x86={}) via {} token_capacity_basis={}; pass --allow-large to run it intentionally",
                 human_bytes(compile_floor),
                 human_bytes(parser_floor.total),
                 human_bytes(typecheck_floor.total),
-                human_bytes(x86_floor.total),
+                human_bytes(x86_capacity.workspace_bytes),
                 estimate.path,
                 token_capacity.basis
             ));
@@ -274,6 +264,7 @@ pub(super) fn print_capacity_estimate(
         token_capacity.basis,
     );
     print_capacity_floors(
+        source_bytes,
         token_capacity.lexer_token_capacity,
         &parse_capacity,
         None,
@@ -425,8 +416,8 @@ pub(super) struct CompileCapacitySnapshot {
     pub(super) parser_tree_capacity: usize,
     pub(super) parser_floor_bytes: usize,
     pub(super) frontend_floor_bytes: usize,
-    pub(super) x86_inst_capacity: usize,
-    pub(super) x86_floor_bytes: usize,
+    pub(super) x86_target_instruction_capacity: usize,
+    pub(super) x86_workspace_bytes: usize,
     pub(super) compile_floor_bytes: usize,
 }
 
@@ -448,13 +439,13 @@ pub(super) fn compile_capacity_snapshot_for_source(
         true,
         source_file_capacity,
     );
-    let x86_capacity = x86_capacity_estimate_for_hir_and_tokens(
-        parse_capacity.tree_capacity,
+    let x86_capacity = x86_graph_capacity_estimate(
+        src.len(),
         token_capacity.lexer_token_capacity,
+        parse_capacity.tree_capacity,
     );
-    let x86_floor = x86_allocation_floor_bytes(token_capacity.lexer_token_capacity, &x86_capacity);
     let frontend_floor_bytes = parser_floor.total.saturating_add(typecheck_floor.total);
-    let compile_floor_bytes = frontend_floor_bytes.saturating_add(x86_floor.total);
+    let compile_floor_bytes = frontend_floor_bytes.saturating_add(x86_capacity.workspace_bytes);
 
     CompileCapacitySnapshot {
         source_bytes: src.len(),
@@ -463,8 +454,8 @@ pub(super) fn compile_capacity_snapshot_for_source(
         parser_tree_capacity: parse_capacity.tree_capacity,
         parser_floor_bytes: parser_floor.total,
         frontend_floor_bytes,
-        x86_inst_capacity: x86_capacity.inst_capacity,
-        x86_floor_bytes: x86_floor.total,
+        x86_target_instruction_capacity: x86_capacity.target_instructions,
+        x86_workspace_bytes: x86_capacity.workspace_bytes,
         compile_floor_bytes,
     }
 }
@@ -488,6 +479,7 @@ pub(super) fn print_live_capacity_estimate(
     let x86_hir_words = (live.parser_emit_len as usize).max(1);
     let semantic_hir_words = (live.semantic_hir_count as usize).max(1);
     print_capacity_floors(
+        source_bytes,
         token_capacity,
         &parse_capacity,
         Some((x86_hir_words, semantic_hir_words)),
@@ -495,60 +487,16 @@ pub(super) fn print_live_capacity_estimate(
         live.parser_feature_flags,
     );
     print_parallel_pass_contract_estimate();
-    if x86_hir_words < parse_capacity.tree_capacity {
-        let projected_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
-            parse_capacity.tree_capacity,
-            token_capacity,
-            semantic_hir_words,
-        );
-        let current_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
-            x86_hir_words,
-            token_capacity,
-            semantic_hir_words,
-        );
-        let projected_x86_floor =
-            x86_allocation_floor_bytes(token_capacity, &projected_x86_capacity);
-        let current_x86_floor = x86_allocation_floor_bytes(token_capacity, &current_x86_capacity);
-        let saved = projected_x86_floor
-            .hir_scaled
-            .saturating_sub(current_x86_floor.hir_scaled);
-        println!(
-            "estimate_live x86_parser_emit_capacity current_hir_words={x86_hir_words} projected_tree_hir_words={} projected_x86_hir_scaled={} current_x86_hir_scaled={} hir_scaled_savings={}",
-            projected_x86_capacity.hir_words,
-            human_bytes(projected_x86_floor.hir_scaled),
-            human_bytes(current_x86_floor.hir_scaled),
-            human_bytes(saved)
-        );
-    }
-    if semantic_hir_words < x86_hir_words {
-        let current_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
-            x86_hir_words,
-            token_capacity,
-            semantic_hir_words,
-        );
-        let dense_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
-            semantic_hir_words,
-            token_capacity,
-            semantic_hir_words,
-        );
-        let current_x86_floor = x86_allocation_floor_bytes(token_capacity, &current_x86_capacity);
-        let dense_x86_floor = x86_allocation_floor_bytes(token_capacity, &dense_x86_capacity);
-        let saved = current_x86_floor
-            .hir_scaled
-            .saturating_sub(dense_x86_floor.hir_scaled);
-        println!(
-            "estimate_live x86_semantic_dense_hypothesis semantic_hir_words={semantic_hir_words} current_hir_words={x86_hir_words} current_x86_hir_scaled={} dense_x86_hir_scaled={} possible_hir_scaled_savings={} note=diagnostic-only-HIR-records-are-still-original-node-keyed",
-            human_bytes(current_x86_floor.hir_scaled),
-            human_bytes(dense_x86_floor.hir_scaled),
-            human_bytes(saved)
-        );
-    }
+    println!(
+        "estimate_live compact_hir_rows={semantic_hir_words} raw_parser_emit_rows={x86_hir_words} backend_capacity_basis=compact_hir"
+    );
     println!(
         "estimate_live ll1_seed_path=inactive note=live GPU lex, parser, and semantic-HIR count"
     );
 }
 
 pub(super) fn print_capacity_floors(
+    source_bytes: usize,
     token_capacity: usize,
     parse_capacity: &ParserCapacityEstimate,
     x86_words_override: Option<(usize, usize)>,
@@ -595,54 +543,28 @@ pub(super) fn print_capacity_floors(
         "estimate frontend_allocation_floor parser_plus_typecheck={}",
         human_bytes(allocation_floor.total.saturating_add(typecheck_floor.total))
     );
-    let (x86_hir_words, x86_inst_basis_words) =
+    let (raw_hir_words, compact_hir_words) =
         x86_words_override.unwrap_or((parse_capacity.tree_capacity, parse_capacity.tree_capacity));
-    let x86_hir_words = x86_hir_words.max(1);
-    let x86_inst_basis_words = x86_inst_basis_words.max(1);
+    let compact_hir_words = compact_hir_words.max(1);
     let x86_hir_basis = match x86_words_override {
-        Some(_) if x86_inst_basis_words < x86_hir_words => "parser_emit_len+semantic_hir_count",
-        Some(_) => "parser_emit_len",
-        None => "parser_tree_capacity",
+        Some(_) if compact_hir_words < raw_hir_words => "semantic_hir_count",
+        Some(_) => "semantic_hir_count_equal_to_parser_emit",
+        None => "parser_tree_capacity_upper_bound",
     };
-    let x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
-        x86_hir_words,
-        token_capacity,
-        x86_inst_basis_words,
-    );
-    let x86_dynamic = x86_dynamic_buffer_estimate_bytes(&x86_capacity);
-    let x86_floor = x86_allocation_floor_bytes(token_capacity, &x86_capacity);
+    let x86_capacity = x86_graph_capacity_estimate(source_bytes, token_capacity, compact_hir_words);
     println!(
-        "estimate x86_dynamic_caps hir_basis={x86_hir_basis} hir_words={} inst_basis_words={} requested_inst_capacity={} inst_capacity={} inst_capacity_capped={} output_capacity={}",
-        x86_capacity.hir_words,
-        x86_capacity.inst_basis_words,
-        x86_capacity.requested_inst_capacity,
-        x86_capacity.inst_capacity,
-        x86_capacity.inst_capacity_capped,
-        human_bytes(x86_capacity.output_capacity)
-    );
-    println!(
-        "estimate x86_dynamic_buffer_estimate total={} virtual_inst_records={} live_ranges={} selected_text={}",
-        human_bytes(x86_dynamic.total),
-        human_bytes(x86_dynamic.virtual_inst_records),
-        human_bytes(x86_dynamic.live_ranges),
-        human_bytes(x86_dynamic.selected_text)
-    );
-    println!(
-        "estimate x86_allocation_floor total={} hir_scaled={} token_scaled={} inst_scaled={} scans={} output_and_readback={} small={}",
-        human_bytes(x86_floor.total),
-        human_bytes(x86_floor.hir_scaled),
-        human_bytes(x86_floor.token_scaled),
-        human_bytes(x86_floor.inst_scaled),
-        human_bytes(x86_floor.scans),
-        human_bytes(x86_floor.output_and_readback),
-        human_bytes(x86_floor.small),
+        "estimate x86_graph_lowering hir_basis={x86_hir_basis} compact_hir_rows={compact_hir_words} semantic_instruction_capacity={} target_instruction_capacity={} artifact_capacity={} phase_colored_workspace={}",
+        x86_capacity.semantic_instructions,
+        x86_capacity.target_instructions,
+        human_bytes(x86_capacity.artifact_bytes),
+        human_bytes(x86_capacity.workspace_bytes),
     );
     let compile_floor_bytes = allocation_floor
         .total
         .saturating_add(typecheck_floor.total)
-        .saturating_add(x86_floor.total);
+        .saturating_add(x86_capacity.workspace_bytes);
     println!(
-        "estimate compile_allocation_floor parser_plus_typecheck_plus_x86={} compile_floor_bytes={compile_floor_bytes}",
+        "estimate compile_allocation_floor parser_plus_typecheck_plus_graph_workspace={} compile_floor_bytes={compile_floor_bytes}",
         human_bytes(compile_floor_bytes)
     );
     if parse_capacity.path.starts_with("llp-") {
@@ -656,241 +578,34 @@ pub(super) fn print_capacity_floors(
     }
 }
 
-pub(super) struct X86DynamicBufferEstimate {
-    total: usize,
-    virtual_inst_records: usize,
-    live_ranges: usize,
-    selected_text: usize,
+#[derive(Clone, Copy, Debug)]
+struct X86GraphCapacityEstimate {
+    semantic_instructions: usize,
+    target_instructions: usize,
+    artifact_bytes: usize,
+    workspace_bytes: usize,
 }
 
-pub(super) struct X86AllocationFloor {
-    total: usize,
-    hir_scaled: usize,
-    token_scaled: usize,
-    inst_scaled: usize,
-    scans: usize,
-    output_and_readback: usize,
-    small: usize,
-}
-
-pub(super) fn x86_dynamic_buffer_estimate_bytes(
-    capacity: &X86CapacityEstimate,
-) -> X86DynamicBufferEstimate {
-    let inst = capacity.inst_capacity;
-    let virtual_inst_records = inst
-        .saturating_mul(16)
-        .saturating_add(inst.saturating_mul(16))
-        .saturating_add(inst.saturating_mul(4));
-    let live_ranges = inst.saturating_mul(4).saturating_mul(4);
-    let selected_text = inst.saturating_mul(4).saturating_mul(3);
-    X86DynamicBufferEstimate {
-        total: virtual_inst_records
-            .saturating_add(live_ranges)
-            .saturating_add(selected_text),
-        virtual_inst_records,
-        live_ranges,
-        selected_text,
-    }
-}
-
-pub(super) fn x86_allocation_floor_bytes(
+fn x86_graph_capacity_estimate(
+    source_bytes: usize,
     token_capacity: usize,
-    capacity: &X86CapacityEstimate,
-) -> X86AllocationFloor {
-    const X86_NODE_LOCAL_INSTS: usize = 4;
-    const STATUS_WORDS: usize = 4;
-    const FUNC_META_WORDS: usize = 8;
-    const ELF_LAYOUT_WORDS: usize = 8;
-    const TRACE_STATUS_WORDS: usize = 110;
-
-    let token_words = token_capacity.max(1);
-    let hir_words = capacity.hir_words.max(1);
-    let inst = capacity.inst_capacity.max(1);
-    let output_words = capacity.output_capacity.div_ceil(4).max(1);
-    let node_inst_scan_words = hir_words.saturating_add(1);
-    let node_inst_scan_blocks = node_inst_scan_words.div_ceil(256).max(1);
-    let text_scan_blocks = inst.div_ceil(256).max(1);
-
-    let hir_scaled_words_per_node = (
-        // Keep this in sync with `record_elf_from_hir` HIR-sized buffers.
-        4 + 1
-            + 1
-            + 1
-            + 1
-            + 4
-            + 4
-            + 1
-            + 1
-            + 1
-            + 1
-            + 1
-            + 1
-            + 1
-            + 1
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 1
-            + 4
-            + 1
-            + 4
-            + 1
-            + 4
-            + 1
-            + 4
-            + 1
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 1
-            + 1
-            + 4
-            + 4
-            + X86_NODE_LOCAL_INSTS
-            + 4
-            + 1
-            + 1
-            + 1
-        // Write-only call-argument eval, call-argument ABI, node-value,
-        // terminal-if projection, dead return-projection records, and the
-        // dead function-discovery record were removed from the retained x86
-        // backend surface. The call-argument lookup record is packed to one
-        // word per call/ordinal slot, and the call ABI record stores only the
-        // target plus packed argument count/return width. One resolved-expression
-        // table was added so backend shaders do not each walk HIR_EXPR_FORWARD
-        // chains locally. Node instruction ranges reuse dead parser HIR
-        // workspaces as separate start/info words. Enum value records retain only packed
-        // kind/payload-count data plus ordinal. Struct/array access rows and
-        // declaration layout rows pack their small kind fields into three-word
-        // flat records. Node instruction order rows use a compact three-word
-        // phase-reused buffer.
-        // Enclosing loop owners, virtual parameter masks, node instruction
-        // counts, instruction-order rows, subtree slot bounds, node
-        // instruction locations, and virtual row bounds reuse existing backend
-        // scratch instead of adding HIR-sized buffers. Call type and node
-        // instruction count records share one compact row table sized to also
-        // carry the later subtree-bounds worklist tail.
-        // Match-result owner pointer-jump rows reuse the later match-pattern
-        // owner scratch and same-end link scratch.
-        // Function-owner pointer-jump output reuses match-pattern first-use
-        // scratch, copying odd-step results back to the stable owner table.
-        // Enclosing-let pointer-jump output reuses the later call-callee-root
-        // marker table after copyback to the stable owner table.
-        // Intrinsic call projection reuses the dead match-pattern owner table.
-        // Intrinsic call projection packs the call lookup base and small
-        // intrinsic tag into one HIR-keyed word. Call ABI and declaration
-        // layouts are token/declaration-token indexed instead of retaining
-        // HIR-sized side tables.
-        // x86 calls resolve function targets through the token-indexed
-        // declaration table rather than a second open-address function table,
-        // and const values are token-row sized.
-        // Register allocation keeps active-end register state in compact
-        // function slots and uses a compact function-slot list for active
-        // dispatch.
-        // Backend tree projection keeps parent/subtree_end only; first-child
-        // and next-sibling links are derived from preorder spans in x86
-        // shaders. Expression semantic compare type and links are packed into the
-        // existing same-end link scratch instead of retaining two HIR-sized
-        // type ping-pong buffers.
-        // Parameter-node decl lookup is carried in existing HIR metadata and
-        // per-node location metadata instead of a HIR-sized param-reg tail.
+    hir_capacity: usize,
+) -> X86GraphCapacityEstimate {
+    let to_u32 = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
+    let capacities = LoweringCapacities::from_frontend_unit(
+        to_u32(source_bytes),
+        to_u32(token_capacity),
+        to_u32(hir_capacity),
+        LoweringTarget::X86_64,
     )
-    .saturating_sub(96usize);
-    let hir_scaled_words = hir_words.saturating_mul(hir_scaled_words_per_node);
-    let token_scaled_words_per_token = {
-        // Token-sized metadata and the token half of compact backend lookup
-        // buffers. Virtual function last-row bounds reuse dead call ABI
-        // storage, and register-allocation active ends reuse dead node-order
-        // scratch when that scratch is large enough.
-        let enum_type_record = 1usize;
-        let struct_type_record = 1usize;
-        let decl_layout_record = 4usize;
-        let decl_node_by_token = 1usize;
-        let const_value_record = 2usize;
-        let param_reg_record = 6usize;
-        let local_literal_record = 3usize;
-        let call_abi_record = 2usize;
-        enum_type_record
-            + struct_type_record
-            + decl_layout_record
-            + decl_node_by_token
-            + const_value_record
-            + param_reg_record
-            + local_literal_record
-            + call_abi_record
-    };
-    let function_slot_words =
-        x86_function_slot_capacity(capacity.inst_basis_words, hir_words, token_words);
-    let virtual_func_first_row_words = function_slot_words;
-    let virtual_regalloc_active_end_words = function_slot_words.saturating_mul(14);
-    let prior_node_inst_order_reuse_words = node_inst_scan_words.saturating_mul(3);
-    let node_inst_order_reuse_words =
-        x86_node_inst_order_record_words(hir_words, inst, function_slot_words);
-    let prior_node_inst_subtree_bounds_words = hir_words.saturating_add(1).saturating_mul(4);
-    let call_type_record_words = x86_call_type_record_words(hir_words, true);
-    let node_inst_count_words = x86_node_inst_count_record_words(hir_words);
-    let node_inst_subtree_bounds_words = hir_words.saturating_mul(2);
-    let node_inst_gen_node_record_words = x86_node_inst_gen_node_record_words(hir_words, inst);
-    let split_node_inst_planning_words = call_type_record_words
-        .saturating_add(node_inst_count_words)
-        .saturating_add(node_inst_subtree_bounds_words)
-        .saturating_add(node_inst_gen_node_record_words);
-    let hir_scaled_words = hir_scaled_words
-        .saturating_sub(
-            prior_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
-        )
-        .saturating_sub(prior_node_inst_subtree_bounds_words)
-        .saturating_add(split_node_inst_planning_words)
-        .saturating_add(virtual_func_first_row_words)
-        .saturating_add(function_slot_words);
-    let active_end_extra_words =
-        virtual_regalloc_active_end_words.saturating_sub(node_inst_order_reuse_words);
-    let token_scaled_words = token_words
-        .saturating_mul(token_scaled_words_per_token)
-        .saturating_add(active_end_extra_words);
-    let inst_scaled_words = inst.saturating_mul(
-        // Virtual instruction records plus the inst-sized scratch that remains
-        // live after lifetime reuse. Fixed-barrier spans reuse the future
-        // call-live-mask table before register allocation writes the final
-        // masks. Selected instruction fields and instruction sizes reuse dead
-        // backend scratch records; byte offsets and text-scan local prefixes
-        // are retained as compact inst-sized rows after virtual use-edge
-        // materialization was removed.
-        4 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1,
-    );
-    let scan_words = node_inst_scan_blocks
-        .saturating_mul(3)
-        .saturating_add(node_inst_scan_words.saturating_mul(5))
-        .saturating_add(text_scan_blocks.saturating_mul(3));
-    let output_words_total = output_words.saturating_mul(2).saturating_add(4);
-    let small_words = FUNC_META_WORDS
-        .saturating_mul(2)
-        .saturating_add(ELF_LAYOUT_WORDS)
-        .saturating_add(STATUS_WORDS.saturating_mul(37))
-        .saturating_add(TRACE_STATUS_WORDS);
-
-    X86AllocationFloor {
-        hir_scaled: u32_words_to_bytes(hir_scaled_words),
-        token_scaled: u32_words_to_bytes(token_scaled_words),
-        inst_scaled: u32_words_to_bytes(inst_scaled_words),
-        scans: u32_words_to_bytes(scan_words),
-        output_and_readback: u32_words_to_bytes(output_words_total),
-        small: u32_words_to_bytes(small_words),
-        total: u32_words_to_bytes(
-            hir_scaled_words
-                .saturating_add(token_scaled_words)
-                .saturating_add(inst_scaled_words)
-                .saturating_add(scan_words)
-                .saturating_add(output_words_total)
-                .saturating_add(small_words),
-        ),
+    .expect("x86 graph capacity must fit the bounded compilation-unit model");
+    let graph = lowering_compiler_graph(capacities, LoweringTarget::X86_64)
+        .expect("x86 lowering graph capacity must be internally valid");
+    X86GraphCapacityEstimate {
+        semantic_instructions: capacities.semantic_instructions as usize,
+        target_instructions: capacities.target_instructions as usize,
+        artifact_bytes: capacities.artifact_bytes as usize,
+        workspace_bytes: usize::try_from(graph.workspace_bytes()).unwrap_or(usize::MAX),
     }
 }
 

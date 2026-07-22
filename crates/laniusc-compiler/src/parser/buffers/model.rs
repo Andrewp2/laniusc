@@ -240,8 +240,16 @@ pub struct GpuHirView {
     pub core: LaniusBuffer<HirCore>,
     pub links: LaniusBuffer<HirLinks>,
     pub payload: LaniusBuffer<HirPayload>,
+    /// Lexical source-token scope end keyed by dense declaration HIR id.
+    pub scope_end: LaniusBuffer<u32>,
     /// Dense nearest enclosing loop keyed by dense HIR id.
     pub nearest_loop: LaniusBuffer<u32>,
+    /// Dense nearest enclosing block keyed by dense HIR id.
+    pub nearest_block: LaniusBuffer<u32>,
+    /// Dense nearest enclosing control-flow statement keyed by dense HIR id.
+    pub nearest_control: LaniusBuffer<u32>,
+    /// Dense nearest enclosing function keyed by dense HIR id.
+    pub nearest_fn: LaniusBuffer<u32>,
     /// Dense return-type HIR id keyed by dense function HIR id.
     pub fn_return_type: LaniusBuffer<u32>,
     /// Dense target-type HIR id keyed by dense type-alias declaration HIR id.
@@ -551,7 +559,11 @@ pub struct ParserBuffers {
     pub hir_core: LaniusBuffer<HirCore>,
     pub hir_links: LaniusBuffer<HirLinks>,
     pub hir_payload: LaniusBuffer<HirPayload>,
+    pub hir_canonical_scope_end: LaniusBuffer<u32>,
     pub hir_canonical_nearest_loop: LaniusBuffer<u32>,
+    pub hir_canonical_nearest_block: LaniusBuffer<u32>,
+    pub hir_canonical_nearest_control: LaniusBuffer<u32>,
+    pub hir_canonical_nearest_fn: LaniusBuffer<u32>,
     pub hir_canonical_fn_return_type: LaniusBuffer<u32>,
     pub hir_canonical_type_alias_target: LaniusBuffer<u32>,
     pub hir_canonical_const_type: LaniusBuffer<u32>,
@@ -884,7 +896,11 @@ impl GpuHirView {
             core: buffers.hir_core.clone(),
             links: buffers.hir_links.clone(),
             payload: buffers.hir_payload.clone(),
+            scope_end: buffers.hir_canonical_scope_end.clone(),
             nearest_loop: buffers.hir_canonical_nearest_loop.clone(),
+            nearest_block: buffers.hir_canonical_nearest_block.clone(),
+            nearest_control: buffers.hir_canonical_nearest_control.clone(),
+            nearest_fn: buffers.hir_canonical_nearest_fn.clone(),
             fn_return_type: buffers.hir_canonical_fn_return_type.clone(),
             type_alias_target: buffers.hir_canonical_type_alias_target.clone(),
             const_type: buffers.hir_canonical_const_type.clone(),

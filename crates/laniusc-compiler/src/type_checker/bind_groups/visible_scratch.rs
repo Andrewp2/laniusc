@@ -23,30 +23,18 @@ impl ResidentVisibleScratch {
             // declaration scans run, so the HIR-sized flag/prefix scratch can
             // reuse those buffers instead of allocating another scan family.
             return Self {
-                flag: typed_alias_storage_u32(
-                    &module_path.module_record_flag,
-                    scan_capacity as usize,
-                ),
-                prefix: typed_alias_storage_u32(
-                    &module_path.module_record_prefix,
-                    scan_capacity as usize,
-                ),
-                scan_local_prefix: typed_alias_storage_u32(
-                    &module_path.record_scan_local_prefix,
-                    scan_capacity as usize,
-                ),
-                scan_block_sum: typed_alias_storage_u32(
-                    &module_path.record_scan_block_sum,
-                    scan_blocks as usize,
-                ),
-                scan_prefix_a: typed_alias_storage_u32(
-                    &module_path.record_scan_prefix_a,
-                    scan_blocks as usize,
-                ),
-                scan_prefix_b: typed_alias_storage_u32(
-                    &module_path.record_scan_prefix_b,
-                    scan_blocks as usize,
-                ),
+                flag: module_path.module_record_flag.alias(scan_capacity as usize),
+                prefix: module_path
+                    .module_record_prefix
+                    .alias(scan_capacity as usize),
+                scan_local_prefix: module_path
+                    .record_scan_local_prefix
+                    .alias(scan_capacity as usize),
+                scan_block_sum: module_path
+                    .record_scan_block_sum
+                    .alias(scan_blocks as usize),
+                scan_prefix_a: module_path.record_scan_prefix_a.alias(scan_blocks as usize),
+                scan_prefix_b: module_path.record_scan_prefix_b.alias(scan_blocks as usize),
             };
         }
 
@@ -94,6 +82,13 @@ impl ResidentVisibleScratch {
     pub(super) fn register_resources<'a>(&'a self, resources: &mut ResourceMap<'a>) {
         resources.buffer("hir_visible_decl_flag", &self.flag);
         resources.buffer("hir_visible_decl_prefix", &self.prefix);
+        resources.buffer(
+            "hir_visible_decl_scan_local_prefix",
+            &self.scan_local_prefix,
+        );
+        resources.buffer("hir_visible_decl_scan_block_sum", &self.scan_block_sum);
+        resources.buffer("hir_visible_decl_scan_prefix_a", &self.scan_prefix_a);
+        resources.buffer("hir_visible_decl_scan_prefix_b", &self.scan_prefix_b);
     }
 
     /// Returns the scan scratch rows used by visible-declaration bind groups.

@@ -28,6 +28,7 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_CONST_ITEM = 25u;
 
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
@@ -36,6 +37,18 @@ static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_STMT_ASSIGN = 5u;
 static const uint HIR_STMT_WHILE = 6u;
 static const uint HIR_STMT_FOR = 7u;
+
+static const uint HIR_ASSIGN_OP_SET = 1u;
+static const uint HIR_ASSIGN_OP_ADD = 2u;
+static const uint HIR_ASSIGN_OP_SUB = 3u;
+static const uint HIR_ASSIGN_OP_MUL = 4u;
+static const uint HIR_ASSIGN_OP_DIV = 5u;
+static const uint HIR_ASSIGN_OP_MOD = 6u;
+static const uint HIR_ASSIGN_OP_XOR = 7u;
+static const uint HIR_ASSIGN_OP_SHL = 8u;
+static const uint HIR_ASSIGN_OP_SHR = 9u;
+static const uint HIR_ASSIGN_OP_BAND = 10u;
+static const uint HIR_ASSIGN_OP_BOR = 11u;
 
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -98,12 +111,38 @@ bool semantic_lir_is_control(HirCore core, HirPayload payload)
     return semantic_lir_is_if(core, payload) || semantic_lir_is_loop(core, payload);
 }
 
+bool semantic_lir_is_assignment(HirCore core, HirPayload payload)
+{
+    return (core.kind == HIR_STMT || core.kind == HIR_ASSIGN_EXPR) &&
+        payload.a == HIR_STMT_ASSIGN;
+}
+
+uint semantic_lir_compound_assignment_op(uint assign_op)
+{
+    if (assign_op == HIR_ASSIGN_OP_ADD) return SEMANTIC_LIR_OP_ADD;
+    if (assign_op == HIR_ASSIGN_OP_SUB) return SEMANTIC_LIR_OP_SUB;
+    if (assign_op == HIR_ASSIGN_OP_MUL) return SEMANTIC_LIR_OP_MUL;
+    if (assign_op == HIR_ASSIGN_OP_DIV) return SEMANTIC_LIR_OP_DIV;
+    if (assign_op == HIR_ASSIGN_OP_MOD) return SEMANTIC_LIR_OP_REM;
+    if (assign_op == HIR_ASSIGN_OP_XOR) return SEMANTIC_LIR_OP_BIT_XOR;
+    if (assign_op == HIR_ASSIGN_OP_SHL) return SEMANTIC_LIR_OP_SHIFT_LEFT;
+    if (assign_op == HIR_ASSIGN_OP_SHR) return SEMANTIC_LIR_OP_SHIFT_RIGHT;
+    if (assign_op == HIR_ASSIGN_OP_BAND) return SEMANTIC_LIR_OP_BIT_AND;
+    if (assign_op == HIR_ASSIGN_OP_BOR) return SEMANTIC_LIR_OP_BIT_OR;
+    return SEMANTIC_LIR_OP_INVALID;
+}
+
 uint semantic_lir_row_count(HirCore core, HirPayload payload)
 {
+    if (core.kind == HIR_CONST_ITEM) return 1u;
     if (semantic_lir_is_if(core, payload))
         return payload.d == LIR_INVALID ? 2u : 3u;
     if (semantic_lir_is_loop(core, payload))
         return 6u;
+    if (semantic_lir_is_assignment(core, payload) &&
+        payload.d != HIR_ASSIGN_OP_SET)
+        return semantic_lir_compound_assignment_op(payload.d) !=
+            SEMANTIC_LIR_OP_INVALID ? 3u : 1u;
     if (semantic_lir_op(core, payload) != SEMANTIC_LIR_OP_INVALID) return 1u;
 
     // These are executable constructs. Until their full semantic contract is
@@ -124,6 +163,15 @@ uint semantic_lir_row_count(HirCore core, HirPayload payload)
 uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
                            uint row_count)
 {
+    if (semantic_lir_is_assignment(core, payload))
+    {
+        if (payload.d == HIR_ASSIGN_OP_SET) return SEMANTIC_LIR_OP_STORE;
+        if (row_count != 3u) return SEMANTIC_LIR_OP_INVALID;
+        if (local_row == 0u) return SEMANTIC_LIR_OP_VALUE_GET;
+        if (local_row == 1u)
+            return semantic_lir_compound_assignment_op(payload.d);
+        return SEMANTIC_LIR_OP_STORE;
+    }
     if (semantic_lir_is_if(core, payload))
     {
         if (local_row == 0u) return SEMANTIC_LIR_OP_IF_BEGIN;
@@ -143,6 +191,7 @@ uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
 
 uint semantic_lir_op(HirCore core, HirPayload payload)
 {
+    if (core.kind == HIR_CONST_ITEM) return SEMANTIC_LIR_OP_RETURN;
     if (core.kind == HIR_ARRAY_EXPR || core.kind == HIR_STRUCT_LITERAL_EXPR)
         return SEMANTIC_LIR_OP_AGGREGATE_NEW;
     if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MEMBER_EXPR)
@@ -157,8 +206,7 @@ uint semantic_lir_op(HirCore core, HirPayload payload)
     if (core.kind == HIR_RETURN_STMT ||
         (core.kind == HIR_STMT && payload.a == HIR_STMT_RETURN))
         return SEMANTIC_LIR_OP_RETURN;
-    if ((core.kind == HIR_STMT || core.kind == HIR_ASSIGN_EXPR) &&
-        payload.a == HIR_STMT_ASSIGN)
+    if (semantic_lir_is_assignment(core, payload))
         return SEMANTIC_LIR_OP_STORE;
     if (semantic_lir_is_if(core, payload)) return SEMANTIC_LIR_OP_IF_BEGIN;
     if (semantic_lir_is_loop(core, payload)) return SEMANTIC_LIR_OP_LOOP_BEGIN;
@@ -172,7 +220,7 @@ uint semantic_lir_op(HirCore core, HirPayload payload)
     uint form = payload.a;
     if (form == HIR_EXPR_FORWARD) return SEMANTIC_LIR_OP_INVALID;
     if (form == HIR_EXPR_NAME) return SEMANTIC_LIR_OP_VALUE_GET;
-    if (form == HIR_EXPR_INT || form == HIR_EXPR_TRUE ||
+    if (form == HIR_EXPR_INT || form == HIR_EXPR_CHAR || form == HIR_EXPR_TRUE ||
         form == HIR_EXPR_FALSE)
         return SEMANTIC_LIR_OP_CONST_I32;
     if (form == HIR_EXPR_FLOAT) return SEMANTIC_LIR_OP_CONST_F32;

@@ -262,7 +262,7 @@ pub(in crate::type_checker) fn create(
         device,
         "type_check.dependencies.call_compare.scan_input",
         call_compare_capacity as usize,
-        wgpu::BufferUsages::empty(),
+        wgpu::BufferUsages::COPY_DST,
     );
     let call_compare_prefix = typed_storage_u32_rw(
         device,
@@ -862,15 +862,17 @@ pub(in crate::type_checker) fn create(
         0,
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
-            ("hir_kind", inputs.hir_kind_buf.as_entire_binding()),
             (
-                "hir_token_pos",
-                inputs.hir_token_pos_buf.as_entire_binding(),
+                "compact_hir_count",
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node",
-                inputs.hir_items.call_callee_node.as_entire_binding(),
+                "compact_hir_core",
+                inputs.hir_items.hir.core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_payload",
+                inputs.hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "token_file_id",
@@ -952,22 +954,25 @@ pub(in crate::type_checker) fn create(
         0,
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
             (
-                "hir_token_pos",
-                inputs.hir_token_pos_buf.as_entire_binding(),
+                "compact_hir_count",
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node",
-                inputs.hir_items.call_callee_node.as_entire_binding(),
+                "compact_hir_core",
+                inputs.hir_items.hir.core.as_entire_binding(),
             ),
             (
-                "hir_call_arg_parent_call",
-                inputs.hir_items.call_arg_parent_call.as_entire_binding(),
+                "compact_hir_payload",
+                inputs.hir_items.hir.payload.as_entire_binding(),
             ),
             (
-                "hir_call_arg_ordinal",
-                inputs.hir_items.call_arg_ordinal.as_entire_binding(),
+                "compact_call_arg_count",
+                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
+            ),
+            (
+                "compact_call_args",
+                inputs.hir_items.hir.call_args.as_entire_binding(),
             ),
             (
                 "call_dependency_decl",
@@ -994,22 +999,25 @@ pub(in crate::type_checker) fn create(
         0,
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
             (
-                "hir_token_pos",
-                inputs.hir_token_pos_buf.as_entire_binding(),
+                "compact_hir_count",
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node",
-                inputs.hir_items.call_callee_node.as_entire_binding(),
+                "compact_hir_core",
+                inputs.hir_items.hir.core.as_entire_binding(),
             ),
             (
-                "hir_call_arg_parent_call",
-                inputs.hir_items.call_arg_parent_call.as_entire_binding(),
+                "compact_hir_payload",
+                inputs.hir_items.hir.payload.as_entire_binding(),
             ),
             (
-                "hir_call_arg_ordinal",
-                inputs.hir_items.call_arg_ordinal.as_entire_binding(),
+                "compact_call_arg_count",
+                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
+            ),
+            (
+                "compact_call_args",
+                inputs.hir_items.hir.call_args.as_entire_binding(),
             ),
             (
                 "call_dependency_decl",
@@ -1080,30 +1088,25 @@ pub(in crate::type_checker) fn create(
         0,
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
             (
-                "hir_token_pos",
-                inputs.hir_token_pos_buf.as_entire_binding(),
+                "compact_hir_count",
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
-                "hir_expr_record",
-                inputs.hir_items.expr_record.as_entire_binding(),
+                "compact_hir_core",
+                inputs.hir_items.hir.core.as_entire_binding(),
             ),
             (
-                "hir_expr_result_root_node",
-                inputs.hir_items.expr_result_root_node.as_entire_binding(),
+                "compact_hir_payload",
+                inputs.hir_items.hir.payload.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node",
-                inputs.hir_items.call_callee_node.as_entire_binding(),
+                "compact_call_arg_count",
+                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
             ),
             (
-                "hir_call_arg_parent_call",
-                inputs.hir_items.call_arg_parent_call.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_ordinal",
-                inputs.hir_items.call_arg_ordinal.as_entire_binding(),
+                "compact_call_args",
+                inputs.hir_items.hir.call_args.as_entire_binding(),
             ),
             (
                 "hir_semantic_count",
@@ -1214,29 +1217,15 @@ pub(in crate::type_checker) fn create(
                 ("gParams", value_params.as_entire_binding()),
                 (
                     "compact_hir_count",
-                    inputs.hir_items.compact_hir_count.as_entire_binding(),
+                    inputs.hir_items.hir.count.as_entire_binding(),
+                ),
+                (
+                    "compact_hir_core",
+                    inputs.hir_items.hir.core.as_entire_binding(),
                 ),
                 (
                     "compact_hir_payload",
-                    inputs.hir_items.compact_hir_payload.as_entire_binding(),
-                ),
-                ("hir_status", inputs.hir_status_buf.as_entire_binding()),
-                ("hir_kind", inputs.hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_token_pos",
-                    inputs.hir_token_pos_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_result_root_node",
-                    inputs.hir_items.expr_result_root_node.as_entire_binding(),
-                ),
-                (
-                    "hir_stmt_record",
-                    inputs.hir_items.stmt_record.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node",
-                    inputs.hir_items.call_callee_node.as_entire_binding(),
+                    inputs.hir_items.hir.payload.as_entire_binding(),
                 ),
                 (
                     "hir_semantic_count",

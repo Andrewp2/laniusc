@@ -1,4 +1,5 @@
 import codegen.lir.wasm.module_common;
+import codegen.lir.wasm.host_abi;
 import codegen.lowering_ir;
 import gpu_index;
 
@@ -36,7 +37,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (layout.status != 0u || function_id >= count) return;
     WasmLirFunction function = wasm_lir_functions[function_id];
 
-    uint type_pos = layout.type_entries_start + wasm_type_entry_offset[function_id];
+    uint type_pos = layout.type_entries_start + WASM_HOST_TYPE_ENTRIES_LENGTH +
+        wasm_type_entry_offset[function_id];
     store(type_pos, 0x60u);
     store_leb5(type_pos + 1u, function.param_value_count);
     uint value_pos = type_pos + 6u;

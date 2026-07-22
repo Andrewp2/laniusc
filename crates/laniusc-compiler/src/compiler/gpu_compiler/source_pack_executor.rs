@@ -667,7 +667,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         "prepare {context} for x86_64: {reason}"
                     ))
                 })?;
-                let generator = self.compiler.x86_generator().map_err(|reason| {
+                let linker = self.compiler.x86_linker().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
                         "initialize x86_64 linker for {context}: {reason}"
                     ))
@@ -678,7 +678,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     artifact_label,
                     source_pack_artifact_store_error,
                     |file, _error| {
-                        generator
+                        linker
                             .link_executable_to_writer(
                                 &self.compiler.gpu.device,
                                 &self.compiler.gpu.queue,
@@ -716,7 +716,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         "prepare {context} for Wasm: {reason}"
                     ))
                 })?;
-                let generator = self.compiler.wasm_generator().map_err(|reason| {
+                let linker = self.compiler.wasm_linker().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
                         "initialize Wasm linker for {context}: {reason}"
                     ))
@@ -727,7 +727,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     artifact_label,
                     source_pack_artifact_store_error,
                     |file, _error| {
-                        generator
+                        linker
                             .link_executable_to_writer(
                                 &self.compiler.gpu.device,
                                 &self.compiler.gpu.queue,

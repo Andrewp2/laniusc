@@ -15,17 +15,17 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 struct HirPayload { uint a; uint b; uint c; uint d; };
 
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_context_stmt_node;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
+StructuredBuffer<uint> path_call_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -39,7 +39,6 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
-StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> module_value_path_call_head;
 
@@ -56,11 +55,12 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_KIND_VALUE = 3u;
+static const uint HIR_CALL_EXPR = 19u;
 
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -98,11 +98,6 @@ bool valid_variant(uint row)
     return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
 }
 
-uint stmt_slot(uint node, uint slot)
-{
-    return node * STMT_RECORD_STRIDE + slot;
-}
-
 uint function_return_instance_for_token(uint token)
 {
     if (!valid_token(token))
@@ -124,20 +119,25 @@ uint function_return_instance_for_call(uint owner_token, uint call_node)
     uint instance = function_return_instance_for_token(owner_token);
     if (instance != INVALID)
         return instance;
-    return valid_node(call_node) ? function_return_instance_for_token(hir_token_pos[call_node])
+    return valid_node(call_node) ? function_return_instance_for_token(compact_hir_core[call_node].token_start)
                                  : INVALID;
 }
 
 uint contextual_instance_for_call(uint owner_token, uint call_node)
 {
-    uint context_node = valid_node(call_node) ? hir_call_context_stmt_node[call_node] : INVALID;
+    uint encoded_context = valid_node(call_node) ? compact_hir_payload[call_node].d
+                                                 : HIR_CALL_CONTEXT_ID_MASK;
+    uint context_node = (encoded_context & HIR_CALL_CONTEXT_ID_MASK) != HIR_CALL_CONTEXT_ID_MASK
+        ? encoded_context & HIR_CALL_CONTEXT_ID_MASK
+        : INVALID;
     if (!valid_node(context_node))
         return function_return_instance_for_call(owner_token, call_node);
 
-    uint context_kind = hir_stmt_record[stmt_slot(context_node, 0u)];
+    HirPayload context = compact_hir_payload[context_node];
+    uint context_kind = context.a;
     if (context_kind == STMT_RECORD_KIND_LET)
     {
-        uint decl_token = hir_stmt_record[stmt_slot(context_node, 1u)];
+        uint decl_token = context.b;
         if (valid_token(decl_token))
         {
             uint tag = decl_type_ref_tag[decl_token];
@@ -174,32 +174,38 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_decl_i, out uint enum_to
     return valid_token(enum_token) && valid_variant(variant);
 }
 
-uint call_arg_count_for_call(uint owner_token, uint call_node)
+uint dense_call_for_path(uint path_i)
 {
-    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
-    if (!valid_node(call_node))
-        return record_count;
-    return max(record_count, call_arg_row_count[call_node]);
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint call_node = path_i < active_path_count() ? path_call_hir[path_i] : INVALID;
+    return call_node < hir_count && compact_hir_core[call_node].kind == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
+}
+
+uint call_arg_count_for_call(uint dense_call)
+{
+    return dense_call < min(compact_hir_count[0u], gParams.n_hir_nodes)
+        ? call_arg_row_count[dense_call]
+        : 0u;
 }
 
 bool prepare_enum_constructor_call(
     uint owner_token,
+    uint dense_call,
     uint enum_token,
     uint variant)
 {
-    uint4 arg_record = call_arg_record[owner_token];
-    uint call_node = arg_record.z;
-    uint actual_count = call_arg_count_for_call(owner_token, call_node);
     uint expected_count = compact_variant_payload_count[variant];
+    if (expected_count > 0u && !valid_node(dense_call))
+        return false;
+    uint actual_count = call_arg_count_for_call(dense_call);
     if (actual_count != expected_count)
         return false;
     if (actual_count > PARAM_CACHE_STRIDE ||
         expected_count > VARIANT_PAYLOAD_SLOT_STRIDE)
         return false;
-    if (expected_count > 0u && !valid_node(call_node))
-        return false;
-
-    uint context_instance = contextual_instance_for_call(owner_token, call_node);
+    uint context_instance = contextual_instance_for_call(owner_token, dense_call);
     if (context_instance != INVALID && type_instance_decl_token[context_instance] != enum_token)
         return false;
     return true;
@@ -233,7 +239,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (!prepare_enum_constructor_call(owner_token, enum_token, variant))
+    uint dense_call = dense_call_for_path(path_i);
+    if (!prepare_enum_constructor_call(owner_token, dense_call, enum_token, variant))
     {
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
         return;

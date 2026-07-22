@@ -510,12 +510,13 @@ fn generated_capacity_snapshots_scale_monotonically_without_gpu_work() {
                 snapshot.compile_floor_bytes
                     >= snapshot
                         .frontend_floor_bytes
-                        .saturating_add(snapshot.x86_floor_bytes),
-                "{mode:?} lines={lines} compile floor should include frontend plus x86"
+                        .saturating_add(snapshot.x86_workspace_bytes),
+                "{mode:?} lines={lines} compile floor should include frontend plus graph workspace"
             );
             assert!(
-                snapshot.x86_inst_capacity >= 256,
-                "{mode:?} lines={lines} x86 instruction capacity should keep the minimum planning floor"
+                snapshot.x86_target_instruction_capacity
+                    >= snapshot.parser_tree_capacity.saturating_mul(5),
+                "{mode:?} lines={lines} x86 target capacity should cover the graph's structural bound"
             );
 
             if let Some(previous) = previous {
@@ -532,7 +533,8 @@ fn generated_capacity_snapshots_scale_monotonically_without_gpu_work() {
                     "{mode:?} parser tree capacity shrank between generated checkpoints"
                 );
                 assert!(
-                    snapshot.x86_inst_capacity >= previous.x86_inst_capacity,
+                    snapshot.x86_target_instruction_capacity
+                        >= previous.x86_target_instruction_capacity,
                     "{mode:?} x86 instruction capacity shrank between generated checkpoints"
                 );
                 assert!(

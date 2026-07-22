@@ -38,6 +38,11 @@ bool wasm_has_block_type(uint opcode)
 uint wasm_lir_byte_len(WasmLirInstruction inst)
 {
     if (inst.opcode == WASM_LIR_OP_CALL_HOST) return 0u;
+    // All language-function calls use a five-byte padded LEB. This is a valid
+    // Wasm encoding and makes local and external call sites equally patchable
+    // without changing any following byte offsets during object linking.
+    if (inst.opcode == WASM_LIR_OP_CALL ||
+        inst.opcode == WASM_LIR_OP_CALL_SYMBOL) return 6u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
         return 1u + wasm_i32_leb_len(inst.immediate);
     if (inst.opcode == WASM_LIR_OP_F32_CONST) return 5u;
@@ -70,6 +75,15 @@ uint wasm_i32_leb_byte(uint value, uint byte_i)
 
 uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
 {
+    if (inst.opcode == WASM_LIR_OP_CALL ||
+        inst.opcode == WASM_LIR_OP_CALL_SYMBOL)
+    {
+        if (byte_i == 0u) return WASM_LIR_OP_CALL;
+        uint value = inst.opcode == WASM_LIR_OP_CALL_SYMBOL ? 0u : inst.immediate;
+        uint immediate_i = byte_i - 1u;
+        uint byte_value = (value >> (immediate_i * 7u)) & 0x7fu;
+        return immediate_i < 4u ? byte_value | 0x80u : byte_value;
+    }
     if (byte_i == 0u) return inst.opcode;
     uint immediate_i = byte_i - 1u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)

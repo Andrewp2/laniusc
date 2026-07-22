@@ -22,6 +22,112 @@ pub mod opcode {
     include!(concat!(env!("OUT_DIR"), "/lowering_ir_opcodes.rs"));
 }
 
+/// Target-independent runtime service selected by checked semantic lowering.
+///
+/// Values intentionally match the canonical builtin-symbol slots consumed by
+/// type checking. Targets lower this enum to syscalls, runtime thunks, or Wasm
+/// imports; they never rediscover a service from source text.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostService {
+    OpenReadPath = opcode::HOST_SERVICE_OPEN_READ_PATH,
+    OpenWritePath = opcode::HOST_SERVICE_OPEN_WRITE_PATH,
+    ReadI32 = opcode::HOST_SERVICE_READ_I32,
+    WriteText = opcode::HOST_SERVICE_WRITE_TEXT,
+    WriteI32 = opcode::HOST_SERVICE_WRITE_I32,
+    WriteByte = opcode::HOST_SERVICE_WRITE_BYTE,
+    WriteNewline = opcode::HOST_SERVICE_WRITE_NEWLINE,
+    CloseFile = opcode::HOST_SERVICE_CLOSE_FILE,
+    I32ToF32 = opcode::HOST_SERVICE_I32_TO_F32,
+    Exit = opcode::HOST_SERVICE_EXIT,
+    SecureU32 = opcode::HOST_SERVICE_SECURE_U32,
+    Alloc = opcode::HOST_SERVICE_ALLOC,
+    Dealloc = opcode::HOST_SERVICE_DEALLOC,
+    Argc = opcode::HOST_SERVICE_ARGC,
+    ArgLen = opcode::HOST_SERVICE_ARG_LEN,
+    ArgRead = opcode::HOST_SERVICE_ARG_READ,
+    UnixSeconds = opcode::HOST_SERVICE_UNIX_SECONDS,
+    CurrentDirRead = opcode::HOST_SERVICE_CURRENT_DIR_READ,
+    VarCount = opcode::HOST_SERVICE_VAR_COUNT,
+    VarKeyLen = opcode::HOST_SERVICE_VAR_KEY_LEN,
+    VarKeyRead = opcode::HOST_SERVICE_VAR_KEY_READ,
+    VarLen = opcode::HOST_SERVICE_VAR_LEN,
+    VarRead = opcode::HOST_SERVICE_VAR_READ,
+    Close = opcode::HOST_SERVICE_CLOSE,
+    Read = opcode::HOST_SERVICE_READ,
+    Write = opcode::HOST_SERVICE_WRITE,
+    OpenRead = opcode::HOST_SERVICE_OPEN_READ,
+    OpenWrite = opcode::HOST_SERVICE_OPEN_WRITE,
+    OpenAppend = opcode::HOST_SERVICE_OPEN_APPEND,
+    WriteStdout = opcode::HOST_SERVICE_WRITE_STDOUT,
+    WriteStderr = opcode::HOST_SERVICE_WRITE_STDERR,
+    ReadStdin = opcode::HOST_SERVICE_READ_STDIN,
+    FillSecureBytes = opcode::HOST_SERVICE_FILL_SECURE_BYTES,
+    RemoveFile = opcode::HOST_SERVICE_REMOVE_FILE,
+    CreateDir = opcode::HOST_SERVICE_CREATE_DIR,
+    RemoveDir = opcode::HOST_SERVICE_REMOVE_DIR,
+    Rename = opcode::HOST_SERVICE_RENAME,
+    MonotonicRead = opcode::HOST_SERVICE_MONOTONIC_READ,
+    SystemRead = opcode::HOST_SERVICE_SYSTEM_READ,
+    SleepMsI32 = opcode::HOST_SERVICE_SLEEP_MS_I32,
+    Realloc = opcode::HOST_SERVICE_REALLOC,
+    AllocFailed = opcode::HOST_SERVICE_ALLOC_FAILED,
+}
+
+impl HostService {
+    pub const fn symbol_slot(self) -> u32 {
+        self as u32
+    }
+
+    pub fn from_symbol_slot(slot: u32) -> Option<Self> {
+        Some(match slot {
+            opcode::HOST_SERVICE_OPEN_READ_PATH => Self::OpenReadPath,
+            opcode::HOST_SERVICE_OPEN_WRITE_PATH => Self::OpenWritePath,
+            opcode::HOST_SERVICE_READ_I32 => Self::ReadI32,
+            opcode::HOST_SERVICE_WRITE_TEXT => Self::WriteText,
+            opcode::HOST_SERVICE_WRITE_I32 => Self::WriteI32,
+            opcode::HOST_SERVICE_WRITE_BYTE => Self::WriteByte,
+            opcode::HOST_SERVICE_WRITE_NEWLINE => Self::WriteNewline,
+            opcode::HOST_SERVICE_CLOSE_FILE => Self::CloseFile,
+            opcode::HOST_SERVICE_I32_TO_F32 => Self::I32ToF32,
+            opcode::HOST_SERVICE_EXIT => Self::Exit,
+            opcode::HOST_SERVICE_SECURE_U32 => Self::SecureU32,
+            opcode::HOST_SERVICE_ALLOC => Self::Alloc,
+            opcode::HOST_SERVICE_DEALLOC => Self::Dealloc,
+            opcode::HOST_SERVICE_ARGC => Self::Argc,
+            opcode::HOST_SERVICE_ARG_LEN => Self::ArgLen,
+            opcode::HOST_SERVICE_ARG_READ => Self::ArgRead,
+            opcode::HOST_SERVICE_UNIX_SECONDS => Self::UnixSeconds,
+            opcode::HOST_SERVICE_CURRENT_DIR_READ => Self::CurrentDirRead,
+            opcode::HOST_SERVICE_VAR_COUNT => Self::VarCount,
+            opcode::HOST_SERVICE_VAR_KEY_LEN => Self::VarKeyLen,
+            opcode::HOST_SERVICE_VAR_KEY_READ => Self::VarKeyRead,
+            opcode::HOST_SERVICE_VAR_LEN => Self::VarLen,
+            opcode::HOST_SERVICE_VAR_READ => Self::VarRead,
+            opcode::HOST_SERVICE_CLOSE => Self::Close,
+            opcode::HOST_SERVICE_READ => Self::Read,
+            opcode::HOST_SERVICE_WRITE => Self::Write,
+            opcode::HOST_SERVICE_OPEN_READ => Self::OpenRead,
+            opcode::HOST_SERVICE_OPEN_WRITE => Self::OpenWrite,
+            opcode::HOST_SERVICE_OPEN_APPEND => Self::OpenAppend,
+            opcode::HOST_SERVICE_WRITE_STDOUT => Self::WriteStdout,
+            opcode::HOST_SERVICE_WRITE_STDERR => Self::WriteStderr,
+            opcode::HOST_SERVICE_READ_STDIN => Self::ReadStdin,
+            opcode::HOST_SERVICE_FILL_SECURE_BYTES => Self::FillSecureBytes,
+            opcode::HOST_SERVICE_REMOVE_FILE => Self::RemoveFile,
+            opcode::HOST_SERVICE_CREATE_DIR => Self::CreateDir,
+            opcode::HOST_SERVICE_REMOVE_DIR => Self::RemoveDir,
+            opcode::HOST_SERVICE_RENAME => Self::Rename,
+            opcode::HOST_SERVICE_MONOTONIC_READ => Self::MonotonicRead,
+            opcode::HOST_SERVICE_SYSTEM_READ => Self::SystemRead,
+            opcode::HOST_SERVICE_SLEEP_MS_I32 => Self::SleepMsI32,
+            opcode::HOST_SERVICE_REALLOC => Self::Realloc,
+            opcode::HOST_SERVICE_ALLOC_FAILED => Self::AllocFailed,
+            _ => return None,
+        })
+    }
+}
+
 /// Four 32-bit schedule-key words consumed two bits per stable radix step.
 pub(crate) const TARGET_SCHEDULE_RADIX_STEPS: u32 = 16;
 
@@ -72,6 +178,66 @@ struct WasmModuleGraphResources {
     layout: ResourceId,
     module_length: ResourceId,
     module_bytes: ResourceId,
+}
+
+#[derive(Clone, Copy)]
+struct WasmObjectGraphResources {
+    relocation_flags: ResourceId,
+    relocation_prefix: ResourceId,
+    relocation_scan_local: ResourceId,
+    relocation_scan_block_sum: ResourceId,
+    relocation_scan_block_prefix: ResourceId,
+    relocation_scan_hierarchy: ResourceId,
+    relocation_total: ResourceId,
+    symbol_flags: ResourceId,
+    symbol_prefix: ResourceId,
+    symbol_scan_local: ResourceId,
+    symbol_scan_block_sum: ResourceId,
+    symbol_scan_block_prefix: ResourceId,
+    symbol_scan_hierarchy: ResourceId,
+    symbol_total: ResourceId,
+    definition_flags: ResourceId,
+    definition_prefix: ResourceId,
+    definition_scan_local: ResourceId,
+    definition_scan_block_sum: ResourceId,
+    definition_scan_block_prefix: ResourceId,
+    definition_scan_hierarchy: ResourceId,
+    definition_total: ResourceId,
+    relocations: ResourceId,
+    functions: ResourceId,
+    definitions: ResourceId,
+    type_bytes: ResourceId,
+    body_bytes: ResourceId,
+}
+
+#[derive(Clone, Copy)]
+struct X86ObjectGraphResources {
+    relocation_flags: ResourceId,
+    relocation_prefix: ResourceId,
+    relocation_scan_local: ResourceId,
+    relocation_scan_block_sum: ResourceId,
+    relocation_scan_block_prefix: ResourceId,
+    relocation_scan_hierarchy: ResourceId,
+    relocation_total: ResourceId,
+    symbol_flags: ResourceId,
+    symbol_prefix: ResourceId,
+    symbol_scan_local: ResourceId,
+    symbol_scan_block_sum: ResourceId,
+    symbol_scan_block_prefix: ResourceId,
+    symbol_scan_hierarchy: ResourceId,
+    symbol_total: ResourceId,
+    definition_flags: ResourceId,
+    definition_prefix: ResourceId,
+    definition_scan_local: ResourceId,
+    definition_scan_block_sum: ResourceId,
+    definition_scan_block_prefix: ResourceId,
+    definition_scan_hierarchy: ResourceId,
+    definition_total: ResourceId,
+    relocations: ResourceId,
+    undefined_symbols: ResourceId,
+    definitions: ResourceId,
+    text_bytes: ResourceId,
+    rodata_bytes: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -215,6 +381,8 @@ fn add_schedule_graph_passes(
 pub struct SemanticLirCore {
     pub op: u32,
     pub type_id: u32,
+    pub type_ref_tag: u32,
+    pub type_ref_payload: u32,
     pub source_hir: u32,
     pub flags: u32,
 }
@@ -271,9 +439,14 @@ pub struct SemanticLirFunction {
     pub file_id: u32,
     pub local_start: u32,
     pub local_count: u32,
-    pub reserved0: u32,
-    pub reserved1: u32,
-    pub reserved2: u32,
+    /// Number of target-independent 32-bit words in an aggregate result.
+    /// Zero denotes a scalar/void result. This is semantic ABI metadata, not
+    /// a target-specific stack layout.
+    pub result_word_count: u32,
+    /// Stable declaration index in this unit's persisted semantic interface,
+    /// or `u32::MAX` for a private/non-exported function.
+    pub symbol_local_index: u32,
+    pub symbol_flags: u32,
 }
 
 #[repr(C)]
@@ -432,6 +605,90 @@ pub struct WasmModuleLayout {
     pub reserved1: u32,
 }
 
+/// One compact relocation emitted by the graph-native Wasm object projector.
+/// The final three identity words are meaningful only for `target_kind == 2`;
+/// keeping them in the row makes every relocation self-contained until symbol
+/// table serialization.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct WasmObjectRelocationRow {
+    pub body_byte_offset: u32,
+    pub target_kind: u32,
+    pub target_index: u32,
+    pub addend: u32,
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub local_index: u32,
+    pub reserved: u32,
+}
+
+/// Directly serializable per-function columns for a relocatable Wasm object.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct WasmObjectFunctionRow {
+    pub type_byte_start: u32,
+    pub type_byte_len: u32,
+    pub body_byte_start: u32,
+    pub body_byte_len: u32,
+    pub symbol_index: u32,
+    pub flags: u32,
+}
+
+/// One compact definition. Identity is an exact source-pack coordinate rather
+/// than a token/name recovered by the host after lowering.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct WasmObjectDefinitionRow {
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub local_index: u32,
+    pub function_index: u32,
+    pub size: u32,
+    pub flags: u32,
+    pub reserved0: u32,
+    pub reserved1: u32,
+}
+
+/// One normalized x86 object relocation. The row matches the durable object
+/// contract directly, including the signed 64-bit addend split into words.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86ObjectRelocationRow {
+    pub kind: u32,
+    pub site_section: u32,
+    pub site_offset: u32,
+    pub target_kind: u32,
+    pub target_index: u32,
+    pub target_offset: u32,
+    pub addend_lo: u32,
+    pub addend_hi: u32,
+}
+
+/// One compact x86 definition. Undefined call symbols are represented by the
+/// corresponding relocation row identity; this table contains definitions
+/// owned by the current compilation unit.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86ObjectDefinitionRow {
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub local_index: u32,
+    pub section: u32,
+    pub offset: u32,
+    pub size: u32,
+    pub flags: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86ObjectUndefinedRow {
+    pub library_id: u32,
+    pub unit_id: u32,
+    pub local_index: u32,
+    pub reserved: u32,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
 pub struct X86ArtifactLayout {
@@ -443,6 +700,10 @@ pub struct X86ArtifactLayout {
     pub text_offset: u32,
     pub body_offset: u32,
     pub status: u32,
+    pub runtime_offset: u32,
+    pub runtime_length: u32,
+    pub rodata_offset: u32,
+    pub rodata_length: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -624,6 +885,11 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<crate::parser::buffers::HirPayload>(capacities.hir_nodes),
     ))?;
+    let hir_const_value = graph.add_resource(input(
+        "hir.const_value",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let hir_links = graph.add_resource(input(
         "hir.links",
         ResourceDomain::HirNodes,
@@ -649,10 +915,20 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let visible_decls = graph.add_resource(input(
-        "typecheck.visible_decls",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    let semantic_expr_ref_tags = graph.add_resource(input(
+        "typecheck.semantic_expr_ref_tags_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_expr_ref_payloads = graph.add_resource(input(
+        "typecheck.semantic_expr_ref_payloads_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let checked_value_decls = graph.add_resource(input(
+        "typecheck.semantic_value_decls_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let name_ids_by_token = graph.add_resource(input(
         "typecheck.name_ids_by_token",
@@ -664,10 +940,22 @@ fn build_lowering_compiler_graph(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(63),
     ))?;
-    let visible_types = graph.add_resource(input(
-        "typecheck.visible_types",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    let checked_value_types = graph.add_resource(input(
+        "typecheck.semantic_value_types_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let checked_param_types = graph.add_resource(input(
+        "typecheck.semantic_param_types_by_row",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(capacities.parameters),
+    ))?;
+    let checked_calls = graph.add_resource(input(
+        "typecheck.semantic_calls_by_hir",
+        ResourceDomain::Calls,
+        LoweringCapacities::bytes::<crate::type_checker::GpuCheckedCallArtifact>(
+            capacities.hir_nodes,
+        ),
     ))?;
     let member_field_ordinals = graph.add_resource(input(
         "typecheck.member_field_ordinals",
@@ -689,20 +977,35 @@ fn build_lowering_compiler_graph(
         ResourceDomain::Tokens,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
     ))?;
-    let backend_call_targets = graph.add_resource(input(
-        "typecheck.backend_call_targets",
-        ResourceDomain::Tokens,
+    let public_decl_index_by_hir = graph.add_resource(input(
+        "typecheck.public_decl_index_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let dependency_counts = graph.add_resource(input(
+        "typecheck.dependency_counts",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(8),
+    ))?;
+    let dependency_declaration_library_ids = graph.add_resource(input(
+        "typecheck.dependency_declaration_library_ids",
+        ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
     ))?;
-    let call_intrinsic_tags = graph.add_resource(input(
-        "typecheck.call_intrinsic_tags",
-        ResourceDomain::Tokens,
+    let dependency_declaration_unit_ids = graph.add_resource(input(
+        "typecheck.dependency_declaration_unit_ids",
+        ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
     ))?;
-    let enclosing_functions = graph.add_resource(input(
-        "typecheck.enclosing_functions",
-        ResourceDomain::Tokens,
+    let dependency_declaration_local_indices = graph.add_resource(input(
+        "typecheck.dependency_declaration_local_indices",
+        ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let checked_enclosing_functions = graph.add_resource(input(
+        "typecheck.semantic_enclosing_functions_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let if_depth = graph.add_resource(input(
         "typecheck.if_depth",
@@ -734,6 +1037,36 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let semantic_call_receivers = graph.add_resource(artifact(
+        "semantic.call_receivers",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_symbol_library_ids = graph.add_resource(artifact(
+        "semantic.call_symbol_library_ids",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_symbol_unit_ids = graph.add_resource(artifact(
+        "semantic.call_symbol_unit_ids",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_symbol_local_indices = graph.add_resource(artifact(
+        "semantic.call_symbol_local_indices",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_arg_counts_by_hir = graph.add_resource(workspace(
+        "lir.semantic.call_arg_counts_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_arg_prefix_by_hir = graph.add_resource(workspace(
+        "lir.semantic.call_arg_prefix_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let semantic_function_ids = graph.add_resource(artifact(
         "semantic.function_ids",
         ResourceDomain::HirNodes,
@@ -753,6 +1086,21 @@ fn build_lowering_compiler_graph(
         "lir.semantic.function_id_by_token",
         ResourceDomain::Tokens,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let semantic_const_function_by_root = graph.add_resource(workspace(
+        "lir.semantic.const_function_by_root",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_struct_hir_by_name_token = graph.add_resource(workspace(
+        "lir.semantic.struct_hir_by_name_token",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let semantic_struct_field_count_by_hir = graph.add_resource(workspace(
+        "lir.semantic.struct_field_count_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let semantic_local_flags = graph.add_resource(workspace(
         "lir.semantic.local_flags",
@@ -934,6 +1282,26 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
+    let semantic_call_arg_scan_local = graph.add_resource(workspace(
+        "lir.semantic.call_arg_scan_local",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_call_arg_scan_block_sum = graph.add_resource(workspace(
+        "lir.semantic.call_arg_scan_block_sum",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
+    ))?;
+    let semantic_call_arg_scan_block_prefix = graph.add_resource(workspace(
+        "lir.semantic.call_arg_scan_block_prefix",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
+    ))?;
+    let semantic_call_arg_scan_hierarchy = graph.add_resource(workspace(
+        "lir.semantic.call_arg_scan_hierarchy",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
+    ))?;
     let semantic_total = graph.add_resource(retained_semantic(
         "lir.semantic.total",
         ResourceDomain::SemanticInstructions,
@@ -1094,6 +1462,49 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::write("semantic_function_flag", semantic_function_flags),
+            PassAccess::write(
+                "semantic_const_function_by_root",
+                semantic_const_function_by_root,
+            ),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.clear",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Tokens,
+        accesses: vec![
+            PassAccess::write(
+                "semantic_struct_hir_by_name_token",
+                semantic_struct_hir_by_name_token,
+            ),
+            PassAccess::write(
+                "semantic_struct_field_count_by_hir",
+                semantic_struct_field_count_by_hir,
+            ),
+            PassAccess::write(
+                "semantic_function_id_by_token",
+                semantic_function_id_by_token,
+            ),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.collect",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Declarations,
+        accesses: vec![
+            PassAccess::read("compact_hir_count", hir_count),
+            PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_field_count", hir_field_count),
+            PassAccess::read("compact_fields", hir_fields),
+            PassAccess::write(
+                "semantic_struct_hir_by_name_token",
+                semantic_struct_hir_by_name_token,
+            ),
+            PassAccess::write(
+                "semantic_struct_field_count_by_hir",
+                semantic_struct_field_count_by_hir,
+            ),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -1204,6 +1615,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_links", hir_links),
             PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_const_value", hir_const_value),
             PassAccess::read("compact_param_ranges", hir_param_ranges),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
@@ -1211,10 +1623,24 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_local_total", semantic_local_total),
             PassAccess::read("call_return_type", call_return_types),
             PassAccess::read("fn_entrypoint_tag", function_entrypoint_tags),
+            PassAccess::read("public_decl_index_by_hir", public_decl_index_by_hir),
+            PassAccess::read("semantic_value_type_by_hir", checked_value_types),
+            PassAccess::read(
+                "semantic_struct_hir_by_name_token",
+                semantic_struct_hir_by_name_token,
+            ),
+            PassAccess::read(
+                "semantic_struct_field_count_by_hir",
+                semantic_struct_field_count_by_hir,
+            ),
             PassAccess::write("semantic_lir_functions", semantic_functions),
             PassAccess::write(
                 "semantic_function_id_by_token",
                 semantic_function_id_by_token,
+            ),
+            PassAccess::write(
+                "semantic_const_function_by_root",
+                semantic_const_function_by_root,
             ),
         ],
     })?;
@@ -1227,7 +1653,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_params", hir_params),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
-            PassAccess::read("visible_type", visible_types),
+            PassAccess::read("semantic_param_type_by_row", checked_param_types),
             PassAccess::write("semantic_lir_param_total", semantic_param_total),
             PassAccess::write("semantic_lir_params", semantic_params),
             PassAccess::read_write("lowering_status", lowering_status),
@@ -1242,13 +1668,26 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
-            PassAccess::read("visible_decl", visible_decls),
-            PassAccess::read("visible_type", visible_types),
+            PassAccess::read("compact_expr_root", hir_expr_root),
+            PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
+            PassAccess::read("semantic_value_type_by_hir", checked_value_types),
             PassAccess::read("name_id_by_token", name_ids_by_token),
             PassAccess::read("language_name_id", language_name_ids),
-            PassAccess::read("backend_call_fn_index", backend_call_targets),
-            PassAccess::read("call_intrinsic_tag", call_intrinsic_tags),
-            PassAccess::read("enclosing_fn", enclosing_functions),
+            PassAccess::read("semantic_calls_by_hir", checked_calls),
+            PassAccess::read("dependency_counts", dependency_counts),
+            PassAccess::read(
+                "dependency_declaration_library_id",
+                dependency_declaration_library_ids,
+            ),
+            PassAccess::read(
+                "dependency_declaration_unit_id",
+                dependency_declaration_unit_ids,
+            ),
+            PassAccess::read(
+                "dependency_declaration_local_index",
+                dependency_declaration_local_indices,
+            ),
+            PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
             PassAccess::read(
@@ -1256,12 +1695,77 @@ fn build_lowering_compiler_graph(
                 semantic_function_id_by_token,
             ),
             PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read(
+                "semantic_const_function_by_root",
+                semantic_const_function_by_root,
+            ),
             PassAccess::write("semantic_value_id", semantic_value_ids),
             PassAccess::write("semantic_value_type", semantic_value_types),
             PassAccess::write("semantic_call_target", semantic_call_targets),
             PassAccess::write("semantic_call_kind", semantic_call_kinds),
             PassAccess::write("semantic_call_result_type", semantic_call_result_types),
+            PassAccess::write("semantic_call_receiver", semantic_call_receivers),
+            PassAccess::write(
+                "semantic_call_symbol_library_id",
+                semantic_call_symbol_library_ids,
+            ),
+            PassAccess::write(
+                "semantic_call_symbol_unit_id",
+                semantic_call_symbol_unit_ids,
+            ),
+            PassAccess::write(
+                "semantic_call_symbol_local_index",
+                semantic_call_symbol_local_indices,
+            ),
+            PassAccess::write(
+                "semantic_call_arg_count_by_hir",
+                semantic_call_arg_counts_by_hir,
+            ),
             PassAccess::write("semantic_function_id", semantic_function_ids),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.call_arg_scan.local",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::HirNodes,
+        accesses: vec![
+            PassAccess::read("scan_count", hir_count),
+            PassAccess::read("scan_input", semantic_call_arg_counts_by_hir),
+            PassAccess::write("scan_local_prefix", semantic_call_arg_scan_local),
+            PassAccess::write("scan_block_sum", semantic_call_arg_scan_block_sum),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.call_arg_scan.hierarchy_up",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::HirNodes,
+        accesses: vec![
+            PassAccess::read("scan_count", hir_count),
+            PassAccess::read("scan_block_sum", semantic_call_arg_scan_block_sum),
+            PassAccess::write("scan_block_prefix", semantic_call_arg_scan_block_prefix),
+            PassAccess::write("scan_hierarchy", semantic_call_arg_scan_hierarchy),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.call_arg_scan.hierarchy_down",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::HirNodes,
+        accesses: vec![
+            PassAccess::read("scan_count", hir_count),
+            PassAccess::read_write("scan_block_prefix", semantic_call_arg_scan_block_prefix),
+            PassAccess::read_write("scan_hierarchy", semantic_call_arg_scan_hierarchy),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.call_arg_scan.apply",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::HirNodes,
+        accesses: vec![
+            PassAccess::read("scan_count", hir_count),
+            PassAccess::read("scan_local_prefix", semantic_call_arg_scan_local),
+            PassAccess::read("scan_block_prefix", semantic_call_arg_scan_block_prefix),
+            PassAccess::write("scan_output_prefix", semantic_call_arg_prefix_by_hir),
+            PassAccess::write("scan_total", semantic_call_arg_total),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -1274,7 +1778,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_local_flag", semantic_local_flags),
             PassAccess::read("semantic_local_prefix", semantic_local_prefix),
             PassAccess::read("semantic_function_id", semantic_function_ids),
-            PassAccess::read("visible_type", visible_types),
+            PassAccess::read("semantic_value_type_by_hir", checked_value_types),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::write("semantic_lir_locals", semantic_locals),
         ],
@@ -1334,6 +1838,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_expr_parent", hir_expr_parent),
+            PassAccess::read("semantic_function_id", semantic_function_ids),
             PassAccess::write("semantic_lir_count", semantic_counts),
         ],
     })?;
@@ -1404,12 +1909,27 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_links", hir_links),
             PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_const_value", hir_const_value),
             PassAccess::read("semantic_expr_type", semantic_types),
+            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
             PassAccess::read("semantic_value_id", semantic_value_ids),
             PassAccess::read("semantic_value_type", semantic_value_types),
             PassAccess::read("semantic_call_target", semantic_call_targets),
             PassAccess::read("semantic_call_kind", semantic_call_kinds),
             PassAccess::read("semantic_call_result_type", semantic_call_result_types),
+            PassAccess::read(
+                "semantic_call_symbol_library_id",
+                semantic_call_symbol_library_ids,
+            ),
+            PassAccess::read(
+                "semantic_call_symbol_unit_id",
+                semantic_call_symbol_unit_ids,
+            ),
+            PassAccess::read(
+                "semantic_call_symbol_local_index",
+                semantic_call_symbol_local_indices,
+            ),
             PassAccess::read("semantic_function_id", semantic_function_ids),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("semantic_if_depth", if_depth),
@@ -1463,9 +1983,17 @@ fn build_lowering_compiler_graph(
         accesses: vec![
             PassAccess::read("compact_call_arg_count", hir_call_arg_count),
             PassAccess::read("compact_call_args", hir_call_args),
+            PassAccess::read("semantic_call_receiver", semantic_call_receivers),
+            PassAccess::read(
+                "semantic_call_arg_count_by_hir",
+                semantic_call_arg_counts_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_call_arg_prefix_by_hir",
+                semantic_call_arg_prefix_by_hir,
+            ),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
-            PassAccess::write("semantic_lir_call_arg_total", semantic_call_arg_total),
             PassAccess::write("semantic_lir_call_args", semantic_call_args),
             PassAccess::read_write(
                 "semantic_lir_call_arg_start_scratch",
@@ -1623,18 +2151,18 @@ fn build_lowering_compiler_graph(
             workspace("lir.wasm.instructions", target_domain, target_core_bytes)
         }
     })?;
-    // x86 retains virtual operands through final instruction selection. Wasm
-    // has only an opcode/immediate after scatter, so a parallel operand table
-    // would be dead immediately after its producer.
-    let target_operands = if target == LoweringTarget::X86_64 {
-        Some(graph.add_resource(workspace(
-            "lir.x86.operands",
-            target_domain,
-            LoweringCapacities::bytes::<X86LirOperands>(capacities.target_instructions),
-        ))?)
-    } else {
-        None
-    };
+    // Both targets retain an explicit operand record. Most Wasm instructions
+    // need only the immediate embedded in `WasmLirInstruction`, but symbolic
+    // calls must preserve all three words of canonical symbol identity until
+    // relocatable-object projection.
+    let target_operands = Some(graph.add_resource(workspace(
+        match target {
+            LoweringTarget::X86_64 => "lir.x86.operands",
+            LoweringTarget::Wasm => "lir.wasm.operands",
+        },
+        target_domain,
+        LoweringCapacities::bytes::<X86LirOperands>(capacities.target_instructions),
+    ))?);
     // Wasm carries this in WasmLirInstruction. x86 preserves the established
     // virtual-instruction layout, so scheduling provenance is a compact side
     // table rather than an overloaded operand word.
@@ -1903,6 +2431,191 @@ fn build_lowering_compiler_graph(
     } else {
         None
     };
+    let x86_object = if target == LoweringTarget::X86_64 {
+        let target_capacity = capacities.target_instructions.max(1);
+        let function_capacity = capacities.hir_nodes.max(1);
+        let target_blocks = target_capacity.div_ceil(256);
+        let function_blocks = function_capacity.div_ceil(256);
+        let u32_rows = |graph: &mut CompilerGraphBuilder,
+                        name: &'static str,
+                        domain: ResourceDomain,
+                        rows: u32|
+         -> Result<ResourceId, String> {
+            graph.add_resource(workspace(
+                name,
+                domain,
+                LoweringCapacities::bytes::<u32>(rows),
+            ))
+        };
+        Some(X86ObjectGraphResources {
+            relocation_flags: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_flags",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            relocation_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_prefix",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            relocation_scan_local: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_scan_local",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            relocation_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_scan_block_sum",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            relocation_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_scan_block_prefix",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            relocation_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.x86.object.relocation_scan_hierarchy",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            relocation_total: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.relocation_total",
+                domain: ResourceDomain::X86Instructions,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            symbol_flags: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_flags",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            symbol_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_prefix",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            symbol_scan_local: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_scan_local",
+                ResourceDomain::X86Instructions,
+                target_capacity,
+            )?,
+            symbol_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_scan_block_sum",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            symbol_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_scan_block_prefix",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            symbol_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.x86.object.symbol_scan_hierarchy",
+                ResourceDomain::X86Instructions,
+                target_blocks,
+            )?,
+            symbol_total: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.symbol_total",
+                domain: ResourceDomain::X86Instructions,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            definition_flags: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_flags",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_prefix",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_scan_local: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_scan_local",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_scan_block_sum",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_scan_block_prefix",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.x86.object.definition_scan_hierarchy",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_total: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.definition_total",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            relocations: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.relocations",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<X86ObjectRelocationRow>(target_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            undefined_symbols: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.undefined_symbols",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<X86ObjectUndefinedRow>(target_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            definitions: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.definitions",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<X86ObjectDefinitionRow>(function_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            text_bytes: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.text_bytes",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            rodata_bytes: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.rodata_bytes",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+        })
+    } else {
+        None
+    };
     let wasm_module = if target == LoweringTarget::Wasm {
         let function_capacity = capacities.hir_nodes.max(1);
         let blocks = function_capacity.div_ceil(256);
@@ -2003,6 +2716,191 @@ fn build_lowering_compiler_graph(
     } else {
         None
     };
+    let wasm_object = if target == LoweringTarget::Wasm {
+        let target_capacity = capacities.target_instructions.max(1);
+        let function_capacity = capacities.hir_nodes.max(1);
+        let target_blocks = target_capacity.div_ceil(256);
+        let function_blocks = function_capacity.div_ceil(256);
+        let u32_rows = |graph: &mut CompilerGraphBuilder,
+                        name: &'static str,
+                        domain: ResourceDomain,
+                        rows: u32|
+         -> Result<ResourceId, String> {
+            graph.add_resource(workspace(
+                name,
+                domain,
+                LoweringCapacities::bytes::<u32>(rows),
+            ))
+        };
+        Some(WasmObjectGraphResources {
+            relocation_flags: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_flags",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            relocation_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_prefix",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            relocation_scan_local: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_scan_local",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            relocation_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_scan_block_sum",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            relocation_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_scan_block_prefix",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            relocation_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.relocation_scan_hierarchy",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            relocation_total: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.relocation_total",
+                domain: ResourceDomain::WasmInstructions,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            symbol_flags: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_flags",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            symbol_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_prefix",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            symbol_scan_local: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_scan_local",
+                ResourceDomain::WasmInstructions,
+                target_capacity,
+            )?,
+            symbol_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_scan_block_sum",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            symbol_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_scan_block_prefix",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            symbol_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.symbol_scan_hierarchy",
+                ResourceDomain::WasmInstructions,
+                target_blocks,
+            )?,
+            symbol_total: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.symbol_total",
+                domain: ResourceDomain::WasmInstructions,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            definition_flags: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_flags",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_prefix",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_scan_local: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_scan_local",
+                ResourceDomain::Declarations,
+                function_capacity,
+            )?,
+            definition_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_scan_block_sum",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_scan_block_prefix",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.wasm.object.definition_scan_hierarchy",
+                ResourceDomain::Declarations,
+                function_blocks,
+            )?,
+            definition_total: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.definition_total",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            relocations: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.relocations",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<WasmObjectRelocationRow>(target_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            functions: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.functions",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<WasmObjectFunctionRow>(function_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            definitions: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.definitions",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<WasmObjectDefinitionRow>(function_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            type_bytes: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.type_bytes",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            body_bytes: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.body_bytes",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+        })
+    } else {
+        None
+    };
 
     graph.add_pass(PassDesc {
         name: "lir.semantic.schedule.init",
@@ -2047,10 +2945,18 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_core", semantic_core),
             PassAccess::read("semantic_lir_operands", semantic_operands),
             PassAccess::read("semantic_schedule_order", schedule_order),
+            PassAccess::read("semantic_lir_schedule", semantic_schedule),
             PassAccess::read(
                 "semantic_lir_call_arg_count_by_instruction",
                 semantic_call_arg_count_by_instruction,
             ),
+            PassAccess::read(
+                "semantic_lir_call_arg_start_by_instruction",
+                semantic_call_arg_start,
+            ),
+            PassAccess::read("semantic_lir_call_args", semantic_call_args),
+            PassAccess::read("semantic_lir_function_total", semantic_function_total),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::write("target_lir_count", target_counts),
         ],
     };
@@ -2074,16 +2980,23 @@ fn build_lowering_compiler_graph(
                 "semantic_lir_aggregate_elements",
                 semantic_aggregate_elements,
             ),
+            PassAccess::read("semantic_lir_string_total", semantic_string_total),
+            PassAccess::read("semantic_lir_strings", semantic_strings),
             PassAccess::read("target_lir_offset", target_offsets),
             PassAccess::read("target_lir_total", target_total),
             PassAccess::write("semantic_to_target_start", semantic_to_target_start),
             PassAccess::write("target_lir_core", target_core),
+            PassAccess::write(
+                "target_lir_operands",
+                target_operands.expect("Wasm operand resource"),
+            ),
         ],
         LoweringTarget::X86_64 => vec![
             PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_lir_core", semantic_core),
             PassAccess::read("semantic_lir_operands", semantic_operands),
             PassAccess::read("semantic_schedule_order", schedule_order),
+            PassAccess::read("semantic_lir_schedule", semantic_schedule),
             PassAccess::read(
                 "semantic_lir_call_arg_count_by_instruction",
                 semantic_call_arg_count_by_instruction,
@@ -2101,6 +3014,9 @@ fn build_lowering_compiler_graph(
                 "semantic_lir_aggregate_elements",
                 semantic_aggregate_elements,
             ),
+            PassAccess::read("semantic_lir_string_total", semantic_string_total),
+            PassAccess::read("semantic_lir_function_total", semantic_function_total),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("target_lir_offset", target_offsets),
             PassAccess::read("target_lir_total", target_total),
             PassAccess::write("semantic_to_target_start", semantic_to_target_start),
@@ -2690,11 +3606,24 @@ fn build_lowering_compiler_graph(
                     function_index_by_semantic,
                 ),
                 PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
                 PassAccess::write("x86_artifact_layout", x86.layout),
                 PassAccess::write("x86_artifact_length", x86.artifact_length),
                 PassAccess::read_write("lowering_status", lowering_status),
             ],
         })?;
+        if x86_object.is_some() {
+            graph.add_pass(PassDesc {
+                name: "artifact.x86.object.normalize_status",
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::ArtifactBytes,
+                accesses: vec![
+                    PassAccess::read("x86_entrypoint_state", x86.entrypoint_state),
+                    PassAccess::read_write("x86_artifact_layout", x86.layout),
+                    PassAccess::read_write("lowering_status", lowering_status),
+                ],
+            })?;
+        }
         graph.add_pass(PassDesc {
             name: "lir.x86.artifact.clear",
             phase: CompilerPhase::Artifact,
@@ -2721,6 +3650,10 @@ fn build_lowering_compiler_graph(
                 ),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("semantic_lir_string_total", semantic_string_total),
+                PassAccess::read("semantic_lir_strings", semantic_strings),
+                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
+                PassAccess::read("semantic_lir_string_data", semantic_string_data),
                 PassAccess::read(
                     "x86_frame_slot_by_decl_token",
                     x86_frame_slot_by_decl_token.expect("x86 declaration slot resource"),
@@ -2743,6 +3676,224 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("target_byte_offset", byte_offsets),
                 PassAccess::read("artifact_length", body_length),
                 PassAccess::write("artifact_bytes", output),
+            ],
+        })?;
+    }
+
+    if let (Some(artifact), Some(object)) = (x86_artifact, x86_object) {
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.relocation_flags",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::X86Instructions,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::write("x86_object_relocation_flag", object.relocation_flags),
+                PassAccess::write("x86_object_symbol_flag", object.symbol_flags),
+            ],
+        })?;
+        for (name, accesses) in [
+            (
+                "artifact.x86.object.relocation_scan.local",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_input", object.relocation_flags),
+                    PassAccess::write("scan_local_prefix", object.relocation_scan_local),
+                    PassAccess::write("scan_block_sum", object.relocation_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.x86.object.relocation_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.relocation_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.relocation_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read_write(
+                        "scan_block_prefix",
+                        object.relocation_scan_block_prefix,
+                    ),
+                    PassAccess::read_write("scan_hierarchy", object.relocation_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.relocation_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_local_prefix", object.relocation_scan_local),
+                    PassAccess::read("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.relocation_prefix),
+                    PassAccess::write("scan_total", object.relocation_total),
+                ],
+            ),
+            (
+                "artifact.x86.object.symbol_scan.local",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_input", object.symbol_flags),
+                    PassAccess::write("scan_local_prefix", object.symbol_scan_local),
+                    PassAccess::write("scan_block_sum", object.symbol_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.x86.object.symbol_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.symbol_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.symbol_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read_write("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::read_write("scan_hierarchy", object.symbol_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.symbol_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_local_prefix", object.symbol_scan_local),
+                    PassAccess::read("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.symbol_prefix),
+                    PassAccess::write("scan_total", object.symbol_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::X86Instructions,
+                accesses,
+            })?;
+        }
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.definition_flags",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: vec![
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::write("x86_object_definition_flag", object.definition_flags),
+            ],
+        })?;
+        for (name, accesses) in [
+            (
+                "artifact.x86.object.definition_scan.local",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_input", object.definition_flags),
+                    PassAccess::write("scan_local_prefix", object.definition_scan_local),
+                    PassAccess::write("scan_block_sum", object.definition_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.x86.object.definition_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.definition_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.definition_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read_write(
+                        "scan_block_prefix",
+                        object.definition_scan_block_prefix,
+                    ),
+                    PassAccess::read_write("scan_hierarchy", object.definition_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.definition_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_local_prefix", object.definition_scan_local),
+                    PassAccess::read("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.definition_prefix),
+                    PassAccess::write("scan_total", object.definition_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses,
+            })?;
+        }
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.relocations",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::X86Instructions,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::read(
+                    "target_lir_operands",
+                    target_operands.expect("x86 operand resource"),
+                ),
+                PassAccess::read("scheduled_function_id", scheduled_function_ids),
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read("target_functions", functions),
+                PassAccess::read(
+                    "target_function_index_by_semantic",
+                    function_index_by_semantic,
+                ),
+                PassAccess::read("target_byte_length", byte_lengths),
+                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("x86_artifact_layout", artifact.layout),
+                PassAccess::read("semantic_lir_string_total", semantic_string_total),
+                PassAccess::read("semantic_lir_strings", semantic_strings),
+                PassAccess::read("x86_object_relocation_flag", object.relocation_flags),
+                PassAccess::read("x86_object_relocation_prefix", object.relocation_prefix),
+                PassAccess::read("x86_object_symbol_prefix", object.symbol_prefix),
+                PassAccess::write("x86_object_relocations", object.relocations),
+                PassAccess::write("x86_object_undefined_symbols", object.undefined_symbols),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.definitions",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: vec![
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read("target_functions", functions),
+                PassAccess::read(
+                    "target_function_index_by_semantic",
+                    function_index_by_semantic,
+                ),
+                PassAccess::read("target_byte_length", byte_lengths),
+                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("x86_artifact_layout", artifact.layout),
+                PassAccess::read("x86_object_definition_flag", object.definition_flags),
+                PassAccess::read("x86_object_definition_prefix", object.definition_prefix),
+                PassAccess::write("x86_object_definitions", object.definitions),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.bytes",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::ArtifactBytes,
+            accesses: vec![
+                PassAccess::read("x86_artifact_layout", artifact.layout),
+                PassAccess::read("x86_artifact_bytes", artifact.artifact_bytes),
+                PassAccess::write("x86_object_text_bytes", object.text_bytes),
+                PassAccess::write("x86_object_rodata_bytes", object.rodata_bytes),
             ],
         })?;
     }
@@ -2861,6 +4012,7 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("wasm_type_entries_length", module.type_total),
                 PassAccess::read("wasm_code_entries_length", module.code_total),
                 PassAccess::read("wasm_module_entrypoint_state", module.entrypoint_state),
+                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
                 PassAccess::write("wasm_module_layout", module.layout),
                 PassAccess::write("wasm_module_length", module.module_length),
                 PassAccess::read_write("lowering_status", lowering_status),
@@ -2872,6 +4024,8 @@ fn build_lowering_compiler_graph(
             dispatch_domain: ResourceDomain::ArtifactBytes,
             accesses: vec![
                 PassAccess::read("wasm_module_layout", module.layout),
+                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
+                PassAccess::read("semantic_lir_string_data", semantic_string_data),
                 PassAccess::write("wasm_module_bytes", module.module_bytes),
             ],
         })?;
@@ -2893,12 +4047,255 @@ fn build_lowering_compiler_graph(
         })?;
     }
 
+    if let (Some(wasm), Some(module), Some(object)) = (wasm_abi, wasm_module, wasm_object) {
+        graph.add_pass(PassDesc {
+            name: "artifact.wasm.object.relocation_flags",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::WasmInstructions,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::read("semantic_lir_total", semantic_total),
+                PassAccess::read("semantic_lir_core", semantic_core),
+                PassAccess::write("wasm_object_relocation_flag", object.relocation_flags),
+                PassAccess::write("wasm_object_symbol_flag", object.symbol_flags),
+            ],
+        })?;
+        for (name, accesses) in [
+            (
+                "artifact.wasm.object.relocation_scan.local",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_input", object.relocation_flags),
+                    PassAccess::write("scan_local_prefix", object.relocation_scan_local),
+                    PassAccess::write("scan_block_sum", object.relocation_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.wasm.object.relocation_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.relocation_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.relocation_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read_write(
+                        "scan_block_prefix",
+                        object.relocation_scan_block_prefix,
+                    ),
+                    PassAccess::read_write("scan_hierarchy", object.relocation_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.relocation_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_local_prefix", object.relocation_scan_local),
+                    PassAccess::read("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.relocation_prefix),
+                    PassAccess::write("scan_total", object.relocation_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::WasmInstructions,
+                accesses,
+            })?;
+        }
+        for (name, accesses) in [
+            (
+                "artifact.wasm.object.symbol_scan.local",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_input", object.symbol_flags),
+                    PassAccess::write("scan_local_prefix", object.symbol_scan_local),
+                    PassAccess::write("scan_block_sum", object.symbol_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.wasm.object.symbol_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.symbol_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.symbol_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read_write("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::read_write("scan_hierarchy", object.symbol_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.symbol_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_local_prefix", object.symbol_scan_local),
+                    PassAccess::read("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.symbol_prefix),
+                    PassAccess::write("scan_total", object.symbol_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::WasmInstructions,
+                accesses,
+            })?;
+        }
+        graph.add_pass(PassDesc {
+            name: "artifact.wasm.object.definition_flags",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: vec![
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::write("wasm_object_definition_flag", object.definition_flags),
+            ],
+        })?;
+        for (name, accesses) in [
+            (
+                "artifact.wasm.object.definition_scan.local",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_input", object.definition_flags),
+                    PassAccess::write("scan_local_prefix", object.definition_scan_local),
+                    PassAccess::write("scan_block_sum", object.definition_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.wasm.object.definition_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
+                    PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::write("scan_hierarchy", object.definition_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.definition_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read_write(
+                        "scan_block_prefix",
+                        object.definition_scan_block_prefix,
+                    ),
+                    PassAccess::read_write("scan_hierarchy", object.definition_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.wasm.object.definition_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", semantic_function_total),
+                    PassAccess::read("scan_local_prefix", object.definition_scan_local),
+                    PassAccess::read("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::write("scan_output_prefix", object.definition_prefix),
+                    PassAccess::write("scan_total", object.definition_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses,
+            })?;
+        }
+        graph.add_pass(PassDesc {
+            name: "artifact.wasm.object.relocations",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::WasmInstructions,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::read(
+                    "target_lir_operands",
+                    target_operands.expect("Wasm operand resource"),
+                ),
+                PassAccess::read("scheduled_function_id", scheduled_function_ids),
+                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("wasm_object_relocation_flag", object.relocation_flags),
+                PassAccess::read("wasm_object_relocation_prefix", object.relocation_prefix),
+                PassAccess::read("wasm_object_symbol_prefix", object.symbol_prefix),
+                PassAccess::read("wasm_lir_functions", wasm.functions),
+                PassAccess::read("wasm_code_entry_offset", module.code_offsets),
+                PassAccess::write("wasm_object_relocations", object.relocations),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "artifact.wasm.object.functions",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: vec![
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("wasm_lir_functions", wasm.functions),
+                PassAccess::read("wasm_type_entry_length", module.type_lengths),
+                PassAccess::read("wasm_type_entry_offset", module.type_offsets),
+                PassAccess::read("wasm_code_entry_length", module.code_lengths),
+                PassAccess::read("wasm_code_entry_offset", module.code_offsets),
+                PassAccess::read("wasm_object_symbol_total", object.symbol_total),
+                PassAccess::read("wasm_object_definition_flag", object.definition_flags),
+                PassAccess::read("wasm_object_definition_prefix", object.definition_prefix),
+                PassAccess::write("wasm_object_functions", object.functions),
+                PassAccess::write("wasm_object_definitions", object.definitions),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "artifact.wasm.object.bytes",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::ArtifactBytes,
+            accesses: vec![
+                PassAccess::read("wasm_type_entries_length", module.type_total),
+                PassAccess::read("wasm_code_entries_length", module.code_total),
+                PassAccess::read("wasm_module_layout", module.layout),
+                PassAccess::read("wasm_module_bytes", module.module_bytes),
+                PassAccess::write("wasm_object_type_bytes", object.type_bytes),
+                PassAccess::write("wasm_object_body_bytes", object.body_bytes),
+            ],
+        })?;
+    }
+
     graph.build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_service_namespace_round_trips_canonical_symbol_slots() {
+        for slot in opcode::HOST_SERVICE_FIRST..opcode::HOST_SERVICE_END {
+            let service = HostService::from_symbol_slot(slot);
+            if slot == opcode::HOST_SERVICE_I32_ARRAY_DATA_PTR {
+                assert_eq!(
+                    service, None,
+                    "compiler-only array projection is not a host call"
+                );
+            } else {
+                assert_eq!(service.map(HostService::symbol_slot), Some(slot));
+            }
+        }
+        assert_eq!(
+            HostService::from_symbol_slot(opcode::HOST_SERVICE_FIRST - 1),
+            None
+        );
+        assert_eq!(
+            HostService::from_symbol_slot(opcode::HOST_SERVICE_END),
+            None
+        );
+    }
 
     #[test]
     fn frontend_unit_capacity_uses_structural_ir_expansion_bounds() {
@@ -2961,7 +4358,7 @@ mod tests {
 
     #[test]
     fn lowering_records_match_shader_uint4_layouts() {
-        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 16);
+        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 24);
         assert_eq!(std::mem::size_of::<SemanticLirOperands>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirSchedule>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirPage>(), 16);
@@ -2978,6 +4375,11 @@ mod tests {
         assert_eq!(std::mem::size_of::<WasmLirOperands>(), 16);
         assert_eq!(std::mem::size_of::<WasmLirFunction>(), 56);
         assert_eq!(std::mem::size_of::<WasmModuleLayout>(), 64);
+        assert_eq!(std::mem::size_of::<X86ArtifactLayout>(), 48);
+        assert_eq!(
+            std::mem::size_of::<crate::type_checker::GpuCheckedCallArtifact>(),
+            32
+        );
     }
 
     #[test]
@@ -3038,6 +4440,59 @@ mod tests {
                     .resources()
                     .iter()
                     .any(|resource| resource.name == output)
+            );
+            assert!(graph.resource_id("typecheck.visible_decls").is_none());
+            assert!(graph.resource_id("typecheck.visible_types").is_none());
+            assert_eq!(
+                graph
+                    .resource(
+                        graph
+                            .resource_id("typecheck.semantic_value_decls_by_hir")
+                            .unwrap(),
+                    )
+                    .unwrap()
+                    .domain,
+                ResourceDomain::HirNodes,
+            );
+            assert_eq!(
+                graph
+                    .resource(
+                        graph
+                            .resource_id("typecheck.semantic_param_types_by_row")
+                            .unwrap(),
+                    )
+                    .unwrap()
+                    .domain,
+                ResourceDomain::Declarations,
+            );
+            assert_eq!(
+                graph
+                    .resource(
+                        graph
+                            .resource_id("typecheck.semantic_calls_by_hir")
+                            .unwrap(),
+                    )
+                    .unwrap()
+                    .domain,
+                ResourceDomain::Calls,
+            );
+            assert!(
+                graph
+                    .resource_id("typecheck.backend_call_targets")
+                    .is_none()
+            );
+            assert!(
+                graph
+                    .resource_id("typecheck.call_dependency_decls")
+                    .is_none()
+            );
+            assert!(graph.resource_id("typecheck.call_intrinsic_tags").is_none());
+            assert!(
+                graph
+                    .resources()
+                    .iter()
+                    .all(|resource| resource.class != ResourceClass::Resident),
+                "fully described lowering graphs must permit phase-lifetime coloring",
             );
         }
     }

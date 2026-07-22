@@ -7,7 +7,7 @@ fn wasm_executes_scalar_constant_return_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
         r#"
-const BASE: i32 = 7;
+const BASE: i32 = 3 + 4;
 
 fn main() {
     return BASE + 35;
@@ -19,6 +19,25 @@ fn main() {
     let status =
         common::run_wasm_main_return_with_node("scalar WASM main return", "scalar_return", &wasm);
     assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_executes_char_literals_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> bool {
+    let digit: char = '7';
+    let newline: char = '\n';
+    return digit == '7' && newline == '\n';
+}
+"#,
+    )
+    .expect("character literals should compile to WASM");
+
+    let status =
+        common::run_wasm_main_return_with_node("WASM character literals", "char_literals", &wasm);
+    assert_eq!(status, 1);
 }
 
 #[test]
@@ -925,6 +944,28 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_unsigned_scalar_comparison_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> bool {
+    let left: u32 = 4294967295;
+    let right: u32 = 1;
+    return left > right;
+}
+"#,
+    )
+    .expect("unsigned scalar comparison should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM unsigned scalar comparison",
+        "unsigned_scalar_comparison",
+        &wasm,
+    );
+    assert_eq!(status, 1);
+}
+
+#[test]
 fn wasm_executes_constant_assignment_inside_if_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -1018,6 +1059,35 @@ fn wasm_executes_struct_local_member_reads_with_node() {
         &wasm,
     );
     assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_generic_struct_parameter_member_reads_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Boxed<T> {
+    value: i32,
+}
+
+fn read<T>(value: Boxed<T>) -> i32 {
+    return value.value;
+}
+
+fn main() {
+    let value: Boxed<i32> = Boxed { value: 9 };
+    return read(value);
+}
+"#,
+    )
+    .expect("generic struct parameters and member reads should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM generic struct parameter member reads",
+        "generic_struct_parameter_member_reads",
+        &wasm,
+    );
+    assert_eq!(status, 9);
 }
 
 #[test]

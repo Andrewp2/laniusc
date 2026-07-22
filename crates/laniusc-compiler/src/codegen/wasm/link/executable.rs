@@ -4,9 +4,9 @@ use anyhow::{Result, anyhow};
 use wgpu::util::DeviceExt;
 
 use super::{GpuWasmLinkInput, paged::GpuWasmPagedExecutablePlan};
-use crate::codegen::wasm::{GpuWasmCodeGenerator, create_wasm_bind_group, workgroup_grid_1d};
+use crate::codegen::wasm::{GpuWasmLinker, create_wasm_bind_group, workgroup_grid_1d};
 
-impl GpuWasmCodeGenerator {
+impl GpuWasmLinker {
     /// Emits and relocates a complete multi-unit Wasm module on the GPU.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn link_executable(

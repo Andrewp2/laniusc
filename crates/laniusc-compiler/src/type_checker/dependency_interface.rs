@@ -28,6 +28,15 @@ pub(crate) struct GpuDependencyInterfaceState {
 }
 
 impl GpuDependencyInterfaceState {
+    pub(crate) fn symbol_buffers(&self) -> super::GpuDependencySymbolBuffers<'_> {
+        super::GpuDependencySymbolBuffers {
+            counts: &self.counts,
+            declaration_library_id: &self.declaration_library_id,
+            declaration_unit_id: &self.declaration_unit_id,
+            declaration_local_index: &self.declaration_local_index,
+        }
+    }
+
     pub(crate) fn new(
         device: &wgpu::Device,
         current_library_id: u32,

@@ -29,7 +29,7 @@ use super::support::{
     workgroup_grid_1d,
 };
 use super::{
-    GpuX86CodeGenerator,
+    GpuX86Linker,
     GpuX86RelocatableObject,
     GpuX86RelocatableObjectLayout,
     GpuX86RelocationTargetKind,
@@ -280,7 +280,7 @@ fn checked_u32_count(label: &str, count: usize) -> Result<u32, String> {
     u32::try_from(count).map_err(|_| format!("x86 link {label} count {count} exceeds u32"))
 }
 
-impl GpuX86CodeGenerator {
+impl GpuX86Linker {
     #[cfg(test)]
     fn relocate_for_test(
         &self,
@@ -1260,7 +1260,7 @@ mod tests {
     #[test]
     fn gpu_link_section_scan_rebases_entry_and_copies_unaligned_sections() {
         let gpu = crate::gpu::device::global();
-        let generator = GpuX86CodeGenerator::new_with_device(gpu).expect("x86 generator");
+        let generator = GpuX86Linker::new_with_device(gpu).expect("x86 linker");
         let empty = GpuX86RelocatableObject {
             version: GPU_X86_OBJECT_VERSION,
             library_id: 1,

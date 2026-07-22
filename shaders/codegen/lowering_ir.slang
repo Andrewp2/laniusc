@@ -82,6 +82,105 @@ static const uint SEMANTIC_LIR_OP_AGGREGATE_NEW = 37u;
 // remain a distinct ABI boundary.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_CALL_INTRINSIC = 38u;
+// A checked call whose definition belongs to another bounded compilation
+// unit. Operands a/b/c are the canonical library/unit/declaration identity.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_CALL_SYMBOL = 39u;
+
+// Runtime services retain the type checker's canonical language-symbol values
+// at the semantic-LIR boundary. Naming the complete namespace here makes the
+// ABI explicit and keeps target shaders independent of symbol-table trivia.
+// IR_OPCODE
+static const uint HOST_SERVICE_OPEN_READ_PATH = 20u;
+// IR_OPCODE
+static const uint HOST_SERVICE_OPEN_WRITE_PATH = 21u;
+// IR_OPCODE
+static const uint HOST_SERVICE_READ_I32 = 22u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_TEXT = 23u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_I32 = 24u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_BYTE = 25u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_NEWLINE = 26u;
+// IR_OPCODE
+static const uint HOST_SERVICE_CLOSE_FILE = 27u;
+// IR_OPCODE
+static const uint HOST_SERVICE_I32_TO_F32 = 28u;
+// IR_OPCODE
+static const uint HOST_SERVICE_EXIT = 29u;
+// IR_OPCODE
+static const uint HOST_SERVICE_SECURE_U32 = 30u;
+// IR_OPCODE
+static const uint HOST_SERVICE_ALLOC = 31u;
+// IR_OPCODE
+static const uint HOST_SERVICE_DEALLOC = 32u;
+// IR_OPCODE
+static const uint HOST_SERVICE_ARGC = 33u;
+// IR_OPCODE
+static const uint HOST_SERVICE_ARG_LEN = 34u;
+// IR_OPCODE
+static const uint HOST_SERVICE_ARG_READ = 35u;
+// IR_OPCODE
+static const uint HOST_SERVICE_UNIX_SECONDS = 36u;
+// IR_OPCODE
+static const uint HOST_SERVICE_CURRENT_DIR_READ = 37u;
+// IR_OPCODE
+static const uint HOST_SERVICE_VAR_COUNT = 38u;
+// IR_OPCODE
+static const uint HOST_SERVICE_VAR_KEY_LEN = 39u;
+// IR_OPCODE
+static const uint HOST_SERVICE_VAR_KEY_READ = 40u;
+// IR_OPCODE
+static const uint HOST_SERVICE_VAR_LEN = 41u;
+// IR_OPCODE
+static const uint HOST_SERVICE_VAR_READ = 42u;
+// IR_OPCODE
+static const uint HOST_SERVICE_CLOSE = 43u;
+// IR_OPCODE
+static const uint HOST_SERVICE_READ = 44u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE = 45u;
+// IR_OPCODE
+static const uint HOST_SERVICE_OPEN_READ = 46u;
+// IR_OPCODE
+static const uint HOST_SERVICE_OPEN_WRITE = 47u;
+// IR_OPCODE
+static const uint HOST_SERVICE_OPEN_APPEND = 48u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_STDOUT = 49u;
+// IR_OPCODE
+static const uint HOST_SERVICE_WRITE_STDERR = 50u;
+// IR_OPCODE
+static const uint HOST_SERVICE_READ_STDIN = 51u;
+// Slot 52 is a compiler-only address projection, not a runtime service.
+// IR_OPCODE
+static const uint HOST_SERVICE_I32_ARRAY_DATA_PTR = 52u;
+// IR_OPCODE
+static const uint HOST_SERVICE_FILL_SECURE_BYTES = 53u;
+// IR_OPCODE
+static const uint HOST_SERVICE_REMOVE_FILE = 54u;
+// IR_OPCODE
+static const uint HOST_SERVICE_CREATE_DIR = 55u;
+// IR_OPCODE
+static const uint HOST_SERVICE_REMOVE_DIR = 56u;
+// IR_OPCODE
+static const uint HOST_SERVICE_RENAME = 57u;
+// IR_OPCODE
+static const uint HOST_SERVICE_MONOTONIC_READ = 58u;
+// IR_OPCODE
+static const uint HOST_SERVICE_SYSTEM_READ = 59u;
+// IR_OPCODE
+static const uint HOST_SERVICE_SLEEP_MS_I32 = 60u;
+// IR_OPCODE
+static const uint HOST_SERVICE_REALLOC = 61u;
+// IR_OPCODE
+static const uint HOST_SERVICE_ALLOC_FAILED = 62u;
+// IR_OPCODE
+static const uint HOST_SERVICE_FIRST = 20u;
+// IR_OPCODE
+static const uint HOST_SERVICE_END = 63u;
 
 // Semantic rows are never silently discarded merely because a target does
 // not implement them yet.  The lowering diagnostic reduction treats this as
@@ -104,6 +203,13 @@ static const uint SEMANTIC_LIR_FLAG_INDEXED = 32u;
 // byte offsets belong to the target layout layer, not semantic lowering.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_FLAG_FIELD = 64u;
+
+// Canonical type-reference tags shared with checked semantic artifacts.
+static const uint SEMANTIC_TYPE_REF_INVALID = 0u;
+static const uint SEMANTIC_TYPE_REF_SCALAR = 1u;
+static const uint SEMANTIC_TYPE_REF_GENERIC_PARAM = 2u;
+static const uint SEMANTIC_TYPE_REF_INSTANCE = 3u;
+static const uint SEMANTIC_TYPE_REF_ERROR = 4u;
 
 // Function ABI flags are separate from instruction flags.
 // IR_OPCODE
@@ -162,6 +268,9 @@ static const uint X86_LIR_OP_CALL_ARG = 21u;
 // service ID, never a source token or a machine address.
 // IR_OPCODE
 static const uint X86_LIR_OP_CALL_HOST = 22u;
+// Relocatable call whose operands retain the canonical symbol identity.
+// IR_OPCODE
+static const uint X86_LIR_OP_CALL_SYMBOL = 23u;
 // IR_OPCODE
 static const uint X86_LIR_OP_RETURN_VOID = 24u;
 // Fixed-frame aggregate storage. ARRAY_ADDR produces the address of the
@@ -174,6 +283,25 @@ static const uint X86_LIR_OP_ARRAY_INIT = 31u;
 static const uint X86_LIR_OP_INDEX_LOAD = 32u;
 // IR_OPCODE
 static const uint X86_LIR_OP_FIELD_LOAD = 33u;
+// Target-only frame row reserved for aggregate results returned in registers.
+// It emits no machine bytes, but gives each returned word stable caller-owned
+// storage for the remainder of the caller's activation.
+// IR_OPCODE
+static const uint X86_LIR_OP_AGGREGATE_RESULT_SLOT = 34u;
+// One independently emitted aggregate-return word. Register-class returns
+// place it in EAX/EDX; sret-class returns copy it to caller-owned storage.
+// IR_OPCODE
+static const uint X86_LIR_OP_AGGREGATE_RETURN_WORD = 35u;
+// The two target rows of one semantic string constant materialize its rodata
+// address and decoded byte length independently for ABI expansion.
+// IR_OPCODE
+static const uint X86_LIR_OP_STRING_ADDR = 36u;
+// IR_OPCODE
+static const uint X86_LIR_OP_STRING_LEN = 37u;
+// Compiler intrinsic lowered to the native runtime's shared signed-decimal
+// printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
+// IR_OPCODE
+static const uint X86_LIR_OP_PRINT_I32 = 38u;
 // Target-only pseudo instruction. It owns a stable scheduled row for branch
 // resolution and is removed by final machine selection.
 // IR_OPCODE
@@ -271,11 +399,19 @@ static const uint WASM_LIR_OP_I32_NE = 0x47u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_I32_LT_S = 0x48u;
 // IR_OPCODE
+static const uint WASM_LIR_OP_I32_LT_U = 0x49u;
+// IR_OPCODE
 static const uint WASM_LIR_OP_I32_GT_S = 0x4au;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_GT_U = 0x4bu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_I32_LE_S = 0x4cu;
 // IR_OPCODE
+static const uint WASM_LIR_OP_I32_LE_U = 0x4du;
+// IR_OPCODE
 static const uint WASM_LIR_OP_I32_GE_S = 0x4eu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_GE_U = 0x4fu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F32_EQ = 0x5bu;
 // IR_OPCODE
@@ -292,6 +428,10 @@ static const uint WASM_LIR_OP_F32_GE = 0x60u;
 // function index. It must never be emitted as a byte opcode directly.
 // IR_OPCODE
 static const uint WASM_LIR_OP_CALL_HOST = 0x100u;
+// Relocatable call. This pseudo-op emits `call` plus a fixed-width padded LEB
+// placeholder; WasmLirOperands retain the canonical symbol identity.
+// IR_OPCODE
+static const uint WASM_LIR_OP_CALL_SYMBOL = 0x101u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_I32_ADD = 0x6au;
 // IR_OPCODE
@@ -323,6 +463,8 @@ static const uint WASM_LIR_OP_F32_MUL = 0x94u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F32_DIV = 0x95u;
 // IR_OPCODE
+static const uint WASM_LIR_OP_I64_EXTEND_I32_S = 0xacu;
+// IR_OPCODE
 static const uint WASM_LIR_OP_F32_CONVERT_I32_S = 0xb2u;
 
 // IR_OPCODE
@@ -331,11 +473,19 @@ static const uint TARGET_LIR_FLAG_UNSUPPORTED = 1u;
 // derived from the full checked type before scalar type IDs are compacted.
 // IR_OPCODE
 static const uint X86_LIR_METADATA_AGGREGATE = 0x80000000u;
+// The value occupies one ABI register, but that register carries a full
+// machine word (for example the address half of a string pair).
+static const uint X86_LIR_METADATA_WIDE = 0x40000000u;
 
 struct SemanticLirCore
 {
     uint op;
     uint type_id;
+    // Canonical checked type identity. `type_id` remains the compact machine
+    // class used by instruction selection; aggregate identity and generic
+    // structure live in this tag/payload pair instead of numeric heuristics.
+    uint type_ref_tag;
+    uint type_ref_payload;
     uint source_hir;
     uint flags;
 };
@@ -383,9 +533,11 @@ struct SemanticLirFunction
     uint file_id;
     uint local_start;
     uint local_count;
-    uint reserved0;
-    uint reserved1;
-    uint reserved2;
+    uint result_word_count;
+    // Stable declaration index in the unit's semantic interface. The target
+    // object layer combines this with its library/unit identity.
+    uint symbol_local_index;
+    uint symbol_flags;
 };
 
 struct SemanticLirParam
@@ -513,6 +665,72 @@ struct WasmModuleLayout
     uint reserved1;
 };
 
+struct WasmObjectRelocationRow
+{
+    uint body_byte_offset;
+    uint target_kind;
+    uint target_index;
+    uint addend;
+    uint library_id;
+    uint unit_id;
+    uint local_index;
+    uint reserved;
+};
+
+struct WasmObjectFunctionRow
+{
+    uint type_byte_start;
+    uint type_byte_len;
+    uint body_byte_start;
+    uint body_byte_len;
+    uint symbol_index;
+    uint flags;
+};
+
+struct WasmObjectDefinitionRow
+{
+    uint library_id;
+    uint unit_id;
+    uint local_index;
+    uint function_index;
+    uint size;
+    uint flags;
+    uint reserved0;
+    uint reserved1;
+};
+
+struct X86ObjectRelocationRow
+{
+    uint kind;
+    uint site_section;
+    uint site_offset;
+    uint target_kind;
+    uint target_index;
+    uint target_offset;
+    uint addend_lo;
+    uint addend_hi;
+};
+
+struct X86ObjectDefinitionRow
+{
+    uint library_id;
+    uint unit_id;
+    uint local_index;
+    uint section;
+    uint offset;
+    uint size;
+    uint flags;
+    uint reserved;
+};
+
+struct X86ObjectUndefinedRow
+{
+    uint library_id;
+    uint unit_id;
+    uint local_index;
+    uint reserved;
+};
+
 struct X86ArtifactLayout
 {
     uint body_length;
@@ -523,4 +741,8 @@ struct X86ArtifactLayout
     uint text_offset;
     uint body_offset;
     uint status;
+    uint runtime_offset;
+    uint runtime_length;
+    uint rodata_offset;
+    uint rodata_length;
 };

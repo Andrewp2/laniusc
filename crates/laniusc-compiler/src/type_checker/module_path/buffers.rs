@@ -140,6 +140,7 @@ pub(super) struct Buffers {
     pub(super) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_owner_hir: LaniusBuffer<u32>,
+    pub(super) path_call_hir: LaniusBuffer<u32>,
     pub(super) path_owner_token: LaniusBuffer<u32>,
     pub(super) path_id_by_owner_hir: LaniusBuffer<u32>,
     pub(super) path_id_by_owner_token: LaniusBuffer<u32>,
@@ -192,16 +193,14 @@ impl Buffers {
         // Module/path family bits are dead before type-instance passes reuse this
         // HIR-indexed storage for const-generic declaration counts and, later,
         // function entrypoint tags.
-        let record_family_bits = typed_alias_storage_u32(
-            inputs.record_family_bits_scratch,
-            hir_node_capacity.max(1) as usize,
-        );
+        let record_family_bits = inputs
+            .record_family_bits_scratch
+            .alias(hir_node_capacity.max(1) as usize);
         // Record-family flags feed module/path scans and resident visible-decl
         // scans. Struct-init by-node ordinals are recorded later, after those scans.
-        let record_family_flag = typed_alias_storage_u32(
-            inputs.record_family_flag_scratch,
-            hir_node_capacity.max(1) as usize,
-        );
+        let record_family_flag = inputs
+            .record_family_flag_scratch
+            .alias(hir_node_capacity.max(1) as usize);
         let module_record_flag = record_family_flag.clone();
         let import_record_flag = record_family_flag.clone();
         let decl_record_flag = record_family_flag.clone();
@@ -209,12 +208,20 @@ impl Buffers {
         // Parser list-workspace buffers are dead before typecheck starts. Use one
         // as shared HIR-keyed module/import/decl/path prefix scratch instead of
         // allocating a second max-capacity buffer.
-        let module_record_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.module_record_prefix",
-            hir_node_capacity as usize,
-            external.map(|scratch| scratch.module_record_prefix),
-        );
+        let module_record_prefix = external
+            .map(|scratch| {
+                scratch
+                    .module_record_prefix
+                    .alias(hir_node_capacity as usize)
+            })
+            .unwrap_or_else(|| {
+                typed_storage_u32_rw(
+                    device,
+                    "type_check.resident.module_record_prefix",
+                    hir_node_capacity as usize,
+                    wgpu::BufferUsages::empty(),
+                )
+            });
         // Module, import, and declaration record prefixes are consumed by their
         // scatter passes before the next record-family scan runs, so one prefix
         // buffer is enough.
@@ -222,12 +229,20 @@ impl Buffers {
         let decl_record_prefix = module_record_prefix.clone();
         // The counted-scan local prefix is scratch for module/path and visible
         // declaration scans. Reuse a dead parser list-workspace buffer.
-        let record_scan_local_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.record_scan_local_prefix",
-            hir_node_capacity as usize,
-            external.map(|scratch| scratch.record_scan_local_prefix),
-        );
+        let record_scan_local_prefix = external
+            .map(|scratch| {
+                scratch
+                    .record_scan_local_prefix
+                    .alias(hir_node_capacity as usize)
+            })
+            .unwrap_or_else(|| {
+                typed_storage_u32_rw(
+                    device,
+                    "type_check.resident.record_scan_local_prefix",
+                    hir_node_capacity as usize,
+                    wgpu::BufferUsages::empty(),
+                )
+            });
         let record_scan_block_sum = typed_storage_u32_rw(
             device,
             "type_check.resident.record_scan_block_sum",
@@ -942,6 +957,13 @@ impl Buffers {
             record_capacity,
             retained_path_external.map(|scratch| scratch.path_owner_hir),
         );
+        let path_call_hir = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.path_call_hir",
+            record_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let path_owner_token = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_owner_token",
@@ -1130,6 +1152,7 @@ impl Buffers {
             path_prefix_row_dispatch_args,
             path_prefix_round_dispatch_args,
             path_owner_hir,
+            path_call_hir,
             path_owner_token,
             path_id_by_owner_hir,
             path_id_by_owner_token,

@@ -179,6 +179,14 @@ impl TypeCheckPasses {
                 "type_check_expression_types_01_step",
                 "type_checker/semantic/expression_types/01_step"
             ),
+            semantic_calls_project: pass!(
+                "type_check_semantic_artifact_00_calls",
+                "type_checker/semantic/artifact/00_calls"
+            ),
+            semantic_artifact_project: pass!(
+                "type_check_semantic_artifact_00_project",
+                "type_checker/semantic/artifact/00_project"
+            ),
             names_mark_lexemes: pass!(
                 "type_check_names_00_mark_lexemes",
                 "type_checker/names/00_mark_lexemes"
@@ -886,6 +894,18 @@ impl TypeCheckPasses {
                 "type_check_predicates_02_obligations",
                 "type_checker/predicates/02_obligations"
             ),
+            semantic_predicate_diagnostics_clear: pass!(
+                "type_check_semantic_artifact_00_predicate_diagnostics_clear",
+                "type_checker/semantic/artifact/00_predicate_diagnostics_clear"
+            ),
+            semantic_predicate_diagnostics_claim: pass!(
+                "type_check_semantic_artifact_01_predicate_diagnostics_claim",
+                "type_checker/semantic/artifact/01_predicate_diagnostics_claim"
+            ),
+            semantic_predicate_diagnostics_project: pass!(
+                "type_check_semantic_artifact_02_predicate_diagnostics",
+                "type_checker/semantic/artifact/02_predicate_diagnostics"
+            ),
             returns_clear: pass!(
                 "type_check_returns_00_clear",
                 "type_checker/returns/00_clear"
@@ -899,7 +919,46 @@ impl TypeCheckPasses {
                 "type_check_returns_03_validate",
                 "type_checker/returns/03_validate"
             ),
-            conditions_hir: pass!("type_check_conditions_hir", "type_checker/conditions_hir"),
+            conditions_compact_expr: pass!(
+                "type_check_conditions_compact_expr",
+                "type_checker/conditions/compact_expr"
+            ),
+            conditions_compact_stmt: pass!(
+                "type_check_conditions_compact_stmt",
+                "type_checker/conditions/compact_stmt"
+            ),
+            conditions_compact_calls: pass!(
+                "type_check_conditions_compact_calls",
+                "type_checker/conditions/compact_calls"
+            ),
+            conditions_compact_types: pass!(
+                "type_check_conditions_compact_types",
+                "type_checker/conditions/compact_types"
+            ),
+            conditions_compact_methods: pass!(
+                "type_check_conditions_compact_methods",
+                "type_checker/conditions/compact_methods"
+            ),
+            conditions_compact_predicates: pass!(
+                "type_check_conditions_compact_predicates",
+                "type_checker/conditions/compact_predicates"
+            ),
+            conditions_compact_names: pass!(
+                "type_check_conditions_compact_names",
+                "type_checker/conditions/compact_names"
+            ),
+            conditions_compact_aggregate_requests: pass!(
+                "type_check_conditions_compact_aggregate_requests",
+                "type_checker/conditions/compact_aggregate_requests"
+            ),
+            semantic_expression_refs_project: pass!(
+                "type_check_semantic_artifact_expression_refs",
+                "type_checker/semantic/artifact/01_expression_refs"
+            ),
+            semantic_struct_literal_refs_project: pass!(
+                "type_check_semantic_artifact_struct_literal_refs",
+                "type_checker/semantic/artifact/01a_struct_literal_refs"
+            ),
             conditions_aggregate_args: pass!(
                 "type_check_conditions_aggregate_args",
                 "type_checker/conditions/aggregate_args"
@@ -908,7 +967,6 @@ impl TypeCheckPasses {
                 "type_check_conditions_type_subtree",
                 "type_checker/conditions/type_subtree"
             )),
-            control_hir: pass!("type_check_control_hir", "type_checker/control/hir"),
             scope_hir: pass!("type_check_scope_hir", "type_checker/scope/hir"),
             calls_clear: pass!(
                 "type_check_calls_01_resolve",
@@ -966,14 +1024,6 @@ impl TypeCheckPasses {
                 "type_check_calls_03a0_match_arg_params_init",
                 "type_checker/calls/03a0_match_arg_params_init"
             ),
-            calls_match_arg_params_copy: pass!(
-                "type_check_calls_03a0_match_arg_params_copy",
-                "type_checker/calls/03a0_match_arg_params_copy"
-            ),
-            calls_match_arg_params_step: pass!(
-                "type_check_calls_03a0_match_arg_params_step",
-                "type_checker/calls/03a0_match_arg_params_step"
-            ),
             calls_collect_row_args: pass!(
                 "type_check_calls_03a_collect_row_args",
                 "type_checker/calls/03a_collect_row_args"
@@ -1025,6 +1075,10 @@ impl TypeCheckPasses {
             calls_mark_array_args: pass!(
                 "type_check_calls_03d_mark_array_args",
                 "type_checker/calls/03d_mark_array_args"
+            ),
+            calls_project_result_instances: pass!(
+                "type_check_calls_03e_project_result_instances",
+                "type_checker/calls/03e_project_result_instances"
             ),
             calls_erase_generic_params: pass!(
                 "type_check_calls_04_erase_generic_params",

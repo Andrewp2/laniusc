@@ -7,20 +7,14 @@ mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;
 mod typecheck;
-pub(in crate::compiler::gpu_compiler) use typecheck::{
-    type_check_diagnostic_at_span,
-    type_check_execution_failed_for_source,
-    type_check_execution_failed_for_source_pack,
-};
 mod wasm_codegen;
 mod x86_codegen;
-use buffers::{OwnedTypecheckParserBuffers, OwnedX86DiagnosticBuffers, OwnedX86ParserBuffers};
+use buffers::OwnedTypecheckParserBuffers;
 
 mod helpers;
 mod host_timer;
 use helpers::{
     StageExecutionFailure,
-    buffer_if_wgpu_u32_words,
     first_nonempty_source_span,
     hir_node_capacity_for_parser_emit,
     parser_execution_failed_for_source,
@@ -32,7 +26,6 @@ use helpers::{
     trace_wasm_compile,
     type_mismatch_label,
     type_mismatch_note,
-    x86_inst_hir_node_count_for_backend_capacity,
 };
 pub(in crate::compiler) use helpers::{prepare_source_for_gpu, prepare_source_for_gpu_from_path};
 use host_timer::CompilerHostTimer;
@@ -62,231 +55,289 @@ pub struct GpuCompiler<'gpu> {
     pub(super) parse_tables: PrecomputedParseTables,
     pub(super) type_checker: gpu_type_checker::GpuTypeChecker,
     pub(super) resident_pipeline_lock: Mutex<()>,
-    source_pack_tree_capacity_cache: std::sync::Mutex<Option<SourcePackTreeCapacityCache>>,
-    source_pack_parser_capacity_high_water: std::sync::Mutex<Option<ResidentParserCapacity>>,
-    source_pack_typecheck_capacity_high_water:
-        std::sync::Mutex<Option<gpu_type_checker::TypeCheckPreflightCapacities>>,
-    pub(super) wasm_generator: Result<Box<wasm::GpuWasmCodeGenerator>, String>,
-    pub(super) x86_generator: Result<Box<x86::GpuX86CodeGenerator>, String>,
+    pub(super) wasm_linker: Result<Box<wasm::GpuWasmLinker>, String>,
+    pub(super) x86_linker: Result<Box<x86::GpuX86Linker>, String>,
+    pub(super) wasm_lowering: Result<Box<GpuLoweringPipeline>, String>,
+    pub(super) x86_lowering: Result<Box<GpuLoweringPipeline>, String>,
 }
 
-struct SourcePackTreeCapacityCache {
-    sources: Vec<String>,
-    tree_capacity: u32,
-    parser_feature_flags: u32,
-    typecheck_preflight: Option<gpu_type_checker::TypeCheckPreflightCapacities>,
-    x86_plan: Option<SourcePackX86Plan>,
+// First graph-owned daemon capacity while production entry points move onto
+// the lowering pipeline. Source packs already have a separate bounded-unit
+// boundary; resident high-water growth is kept explicit instead of silently
+// falling back to a legacy backend.
+const INITIAL_LOWERING_SOURCE_CAPACITY: u32 = 1024 * 1024;
+
+fn initial_lowering_capacities(target: LoweringTarget) -> Result<LoweringCapacities, String> {
+    LoweringCapacities::from_frontend_unit(
+        INITIAL_LOWERING_SOURCE_CAPACITY,
+        INITIAL_LOWERING_SOURCE_CAPACITY,
+        INITIAL_LOWERING_SOURCE_CAPACITY,
+        target,
+    )
 }
 
-#[derive(Clone, Copy)]
-struct SourcePackX86Plan {
-    feature_summary: x86::X86FeatureSummary,
-    active_tree_capacity: u32,
-    semantic_hir_count: u32,
-    pointer_jump_steps: u32,
+type PipelineFamilyInitialization = (
+    gpu_type_checker::GpuTypeChecker,
+    Result<Box<wasm::GpuWasmLinker>, String>,
+    Result<Box<x86::GpuX86Linker>, String>,
+    Result<Box<GpuLoweringPipeline>, String>,
+    Result<Box<GpuLoweringPipeline>, String>,
+);
+
+const PIPELINE_INIT_STACK_BYTES: usize = 32 * 1024 * 1024;
+
+// This coordinator intentionally runs on the same explicit large-stack policy
+// as the pipeline constructors it launches. Its debug-build frame contains
+// all three scoped join handles and their result variants; keeping that frame
+// out of an arbitrary async executor thread makes compiler initialization safe
+// without imposing a stack-size requirement on callers.
+#[inline(never)]
+fn initialize_pipeline_families(
+    gpu: &GpuDevice,
+    backends: GpuCompilerBackends,
+) -> Result<PipelineFamilyInitialization, CompileError> {
+    std::thread::scope(|scope| {
+        let type_checker = std::thread::Builder::new()
+            .name("lanius-typecheck-init".into())
+            .stack_size(PIPELINE_INIT_STACK_BYTES)
+            .spawn_scoped(scope, || {
+                let start = std::time::Instant::now();
+                (
+                    gpu_type_checker::GpuTypeChecker::new_with_device(gpu),
+                    start.elapsed(),
+                )
+            })
+            .expect("spawn type-check pipeline initialization worker");
+        let wasm = backends.wasm.then(|| {
+            std::thread::Builder::new()
+                .name("lanius-wasm-init".into())
+                .stack_size(PIPELINE_INIT_STACK_BYTES)
+                .spawn_scoped(scope, || {
+                    let start = std::time::Instant::now();
+                    let linker = wasm::GpuWasmLinker::new_with_device(gpu)
+                        .map(Box::new)
+                        .map_err(|err| err.to_string());
+                    let lowering =
+                        initial_lowering_capacities(LoweringTarget::Wasm).and_then(|capacities| {
+                            GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::Wasm)
+                                .map(Box::new)
+                                .map_err(|err| err.to_string())
+                        });
+                    ((linker, lowering), start.elapsed())
+                })
+                .expect("spawn Wasm pipeline initialization worker")
+        });
+        let x86 = backends.x86.then(|| {
+            std::thread::Builder::new()
+                .name("lanius-x86-init".into())
+                .stack_size(PIPELINE_INIT_STACK_BYTES)
+                .spawn_scoped(scope, || {
+                    let start = std::time::Instant::now();
+                    let linker = x86::GpuX86Linker::new_with_device(gpu)
+                        .map(Box::new)
+                        .map_err(|err| err.to_string());
+                    let lowering = initial_lowering_capacities(LoweringTarget::X86_64).and_then(
+                        |capacities| {
+                            GpuLoweringPipeline::new(
+                                &gpu.device,
+                                capacities,
+                                LoweringTarget::X86_64,
+                            )
+                            .map(Box::new)
+                            .map_err(|err| err.to_string())
+                        },
+                    );
+                    ((linker, lowering), start.elapsed())
+                })
+                .expect("spawn x86 pipeline initialization worker")
+        });
+        let (type_checker, type_checker_elapsed) = type_checker.join().map_err(|_| {
+            compiler_initialization_failed_error(
+                "the compiler stopped while initializing GPU type-check pipelines",
+                "initialize type checker worker",
+                anyhow::anyhow!("type checker initialization thread panicked"),
+            )
+        })?;
+        let type_checker = type_checker.map_err(|err| {
+            compiler_initialization_failed_error(
+                "the compiler stopped while initializing GPU type-check pipelines",
+                "initialize type checker",
+                err,
+            )
+        })?;
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] compiler.init.parallel.type_checker: {:.3}ms",
+                type_checker_elapsed.as_secs_f64() * 1000.0
+            );
+        }
+        let (wasm_linker, wasm_lowering) = match wasm.map(std::thread::ScopedJoinHandle::join) {
+            Some(Ok(((linker, lowering), _elapsed))) => (linker, lowering),
+            Some(Err(_)) => (
+                Err("WASM linker initialization thread panicked".into()),
+                Err("WASM lowering initialization thread panicked".into()),
+            ),
+            None => (
+                Err("WASM linker was not initialized for this compiler".into()),
+                Err("WASM lowering pipeline was not initialized for this compiler".into()),
+            ),
+        };
+        let (x86_linker, x86_lowering) = match x86.map(std::thread::ScopedJoinHandle::join) {
+            Some(Ok(((linker, lowering), _elapsed))) => (linker, lowering),
+            Some(Err(_)) => (
+                Err("x86 linker initialization thread panicked".into()),
+                Err("x86 lowering initialization thread panicked".into()),
+            ),
+            None => (
+                Err("x86 linker was not initialized for this compiler".into()),
+                Err("x86 lowering pipeline was not initialized for this compiler".into()),
+            ),
+        };
+        Ok((
+            type_checker,
+            wasm_linker,
+            x86_linker,
+            wasm_lowering,
+            x86_lowering,
+        ))
+    })
+}
+
+fn initialize_pipeline_families_on_coordinator(
+    gpu: &GpuDevice,
+    backends: GpuCompilerBackends,
+) -> Result<PipelineFamilyInitialization, CompileError> {
+    let initialized = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("lanius-pipeline-init".into())
+            .stack_size(PIPELINE_INIT_STACK_BYTES)
+            .spawn_scoped(scope, || {
+                initialize_pipeline_families(gpu, backends).map(Box::new)
+            })
+            .expect("spawn pipeline initialization coordinator")
+            .join()
+            .map_err(|_| {
+                compiler_initialization_failed_error(
+                    "the compiler stopped while initializing GPU pipelines",
+                    "initialize pipeline coordinator",
+                    anyhow::anyhow!("pipeline initialization coordinator panicked"),
+                )
+            })?
+    })?;
+    Ok(*initialized)
 }
 
 /// Resources released by one compiler-wide resident job-buffer trim.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct GpuResidentJobBufferTrim {
-    /// Raw wgpu x86 pool buffers, which are not included in LaniusBuffer metrics.
-    pub x86_pooled_buffer_count: usize,
-    /// Total capacity of the released raw x86 pool buffers.
-    pub x86_pooled_buffer_bytes: u64,
-}
-
-impl SourcePackTreeCapacityCache {
-    fn matches<S: AsRef<str>>(&self, sources: &[S]) -> bool {
-        self.sources.len() == sources.len()
-            && self
-                .sources
-                .iter()
-                .zip(sources)
-                .all(|(cached, source)| cached == source.as_ref())
-    }
-
-    fn typecheck_preflight_for<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-    ) -> Option<gpu_type_checker::TypeCheckPreflightCapacities> {
-        self.matches(sources)
-            .then_some(self.typecheck_preflight)
-            .flatten()
-    }
-}
+pub struct GpuResidentJobBufferTrim;
 
 impl GpuCompiler<'static> {
     /// Create a compiler backed by the process-global GPU device.
-    pub async fn new() -> Result<Self, CompileError> {
-        Self::new_with_backends(GpuCompilerBackends::all()).await
+    pub fn new()
+    -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self, CompileError>> + 'static>>
+    {
+        Self::new_with_backends(GpuCompilerBackends::all())
     }
 
     /// Create a compiler backed by the process-global GPU with selected backends.
-    pub async fn new_with_backends(backends: GpuCompilerBackends) -> Result<Self, CompileError> {
-        let gpu = device::global_result().map_err(|err| {
-            compiler_initialization_failed_error(
-                "the compiler stopped while selecting a GPU adapter",
-                "initialize GPU device",
-                anyhow::Error::new((*err).clone()),
-            )
-        })?;
-        Self::new_with_device_and_backends(gpu, backends).await
+    pub fn new_with_backends(
+        backends: GpuCompilerBackends,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self, CompileError>> + 'static>>
+    {
+        Box::pin(async move {
+            let gpu = device::global_result().map_err(|err| {
+                compiler_initialization_failed_error(
+                    "the compiler stopped while selecting a GPU adapter",
+                    "initialize GPU device",
+                    anyhow::Error::new((*err).clone()),
+                )
+            })?;
+            Self::new_with_device_and_backends(gpu, backends).await
+        })
     }
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
     /// Create a compiler for an existing GPU device with all backend families
     /// initialized.
-    pub async fn new_with_device(gpu: &'gpu GpuDevice) -> Result<Self, CompileError> {
-        Self::new_with_device_and_backends(gpu, GpuCompilerBackends::all()).await
+    pub fn new_with_device(
+        gpu: &'gpu GpuDevice,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self, CompileError>> + 'gpu>>
+    {
+        Self::new_with_device_and_backends(gpu, GpuCompilerBackends::all())
     }
 
     /// Create a compiler for an existing GPU device and a selected backend set.
     ///
     /// Frontend phases are always initialized. Disabled or failed backends are
     /// stored as deferred errors so frontend-only operations can still run.
-    pub async fn new_with_device_and_backends(
+    pub fn new_with_device_and_backends(
         gpu: &'gpu GpuDevice,
         backends: GpuCompilerBackends,
-    ) -> Result<Self, CompileError> {
-        let mut host_timer = CompilerHostTimer::new("compiler.init");
-        host_timer.pipeline_cache_size(gpu, "start");
-        let lexer = GpuLexer::new_with_device(gpu).await.map_err(|err| {
-            compiler_initialization_failed_error(
-                "the compiler stopped while initializing GPU frontend pipelines",
-                "initialize lexer",
-                err,
-            )
-        })?;
-        host_timer.stamp("lexer");
-        host_timer.pipeline_cache_size(gpu, "after_lexer");
-        let parse_tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tables/parse_tables.bin"
-        )))
-        .map_err(|err| {
-            compiler_execution_failed_error(
-                "the compiler stopped while loading parser tables",
-                "load parse tables",
-                err,
-            )
-        })?;
-        host_timer.stamp("parse_tables");
-        let parser = GpuParser::new_with_device(gpu).await.map_err(|err| {
-            compiler_initialization_failed_error(
-                "the compiler stopped while initializing GPU frontend pipelines",
-                "initialize parser",
-                err,
-            )
-        })?;
-        host_timer.stamp("parser");
-        host_timer.pipeline_cache_size(gpu, "after_parser");
-        // These eager pipeline families have no construction-time data
-        // dependencies. Build them concurrently in every profile so debug
-        // daemon jobs exercise the same readiness contract as release jobs.
-        let (type_checker, wasm_generator, x86_generator) = {
-            // Pipeline compilation is CPU/driver-heavy and these families have
-            // no construction-time data dependencies.
-            std::thread::scope(|scope| {
-                const PIPELINE_INIT_STACK_BYTES: usize = 32 * 1024 * 1024;
-                let type_checker = std::thread::Builder::new()
-                    .name("lanius-typecheck-init".into())
-                    .stack_size(PIPELINE_INIT_STACK_BYTES)
-                    .spawn_scoped(scope, || {
-                        let start = std::time::Instant::now();
-                        (
-                            gpu_type_checker::GpuTypeChecker::new_with_device(gpu),
-                            start.elapsed(),
-                        )
-                    })
-                    .expect("spawn type-check pipeline initialization worker");
-                let wasm = backends.wasm.then(|| {
-                    std::thread::Builder::new()
-                        .name("lanius-wasm-init".into())
-                        .stack_size(PIPELINE_INIT_STACK_BYTES)
-                        .spawn_scoped(scope, || {
-                            let start = std::time::Instant::now();
-                            (
-                                wasm::GpuWasmCodeGenerator::new_with_device(gpu)
-                                    .map(Box::new)
-                                    .map_err(|err| err.to_string()),
-                                start.elapsed(),
-                            )
-                        })
-                        .expect("spawn Wasm pipeline initialization worker")
-                });
-                let x86 = backends.x86.then(|| {
-                    std::thread::Builder::new()
-                        .name("lanius-x86-init".into())
-                        .stack_size(PIPELINE_INIT_STACK_BYTES)
-                        .spawn_scoped(scope, || {
-                            let start = std::time::Instant::now();
-                            (
-                                x86::GpuX86CodeGenerator::new_with_device(gpu)
-                                    .map(Box::new)
-                                    .map_err(|err| err.to_string()),
-                                start.elapsed(),
-                            )
-                        })
-                        .expect("spawn x86 pipeline initialization worker")
-                });
-                let (type_checker, type_checker_elapsed) = type_checker.join().map_err(|_| {
-                    compiler_initialization_failed_error(
-                        "the compiler stopped while initializing GPU type-check pipelines",
-                        "initialize type checker worker",
-                        anyhow::anyhow!("type checker initialization thread panicked"),
-                    )
-                })?;
-                let type_checker = type_checker.map_err(|err| {
-                    compiler_initialization_failed_error(
-                        "the compiler stopped while initializing GPU type-check pipelines",
-                        "initialize type checker",
-                        err,
-                    )
-                })?;
-                if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
-                    eprintln!(
-                        "[gpu_compile_host_timer] compiler.init.parallel.type_checker: {:.3}ms",
-                        type_checker_elapsed.as_secs_f64() * 1000.0
-                    );
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self, CompileError>> + 'gpu>>
+    {
+        Box::pin(async move {
+            let mut host_timer = CompilerHostTimer::new("compiler.init");
+            host_timer.pipeline_cache_size(gpu, "start");
+            let lexer = GpuLexer::new_with_device(gpu).await.map_err(|err| {
+                compiler_initialization_failed_error(
+                    "the compiler stopped while initializing GPU frontend pipelines",
+                    "initialize lexer",
+                    err,
+                )
+            })?;
+            host_timer.stamp("lexer");
+            host_timer.pipeline_cache_size(gpu, "after_lexer");
+            let parse_tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../tables/parse_tables.bin"
+            )))
+            .map_err(|err| {
+                compiler_execution_failed_error(
+                    "the compiler stopped while loading parser tables",
+                    "load parse tables",
+                    err,
+                )
+            })?;
+            host_timer.stamp("parse_tables");
+            let parser = GpuParser::new_with_device(gpu).await.map_err(|err| {
+                compiler_initialization_failed_error(
+                    "the compiler stopped while initializing GPU frontend pipelines",
+                    "initialize parser",
+                    err,
+                )
+            })?;
+            host_timer.stamp("parser");
+            host_timer.pipeline_cache_size(gpu, "after_parser");
+            // These eager pipeline families have no construction-time data
+            // dependencies. Build them concurrently in every profile so debug
+            // daemon jobs exercise the same readiness contract as release jobs.
+            let (type_checker, wasm_linker, x86_linker, wasm_lowering, x86_lowering) =
+                initialize_pipeline_families_on_coordinator(gpu, backends)?;
+            if let Err(err) = &wasm_linker {
+                if backends.wasm {
+                    log::warn!("preinitializing WASM linker failed: {err}");
                 }
-                let wasm_generator = match wasm.map(std::thread::ScopedJoinHandle::join) {
-                    Some(Ok((generator, _elapsed))) => generator,
-                    Some(Err(_)) => Err("WASM generator initialization thread panicked".into()),
-                    None => Err("WASM code generator was not initialized for this compiler".into()),
-                };
-                let x86_generator = match x86.map(std::thread::ScopedJoinHandle::join) {
-                    Some(Ok((generator, _elapsed))) => generator,
-                    Some(Err(_)) => Err("x86 generator initialization thread panicked".into()),
-                    None => Err("x86 code generator was not initialized for this compiler".into()),
-                };
-                Ok::<_, CompileError>((type_checker, wasm_generator, x86_generator))
-            })?
-        };
-        if let Err(err) = &wasm_generator {
-            if backends.wasm {
-                log::warn!("preinitializing WASM code generator failed: {err}");
             }
-        }
-        if let Err(err) = &x86_generator {
-            if backends.x86 {
-                log::warn!("preinitializing x86 code generator failed: {err}");
+            if let Err(err) = &x86_linker {
+                if backends.x86 {
+                    log::warn!("preinitializing x86 linker failed: {err}");
+                }
             }
-        }
-        host_timer.stamp("parallel_pipeline_families");
-        host_timer.pipeline_cache_size(gpu, "after_parallel_pipeline_families");
-        Ok(Self {
-            gpu,
-            lexer,
-            parser,
-            parse_tables,
-            type_checker,
-            resident_pipeline_lock: Mutex::new((), false),
-            source_pack_tree_capacity_cache: std::sync::Mutex::new(None),
-            source_pack_parser_capacity_high_water: std::sync::Mutex::new(None),
-            source_pack_typecheck_capacity_high_water: std::sync::Mutex::new(None),
-            wasm_generator,
-            x86_generator,
+            host_timer.stamp("parallel_pipeline_families");
+            host_timer.pipeline_cache_size(gpu, "after_parallel_pipeline_families");
+            Ok(Self {
+                gpu,
+                lexer,
+                parser,
+                parse_tables,
+                type_checker,
+                resident_pipeline_lock: Mutex::new((), false),
+                wasm_linker,
+                x86_linker,
+                wasm_lowering,
+                x86_lowering,
+            })
         })
     }
 
@@ -294,6 +345,29 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// drivers.
     pub fn gpu(&self) -> &'gpu GpuDevice {
         self.gpu
+    }
+
+    pub(super) fn ensure_lowering_capacity(
+        &self,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+    ) -> Result<(), String> {
+        let required = source_bytes.max(tokens).max(hir_nodes);
+        if required <= INITIAL_LOWERING_SOURCE_CAPACITY {
+            return Ok(());
+        }
+        Err(format!(
+            "compilation unit requires {required} lowering rows/bytes, exceeding the daemon's resident graph capacity of {INITIAL_LOWERING_SOURCE_CAPACITY}; split the source into bounded compilation units"
+        ))
+    }
+
+    pub(super) fn x86_lowering_pipeline(&self) -> Result<&GpuLoweringPipeline, &str> {
+        self.x86_lowering.as_deref().map_err(String::as_str)
+    }
+
+    pub(super) fn wasm_lowering_pipeline(&self) -> Result<&GpuLoweringPipeline, &str> {
+        self.wasm_lowering.as_deref().map_err(String::as_str)
     }
 
     /// Releases source/job-sized GPU buffers across every compiler phase while
@@ -307,210 +381,18 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_state();
-        if let Ok(generator) = self.wasm_generator.as_ref() {
-            generator.release_current_resident_buffers();
-        }
-        let (x86_pooled_buffer_count, x86_pooled_buffer_bytes) = self
-            .x86_generator
-            .as_ref()
-            .map(|generator| generator.release_pooled_buffers(&self.gpu.device))
-            .unwrap_or_default();
-
-        *self
-            .source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned") = None;
-        *self
-            .source_pack_parser_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_parser_capacity_high_water poisoned") = None;
-        *self
-            .source_pack_typecheck_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_typecheck_capacity_high_water poisoned") = None;
-
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
-        GpuResidentJobBufferTrim {
-            x86_pooled_buffer_count,
-            x86_pooled_buffer_bytes,
-        }
-    }
-
-    fn cached_source_pack_parser_capacity<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-    ) -> Option<ResidentParserCapacity> {
-        self.source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned")
-            .as_ref()
-            .filter(|cached| cached.matches(sources))
-            .map(|cached| ResidentParserCapacity {
-                tree_capacity: cached.tree_capacity,
-                parser_feature_flags: cached.parser_feature_flags,
-            })
-    }
-
-    fn remember_source_pack_parser_capacity<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        capacity: ResidentParserCapacity,
-    ) {
-        *self
-            .source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned") =
-            Some(SourcePackTreeCapacityCache {
-                sources: sources
-                    .iter()
-                    .map(|source| source.as_ref().to_owned())
-                    .collect(),
-                tree_capacity: capacity.tree_capacity,
-                parser_feature_flags: capacity.parser_feature_flags,
-                typecheck_preflight: None,
-                x86_plan: None,
-            });
-        let mut high_water = self
-            .source_pack_parser_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_parser_capacity_high_water poisoned");
-        *high_water = Some(
-            (*high_water)
-                .map(|current| ResidentParserCapacity {
-                    tree_capacity: current.tree_capacity.max(capacity.tree_capacity),
-                    parser_feature_flags: current.parser_feature_flags
-                        | capacity.parser_feature_flags,
-                })
-                .unwrap_or(capacity),
-        );
-    }
-
-    fn source_pack_parser_capacity_high_water(&self) -> Option<ResidentParserCapacity> {
-        *self
-            .source_pack_parser_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_parser_capacity_high_water poisoned")
-    }
-
-    fn cached_source_pack_typecheck_preflight<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-    ) -> Option<gpu_type_checker::TypeCheckPreflightCapacities> {
-        self.source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned")
-            .as_ref()
-            .and_then(|cached| cached.typecheck_preflight_for(sources))
-    }
-
-    fn remember_source_pack_typecheck_preflight<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        capacities: gpu_type_checker::TypeCheckPreflightCapacities,
-    ) {
-        let mut cache = self
-            .source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned");
-        if let Some(cached) = cache.as_mut().filter(|cached| cached.matches(sources)) {
-            cached.typecheck_preflight = Some(capacities);
-        }
-        let mut high_water = self
-            .source_pack_typecheck_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_typecheck_capacity_high_water poisoned");
-        *high_water = Some(
-            (*high_water)
-                .map(|current| current.union(capacities))
-                .unwrap_or(capacities),
-        );
-    }
-
-    fn source_pack_typecheck_capacity_high_water(
-        &self,
-    ) -> Option<gpu_type_checker::TypeCheckPreflightCapacities> {
-        *self
-            .source_pack_typecheck_capacity_high_water
-            .lock()
-            .expect("GpuCompiler.source_pack_typecheck_capacity_high_water poisoned")
-    }
-
-    fn cached_source_pack_x86_plan<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-    ) -> Option<SourcePackX86Plan> {
-        self.source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned")
-            .as_ref()
-            .filter(|cached| cached.matches(sources))
-            .and_then(|cached| cached.x86_plan)
-    }
-
-    fn remember_source_pack_x86_plan<S: AsRef<str>>(&self, sources: &[S], plan: SourcePackX86Plan) {
-        let mut cache = self
-            .source_pack_tree_capacity_cache
-            .lock()
-            .expect("GpuCompiler.source_pack_tree_capacity_cache poisoned");
-        if let Some(cached) = cache.as_mut().filter(|cached| cached.matches(sources)) {
-            cached.x86_plan = Some(plan);
-        }
+        GpuResidentJobBufferTrim
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{GpuCompiler, GpuCompilerBackends, SourcePackTreeCapacityCache};
-    use crate::{
-        codegen::{
-            lowering_ir::{LoweringCapacities, LoweringTarget},
-            lowering_pipeline::GpuLoweringPipeline,
-        },
-        type_checker::TypeCheckPreflightCapacities,
+    use super::{GpuCompiler, GpuCompilerBackends};
+    use crate::codegen::{
+        lowering_ir::{LoweringCapacities, LoweringTarget},
+        lowering_pipeline::GpuLoweringPipeline,
     };
-
-    #[test]
-    fn source_pack_tree_capacity_cache_requires_exact_source_contents() {
-        let cache = SourcePackTreeCapacityCache {
-            sources: vec!["fn a() {}".into(), "fn b() {}".into()],
-            tree_capacity: 17,
-            parser_feature_flags: 0x12,
-            typecheck_preflight: None,
-            x86_plan: None,
-        };
-
-        assert!(cache.matches(&["fn a() {}", "fn b() {}"]));
-        assert!(!cache.matches(&["fn a() {}", "fn c() {}"]));
-        assert!(!cache.matches(&["fn a() {}"]));
-    }
-
-    #[test]
-    fn source_pack_typecheck_preflight_cache_is_content_exact() {
-        let capacities = TypeCheckPreflightCapacities {
-            module_records: 7,
-            call_param_rows: 5,
-            call_arg_rows: 3,
-        };
-        let cache = SourcePackTreeCapacityCache {
-            sources: vec!["fn a() {}".into(), "fn b() {}".into()],
-            tree_capacity: 17,
-            parser_feature_flags: 0x12,
-            typecheck_preflight: Some(capacities),
-            x86_plan: None,
-        };
-
-        let cached = cache
-            .typecheck_preflight_for(&["fn a() {}", "fn b() {}"])
-            .expect("exact source pack should reuse preflight capacities");
-        assert_eq!(cached.module_records, 7);
-        assert_eq!(cached.call_param_rows, 5);
-        assert_eq!(cached.call_arg_rows, 3);
-        assert!(
-            cache
-                .typecheck_preflight_for(&["fn a() {}", "fn c() {}"])
-                .is_none()
-        );
-    }
 
     #[test]
     fn physical_gpu_lowers_the_compilers_checked_compact_hir_for_both_targets() {
@@ -527,7 +409,7 @@ mod tests {
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
             gpu,
-            GpuCompilerBackends::x86_only(),
+            GpuCompilerBackends::all(),
         ))
         .expect("initialize compiler");
         let capacities = LoweringCapacities {
@@ -553,6 +435,47 @@ mod tests {
                     .expect("Wasm lowering graph"),
             ),
         ];
+        let production_source = "fn main() -> i32 { return 42; }";
+        let production_x86 =
+            pollster::block_on(compiler.compile_expanded_source_to_x86_64(production_source))
+                .expect("production x86 lowering pipeline");
+        assert_lowered_program_result(
+            LoweringTarget::X86_64,
+            "production_entrypoint",
+            &production_x86,
+            42,
+        );
+        let production_wasm =
+            pollster::block_on(compiler.compile_expanded_source_to_wasm(production_source))
+                .expect("production Wasm lowering pipeline");
+        assert_lowered_program_result(
+            LoweringTarget::Wasm,
+            "production_entrypoint",
+            &production_wasm,
+            42,
+        );
+        let production_pack = [
+            "module core::math; pub fn add(a: i32, b: i32) -> i32 { return a + b; }",
+            "module app::main; import core::math; fn main() -> i32 { return add(20, 22); }",
+        ];
+        let production_pack_x86 =
+            pollster::block_on(compiler.compile_source_pack_to_x86_64(&production_pack))
+                .expect("production source-pack x86 lowering pipeline");
+        assert_lowered_program_result(
+            LoweringTarget::X86_64,
+            "production_source_pack",
+            &production_pack_x86,
+            42,
+        );
+        let production_pack_wasm =
+            pollster::block_on(compiler.compile_source_pack_to_wasm(&production_pack))
+                .expect("production source-pack Wasm lowering pipeline");
+        assert_lowered_program_result(
+            LoweringTarget::Wasm,
+            "production_source_pack",
+            &production_pack_wasm,
+            42,
+        );
         let cases = [
             ("constant", "fn main() -> i32 { return 42; }", 42),
             (
@@ -588,6 +511,16 @@ mod tests {
             (
                 "i32_to_f32_conversion",
                 "extern \"lanius_std\" fn i32_to_f32(value: i32) -> f32; fn main() -> i32 { if (i32_to_f32(7) == 7.0) { return 42; } else { return 7; } }",
+                42,
+            ),
+            (
+                "shared_host_runtime_calls",
+                "extern \"lanius_std\" fn argc() -> i32; extern \"lanius_std\" fn write_stdout(ptr: u32, len: usize) -> i32; fn main() -> i32 { return argc() + write_stdout(0, 0) + 41; }",
+                42,
+            ),
+            (
+                "string_rodata_host_abi",
+                "extern \"lanius_std\" fn write_text(handle: i32, text: str) -> i32; fn main() -> i32 { return write_text(1, \"hello\") + 37; }",
                 42,
             ),
             (
@@ -645,10 +578,40 @@ mod tests {
                 "struct Pair { left: i32, right: i32, } fn make() -> Pair { return Pair { right: 25, left: 17 }; } fn main() -> i32 { let pair: Pair = make(); return pair.left + pair.right; }",
                 42,
             ),
+            (
+                "method_receiver_and_explicit_argument",
+                "struct Counter { value: i32, } impl Counter { fn add(self, amount: i32) -> i32 { return self.value + amount; } } fn main() -> i32 { let counter: Counter = Counter { value: 37 }; return counter.add(5); }",
+                42,
+            ),
+            (
+                "associated_constructor_and_aggregate_method",
+                "struct Vec2 { x: i32, y: i32, } impl Vec2 { fn new(x: i32, y: i32) -> Vec2 { return Vec2 { x: x, y: y }; } fn add(self, right: Vec2) -> Vec2 { return Vec2::new(self.x + right.x, self.y + right.y); } } fn main() -> i32 { let left: Vec2 = Vec2::new(1, 2); let right: Vec2 = Vec2::new(4, 5); let sum: Vec2 = left.add(right); return sum.y * 6; }",
+                42,
+            ),
+            (
+                "large_aggregate_sret_method",
+                "struct Quad { a: i32, b: i32, c: i32, d: i32, } impl Quad { fn new(a: i32, b: i32, c: i32, d: i32) -> Quad { return Quad { a: a, b: b, c: c, d: d }; } fn bump(self, amount: i32) -> Quad { return Quad::new(self.a + amount, self.b + amount, self.c + amount, self.d + amount); } } fn main() -> i32 { let value: Quad = Quad::new(1, 2, 3, 4); let bumped: Quad = value.bump(5); return bumped.a + bumped.b + bumped.c + bumped.d; }",
+                30,
+            ),
+            (
+                "nested_aggregate_fields",
+                "struct Vec2 { x: i32, y: i32, } struct Ray { origin: Vec2, direction: Vec2, } fn main() -> i32 { let origin: Vec2 = Vec2 { x: 1, y: 2 }; let direction: Vec2 = Vec2 { x: 3, y: 42 }; let ray: Ray = Ray { origin: origin, direction: direction }; return ray.direction.y; }",
+                42,
+            ),
+            (
+                "nested_aggregate_return_and_method",
+                "struct Vec2 { x: i32, y: i32, } struct Ray { origin: Vec2, direction: Vec2, } impl Ray { fn sample(self) -> i32 { return self.direction.y; } } fn make_ray() -> Ray { let origin: Vec2 = Vec2 { x: 1, y: 2 }; let direction: Vec2 = Vec2 { x: 3, y: 42 }; return Ray { origin: origin, direction: direction }; } fn main() -> i32 { let ray: Ray = make_ray(); return ray.sample(); }",
+                42,
+            ),
+            (
+                "nested_aggregate_sret",
+                "struct Vec2 { x: i32, y: i32, } struct Bundle { first: Vec2, tag: i32, last: Vec2, } fn make_bundle() -> Bundle { let first: Vec2 = Vec2 { x: 1, y: 2 }; let last: Vec2 = Vec2 { x: 3, y: 42 }; return Bundle { first: first, tag: 7, last: last }; } fn main() -> i32 { let bundle: Bundle = make_bundle(); return bundle.last.y; }",
+                42,
+            ),
         ];
 
         for (case, source, expected) in cases {
-            pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap_or_else(|error| {
+            pollster::block_on(compiler.type_check_source(source)).unwrap_or_else(|error| {
                 panic!("produce checked frontend artifacts for {case}: {error}")
             });
             let hir = compiler
@@ -665,7 +628,7 @@ mod tests {
                 compiler
                     .type_checker
                     .with_codegen_buffers(|semantic| {
-                        pipeline.record_checked_hir(&gpu.device, &mut encoder, &hir, semantic)
+                        pipeline.record_checked_hir(&gpu.device, &mut encoder, &hir, semantic, None)
                     })
                     .expect("type checker should retain semantic artifact")
                     .unwrap_or_else(|error| {
@@ -677,11 +640,13 @@ mod tests {
                     encoder.finish(),
                 );
 
-                let artifact = match target {
+                let artifact_result = match target {
                     LoweringTarget::X86_64 => pipeline.finish_x86_artifact(&gpu.device),
                     LoweringTarget::Wasm => pipeline.finish_wasm_artifact(&gpu.device),
-                }
-                .unwrap_or_else(|error| panic!("finish {target:?} artifact for {case}: {error}"));
+                };
+                let artifact = artifact_result.unwrap_or_else(|error| {
+                    panic!("finish {target:?} artifact for {case}: {error}")
+                });
                 assert_lowered_program_result(*target, case, &artifact, expected);
             }
         }
@@ -729,7 +694,7 @@ mod tests {
                 let output = std::process::Command::new("node")
                     .arg("-e")
                     .arg(
-                        "const fs=require('fs');WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(({instance})=>process.exit(instance.exports.main()===Number(process.argv[2])?0:1)).catch(error=>{console.error(error);process.exit(2)})",
+                        "const fs=require('fs');const bytes=fs.readFileSync(process.argv[1]);const module=new WebAssembly.Module(bytes);let instance;const env={};for(const entry of WebAssembly.Module.imports(module)){if(entry.module==='env'&&entry.kind==='function')env[entry.name]=entry.name==='argc'?()=>1:entry.name==='write_text'?(fd,ptr,len)=>{const text=Buffer.from(instance.exports.memory.buffer,ptr,len).toString();return fd===1&&text==='hello'?len:-1}:()=>0;}WebAssembly.instantiate(module,{env}).then(result=>{instance=result;process.exit(instance.exports.main()===Number(process.argv[2])?0:1)}).catch(error=>{console.error(error);process.exit(2)})",
                     )
                     .arg(&path)
                     .arg(expected.to_string())

@@ -2063,9 +2063,29 @@ impl ParserBuffers {
             "parser.hir_payload",
             hir_canonical_capacity as usize,
         );
+        let hir_canonical_scope_end = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_scope_end",
+            hir_canonical_capacity as usize,
+        );
         let hir_canonical_nearest_loop = storage_rw_for_array::<u32>(
             device,
             "parser.hir_canonical_nearest_loop",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_nearest_block = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_nearest_block",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_nearest_control = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_nearest_control",
+            hir_canonical_capacity as usize,
+        );
+        let hir_canonical_nearest_fn = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_nearest_fn",
             hir_canonical_capacity as usize,
         );
         let hir_canonical_fn_return_type = storage_rw_for_array::<u32>(
@@ -2586,7 +2606,11 @@ impl ParserBuffers {
             hir_core,
             hir_links,
             hir_payload,
+            hir_canonical_scope_end,
             hir_canonical_nearest_loop,
+            hir_canonical_nearest_block,
+            hir_canonical_nearest_control,
+            hir_canonical_nearest_fn,
             hir_canonical_fn_return_type,
             hir_canonical_type_alias_target,
             hir_canonical_const_type,

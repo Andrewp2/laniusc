@@ -1,21 +1,5 @@
 use super::*;
 
-/// Caps x86 instruction HIR capacity to the parser tree capacity.
-pub(super) fn x86_inst_hir_node_count_for_backend_capacity(
-    parser_tree_capacity: u32,
-    semantic_hir_count: u32,
-) -> u32 {
-    semantic_hir_count.max(1).min(parser_tree_capacity.max(1))
-}
-
-/// Returns a buffer only when it contains at least `words` 32-bit words.
-pub(super) fn buffer_if_wgpu_u32_words(
-    buffer: &wgpu::Buffer,
-    words: usize,
-) -> Option<&wgpu::Buffer> {
-    (buffer.size() >= words.saturating_mul(4) as u64).then_some(buffer)
-}
-
 /// Caps parser-emitted HIR capacity to the parser tree capacity.
 pub(super) fn hir_node_capacity_for_parser_emit(
     parser_tree_capacity: u32,

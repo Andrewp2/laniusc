@@ -50,15 +50,15 @@ pub(in crate::type_checker) fn create_record_discovery(
             ("gParams", inputs.params.as_entire_binding()),
             (
                 "compact_hir_count",
-                inputs.hir_items.compact_hir_count.as_entire_binding(),
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
                 "compact_hir_core",
-                inputs.hir_items.compact_hir_core.as_entire_binding(),
+                inputs.hir_items.hir.core.as_entire_binding(),
             ),
             (
                 "compact_hir_payload",
-                inputs.hir_items.compact_hir_payload.as_entire_binding(),
+                inputs.hir_items.hir.payload.as_entire_binding(),
             ),
             (
                 "record_family_bits",
@@ -109,34 +109,36 @@ pub(in crate::type_checker) fn create_record_discovery(
             ("gParams", inputs.params.as_entire_binding()),
             (
                 "compact_hir_count",
-                inputs.hir_items.compact_hir_count.as_entire_binding(),
+                inputs.hir_items.hir.count.as_entire_binding(),
             ),
             (
                 "compact_hir_core",
-                inputs.hir_items.compact_hir_core.as_entire_binding(),
+                inputs.hir_items.hir.core.as_entire_binding(),
+            ),
+            (
+                "compact_hir_expr_parent",
+                inputs.hir_items.hir.expr_parent.as_entire_binding(),
             ),
             (
                 "compact_path_count",
-                inputs.hir_items.compact_path_count.as_entire_binding(),
+                inputs.hir_items.hir.path_count.as_entire_binding(),
             ),
             (
                 "compact_paths",
-                inputs.hir_items.compact_paths.as_entire_binding(),
+                inputs.hir_items.hir.paths.as_entire_binding(),
             ),
             (
                 "compact_path_segment_count",
-                inputs
-                    .hir_items
-                    .compact_path_segment_count
-                    .as_entire_binding(),
+                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
             ),
             (
                 "compact_path_segments",
-                inputs.hir_items.compact_path_segments.as_entire_binding(),
+                inputs.hir_items.hir.path_segments.as_entire_binding(),
             ),
             ("path_start", buffers.path_start.as_entire_binding()),
             ("path_len", buffers.path_len.as_entire_binding()),
             ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
+            ("path_call_hir", buffers.path_call_hir.as_entire_binding()),
             (
                 "path_owner_token",
                 buffers.path_owner_token.as_entire_binding(),
@@ -182,18 +184,15 @@ pub(in crate::type_checker) fn create_record_discovery(
             ("gParams", inputs.params.as_entire_binding()),
             (
                 "compact_path_count",
-                inputs.hir_items.compact_path_count.as_entire_binding(),
+                inputs.hir_items.hir.path_count.as_entire_binding(),
             ),
             (
                 "compact_paths",
-                inputs.hir_items.compact_paths.as_entire_binding(),
+                inputs.hir_items.hir.paths.as_entire_binding(),
             ),
             (
                 "compact_path_segment_count",
-                inputs
-                    .hir_items
-                    .compact_path_segment_count
-                    .as_entire_binding(),
+                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
             ),
             (
                 "path_segment_base",
@@ -222,22 +221,19 @@ pub(in crate::type_checker) fn create_record_discovery(
             ("gParams", inputs.params.as_entire_binding()),
             (
                 "compact_path_count",
-                inputs.hir_items.compact_path_count.as_entire_binding(),
+                inputs.hir_items.hir.path_count.as_entire_binding(),
             ),
             (
                 "compact_paths",
-                inputs.hir_items.compact_paths.as_entire_binding(),
+                inputs.hir_items.hir.paths.as_entire_binding(),
             ),
             (
                 "compact_path_segment_count",
-                inputs
-                    .hir_items
-                    .compact_path_segment_count
-                    .as_entire_binding(),
+                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
             ),
             (
                 "compact_path_segments",
-                inputs.hir_items.compact_path_segments.as_entire_binding(),
+                inputs.hir_items.hir.path_segments.as_entire_binding(),
             ),
             (
                 "name_id_by_token",

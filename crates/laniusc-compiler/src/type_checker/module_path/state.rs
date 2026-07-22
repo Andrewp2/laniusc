@@ -271,6 +271,7 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_owner_hir: LaniusBuffer<u32>,
+    pub(in crate::type_checker) path_call_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_owner_token: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_id_by_owner_hir: LaniusBuffer<u32>,
     pub(in crate::type_checker) path_id_by_owner_token: LaniusBuffer<u32>,

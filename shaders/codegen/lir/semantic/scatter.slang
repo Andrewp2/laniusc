@@ -8,12 +8,18 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> semantic_expr_type;
+StructuredBuffer<uint> semantic_expr_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_value_id;
 StructuredBuffer<uint> semantic_value_type;
 StructuredBuffer<uint> semantic_call_target;
 StructuredBuffer<uint> semantic_call_kind;
 StructuredBuffer<uint> semantic_call_result_type;
+StructuredBuffer<uint> semantic_call_symbol_library_id;
+StructuredBuffer<uint> semantic_call_symbol_unit_id;
+StructuredBuffer<uint> semantic_call_symbol_local_index;
 StructuredBuffer<uint> semantic_function_id;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<int> semantic_if_depth;
@@ -63,6 +69,16 @@ uint semantic_type_for_hir(uint node, uint hir_count)
         : semantic_lir_type(semantic_expr_type[node]);
 }
 
+void semantic_type_ref_for_hir(uint node, uint hir_count,
+                               out uint tag, out uint payload)
+{
+    tag = 0u;
+    payload = LIR_INVALID;
+    if (node == LIR_INVALID || node >= hir_count) return;
+    tag = semantic_expr_ref_tag[node];
+    payload = semantic_expr_ref_payload[node];
+}
+
 void write_schedule(uint row, uint node, uint local_row, uint local_count,
                     uint hir_count, HirCore hir, HirLinks links,
                     HirPayload payload)
@@ -99,11 +115,29 @@ void write_schedule(uint row, uint node, uint local_row, uint local_count,
         semantic_lir_schedule[row] = schedule;
         return;
     }
+    if (semantic_lir_is_assignment(hir, payload))
+    {
+        uint rhs = payload.c;
+        uint rhs_root = rhs < hir_count ? compact_expr_root[rhs] : LIR_INVALID;
+        if (rhs_root == LIR_INVALID || rhs_root >= hir_count) rhs_root = rhs;
+        schedule.execution_region = bounded_token(rhs_root, hir_count, hir.token_start);
+        bool compound_lhs_read = payload.d != HIR_ASSIGN_OP_SET && local_row == 0u;
+        // A compound assignment reads its old lhs before evaluating the RHS,
+        // then applies the binary operation and store after the RHS completes.
+        // This is observable for side effects and is also the stack contract
+        // required by Wasm's non-commutative binary instructions.
+        schedule.execution_rank = compound_lhs_read ? 0u : 0xffffffffu;
+        schedule.execution_tie = local_row;
+        semantic_lir_schedule[row] = schedule;
+        return;
+    }
     if (root == LIR_INVALID || root >= hir_count)
     {
         uint operand = LIR_INVALID;
-        if (local_op == SEMANTIC_LIR_OP_RETURN ||
-            local_op == SEMANTIC_LIR_OP_IF_BEGIN ||
+        if (local_op == SEMANTIC_LIR_OP_RETURN)
+            operand = hir.kind == HIR_CONST_ITEM
+                ? compact_const_value[node] : payload.b;
+        else if (local_op == SEMANTIC_LIR_OP_IF_BEGIN ||
             local_op == SEMANTIC_LIR_OP_LOOP_BEGIN)
             operand = payload.b;
         else if (local_op == SEMANTIC_LIR_OP_VALUE_SET ||
@@ -223,6 +257,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirLinks links = compact_hir_links[node];
     HirPayload payload = compact_hir_payload[node];
     uint local_count = semantic_lir_count[node];
+    bool compound_assignment = semantic_lir_is_assignment(hir, payload) &&
+        payload.d != HIR_ASSIGN_OP_SET && local_count == 3u;
     bool range_for = local_count == 17u && semantic_lir_is_loop(hir, payload);
     HirPayload range_payload;
     range_payload.a = 0u;
@@ -239,6 +275,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         row >= gParams.lir_capacity) continue;
     uint page_row = row - semantic_start;
     uint op = semantic_lir_local_op(hir, payload, local_row, local_count);
+    if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 1u)
+        op = SEMANTIC_LIR_OP_CALL;
     if (range_for)
     {
         if (local_row <= 1u) op = SEMANTIC_LIR_OP_VALUE_SET;
@@ -260,32 +298,64 @@ void main(uint3 dtid: SV_DispatchThreadID)
         op = SEMANTIC_LIR_OP_CALL_INTRINSIC;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 3u)
         op = SEMANTIC_LIR_OP_CALL_HOST;
+    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 4u)
+        op = SEMANTIC_LIR_OP_CALL_SYMBOL;
 
     SemanticLirCore core;
     core.op = op;
     core.type_id = semantic_type_for_hir(node, hir_count);
+    semantic_type_ref_for_hir(node, hir_count,
+        core.type_ref_tag, core.type_ref_payload);
     if (op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
         op == SEMANTIC_LIR_OP_STORE)
         core.type_id = semantic_value_type[node];
+    // A declaration-setting row represents the value being stored, while the
+    // statement node itself need not carry an expression type. Preserve the
+    // checked RHS reference here so target ABIs can distinguish instantiated
+    // aggregates from scalar values without reconstructing declaration syntax.
+    if (op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count)
+        semantic_type_ref_for_hir(payload.c, hir_count,
+            core.type_ref_tag, core.type_ref_payload);
+    if (semantic_lir_is_assignment(hir, payload) && payload.b < hir_count)
+    {
+        core.type_id = semantic_value_type[payload.b];
+        semantic_type_ref_for_hir(payload.b, hir_count,
+            core.type_ref_tag, core.type_ref_payload);
+    }
     if (op == SEMANTIC_LIR_OP_RETURN &&
         semantic_function_id[node] != LIR_INVALID)
+    {
         core.type_id = semantic_lir_functions[semantic_function_id[node]].result_type;
-    if (range_for) core.type_id = 3u;
+        semantic_type_ref_for_hir(payload.b, hir_count,
+            core.type_ref_tag, core.type_ref_payload);
+    }
+    if (range_for)
+    {
+        core.type_id = 3u;
+        core.type_ref_tag = 1u;
+        core.type_ref_payload = 3u;
+    }
     // Comparisons produce bool but machine selection depends on the operand
     // representation. The semantic instruction type therefore records the
     // compared value type for this opcode.
     if (op == SEMANTIC_LIR_OP_COMPARE && payload.b < hir_count)
+    {
         core.type_id = semantic_type_for_hir(payload.b, hir_count);
+        semantic_type_ref_for_hir(payload.b, hir_count,
+            core.type_ref_tag, core.type_ref_payload);
+    }
     core.source_hir = node;
-    core.flags = op == SEMANTIC_LIR_OP_COMPARE ? comparison_predicate(payload.a) : 0u;
+    core.flags = 0u;
     if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_INDEX_EXPR)
         core.flags |= SEMANTIC_LIR_FLAG_INDEXED;
     if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_MEMBER_EXPR)
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
-    if (range_for && op == SEMANTIC_LIR_OP_COMPARE)
-        core.flags = range_payload.a == HIR_EXPR_RANGE_INCLUSIVE ? 4u : 2u;
     if (op == SEMANTIC_LIR_OP_INVALID) core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
-    if (local_count > 1u) core.flags |= SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
+    if (compound_assignment &&
+        (payload.b >= hir_count || semantic_value_id[payload.b] == LIR_INVALID))
+        core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+    if (semantic_lir_is_control(hir, payload) || range_for)
+        core.flags |= SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
     if (hir.kind == HIR_CONTINUE_STMT)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_CONTINUE;
     uint enclosing_loop = compact_nearest_loop[node];
@@ -380,7 +450,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             operands.a = 0u;
     }
     else if (op == SEMANTIC_LIR_OP_VALUE_GET)
-        operands.a = semantic_value_id[node];
+        operands.a = compound_assignment && payload.b < hir_count
+            ? semantic_value_id[payload.b] : semantic_value_id[node];
     else if (op == SEMANTIC_LIR_OP_CALL ||
              op == SEMANTIC_LIR_OP_CALL_INTRINSIC ||
              op == SEMANTIC_LIR_OP_CALL_HOST)
@@ -389,16 +460,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = payload.b;
         operands.c = payload.c;
     }
+    else if (op == SEMANTIC_LIR_OP_CALL_SYMBOL)
+    {
+        operands.a = semantic_call_symbol_library_id[node];
+        operands.b = semantic_call_symbol_unit_id[node];
+        operands.c = semantic_call_symbol_local_index[node];
+    }
     else if (op == SEMANTIC_LIR_OP_VALUE_SET)
     {
         operands.a = semantic_value_id[node];
         operands.b = lir_for_value_hir(payload.c, hir_count);
     }
     else if (op == SEMANTIC_LIR_OP_RETURN)
-        operands.a = lir_for_value_hir(payload.b, hir_count);
+        operands.a = lir_for_value_hir(hir.kind == HIR_CONST_ITEM
+            ? compact_const_value[node] : payload.b, hir_count);
     else if (op == SEMANTIC_LIR_OP_STORE)
     {
         operands.a = payload.b < hir_count ? semantic_value_id[payload.b] : LIR_INVALID;
+        operands.b = compound_assignment ? first_row + 1u
+            : lir_for_value_hir(payload.c, hir_count);
+    }
+    else if (compound_assignment && local_row == 1u)
+    {
+        operands.a = first_row;
         operands.b = lir_for_value_hir(payload.c, hir_count);
     }
     else if (structured_loop && op == SEMANTIC_LIR_OP_BRANCH_IF)
@@ -473,6 +557,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.a = lir_for_hir(payload.b, hir_count);
         operands.b = lir_for_hir(payload.c, hir_count);
     }
+    // Operation payload belongs in operands, never in the semantic flag
+    // namespace. Comparison predicates range from 0..5 and previously
+    // collided with UNSUPPORTED/SYNTHETIC_CONTROL/BRANCH_CONTINUE.
+    if (op == SEMANTIC_LIR_OP_COMPARE)
+        operands.c = range_for
+            ? (range_payload.a == HIR_EXPR_RANGE_INCLUSIVE ? 4u : 2u)
+            : comparison_predicate(payload.a);
 
     semantic_lir_core[page_row] = core;
     semantic_lir_operands[page_row] = operands;

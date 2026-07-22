@@ -12,8 +12,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_generic_claim_callee;
@@ -40,6 +41,7 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
@@ -60,7 +62,7 @@ uint active_token_count()
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint generic_claim_capacity()
@@ -91,7 +93,7 @@ uint claim_error_token(uint row, uint fallback_token)
     uint arg_node = arg_row < active_hir_node_count() ? call_arg_row_node[arg_row] : INVALID;
     if (valid_node(arg_node))
     {
-        uint token = hir_token_pos[arg_node];
+        uint token = compact_hir_core[arg_node].token_start;
         if (valid_token(token))
             return token;
     }
@@ -133,6 +135,17 @@ void validate_claim_at(uint order_i)
     uint prev_tag = call_generic_claim_ref_tag[prev_row];
     if (tag != TYPE_REF_INVALID && prev_tag != TYPE_REF_INVALID)
     {
+        if (tag == TYPE_REF_SCALAR && prev_tag == TYPE_REF_SCALAR)
+        {
+            uint payload = call_generic_claim_ref_payload[row];
+            uint prev_payload = call_generic_claim_ref_payload[prev_row];
+            if (payload != prev_payload)
+                record_error(
+                    claim_error_token(row, callee),
+                    ERR_ASSIGN_MISMATCH,
+                    prev_payload * 256u + payload);
+            return;
+        }
         if (tag == TYPE_REF_INSTANCE && prev_tag == TYPE_REF_INSTANCE)
         {
             uint instance = call_generic_claim_ref_payload[row];

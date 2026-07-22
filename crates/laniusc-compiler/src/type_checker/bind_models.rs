@@ -402,11 +402,6 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) resolve: wgpu::BindGroup,
     pub(in crate::type_checker) backend_targets: wgpu::BindGroup,
     pub(in crate::type_checker) match_arg_params_init: wgpu::BindGroup,
-    pub(in crate::type_checker) match_arg_params_copy_main_to_tmp: wgpu::BindGroup,
-    pub(in crate::type_checker) match_arg_params_copy_tmp_to_main: wgpu::BindGroup,
-    pub(in crate::type_checker) match_arg_params_step_main_to_tmp: wgpu::BindGroup,
-    pub(in crate::type_checker) match_arg_params_step_tmp_to_main: wgpu::BindGroup,
-    pub(in crate::type_checker) match_arg_param_steps: u32,
     pub(in crate::type_checker) collect_row_args: wgpu::BindGroup,
     pub(in crate::type_checker) generic_claim_scan: U32ScanBindGroups,
     pub(in crate::type_checker) generic_claim_scan_n_blocks: u32,
@@ -441,6 +436,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) infer_array_generics: wgpu::BindGroup,
     pub(in crate::type_checker) validate_array_results: wgpu::BindGroup,
     pub(in crate::type_checker) mark_array_args: wgpu::BindGroup,
+    pub(in crate::type_checker) project_result_instances: wgpu::BindGroup,
     pub(in crate::type_checker) erase_generic_params: wgpu::BindGroup,
 }
 

@@ -576,26 +576,26 @@ impl GpuTypeChecker {
             hir_status_buf,
         ];
         if let Some(items) = hir_items {
-            fingerprint_buffers.push(items.compact_hir_count);
-            fingerprint_buffers.push(items.compact_hir_core);
-            fingerprint_buffers.push(items.compact_hir_links);
-            fingerprint_buffers.push(items.compact_hir_payload);
-            fingerprint_buffers.push(items.compact_const_type);
-            fingerprint_buffers.push(items.compact_type_arg_count);
-            fingerprint_buffers.push(items.compact_type_args);
-            fingerprint_buffers.push(items.compact_type_arg_ranges);
-            fingerprint_buffers.push(items.compact_field_count);
-            fingerprint_buffers.push(items.compact_fields);
-            fingerprint_buffers.push(items.compact_variant_count);
-            fingerprint_buffers.push(items.compact_variants);
-            fingerprint_buffers.push(items.compact_variant_payload_start);
-            fingerprint_buffers.push(items.compact_variant_payload_count);
-            fingerprint_buffers.push(items.compact_variant_payload_row_count);
-            fingerprint_buffers.push(items.compact_variant_payloads);
-            fingerprint_buffers.push(items.compact_array_element_start);
-            fingerprint_buffers.push(items.compact_array_element_count);
-            fingerprint_buffers.push(items.compact_array_element_row_count);
-            fingerprint_buffers.push(items.compact_array_elements);
+            fingerprint_buffers.push(&items.hir.count);
+            fingerprint_buffers.push(&items.hir.core);
+            fingerprint_buffers.push(&items.hir.links);
+            fingerprint_buffers.push(&items.hir.payload);
+            fingerprint_buffers.push(&items.hir.const_type);
+            fingerprint_buffers.push(&items.hir.type_arg_count);
+            fingerprint_buffers.push(&items.hir.type_args);
+            fingerprint_buffers.push(&items.hir.type_arg_ranges);
+            fingerprint_buffers.push(&items.hir.field_count);
+            fingerprint_buffers.push(&items.hir.fields);
+            fingerprint_buffers.push(&items.hir.variant_count);
+            fingerprint_buffers.push(&items.hir.variants);
+            fingerprint_buffers.push(&items.hir.variant_payload_start);
+            fingerprint_buffers.push(&items.hir.variant_payload_count);
+            fingerprint_buffers.push(&items.hir.variant_payload_row_count);
+            fingerprint_buffers.push(&items.hir.variant_payloads);
+            fingerprint_buffers.push(&items.hir.array_element_start);
+            fingerprint_buffers.push(&items.hir.array_element_count);
+            fingerprint_buffers.push(&items.hir.array_element_row_count);
+            fingerprint_buffers.push(&items.hir.array_elements);
             fingerprint_buffers.push(items.semantic_dense_node);
             fingerprint_buffers.push(items.semantic_count);
             fingerprint_buffers.push(items.semantic_subtree_end);
@@ -756,6 +756,7 @@ impl GpuTypeChecker {
             uses_hir_items,
         };
 
+        let mut debug_semantic_rows = None;
         {
             let mut resident_state_guard = self
                 .resident_state
@@ -1418,6 +1419,13 @@ impl GpuTypeChecker {
                     &bind_groups.methods,
                 )?;
             }
+            record_compute_indirect(
+                encoder,
+                &self.passes.calls_project_result_instances,
+                &bind_groups.calls.project_result_instances,
+                "type_check.calls.project_result_instances",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
             record_call_arg_matching_and_collect_with_passes(
                 &self.passes,
                 encoder,
@@ -1895,6 +1903,27 @@ impl GpuTypeChecker {
                     timer.stamp(encoder, "typecheck.predicates_obligations.done");
                 }
             }
+            record_compute(
+                encoder,
+                &self.passes.semantic_predicate_diagnostics_clear,
+                &bind_groups.semantic_predicate_diagnostics_clear,
+                "type_check.semantic_artifact.predicate_diagnostics.clear",
+                hir_node_capacity,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.semantic_predicate_diagnostics_claim,
+                &bind_groups.semantic_predicate_diagnostics_claim,
+                "type_check.semantic_artifact.predicate_diagnostics.claim",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.semantic_predicate_diagnostics_project,
+                &bind_groups.semantic_predicate_diagnostics_project,
+                "type_check.semantic_artifact.predicate_diagnostics",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
             record_compute_indirect(
                 encoder,
                 &self.passes.returns_clear,
@@ -1935,18 +1964,19 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.returns.done");
             }
-            record_compute_indirect(
-                encoder,
-                &self.passes.conditions_hir,
-                &bind_groups.conditions_hir,
-                "type_check.resident.conditions_hir.pass",
-                &bind_groups.hir_active_dispatch_args,
-            )?;
             if let Some(dependency_visibility) = bind_groups
                 .module_path
                 .as_ref()
                 .and_then(|module_path| module_path.dependency_visibility.as_ref())
             {
+                // Argument and return comparison requests share a dense-HIR
+                // request domain. Clear the count column once before the two
+                // ordered scatter passes publish live requests.
+                encoder.clear_buffer(
+                    &dependency_visibility.call_compare_scan_input.buffer,
+                    0,
+                    None,
+                );
                 record_compute_indirect(
                     encoder,
                     &self.passes.dependencies.validate_call_args,
@@ -1958,7 +1988,17 @@ impl GpuTypeChecker {
                     encoder,
                     &self.passes.dependencies.validate_call_results,
                     &dependency_visibility.validate_call_results_group,
-                    "type_check.dependencies.validate_call_results",
+                    "type_check.dependencies.validate_call_results.substitute",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                // The shader's call lanes publish inferred dependency return
+                // substitutions. A second ordered dispatch lets return lanes
+                // consume those substitutions without a cross-workgroup race.
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.dependencies.validate_call_results,
+                    &dependency_visibility.validate_call_results_group,
+                    "type_check.dependencies.validate_call_results.validate",
                     &bind_groups.hir_active_dispatch_args,
                 )?;
                 record_counted_u32_scan_bind_groups_with_passes(
@@ -1984,6 +2024,77 @@ impl GpuTypeChecker {
                     &dependency_visibility.call_compare_dispatch_args,
                 )?;
             }
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.compact_conditions.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.calls_backend_targets,
+                &bind_groups.calls.backend_targets,
+                "type_check.calls.backend_targets",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls_backend_targets.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.semantic_calls_project,
+                &bind_groups.semantic_calls_project,
+                "type_check.semantic_artifact.calls",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.expression_types_init,
+                &bind_groups.compact_expr_scalar_type_init,
+                "type_check.expression_types.init",
+                hir_node_capacity,
+            )?;
+            for step in &bind_groups.compact_expr_scalar_type_steps {
+                record_compute(
+                    encoder,
+                    &self.passes.expression_types_step,
+                    step,
+                    "type_check.expression_types.step",
+                    hir_node_capacity,
+                )?;
+            }
+            record_compute(
+                encoder,
+                &self.passes.semantic_expression_refs_project,
+                &bind_groups.semantic_expression_refs_project,
+                "type_check.semantic_artifact.expression_refs",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.semantic_struct_literal_refs_project,
+                &bind_groups.semantic_struct_literal_refs_project,
+                "type_check.semantic_artifact.struct_literal_refs",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_expr,
+                &bind_groups.conditions_compact_expr,
+                "type_check.conditions.compact_expr",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_stmt,
+                &bind_groups.conditions_compact_stmt,
+                "type_check.conditions.compact_stmt",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_aggregate_requests,
+                &bind_groups.conditions_compact_aggregate_requests,
+                "type_check.conditions.compact_aggregate_requests",
+                hir_node_capacity,
+            )?;
             if aggregates_required {
                 record_counted_u32_scan_bind_groups_with_passes(
                     &self.passes,
@@ -2009,49 +2120,103 @@ impl GpuTypeChecker {
                 )?;
                 record_type_subtree_comparison_passes(&self.passes, encoder, bind_groups)?;
             }
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.conditions_hir.done");
-            }
-            // Resident validation consumes HIR/fact tables rather than
-            // whole-token syntax scans.
-            record_compute_indirect(
-                encoder,
-                &self.passes.control_hir,
-                &bind_groups.control,
-                "type_check.resident.control.pass",
-                &bind_groups.token_hir_active_dispatch_args,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.control.done");
-            }
             record_compute(
                 encoder,
-                &self.passes.calls_backend_targets,
-                &bind_groups.calls.backend_targets,
-                "type_check.calls.backend_targets",
-                token_capacity,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.calls_backend_targets.done");
-            }
-            record_compute(
-                encoder,
-                &self.passes.expression_types_init,
-                &bind_groups.compact_expr_scalar_type_init,
-                "type_check.expression_types.init",
+                &self.passes.conditions_compact_calls,
+                &bind_groups.conditions_compact_calls,
+                "type_check.conditions.compact_calls",
                 hir_node_capacity,
             )?;
-            for step in &bind_groups.compact_expr_scalar_type_steps {
-                record_compute(
-                    encoder,
-                    &self.passes.expression_types_step,
-                    step,
-                    "type_check.expression_types.step",
-                    hir_node_capacity,
-                )?;
-            }
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_types,
+                &bind_groups.conditions_compact_types,
+                "type_check.conditions.compact_types",
+                hir_node_capacity,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.conditions_compact_methods,
+                &bind_groups.conditions_compact_methods,
+                "type_check.conditions.compact_methods",
+                &bind_groups.method_compact_dispatch_args,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_predicates,
+                &bind_groups.conditions_compact_predicates,
+                "type_check.conditions.compact_predicates",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.conditions_compact_names,
+                &bind_groups.conditions_compact_names,
+                "type_check.conditions.compact_names",
+                hir_node_capacity,
+            )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.expression_types.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.semantic_artifact_project,
+                &bind_groups.semantic_artifact_project,
+                "type_check.semantic_artifact.project",
+                hir_node_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.semantic_artifact.done");
+            }
+            if std::env::var_os("LANIUS_DEBUG_SEMANTIC_ROWS").is_some()
+                && let Some(items) = hir_items
+            {
+                let hir_rows = hir_node_capacity
+                    .min((items.hir.core.size() / 16) as u32)
+                    .min((items.hir.payload.size() / 16) as u32)
+                    .min((bind_groups.compact_expr_scalar_type.size() / 4) as u32)
+                    .min((bind_groups.typecheck_graph.semantic_calls_by_hir.size() / 32) as u32)
+                    .min(256);
+                let token_rows = token_capacity
+                    .min((bind_groups.call_fn_index.size() / 4) as u32)
+                    .min((bind_groups.backend_call_fn_index.size() / 4) as u32)
+                    .min((bind_groups.call_return_type.size() / 4) as u32)
+                    .min(256);
+                let hir_words = hir_rows as u64 * 17;
+                let total_words = hir_words + token_rows as u64 * 3;
+                let buffer = readback_u32s(
+                    device,
+                    "rb.type_check.semantic_rows",
+                    total_words.max(1) as usize,
+                );
+                let mut word_offset = 0u64;
+                let mut copy_words = |source: &wgpu::Buffer, words: u64| {
+                    if words != 0 {
+                        encoder.copy_buffer_to_buffer(
+                            source,
+                            0,
+                            &buffer,
+                            word_offset * 4,
+                            words * 4,
+                        );
+                    }
+                    word_offset += words;
+                };
+                copy_words(&items.hir.core, hir_rows as u64 * 4);
+                copy_words(&items.hir.payload, hir_rows as u64 * 4);
+                copy_words(&bind_groups.compact_expr_scalar_type, hir_rows as u64);
+                copy_words(
+                    &bind_groups.typecheck_graph.semantic_calls_by_hir,
+                    hir_rows as u64 * 8,
+                );
+                copy_words(&bind_groups.call_fn_index, token_rows as u64);
+                copy_words(&bind_groups.backend_call_fn_index, token_rows as u64);
+                copy_words(&bind_groups.call_return_type, token_rows as u64);
+                debug_semantic_rows = Some(TypeCheckSemanticDebugReadback {
+                    buffer,
+                    hir_rows,
+                    token_rows,
+                });
             }
             host_timer.stamp("aggregate_conditions_control");
         }
@@ -2064,7 +2229,9 @@ impl GpuTypeChecker {
             16,
         );
         host_timer.stamp("status_readback_recorded");
-        Ok(RecordedTypeCheck)
+        Ok(RecordedTypeCheck {
+            debug_semantic_rows,
+        })
     }
 
     /// Reads the recorded status buffer and converts GPU status words to an
@@ -2072,7 +2239,7 @@ impl GpuTypeChecker {
     pub fn finish_recorded_check(
         &self,
         device: &wgpu::Device,
-        _recorded: &RecordedTypeCheck,
+        recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
@@ -2080,6 +2247,58 @@ impl GpuTypeChecker {
         let words = read_status_words(&mapped)?;
         drop(mapped);
         self.status_readback.unmap();
+
+        if let Some(debug) = &recorded.debug_semantic_rows {
+            let slice = debug.buffer.slice(..);
+            crate::gpu::passes_core::map_readback_blocking(
+                device,
+                &slice,
+                "type_check.semantic_rows",
+            )?;
+            let mapped = slice.get_mapped_range();
+            let values = mapped
+                .chunks_exact(4)
+                .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("u32 word")))
+                .collect::<Vec<_>>();
+            let hir = debug.hir_rows as usize;
+            let core_base = 0;
+            let payload_base = hir * 4;
+            let scalar_base = payload_base + hir * 4;
+            let call_base = scalar_base + hir;
+            eprintln!("[typecheck.semantic_rows] hir_rows={hir}");
+            for row in 0..hir {
+                let core = &values[core_base + row * 4..core_base + row * 4 + 4];
+                if core[0] == 0 || core[0] == u32::MAX {
+                    continue;
+                }
+                let payload = &values[payload_base + row * 4..payload_base + row * 4 + 4];
+                let call = &values[call_base + row * 8..call_base + row * 8 + 8];
+                eprintln!(
+                    "[typecheck.semantic_rows] hir[{row}] core={core:?} payload={payload:?} scalar={:#010x} call={call:?}",
+                    values[scalar_base + row]
+                );
+            }
+            let token_base = call_base + hir * 8;
+            let tokens = debug.token_rows as usize;
+            let backend_base = token_base + tokens;
+            let return_base = backend_base + tokens;
+            for token in 0..tokens {
+                let semantic_target = values[token_base + token];
+                let backend_target = values[backend_base + token];
+                let return_type = values[return_base + token];
+                if semantic_target != u32::MAX || backend_target != u32::MAX || return_type != 0 {
+                    eprintln!(
+                        "[typecheck.semantic_rows] token[{token}] semantic_target={semantic_target} backend_target={backend_target} return_type={return_type}"
+                    );
+                }
+            }
+            drop(mapped);
+            debug.buffer.unmap();
+        }
+
+        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            eprintln!("GPU type-check status words: {words:?}");
+        }
 
         if words[0] != 0 {
             return Ok(());
@@ -2151,17 +2370,24 @@ impl GpuTypeChecker {
         let module_path = bind_groups.module_path.as_ref()?;
         Some(consume(GpuCodegenBuffers {
             lowering: GpuSemanticLoweringBuffers {
+                checked: GpuCheckedSemanticArtifact {
+                    value_decl_by_hir: &bind_groups.typecheck_graph.semantic_value_decl_by_hir,
+                    value_type_by_hir: &bind_groups.typecheck_graph.semantic_value_type_by_hir,
+                    param_type_by_row: &bind_groups.typecheck_graph.semantic_param_type_by_row,
+                    enclosing_fn_by_hir: &bind_groups.typecheck_graph.semantic_enclosing_fn_by_hir,
+                    calls_by_hir: &bind_groups.typecheck_graph.semantic_calls_by_hir,
+                    expr_ref_tag_by_hir: &bind_groups.typecheck_graph.semantic_expr_ref_tag_by_hir,
+                    expr_ref_payload_by_hir: &bind_groups
+                        .typecheck_graph
+                        .semantic_expr_ref_payload_by_hir,
+                },
                 compact_expr_scalar_type: &bind_groups.compact_expr_scalar_type,
                 name_id_by_token: &bind_groups.name_id_by_token,
                 language_name_id: &bind_groups.language_name_id,
-                enclosing_fn: &bind_groups.enclosing_fn,
                 if_depth: &bind_groups.if_depth,
-                visible_decl: &bind_groups.visible_decl,
-                visible_type: &bind_groups.visible_type,
-                backend_call_fn_index: &bind_groups.backend_call_fn_index,
-                call_intrinsic_tag: &bind_groups.call_intrinsic_tag,
                 call_return_type: &bind_groups.call_return_type,
                 fn_entrypoint_tag: &bind_groups.fn_entrypoint_tag,
+                public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
                 member_result_field_ordinal: &bind_groups.member_result_field_ordinal,
                 struct_init_field_ordinal_by_row: &bind_groups.struct_init_field_ordinal_by_row,
             },
@@ -2338,10 +2564,11 @@ impl GpuTypeChecker {
             .expect("GpuTypeChecker.resident_state poisoned");
         let bind_groups = guard.take()?;
         let ResidentTypeCheckState {
+            typecheck_graph,
             compact_expr_scalar_type,
             name_id_by_token,
             language_name_id,
-            enclosing_fn: enclosing_fn_hir,
+            enclosing_fn: _,
             enclosing_fn_start_token,
             if_depth,
             visible_decl,
@@ -2415,6 +2642,13 @@ impl GpuTypeChecker {
             struct_init_field_decl_token_by_row,
             ..
         } = bind_groups;
+        let semantic_value_decl_by_hir = typecheck_graph.semantic_value_decl_by_hir;
+        let semantic_value_type_by_hir = typecheck_graph.semantic_value_type_by_hir;
+        let semantic_param_type_by_row = typecheck_graph.semantic_param_type_by_row;
+        let semantic_enclosing_fn_by_hir = typecheck_graph.semantic_enclosing_fn_by_hir;
+        let semantic_calls_by_hir = typecheck_graph.semantic_calls_by_hir;
+        let semantic_expr_ref_tag_by_hir = typecheck_graph.semantic_expr_ref_tag_by_hir;
+        let semantic_expr_ref_payload_by_hir = typecheck_graph.semantic_expr_ref_payload_by_hir;
         let ModulePathState {
             path_count_out,
             path_owner_token,
@@ -2434,14 +2668,21 @@ impl GpuTypeChecker {
             interface_public_decl_count: public_decl_count,
             interface_public_decl_local_id: public_decl_local_id,
             interface_public_decl_index_by_local: public_decl_index_by_local,
+            interface_public_decl_index_by_hir: public_decl_index_by_hir,
             ..
         } = module_path?;
 
         Some(OwnedGpuCodegenBuffers {
+            semantic_value_decl_by_hir,
+            semantic_value_type_by_hir,
+            semantic_param_type_by_row,
+            semantic_enclosing_fn_by_hir,
+            semantic_calls_by_hir,
+            semantic_expr_ref_tag_by_hir,
+            semantic_expr_ref_payload_by_hir,
             compact_expr_scalar_type,
             name_id_by_token,
             language_name_id,
-            enclosing_fn_hir,
             enclosing_fn: enclosing_fn_start_token,
             if_depth,
             visible_decl,
@@ -2464,6 +2705,7 @@ impl GpuTypeChecker {
             public_decl_count,
             public_decl_local_id,
             public_decl_index_by_local,
+            public_decl_index_by_hir,
             decl_type_ref_tag,
             decl_type_ref_payload,
             type_expr_ref_tag,

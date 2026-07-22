@@ -1,24 +1,6 @@
 // src/compiler/gpu_compiler/wasm_codegen.rs
 
-use super::{
-    typecheck::{
-        type_check_error_to_compile_error_for_source,
-        type_check_error_to_compile_error_for_source_pack_tokens,
-    },
-    *,
-};
-use crate::gpu::buffers::LaniusBuffer;
-
-#[derive(Clone, Copy)]
-enum WasmBackendArtifactRequest {
-    Executable,
-    RelocatableObject { library_id: u32, unit_id: u32 },
-}
-
-enum CompletedWasmBackendArtifact {
-    Executable(Vec<u8>),
-    RelocatableObject(wasm::GpuWasmRelocatableObject),
-}
+use super::*;
 
 impl<'gpu> GpuCompiler<'gpu> {
     /// Compile one in-memory source string through the WASM backend using
@@ -45,22 +27,12 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<Vec<u8>, CompileError> {
-        match self
-            .compile_source_pack_to_wasm_artifact(
-                sources,
-                &[],
-                WasmBackendArtifactRequest::Executable,
-            )
-            .await?
-        {
-            CompletedWasmBackendArtifact::Executable(bytes) => Ok(bytes),
-            CompletedWasmBackendArtifact::RelocatableObject(_) => {
-                Err(wasm_backend_execution_failed_for_source_pack(
-                    &source_pack_diagnostic_files(sources, None),
-                    "internal Wasm artifact mode mismatch",
-                ))
-            }
-        }
+        validate_in_memory_source_pack_fits_default_codegen_unit(
+            "compile source pack to WASM",
+            sources,
+        )?;
+        self.compile_checked_source_pack_with_lowering(sources, None, LoweringTarget::Wasm)
+            .await
     }
 
     /// Compiles one bounded source-pack unit to a durable relocatable Wasm object.
@@ -71,673 +43,19 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
     ) -> Result<wasm::GpuWasmRelocatableObject, CompileError> {
-        match self
-            .compile_source_pack_to_wasm_artifact(
-                sources,
-                dependency_interfaces,
-                WasmBackendArtifactRequest::RelocatableObject {
-                    library_id,
-                    unit_id,
-                },
-            )
-            .await?
-        {
-            CompletedWasmBackendArtifact::RelocatableObject(object) => Ok(object),
-            CompletedWasmBackendArtifact::Executable(_) => {
-                Err(wasm_backend_execution_failed_for_source_pack(
-                    &source_pack_diagnostic_files(sources, None),
-                    "internal Wasm artifact mode mismatch",
-                ))
-            }
-        }
-    }
-
-    async fn compile_source_pack_to_wasm_artifact<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
-        artifact_request: WasmBackendArtifactRequest,
-    ) -> Result<CompletedWasmBackendArtifact, CompileError> {
         validate_in_memory_source_pack_fits_default_codegen_unit(
-            "compile source pack to WASM",
+            "compile source pack to Wasm object",
             sources,
         )?;
-        let diagnostic_files = source_pack_diagnostic_files(sources, None);
-        let _resident_guard = self.resident_pipeline_lock.lock().await;
-        let dependency_state = match artifact_request {
-            WasmBackendArtifactRequest::RelocatableObject {
-                library_id,
-                unit_id,
-            } if !dependency_interfaces.is_empty() => Some(
-                gpu_type_checker::GpuDependencyInterfaceState::new(
-                    &self.gpu.device,
-                    library_id,
-                    unit_id,
-                    dependency_interfaces,
-                )
-                .map_err(|err| {
-                    wasm_backend_execution_failed_for_source_pack(
-                        &diagnostic_files,
-                        format!("dependency semantic-interface preparation failed: {err}"),
-                    )
-                })?,
-            ),
-            WasmBackendArtifactRequest::Executable if !dependency_interfaces.is_empty() => {
-                return Err(wasm_backend_execution_failed_for_source_pack(
-                    &diagnostic_files,
-                    "dependency semantic interfaces require relocatable-object mode",
-                ));
-            }
-            _ => None,
-        };
-        trace_wasm_compile("source_pack.compile.start");
-        self.lexer
-            .with_recorded_resident_source_pack_tokens_after_count(
-                sources,
-                |device, queue, bufs, token_count, encoder, mut timer| {
-                    trace_wasm_compile("source_pack.lex.recorded");
-                    let token_capacity = token_count.max(1);
-                    let parser_capacity =
-                        if let Some(cached) = self.cached_source_pack_parser_capacity(sources) {
-                            cached
-                        } else {
-                            let measured = self
-                                .parser
-                                .measure_resident_partial_parse_capacity(
-                                    token_capacity,
-                                    &bufs.tokens_out,
-                                    &bufs.token_count,
-                                    Some(&bufs.token_file_id),
-                                    &self.parse_tables,
-                                )
-                                .map_err(|err| {
-                                    parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                                })?;
-                            self.remember_source_pack_parser_capacity(sources, measured);
-                            measured
-                        };
-                    let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags = parser_capacity.parser_feature_flags;
-                    let (parser_check, type_check) = self
-                        .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
-                            encoder,
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            bufs.n,
-                            &bufs.in_bytes,
-                            &self.parse_tables,
-                            Some(parser_tree_capacity),
-                            parser_feature_flags,
-                            &mut timer,
-                            |parse_bufs, encoder, timer| {
-                                trace_wasm_compile("source_pack.parser.recorded");
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "parser.ll1_hir.done");
-                                }
-                                let hir_status = &parse_bufs.ll1_status;
-                                let recorded = self
-                                    .type_checker
-                                    .record_resident_token_buffer_with_hir_items_and_dependencies_on_gpu(
-                                        device,
-                                        queue,
-                                        encoder,
-                                        bufs.n,
-                                        bufs.source_file_start.count as u32,
-                                        token_capacity,
-                                        &bufs.tokens_out,
-                                        &bufs.token_count,
-                                        &bufs.token_file_id,
-                                        &bufs.in_bytes,
-                                        parse_bufs.tree_capacity,
-                                        parse_bufs.tree_capacity,
-                                        &parse_bufs.hir_kind,
-                                        &parse_bufs.hir_token_pos,
-                                        &parse_bufs.hir_token_end,
-                                        &parse_bufs.hir_token_file_id,
-                                        hir_status,
-                                        gpu_type_checker::GpuTypeCheckHirItemBuffers {
-                                            parser_feature_flags: parse_bufs.parser_feature_flags,
-                                            module_record_capacity: parse_bufs.tree_capacity,
-                                            call_param_row_capacity: parse_bufs.tree_capacity,
-                                            call_arg_row_capacity: parse_bufs.tree_capacity,
-                                            compact_hir_count: &parse_bufs.hir_canonical_count,
-                                            compact_hir_core: &parse_bufs.hir_core,
-                                            raw_to_compact_hir: &parse_bufs
-                                                .hir_canonical_raw_to_dense,
-                                            compact_hir_links: &parse_bufs.hir_links,
-                                            compact_hir_payload: &parse_bufs.hir_payload,
-                                            compact_fn_return_type: &parse_bufs
-                                                .hir_canonical_fn_return_type,
-                                            compact_type_alias_target: &parse_bufs
-                                                .hir_canonical_type_alias_target,
-                                            compact_const_type: &parse_bufs
-                                                .hir_canonical_const_type,
-                                            compact_param_count: &parse_bufs.hir_param_table_count,
-                                            compact_params: &parse_bufs.hir_param_rows,
-                                            compact_param_ranges: &parse_bufs.hir_param_ranges,
-                                            compact_method_count: &parse_bufs.hir_method_table_count,
-                                            compact_method_cores: &parse_bufs.hir_method_core_rows,
-                                            compact_method_signatures: &parse_bufs
-                                                .hir_method_signature_rows,
-                                            compact_predicate_count: &parse_bufs
-                                                .hir_predicate_table_count,
-                                            compact_predicates: &parse_bufs.hir_predicate_rows,
-                                            compact_type_arg_count: &parse_bufs
-                                                .hir_type_arg_table_count,
-                                            compact_type_args: &parse_bufs.hir_type_arg_rows,
-                                            compact_type_arg_ranges: &parse_bufs
-                                                .hir_type_arg_ranges,
-                                            compact_path_count: &parse_bufs.hir_path_table_count,
-                                            compact_paths: &parse_bufs.hir_path_rows,
-                                            compact_path_segment_count: &parse_bufs
-                                                .hir_path_segment_table_count,
-                                            compact_path_segments: &parse_bufs
-                                                .hir_path_segment_rows,
-                                            compact_generic_param_count: &parse_bufs
-                                                .hir_generic_param_table_count,
-                                            compact_generic_params: &parse_bufs
-                                                .hir_generic_param_rows,
-                                            compact_generic_param_ranges: &parse_bufs
-                                                .hir_generic_param_ranges,
-                                            compact_field_count: &parse_bufs
-                                                .hir_field_table_count,
-                                            compact_fields: &parse_bufs.hir_field_rows,
-                                            compact_variant_count: &parse_bufs
-                                                .hir_variant_table_count,
-                                            compact_variants: &parse_bufs.hir_variant_rows,
-                                            compact_variant_payload_start: &parse_bufs
-                                                .hir_variant_compact_payload_start,
-                                            compact_variant_payload_count: &parse_bufs
-                                                .hir_variant_compact_payload_count,
-                                            compact_variant_payload_row_count: &parse_bufs
-                                                .hir_variant_payload_table_count,
-                                            compact_variant_payloads: &parse_bufs
-                                                .hir_variant_payload_rows,
-                                            compact_match_arm_count: &parse_bufs
-                                                .hir_match_arm_table_count,
-                                            compact_match_arms: &parse_bufs.hir_match_arm_rows,
-                                            compact_match_payload_start: &parse_bufs
-                                                .hir_match_compact_payload_start,
-                                            compact_match_payload_count: &parse_bufs
-                                                .hir_match_compact_payload_count,
-                                            compact_match_payload_row_count: &parse_bufs
-                                                .hir_match_payload_table_count,
-                                            compact_match_payloads: &parse_bufs
-                                                .hir_match_payload_rows,
-                                            compact_array_element_start: &parse_bufs
-                                                .hir_array_compact_element_start,
-                                            compact_array_element_count: &parse_bufs
-                                                .hir_array_compact_element_count,
-                                            compact_array_element_row_count: &parse_bufs
-                                                .hir_array_element_table_count,
-                                            compact_array_elements: &parse_bufs
-                                                .hir_array_element_rows,
-                                            node_kind: &parse_bufs.node_kind,
-                                            parent: &parse_bufs.parent,
-                                            first_child: &parse_bufs.first_child,
-                                            next_sibling: &parse_bufs.next_sibling,
-                                            subtree_end: &parse_bufs.subtree_end,
-                                            name_token: &parse_bufs.hir_item_name_token,
-                                            type_form: &parse_bufs.hir_type_form,
-                                            type_value_node: &parse_bufs.hir_type_value_node,
-                                            type_len_token: &parse_bufs.hir_type_len_token,
-                                            type_len_value: &parse_bufs.hir_type_len_value,
-                                            type_file_id: &parse_bufs.hir_type_file_id,
-                                            type_path_leaf_node: &parse_bufs
-                                                .hir_type_path_leaf_node,
-                                            bound_path_owner_by_leaf: &parse_bufs
-                                                .hir_bound_path_owner_by_leaf,
-                                            path_segment_owner: &parse_bufs
-                                                .hir_path_segment_owner_a,
-                                            path_segment_rank: &parse_bufs.hir_path_segment_rank_a,
-                                            path_segment_count: &parse_bufs.hir_path_segment_count,
-                                            type_arg_start: &parse_bufs.hir_type_arg_start,
-                                            type_arg_count: &parse_bufs.hir_type_arg_count,
-                                            type_arg_next: &parse_bufs.hir_type_arg_next,
-                                            type_arg_owner: &parse_bufs.hir_type_arg_owner_a,
-                                            type_arg_rank: &parse_bufs.hir_type_arg_rank_a,
-                                            type_root_owner: &parse_bufs.hir_type_root_owner,
-                                            type_alias_target_node: &parse_bufs
-                                                .hir_type_alias_target_node,
-                                            fn_return_type_node: &parse_bufs
-                                                .hir_fn_return_type_node,
-                                            param_record: &parse_bufs.hir_param_record,
-                                            param_type_node: &parse_bufs.hir_param_type_node,
-                                            method_owner_node: &parse_bufs.hir_method_owner_node,
-                                            method_impl_node: &parse_bufs.hir_method_impl_node,
-                                            method_name_token: &parse_bufs.hir_method_name_token,
-                                            method_first_param_token: &parse_bufs
-                                                .hir_method_first_param_token,
-                                            method_receiver_mode: &parse_bufs
-                                                .hir_method_receiver_mode,
-                                            method_visibility: &parse_bufs.hir_method_visibility,
-                                            method_signature_flags: &parse_bufs
-                                                .hir_method_signature_flags,
-                                            method_impl_receiver_type_node: &parse_bufs
-                                                .hir_method_impl_receiver_type_node,
-                                            expr_record: &parse_bufs.hir_expr_record,
-                                            expr_name_role: &parse_bufs.hir_expr_name_role,
-                                            expr_result_node: &parse_bufs.hir_expr_result_node,
-                                            expr_result_root_node: &parse_bufs
-                                                .hir_expr_result_root_node,
-                                            expr_int_value: &parse_bufs.hir_expr_int_value,
-                                            member_receiver_node: &parse_bufs
-                                                .hir_member_receiver_node,
-                                            member_receiver_token: &parse_bufs
-                                                .hir_member_receiver_token,
-                                            member_name_token: &parse_bufs.hir_member_name_token,
-                                            stmt_record: &parse_bufs.hir_stmt_record,
-                                            stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
-                                            nearest_stmt_node: &parse_bufs.hir_nearest_stmt_node,
-                                            nearest_block_node: &parse_bufs.hir_nearest_block_node,
-                                            nearest_enclosing_control_node: &parse_bufs
-                                                .hir_nearest_enclosing_control_node,
-                                            nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
-                                            nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
-                                            array_lit_first_element: &parse_bufs
-                                                .hir_array_lit_first_element,
-                                            array_lit_element_count: &parse_bufs
-                                                .hir_array_lit_element_count,
-                                            array_lit_context_stmt_node: &parse_bufs
-                                                .hir_array_lit_context_stmt_node,
-                                            array_element_parent_lit: &parse_bufs
-                                                .hir_array_element_parent_lit,
-                                            nearest_array_element_node: &parse_bufs
-                                                .hir_nearest_array_element_node,
-                                            array_element_next: &parse_bufs.hir_array_element_next,
-                                            namespace: &parse_bufs.hir_item_namespace,
-                                            visibility: &parse_bufs.hir_item_visibility,
-                                            path_start: &parse_bufs.hir_item_path_start,
-                                            path_end: &parse_bufs.hir_item_path_end,
-                                            path_node: &parse_bufs.hir_item_path_node,
-                                            file_id: &parse_bufs.hir_item_file_id,
-                                            import_target_kind: &parse_bufs
-                                                .hir_item_import_target_kind,
-                                            call_callee_node: &parse_bufs.hir_call_callee_node,
-                                            call_callee_path_node: &parse_bufs
-                                                .hir_call_callee_path_node,
-                                            call_parent_by_callee: &parse_bufs
-                                                .hir_call_parent_by_callee,
-                                            call_context_stmt_node: &parse_bufs
-                                                .hir_call_context_stmt_node,
-                                            call_arg_start: &parse_bufs.hir_call_arg_start,
-                                            call_arg_end: &parse_bufs.hir_call_arg_end,
-                                            call_arg_count: &parse_bufs.hir_call_arg_count,
-                                            call_arg_parent_call: &parse_bufs
-                                                .hir_call_arg_parent_call,
-                                            call_arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                            struct_field_parent_struct: &parse_bufs
-                                                .hir_struct_field_parent_struct,
-                                            struct_field_ordinal: &parse_bufs
-                                                .hir_struct_field_ordinal,
-                                            struct_field_type_node: &parse_bufs
-                                                .hir_struct_field_type_node,
-                                            struct_decl_field_start: &parse_bufs
-                                                .hir_struct_decl_field_start,
-                                            struct_decl_field_count: &parse_bufs
-                                                .hir_struct_decl_field_count,
-                                            struct_lit_head_node: &parse_bufs
-                                                .hir_struct_lit_head_node,
-                                            struct_lit_context_stmt_node: &parse_bufs
-                                                .hir_struct_lit_context_stmt_node,
-                                            struct_lit_field_start: &parse_bufs
-                                                .hir_struct_lit_field_start,
-                                            struct_lit_field_count: &parse_bufs
-                                                .hir_struct_lit_field_count,
-                                            struct_lit_field_parent_lit: &parse_bufs
-                                                .hir_struct_lit_field_parent_lit,
-                                            struct_lit_field_value_node: &parse_bufs
-                                                .hir_struct_lit_field_value_node,
-                                            semantic_dense_node: &parse_bufs
-                                                .hir_semantic_dense_node,
-                                            semantic_count: &parse_bufs.hir_semantic_count,
-                                            semantic_subtree_end: &parse_bufs
-                                                .hir_semantic_subtree_end,
-                                        },
-                                        dependency_state.as_ref(),
-                                        timer.as_deref_mut(),
-                                    )
-                                    .map_err(|err| {
-                                        type_check_execution_failed_for_source_pack(
-                                            &diagnostic_files,
-                                            err,
-                                        )
-                                    })?;
-                                trace_wasm_compile("source_pack.typecheck.recorded");
-                                crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
-                                    "typecheck_recorded",
-                                );
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "typecheck.done");
-                                }
-                                let wasm_check = self
-                                    .type_checker
-                                    .with_codegen_buffers(|codegen| {
-                                        self.wasm_generator()
-                                            .map_err(|err| {
-                                                wasm_backend_execution_failed_for_source_pack(
-                                                    &diagnostic_files,
-                                                    err,
-                                                )
-                                            })?
-.record_wasm_from_gpu_token_buffer(
-    device,
-    queue,
-    encoder,
-    bufs.n,
-    token_capacity,
-    parse_bufs.tree_capacity,
-    match artifact_request {
-        WasmBackendArtifactRequest::Executable => 0,
-        WasmBackendArtifactRequest::RelocatableObject { .. } =>
-            wasm::WASM_ARTIFACT_ALLOW_MISSING_ENTRYPOINT,
-    },
-    wasm::GpuWasmCodegenInputs {
-        token: &bufs.tokens_out,
-        active_hir_dispatch_args: &parse_bufs.tree_active_dispatch_args,
-        parent: &parse_bufs.parent,
-        first_child: &parse_bufs.first_child,
-        next_sibling: &parse_bufs.next_sibling,
-        hir_kind: &parse_bufs.hir_kind,
-        hir_token_pos: &parse_bufs.hir_token_pos,
-        hir_token_end: &parse_bufs.hir_token_end,
-        hir_status: hir_status,
-        parser_feature_flags: &parse_bufs.token_feature_flags,
-        visible_decl: codegen.visible_decl,
-        visible_type: codegen.visible_type,
-        compact_expr_scalar_type: codegen.compact_expr_scalar_type,
-        public_decl_count: codegen.public_decl_count,
-        public_decl_local_id: codegen.public_decl_local_id,
-        public_decl_index_by_local: codegen.public_decl_index_by_local,
-        decl_id_by_name_token: codegen.decl_id_by_name_token,
-        decl_hir_node: codegen.decl_hir_node,
-        name_id_by_token: codegen.name_id_by_token,
-        language_name_id: codegen.language_name_id,
-        enclosing_fn: codegen.enclosing_fn,
-        if_depth: codegen.if_depth,
-        structs: wasm::GpuWasmStructMetadataBuffers {
-                                                    member_receiver_node: &parse_bufs
-                                                        .hir_member_receiver_node,
-                                                    lit_field_parent_lit: &parse_bufs
-                                                        .hir_struct_lit_field_parent_lit,
-                                                    lit_context_stmt_node: &parse_bufs
-                                                        .hir_struct_lit_context_stmt_node,
-                                                    lit_field_value_node: &parse_bufs
-                                                        .hir_struct_lit_field_value_node,
-                                                    member_name_token: &parse_bufs
-                                                        .hir_member_name_token,
-                                                    member_result_field_ordinal: codegen
-                                                        .member_result_field_ordinal,
-                                                    member_result_field_node: codegen
-                                                        .member_result_field_node,
-                                                    struct_init_field_ordinal_by_row: codegen
-                                                        .struct_init_field_ordinal_by_row,
-                                                },
-        calls: wasm::GpuWasmCallMetadataBuffers {
-                                                    callee_node: &parse_bufs.hir_call_callee_node,
-                                                    context_stmt: &parse_bufs
-                                                        .hir_call_context_stmt_node,
-                                                    arg_start: &parse_bufs.hir_call_arg_start,
-                                                    arg_parent_call: &parse_bufs
-                                                        .hir_call_arg_parent_call,
-                                                    arg_count: &parse_bufs.hir_call_arg_count,
-                                                    arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                                    param_row_count_out: codegen
-                                                        .call_param_row_count_out,
-                                                    param_row_fn_token: codegen
-                                                        .call_param_row_fn_token,
-                                                    param_row_ordinal: codegen
-                                                        .call_param_row_ordinal,
-                                                    param_row_type: codegen.call_param_row_type,
-                                                    param_row_start: codegen.call_param_row_start,
-                                                    param_row_count: codegen.call_param_row_count,
-                                                    arg_row_node: codegen.call_arg_row_node,
-                                                    arg_row_start: codegen.call_arg_row_start,
-                                                    arg_row_count: codegen.call_arg_row_count,
-                                                },
-        expressions: wasm::GpuWasmExprMetadataBuffers {
-                                                    record: &parse_bufs.hir_expr_record,
-                                                    result_root_node: &parse_bufs
-                                                        .hir_expr_result_root_node,
-                                                    parent_node: &parse_bufs.hir_expr_parent_node,
-                                                    forest_root_node: &parse_bufs
-                                                        .hir_expr_forest_root_node,
-                                                    int_value: &parse_bufs.hir_expr_int_value,
-                                                    float_bits: &parse_bufs.hir_expr_float_bits,
-                                                    string_start: &parse_bufs
-                                                        .hir_string_data_offset,
-                                                    string_len: &parse_bufs.hir_string_decoded_len,
-                                                    string_data_words: &parse_bufs
-                                                        .hir_string_data_words,
-                                                    string_pool_len: &parse_bufs
-                                                        .hir_string_pool_len,
-                                                    stmt_record: &parse_bufs.hir_stmt_record,
-                                                    nearest_stmt_node: &parse_bufs
-                                                        .hir_nearest_stmt_node,
-                                                    nearest_block_node: &parse_bufs
-                                                        .hir_nearest_block_node,
-                                                    nearest_loop_node: &parse_bufs
-                                                        .hir_nearest_loop_node,
-                                                },
-        arrays: wasm::GpuWasmArrayMetadataBuffers {
-                                                    lit_first_element: &parse_bufs
-                                                        .hir_array_lit_first_element,
-                                                    lit_element_count: &parse_bufs
-                                                        .hir_array_lit_element_count,
-                                                    lit_context_stmt_node: &parse_bufs
-                                                        .hir_array_lit_context_stmt_node,
-                                                    element_parent_lit: &parse_bufs
-                                                        .hir_array_element_parent_lit,
-                                                    element_ordinal: &parse_bufs
-                                                        .hir_array_element_ordinal,
-                                                    element_next: &parse_bufs
-                                                        .hir_array_element_next,
-                                                },
-        paths: wasm::GpuWasmPathMetadataBuffers {
-                                                    count_out: codegen.path_count_out,
-                                                    segment_count: codegen.path_segment_count,
-                                                    segment_base: codegen.path_segment_base,
-                                                    segment_token: codegen.path_segment_token,
-                                                    id_by_owner_token: codegen.path_id_by_owner_token,
-                                                },
-        canonical_hir: wasm::GpuWasmCanonicalHirBuffers {
-                                                    count: &parse_bufs.hir_canonical_count,
-                                                    core: &parse_bufs.hir_core,
-                                                    links: &parse_bufs.hir_links,
-                                                    payload: &parse_bufs.hir_payload,
-                                                    nearest_loop: &parse_bufs
-                                                        .hir_canonical_nearest_loop,
-                                                    const_value: &parse_bufs
-                                                        .hir_canonical_const_value,
-                                                    expr_parent: &parse_bufs
-                                                        .hir_canonical_expr_parent,
-                                                    expr_root: &parse_bufs
-                                                        .hir_canonical_expr_root,
-                                                    call_arg_count: &parse_bufs
-                                                        .hir_call_arg_table_count,
-                                                    call_args: &parse_bufs.hir_call_args,
-                                                    param_count: &parse_bufs.hir_param_table_count,
-                                                    params: &parse_bufs.hir_param_rows,
-                                                    field_count: &parse_bufs.hir_field_table_count,
-                                                    fields: &parse_bufs.hir_field_rows,
-                                                    array_element_start: &parse_bufs
-                                                        .hir_array_compact_element_start,
-                                                    array_element_count: &parse_bufs
-                                                        .hir_array_compact_element_count,
-                                                    array_element_row_count: &parse_bufs
-                                                        .hir_array_element_table_count,
-                                                    array_elements: &parse_bufs
-                                                        .hir_array_element_rows,
-                                                    string_count: &parse_bufs
-                                                        .hir_string_count,
-                                                    strings: &parse_bufs
-                                                        .hir_canonical_string_rows,
-                                                    string_data_words: &parse_bufs
-                                                        .hir_string_data_words,
-                                                    string_pool_len: &parse_bufs
-                                                        .hir_string_pool_len,
-                                                    path_count: &parse_bufs.hir_path_table_count,
-                                                    paths: &parse_bufs.hir_path_rows,
-                                                    path_segment_count: &parse_bufs
-                                                        .hir_path_segment_table_count,
-                                                    path_segments: &parse_bufs
-                                                        .hir_path_segment_rows,
-        },
-        path_id_by_owner_hir: codegen.path_id_by_owner_hir,
-        decl_type_ref_tag: codegen.decl_type_ref_tag,
-        decl_type_ref_payload: codegen.decl_type_ref_payload,
-        call_fn_index: codegen.call_fn_index,
-        call_dependency_decl: codegen.call_dependency_decl,
-        call_intrinsic_tag: codegen.call_intrinsic_tag,
-        fn_entrypoint_tag: codegen.fn_entrypoint_tag,
-        call_return_type: codegen.call_return_type,
-        call_param_count: codegen.call_param_count,
-        call_param_type: codegen.call_param_type,
-        method_decl_param_offset: codegen.method_decl_param_offset,
-        method_decl_receiver_mode: codegen.method_decl_receiver_mode,
-        type_instance_decl_token: codegen.type_instance_decl_token,
-        type_decl_hir_node_by_token: codegen.type_decl_hir_node_by_token,
-        fn_return_ref_tag: codegen.fn_return_ref_tag,
-        fn_return_ref_payload: codegen.fn_return_ref_payload,
-        member_result_ref_tag: codegen.member_result_ref_tag,
-        member_result_ref_payload: codegen.member_result_ref_payload,
-        struct_init_field_expected_ref_tag: codegen.struct_init_field_expected_ref_tag,
-        struct_init_field_expected_ref_payload: codegen.struct_init_field_expected_ref_payload,
-    },
-)
-                                            .map_err(|err| {
-                                                wasm_backend_execution_failed_for_source_pack(
-                                                    &diagnostic_files,
-                                                    err,
-                                                )
-                                            })
-                                    })
-                                    .ok_or_else(|| {
-                                        wasm_backend_execution_failed_for_source_pack(
-                                            &diagnostic_files,
-                                            "WASM type metadata buffers are unavailable",
-                                        )
-                                    })??;
-                                trace_wasm_compile("source_pack.wasm.recorded");
-                                crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
-                                    "wasm_recorded",
-                                );
-                                let wasm_diagnostics = WasmDiagnosticBuffers {
-                                    tokens_out: bufs.tokens_out.clone(),
-                                };
-                                Ok::<_, CompileError>((recorded, wasm_check, wasm_diagnostics))
-                            },
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    trace_wasm_compile("source_pack.parser.typecheck.recorded");
-                    let (type_check, wasm_check, wasm_diagnostics) = type_check?;
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "wasm.codegen.done");
-                    }
-                    Ok((
-                        parser_check,
-                        type_check,
-                        wasm_check,
-                        wasm_diagnostics,
-                        token_capacity,
-                        parser_tree_capacity,
-                    ))
-                },
-                |device,
-                 queue,
-                 (
-                    parser_check,
-                    type_check,
-                    wasm_check,
-                    wasm_diagnostics,
-                    token_capacity,
-                    parser_tree_capacity,
-                )| {
-                    trace_wasm_compile("source_pack.finish.parser.start");
-                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
-                        parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                    })?;
-                    if !ll1.accepted {
-                        let parser_failure = self
-                            .parser
-                            .current_resident_parser_failure_for_ll1_rejection(
-                                token_capacity,
-                                &self.parse_tables,
-                                Some(parser_tree_capacity),
-                                ll1,
-                            );
-                        return Err(parser_failure_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &wasm_diagnostics.tokens_out.buffer,
-                            &diagnostic_files,
-                            &parser_failure,
-                        ));
-                    }
-                    trace_wasm_compile("source_pack.finish.typecheck.start");
-                    self.type_checker
-                        .finish_recorded_check(device, &type_check)
-                        .map_err(|err| {
-                            type_check_error_to_compile_error_for_source_pack_tokens(
-                                device,
-                                queue,
-                                &wasm_diagnostics.tokens_out,
-                                &diagnostic_files,
-                                err,
-                            )
-                        })?;
-                    trace_wasm_compile("source_pack.finish.wasm.start");
-                    let generator = self.wasm_generator()
-                        .map_err(|err| {
-                            wasm_backend_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    let result = match artifact_request {
-                        WasmBackendArtifactRequest::Executable => generator
-                            .finish_recorded_wasm(device, queue, &wasm_check)
-                            .map(CompletedWasmBackendArtifact::Executable),
-                        WasmBackendArtifactRequest::RelocatableObject {
-                            library_id,
-                            unit_id,
-                        } => generator
-                            .finish_recorded_wasm_object(
-                                device,
-                                queue,
-                                &wasm_check,
-                                library_id,
-                                unit_id,
-                                dependency_state.as_ref().map(|dependencies| {
-                                    wasm::GpuWasmDependencySymbolBuffers {
-                                        declaration_count: dependencies.declaration_count,
-                                        declaration_library_id: &dependencies.declaration_library_id,
-                                        declaration_unit_id: &dependencies.declaration_unit_id,
-                                        declaration_local_index: &dependencies.declaration_local_index,
-                                    }
-                                }),
-                            )
-                            .map(CompletedWasmBackendArtifact::RelocatableObject),
-                    };
-                    result.map_err(|err| {
-                            if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
-                                eprintln!("[laniusc][wasm-codegen] finish.error: {err:#}");
-                            }
-                            wasm_codegen_error_to_compile_error_for_source_pack(
-                                device,
-                                queue,
-                                &wasm_diagnostics.tokens_out,
-                                &diagnostic_files,
-                                &err,
-                            )
-                        })
-                },
-            )
-            .await
-            .map_err(|err| source_tokenization_failed_for_source_pack(&diagnostic_files, err))?
+        self.compile_checked_source_pack_to_wasm_object_with_lowering(
+            sources,
+            library_id,
+            unit_id,
+            dependency_interfaces,
+        )
+        .await
     }
+
     /// Compile an explicit in-memory source-pack manifest through the WASM
     /// backend and preserve manifest source paths for diagnostics.
     pub async fn compile_source_pack_manifest_to_wasm(
@@ -760,720 +78,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: PathBuf,
     ) -> Result<Vec<u8>, CompileError> {
-        // The current WASM recorder batches backend passes behind type checking.
-        // Preflight keeps expected user type errors from executing backend codegen
-        // until this path is split into staged GPU submissions like x86.
-        self.type_check_expanded_source_with_diagnostic_path(src, diagnostic_path.clone())
-            .await?;
-
-        let _resident_guard = self.resident_pipeline_lock.lock().await;
-        trace_wasm_compile("compile.start");
-        self.lexer
-            .with_recorded_resident_tokens_after_count(
-                src,
-                |device, queue, bufs, token_count, encoder, mut timer| {
-                    trace_wasm_compile("lex.recorded");
-                    let token_capacity = token_count.max(1);
-                    let parser_capacity = self
-                        .parser
-                        .measure_resident_partial_parse_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
-                    let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags = parser_capacity.parser_feature_flags;
-                    let (parser_check, type_check) = self
-                        .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
-                            encoder,
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            bufs.n,
-                            &bufs.in_bytes,
-                            &self.parse_tables,
-                            Some(parser_tree_capacity),
-                            parser_feature_flags,
-                            &mut timer,
-                            |parse_bufs, encoder, timer| {
-                                trace_wasm_compile("parser.recorded");
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "parser.ll1_hir.done");
-                                }
-                                let hir_status = &parse_bufs.ll1_status;
-                                let recorded = self
-                                    .type_checker
-                                    .record_resident_token_buffer_with_hir_items_on_gpu(
-                                        device,
-                                        queue,
-                                        encoder,
-                                        bufs.n,
-                                        bufs.source_file_start.count as u32,
-                                        token_capacity,
-                                        &bufs.tokens_out,
-                                        &bufs.token_count,
-                                        &bufs.token_file_id,
-                                        &bufs.in_bytes,
-                                        parse_bufs.tree_capacity,
-                                        parse_bufs.tree_capacity,
-                                        &parse_bufs.hir_kind,
-                                        &parse_bufs.hir_token_pos,
-                                        &parse_bufs.hir_token_end,
-                                        &parse_bufs.hir_token_file_id,
-                                        hir_status,
-                                        gpu_type_checker::GpuTypeCheckHirItemBuffers {
-                                            parser_feature_flags: parse_bufs.parser_feature_flags,
-                                            module_record_capacity: parse_bufs.tree_capacity,
-                                            call_param_row_capacity: parse_bufs.tree_capacity,
-                                            call_arg_row_capacity: parse_bufs.tree_capacity,
-                                            compact_hir_count: &parse_bufs.hir_canonical_count,
-                                            compact_hir_core: &parse_bufs.hir_core,
-                                            raw_to_compact_hir: &parse_bufs
-                                                .hir_canonical_raw_to_dense,
-                                            compact_hir_links: &parse_bufs.hir_links,
-                                            compact_hir_payload: &parse_bufs.hir_payload,
-                                            compact_fn_return_type: &parse_bufs
-                                                .hir_canonical_fn_return_type,
-                                            compact_type_alias_target: &parse_bufs
-                                                .hir_canonical_type_alias_target,
-                                            compact_const_type: &parse_bufs
-                                                .hir_canonical_const_type,
-                                            compact_param_count: &parse_bufs.hir_param_table_count,
-                                            compact_params: &parse_bufs.hir_param_rows,
-                                            compact_param_ranges: &parse_bufs.hir_param_ranges,
-                                            compact_method_count: &parse_bufs.hir_method_table_count,
-                                            compact_method_cores: &parse_bufs.hir_method_core_rows,
-                                            compact_method_signatures: &parse_bufs
-                                                .hir_method_signature_rows,
-                                            compact_predicate_count: &parse_bufs
-                                                .hir_predicate_table_count,
-                                            compact_predicates: &parse_bufs.hir_predicate_rows,
-                                            compact_type_arg_count: &parse_bufs
-                                                .hir_type_arg_table_count,
-                                            compact_type_args: &parse_bufs.hir_type_arg_rows,
-                                            compact_type_arg_ranges: &parse_bufs
-                                                .hir_type_arg_ranges,
-                                            compact_path_count: &parse_bufs.hir_path_table_count,
-                                            compact_paths: &parse_bufs.hir_path_rows,
-                                            compact_path_segment_count: &parse_bufs
-                                                .hir_path_segment_table_count,
-                                            compact_path_segments: &parse_bufs
-                                                .hir_path_segment_rows,
-                                            compact_generic_param_count: &parse_bufs
-                                                .hir_generic_param_table_count,
-                                            compact_generic_params: &parse_bufs
-                                                .hir_generic_param_rows,
-                                            compact_generic_param_ranges: &parse_bufs
-                                                .hir_generic_param_ranges,
-                                            compact_field_count: &parse_bufs
-                                                .hir_field_table_count,
-                                            compact_fields: &parse_bufs.hir_field_rows,
-                                            compact_variant_count: &parse_bufs
-                                                .hir_variant_table_count,
-                                            compact_variants: &parse_bufs.hir_variant_rows,
-                                            compact_variant_payload_start: &parse_bufs
-                                                .hir_variant_compact_payload_start,
-                                            compact_variant_payload_count: &parse_bufs
-                                                .hir_variant_compact_payload_count,
-                                            compact_variant_payload_row_count: &parse_bufs
-                                                .hir_variant_payload_table_count,
-                                            compact_variant_payloads: &parse_bufs
-                                                .hir_variant_payload_rows,
-                                            compact_match_arm_count: &parse_bufs
-                                                .hir_match_arm_table_count,
-                                            compact_match_arms: &parse_bufs.hir_match_arm_rows,
-                                            compact_match_payload_start: &parse_bufs
-                                                .hir_match_compact_payload_start,
-                                            compact_match_payload_count: &parse_bufs
-                                                .hir_match_compact_payload_count,
-                                            compact_match_payload_row_count: &parse_bufs
-                                                .hir_match_payload_table_count,
-                                            compact_match_payloads: &parse_bufs
-                                                .hir_match_payload_rows,
-                                            compact_array_element_start: &parse_bufs
-                                                .hir_array_compact_element_start,
-                                            compact_array_element_count: &parse_bufs
-                                                .hir_array_compact_element_count,
-                                            compact_array_element_row_count: &parse_bufs
-                                                .hir_array_element_table_count,
-                                            compact_array_elements: &parse_bufs
-                                                .hir_array_element_rows,
-                                            node_kind: &parse_bufs.node_kind,
-                                            parent: &parse_bufs.parent,
-                                            first_child: &parse_bufs.first_child,
-                                            next_sibling: &parse_bufs.next_sibling,
-                                            subtree_end: &parse_bufs.subtree_end,
-                                            name_token: &parse_bufs.hir_item_name_token,
-                                            type_form: &parse_bufs.hir_type_form,
-                                            type_value_node: &parse_bufs.hir_type_value_node,
-                                            type_len_token: &parse_bufs.hir_type_len_token,
-                                            type_len_value: &parse_bufs.hir_type_len_value,
-                                            type_file_id: &parse_bufs.hir_type_file_id,
-                                            type_path_leaf_node: &parse_bufs
-                                                .hir_type_path_leaf_node,
-                                            bound_path_owner_by_leaf: &parse_bufs
-                                                .hir_bound_path_owner_by_leaf,
-                                            path_segment_owner: &parse_bufs
-                                                .hir_path_segment_owner_a,
-                                            path_segment_rank: &parse_bufs
-                                                .hir_path_segment_rank_a,
-                                            path_segment_count: &parse_bufs
-                                                .hir_path_segment_count,
-                                            type_arg_start: &parse_bufs.hir_type_arg_start,
-                                            type_arg_count: &parse_bufs.hir_type_arg_count,
-                                            type_arg_next: &parse_bufs.hir_type_arg_next,
-                                            type_arg_owner: &parse_bufs.hir_type_arg_owner_a,
-                                            type_arg_rank: &parse_bufs.hir_type_arg_rank_a,
-                                            type_root_owner: &parse_bufs.hir_type_root_owner,
-                                            type_alias_target_node: &parse_bufs
-                                                .hir_type_alias_target_node,
-                                            fn_return_type_node: &parse_bufs
-                                                .hir_fn_return_type_node,
-                                            param_record: &parse_bufs.hir_param_record,
-                                            param_type_node: &parse_bufs.hir_param_type_node,
-                                            method_owner_node: &parse_bufs.hir_method_owner_node,
-                                            method_impl_node: &parse_bufs.hir_method_impl_node,
-                                            method_name_token: &parse_bufs.hir_method_name_token,
-                                            method_first_param_token: &parse_bufs
-                                                .hir_method_first_param_token,
-                                            method_receiver_mode: &parse_bufs
-                                                .hir_method_receiver_mode,
-                                            method_visibility: &parse_bufs.hir_method_visibility,
-                                            method_signature_flags: &parse_bufs
-                                                .hir_method_signature_flags,
-                                            method_impl_receiver_type_node: &parse_bufs
-                                                .hir_method_impl_receiver_type_node,
-                                            expr_record: &parse_bufs.hir_expr_record,
-                                            expr_name_role: &parse_bufs.hir_expr_name_role,
-                                            expr_result_node: &parse_bufs.hir_expr_result_node,
-                                            expr_result_root_node: &parse_bufs
-                                                .hir_expr_result_root_node,
-                                            expr_int_value: &parse_bufs.hir_expr_int_value,
-                                            member_receiver_node: &parse_bufs
-                                                .hir_member_receiver_node,
-                                            member_receiver_token: &parse_bufs
-                                                .hir_member_receiver_token,
-                                            member_name_token: &parse_bufs.hir_member_name_token,
-                                            stmt_record: &parse_bufs.hir_stmt_record,
-                                            stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
-                                            nearest_stmt_node: &parse_bufs.hir_nearest_stmt_node,
-                                            nearest_block_node: &parse_bufs.hir_nearest_block_node,
-                                            nearest_enclosing_control_node: &parse_bufs
-                                                .hir_nearest_enclosing_control_node,
-                                            nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
-                                            nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
-                                            array_lit_first_element: &parse_bufs
-                                                .hir_array_lit_first_element,
-                                            array_lit_element_count: &parse_bufs
-                                                .hir_array_lit_element_count,
-                                            array_lit_context_stmt_node: &parse_bufs
-                                                .hir_array_lit_context_stmt_node,
-                                            array_element_parent_lit: &parse_bufs
-                                                .hir_array_element_parent_lit,
-                                            nearest_array_element_node: &parse_bufs
-                                                .hir_nearest_array_element_node,
-                                            array_element_next: &parse_bufs.hir_array_element_next,
-                                            namespace: &parse_bufs.hir_item_namespace,
-                                            visibility: &parse_bufs.hir_item_visibility,
-                                            path_start: &parse_bufs.hir_item_path_start,
-                                            path_end: &parse_bufs.hir_item_path_end,
-                                            path_node: &parse_bufs.hir_item_path_node,
-                                            file_id: &parse_bufs.hir_item_file_id,
-                                            import_target_kind: &parse_bufs
-                                                .hir_item_import_target_kind,
-                                            call_callee_node: &parse_bufs.hir_call_callee_node,
-                                            call_callee_path_node: &parse_bufs
-                                                .hir_call_callee_path_node,
-                                            call_parent_by_callee: &parse_bufs
-                                                .hir_call_parent_by_callee,
-                                            call_context_stmt_node: &parse_bufs
-                                                .hir_call_context_stmt_node,
-                                            call_arg_start: &parse_bufs.hir_call_arg_start,
-                                            call_arg_end: &parse_bufs.hir_call_arg_end,
-                                            call_arg_count: &parse_bufs.hir_call_arg_count,
-                                            call_arg_parent_call: &parse_bufs
-                                                .hir_call_arg_parent_call,
-                                            call_arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                            struct_field_parent_struct: &parse_bufs
-                                                .hir_struct_field_parent_struct,
-                                            struct_field_ordinal: &parse_bufs
-                                                .hir_struct_field_ordinal,
-                                            struct_field_type_node: &parse_bufs
-                                                .hir_struct_field_type_node,
-                                            struct_decl_field_start: &parse_bufs
-                                                .hir_struct_decl_field_start,
-                                            struct_decl_field_count: &parse_bufs
-                                                .hir_struct_decl_field_count,
-                                            struct_lit_head_node: &parse_bufs
-                                                .hir_struct_lit_head_node,
-                                            struct_lit_context_stmt_node: &parse_bufs
-                                                .hir_struct_lit_context_stmt_node,
-                                            struct_lit_field_start: &parse_bufs
-                                                .hir_struct_lit_field_start,
-                                            struct_lit_field_count: &parse_bufs
-                                                .hir_struct_lit_field_count,
-                                            struct_lit_field_parent_lit: &parse_bufs
-                                                .hir_struct_lit_field_parent_lit,
-                                            struct_lit_field_value_node: &parse_bufs
-                                                .hir_struct_lit_field_value_node,
-                                            semantic_dense_node: &parse_bufs
-                                                .hir_semantic_dense_node,
-                                            semantic_count: &parse_bufs.hir_semantic_count,
-                                            semantic_subtree_end: &parse_bufs
-                                                .hir_semantic_subtree_end,
-                                        },
-                                        timer.as_deref_mut(),
-                                    )
-                                    .map_err(|err| {
-                                        type_check_execution_failed_for_source(
-                                            &diagnostic_path,
-                                            src,
-                                            err,
-                                        )
-                                    })?;
-                                trace_wasm_compile("typecheck.recorded");
-                                crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
-                                    "typecheck_recorded",
-                                );
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "typecheck.done");
-                                }
-                                let wasm_check = self
-                                    .type_checker
-                                    .with_codegen_buffers(|codegen| {
-                                        self.wasm_generator()
-                                            .map_err(|err| {
-                                                wasm_backend_execution_failed_for_source(
-                                                    &diagnostic_path,
-                                                    src,
-                                                    err,
-                                                )
-                                            })?
-.record_wasm_from_gpu_token_buffer(
-    device,
-    queue,
-    encoder,
-    bufs.n,
-    token_capacity,
-    parse_bufs.tree_capacity,
-    0,
-    wasm::GpuWasmCodegenInputs {
-        token: &bufs.tokens_out,
-        active_hir_dispatch_args: &parse_bufs.tree_active_dispatch_args,
-        parent: &parse_bufs.parent,
-        first_child: &parse_bufs.first_child,
-        next_sibling: &parse_bufs.next_sibling,
-        hir_kind: &parse_bufs.hir_kind,
-        hir_token_pos: &parse_bufs.hir_token_pos,
-        hir_token_end: &parse_bufs.hir_token_end,
-        hir_status: hir_status,
-        parser_feature_flags: &parse_bufs.token_feature_flags,
-        visible_decl: codegen.visible_decl,
-        visible_type: codegen.visible_type,
-        compact_expr_scalar_type: codegen.compact_expr_scalar_type,
-        public_decl_count: codegen.public_decl_count,
-        public_decl_local_id: codegen.public_decl_local_id,
-        public_decl_index_by_local: codegen.public_decl_index_by_local,
-        decl_id_by_name_token: codegen.decl_id_by_name_token,
-        decl_hir_node: codegen.decl_hir_node,
-        name_id_by_token: codegen.name_id_by_token,
-        language_name_id: codegen.language_name_id,
-        enclosing_fn: codegen.enclosing_fn,
-        if_depth: codegen.if_depth,
-        structs: wasm::GpuWasmStructMetadataBuffers {
-                                                    member_receiver_node: &parse_bufs
-                                                        .hir_member_receiver_node,
-                                                    lit_field_parent_lit: &parse_bufs
-                                                        .hir_struct_lit_field_parent_lit,
-                                                    lit_context_stmt_node: &parse_bufs
-                                                        .hir_struct_lit_context_stmt_node,
-                                                    lit_field_value_node: &parse_bufs
-                                                        .hir_struct_lit_field_value_node,
-                                                    member_name_token: &parse_bufs
-                                                        .hir_member_name_token,
-                                                    member_result_field_ordinal: codegen
-                                                        .member_result_field_ordinal,
-                                                    member_result_field_node: codegen
-                                                        .member_result_field_node,
-                                                    struct_init_field_ordinal_by_row: codegen
-                                                        .struct_init_field_ordinal_by_row,
-                                                },
-        calls: wasm::GpuWasmCallMetadataBuffers {
-                                                    callee_node: &parse_bufs.hir_call_callee_node,
-                                                    context_stmt: &parse_bufs
-                                                        .hir_call_context_stmt_node,
-                                                    arg_start: &parse_bufs.hir_call_arg_start,
-                                                    arg_parent_call: &parse_bufs
-                                                        .hir_call_arg_parent_call,
-                                                    arg_count: &parse_bufs.hir_call_arg_count,
-                                                    arg_ordinal: &parse_bufs.hir_call_arg_ordinal,
-                                                    param_row_count_out: codegen
-                                                        .call_param_row_count_out,
-                                                    param_row_fn_token: codegen
-                                                        .call_param_row_fn_token,
-                                                    param_row_ordinal: codegen
-                                                        .call_param_row_ordinal,
-                                                    param_row_type: codegen.call_param_row_type,
-                                                    param_row_start: codegen.call_param_row_start,
-                                                    param_row_count: codegen.call_param_row_count,
-                                                    arg_row_node: codegen.call_arg_row_node,
-                                                    arg_row_start: codegen.call_arg_row_start,
-                                                    arg_row_count: codegen.call_arg_row_count,
-                                                },
-        expressions: wasm::GpuWasmExprMetadataBuffers {
-                                                    record: &parse_bufs.hir_expr_record,
-                                                    result_root_node: &parse_bufs
-                                                        .hir_expr_result_root_node,
-                                                    parent_node: &parse_bufs.hir_expr_parent_node,
-                                                    forest_root_node: &parse_bufs
-                                                        .hir_expr_forest_root_node,
-                                                    int_value: &parse_bufs.hir_expr_int_value,
-                                                    float_bits: &parse_bufs.hir_expr_float_bits,
-                                                    string_start: &parse_bufs.hir_string_data_offset,
-                                                    string_len: &parse_bufs.hir_string_decoded_len,
-                                                    string_data_words: &parse_bufs.hir_string_data_words,
-                                                    string_pool_len: &parse_bufs.hir_string_pool_len,
-                                                    stmt_record: &parse_bufs.hir_stmt_record,
-                                                    nearest_stmt_node: &parse_bufs
-                                                        .hir_nearest_stmt_node,
-                                                    nearest_block_node: &parse_bufs
-                                                        .hir_nearest_block_node,
-                                                    nearest_loop_node: &parse_bufs
-                                                        .hir_nearest_loop_node,
-                                                },
-        arrays: wasm::GpuWasmArrayMetadataBuffers {
-                                                    lit_first_element: &parse_bufs
-                                                        .hir_array_lit_first_element,
-                                                    lit_element_count: &parse_bufs
-                                                        .hir_array_lit_element_count,
-                                                    lit_context_stmt_node: &parse_bufs
-                                                        .hir_array_lit_context_stmt_node,
-                                                    element_parent_lit: &parse_bufs
-                                                        .hir_array_element_parent_lit,
-                                                    element_ordinal: &parse_bufs
-                                                        .hir_array_element_ordinal,
-                                                    element_next: &parse_bufs
-                                                        .hir_array_element_next,
-                                                },
-        paths: wasm::GpuWasmPathMetadataBuffers {
-                                                    count_out: codegen.path_count_out,
-                                                    segment_count: codegen.path_segment_count,
-                                                    segment_base: codegen.path_segment_base,
-                                                    segment_token: codegen.path_segment_token,
-                                                    id_by_owner_token: codegen.path_id_by_owner_token,
-                                                },
-        canonical_hir: wasm::GpuWasmCanonicalHirBuffers {
-                                                    count: &parse_bufs.hir_canonical_count,
-                                                    core: &parse_bufs.hir_core,
-                                                    links: &parse_bufs.hir_links,
-                                                    payload: &parse_bufs.hir_payload,
-                                                    nearest_loop: &parse_bufs
-                                                        .hir_canonical_nearest_loop,
-                                                    const_value: &parse_bufs
-                                                        .hir_canonical_const_value,
-                                                    expr_parent: &parse_bufs
-                                                        .hir_canonical_expr_parent,
-                                                    expr_root: &parse_bufs
-                                                        .hir_canonical_expr_root,
-                                                    call_arg_count: &parse_bufs
-                                                        .hir_call_arg_table_count,
-                                                    call_args: &parse_bufs.hir_call_args,
-                                                    param_count: &parse_bufs.hir_param_table_count,
-                                                    params: &parse_bufs.hir_param_rows,
-                                                    field_count: &parse_bufs.hir_field_table_count,
-                                                    fields: &parse_bufs.hir_field_rows,
-                                                    array_element_start: &parse_bufs
-                                                        .hir_array_compact_element_start,
-                                                    array_element_count: &parse_bufs
-                                                        .hir_array_compact_element_count,
-                                                    array_element_row_count: &parse_bufs
-                                                        .hir_array_element_table_count,
-                                                    array_elements: &parse_bufs
-                                                        .hir_array_element_rows,
-                                                    string_count: &parse_bufs
-                                                        .hir_string_count,
-                                                    strings: &parse_bufs
-                                                        .hir_canonical_string_rows,
-                                                    string_data_words: &parse_bufs
-                                                        .hir_string_data_words,
-                                                    string_pool_len: &parse_bufs
-                                                        .hir_string_pool_len,
-                                                    path_count: &parse_bufs.hir_path_table_count,
-                                                    paths: &parse_bufs.hir_path_rows,
-                                                    path_segment_count: &parse_bufs
-                                                        .hir_path_segment_table_count,
-                                                    path_segments: &parse_bufs
-                                                        .hir_path_segment_rows,
-        },
-        path_id_by_owner_hir: codegen.path_id_by_owner_hir,
-        decl_type_ref_tag: codegen.decl_type_ref_tag,
-        decl_type_ref_payload: codegen.decl_type_ref_payload,
-        call_fn_index: codegen.call_fn_index,
-        call_dependency_decl: codegen.call_dependency_decl,
-        call_intrinsic_tag: codegen.call_intrinsic_tag,
-        fn_entrypoint_tag: codegen.fn_entrypoint_tag,
-        call_return_type: codegen.call_return_type,
-        call_param_count: codegen.call_param_count,
-        call_param_type: codegen.call_param_type,
-        method_decl_param_offset: codegen.method_decl_param_offset,
-        method_decl_receiver_mode: codegen.method_decl_receiver_mode,
-        type_instance_decl_token: codegen.type_instance_decl_token,
-        type_decl_hir_node_by_token: codegen.type_decl_hir_node_by_token,
-        fn_return_ref_tag: codegen.fn_return_ref_tag,
-        fn_return_ref_payload: codegen.fn_return_ref_payload,
-        member_result_ref_tag: codegen.member_result_ref_tag,
-        member_result_ref_payload: codegen.member_result_ref_payload,
-        struct_init_field_expected_ref_tag: codegen.struct_init_field_expected_ref_tag,
-        struct_init_field_expected_ref_payload: codegen.struct_init_field_expected_ref_payload,
-    },
-)
-                                            .map_err(|err| {
-                                                wasm_backend_execution_failed_for_source(
-                                                    &diagnostic_path,
-                                                    src,
-                                                    err,
-                                                )
-                                            })
-                                    })
-                                    .ok_or_else(|| {
-                                        wasm_backend_execution_failed_for_source(
-                                            &diagnostic_path,
-                                            src,
-                                            "WASM type metadata buffers are unavailable",
-                                        )
-                                    })??;
-                                trace_wasm_compile("wasm.recorded");
-                                crate::gpu::buffers::record_tracked_buffer_phase_snapshot(
-                                    "wasm_recorded",
-                                );
-                                Ok::<_, CompileError>((recorded, wasm_check))
-                            },
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
-                    trace_wasm_compile("parser.typecheck.recorded");
-                    let (type_check, wasm_check) = type_check?;
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "wasm.codegen.done");
-                    }
-                    Ok((parser_check, type_check, wasm_check, token_capacity, parser_tree_capacity))
-                },
-                |device,
-                 queue,
-                 _bufs,
-                 (parser_check, type_check, wasm_check, token_capacity, parser_tree_capacity)| {
-                    trace_wasm_compile("finish.parser.start");
-                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
-                        parser_execution_failed_for_source(&diagnostic_path, src, err)
-                    })?;
-                    if !ll1.accepted {
-                        let parser_failure = self
-                            .parser
-                            .current_resident_parser_failure_for_ll1_rejection(
-                                token_capacity,
-                                &self.parse_tables,
-                                Some(parser_tree_capacity),
-                                ll1,
-                            );
-                        return Err(parser_failure_to_compile_error_for_source(
-                            device,
-                            queue,
-                            &_bufs.tokens_out.buffer,
-                            src,
-                            &diagnostic_path,
-                            &parser_failure,
-                        ));
-                    }
-                    trace_wasm_compile("finish.typecheck.start");
-                    self.type_checker
-                        .finish_recorded_check(device, &type_check)
-                        .map_err(|err| {
-                            type_check_error_to_compile_error_for_source(
-                                device,
-                                queue,
-                                _bufs,
-                                src,
-                                &diagnostic_path,
-                                err,
-                            )
-                        })?;
-                    trace_wasm_compile("finish.wasm.start");
-                    self.wasm_generator()
-                        .map_err(|err| {
-                            wasm_backend_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?
-                        .finish_recorded_wasm(device, queue, &wasm_check)
-                        .map_err(|err| {
-                            wasm_codegen_error_to_compile_error_for_source(
-                                device,
-                                queue,
-                                &_bufs.tokens_out.buffer,
-                                src,
-                                &diagnostic_path,
-                                &err,
-                            )
-                        })
-                },
-            )
-            .await
-            .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))?
-    }
-    /// Returns the initialized WASM code generator or its deferred initialization error.
-    pub(super) fn wasm_generator(&self) -> Result<&wasm::GpuWasmCodeGenerator, &str> {
-        trace_wasm_compile("wasm.generator");
-        self.wasm_generator.as_deref().map_err(String::as_str)
-    }
-}
-
-struct WasmDiagnosticBuffers {
-    tokens_out: LaniusBuffer<crate::lexer::GpuToken>,
-}
-
-fn wasm_codegen_error_to_compile_error_for_source(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    token_buffer: &wgpu::Buffer,
-    src: &str,
-    diagnostic_path: &Path,
-    err: &anyhow::Error,
-) -> CompileError {
-    let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
-        return wasm_backend_execution_failed_for_source(diagnostic_path, src, err);
-    };
-
-    let label =
-        wasm_error_label_for_source(device, queue, token_buffer, src, diagnostic_path, wasm_err);
-    CompileError::Diagnostic(wasm_backend_boundary_diagnostic(wasm_err).with_primary_label(label))
-}
-
-fn wasm_error_label_for_source(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    token_buffer: &wgpu::Buffer,
-    src: &str,
-    diagnostic_path: &Path,
-    wasm_err: &wasm::WasmOutputError,
-) -> DiagnosticLabel {
-    if wasm_err.detail_is_token() {
-        if let Ok(token) =
-            read_single_token_from_buffer(device, queue, token_buffer, wasm_err.error_detail())
-        {
-            return diagnostic_label_from_source_span(
-                diagnostic_path,
-                src,
-                token.start,
-                token.len,
-                "not supported by the WASM backend yet",
-            );
-        }
+        self.compile_checked_source_with_lowering(src, diagnostic_path, Some(LoweringTarget::Wasm))
+            .await?
+            .ok_or_else(|| CompileError::GpuCodegen("Wasm lowering produced no artifact".into()))
     }
 
-    let (start, len) = first_nonempty_source_span(src);
-    diagnostic_label_from_source_span(
-        diagnostic_path,
-        src,
-        start,
-        len,
-        "not supported by the WASM backend yet",
-    )
-}
-
-fn wasm_codegen_error_to_compile_error_for_source_pack(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    token_buffer: &wgpu::Buffer,
-    diagnostic_files: &[DiagnosticSourceFile],
-    err: &anyhow::Error,
-) -> CompileError {
-    let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
-        return wasm_backend_execution_failed_for_source_pack(diagnostic_files, err);
-    };
-    let Some(file) = diagnostic_files.first() else {
-        return wasm_backend_execution_failed_for_source_pack(diagnostic_files, err);
-    };
-
-    let label = if wasm_err.detail_is_token() {
-        read_single_token_from_buffer(device, queue, token_buffer, wasm_err.error_detail())
-            .ok()
-            .and_then(|token| {
-                source_pack_nearest_file_for_global_span(diagnostic_files, token.start).map(
-                    |file| {
-                        diagnostic_label_from_source_span(
-                            &file.path,
-                            &file.source,
-                            file.local_start_for_global(token.start),
-                            token.len,
-                            "not supported by the WASM backend yet",
-                        )
-                    },
-                )
-            })
-            .unwrap_or_else(|| {
-                let (start, len) = first_nonempty_source_span(&file.source);
-                diagnostic_label_from_source_span(
-                    &file.path,
-                    &file.source,
-                    start,
-                    len,
-                    "not supported by the WASM backend yet",
-                )
-            })
-    } else {
-        let (start, len) = first_nonempty_source_span(&file.source);
-        diagnostic_label_from_source_span(
-            &file.path,
-            &file.source,
-            start,
-            len,
-            "not supported by the WASM backend yet",
-        )
-    };
-
-    CompileError::Diagnostic(wasm_backend_boundary_diagnostic(wasm_err).with_primary_label(label))
-}
-
-fn wasm_backend_boundary_diagnostic(wasm_err: &wasm::WasmOutputError) -> Diagnostic {
-    Diagnostic::error("LNC0036", wasm_err.public_message()).with_note(
-        "this program reached a WASM lowering path that is not supported yet; use `laniusc check` for diagnostics-only validation until this construct is covered",
-    )
-}
-
-fn wasm_backend_execution_failed_for_source(
-    diagnostic_path: &Path,
-    src: &str,
-    err: impl std::fmt::Display,
-) -> CompileError {
-    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
-        eprintln!("[laniusc][wasm] backend execution error: {err:#}");
-    }
-    stage_execution_failed_for_source(wasm_backend_execution_failure(), diagnostic_path, src, err)
-}
-
-fn wasm_backend_execution_failed_for_source_pack(
-    diagnostic_files: &[DiagnosticSourceFile],
-    err: impl std::fmt::Display,
-) -> CompileError {
-    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
-        eprintln!("[laniusc][wasm] backend execution error: {err:#}");
-    }
-    stage_execution_failed_for_source_pack(wasm_backend_execution_failure(), diagnostic_files, err)
-}
-
-fn wasm_backend_execution_failure() -> StageExecutionFailure<'static> {
-    StageExecutionFailure {
-        code: "LNC0036",
-        message: "WASM backend execution failed",
-        primary_label: "WASM backend failed before it could classify this source",
-        source_help: "use `laniusc check` to validate frontend diagnostics; if this happens on a small supported program, report a compiler bug",
-        source_pack_help: "use `laniusc check` to validate frontend diagnostics; if this happens on a small supported source pack, report a compiler bug",
+    /// Returns the initialized Wasm linker or its deferred initialization error.
+    pub(super) fn wasm_linker(&self) -> Result<&wasm::GpuWasmLinker, &str> {
+        trace_wasm_compile("wasm.linker");
+        self.wasm_linker.as_deref().map_err(String::as_str)
     }
 }
 
@@ -1516,19 +129,104 @@ fn main() -> i32 {
         );
         let input = wasm::link::GpuWasmLinkInput::for_executable(&[object])
             .expect("flatten projected Wasm object");
-        let generator = compiler.wasm_generator().expect("Wasm generator");
-        let linked = generator
+        let linker = compiler.wasm_linker().expect("Wasm linker");
+        let linked = linker
             .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
             .expect("link projected Wasm object");
+        assert_wasm_main_result(&linked, "projected-local-call", b"7");
+    }
+
+    #[test]
+    fn gpu_links_graph_projected_call_across_compilation_units() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let provider_source = [r#"
+module core::math;
+
+pub fn seven() -> i32 {
+    return 7;
+}
+"#];
+        let provider_interface =
+            pollster::block_on(compiler.semantic_interface_for_source_pack(7, &provider_source))
+                .expect("project provider semantic interface");
+        let provider_object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
+            &provider_source,
+            7,
+            0,
+            &[],
+        ))
+        .expect("compile provider Wasm object");
+        assert_eq!(provider_object.entry_function, None);
+
+        let consumer_source = [r#"
+module app::main;
+import core::math;
+
+fn main() -> i32 {
+    return seven();
+}
+"#];
+        let consumer_object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
+            &consumer_source,
+            11,
+            2,
+            &[provider_interface],
+        ))
+        .expect("compile consumer Wasm object against provider interface");
+        assert_eq!(consumer_object.entry_function, Some(0));
+        assert_eq!(consumer_object.relocations.len(), 1);
+        let relocation = &consumer_object.relocations[0];
+        assert_eq!(
+            relocation.target_kind,
+            wasm::GpuWasmRelocationTargetKind::Symbol
+        );
+        let undefined = &consumer_object.symbols[relocation.target_index as usize];
+        assert_eq!(undefined.kind, wasm::GpuWasmSymbolKind::Undefined);
+        let definition = provider_object
+            .symbols
+            .iter()
+            .find(|symbol| symbol.kind == wasm::GpuWasmSymbolKind::Function)
+            .expect("provider public function definition");
+        assert_eq!(
+            wasm_object_symbol_identity(&consumer_object, undefined),
+            wasm_object_symbol_identity(&provider_object, definition),
+            "dependency declaration identity must survive semantic and target lowering"
+        );
+
+        let input =
+            wasm::link::GpuWasmLinkInput::for_executable(&[provider_object, consumer_object])
+                .expect("flatten cross-unit Wasm objects");
+        let linked = compiler
+            .wasm_linker()
+            .expect("Wasm linker")
+            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
+            .expect("link cross-unit Wasm objects");
+        assert_wasm_main_result(&linked, "projected-cross-unit-call", b"7");
+    }
+
+    fn wasm_object_symbol_identity(
+        object: &wasm::GpuWasmRelocatableObject,
+        symbol: &wasm::GpuWasmObjectSymbolRecord,
+    ) -> [u32; 3] {
+        let start = symbol.identity_byte_start as usize;
+        let bytes = &object.identity_bytes[start..start + 12];
+        [
+            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+        ]
+    }
+
+    fn assert_wasm_main_result(bytes: &[u8], artifact_name: &str, expected: &[u8]) {
         let node = match which::which("node") {
             Ok(node) => node,
             Err(_) => return,
         };
         let path = std::env::temp_dir().join(format!(
-            "laniusc-projected-object-{}.wasm",
+            "laniusc-{artifact_name}-{}.wasm",
             std::process::id()
         ));
-        std::fs::write(&path, &linked).expect("write projected linked Wasm");
+        std::fs::write(&path, bytes).expect("write projected linked Wasm");
         let output = std::process::Command::new(node)
             .args([
                 "-e",
@@ -1543,69 +241,6 @@ fn main() -> i32 {
             "Node rejected projected linked Wasm: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(output.stdout, b"7");
-    }
-
-    #[test]
-    fn wasm_backend_execution_failure_for_source_is_structured_diagnostic() {
-        let err = wasm_backend_execution_failed_for_source(
-            Path::new("app.lani"),
-            "fn main() { return 0; }\n",
-            "finish readback failed",
-        );
-
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                assert_eq!(diagnostic.code, "LNC0036");
-                assert_eq!(diagnostic.message, "WASM backend execution failed");
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("WASM backend diagnostic should carry a label");
-                assert_eq!(label.path, PathBuf::from("app.lani"));
-                assert_eq!(
-                    label.message,
-                    "WASM backend failed before it could classify this source"
-                );
-                let rendered = diagnostic.render();
-                assert!(rendered.contains("error[LNC0036]: WASM backend execution failed"));
-                assert!(!rendered.contains("finish readback failed"));
-                assert!(!rendered.contains("WASM backend error:"));
-                assert!(!rendered.contains("GpuCodegen"));
-                assert!(!rendered.contains("code generation error:"));
-            }
-            other => panic!("expected structured WASM backend diagnostic, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn wasm_backend_execution_failure_for_source_pack_is_structured_diagnostic() {
-        let paths = [Some(PathBuf::from("first.lani"))];
-        let files = source_pack_diagnostic_files(&["module first;\n"], Some(&paths));
-
-        let err = wasm_backend_execution_failed_for_source_pack(&files, "finish readback failed");
-
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                assert_eq!(diagnostic.code, "LNC0036");
-                assert_eq!(diagnostic.message, "WASM backend execution failed");
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("WASM backend diagnostic should carry a label");
-                assert_eq!(label.path, PathBuf::from("first.lani"));
-                assert_eq!(
-                    label.message,
-                    "WASM backend failed before it could classify this source"
-                );
-                let rendered = diagnostic.render();
-                assert!(rendered.contains("source file count: 1"));
-                assert!(!rendered.contains("finish readback failed"));
-                assert!(!rendered.contains("WASM backend error:"));
-                assert!(!rendered.contains("GpuCodegen"));
-                assert!(!rendered.contains("code generation error:"));
-            }
-            other => panic!("expected structured WASM source-pack diagnostic, got {other:?}"),
-        }
+        assert_eq!(output.stdout, expected);
     }
 }

@@ -1,4 +1,4 @@
-// Mark parser-owned HIR call argument segments for compact semantic rows.
+// Mark dense compact-HIR call argument segments for semantic rows.
 //
 // This pass keeps argument discovery in the HIR record layer. It clears the
 // dense row outputs and writes each call node's argument count as the scan
@@ -15,9 +15,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_call_arg_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> call_arg_row_scan_input;
 RWStructuredBuffer<uint> call_arg_row_node;
@@ -25,6 +27,7 @@ RWStructuredBuffer<uint> call_arg_row_call_node;
 RWStructuredBuffer<uint> call_arg_row_ordinal;
 RWStructuredBuffer<uint> call_arg_row_start;
 RWStructuredBuffer<uint> call_arg_row_count;
+RWStructuredBuffer<uint> call_generic_return_arg_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
@@ -38,7 +41,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 [shader("compute")]
@@ -51,7 +54,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     call_arg_row_scan_input[node] =
-        hir_kind[node] == HIR_CALL_EXPR ? hir_call_arg_count[node] : 0u;
+        compact_hir_core[node].kind == HIR_CALL_EXPR
+            ? compact_hir_payload[node].c
+            : 0u;
     call_arg_row_start[node] = INVALID;
     call_arg_row_count[node] = 0u;
+    call_generic_return_arg_node[node] = INVALID;
 }

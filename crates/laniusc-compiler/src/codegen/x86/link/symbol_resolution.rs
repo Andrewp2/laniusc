@@ -8,7 +8,7 @@ use super::{
     symbol_partitions::{GpuX86SymbolPartition, GpuX86SymbolPartitionPlan},
 };
 use crate::codegen::x86::{
-    GpuX86CodeGenerator,
+    GpuX86Linker,
     support::{
         dispatch_compute_pass,
         reflected_bind_group,
@@ -21,7 +21,7 @@ use crate::codegen::x86::{
 
 const SYMBOL_PARTITION_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
 
-impl GpuX86CodeGenerator {
+impl GpuX86Linker {
     pub(super) fn resolve_symbol_relocations(
         &self,
         device: &wgpu::Device,
@@ -57,7 +57,7 @@ impl GpuX86CodeGenerator {
 }
 
 fn resolve_partition(
-    generator: &GpuX86CodeGenerator,
+    generator: &GpuX86Linker,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     input: &GpuX86LinkInput,

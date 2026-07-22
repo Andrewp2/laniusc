@@ -21,10 +21,11 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_count;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_fn_index;
@@ -38,6 +39,7 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint TY_ARRAY_BASE = 128u;
@@ -55,7 +57,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes;
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -70,18 +72,21 @@ bool valid_token(uint token)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = hir_token_pos[call_node];
+    uint call_token = compact_hir_core[call_node].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_node = hir_call_callee_node[call_node];
+    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
-    uint callee_token = hir_token_pos[callee_node];
+    HirCore callee = compact_hir_core[callee_node];
+    HirPayload payload = compact_hir_payload[callee_node];
+    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(callee_token)) callee_token = callee.token_start;
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
@@ -97,7 +102,7 @@ uint call_arg_count_for_callee(uint callee_token, uint call_node)
     uint record_count = call_arg_record[callee_token].w;
     if (!valid_node(call_node))
         return record_count;
-    return max(max(record_count, hir_call_arg_count[call_node]), call_arg_row_count[call_node]);
+    return max(max(record_count, compact_hir_payload[call_node].c), call_arg_row_count[call_node]);
 }
 
 bool check_call_window(

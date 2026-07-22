@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 
 use super::{GpuX86LinkInput, paged::GpuX86PagedExecutablePlan};
 use crate::codegen::x86::{
-    GpuX86CodeGenerator,
+    GpuX86Linker,
     support::{
         dispatch_compute_pass,
         reflected_bind_group,
@@ -27,7 +27,7 @@ struct X86ResolvedLinkBuffers<'a> {
     relocation_status: &'a wgpu::Buffer,
 }
 
-impl GpuX86CodeGenerator {
+impl GpuX86Linker {
     /// Links validated object columns entirely on the GPU and reads back only
     /// the final executable image and compact status words.
     #[cfg_attr(not(test), allow(dead_code))]

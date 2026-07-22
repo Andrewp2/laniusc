@@ -260,18 +260,9 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             0,
             &[
                 ("gParams", input.params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    items.compact_hir_count.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_core",
-                    items.compact_hir_core.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_payload",
-                    items.compact_hir_payload.as_entire_binding(),
-                ),
+                ("compact_hir_count", items.hir.count.as_entire_binding()),
+                ("compact_hir_core", items.hir.core.as_entire_binding()),
+                ("compact_hir_payload", items.hir.payload.as_entire_binding()),
                 (
                     "raw_to_compact_hir",
                     items.raw_to_compact_hir.as_entire_binding(),
@@ -490,14 +481,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
                     "predicate_syntax_token",
                     resident_resources["predicate_syntax_token"].clone(),
                 ),
-                (
-                    "compact_hir_count",
-                    items.compact_hir_count.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_payload",
-                    items.compact_hir_payload.as_entire_binding(),
-                ),
+                ("compact_hir_count", items.hir.count.as_entire_binding()),
+                ("compact_hir_payload", items.hir.payload.as_entire_binding()),
                 (
                     "hir_method_owner_node",
                     items.method_owner_node.as_entire_binding(),
@@ -644,14 +629,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         &[
             ("gParams", input.params.as_entire_binding()),
             ("hir_status", input.hir_status.as_entire_binding()),
-            (
-                "compact_hir_count",
-                items.compact_hir_count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                items.compact_hir_payload.as_entire_binding(),
-            ),
+            ("compact_hir_count", items.hir.count.as_entire_binding()),
+            ("compact_hir_payload", items.hir.payload.as_entire_binding()),
             (
                 "raw_to_compact_hir",
                 items.raw_to_compact_hir.as_entire_binding(),
@@ -798,10 +777,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
             ("gParams", input.params.as_entire_binding()),
             ("hir_status", input.hir_status.as_entire_binding()),
             ("node_kind", items.node_kind.as_entire_binding()),
-            (
-                "compact_hir_count",
-                items.compact_hir_count.as_entire_binding(),
-            ),
+            ("compact_hir_count", items.hir.count.as_entire_binding()),
             (
                 "raw_to_compact_hir",
                 items.raw_to_compact_hir.as_entire_binding(),

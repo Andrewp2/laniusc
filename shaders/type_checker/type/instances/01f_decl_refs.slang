@@ -23,12 +23,6 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_const_type;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -47,9 +41,6 @@ static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
-static const uint EXPR_RECORD_STRIDE = 4u;
-static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
@@ -70,16 +61,6 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
-}
-
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
@@ -95,41 +76,15 @@ bool valid_compact_node(uint node)
     return node != INVALID && node < active_compact_hir_count();
 }
 
-uint stmt_slot(uint node, uint slot)
-{
-    return node * STMT_RECORD_STRIDE + slot;
-}
-
-uint expr_slot(uint node, uint slot)
-{
-    return valid_node(node) ? hir_expr_record[node * EXPR_RECORD_STRIDE + slot] : INVALID;
-}
-
-uint result_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : node;
-}
-
 uint name_or_path_token_for_node(uint node)
 {
-    if (!valid_node(node) ||
-        (hir_kind[node] != HIR_NAME_EXPR && hir_kind[node] != HIR_PATH_EXPR))
+    if (!valid_compact_node(node) ||
+        (compact_hir_core[node].kind != HIR_NAME_EXPR &&
+         compact_hir_core[node].kind != HIR_PATH_EXPR))
         return INVALID;
 
-    uint token = expr_slot(node, EXPR_RECORD_VALUE_TOKEN);
-    return valid_token(token) ? token : hir_token_pos[node];
-}
-
-uint name_token_for_expr(uint root)
-{
-    uint token = name_or_path_token_for_node(root);
-    if (valid_token(token))
-        return token;
-
-    return name_or_path_token_for_node(result_expr(root));
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 void publish_compact_decl_ref(uint decl_token, uint type_node)
@@ -186,17 +141,18 @@ void publish_compact_item_decl_ref(uint node)
 
 void publish_for_decl_ref(uint node)
 {
-    if (!valid_node(node) ||
-        (hir_kind[node] != HIR_STMT && hir_kind[node] != HIR_FOR_STMT))
+    if (!valid_compact_node(node) ||
+        (compact_hir_core[node].kind != HIR_STMT &&
+         compact_hir_core[node].kind != HIR_FOR_STMT))
         return;
 
-    uint kind = hir_stmt_record[stmt_slot(node, 0u)];
+    HirPayload statement = compact_hir_payload[node];
+    uint kind = statement.a;
     if (kind != STMT_RECORD_KIND_FOR)
         return;
 
-    uint decl_token = hir_stmt_record[stmt_slot(node, 1u)];
-    uint iterable_node = hir_stmt_record[stmt_slot(node, 2u)];
-    uint iterable_token = name_token_for_expr(iterable_node);
+    uint decl_token = statement.b;
+    uint iterable_token = name_or_path_token_for_node(statement.c);
     uint iterable_decl = valid_token(iterable_token) ? visible_decl[iterable_token] : INVALID;
     if (!valid_token(iterable_decl))
         return;
@@ -230,8 +186,7 @@ void publish_param_decl_ref(uint row)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (valid_node(node))
-        publish_for_decl_ref(node);
+    publish_for_decl_ref(node);
     publish_compact_item_decl_ref(node);
     publish_compact_stmt_decl_ref(node);
     publish_param_decl_ref(node);

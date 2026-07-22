@@ -41,8 +41,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = target_value(operands.b, total);
     else if (core.op == X86_LIR_OP_RETURN)
         operands.a = target_value(operands.a, total);
-    else if (core.op == X86_LIR_OP_CALL_ARG)
+    else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         operands.a = target_value(operands.a, total);
+    else if (core.op == X86_LIR_OP_CALL_ARG)
+    {
+        uint base = target_value(operands.a, total);
+        operands.a = base < total && operands.c < total - base
+            ? base + operands.c : INVALID;
+        operands.c = 0u;
+    }
     else if (core.op == X86_LIR_OP_STORE_LOCAL)
         operands.b = target_value(operands.b, total);
     else if (core.op == X86_LIR_OP_ARRAY_INIT)

@@ -1,4 +1,4 @@
-// Validate that concrete non-void functions have parser-owned return evidence.
+// Validate that concrete non-void functions have compact-HIR return evidence.
 
 import status;
 import fixed.compact_method;
@@ -13,14 +13,14 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct HirPayload { uint a; uint b; uint c; uint d; };
-StructuredBuffer<uint> raw_to_compact_hir;
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<CompactMethodCore> compact_method_cores;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> return_fn_flags;
 
 RWStructuredBuffer<uint> status;
@@ -34,6 +34,8 @@ static const uint HIR_ITEM_KIND_FN = 4u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 
 uint linear_thread_id(uint3 dtid)
@@ -43,7 +45,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -60,42 +62,31 @@ uint canonical_function_token(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint dense = raw_to_compact_hir[node];
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense == INVALID || dense >= count)
-        return INVALID;
-    uint token = compact_hir_payload[dense].b;
+    uint token = compact_hir_payload[node].b;
     return valid_token(token) ? token : INVALID;
 }
 
 uint canonical_item_kind(uint node)
 {
-    if (!valid_node(node))
-        return INVALID;
-    uint dense = raw_to_compact_hir[node];
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    return dense < count ? compact_hir_payload[dense].a : INVALID;
+    return valid_node(node) ? compact_hir_payload[node].a : INVALID;
 }
 
 bool compact_impl_method(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint dense = raw_to_compact_hir[node];
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= hir_count)
-        return false;
     uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
     uint row = compact_method_row_for_hir(
-        compact_method_cores, method_count, dense);
-    return row < method_count && compact_method_cores[row].node == dense &&
+        compact_method_cores, method_count, node);
+    return row < method_count && compact_method_cores[row].node == node &&
            compact_method_cores[row].impl_node < hir_count;
 }
 
 bool function_with_body(uint node)
 {
     return valid_node(node) &&
-           hir_kind[node] == HIR_FN &&
+           compact_hir_core[node].kind == HIR_FN &&
            (canonical_item_kind(node) == HIR_ITEM_KIND_FN ||
             compact_impl_method(node));
 }
@@ -117,8 +108,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(fn_token))
         return;
 
-    uint expected = call_return_type[fn_token];
-    if (expected == TY_UNKNOWN || expected == TY_VOID)
+    uint return_tag = fn_return_ref_tag[fn_token];
+    if (return_tag == TYPE_REF_INVALID)
+        return;
+    uint expected = return_tag == TYPE_REF_SCALAR
+        ? fn_return_ref_payload[fn_token]
+        : TY_UNKNOWN;
+    if (expected == TY_VOID)
         return;
 
     if (return_fn_flags[node] == 0u)

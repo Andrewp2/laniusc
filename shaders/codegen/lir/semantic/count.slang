@@ -8,6 +8,7 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_parent;
+StructuredBuffer<uint> semantic_function_id;
 RWStructuredBuffer<uint> semantic_lir_count;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -20,7 +21,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
     if (node >= gParams.n_hir_nodes) return;
     uint rows = 0u;
-    if (node < count)
+    // Executable LIR belongs to a concrete checked function. Compact HIR also
+    // contains path/name expressions used by module, import, type, and other
+    // declaration syntax; those remain semantic metadata and must never be
+    // scheduled as top-level machine instructions.
+    if (node < count && semantic_function_id[node] != LIR_INVALID)
     {
         uint parent = compact_expr_parent[node];
         bool owned_syntax = parent < count &&
