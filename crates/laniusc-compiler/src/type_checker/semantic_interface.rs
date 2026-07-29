@@ -22,9 +22,9 @@ const MEMBER_WORDS: usize = 10;
 #[allow(clippy::too_many_arguments)]
 fn graph_prefix_scan(
     device: &wgpu::Device,
+    kernels: &KernelRegistry,
     label: &'static str,
-    params: NameScanParams,
-    passes: PrefixScanPasses<'_>,
+    params: PrefixScanParams,
     graph: &compiler_graph::TypeCheckCompilerGraph,
     scan: compiler_graph::SemanticInterfaceScan,
     count: &wgpu::Buffer,
@@ -53,9 +53,9 @@ fn graph_prefix_scan(
     graph.validate_semantic_interface_scan(scan, &resources)?;
     PrefixScanOperation::with_workspace(
         device,
+        kernels,
         label,
         params,
-        passes,
         count,
         dispatch_args,
         input,
@@ -184,6 +184,31 @@ impl GpuTypeChecker {
         })?;
         let name_scan_total = state.typecheck_graph.u32_buffer("name_scan_total")?;
         let name_spans = state.typecheck_graph.u32_buffer("name_spans")?;
+        let graph_buffers = [
+            state.typecheck_graph.u32_buffer("type_expr_ref_tag")?,
+            state.typecheck_graph.u32_buffer("type_expr_ref_payload")?,
+            state
+                .typecheck_graph
+                .u32_buffer("type_generic_param_slot_by_token")?,
+            state
+                .typecheck_graph
+                .u32_buffer("type_const_param_slot_by_token")?,
+            state
+                .typecheck_graph
+                .u32_buffer("generic_param_count_out")?,
+            state
+                .typecheck_graph
+                .u32_buffer("generic_param_owner_token")?,
+            state.typecheck_graph.u32_buffer("generic_param_name_id")?,
+            state.typecheck_graph.u32_buffer("generic_param_token")?,
+            state.typecheck_graph.u32_buffer("generic_param_kind")?,
+            state
+                .typecheck_graph
+                .u32_buffer("type_decl_generic_param_count_by_owner_token")?,
+            state
+                .typecheck_graph
+                .u32_buffer("type_decl_const_param_count_by_owner_token")?,
+        ];
         let inputs = GpuSemanticInterfaceIdentityBuffers {
             name_count_out: &name_scan_total,
             name_spans: &name_spans,
@@ -207,12 +232,10 @@ impl GpuTypeChecker {
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
             public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
-            type_expr_ref_tag: &state.typecheck_graph.type_expr_ref_tag,
-            type_expr_ref_payload: &state.typecheck_graph.type_expr_ref_payload,
-            type_generic_param_slot_by_token: &state
-                .typecheck_graph
-                .type_generic_param_slot_by_token,
-            type_const_param_slot_by_token: &state.typecheck_graph.type_const_param_slot_by_token,
+            type_expr_ref_tag: &graph_buffers[0],
+            type_expr_ref_payload: &graph_buffers[1],
+            type_generic_param_slot_by_token: &graph_buffers[2],
+            type_const_param_slot_by_token: &graph_buffers[3],
             type_instance_decl_token: &state.type_instance_decl_token,
             type_instance_external_canonical: &state.type_instance_external_canonical,
             dependency_type_count: module_path
@@ -228,17 +251,13 @@ impl GpuTypeChecker {
             path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
-            generic_param_count_out: &state.typecheck_graph.generic_param_count_out,
-            generic_param_owner_token: &state.typecheck_graph.generic_param_owner_token,
-            generic_param_name_id: &state.typecheck_graph.generic_param_name_id,
-            generic_param_token: &state.typecheck_graph.generic_param_token,
-            generic_param_kind: &state.typecheck_graph.generic_param_kind,
-            type_decl_generic_param_count_by_owner_token: &state
-                .typecheck_graph
-                .type_decl_generic_param_count_by_owner_token,
-            type_decl_const_param_count_by_owner_token: &state
-                .typecheck_graph
-                .type_decl_const_param_count_by_owner_token,
+            generic_param_count_out: &graph_buffers[4],
+            generic_param_owner_token: &graph_buffers[5],
+            generic_param_name_id: &graph_buffers[6],
+            generic_param_token: &graph_buffers[7],
+            generic_param_kind: &graph_buffers[8],
+            type_decl_generic_param_count_by_owner_token: &graph_buffers[9],
+            type_decl_const_param_count_by_owner_token: &graph_buffers[10],
         };
         self.record_semantic_interface_from_buffers(
             device,
@@ -347,7 +366,10 @@ impl GpuTypeChecker {
             &[name_ref_count],
             wgpu::BufferUsages::STORAGE,
         );
-        let [tgsx, tgsy, _] = self.passes.counted_scan_local.thread_group_size;
+        let [tgsx, tgsy, _] = self
+            .passes
+            .kernel("scan/counted/00_local")
+            .thread_group_size;
         let (dispatch_x, dispatch_y, dispatch_z) = plan_workgroups(
             DispatchDim::D1,
             InputElements::Elements1D(name_ref_count.max(1)),
@@ -361,13 +383,13 @@ impl GpuTypeChecker {
         );
         let scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.name_scan",
-            NameScanParams {
+            PrefixScanParams {
                 n_items: name_ref_count,
                 n_blocks: scan_n_blocks,
                 scan_step: 0,
             },
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::Names,
             &scan_count,
@@ -402,13 +424,13 @@ impl GpuTypeChecker {
         );
         let module_scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.module_segment_scan",
-            NameScanParams {
+            PrefixScanParams {
                 n_items: module_capacity,
                 n_blocks: module_scan_n_blocks,
                 scan_step: 0,
             },
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::Modules,
             inputs.module_count_out,
@@ -483,7 +505,9 @@ impl GpuTypeChecker {
         let size_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check.interface.identity_sizes"),
-            &self.passes.interface_identity_sizes,
+            &self
+                .passes
+                .kernel("type_checker/interface/00_identity_sizes"),
             0,
             &[
                 ("gParams", size_params.as_entire_binding()),
@@ -552,7 +576,9 @@ impl GpuTypeChecker {
         let record_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check.interface.identity_records"),
-            &self.passes.interface_identity_records,
+            &self
+                .passes
+                .kernel("type_checker/interface/01_identity_records"),
             0,
             &[
                 ("gParams", record_params.as_entire_binding()),
@@ -663,7 +689,9 @@ impl GpuTypeChecker {
         let byte_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check.interface.identity_bytes"),
-            &self.passes.interface_identity_bytes,
+            &self
+                .passes
+                .kernel("type_checker/interface/02_identity_bytes"),
             0,
             &[
                 ("gParams", byte_params.as_entire_binding()),
@@ -733,7 +761,9 @@ impl GpuTypeChecker {
         module_scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_identity_sizes,
+            &self
+                .passes
+                .kernel("type_checker/interface/00_identity_sizes"),
             &size_bind_group,
             "type_check.interface.identity_sizes",
             identity_work_capacity,
@@ -741,14 +771,18 @@ impl GpuTypeChecker {
         scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_identity_records,
+            &self
+                .passes
+                .kernel("type_checker/interface/01_identity_records"),
             &record_bind_group,
             "type_check.interface.identity_records",
             identity_work_capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_identity_bytes,
+            &self
+                .passes
+                .kernel("type_checker/interface/02_identity_bytes"),
             &byte_bind_group,
             "type_check.interface.identity_bytes",
             name_ref_count,
@@ -1157,7 +1191,7 @@ impl GpuTypeChecker {
             member_capacity as usize,
             wgpu::BufferUsages::COPY_DST,
         );
-        let signature_scan_params = NameScanParams {
+        let signature_scan_params = PrefixScanParams {
             n_items: signature_capacity,
             n_blocks: signature_n_blocks,
             scan_step: 0,
@@ -1166,8 +1200,12 @@ impl GpuTypeChecker {
             DispatchDim::D1,
             InputElements::Elements1D(signature_capacity),
             [
-                self.passes.counted_scan_local.thread_group_size[0],
-                self.passes.counted_scan_local.thread_group_size[1],
+                self.passes
+                    .kernel("scan/counted/00_local")
+                    .thread_group_size[0],
+                self.passes
+                    .kernel("scan/counted/00_local")
+                    .thread_group_size[1],
                 1,
             ],
         )?;
@@ -1183,9 +1221,9 @@ impl GpuTypeChecker {
         );
         let signature_type_scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.signature.type_scan",
             signature_scan_params,
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::SignatureTypes,
             &signature_scan_count,
@@ -1197,9 +1235,9 @@ impl GpuTypeChecker {
         )?;
         let signature_edge_scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.signature.edge_scan",
             signature_scan_params,
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::SignatureEdges,
             &signature_scan_count,
@@ -1211,9 +1249,9 @@ impl GpuTypeChecker {
         )?;
         let member_scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.members.scan",
             signature_scan_params,
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::Members,
             &signature_scan_count,
@@ -1223,7 +1261,10 @@ impl GpuTypeChecker {
             &member_total,
             scan_scratch,
         )?;
-        let [tgsx, tgsy, _] = self.passes.counted_scan_local.thread_group_size;
+        let [tgsx, tgsy, _] = self
+            .passes
+            .kernel("scan/counted/00_local")
+            .thread_group_size;
         let (dispatch_x, dispatch_y, dispatch_z) = plan_workgroups(
             DispatchDim::D1,
             InputElements::Elements1D(capacity),
@@ -1235,16 +1276,16 @@ impl GpuTypeChecker {
             &[dispatch_x, dispatch_y, dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
-        let scan_params = NameScanParams {
+        let scan_params = PrefixScanParams {
             n_items: capacity,
             n_blocks,
             scan_step: 0,
         };
         let scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.type_topology.scan",
             scan_params,
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::TypeOrder,
             &scan_count,
@@ -1256,9 +1297,9 @@ impl GpuTypeChecker {
         )?;
         let edge_scan = graph_prefix_scan(
             device,
+            &self.passes,
             "type_check.interface.type_topology.edge_scan",
             scan_params,
-            (&self.passes).into(),
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::TypeEdges,
             &scan_count,
@@ -1275,7 +1316,9 @@ impl GpuTypeChecker {
             };
         let init = bind(
             "type_check.interface.type_topology.init",
-            &self.passes.interface_type_topology_init,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/00_init"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_parent", parent.as_entire_binding()),
@@ -1292,7 +1335,9 @@ impl GpuTypeChecker {
         )?;
         let attach_unary = bind(
             "type_check.interface.type_topology.attach_unary",
-            &self.passes.interface_type_topology_attach_unary,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/01_attach_unary"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1322,7 +1367,9 @@ impl GpuTypeChecker {
         )?;
         let seed_declarations = bind(
             "type_check.interface.type_topology.seed_declarations",
-            &self.passes.interface_type_topology_seed_declarations,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/02_seed_declarations"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1363,7 +1410,9 @@ impl GpuTypeChecker {
         )?;
         let seed_params = bind(
             "type_check.interface.type_topology.seed_params",
-            &self.passes.interface_type_topology_seed_params,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/02b_seed_params"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1387,7 +1436,9 @@ impl GpuTypeChecker {
         )?;
         let seed_fields = bind(
             "type_check.interface.type_topology.seed_fields",
-            &self.passes.interface_type_topology_seed_fields,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/02c_seed_fields"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1411,7 +1462,9 @@ impl GpuTypeChecker {
         )?;
         let seed_variants = bind(
             "type_check.interface.type_topology.seed_variants",
-            &self.passes.interface_type_topology_seed_variants,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/02d_seed_variants"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1447,7 +1500,9 @@ impl GpuTypeChecker {
         )?;
         let root_init = bind(
             "type_check.interface.type_topology.root_init",
-            &self.passes.interface_type_topology_root_init,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/03_root_init"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1465,7 +1520,9 @@ impl GpuTypeChecker {
         )?;
         let root_step_ab = bind(
             "type_check.interface.type_topology.root_step_ab",
-            &self.passes.interface_type_topology_root_step,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/04_root_step"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1488,7 +1545,9 @@ impl GpuTypeChecker {
         )?;
         let root_step_ba = bind(
             "type_check.interface.type_topology.root_step_ba",
-            &self.passes.interface_type_topology_root_step,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/04_root_step"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1517,7 +1576,9 @@ impl GpuTypeChecker {
         };
         let mark_reverse = bind(
             "type_check.interface.type_topology.mark_reverse",
-            &self.passes.interface_type_topology_mark_reverse,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/05_mark_reverse"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1538,7 +1599,9 @@ impl GpuTypeChecker {
         )?;
         let scatter = bind(
             "type_check.interface.type_topology.scatter",
-            &self.passes.interface_type_topology_scatter,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/06_scatter"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1558,7 +1621,9 @@ impl GpuTypeChecker {
         )?;
         let edge_counts = bind(
             "type_check.interface.type_topology.edge_counts",
-            &self.passes.interface_type_topology_edge_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/08_edge_counts"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -1577,7 +1642,9 @@ impl GpuTypeChecker {
         )?;
         let edge_scatter = bind(
             "type_check.interface.type_topology.edge_scatter",
-            &self.passes.interface_type_topology_edge_scatter,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/09_edge_scatter"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -1605,7 +1672,9 @@ impl GpuTypeChecker {
         )?;
         let resolve_local_decl = bind(
             "type_check.interface.type_topology.resolve_local_decl",
-            &self.passes.interface_type_topology_resolve_local_decl,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/10_resolve_local_decl"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1645,7 +1714,9 @@ impl GpuTypeChecker {
         )?;
         let classify_path = bind(
             "type_check.interface.type_topology.classify_path",
-            &self.passes.interface_type_topology_classify_path,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/11_classify_path"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1694,7 +1765,9 @@ impl GpuTypeChecker {
         )?;
         let type_records = bind(
             "type_check.interface.type_topology.type_records",
-            &self.passes.interface_type_topology_type_records,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/12_type_records"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -1718,7 +1791,9 @@ impl GpuTypeChecker {
         )?;
         let array_lengths = bind(
             "type_check.interface.type_topology.array_lengths",
-            &self.passes.interface_type_topology_array_lengths,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/13_array_lengths"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -1737,7 +1812,9 @@ impl GpuTypeChecker {
         )?;
         let signature_flags = bind(
             "type_check.interface.signature.flags",
-            &self.passes.interface_signature_flags,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/00_flags"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1783,7 +1860,9 @@ impl GpuTypeChecker {
         )?;
         let signature_totals = bind(
             "type_check.interface.signature.totals",
-            &self.passes.interface_signature_totals,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/01_totals"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -1809,7 +1888,9 @@ impl GpuTypeChecker {
         )?;
         let signature_direct_types = bind(
             "type_check.interface.signature.direct_types",
-            &self.passes.interface_signature_direct_types,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/01b_direct_types"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1837,7 +1918,9 @@ impl GpuTypeChecker {
         )?;
         let signature_synthetic_types = bind(
             "type_check.interface.signature.synthetic_types",
-            &self.passes.interface_signature_synthetic_types,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/01c_synthetic_types"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1877,7 +1960,9 @@ impl GpuTypeChecker {
         )?;
         let signature_param_edges = bind(
             "type_check.interface.signature.param_edges",
-            &self.passes.interface_signature_param_edges,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/02_param_edges"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1912,7 +1997,9 @@ impl GpuTypeChecker {
         )?;
         let signature_return_edges = bind(
             "type_check.interface.signature.return_edges",
-            &self.passes.interface_signature_return_edges,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/03_return_edges"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -1964,7 +2051,9 @@ impl GpuTypeChecker {
         )?;
         let signature_variant_payload_edges = bind(
             "type_check.interface.signature.variant_payload_edges",
-            &self.passes.interface_signature_variant_payload_edges,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/02b_variant_payload_edges"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2011,7 +2100,9 @@ impl GpuTypeChecker {
         )?;
         let members_variant_counts = bind(
             "type_check.interface.members.variant_counts",
-            &self.passes.interface_members_variant_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/00_variant_counts"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2036,7 +2127,9 @@ impl GpuTypeChecker {
         )?;
         let members_generic_counts = bind(
             "type_check.interface.members.generic_counts",
-            &self.passes.interface_members_generic_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/00b_generic_counts"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2083,7 +2176,9 @@ impl GpuTypeChecker {
         )?;
         let members_counts = bind(
             "type_check.interface.members.counts",
-            &self.passes.interface_members_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/01_counts"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2126,7 +2221,9 @@ impl GpuTypeChecker {
         )?;
         let members_scatter_hir = bind(
             "type_check.interface.members.scatter_hir",
-            &self.passes.interface_members_scatter_hir,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/02_scatter_hir"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2191,7 +2288,9 @@ impl GpuTypeChecker {
         )?;
         let members_scatter_generic = bind(
             "type_check.interface.members.scatter_generic",
-            &self.passes.interface_members_scatter_generic,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/03_scatter_generic"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -2253,7 +2352,9 @@ impl GpuTypeChecker {
         )?;
         let members_normalize_types = bind(
             "type_check.interface.members.normalize_types",
-            &self.passes.interface_members_normalize_types,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/04_normalize_types"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -2275,7 +2376,9 @@ impl GpuTypeChecker {
         )?;
         let validate = bind(
             "type_check.interface.type_topology.validate",
-            &self.passes.interface_type_topology_validate,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/07_validate"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("interface_type_count", count.as_entire_binding()),
@@ -2297,36 +2400,48 @@ impl GpuTypeChecker {
         record_typecheck_clear_buffer(encoder, &member_written, 0, None);
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_init,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/00_init"),
             &init,
             "type_check.interface.type_topology.init",
             capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_attach_unary,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/01_attach_unary"),
             &attach_unary,
             "type_check.interface.type_topology.attach_unary",
             capacity,
         )?;
         for (pass, group, label) in [
             (
-                &self.passes.interface_type_topology_seed_declarations,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/02_seed_declarations"),
                 &seed_declarations,
                 "type_check.interface.type_topology.seed_declarations",
             ),
             (
-                &self.passes.interface_type_topology_seed_params,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/02b_seed_params"),
                 &seed_params,
                 "type_check.interface.type_topology.seed_params",
             ),
             (
-                &self.passes.interface_type_topology_seed_fields,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/02c_seed_fields"),
                 &seed_fields,
                 "type_check.interface.type_topology.seed_fields",
             ),
             (
-                &self.passes.interface_type_topology_seed_variants,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/02d_seed_variants"),
                 &seed_variants,
                 "type_check.interface.type_topology.seed_variants",
             ),
@@ -2335,7 +2450,9 @@ impl GpuTypeChecker {
         }
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_root_init,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/03_root_init"),
             &root_init,
             "type_check.interface.type_topology.root_init",
             capacity,
@@ -2348,7 +2465,9 @@ impl GpuTypeChecker {
             };
             record_compute(
                 encoder,
-                &self.passes.interface_type_topology_root_step,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/04_root_step"),
                 group,
                 "type_check.interface.type_topology.root_step",
                 capacity,
@@ -2356,7 +2475,9 @@ impl GpuTypeChecker {
         }
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_mark_reverse,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/05_mark_reverse"),
             &mark_reverse,
             "type_check.interface.type_topology.mark_reverse",
             capacity,
@@ -2364,14 +2485,18 @@ impl GpuTypeChecker {
         scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_scatter,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/06_scatter"),
             &scatter,
             "type_check.interface.type_topology.scatter",
             capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_edge_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/08_edge_counts"),
             &edge_counts,
             "type_check.interface.type_topology.edge_counts",
             capacity,
@@ -2379,29 +2504,39 @@ impl GpuTypeChecker {
         edge_scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_edge_scatter,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/09_edge_scatter"),
             &edge_scatter,
             "type_check.interface.type_topology.edge_scatter",
             capacity,
         )?;
         for (pass, group, label) in [
             (
-                &self.passes.interface_type_topology_resolve_local_decl,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/10_resolve_local_decl"),
                 &resolve_local_decl,
                 "type_check.interface.type_topology.resolve_local_decl",
             ),
             (
-                &self.passes.interface_type_topology_classify_path,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/11_classify_path"),
                 &classify_path,
                 "type_check.interface.type_topology.classify_path",
             ),
             (
-                &self.passes.interface_type_topology_type_records,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/12_type_records"),
                 &type_records,
                 "type_check.interface.type_topology.type_records",
             ),
             (
-                &self.passes.interface_type_topology_array_lengths,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/type_topology/13_array_lengths"),
                 &array_lengths,
                 "type_check.interface.type_topology.array_lengths",
             ),
@@ -2410,14 +2545,18 @@ impl GpuTypeChecker {
         }
         record_compute(
             encoder,
-            &self.passes.interface_type_topology_validate,
+            &self
+                .passes
+                .kernel("type_checker/interface/type_topology/07_validate"),
             &validate,
             "type_check.interface.type_topology.validate",
             capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_signature_flags,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/00_flags"),
             &signature_flags,
             "type_check.interface.signature.flags",
             signature_capacity,
@@ -2426,38 +2565,50 @@ impl GpuTypeChecker {
         signature_edge_scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_signature_totals,
+            &self
+                .passes
+                .kernel("type_checker/interface/signature/01_totals"),
             &signature_totals,
             "type_check.interface.signature.totals",
             1,
         )?;
         for (pass, group, label, work) in [
             (
-                &self.passes.interface_signature_direct_types,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/signature/01b_direct_types"),
                 &signature_direct_types,
                 "type_check.interface.signature.direct_types",
                 signature_capacity,
             ),
             (
-                &self.passes.interface_signature_synthetic_types,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/signature/01c_synthetic_types"),
                 &signature_synthetic_types,
                 "type_check.interface.signature.synthetic_types",
                 signature_capacity,
             ),
             (
-                &self.passes.interface_signature_param_edges,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/signature/02_param_edges"),
                 &signature_param_edges,
                 "type_check.interface.signature.param_edges",
                 capacity,
             ),
             (
-                &self.passes.interface_signature_variant_payload_edges,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/signature/02b_variant_payload_edges"),
                 &signature_variant_payload_edges,
                 "type_check.interface.signature.variant_payload_edges",
                 capacity,
             ),
             (
-                &self.passes.interface_signature_return_edges,
+                &self
+                    .passes
+                    .kernel("type_checker/interface/signature/03_return_edges"),
                 &signature_return_edges,
                 "type_check.interface.signature.return_edges",
                 signature_capacity,
@@ -2467,21 +2618,27 @@ impl GpuTypeChecker {
         }
         record_compute(
             encoder,
-            &self.passes.interface_members_variant_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/00_variant_counts"),
             &members_variant_counts,
             "type_check.interface.members.variant_counts",
             capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_members_generic_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/00b_generic_counts"),
             &members_generic_counts,
             "type_check.interface.members.generic_counts",
             token_capacity.max(1),
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_members_counts,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/01_counts"),
             &members_counts,
             "type_check.interface.members.counts",
             signature_capacity,
@@ -2489,21 +2646,27 @@ impl GpuTypeChecker {
         member_scan.record(encoder)?;
         record_compute(
             encoder,
-            &self.passes.interface_members_scatter_hir,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/02_scatter_hir"),
             &members_scatter_hir,
             "type_check.interface.members.scatter_hir",
             capacity,
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_members_scatter_generic,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/03_scatter_generic"),
             &members_scatter_generic,
             "type_check.interface.members.scatter_generic",
             token_capacity.max(1),
         )?;
         record_compute(
             encoder,
-            &self.passes.interface_members_normalize_types,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/04_normalize_types"),
             &members_normalize_types,
             "type_check.interface.members.normalize_types",
             capacity,

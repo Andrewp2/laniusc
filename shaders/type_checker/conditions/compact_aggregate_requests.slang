@@ -16,6 +16,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -46,6 +47,8 @@ static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
@@ -53,6 +56,7 @@ static const uint HIR_STMT_ASSIGN = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
@@ -102,6 +106,20 @@ void expression_ref(uint node, out uint tag, out uint payload)
     if (!valid_hir(node)) return;
     tag = semantic_expr_ref_tag_by_hir[node];
     payload = semantic_expr_ref_payload_by_hir[node];
+}
+
+bool resolved_dependency_call(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_CALL_EXPR)
+        return false;
+    uint callee = compact_hir_payload[node].a;
+    if (!valid_hir(callee))
+        return false;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token)) token = core.token_start;
+    return valid_token(token) && call_dependency_decl[token] != INVALID;
 }
 
 bool same_generic_slot(uint lhs, uint rhs, bool is_const)
@@ -244,6 +262,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (valid_hir(stmt.b)) error_token = compact_hir_core[stmt.b].token_start;
     }
     else
+        return;
+
+    // Persisted canonical return types are compared with local instances by
+    // the dependency call-result relation after generic claims are resolved.
+    // This pass remains authoritative for every other representation pair.
+    if (stmt.a == HIR_STMT_RETURN &&
+        actual_tag == TYPE_REF_EXTERNAL_CANONICAL &&
+        resolved_dependency_call(stmt.b))
         return;
 
     validate_refs(

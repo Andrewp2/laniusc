@@ -19,8 +19,9 @@ impl VisibleDeclSort {
         resources: &HashMap<String, wgpu::BindingResource<'_>>,
         capacity: u32,
         n_blocks: u32,
-        dispatch_args: &wgpu::Buffer,
     ) -> Result<Self> {
+        let dispatch_args =
+            buffer_from_resources(resources, "hir_visible_decl_key_radix_dispatch_args")?;
         let capacity = capacity.max(1);
         let radix_bytes = visible_decl_key_radix_bytes(capacity);
         let params = |key_step| ModuleKeyRadixParams {
@@ -37,7 +38,7 @@ impl VisibleDeclSort {
         let dispatch = reflected_bind_group_with_overrides(
             device,
             "type_check.visible.declarations.dispatch",
-            &passes.names_radix_dispatch_args,
+            &passes.kernel("type_checker/names/radix/dispatch_args"),
             resources,
             &[
                 ("gParams", dispatch_params.as_entire_binding()),
@@ -51,33 +52,25 @@ impl VisibleDeclSort {
         let seed = reflected_bind_group_with_overrides(
             device,
             "type_check.visible.declarations.seed",
-            &passes.visible_seed_hir_decl_order,
+            &passes.kernel("type_checker/visible/03d_seed_hir_decl_order"),
             resources,
             &[("gParams", dispatch_params.as_entire_binding())],
         )?;
         let sort = RadixSortOperation::new(
             device,
+            passes,
             resources,
-            RadixSortPlan {
-                label: compiler_graph::VISIBLE_RADIX_SORT.label(),
+            compiler_graph::VISIBLE_RADIX_SORT.plan(
                 capacity,
-                small_capacity: VISIBLE_DECL_SMALL_SORT_CAPACITY,
-                steps: visible_decl_key_radix_steps(capacity),
-                passes: RadixSortPasses {
-                    small: Some(&passes.visible_sort_hir_decl_keys_small),
-                    histogram: &passes.visible_sort_hir_decl_keys,
-                    bucket_prefix: &passes.names_radix_bucket_prefix,
-                    bucket_bases: &passes.names_radix_bucket_bases,
-                    scatter: &passes.visible_sort_hir_decl_keys_scatter,
-                },
-                dispatch: RadixSortDispatch {
+                VISIBLE_DECL_SMALL_SORT_CAPACITY,
+                visible_decl_key_radix_steps(capacity),
+                RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
                     rows: RadixDispatchDomain::Indirect(dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-                resources: compiler_graph::VISIBLE_RADIX_SORT.resources,
-            },
+            ),
             params,
         )?;
 
@@ -97,14 +90,14 @@ impl VisibleDeclSort {
     ) -> Result<()> {
         record_compute(
             encoder,
-            &passes.names_radix_dispatch_args,
+            &passes.kernel("type_checker/names/radix/dispatch_args"),
             &self.dispatch,
             "type_check.visible.hir_decl_key_radix_dispatch_args",
             1,
         )?;
         record_compute_indirect(
             encoder,
-            &passes.visible_seed_hir_decl_order,
+            &passes.kernel("type_checker/visible/03d_seed_hir_decl_order"),
             &self.seed,
             "type_check.visible.seed_hir_decl_order",
             &self.dispatch_args,

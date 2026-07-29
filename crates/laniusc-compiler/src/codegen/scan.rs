@@ -87,26 +87,10 @@ impl GpuResidentExclusiveScan {
         let block_prefix = alias(contract.block_prefix, blocks)?;
         let hierarchy = alias(contract.hierarchy, blocks)?;
         let passes = ScanPasses {
-            local: load(
-                device,
-                "lir.scan.local",
-                "type_checker/counted/scan/00_local",
-            )?,
-            up: load(
-                device,
-                "lir.scan.up",
-                "type_checker/counted/scan/01_hierarchy_up",
-            )?,
-            down: load(
-                device,
-                "lir.scan.down",
-                "type_checker/counted/scan/02_hierarchy_down",
-            )?,
-            apply: load(
-                device,
-                "lir.scan.apply",
-                "type_checker/counted/scan/02_apply",
-            )?,
+            local: load(device, "lir.scan.local", "scan/counted/00_local")?,
+            up: load(device, "lir.scan.up", "scan/counted/01_hierarchy_up")?,
+            down: load(device, "lir.scan.down", "scan/counted/02_hierarchy_down")?,
+            apply: load(device, "lir.scan.apply", "scan/counted/02_apply")?,
         };
         let params = uniform_from_val(
             device,

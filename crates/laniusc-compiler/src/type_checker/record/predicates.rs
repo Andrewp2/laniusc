@@ -11,7 +11,7 @@ pub(in crate::type_checker) fn record_predicate_method_contract_keys_with_passes
     groups.method_param_keys.record(passes, encoder)?;
     record_compute_indirect(
         encoder,
-        &passes.predicates_build_method_owner_ranges,
+        &passes.kernel("type_checker/predicates/01e_build_method_owner_ranges"),
         &groups.build_method_contract_owner_ranges,
         "type_check.predicates.build_method_contract_owner_ranges",
         predicate_active_dispatch_args,

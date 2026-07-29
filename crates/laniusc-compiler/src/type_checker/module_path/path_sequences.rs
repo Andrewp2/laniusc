@@ -23,6 +23,7 @@ pub(in crate::type_checker) fn create_path_sequences(
     device: &wgpu::Device,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
+    resources: &ResourceMap<'_>,
 ) -> Result<PathSequences> {
     let segment_capacity = inputs.token_capacity.max(1);
     let round_count = u32::BITS - segment_capacity.saturating_sub(1).leading_zeros();
@@ -37,13 +38,11 @@ pub(in crate::type_checker) fn create_path_sequences(
         },
     );
 
-    let clear_state = bind_group::create_bind_group_from_bindings(
+    let clear_state = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01a_clear_path_state"),
-        &passes.modules_clear_path_state,
-        0,
+        "type_check_modules_01a_clear_path_state",
+        &passes.kernel("type_checker/modules/01a_clear_path_state"),
         &[
-            ("gParams", inputs.params.as_entire_binding()),
             (
                 "path_id_by_owner_hir",
                 buffers.path_id_by_owner_hir.as_entire_binding(),
@@ -54,11 +53,10 @@ pub(in crate::type_checker) fn create_path_sequences(
             ),
         ],
     )?;
-    let dispatch_args = bind_group::create_bind_group_from_bindings(
+    let dispatch_args = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01c_path_prefix_dispatch_args"),
-        &passes.modules_path_prefix_dispatch_args,
-        0,
+        "type_check_modules_01c_path_prefix_dispatch_args",
+        &passes.kernel("type_checker/modules/01c_path_prefix_dispatch_args"),
         &[
             ("gParams", dispatch_params.as_entire_binding()),
             (
@@ -97,11 +95,10 @@ pub(in crate::type_checker) fn create_path_sequences(
         } else {
             (&buffers.path_prefix_id_b, &buffers.path_prefix_id_a)
         };
-        let clear = bind_group::create_bind_group_from_bindings(
+        let clear = resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check_modules_01c_path_prefix_table_clear"),
-            &passes.modules_path_prefix_table_clear,
-            0,
+            "type_check_modules_01c_path_prefix_table_clear",
+            &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -114,11 +111,10 @@ pub(in crate::type_checker) fn create_path_sequences(
                 ),
             ],
         )?;
-        let insert = bind_group::create_bind_group_from_bindings(
+        let insert = resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check_modules_01c_path_prefix_table_insert"),
-            &passes.modules_path_prefix_table_insert,
-            0,
+            "type_check_modules_01c_path_prefix_table_insert",
+            &passes.kernel("type_checker/modules/01c_path_prefix_table_insert"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -136,11 +132,10 @@ pub(in crate::type_checker) fn create_path_sequences(
                 ),
             ],
         )?;
-        let lookup = bind_group::create_bind_group_from_bindings(
+        let lookup = resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check_modules_01c_path_prefix_table_lookup"),
-            &passes.modules_path_prefix_table_lookup,
-            0,
+            "type_check_modules_01c_path_prefix_table_lookup",
+            &passes.kernel("type_checker/modules/01c_path_prefix_table_lookup"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -157,7 +152,6 @@ pub(in crate::type_checker) fn create_path_sequences(
                     buffers.path_prefix_table_state.as_entire_binding(),
                 ),
                 ("path_prefix_id_out", write_ids.as_entire_binding()),
-                ("status", inputs.status_buf.as_entire_binding()),
             ],
         )?;
         rounds.push(PathPrefixRound {
@@ -168,11 +162,10 @@ pub(in crate::type_checker) fn create_path_sequences(
         });
     }
 
-    let finalize = bind_group::create_bind_group_from_bindings(
+    let finalize = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01c_path_prefix_finalize"),
-        &passes.modules_path_prefix_finalize,
-        0,
+        "type_check_modules_01c_path_prefix_finalize",
+        &passes.kernel("type_checker/modules/01c_path_prefix_finalize"),
         &[
             ("gParams", dispatch_params.as_entire_binding()),
             (

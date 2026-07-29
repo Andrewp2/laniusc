@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const UNKNOWN: &str = "unknown";
 const ARTIFACT_ROOT: &str = env!("LANIUS_SHADER_ARTIFACT_ROOT");
@@ -6,6 +6,37 @@ const ARTIFACT_ROOT: &str = env!("LANIUS_SHADER_ARTIFACT_ROOT");
 /// Resolves a generated shader artifact path under the build-time artifact root.
 pub(crate) fn artifact_path(file: &str) -> PathBuf {
     PathBuf::from(ARTIFACT_ROOT).join(file)
+}
+
+/// Returns the stable keys of every compiled shader below `prefix`.
+///
+/// Shader discovery belongs to the generated artifact set, not to phase-local
+/// Rust pass structs.  Sorting makes daemon preparation deterministic even
+/// when the host filesystem enumerates artifacts in a different order.
+pub(crate) fn shader_keys(prefix: &str) -> std::io::Result<Vec<String>> {
+    fn visit(root: &Path, directory: &Path, keys: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                visit(root, &path, keys)?;
+            } else if path.extension().and_then(|extension| extension.to_str()) == Some("spv") {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("visited shader artifact is below its root");
+                let mut key = relative.to_string_lossy().replace('\\', "/");
+                key.truncate(key.len() - ".spv".len());
+                keys.push(key);
+            }
+        }
+        Ok(())
+    }
+
+    let root = PathBuf::from(ARTIFACT_ROOT);
+    let directory = root.join(prefix);
+    let mut keys = Vec::new();
+    visit(&root, &directory, &mut keys)?;
+    keys.sort_unstable();
+    Ok(keys)
 }
 
 /// Returns the digest recorded for the current shader artifact set.

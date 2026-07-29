@@ -25,6 +25,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
 StructuredBuffer<uint> call_generic_slot_type;
@@ -267,6 +268,7 @@ void validate_required_generic(uint requirement_i)
 
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) ||
+        call_dependency_decl[callee_i] != INVALID ||
         method_call_name_id[callee_i] != INVALID ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;

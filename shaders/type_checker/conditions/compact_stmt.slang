@@ -19,6 +19,7 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -31,6 +32,8 @@ static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
@@ -43,6 +46,7 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint SCALAR_TYPE_SHIFT = 28u;
@@ -95,6 +99,20 @@ uint scalar_decl_type(uint token)
 uint expression_token(uint node)
 {
     return valid_hir(node) ? compact_hir_core[node].token_start : INVALID;
+}
+
+bool resolved_dependency_call(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_CALL_EXPR)
+        return false;
+    uint callee = compact_hir_payload[node].a;
+    if (!valid_hir(callee))
+        return false;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token)) token = core.token_start;
+    return valid_token(token) && call_dependency_decl[token] != INVALID;
 }
 
 bool expression_type_ref(uint node, out uint tag, out uint payload)
@@ -162,6 +180,9 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
         bool actual_ref_known = known_scalar(actual_scalar) ||
                                 expression_type_ref(
                                     stmt.b, actual_ref_tag, actual_ref_payload);
+        if (actual_ref_tag == TYPE_REF_EXTERNAL_CANONICAL &&
+            resolved_dependency_call(stmt.b))
+            return;
         bool expected_ref_known = expected_ref_tag != TYPE_REF_INVALID ||
                                   known_scalar(expected);
         bool actual_is_instance = !known_scalar(actual_scalar) &&

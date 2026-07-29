@@ -203,22 +203,16 @@ impl SemanticPasses {
                 "codegen/lir/semantic/execution_rank_step",
             )?,
             count: load("lir.semantic.count", "codegen/lir/semantic/count")?,
-            scan_local: load(
-                "lir.semantic.scan.local",
-                "type_checker/counted/scan/00_local",
-            )?,
+            scan_local: load("lir.semantic.scan.local", "scan/counted/00_local")?,
             scan_up: load(
                 "lir.semantic.scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             )?,
             scan_down: load(
                 "lir.semantic.scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             )?,
-            scan_apply: load(
-                "lir.semantic.scan.apply",
-                "type_checker/counted/scan/02_apply",
-            )?,
+            scan_apply: load("lir.semantic.scan.apply", "scan/counted/02_apply")?,
             page_plan: load("lir.semantic.pages.plan", "codegen/lir/semantic/page_plan")?,
             scatter: load("lir.semantic.scatter", "codegen/lir/semantic/scatter")?,
             schedule_init: load(
@@ -3572,28 +3566,28 @@ mod tests {
             &gpu.device,
             "test.schedule.scan.local",
             "main",
-            "type_checker/counted/scan/00_local",
+            "scan/counted/00_local",
         )
         .unwrap();
         let scan_up_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.scan.up",
             "main",
-            "type_checker/counted/scan/01_hierarchy_up",
+            "scan/counted/01_hierarchy_up",
         )
         .unwrap();
         let scan_down_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.scan.down",
             "main",
-            "type_checker/counted/scan/02_hierarchy_down",
+            "scan/counted/02_hierarchy_down",
         )
         .unwrap();
         let scan_apply_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.scan.apply",
             "main",
-            "type_checker/counted/scan/02_apply",
+            "scan/counted/02_apply",
         )
         .unwrap();
         let slot_group = make_group(

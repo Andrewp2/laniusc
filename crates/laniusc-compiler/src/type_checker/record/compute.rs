@@ -2,22 +2,6 @@
 
 use super::*;
 
-thread_local! {
-    static RECORDED_COMPUTE_PASS_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-}
-
-pub(in crate::type_checker) fn reset_recorded_compute_pass_count() {
-    RECORDED_COMPUTE_PASS_COUNT.set(0);
-}
-
-pub(in crate::type_checker) fn recorded_compute_pass_count() -> u32 {
-    RECORDED_COMPUTE_PASS_COUNT.get()
-}
-
-pub(in crate::type_checker) fn count_recorded_compute_pass() {
-    RECORDED_COMPUTE_PASS_COUNT.set(RECORDED_COMPUTE_PASS_COUNT.get().saturating_add(1));
-}
-
 pub(in crate::type_checker) fn record_typecheck_clear_buffer(
     encoder: &mut wgpu::CommandEncoder,
     buffer: &wgpu::Buffer,

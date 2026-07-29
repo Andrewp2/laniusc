@@ -48,7 +48,9 @@ impl GpuTypeChecker {
         let bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check_modules_00a_count_record_candidates"),
-            &self.passes.modules_count_record_candidates,
+            &self
+                .passes
+                .kernel("type_checker/modules/00a_count_record_candidates"),
             0,
             &[
                 ("gParams", self.params_buf.as_entire_binding()),
@@ -82,7 +84,9 @@ impl GpuTypeChecker {
         )?;
         record_compute(
             encoder,
-            &self.passes.modules_count_record_candidates,
+            &self
+                .passes
+                .kernel("type_checker/modules/00a_count_record_candidates"),
             &bind_group,
             "type_check.modules.count_record_candidates",
             parse_bufs.tree_capacity,

@@ -76,7 +76,7 @@ pub(in crate::type_checker) fn record_call_erase_generic_params_with_passes(
 ) -> Result<()> {
     record_compute(
         encoder,
-        &passes.calls_erase_generic_params,
+        &passes.kernel("type_checker/calls/04_erase_generic_params"),
         &groups.erase_generic_params,
         "type_check.calls.erase_generic_params",
         token_capacity

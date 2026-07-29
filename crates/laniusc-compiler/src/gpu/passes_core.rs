@@ -24,6 +24,25 @@ use crate::reflection::{
 
 static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 
+thread_local! {
+    static RECORDED_COMPUTE_PASS_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Resets the current thread's recorded compute-pass counter.
+pub(crate) fn reset_recorded_compute_pass_count() {
+    RECORDED_COMPUTE_PASS_COUNT.set(0);
+}
+
+/// Returns the number of compute passes recorded on the current thread.
+pub(crate) fn recorded_compute_pass_count() -> u32 {
+    RECORDED_COMPUTE_PASS_COUNT.get()
+}
+
+/// Counts one logical compute-pass recording operation.
+pub(crate) fn count_recorded_compute_pass() {
+    RECORDED_COMPUTE_PASS_COUNT.set(RECORDED_COMPUTE_PASS_COUNT.get().saturating_add(1));
+}
+
 /// Returns the number of compute pipelines created by this process.
 ///
 /// The daemon uses this monotonic count to enforce that compilation jobs do
@@ -1406,16 +1425,21 @@ pub struct PassContext<'a, B, D> {
     pub buffers: &'a B,
     pub maybe_timer: &'a mut Option<&'a mut crate::gpu::timer::GpuTimer>,
     pub maybe_dbg: &'a mut Option<&'a mut D>,
-    /// Optional bind group cache: when present, record_pass will reuse cached
-    /// bind groups keyed by shader id and set index, and populate it on miss.
+    /// Optional bind group cache. Entries are keyed by both kernel and logical
+    /// invocation, because one reflected kernel may bind different arrays at
+    /// different graph nodes.
     pub bg_cache: Option<&'a mut BindGroupCache>,
 }
 
 #[derive(Default)]
-/// Cache of reflected bind groups keyed by shader id.
+/// Cache of reflected bind groups keyed by kernel and logical invocation.
 pub struct BindGroupCache {
-    // Keyed by shader id (label) to its vector of bind groups (per set index)
+    // Each value contains one bind group per reflected descriptor set.
     map: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
+}
+
+fn bind_group_cache_key(shader_id: &str, invocation: &str) -> String {
+    format!("{shader_id}::invocation::{invocation}")
 }
 
 impl BindGroupCache {
@@ -1430,9 +1454,10 @@ impl BindGroupCache {
         self.map.clear();
     }
 
-    /// Removes cached bind groups for one shader id.
+    /// Removes every cached invocation of one shader kernel.
     pub fn remove(&mut self, shader_id: &str) {
-        self.map.remove(shader_id);
+        let prefix = format!("{shader_id}::");
+        self.map.retain(|key, _| !key.starts_with(&prefix));
     }
 
     /// Returns reflected bind groups for raw `PassData`, reusing them while the
@@ -1444,7 +1469,7 @@ impl BindGroupCache {
         pass: &PassData,
         resources: &HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error> {
-        let cache_key = format!("{}::raw::{label}", pass.shader_id);
+        let cache_key = bind_group_cache_key(&pass.shader_id, label);
         if let Some(groups) = self.map.get(&cache_key)
             && groups.len() == pass.bind_group_layouts.len()
         {
@@ -1482,9 +1507,10 @@ where
 {
     let pd = pass.data();
     let resources = pass.create_resource_map(buffers);
+    let cache_key = bind_group_cache_key(&pd.shader_id, P::NAME);
     let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
     if let Some(cache) = cache.as_ref()
-        && let Some(v) = cache.map.get(&pd.shader_id)
+        && let Some(v) = cache.map.get(&cache_key)
         && v.len() == pd.bind_group_layouts.len()
     {
         cached_entries = Some(v.clone());
@@ -1506,9 +1532,69 @@ where
         bind_groups.push(Arc::new(bg));
     }
     if let Some(cache) = cache {
-        cache.map.insert(pd.shader_id.clone(), bind_groups.clone());
+        cache.map.insert(cache_key, bind_groups.clone());
     }
     Ok(bind_groups)
+}
+
+/// Records one named invocation of a reflected kernel.
+///
+/// Kernel identity and invocation identity are deliberately separate: one
+/// compiled algorithm can appear at many graph nodes with different logical
+/// arrays. Reflection remains the binding-layout source of truth, while the
+/// invocation name supplies tracing and a safe bind-group cache key.
+pub(crate) fn record_reflected_compute(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    maybe_timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
+    cache: Option<&mut BindGroupCache>,
+    kernel: &PassData,
+    invocation: &'static str,
+    dim: DispatchDim,
+    input: InputElements,
+    resources: &HashMap<String, wgpu::BindingResource<'_>>,
+) -> Result<(), anyhow::Error> {
+    let validation = validation_scope(device, validation_scopes_enabled());
+    let bind_groups = if let Some(cache) = cache {
+        cache.reflected_for_pass_data(device, invocation, kernel, resources)?
+    } else {
+        kernel
+            .bind_group_layouts
+            .iter()
+            .enumerate()
+            .map(|(set_index, layout)| {
+                bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some(invocation),
+                    layout,
+                    &kernel.reflection,
+                    set_index,
+                    resources,
+                )
+                .map(Arc::new)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let [x, y, _] = kernel.thread_group_size;
+    let groups = plan_workgroups(dim, input, [x, y, 1])?;
+    if !defer_compute_direct_bind_groups(kernel, &bind_groups, groups) {
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(invocation),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&kernel.pipeline);
+        for (index, group) in bind_groups.iter().enumerate() {
+            compute.set_bind_group(index as u32, Some(group.as_ref()), &[]);
+        }
+        compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+    }
+    if let Some(timer) = maybe_timer.as_deref_mut() {
+        timer.stamp(encoder, invocation.to_owned());
+    }
+    if let Some(error) = pop_validation_scope(validation) {
+        return Err(anyhow!("validation in pass {invocation}: {error:?}"));
+    }
+    Ok(())
 }
 
 /// Records multiple compatible passes into one compute pass.

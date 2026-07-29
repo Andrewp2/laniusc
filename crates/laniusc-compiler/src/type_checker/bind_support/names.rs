@@ -1,92 +1,41 @@
 use super::super::*;
 
-/// Builds bind groups for compacting source lexemes into stable name ids.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
+/// Builds the reflected source-name schedule. All buffer relations come from
+/// the compiler graph; only capacity-dependent hash parameters are local.
+pub(in crate::type_checker) fn create_name_bind_groups(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
-    input: NameInput<'_>,
+    source_len: u32,
+    name_capacity: u32,
+    name_blocks: u32,
     resources: &ResourceMap<'_>,
 ) -> Result<NameBindGroups> {
-    let params = input.params;
-    let source_len = input.source_len;
-    let name_capacity = input.cap;
-    let name_n_blocks = input.name_blocks;
-    let token_buf = input.token_words;
-    let token_count_buf = input.token_count;
-    let source_buf = input.source_bytes;
-    let status_buf = input.status;
-    let name_lexeme_flag = input.lexemes.flag;
-    let name_lexeme_kind = input.lexemes.kind;
-    let name_lexeme_prefix = input.lexemes.prefix;
-    let name_scan_total = input.total;
-    let name_max_len = input.max_len;
-    let name_spans = input.spans;
-    let name_order_in = input.order_in;
-    let name_order_tmp = input.order_tmp;
-    let language_symbol_bytes = input.symbols.bytes;
-    let language_symbol_start = input.symbols.start;
-    let language_symbol_len = input.symbols.len;
-    let name_id_by_token = input.ids.by_token;
-    let language_name_id = input.ids.language;
-    let name_hash_table_a = input.hash.table_a;
-    let name_hash_table_b = input.hash.table_b;
-    let sorted_name_id = input.ids.sorted;
-    let name_id_by_input = input.ids.by_input;
-    let unique_name_count = input.ids.unique_count;
-
-    let mark = bind_group::create_bind_group_from_bindings(
+    let mark = reflected_bind_group_from_resources(
         device,
-        Some("type_check_names_00_mark_lexemes"),
-        &passes.names_mark_lexemes,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
-            ("token_count", token_count_buf.as_entire_binding()),
-            ("name_lexeme_flag", name_lexeme_flag.as_entire_binding()),
-            ("name_lexeme_kind", name_lexeme_kind.as_entire_binding()),
-        ],
-    )?;
-
-    let name_lexeme_scan = PrefixScanOperation::from_spec(
-        device,
-        passes.into(),
+        "type_check_names_00_mark_lexemes",
+        &passes.kernel("type_checker/names/00_mark_lexemes"),
         resources,
-        compiler_graph::NAMES_SCAN,
     )?;
+    let scan =
+        PrefixScanOperation::from_spec(device, passes, resources, compiler_graph::NAMES_SCAN)?;
 
-    let scatter = bind_group::create_bind_group_from_bindings(
+    let mut name_resources = resources.to_binding_map();
+    for (binding, resource) in [
+        ("name_order_in", "name_hash_lo"),
+        ("name_order_tmp", "name_hash_hi"),
+        ("name_count_out", "name_scan_total"),
+        ("name_max_len_out", "name_max_len"),
+    ] {
+        name_resources.insert(binding.into(), resources[resource].clone());
+    }
+    let scatter = reflected_bind_group_from_resources(
         device,
-        Some("type_check_names_01_scatter_lexemes"),
-        &passes.names_scatter_lexemes,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
-            ("token_count", token_count_buf.as_entire_binding()),
-            ("name_lexeme_flag", name_lexeme_flag.as_entire_binding()),
-            ("name_lexeme_kind", name_lexeme_kind.as_entire_binding()),
-            ("name_lexeme_prefix", name_lexeme_prefix.as_entire_binding()),
-            (
-                "language_symbol_start",
-                language_symbol_start.as_entire_binding(),
-            ),
-            (
-                "language_symbol_len",
-                language_symbol_len.as_entire_binding(),
-            ),
-            ("name_spans", name_spans.as_entire_binding()),
-            ("name_order_in", name_order_in.as_entire_binding()),
-            ("name_order_tmp", name_order_tmp.as_entire_binding()),
-            ("name_id_by_token", name_id_by_token.as_entire_binding()),
-            ("name_count_out", name_scan_total.as_entire_binding()),
-            ("name_max_len_out", name_max_len.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        "type_check_names_01_scatter_lexemes",
+        &passes.kernel("type_checker/names/01_scatter_lexemes"),
+        &name_resources,
     )?;
 
-    let hash_work_items = name_n_blocks.max(1).saturating_mul(NAME_RADIX_BUCKETS);
+    let hash_work_items = name_blocks.max(1).saturating_mul(NAME_RADIX_BUCKETS);
     let hash_params = uniform_from_val(
         device,
         "type_check.names.hash.params",
@@ -97,51 +46,27 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
             radix_byte_offset: 0,
         },
     );
-    let hash_bindings = [
-        ("gParams", hash_params.as_entire_binding()),
-        ("name_spans", name_spans.as_entire_binding()),
-        ("name_count_in", name_scan_total.as_entire_binding()),
-        ("source_bytes", source_buf.as_entire_binding()),
-        (
-            "language_symbol_bytes",
-            language_symbol_bytes.as_entire_binding(),
-        ),
-        ("name_hash_lo", name_order_in.as_entire_binding()),
-        ("name_hash_hi", name_order_tmp.as_entire_binding()),
-        ("name_hash_table_a", name_hash_table_a.as_entire_binding()),
-        ("name_hash_table_b", name_hash_table_b.as_entire_binding()),
-        ("status", status_buf.as_entire_binding()),
-        ("sorted_name_id", sorted_name_id.as_entire_binding()),
-        ("name_id_by_input", name_id_by_input.as_entire_binding()),
-        ("name_id_by_token", name_id_by_token.as_entire_binding()),
-        ("language_name_id", language_name_id.as_entire_binding()),
-        ("unique_name_count", unique_name_count.as_entire_binding()),
-    ];
-    let hash_prepare = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_names_hash_00_prepare"),
-        &passes.names_hash_prepare,
-        0,
-        &hash_bindings,
+    name_resources.insert("gParams".into(), hash_params.as_entire_binding());
+    name_resources.insert("name_count_in".into(), resources["name_scan_total"].clone());
+    let hash = |label, kernel| {
+        reflected_bind_group_from_resources(device, label, &passes.kernel(kernel), &name_resources)
+    };
+    let hash_prepare = hash(
+        "type_check_names_hash_00_prepare",
+        "type_checker/names/hash/00_prepare",
     )?;
-    let hash_insert = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_names_hash_01_insert"),
-        &passes.names_hash_insert,
-        0,
-        &hash_bindings,
+    let hash_insert = hash(
+        "type_check_names_hash_01_insert",
+        "type_checker/names/hash/01_insert",
     )?;
-    let hash_assign_ids = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_names_hash_02_assign_ids"),
-        &passes.names_hash_assign_ids,
-        0,
-        &hash_bindings,
+    let hash_assign_ids = hash(
+        "type_check_names_hash_02_assign_ids",
+        "type_checker/names/hash/02_assign_ids",
     )?;
 
     Ok(NameBindGroups {
         mark,
-        scan: name_lexeme_scan,
+        scan,
         scatter,
         hash_work_items,
         _hash_params: hash_params,

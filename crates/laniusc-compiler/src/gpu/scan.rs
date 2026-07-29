@@ -1,3 +1,26 @@
+use encase::ShaderType;
+
+/// Uniform parameters for a counted exclusive prefix scan.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(crate) struct PrefixScanParams {
+    pub(crate) n_items: u32,
+    pub(crate) n_blocks: u32,
+    pub(crate) scan_step: u32,
+}
+
+/// Uniform parameters for one level of a 256-way prefix-scan hierarchy.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(crate) struct PrefixScanHierarchyParams {
+    pub(crate) n_items: u32,
+    pub(crate) n_blocks: u32,
+    pub(crate) level_divisor: u32,
+    pub(crate) level_offset: u32,
+    pub(crate) parent_divisor: u32,
+    pub(crate) parent_offset: u32,
+}
+
 /// One ping/pong prefix-scan recording step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PingPongScanStep {

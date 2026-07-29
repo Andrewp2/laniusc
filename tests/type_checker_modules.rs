@@ -1809,14 +1809,15 @@ fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source:
 }
 
 #[test]
-fn resident_typechecker_uses_compact_hir_control_and_hir_scope_validation() {
+fn typechecker_graph_uses_compact_hir_control_and_hir_scope_validation() {
     let resident = include_str!("../crates/laniusc-compiler/src/type_checker/resident.rs");
-    let pass_loaders = include_str!("../crates/laniusc-compiler/src/type_checker/pass_loaders.rs");
+    let graph = include_str!("../crates/laniusc-compiler/src/type_checker/compiler_graph.rs");
 
     assert!(
-        resident.contains("&self.passes.conditions_compact_expr")
-            && resident.contains("&self.passes.scope_hir")
-            && !resident.contains("&self.passes.control_hir"),
+        resident.contains("bind_groups.conditions_compact_expr")
+            && resident.contains("kernel(\"type_checker/scope/hir\")")
+            && graph.contains("type_check.conditions.compact_expr")
+            && graph.contains("type_check.scope.hir"),
         "control validation should consume compact HIR while scope publication remains HIR-based"
     );
     assert!(
@@ -1826,10 +1827,10 @@ fn resident_typechecker_uses_compact_hir_control_and_hir_scope_validation() {
         "resident type checking must not fall back to lexer-token syntax validation"
     );
     assert!(
-        !pass_loaders.contains("type_check_control_hir")
-            && !pass_loaders.contains("type_check_control\", \"type_checker/control\"")
-            && !pass_loaders.contains("type_check_scope\", \"type_checker/scope\""),
-        "raw-HIR/token-derived control and token-derived scope shaders should not be loaded"
+        !graph.contains("type_check_control_hir")
+            && !graph.contains("type_check.control.raw_hir")
+            && !graph.contains("type_check.scope.tokens"),
+        "the compiler graph must not register raw-HIR/token-derived control or token-derived scope passes"
     );
 }
 

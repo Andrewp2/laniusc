@@ -146,22 +146,22 @@ impl GpuStableScheduleSorter {
             scan_local: load(
                 device,
                 "lir.target.schedule.scan.local",
-                "type_checker/counted/scan/00_local",
+                "scan/counted/00_local",
             )?,
             scan_up: load(
                 device,
                 "lir.target.schedule.scan.up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             )?,
             scan_down: load(
                 device,
                 "lir.target.schedule.scan.down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             )?,
             scan_apply: load(
                 device,
                 "lir.target.schedule.scan.apply",
-                "type_checker/counted/scan/02_apply",
+                "scan/counted/02_apply",
             )?,
             scatter: load(
                 device,

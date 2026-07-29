@@ -20,6 +20,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> method_call_name_id;
@@ -157,6 +158,7 @@ void apply_row_argument_call(uint call_node)
 
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) ||
+        call_dependency_decl[callee_i] != INVALID ||
         method_call_name_id[callee_i] != INVALID ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;

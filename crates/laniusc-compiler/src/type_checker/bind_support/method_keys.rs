@@ -15,16 +15,6 @@ pub(in crate::type_checker) struct MethodKeyPipeline {
     token_dispatch_args: wgpu::Buffer,
 }
 
-fn method_radix_passes(passes: &TypeCheckPasses) -> RadixSortPasses<'_> {
-    RadixSortPasses {
-        small: Some(&passes.methods_sort_keys_small),
-        histogram: &passes.methods_sort_keys,
-        bucket_prefix: &passes.names_radix_bucket_prefix,
-        bucket_bases: &passes.names_radix_bucket_bases,
-        scatter: &passes.methods_sort_keys_scatter,
-    }
-}
-
 impl MethodKeyPipeline {
     pub(in crate::type_checker) fn new(
         device: &wgpu::Device,
@@ -48,20 +38,19 @@ impl MethodKeyPipeline {
         let seed = resources.reflected_bind_group_with_overrides(
             device,
             &format!("{label}.seed"),
-            &passes.methods_seed_key_order,
+            &passes.kernel("type_checker/methods/03/seed_key_order"),
             &[("gParams", seed_params.as_entire_binding())],
         )?;
 
         let sort = RadixSortOperation::new(
             device,
+            passes,
             resources,
-            RadixSortPlan {
-                label: compiler_graph::METHOD_KEY_RADIX_SORT.label(),
+            compiler_graph::METHOD_KEY_RADIX_SORT.plan(
                 capacity,
-                small_capacity: METHOD_KEY_SMALL_SORT_CAPACITY,
-                steps: METHOD_KEY_RADIX_STEPS,
-                passes: method_radix_passes(passes),
-                dispatch: RadixSortDispatch {
+                METHOD_KEY_SMALL_SORT_CAPACITY,
+                METHOD_KEY_RADIX_STEPS,
+                RadixSortDispatch {
                     small: RadixDispatchDomain::Indirect(buffer_from_resources(
                         resources,
                         "method_radix_bases_dispatch_args",
@@ -79,8 +68,7 @@ impl MethodKeyPipeline {
                         "method_radix_bases_dispatch_args",
                     )?),
                 },
-                resources: compiler_graph::METHOD_KEY_RADIX_SORT.resources,
-            },
+            ),
             params,
         )?;
 
@@ -92,16 +80,20 @@ impl MethodKeyPipeline {
         let validate = resources.reflected_bind_group_with_overrides(
             device,
             &format!("{label}.validate"),
-            &passes.methods_validate_keys,
+            &passes.kernel("type_checker/methods/05_validate_keys"),
             &[("gParams", validate_params.as_entire_binding())],
         )?;
 
         Ok(Self {
             _boundary_params: [seed_params, validate_params],
-            seed_pass: passes.methods_seed_key_order.clone(),
+            seed_pass: passes
+                .kernel("type_checker/methods/03/seed_key_order")
+                .clone(),
             seed,
             sort,
-            validate_pass: passes.methods_validate_keys.clone(),
+            validate_pass: passes
+                .kernel("type_checker/methods/05_validate_keys")
+                .clone(),
             validate,
             token_dispatch_args: buffer_from_resources(resources, "method_token_dispatch_args")?
                 .clone(),

@@ -13,7 +13,7 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
 ) -> Result<()> {
     record_compute_indirect(
         encoder,
-        &passes.names_mark_lexemes,
+        &passes.kernel("type_checker/names/00_mark_lexemes"),
         &groups.mark,
         "type_check.names.mark_lexemes",
         token_active_dispatch_args,
@@ -21,28 +21,28 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     groups.scan.record(encoder)?;
     record_compute_indirect(
         encoder,
-        &passes.names_scatter_lexemes,
+        &passes.kernel("type_checker/names/01_scatter_lexemes"),
         &groups.scatter,
         "type_check.names.scatter_lexemes",
         token_active_dispatch_args,
     )?;
     record_compute(
         encoder,
-        &passes.names_hash_prepare,
+        &passes.kernel("type_checker/names/hash/00_prepare"),
         &groups.hash_prepare,
         "type_check.names.hash_prepare",
         groups.hash_work_items,
     )?;
     record_compute(
         encoder,
-        &passes.names_hash_insert,
+        &passes.kernel("type_checker/names/hash/01_insert"),
         &groups.hash_insert,
         "type_check.names.hash_insert",
         groups.hash_work_items,
     )?;
     record_compute(
         encoder,
-        &passes.names_hash_assign_ids,
+        &passes.kernel("type_checker/names/hash/02_assign_ids"),
         &groups.hash_assign_ids,
         "type_check.names.hash_assign_ids",
         groups.hash_work_items,
@@ -58,7 +58,7 @@ pub(in crate::type_checker) fn record_language_name_bind_groups_with_passes(
 ) -> Result<()> {
     record_compute(
         encoder,
-        &passes.language_names_clear,
+        &passes.kernel("type_checker/language/names/00_clear"),
         &groups.clear,
         "type_check.language_names.clear",
         LANGUAGE_SYMBOL_COUNT,
@@ -74,14 +74,14 @@ pub(in crate::type_checker) fn record_language_decl_bind_groups_with_passes(
 ) -> Result<()> {
     record_compute(
         encoder,
-        &passes.language_type_codes_clear,
+        &passes.kernel("type_checker/language/decls/00a_clear_type_codes"),
         &groups.type_codes_clear,
         "type_check.language_type_codes.clear",
         name_capacity,
     )?;
     record_compute(
         encoder,
-        &passes.language_decls_materialize,
+        &passes.kernel("type_checker/language/decls/00_materialize"),
         &groups.decls_materialize,
         "type_check.language_decls.materialize",
         LANGUAGE_DECL_COUNT,

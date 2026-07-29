@@ -29,21 +29,21 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
 ) -> Result<()> {
     record_compute(
         encoder,
-        &passes.fn_context_clear,
+        &passes.kernel("type_checker/fn/context/01_clear"),
         &groups.clear,
         "type_check.fn_context.clear",
         token_capacity.max(n_blocks).max(1),
     )?;
     record_compute_indirect(
         encoder,
-        &passes.fn_context_mark,
+        &passes.kernel("type_checker/fn/context/02_mark"),
         &groups.mark,
         "type_check.fn_context.mark",
         hir_active_dispatch_args,
     )?;
     record_compute(
         encoder,
-        &passes.fn_context_local,
+        &passes.kernel("type_checker/fn/context/03_local"),
         &groups.local,
         "type_check.fn_context.local",
         token_capacity.max(1),
@@ -51,7 +51,7 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     for step in &groups.hierarchy_up {
         record_compute(
             encoder,
-            &passes.fn_context_hierarchy_up,
+            &passes.kernel("type_checker/fn/context/04_hierarchy_up"),
             &step.bind_group,
             "type_check.fn_context.hierarchy_up",
             step.work_items,
@@ -60,7 +60,7 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     for step in &groups.hierarchy_down {
         record_compute(
             encoder,
-            &passes.fn_context_hierarchy_down,
+            &passes.kernel("type_checker/fn/context/04_hierarchy_down"),
             &step.bind_group,
             "type_check.fn_context.hierarchy_down",
             step.work_items,
@@ -68,7 +68,7 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     }
     record_compute(
         encoder,
-        &passes.fn_context_apply,
+        &passes.kernel("type_checker/fn/context/05_apply"),
         &groups.apply,
         "type_check.fn_context.apply",
         token_capacity.max(1),
@@ -86,21 +86,21 @@ pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
 ) -> Result<()> {
     record_compute(
         encoder,
-        &passes.if_depth_clear,
+        &passes.kernel("type_checker/loop/depth/01_clear"),
         &groups.clear,
         "type_check.if_depth.clear",
         token_capacity.saturating_add(1),
     )?;
     record_compute_indirect(
         encoder,
-        &passes.if_depth_mark,
+        &passes.kernel("type_checker/loop/depth/02_mark"),
         &groups.mark,
         "type_check.if_depth.mark",
         hir_active_dispatch_args,
     )?;
     record_compute(
         encoder,
-        &passes.if_depth_local,
+        &passes.kernel("type_checker/loop/depth/03_local"),
         &groups.local,
         "type_check.if_depth.local",
         n_blocks.saturating_mul(256),
@@ -108,7 +108,7 @@ pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
     for step in &groups.hierarchy_up {
         record_compute(
             encoder,
-            &passes.if_depth_hierarchy_up,
+            &passes.kernel("type_checker/loop/depth/04_hierarchy_up"),
             &step.bind_group,
             "type_check.if_depth.hierarchy_up",
             step.work_items,
@@ -117,7 +117,7 @@ pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
     for step in &groups.hierarchy_down {
         record_compute(
             encoder,
-            &passes.if_depth_hierarchy_down,
+            &passes.kernel("type_checker/loop/depth/04_hierarchy_down"),
             &step.bind_group,
             "type_check.if_depth.hierarchy_down",
             step.work_items,
@@ -125,7 +125,7 @@ pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
     }
     record_compute(
         encoder,
-        &passes.if_depth_apply,
+        &passes.kernel("type_checker/loop/depth/05_apply"),
         &groups.apply,
         "type_check.if_depth.apply",
         token_capacity.max(1),

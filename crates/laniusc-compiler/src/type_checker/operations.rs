@@ -5,11 +5,8 @@ mod call_claim_keys;
 mod call_generic_claim_validation;
 mod calls;
 mod generic_parameter_sorts;
-mod hierarchical_radix_sort;
 mod methods;
 mod predicate_keys;
-mod prefix_scan;
-mod radix_sort;
 mod visible_decls;
 
 pub(super) use call_argument_matching::*;
@@ -17,11 +14,8 @@ pub(super) use call_claim_keys::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
 pub(super) use generic_parameter_sorts::*;
-pub(super) use hierarchical_radix_sort::*;
 pub(super) use methods::*;
 pub(super) use predicate_keys::*;
-pub(super) use prefix_scan::*;
-pub(super) use radix_sort::*;
 pub(super) use visible_decls::*;
 
 use super::*;
@@ -97,22 +91,36 @@ impl ComputeOperation {
         device: &wgpu::Device,
         graph: &compiler_graph::TypeCheckCompilerGraph,
         resources: &ResourceMap<'_>,
+        kernels: &KernelRegistry,
         spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
-        pass: &PassData,
         dispatch_args: &wgpu::Buffer,
     ) -> Result<Self> {
-        Self::indirect(device, graph, resources, spec.name, pass, dispatch_args)
+        Self::indirect(
+            device,
+            graph,
+            resources,
+            spec.name,
+            kernels.kernel(spec.kernel),
+            dispatch_args,
+        )
     }
 
     pub(super) fn direct_spec(
         device: &wgpu::Device,
         graph: &compiler_graph::TypeCheckCompilerGraph,
         resources: &ResourceMap<'_>,
+        kernels: &KernelRegistry,
         spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
-        pass: &PassData,
         workgroups: u32,
     ) -> Result<Self> {
-        Self::direct(device, graph, resources, spec.name, pass, workgroups)
+        Self::direct(
+            device,
+            graph,
+            resources,
+            spec.name,
+            kernels.kernel(spec.kernel),
+            workgroups,
+        )
     }
 
     pub(super) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
@@ -153,7 +161,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_COLLECT_PASS,
-                &passes.semantic_features_collect,
+                &passes.kernel("type_checker/semantic/features/00_collect"),
                 hir_dispatch_args,
             )?,
             dispatch: ComputeOperation::direct(
@@ -161,7 +169,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_DISPATCH_PASS,
-                &passes.semantic_features_dispatch_args,
+                &passes.kernel("type_checker/semantic/features/01_dispatch_args"),
                 1,
             )?,
         })

@@ -1,7 +1,4 @@
-use super::{
-    super::*,
-    common::{buffer_from_resources, reflected_bind_group_from_resources},
-};
+use super::super::*;
 
 const GENERIC_PARAM_KEY_FIELD_COUNT: u32 = 3;
 const GENERIC_PARAM_KEY_MAX_RADIX_STEPS: u32 = 12;
@@ -94,7 +91,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     resources: &ResourceMap<'_>,
     token_capacity: u32,
     hir_node_capacity: u32,
-    generic_param_key_radix_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<TypeInstanceBindGroups> {
     let param_capacity = token_capacity.max(1);
     let param_n_blocks = param_capacity.div_ceil(256).max(1);
@@ -117,7 +113,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         param_n_blocks,
         radix_bytes,
         radix_steps,
-        generic_param_key_radix_dispatch_args,
     )?;
     let struct_field_radix_params = uniform_from_val(
         device,
@@ -132,7 +127,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     let struct_field_key_radix_dispatch = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check.type_instances.struct_field_key_radix_dispatch"),
-        &passes.struct_field_radix_dispatch_args,
+        &passes.kernel("type_checker/type/instances/02a_struct_field_radix_dispatch"),
         0,
         &[
             ("gParams", struct_field_radix_params.as_entire_binding()),
@@ -149,19 +144,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
 
     let sort_struct_fields = RadixSortOperation::new_hierarchical(
         device,
+        passes,
         resources,
-        HierarchicalRadixSortPlan {
-            label: compiler_graph::STRUCT_FIELD_RADIX_SORT.label(),
-            steps: struct_field_radix_steps,
-            passes: HierarchicalRadixSortPasses {
-                histogram: &passes.type_instances_sort_struct_field_keys,
-                bucket_local: &passes.struct_field_radix_bucket_local,
-                bucket_chunks: &passes.struct_field_radix_bucket_chunks,
-                bucket_apply: &passes.struct_field_radix_bucket_apply,
-                bucket_bases: &passes.names_radix_bucket_bases,
-                scatter: &passes.type_instances_sort_struct_field_keys_scatter,
-            },
-            dispatch: HierarchicalRadixSortDispatch {
+        compiler_graph::STRUCT_FIELD_RADIX_SORT.plan(
+            struct_field_radix_steps,
+            HierarchicalRadixSortDispatch {
                 rows: buffer_from_resources(resources, "struct_field_key_radix_dispatch_args")?,
                 bucket_work_items: struct_field_n_blocks
                     .div_ceil(256)
@@ -170,8 +157,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
                 bucket_chunk_work_items: NAME_RADIX_BUCKETS.saturating_mul(256),
                 bucket_count: 256,
             },
-            resources: compiler_graph::STRUCT_FIELD_RADIX_SORT.resources,
-        },
+        ),
         |key_step| StructFieldKeyRadixParams {
             hir_node_capacity: struct_field_capacity,
             token_capacity,
@@ -219,7 +205,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         propagate_generic_decl_owner.push(bind_group::create_bind_group_from_bindings(
             device,
             Some("type_check_type_instances_00a1_propagate_generic_decl_owner"),
-            &passes.type_instances_propagate_generic_decl_owner,
+            &passes.kernel("type_checker/type/instances/00a1_propagate_generic_decl_owner"),
             0,
             &[
                 ("gParams", resources["gParams"].clone()),
@@ -236,7 +222,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
 
     let type_instance_arg_row_scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         resources,
         compiler_graph::TYPE_INSTANCE_ARG_ROW_SCAN,
     )?;
@@ -246,7 +232,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     // increasing resident scratch memory.
     let semantic_type_scan = Box::new(PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         resources,
         compiler_graph::TYPE_SEMANTIC_SCAN,
     )?);
@@ -255,13 +241,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         clear: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_clear",
-            &passes.type_instances_clear,
+            &passes.kernel("type_checker/type/instances/00_clear"),
             resources,
         )?,
         mark_generic_param_records: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_mark_generic_param_records",
-            &passes.type_instances_mark_generic_param_records,
+            &passes.kernel("type_checker/type/instances/00a_mark_generic_param_records"),
             resources,
         )?,
         propagate_generic_decl_owner,
@@ -269,20 +255,20 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         decl_generic_params: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_decl_generic_params",
-            &passes.type_instances_decl_generic_params,
+            &passes.kernel("type_checker/type/instances/00b_decl_generic_params"),
             resources,
         )?,
         generic_parameter_sorts,
         generic_param_use_slots: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_generic_param_use_slots",
-            &passes.type_instances_generic_param_use_slots,
+            &passes.kernel("type_checker/type/instances/00e_generic_param_use_slots"),
             resources,
         )?,
         seed_struct_field_keys: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_seed_struct_field_keys",
-            &passes.type_instances_seed_struct_field_keys,
+            &passes.kernel("type_checker/type/instances/02_seed_struct_field_keys"),
             resources,
         )?,
         struct_field_key_radix_dispatch,
@@ -290,122 +276,122 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         collect: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect",
-            &passes.type_instances_collect,
+            &passes.kernel("type_checker/type/instances/01_collect"),
             resources,
         )?,
         collect_named: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect_named",
-            &passes.type_instances_collect_named,
+            &passes.kernel("type_checker/type/instances/01b_collect_named_instances"),
             resources,
         )?,
         collect_aggregate_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect_aggregate_refs",
-            &passes.type_instances_collect_aggregate_refs,
+            &passes.kernel("type_checker/type/instances/01c_collect_aggregate_refs"),
             resources,
         )?,
         collect_aggregate_details: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect_aggregate_details",
-            &passes.type_instances_collect_aggregate_details,
+            &passes.kernel("type_checker/type/instances/01d_collect_aggregate_details"),
             resources,
         )?,
         collect_named_arg_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect_named_arg_refs",
-            &passes.type_instances_collect_named_arg_refs,
+            &passes.kernel("type_checker/type/instances/01e_collect_named_arg_refs"),
             resources,
         )?,
         hash_arg_rows: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_hash_arg_rows",
-            &passes.type_instances_hash_arg_rows,
+            &passes.kernel("type_checker/type/instances/01g_hash_arg_rows"),
             resources,
         )?,
         clear_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_clear_semantic_type_rows",
-            &passes.type_instances_clear_semantic_type_rows,
+            &passes.kernel("type_checker/type/instances/01h_clear_semantic_type_rows"),
             resources,
         )?),
         mark_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_mark_semantic_type_rows",
-            &passes.type_instances_mark_semantic_type_rows,
+            &passes.kernel("type_checker/type/instances/01i_mark_semantic_type_rows"),
             resources,
         )?),
         semantic_type_scan,
         scatter_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_scatter_semantic_type_rows",
-            &passes.type_instances_scatter_semantic_type_rows,
+            &passes.kernel("type_checker/type/instances/01j_scatter_semantic_type_rows"),
             resources,
         )?),
         decl_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_decl_refs",
-            &passes.type_instances_decl_refs,
+            &passes.kernel("type_checker/type/instances/01f_decl_refs"),
             resources,
         )?,
         member_receivers: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_member_receivers",
-            &passes.type_instances_member_receivers,
+            &passes.kernel("type_checker/type/instances/03a_member_receivers"),
             resources,
         )?,
         member_results: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_member_results",
-            &passes.type_instances_member_results,
+            &passes.kernel("type_checker/type/instances/03_member_results"),
             resources,
         )?,
         member_substitute: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_member_substitute",
-            &passes.type_instances_member_substitute,
+            &passes.kernel("type_checker/type/instances/03b_member_substitute"),
             resources,
         )?,
         struct_init_clear: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_struct_init_clear",
-            &passes.type_instances_struct_init_clear,
+            &passes.kernel("type_checker/type/instances/04a_struct_init_clear"),
             resources,
         )?,
         struct_init_contexts: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_struct_init_contexts",
-            &passes.type_instances_struct_init_contexts,
+            &passes.kernel("type_checker/type/instances/04a2_struct_init_contexts"),
             resources,
         )?,
         struct_init_fields: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_struct_init_fields",
-            &passes.type_instances_struct_init_fields,
+            &passes.kernel("type_checker/type/instances/04_struct_init_fields"),
             resources,
         )?,
         struct_init_substitute: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_struct_init_substitute",
-            &passes.type_instances_struct_init_substitute,
+            &passes.kernel("type_checker/type/instances/04b_struct_init_substitute"),
             resources,
         )?,
         array_return_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_array_return_refs",
-            &passes.type_instances_array_return_refs,
+            &passes.kernel("type_checker/type/instances/05_array_return_refs"),
             resources,
         )?,
         array_literal_return_refs: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_array_literal_return_refs",
-            &passes.type_instances_array_literal_return_refs,
+            &passes.kernel("type_checker/type/instances/05b_array_literal_return_refs"),
             resources,
         )?,
         validate_aggregate_access: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_validate_aggregate_access",
-            &passes.type_instances_validate_aggregate_access,
+            &passes.kernel("type_checker/type/instances/08_validate_aggregate_access"),
             resources,
         )?,
     })

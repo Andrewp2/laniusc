@@ -23,8 +23,9 @@ impl GenericParameterSorts {
         n_blocks: u32,
         radix_bytes: u32,
         radix_steps: u32,
-        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
+        let dispatch_args =
+            buffer_from_resources(resources, "generic_param_key_radix_dispatch_args")?;
         let make_params = |key_step| ModuleKeyRadixParams {
             module_capacity: capacity,
             reserved: radix_bytes,
@@ -39,7 +40,7 @@ impl GenericParameterSorts {
         let dispatch = reflected_bind_group_with_overrides(
             device,
             "type_check.type_instances.generic_params.dispatch",
-            &passes.names_radix_dispatch_args,
+            &passes.kernel("type_checker/names/radix/dispatch_args"),
             resources,
             &[
                 ("gParams", dispatch_params.as_entire_binding()),
@@ -55,14 +56,14 @@ impl GenericParameterSorts {
             let small = reflected_bind_group_with_overrides(
                 device,
                 "type_check.type_instances.generic_params.small",
-                &passes.type_instances_sort_generic_params_small,
+                &passes.kernel("type_checker/type/instances/00b2_sort_generic_params_small"),
                 resources,
                 &[("gParams", dispatch_params.as_entire_binding())],
             )?;
             return Ok(Self {
                 _dispatch_params: dispatch_params,
                 dispatch,
-                dispatch_args: dispatch_args.clone(),
+                dispatch_args: typed_alias_storage_u32(dispatch_args, 3),
                 small: Some(small),
                 key: None,
                 slot: None,
@@ -71,14 +72,13 @@ impl GenericParameterSorts {
 
         let key = RadixSortOperation::new(
             device,
+            passes,
             resources,
-            RadixSortPlan {
-                label: compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.key.label(),
+            compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.key.plan(
                 capacity,
-                small_capacity: 0,
-                steps: radix_steps,
-                passes: Self::key_passes(passes),
-                dispatch: RadixSortDispatch {
+                0,
+                radix_steps,
+                RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
                     rows: RadixDispatchDomain::Indirect(dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(
@@ -86,20 +86,18 @@ impl GenericParameterSorts {
                     ),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-                resources: compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.key.resources,
-            },
+            ),
             make_params,
         )?;
         let slot = RadixSortOperation::new(
             device,
+            passes,
             resources,
-            RadixSortPlan {
-                label: compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.slot.label(),
+            compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.slot.plan(
                 capacity,
-                small_capacity: 0,
-                steps: radix_steps,
-                passes: Self::slot_passes(passes),
-                dispatch: RadixSortDispatch {
+                0,
+                radix_steps,
+                RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
                     rows: RadixDispatchDomain::Indirect(dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(
@@ -107,38 +105,17 @@ impl GenericParameterSorts {
                     ),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-                resources: compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.slot.resources,
-            },
+            ),
             make_params,
         )?;
         Ok(Self {
             _dispatch_params: dispatch_params,
             dispatch,
-            dispatch_args: dispatch_args.clone(),
+            dispatch_args: typed_alias_storage_u32(dispatch_args, 3),
             small: None,
             key: Some(key),
             slot: Some(slot),
         })
-    }
-
-    fn key_passes(passes: &TypeCheckPasses) -> RadixSortPasses<'_> {
-        RadixSortPasses {
-            small: None,
-            histogram: &passes.type_instances_sort_generic_param_keys,
-            bucket_prefix: &passes.names_radix_bucket_prefix,
-            bucket_bases: &passes.names_radix_bucket_bases,
-            scatter: &passes.type_instances_sort_generic_param_keys_scatter,
-        }
-    }
-
-    fn slot_passes(passes: &TypeCheckPasses) -> RadixSortPasses<'_> {
-        RadixSortPasses {
-            small: None,
-            histogram: &passes.type_instances_sort_generic_param_slots,
-            bucket_prefix: &passes.names_radix_bucket_prefix,
-            bucket_bases: &passes.names_radix_bucket_bases,
-            scatter: &passes.type_instances_sort_generic_param_slots_scatter,
-        }
     }
 
     pub(in crate::type_checker) fn record(
@@ -148,7 +125,7 @@ impl GenericParameterSorts {
     ) -> Result<()> {
         record_compute(
             encoder,
-            &passes.names_radix_dispatch_args,
+            &passes.kernel("type_checker/names/radix/dispatch_args"),
             &self.dispatch,
             "type_check.type_instances.generic_parameter_dispatch_args",
             1,
@@ -156,7 +133,7 @@ impl GenericParameterSorts {
         if let Some(small) = &self.small {
             return record_compute_indirect(
                 encoder,
-                &passes.type_instances_sort_generic_params_small,
+                &passes.kernel("type_checker/type/instances/00b2_sort_generic_params_small"),
                 small,
                 "type_check.type_instances.generic_parameters.small",
                 &self.dispatch_args,

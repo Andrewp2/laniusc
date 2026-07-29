@@ -58,6 +58,7 @@ pub(in crate::type_checker) fn create(
     layout: Layout,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
+    resources: &ResourceMap<'_>,
 ) -> Result<Option<Box<DependencyVisibilityState>>> {
     let Some(dependencies) = inputs.dependency_interfaces else {
         return Ok(None);
@@ -267,13 +268,13 @@ pub(in crate::type_checker) fn create(
     ]);
     let scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::DEPENDENCY_VISIBLE_SCAN,
     )?;
     let call_compare_scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::DEPENDENCY_CALL_COMPARE_SCAN,
     )?;
@@ -293,11 +294,10 @@ pub(in crate::type_checker) fn create(
             reserved1: 0,
         },
     );
-    let call_compare_dispatch_group = bind_group::create_bind_group_from_bindings(
+    let call_compare_dispatch_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check.dependencies.call_compare.dispatch"),
-        &passes.count_dispatch_args,
-        0,
+        "type_check.dependencies.call_compare.dispatch",
+        &passes.kernel("type_checker/count/dispatch_args"),
         &[
             ("gParams", call_compare_dispatch_params.as_entire_binding()),
             ("count_in", call_compare_total.as_entire_binding()),
@@ -338,11 +338,10 @@ pub(in crate::type_checker) fn create(
         u32::BITS - (dependencies.type_count - 1).leading_zeros()
     };
 
-    let count_group = bind_group::create_bind_group_from_bindings(
+    let count_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_02_count_import_visibility"),
-        &passes.dependencies.count_import_visibility,
-        0,
+        "type_check_dependencies_02_count_import_visibility",
+        &passes.kernel("type_checker/dependencies/02_count_import_visibility"),
         &[
             ("gParams", params.as_entire_binding()),
             (
@@ -369,11 +368,10 @@ pub(in crate::type_checker) fn create(
             ("dependency_visible_count", count.as_entire_binding()),
         ],
     )?;
-    let scatter_group = bind_group::create_bind_group_from_bindings(
+    let scatter_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_03_scatter_import_visibility"),
-        &passes.dependencies.scatter_import_visibility,
-        0,
+        "type_check_dependencies_03_scatter_import_visibility",
+        &passes.kernel("type_checker/dependencies/03_scatter_import_visibility"),
         &[
             ("gParams", params.as_entire_binding()),
             (
@@ -404,24 +402,21 @@ pub(in crate::type_checker) fn create(
                 owner_module.as_entire_binding(),
             ),
             ("dependency_visible_decl", declaration.as_entire_binding()),
-            ("status", inputs.status_buf.as_entire_binding()),
         ],
     )?;
-    let clear_lookup_group = bind_group::create_bind_group_from_bindings(
+    let clear_lookup_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_04_clear_visible_lookup"),
-        &passes.dependencies.clear_visible_lookup,
-        0,
+        "type_check_dependencies_04_clear_visible_lookup",
+        &passes.kernel("type_checker/dependencies/04_clear_visible_lookup"),
         &[
             ("gParams", params.as_entire_binding()),
             ("dependency_visible_lookup", lookup.as_entire_binding()),
         ],
     )?;
-    let build_lookup_group = bind_group::create_bind_group_from_bindings(
+    let build_lookup_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_05_build_visible_lookup"),
-        &passes.dependencies.build_visible_lookup,
-        0,
+        "type_check_dependencies_05_build_visible_lookup",
+        &passes.kernel("type_checker/dependencies/05_build_visible_lookup"),
         &[
             ("gParams", params.as_entire_binding()),
             ("dependency_visible_total", total.as_entire_binding()),
@@ -435,7 +430,6 @@ pub(in crate::type_checker) fn create(
                 dependencies.declaration_words.as_entire_binding(),
             ),
             ("dependency_visible_lookup", lookup.as_entire_binding()),
-            ("status", inputs.status_buf.as_entire_binding()),
         ],
     )?;
 
@@ -444,11 +438,10 @@ pub(in crate::type_checker) fn create(
                               resolved_decl: &LaniusBuffer<u32>,
                               resolved_status: &LaniusBuffer<u32>|
      -> Result<wgpu::BindGroup> {
-        bind_group::create_bind_group_from_bindings(
+        resources.reflected_bind_group_with_overrides(
             device,
-            Some(label),
-            &passes.dependencies.resolve_paths,
-            0,
+            label,
+            &passes.kernel("type_checker/dependencies/06_resolve_paths"),
             &[
                 ("gParams", params.as_entire_binding()),
                 ("path_count_out", buffers.path_count_out.as_entire_binding()),
@@ -468,14 +461,6 @@ pub(in crate::type_checker) fn create(
                 (
                     "path_owner_module_id",
                     buffers.path_owner_module_id.as_entire_binding(),
-                ),
-                ("name_hash_lo", inputs.name_hash_lo.as_entire_binding()),
-                ("name_hash_hi", inputs.name_hash_hi.as_entire_binding()),
-                ("name_spans", inputs.name_spans.as_entire_binding()),
-                ("source_bytes", inputs.source_buf.as_entire_binding()),
-                (
-                    "language_symbol_bytes",
-                    inputs.language_symbol_bytes.as_entire_binding(),
                 ),
                 (
                     "dependency_declaration_words",
@@ -511,14 +496,10 @@ pub(in crate::type_checker) fn create(
         &resolved_value_decl,
         &buffers.resolved_value_status,
     )?;
-    let init_canonical_type_roots_group = bind_group::create_bind_group_from_bindings(
+    let init_canonical_type_roots_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_09_init_canonical_type_roots"),
-        &passes
-            .dependencies
-            .canonical_types
-            .init_canonical_type_roots,
-        0,
+        "type_check_dependencies_09_init_canonical_type_roots",
+        &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             (
@@ -551,14 +532,10 @@ pub(in crate::type_checker) fn create(
                            input: &LaniusBuffer<u32>,
                            output: &LaniusBuffer<u32>|
      -> Result<wgpu::BindGroup> {
-        bind_group::create_bind_group_from_bindings(
+        resources.reflected_bind_group_with_overrides(
             device,
-            Some(label),
-            &passes
-                .dependencies
-                .canonical_types
-                .jump_canonical_type_roots,
-            0,
+            label,
+            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
             &[
                 ("gParams", canonical_type_params.as_entire_binding()),
                 ("canonical_type_roots_in", input.as_entire_binding()),
@@ -582,14 +559,10 @@ pub(in crate::type_checker) fn create(
     } else {
         (&canonical_type_roots_b, &canonical_type_roots_a)
     };
-    let init_canonical_type_subtree_start_group = bind_group::create_bind_group_from_bindings(
+    let init_canonical_type_subtree_start_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_09a_init_canonical_type_subtree_start"),
-        &passes
-            .dependencies
-            .canonical_types
-            .init_canonical_type_subtree_start,
-        0,
+        "type_check_dependencies_09a_init_canonical_type_subtree_start",
+        &passes.kernel("type_checker/dependencies/09a_init_canonical_type_subtree_start"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             (
@@ -610,14 +583,10 @@ pub(in crate::type_checker) fn create(
                                    input: &LaniusBuffer<u32>,
                                    output: &LaniusBuffer<u32>|
      -> Result<wgpu::BindGroup> {
-        bind_group::create_bind_group_from_bindings(
+        resources.reflected_bind_group_with_overrides(
             device,
-            Some(label),
-            &passes
-                .dependencies
-                .canonical_types
-                .jump_canonical_type_subtree_start,
-            0,
+            label,
+            &passes.kernel("type_checker/dependencies/10a_jump_canonical_type_subtree_start"),
             &[
                 ("gParams", canonical_type_params.as_entire_binding()),
                 ("canonical_type_subtree_start_in", input.as_entire_binding()),
@@ -643,11 +612,10 @@ pub(in crate::type_checker) fn create(
     } else {
         &canonical_type_subtree_scratch
     };
-    let project_types_group = bind_group::create_bind_group_from_bindings(
+    let project_types_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_11_project_types"),
-        &passes.dependencies.canonical_types.project_types,
-        0,
+        "type_check_dependencies_11_project_types",
+        &passes.kernel("type_checker/dependencies/11_project_types"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             ("path_count_out", buffers.path_count_out.as_entire_binding()),
@@ -672,32 +640,12 @@ pub(in crate::type_checker) fn create(
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
-            (
-                "type_expr_ref_tag",
-                inputs.type_expr_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_payload",
-                inputs.type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "module_type_path_type",
-                inputs.module_type_path_type.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                inputs.module_type_path_status.as_entire_binding(),
-            ),
         ],
     )?;
-    let clear_declaration_generic_arity_group = bind_group::create_bind_group_from_bindings(
+    let clear_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_12_clear_declaration_generic_arity"),
-        &passes
-            .dependencies
-            .canonical_types
-            .clear_declaration_generic_arity,
-        0,
+        "type_check_dependencies_12_clear_declaration_generic_arity",
+        &passes.kernel("type_checker/dependencies/12_clear_declaration_generic_arity"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             (
@@ -706,14 +654,10 @@ pub(in crate::type_checker) fn create(
             ),
         ],
     )?;
-    let count_declaration_generic_arity_group = bind_group::create_bind_group_from_bindings(
+    let count_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_13_count_declaration_generic_arity"),
-        &passes
-            .dependencies
-            .canonical_types
-            .count_declaration_generic_arity,
-        0,
+        "type_check_dependencies_13_count_declaration_generic_arity",
+        &passes.kernel("type_checker/dependencies/13_count_declaration_generic_arity"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             (
@@ -726,11 +670,10 @@ pub(in crate::type_checker) fn create(
             ),
         ],
     )?;
-    let project_type_instances_group = bind_group::create_bind_group_from_bindings(
+    let project_type_instances_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_14_project_type_instances"),
-        &passes.dependencies.canonical_types.project_type_instances,
-        0,
+        "type_check_dependencies_14_project_type_instances",
+        &passes.kernel("type_checker/dependencies/14_project_type_instances"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
             ("path_count_out", buffers.path_count_out.as_entire_binding()),
@@ -767,74 +710,17 @@ pub(in crate::type_checker) fn create(
                 "declaration_generic_arity",
                 declaration_generic_arity.as_entire_binding(),
             ),
-            (
-                "type_instance_kind",
-                inputs.type_instance_kind.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_count",
-                inputs.type_instance_arg_count.as_entire_binding(),
-            ),
-            (
-                "type_instance_decl_token",
-                inputs.type_instance_decl_token.as_entire_binding(),
-            ),
-            (
-                "type_instance_external_canonical",
-                inputs.type_instance_external_canonical.as_entire_binding(),
-            ),
-            (
-                "type_instance_state",
-                inputs.type_instance_state.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_tag",
-                inputs.type_expr_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_payload",
-                inputs.type_expr_ref_payload.as_entire_binding(),
-            ),
         ],
     )?;
-    let project_calls_group = bind_group::create_bind_group_from_bindings(
+    let project_calls_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_07_project_calls"),
-        &passes.dependencies.project_calls,
-        0,
+        "type_check_dependencies_07_project_calls",
+        &passes.kernel("type_checker/dependencies/07_project_calls"),
         &[
             ("gParams", value_params.as_entire_binding()),
             (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                inputs.hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "token_file_id",
-                inputs.token_file_id_buf.as_entire_binding(),
-            ),
-            (
                 "module_id_by_file_id",
                 buffers.module_id_by_file_id.as_entire_binding(),
-            ),
-            (
-                "name_id_by_token",
-                inputs.name_id_by_token.as_entire_binding(),
-            ),
-            ("name_hash_lo", inputs.name_hash_lo.as_entire_binding()),
-            ("name_hash_hi", inputs.name_hash_hi.as_entire_binding()),
-            ("name_spans", inputs.name_spans.as_entire_binding()),
-            ("source_bytes", inputs.source_buf.as_entire_binding()),
-            (
-                "language_symbol_bytes",
-                inputs.language_symbol_bytes.as_entire_binding(),
             ),
             (
                 "dependency_declaration_words",
@@ -866,56 +752,14 @@ pub(in crate::type_checker) fn create(
                 "call_dependency_decl",
                 call_dependency_decl.as_entire_binding(),
             ),
-            ("call_fn_index", inputs.call_fn_index.as_entire_binding()),
-            (
-                "call_param_count",
-                inputs.call_param_count.as_entire_binding(),
-            ),
-            (
-                "call_return_type",
-                inputs.call_return_type.as_entire_binding(),
-            ),
-            (
-                "call_return_type_token",
-                inputs.call_return_type_token.as_entire_binding(),
-            ),
-            (
-                "decl_type_ref_tag",
-                inputs.decl_type_ref_tag.as_entire_binding(),
-            ),
-            (
-                "decl_type_ref_payload",
-                inputs.decl_type_ref_payload.as_entire_binding(),
-            ),
         ],
     )?;
-    let project_call_params_group = bind_group::create_bind_group_from_bindings(
+    let project_call_params_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_07a_project_call_params"),
-        &passes.dependencies.project_call_params,
-        0,
+        "type_check_dependencies_07a_project_call_params",
+        &passes.kernel("type_checker/dependencies/07a_project_call_params"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                inputs.hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_call_arg_count",
-                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
-            ),
-            (
-                "compact_call_args",
-                inputs.hir_items.hir.call_args.as_entire_binding(),
-            ),
             (
                 "call_dependency_decl",
                 call_dependency_decl.as_entire_binding(),
@@ -928,39 +772,14 @@ pub(in crate::type_checker) fn create(
                 "dependency_type_words",
                 dependencies.type_words.as_entire_binding(),
             ),
-            (
-                "call_param_count",
-                inputs.call_param_count.as_entire_binding(),
-            ),
         ],
     )?;
-    let scatter_call_params_group = bind_group::create_bind_group_from_bindings(
+    let scatter_call_params_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_07b_scatter_call_params"),
-        &passes.dependencies.scatter_call_params,
-        0,
+        "type_check_dependencies_07b_scatter_call_params",
+        &passes.kernel("type_checker/dependencies/07b_scatter_call_params"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                inputs.hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_call_arg_count",
-                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
-            ),
-            (
-                "compact_call_args",
-                inputs.hir_items.hir.call_args.as_entire_binding(),
-            ),
             (
                 "call_dependency_decl",
                 call_dependency_decl.as_entire_binding(),
@@ -981,117 +800,14 @@ pub(in crate::type_checker) fn create(
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
-            (
-                "call_param_count",
-                inputs.call_param_count.as_entire_binding(),
-            ),
-            (
-                "call_param_row_count_out",
-                inputs.call_param_row_count_out.as_entire_binding(),
-            ),
-            (
-                "call_param_row_node",
-                inputs.call_param_row_node.as_entire_binding(),
-            ),
-            (
-                "call_param_row_fn_token",
-                inputs.call_param_row_fn_token.as_entire_binding(),
-            ),
-            (
-                "call_param_row_ordinal",
-                inputs.call_param_row_ordinal.as_entire_binding(),
-            ),
-            (
-                "call_param_row_type",
-                inputs.call_param_row_type.as_entire_binding(),
-            ),
-            (
-                "call_param_row_ref_tag",
-                inputs.call_param_row_ref_tag.as_entire_binding(),
-            ),
-            (
-                "call_param_row_ref_payload",
-                inputs.call_param_row_ref_payload.as_entire_binding(),
-            ),
-            (
-                "call_param_row_start",
-                inputs.call_param_row_start.as_entire_binding(),
-            ),
-            (
-                "call_param_row_count",
-                inputs.call_param_row_count.as_entire_binding(),
-            ),
         ],
     )?;
-    let validate_call_args_group = bind_group::create_bind_group_from_bindings(
+    let validate_call_args_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_08_validate_call_args"),
-        &passes.dependencies.validate_call_args,
-        0,
+        "type_check_dependencies_08_validate_call_args",
+        &passes.kernel("type_checker/dependencies/08_validate_call_args"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                inputs.hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_call_arg_count",
-                inputs.hir_items.hir.call_arg_count.as_entire_binding(),
-            ),
-            (
-                "compact_call_args",
-                inputs.hir_items.hir.call_args.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_count",
-                inputs.hir_items.semantic_count.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_subtree_end",
-                inputs.hir_items.semantic_subtree_end.as_entire_binding(),
-            ),
-            (
-                "call_dependency_decl",
-                call_dependency_decl.as_entire_binding(),
-            ),
-            ("visible_type", inputs.visible_type.as_entire_binding()),
-            ("visible_decl", inputs.visible_decl.as_entire_binding()),
-            (
-                "decl_type_ref_tag",
-                inputs.decl_type_ref_tag.as_entire_binding(),
-            ),
-            (
-                "decl_type_ref_payload",
-                inputs.decl_type_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_external_canonical",
-                inputs.type_instance_external_canonical.as_entire_binding(),
-            ),
-            (
-                "type_instance_kind",
-                inputs.type_instance_kind.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_count",
-                inputs.type_instance_arg_count.as_entire_binding(),
-            ),
-            (
-                "type_instance_len_kind",
-                inputs.type_instance_len_kind.as_entire_binding(),
-            ),
-            (
-                "type_instance_len_payload",
-                inputs.type_instance_len_payload.as_entire_binding(),
-            ),
             ("dependency_counts", dependencies.counts.as_entire_binding()),
             (
                 "dependency_declaration_words",
@@ -1114,22 +830,6 @@ pub(in crate::type_checker) fn create(
                 canonical_type_subtree_start.as_entire_binding(),
             ),
             (
-                "type_semantic_row_by_token",
-                inputs.type_semantic_row_by_token.as_entire_binding(),
-            ),
-            (
-                "type_semantic_scan_input",
-                inputs.type_semantic_scan_input.as_entire_binding(),
-            ),
-            (
-                "type_semantic_prefix",
-                inputs.type_semantic_prefix.as_entire_binding(),
-            ),
-            (
-                "type_semantic_count_out",
-                inputs.type_semantic_count_out.as_entire_binding(),
-            ),
-            (
                 "dependency_call_compare_scan_input",
                 call_compare_scan_input.as_entire_binding(),
             ),
@@ -1145,78 +845,19 @@ pub(in crate::type_checker) fn create(
                 "dependency_call_compare_error_token",
                 call_compare_error_token.as_entire_binding(),
             ),
-            ("status", inputs.status_buf.as_entire_binding()),
         ],
     )?;
-    let validate_call_results_group = bind_group::create_bind_group_from_bindings(
+    let validate_call_results_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_08a_validate_call_results"),
-        &passes.dependencies.validate_call_results,
-        0,
+        "type_check_dependencies_08a_validate_call_results",
+        &passes.kernel("type_checker/dependencies/08a_validate_call_results"),
         &{
             let mut bindings = Vec::with_capacity(45);
             bindings.extend([
                 ("gParams", value_params.as_entire_binding()),
                 (
-                    "compact_hir_count",
-                    inputs.hir_items.hir.count.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_core",
-                    inputs.hir_items.hir.core.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_payload",
-                    inputs.hir_items.hir.payload.as_entire_binding(),
-                ),
-                (
-                    "hir_semantic_count",
-                    inputs.hir_items.semantic_count.as_entire_binding(),
-                ),
-                (
-                    "hir_semantic_subtree_end",
-                    inputs.hir_items.semantic_subtree_end.as_entire_binding(),
-                ),
-                ("enclosing_fn", inputs.enclosing_fn.as_entire_binding()),
-                (
                     "call_dependency_decl",
                     call_dependency_decl.as_entire_binding(),
-                ),
-                (
-                    "fn_return_ref_tag",
-                    inputs.fn_return_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "fn_return_ref_payload",
-                    inputs.fn_return_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_tag",
-                    inputs.decl_type_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_payload",
-                    inputs.decl_type_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "type_instance_external_canonical",
-                    inputs.type_instance_external_canonical.as_entire_binding(),
-                ),
-                (
-                    "type_instance_kind",
-                    inputs.type_instance_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_arg_count",
-                    inputs.type_instance_arg_count.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    inputs.type_instance_len_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    inputs.type_instance_len_payload.as_entire_binding(),
                 ),
             ]);
             bindings.extend([
@@ -1234,80 +875,6 @@ pub(in crate::type_checker) fn create(
                     canonical_type_subtree_start.as_entire_binding(),
                 ),
                 (
-                    "type_semantic_row_by_token",
-                    inputs.type_semantic_row_by_token.as_entire_binding(),
-                ),
-                (
-                    "type_semantic_scan_input",
-                    inputs.type_semantic_scan_input.as_entire_binding(),
-                ),
-                (
-                    "type_semantic_prefix",
-                    inputs.type_semantic_prefix.as_entire_binding(),
-                ),
-                (
-                    "type_semantic_count_out",
-                    inputs.type_semantic_count_out.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_count_out",
-                    inputs.call_generic_claim_count_out.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_callee",
-                    inputs.call_generic_claim_callee.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_slot",
-                    inputs.call_generic_claim_slot.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_type",
-                    inputs.call_generic_claim_type.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_ref_tag",
-                    inputs.call_generic_claim_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_ref_payload",
-                    inputs.call_generic_claim_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "call_generic_claim_order",
-                    inputs.call_generic_claim_order.as_entire_binding(),
-                ),
-                (
-                    "call_return_type",
-                    inputs.call_return_type.as_entire_binding(),
-                ),
-                (
-                    "call_return_type_token",
-                    inputs.call_return_type_token.as_entire_binding(),
-                ),
-                (
-                    "aggregate_compare_scan_input",
-                    inputs.aggregate_compare_scan_input.as_entire_binding(),
-                ),
-                (
-                    "aggregate_compare_expected_instance",
-                    inputs
-                        .aggregate_compare_expected_instance
-                        .as_entire_binding(),
-                ),
-                (
-                    "aggregate_compare_actual_instance",
-                    inputs.aggregate_compare_actual_instance.as_entire_binding(),
-                ),
-                (
-                    "aggregate_compare_error_token",
-                    inputs.aggregate_compare_error_token.as_entire_binding(),
-                ),
-                (
-                    "aggregate_compare_error_detail",
-                    inputs.aggregate_compare_error_detail.as_entire_binding(),
-                ),
-                (
                     "dependency_call_compare_scan_input",
                     call_compare_scan_input.as_entire_binding(),
                 ),
@@ -1323,35 +890,16 @@ pub(in crate::type_checker) fn create(
                     "dependency_call_compare_error_token",
                     call_compare_error_token.as_entire_binding(),
                 ),
-                ("status", inputs.status_buf.as_entire_binding()),
             ]);
             bindings
         },
     )?;
-    let validate_call_type_args_group = bind_group::create_bind_group_from_bindings(
+    let validate_call_type_args_group = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_dependencies_08b_validate_call_type_args"),
-        &passes.dependencies.validate_call_type_args,
-        0,
+        "type_check_dependencies_08b_validate_call_type_args",
+        &passes.kernel("type_checker/dependencies/08b_validate_call_type_args"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("hir_status", inputs.hir_status_buf.as_entire_binding()),
-            (
-                "hir_semantic_count",
-                inputs.hir_items.semantic_count.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_dense_node",
-                inputs.hir_items.semantic_dense_node.as_entire_binding(),
-            ),
-            (
-                "hir_type_form",
-                inputs.hir_items.type_form.as_entire_binding(),
-            ),
-            (
-                "hir_token_pos",
-                inputs.hir_token_pos_buf.as_entire_binding(),
-            ),
             ("dependency_counts", dependencies.counts.as_entire_binding()),
             (
                 "dependency_call_compare_scan_input",
@@ -1393,87 +941,6 @@ pub(in crate::type_checker) fn create(
                 "canonical_type_subtree_start",
                 canonical_type_subtree_start.as_entire_binding(),
             ),
-            (
-                "type_semantic_row_by_token",
-                inputs.type_semantic_row_by_token.as_entire_binding(),
-            ),
-            (
-                "type_semantic_prefix",
-                inputs.type_semantic_prefix.as_entire_binding(),
-            ),
-            (
-                "type_semantic_count_out",
-                inputs.type_semantic_count_out.as_entire_binding(),
-            ),
-            (
-                "type_semantic_row_by_ordinal",
-                inputs.type_semantic_row_by_ordinal.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_tag",
-                inputs.type_expr_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_expr_ref_payload",
-                inputs.type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_external_canonical",
-                inputs.type_instance_external_canonical.as_entire_binding(),
-            ),
-            (
-                "type_instance_kind",
-                inputs.type_instance_kind.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_start",
-                inputs.type_instance_arg_start.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_count",
-                inputs.type_instance_arg_count.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_ref_tag",
-                inputs.type_instance_arg_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_ref_payload",
-                inputs.type_instance_arg_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_start",
-                inputs.type_instance_arg_row_start.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_count_out",
-                inputs.type_instance_arg_row_count_out.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_tag",
-                inputs.type_instance_arg_row_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_payload",
-                inputs.type_instance_arg_row_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_elem_ref_tag",
-                inputs.type_instance_elem_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_elem_ref_payload",
-                inputs.type_instance_elem_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_len_kind",
-                inputs.type_instance_len_kind.as_entire_binding(),
-            ),
-            (
-                "type_instance_len_payload",
-                inputs.type_instance_len_payload.as_entire_binding(),
-            ),
-            ("status", inputs.status_buf.as_entire_binding()),
         ],
     )?;
 

@@ -252,7 +252,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let clear_type_path_types = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10d_clear_type_path_types"),
-        &passes.modules_clear_type_path_types,
+        &passes.kernel("type_checker/modules/10d_clear_type_path_types"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -309,7 +309,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let project_type_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e_project_type_paths"),
-        &passes.modules_project_type_paths,
+        &passes.kernel("type_checker/modules/10e_project_type_paths"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -343,7 +343,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let validate_type_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e3_validate_type_paths"),
-        &passes.modules_validate_type_paths,
+        &passes.kernel("type_checker/modules/10e3_validate_type_paths"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -457,7 +457,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let clear_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0_clear_type_alias_forwarding"),
-        &passes.type_aliases.clear_forwarding,
+        &passes.kernel("type_checker/modules/10e0_clear_type_alias_forwarding"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -479,7 +479,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let init_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0a_init_type_alias_forwarding"),
-        &passes.type_aliases.init_forwarding,
+        &passes.kernel("type_checker/modules/10e0a_init_type_alias_forwarding"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -523,7 +523,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let validate_type_alias_forwarding_args = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0b_validate_type_alias_forwarding_args"),
-        &passes.type_aliases.validate_forwarding_args,
+        &passes.kernel("type_checker/modules/10e0b_validate_type_alias_forwarding_args"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -555,7 +555,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let init_type_alias_roots = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e1_init_type_alias_roots"),
-        &passes.type_aliases.init_roots,
+        &passes.kernel("type_checker/modules/10e1_init_type_alias_roots"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -600,7 +600,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let jump_type_alias_roots_a_to_b = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e1a_jump_type_alias_roots_a_to_b"),
-        &passes.type_aliases.jump_roots,
+        &passes.kernel("type_checker/modules/10e1a_jump_type_alias_roots"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -611,7 +611,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let jump_type_alias_roots_b_to_a = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e1a_jump_type_alias_roots_b_to_a"),
-        &passes.type_aliases.jump_roots,
+        &passes.kernel("type_checker/modules/10e1a_jump_type_alias_roots"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -628,7 +628,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let clear_alias_equivalence = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0c_clear_type_alias_equivalence"),
-        &passes.type_aliases.clear_equivalence,
+        &passes.kernel("type_checker/modules/10e0c_clear_type_alias_equivalence"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -655,7 +655,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let init_alias_decl_edges = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0d_init_type_alias_decl_edges"),
-        &passes.type_aliases.init_decl_edges,
+        &passes.kernel("type_checker/modules/10e0d_init_type_alias_decl_edges"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -709,7 +709,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let init_alias_arg_edges = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0e_init_type_alias_arg_edges"),
-        &passes.type_aliases.init_arg_edges,
+        &passes.kernel("type_checker/modules/10e0e_init_type_alias_arg_edges"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -774,7 +774,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         bind_group::create_bind_group_from_bindings(
             device,
             Some(label),
-            &passes.type_aliases.hook_equivalence,
+            &passes.kernel("type_checker/modules/10e0f_hook_type_alias_equivalence"),
             0,
             &[
                 ("gParams", params.as_entire_binding()),
@@ -797,7 +797,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             bind_group::create_bind_group_from_bindings(
                 device,
                 Some(label),
-                &passes.type_aliases.jump_equivalence,
+                &passes.kernel("type_checker/modules/10e0g_jump_type_alias_equivalence"),
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
@@ -830,7 +830,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let select_alias_generic_sources = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0h_select_type_alias_generic_sources"),
-        &passes.type_aliases.select_generic_sources,
+        &passes.kernel("type_checker/modules/10e0h_select_type_alias_generic_sources"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -864,7 +864,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let select_alias_concrete_sources = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0i_select_type_alias_concrete_sources"),
-        &passes.type_aliases.select_concrete_sources,
+        &passes.kernel("type_checker/modules/10e0i_select_type_alias_concrete_sources"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -884,7 +884,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let finalize_alias_equivalence = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e0j_finalize_type_alias_equivalence"),
-        &passes.type_aliases.finalize_equivalence,
+        &passes.kernel("type_checker/modules/10e0j_finalize_type_alias_equivalence"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -924,7 +924,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     )?;
     let project_type_alias_instances = create_project_type_alias_instances_bind_group(
         device,
-        &passes.type_aliases.project_instances,
+        &passes.kernel("type_checker/modules/10e0k_project_type_alias_instances"),
         params,
         hir_items,
         path_count_out,
@@ -946,7 +946,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let project_type_aliases = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10e2_project_type_aliases"),
-        &passes.type_aliases.project,
+        &passes.kernel("type_checker/modules/10e2_project_type_aliases"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1019,7 +1019,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let project_type_instances = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10k_project_type_instances"),
-        &passes.modules_project_type_instances,
+        &passes.kernel("type_checker/modules/10k_project_type_instances"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1063,7 +1063,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let mark_value_call_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10f_mark_value_call_paths"),
-        &passes.modules_mark_value_call_paths,
+        &passes.kernel("type_checker/modules/10f_mark_value_call_paths"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1117,7 +1117,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let project_value_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10g_project_value_paths"),
-        &passes.modules_project_value_paths,
+        &passes.kernel("type_checker/modules/10g_project_value_paths"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1176,7 +1176,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let consume_value_calls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10h_consume_value_calls"),
-        &passes.modules_consume_value_calls,
+        &passes.kernel("type_checker/modules/10h_consume_value_calls"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1236,7 +1236,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let mirror_value_call_leaf = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10h2_mirror_value_call_leaf"),
-        &passes.modules_mirror_value_call_leaf,
+        &passes.kernel("type_checker/modules/10h2_mirror_value_call_leaf"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1264,7 +1264,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let consume_value_consts = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10i_consume_value_consts"),
-        &passes.modules_consume_value_consts,
+        &passes.kernel("type_checker/modules/10i_consume_value_consts"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1325,7 +1325,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let consume_value_enum_units = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10j_consume_value_enum_units"),
-        &passes.modules_consume_value_enum_units,
+        &passes.kernel("type_checker/modules/10j_consume_value_enum_units"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1549,28 +1549,28 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let consume_value_enum_calls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10l_consume_value_enum_calls"),
-        &passes.modules_consume_value_enum_calls,
+        &passes.kernel("type_checker/modules/10l_consume_value_enum_calls"),
         0,
         &enum_call_bindings,
     )?;
     let validate_value_enum_call_payloads = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10l2_validate_value_enum_call_payloads"),
-        &passes.modules_validate_value_enum_call_payloads,
+        &passes.kernel("type_checker/modules/10l2_validate_value_enum_call_payloads"),
         0,
         &enum_call_bindings,
     )?;
     let finalize_value_enum_calls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10l3_finalize_value_enum_calls"),
-        &passes.modules_finalize_value_enum_calls,
+        &passes.kernel("type_checker/modules/10l3_finalize_value_enum_calls"),
         0,
         &enum_call_bindings,
     )?;
     let bind_match_patterns = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10m_bind_match_patterns"),
-        &passes.modules_bind_match_patterns,
+        &passes.kernel("type_checker/modules/10m_bind_match_patterns"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1651,7 +1651,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let type_match_payloads = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10m2_type_match_payloads"),
-        &passes.modules_type_match_payloads,
+        &passes.kernel("type_checker/modules/10m2_type_match_payloads"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1775,7 +1775,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     let type_match_exprs = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10n_type_match_exprs"),
-        &passes.modules_type_match_exprs,
+        &passes.kernel("type_checker/modules/10n_type_match_exprs"),
         0,
         &[
             ("gParams", params.as_entire_binding()),

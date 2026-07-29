@@ -46,11 +46,18 @@ StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> call_generic_claim_count_out;
+StructuredBuffer<uint> call_generic_claim_callee;
+StructuredBuffer<uint> call_generic_claim_slot;
+StructuredBuffer<uint> call_generic_claim_ref_tag;
+StructuredBuffer<uint> call_generic_claim_ref_payload;
+StructuredBuffer<uint> call_generic_claim_order;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_WORDS = 9u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
+static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
@@ -68,6 +75,7 @@ static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
 uint active_hir_count()
 {
@@ -143,7 +151,77 @@ bool local_nominal_matches(uint expected, uint tag, uint payload)
     return canonical != INVALID && canonical_nominal_matches(expected, canonical);
 }
 
-bool node_matches(uint expected_row, uint local_row)
+uint generic_claim_capacity()
+{
+    uint base = max(gParams.visible_capacity, gParams.hir_capacity);
+    return base > 0xffffffffu / GENERIC_CLAIM_CAPACITY_MULTIPLIER
+        ? 0xffffffffu
+        : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
+}
+
+bool claim_key_less(uint row, uint callee, uint slot)
+{
+    uint row_callee = call_generic_claim_callee[row];
+    return row_callee < callee ||
+        (row_callee == callee && call_generic_claim_slot[row] < slot);
+}
+
+uint generic_claim_row(uint callee, uint slot)
+{
+    uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
+    uint lo = 0u;
+    uint hi = count;
+    for (uint step = 0u; step < 32u && lo < hi; step += 1u)
+    {
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = call_generic_claim_order[mid];
+        if (row >= count || !claim_key_less(row, callee, slot))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+    if (lo >= count)
+        return INVALID;
+    uint row = call_generic_claim_order[lo];
+    return row < count && call_generic_claim_callee[row] == callee &&
+           call_generic_claim_slot[row] == slot
+        ? row
+        : INVALID;
+}
+
+bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint payload)
+{
+    uint row = generic_claim_row(callee, slot);
+    if (row == INVALID)
+        return false;
+    uint claim_tag = call_generic_claim_ref_tag[row];
+    uint claim_payload = call_generic_claim_ref_payload[row];
+    if (claim_tag == TYPE_REF_SCALAR)
+        return form == HIR_TYPE_FORM_PATH && tag == TYPE_REF_SCALAR &&
+               payload == claim_payload;
+    if (claim_tag == TYPE_REF_EXTERNAL_CANONICAL)
+        return form == HIR_TYPE_FORM_PATH &&
+               local_nominal_matches(claim_payload, tag, payload);
+    if (claim_tag != TYPE_REF_INSTANCE || claim_payload >= gParams.visible_capacity ||
+        tag != TYPE_REF_INSTANCE || payload >= gParams.visible_capacity)
+        return false;
+    uint claim_kind = type_instance_kind[claim_payload];
+    bool matches = claim_kind == type_instance_kind[payload] &&
+                   type_instance_arg_count[claim_payload] == type_instance_arg_count[payload];
+    if (matches && claim_kind == TYPE_INSTANCE_ARRAY)
+        matches = type_instance_len_kind[claim_payload] == type_instance_len_kind[payload] &&
+                  type_instance_len_payload[claim_payload] == type_instance_len_payload[payload];
+    if (matches && claim_kind != TYPE_INSTANCE_ARRAY && claim_kind != TYPE_INSTANCE_SLICE)
+    {
+        uint claim_nominal = type_instance_external_canonical[claim_payload];
+        uint local_nominal = type_instance_external_canonical[payload];
+        matches = claim_nominal != INVALID && local_nominal != INVALID &&
+                  canonical_nominal_matches(claim_nominal, local_nominal);
+    }
+    return matches;
+}
+
+bool node_matches(uint expected_row, uint local_row, uint callee)
 {
     uint type_count = dependency_counts[4u];
     uint semantic_count = min(hir_semantic_count[0u], active_hir_count());
@@ -164,6 +242,13 @@ bool node_matches(uint expected_row, uint local_row)
     uint form = hir_type_form[local_node];
     uint tag = type_expr_ref_tag[token];
     uint payload = type_expr_ref_payload[token];
+    if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
+        return generic_claim_matches(
+            callee,
+            dependency_type_words[base + 1u],
+            form,
+            tag,
+            payload);
     if (kind == INTERFACE_TYPE_SCALAR)
         return form == HIR_TYPE_FORM_PATH && tag == TYPE_REF_SCALAR &&
                payload == dependency_type_words[base + 1u] && edge_count == 0u;
@@ -214,7 +299,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : INVALID;
     uint local_row = local_semantic_row(
         dependency_call_compare_actual_instance[request], relative);
-    if (!node_matches(expected, local_row))
+    uint callee = dependency_call_compare_error_token[request];
+    if (!node_matches(expected, local_row, callee))
         record_min_token_error(
             status,
             dependency_call_compare_error_token[request],

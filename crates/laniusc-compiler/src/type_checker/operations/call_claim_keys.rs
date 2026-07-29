@@ -47,7 +47,7 @@ pub(in crate::type_checker) struct CallClaimKeyBuild<'a> {
     pub kind: CallClaimKind,
     pub token_capacity: u32,
     pub claim_capacity: u32,
-    pub dispatch_args: &'a LaniusBuffer<u32>,
+    pub dispatch_args: &'a wgpu::Buffer,
     pub resources: &'a HashMap<String, wgpu::BindingResource<'a>>,
 }
 
@@ -55,7 +55,7 @@ pub(in crate::type_checker) struct CallClaimKeyPipeline {
     dispatch_pass: PassData,
     _dispatch_params: LaniusBuffer<ModuleKeyRadixParams>,
     dispatch: wgpu::BindGroup,
-    dispatch_args: LaniusBuffer<u32>,
+    dispatch_args: wgpu::Buffer,
     sort: RadixSortOperation<ModuleKeyRadixParams>,
 }
 
@@ -95,7 +95,7 @@ impl CallClaimKeyPipeline {
         let dispatch = reflected_bind_group_with_overrides(
             device,
             &format!("{}.dispatch", definition.label()),
-            &passes.names_radix_dispatch_args,
+            &passes.kernel("type_checker/names/radix/dispatch_args"),
             &resources,
             &[
                 ("gParams", dispatch_params.as_entire_binding()),
@@ -109,32 +109,26 @@ impl CallClaimKeyPipeline {
 
         let sort = RadixSortOperation::new(
             device,
+            passes,
             &resources,
-            RadixSortPlan {
-                label: definition.label(),
-                capacity: input.claim_capacity,
-                small_capacity: 0,
-                steps: call_claim_radix_steps(input.token_capacity, input.claim_capacity),
-                passes: RadixSortPasses {
-                    small: None,
-                    histogram: &passes.calls_sort_generic_claims,
-                    bucket_prefix: &passes.names_radix_bucket_prefix,
-                    bucket_bases: &passes.names_radix_bucket_bases,
-                    scatter: &passes.calls_sort_generic_claims_scatter,
-                },
-                dispatch: RadixSortDispatch {
+            definition.plan(
+                input.claim_capacity,
+                0,
+                call_claim_radix_steps(input.token_capacity, input.claim_capacity),
+                RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
                     rows: RadixDispatchDomain::Indirect(input.dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-                resources: names,
-            },
+            ),
             params,
         )?;
 
         Ok(Self {
-            dispatch_pass: passes.names_radix_dispatch_args.clone(),
+            dispatch_pass: passes
+                .kernel("type_checker/names/radix/dispatch_args")
+                .clone(),
             _dispatch_params: dispatch_params,
             dispatch,
             dispatch_args: input.dispatch_args.clone(),

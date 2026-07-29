@@ -17,6 +17,7 @@ pub(in crate::type_checker) fn create_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     inputs: CreateInputs<'_>,
+    resources: &ResourceMap<'_>,
 ) -> Result<State> {
     let parser_hir_n_blocks = inputs.parser_hir_node_capacity.div_ceil(256).max(1);
     let layout = Layout::new(
@@ -43,9 +44,9 @@ pub(in crate::type_checker) fn create_with_passes(
         dispatch_args: path_prefix_dispatch_args,
         rounds: path_prefix_rounds,
         finalize: path_prefix_finalize,
-    } = create_path_sequences(passes, device, &inputs, &buffers)?;
+    } = create_path_sequences(passes, device, &inputs, &buffers, resources)?;
     let dependency_visibility =
-        dependency_visibility::create(passes, device, layout, &inputs, &buffers)?;
+        dependency_visibility::create(passes, device, layout, &inputs, &buffers, resources)?;
     let RecordDiscovery {
         mark_records,
         extract_module_record_flag_params,
@@ -64,7 +65,7 @@ pub(in crate::type_checker) fn create_with_passes(
         module_scan,
         import_scan,
         decl_scan,
-    } = create_record_discovery(passes, device, layout, &inputs, &buffers)?;
+    } = create_record_discovery(passes, device, layout, &inputs, &buffers, resources)?;
     let ModuleIndex {
         scatter_module_records,
         build_module_keys,
@@ -83,7 +84,7 @@ pub(in crate::type_checker) fn create_with_passes(
         sort_import_edges,
         validate_import_cycles,
         mut retained_params,
-    } = create_module_index(passes, device, layout, &inputs, &buffers)?;
+    } = create_module_index(passes, device, layout, &inputs, &buffers, resources)?;
     let ProjectionBindGroups {
         clear_type_path_types,
         project_type_paths,
@@ -272,7 +273,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let clear_file_module_map = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_05b_clear_file_module_map"),
-        &passes.modules_clear_file_module_map,
+        &passes.kernel("type_checker/modules/05b_clear_file_module_map"),
         0,
         &[
             ("gParams", decl_module_params.as_entire_binding()),
@@ -306,7 +307,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let build_file_module_map = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_05c_build_file_module_map"),
-        &passes.modules_build_file_module_map,
+        &passes.kernel("type_checker/modules/05c_build_file_module_map"),
         0,
         &[
             ("gParams", build_file_module_map_params.as_entire_binding()),
@@ -335,7 +336,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let attach_record_modules = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_05d_attach_record_modules"),
-        &passes.modules_attach_record_modules,
+        &passes.kernel("type_checker/modules/05d_attach_record_modules"),
         0,
         &[
             ("gParams", attach_record_modules_params.as_entire_binding()),
@@ -370,7 +371,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let seed_decl_key_order = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_06a_seed_decl_key_order"),
-        &passes.modules_seed_decl_key_order,
+        &passes.kernel("type_checker/modules/06a_seed_decl_key_order"),
         0,
         &[
             ("gParams", decl_module_params.as_entire_binding()),
@@ -396,7 +397,7 @@ pub(in crate::type_checker) fn create_with_passes(
     );
     let decl_key_radix_dispatch = create_radix_dispatch(
         device,
-        &passes.names_radix_dispatch_args,
+        &passes.kernel("type_checker/names/radix/dispatch_args"),
         "type_check.modules.decl_key_radix_dispatch",
         &decl_key_radix_dispatch_params,
         &decl_count_out,
@@ -446,19 +447,18 @@ pub(in crate::type_checker) fn create_with_passes(
     ]);
     let sort_decl_keys = RadixSortOperation::new(
         device,
+        passes,
         &decl_key_resources,
         RadixSortPlan {
             label: "type_check.modules.decl_keys",
             capacity: record_capacity_u32,
             small_capacity: MODULE_RELATION_SMALL_SORT_CAPACITY,
             steps: decl_key_radix_steps,
-            passes: RadixSortPasses {
-                small: Some(&passes.modules_sort_decl_keys_small),
-                histogram: &passes.modules_sort_decl_keys,
-                bucket_prefix: &passes.names_radix_bucket_prefix,
-                bucket_bases: &passes.names_radix_bucket_bases,
-                scatter: &passes.modules_sort_decl_keys_scatter,
-            },
+            kernels: RadixSortKernels::new(
+                "type_checker/modules/06_sort_decl_keys",
+                "type_checker/modules/06b_sort_decl_keys_scatter",
+            )
+            .with_small("type_checker/modules/06a2_sort_decl_keys_small"),
             dispatch: RadixSortDispatch {
                 small: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
                 rows: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
@@ -496,7 +496,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let validate_decls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_07_validate_decls"),
-        &passes.modules_validate_decls,
+        &passes.kernel("type_checker/modules/07_validate_decls"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -518,7 +518,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let mark_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_08_mark_decl_namespace_keys"),
-        &passes.modules_mark_decl_namespace_keys,
+        &passes.kernel("type_checker/modules/08_mark_decl_namespace_keys"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -602,7 +602,7 @@ pub(in crate::type_checker) fn create_with_passes(
 
     let (decl_type_key_scan, decl_value_key_scan) = PrefixScanOperation::from_pair_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::DECL_NAMESPACE_SCAN,
     )?;
@@ -610,7 +610,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_08b_scatter_decl_namespace_keys"),
-        &passes.modules_scatter_decl_namespace_keys,
+        &passes.kernel("type_checker/modules/08b_scatter_decl_namespace_keys"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -646,7 +646,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let mark_public_decl_keys = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_08c_mark_public_decl_keys"),
-        &passes.modules_mark_public_decl_keys,
+        &passes.kernel("type_checker/modules/08c_mark_public_decl_keys"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -688,14 +688,14 @@ pub(in crate::type_checker) fn create_with_passes(
 
     let (decl_type_public_scan, decl_value_public_scan) = PrefixScanOperation::from_pair_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::DECL_PUBLIC_SCAN,
     )?;
     let clear_interface_public_decls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_interface_public_decls_00_clear"),
-        &passes.interface_public_decls_clear,
+        &passes.kernel("type_checker/interface/public_decls/00_clear"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -720,7 +720,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let map_interface_public_decls = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_interface_public_decls_01_map"),
-        &passes.interface_public_decls_map,
+        &passes.kernel("type_checker/interface/public_decls/01_map"),
         0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
@@ -790,7 +790,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let count_import_visibility = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_09_count_import_visibility"),
-        &passes.modules_count_import_visibility,
+        &passes.kernel("type_checker/modules/09_count_import_visibility"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -848,7 +848,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let (import_visible_type_scan, import_visible_value_scan) =
         PrefixScanOperation::from_pair_spec(
             device,
-            passes.into(),
+            passes,
             &scan_resources,
             compiler_graph::IMPORT_VISIBLE_SCAN,
         )?;
@@ -856,7 +856,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_import_visible_type = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_09b_scatter_import_visibility.type"),
-        &passes.modules_scatter_import_visibility,
+        &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -917,7 +917,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_import_visible_value = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_09b_scatter_import_visibility.value"),
-        &passes.modules_scatter_import_visibility,
+        &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -987,7 +987,7 @@ pub(in crate::type_checker) fn create_with_passes(
     );
     let import_visible_type_key_radix_dispatch = create_radix_dispatch(
         device,
-        &passes.names_radix_dispatch_args,
+        &passes.kernel("type_checker/names/radix/dispatch_args"),
         "type_check.modules.import_visible_type_key_radix_dispatch",
         &import_visible_type_key_radix_dispatch_params,
         &import_visible_type_count_out,
@@ -1037,13 +1037,11 @@ pub(in crate::type_checker) fn create_with_passes(
         capacity: import_visible_capacity_u32,
         small_capacity: MODULE_RELATION_SMALL_SORT_CAPACITY,
         steps: IMPORT_VISIBLE_KEY_RADIX_STEPS,
-        passes: RadixSortPasses {
-            small: Some(&passes.modules_sort_import_visible_keys_small),
-            histogram: &passes.modules_sort_import_visible_keys,
-            bucket_prefix: &passes.names_radix_bucket_prefix,
-            bucket_bases: &passes.names_radix_bucket_bases,
-            scatter: &passes.modules_sort_import_visible_keys_scatter,
-        },
+        kernels: RadixSortKernels::new(
+            "type_checker/modules/09c_sort_import_visible_keys",
+            "type_checker/modules/09d_sort_import_visible_keys_scatter",
+        )
+        .with_small("type_checker/modules/09b2_sort_import_visible_keys_small"),
         dispatch: RadixSortDispatch {
             small: RadixDispatchDomain::Indirect(dispatch_args),
             rows: RadixDispatchDomain::Indirect(dispatch_args),
@@ -1063,6 +1061,7 @@ pub(in crate::type_checker) fn create_with_passes(
     };
     let sort_import_visible_type_keys = RadixSortOperation::new(
         device,
+        passes,
         &import_visible_type_key_resources,
         import_visible_sort_plan(
             "type_check.modules.import_visible_type_keys",
@@ -1089,7 +1088,7 @@ pub(in crate::type_checker) fn create_with_passes(
     );
     let import_visible_value_key_radix_dispatch = create_radix_dispatch(
         device,
-        &passes.names_radix_dispatch_args,
+        &passes.kernel("type_checker/names/radix/dispatch_args"),
         "type_check.modules.import_visible_value_key_radix_dispatch",
         &import_visible_value_key_radix_dispatch_params,
         &import_visible_value_count_out,
@@ -1163,6 +1162,7 @@ pub(in crate::type_checker) fn create_with_passes(
     ]);
     let sort_import_visible_value_keys = RadixSortOperation::new(
         device,
+        passes,
         &import_visible_value_key_resources,
         import_visible_sort_plan(
             "type_check.modules.import_visible_value_keys",
@@ -1180,7 +1180,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let build_import_visible_type_key_table = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_09e_build_import_visible_key_tables.type"),
-        &passes.modules_build_import_visible_key_tables,
+        &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1222,7 +1222,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let build_import_visible_value_key_table = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_09e_build_import_visible_key_tables.value"),
-        &passes.modules_build_import_visible_key_tables,
+        &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1264,7 +1264,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let (import_visible_validate_dispatch_params, import_visible_validate_dispatch_args_group) =
         create_pair_max_dispatch(
             device,
-            &passes.count_pair_max_dispatch_args,
+            &passes.kernel("type_checker/count/pair_max_dispatch_args"),
             "type_check.modules.import_visible_validate_dispatch.params",
             "type_check.modules.import_visible_validate_dispatch_args",
             import_visible_capacity_u32,
@@ -1289,7 +1289,7 @@ pub(in crate::type_checker) fn create_with_passes(
             bind_group::create_bind_group_from_bindings(
                 device,
                 Some(label),
-                &passes.modules_validate_import_visible_keys,
+                &passes.kernel("type_checker/modules/09f_validate_import_visible_keys"),
                 0,
                 &[
                     ("gParams", params.as_entire_binding()),
@@ -1356,7 +1356,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_local_type_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10_resolve_local_paths.type"),
-        &passes.modules_resolve_local_paths,
+        &passes.kernel("type_checker/modules/10_resolve_local_paths"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1390,7 +1390,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_local_value_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10_resolve_local_paths.value"),
-        &passes.modules_resolve_local_paths,
+        &passes.kernel("type_checker/modules/10_resolve_local_paths"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1424,7 +1424,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_imported_type_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10b_resolve_imported_paths.type"),
-        &passes.modules_resolve_imported_paths,
+        &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1468,7 +1468,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_imported_value_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10b_resolve_imported_paths.value"),
-        &passes.modules_resolve_imported_paths,
+        &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
         0,
         &[
             ("gParams", import_visibility_params.as_entire_binding()),
@@ -1522,7 +1522,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_qualified_type_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10c_resolve_qualified_paths.type"),
-        &passes.modules_resolve_qualified_paths,
+        &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
         0,
         &[
             ("gParams", resolve_qualified_path_params.as_entire_binding()),
@@ -1581,7 +1581,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let resolve_qualified_value_paths = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_10c_resolve_qualified_paths.value"),
-        &passes.modules_resolve_qualified_paths,
+        &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
         0,
         &[
             ("gParams", resolve_qualified_path_params.as_entire_binding()),
@@ -1640,7 +1640,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_decl_core_records = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_02c_scatter_decl_core_records"),
-        &passes.modules_scatter_decl_core_records,
+        &passes.kernel("type_checker/modules/02c_scatter_decl_core_records"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1672,7 +1672,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let append_variant_decl_count = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_02c1_append_variant_decl_count"),
-        &passes.modules_append_variant_decl_count,
+        &passes.kernel("type_checker/modules/02c1_append_variant_decl_count"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1687,7 +1687,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let clear_decl_lookup = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_02d_clear_decl_lookup"),
-        &passes.modules_clear_decl_lookup,
+        &passes.kernel("type_checker/modules/02d/clear_decl_lookup"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1701,7 +1701,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_decl_span_records = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_02d_scatter_decl_span_records"),
-        &passes.modules_scatter_decl_span_records,
+        &passes.kernel("type_checker/modules/02d/scatter_decl_span_records"),
         0,
         &[
             ("gParams", params.as_entire_binding()),
@@ -1725,7 +1725,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let scatter_variant_decl_records = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check_modules_02c2_scatter_variant_decl_records"),
-        &passes.modules_scatter_variant_decl_records,
+        &passes.kernel("type_checker/modules/02c2_scatter_variant_decl_records"),
         0,
         &[
             ("gParams", params.as_entire_binding()),

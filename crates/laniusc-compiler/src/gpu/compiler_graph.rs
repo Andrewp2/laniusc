@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     buffers::LaniusBuffer,
+    kernels::KernelReflections,
     workspace::{WorkspaceAssignment, WorkspacePlan, WorkspaceSlotPlan, WorkspaceUsageClass},
 };
 use crate::reflection::{ParameterReflection, SlangReflection, slang_category_and_type_to_wgpu};
@@ -188,6 +189,7 @@ pub struct ReflectedResourceBinding {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReflectedComputeSpec {
     pub name: &'static str,
+    pub kernel: &'static str,
     pub phase: CompilerPhase,
     pub dispatch_domain: ResourceDomain,
     pub modes: &'static [(&'static str, AccessMode)],
@@ -198,11 +200,13 @@ pub struct ReflectedComputeSpec {
 impl ReflectedComputeSpec {
     pub const fn new(
         name: &'static str,
+        kernel: &'static str,
         phase: CompilerPhase,
         dispatch_domain: ResourceDomain,
     ) -> Self {
         Self {
             name,
+            kernel,
             phase,
             dispatch_domain,
             modes: &[],
@@ -226,12 +230,22 @@ impl ReflectedComputeSpec {
         self
     }
 
-    pub fn register(
+    pub(crate) fn register_kernel(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        kernels: &impl KernelReflections,
+    ) -> Result<PassId, String> {
+        let reflection = kernels.reflection(self.kernel)?;
+        let pass = self.register_reflection(graph, reflection)?;
+        Ok(pass)
+    }
+
+    pub(crate) fn register_reflection(
         self,
         graph: &mut CompilerGraphBuilder,
         reflection: &SlangReflection,
     ) -> Result<PassId, String> {
-        if self.initializes_writable_bindings {
+        let pass = if self.initializes_writable_bindings {
             if !self.modes.is_empty() || !self.aliases.is_empty() {
                 return Err(format!(
                     "reflected compute specification {} combines initializer semantics with explicit modes",
@@ -277,7 +291,9 @@ impl ReflectedComputeSpec {
                 reflection,
                 &overrides,
             )
-        }
+        }?;
+        graph.pass_kernels[pass.index()] = Some(self.kernel);
+        Ok(pass)
     }
 }
 
@@ -403,6 +419,7 @@ pub struct CompilerGraph {
     resources: Vec<ResourceDesc>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
     passes: Vec<PassDesc>,
+    pass_kernels: Vec<Option<&'static str>>,
     lifetimes: Vec<Option<ResourceLifetime>>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
@@ -417,6 +434,26 @@ pub struct CompilerGraph {
 pub struct CompilerGraphWorkspace {
     slots: Vec<LaniusBuffer<u8>>,
     slot_by_resource: Vec<Option<u32>>,
+}
+
+/// Allocation-preserving views of every resource physically owned by one
+/// compiler graph.  Binding construction consumes this set directly instead
+/// of rebuilding the graph's resource table as hundreds of local variables.
+pub(crate) struct CompilerGraphBindings {
+    buffers: Vec<Option<LaniusBuffer<u8>>>,
+}
+
+impl CompilerGraphBindings {
+    pub(crate) fn buffer(&self, resource: ResourceId) -> Option<&LaniusBuffer<u8>> {
+        self.buffers.get(resource.index()).and_then(Option::as_ref)
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (ResourceId, &LaniusBuffer<u8>)> {
+        self.buffers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (ResourceId(index), buffer)))
+    }
 }
 
 /// Copyable ownership identity for graph-managed physical slots. Stages keep
@@ -593,6 +630,33 @@ impl CompilerGraphWorkspace {
         }
     }
 
+    /// Materializes one untyped view for each graph-owned logical resource.
+    /// Input and external resources are intentionally absent: their owning
+    /// phase registers them explicitly at the graph boundary.
+    pub(crate) fn bindings(&self, graph: &CompilerGraph) -> Result<CompilerGraphBindings, String> {
+        let buffers = graph
+            .resources()
+            .iter()
+            .enumerate()
+            .map(|(index, resource)| {
+                if matches!(
+                    resource.class,
+                    ResourceClass::Input | ResourceClass::External
+                ) {
+                    return Ok(None);
+                }
+                let count = usize::try_from(resource.bytes).map_err(|_| {
+                    format!(
+                        "compiler resource {} exceeds host addressable size",
+                        resource.name
+                    )
+                })?;
+                self.alias::<u8>(graph, ResourceId(index), count).map(Some)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(CompilerGraphBindings { buffers })
+    }
+
     pub fn validate_pass_bindings(
         &self,
         graph: &CompilerGraph,
@@ -684,8 +748,19 @@ impl CompilerGraphAllocations {
 }
 
 impl CompilerGraph {
+    /// Returns the generated shader artifact implementing a reflected pass.
+    pub(crate) fn pass_kernel(&self, pass: PassId) -> Option<&'static str> {
+        self.pass_kernels.get(pass.index()).copied().flatten()
+    }
+
     pub fn resources(&self) -> &[ResourceDesc] {
         &self.resources
+    }
+
+    pub(crate) fn resource_aliases(&self) -> impl Iterator<Item = (&'static str, ResourceId)> + '_ {
+        self.resource_aliases
+            .iter()
+            .map(|(name, resource)| (*name, *resource))
     }
 
     pub fn passes(&self) -> &[PassDesc] {
@@ -1639,6 +1714,21 @@ impl<T: Copy> PrefixScanResources<T> {
 
 pub type PrefixScanGraphResources = PrefixScanResources<ResourceId>;
 
+fn assign_prefix_scan_kernels(
+    graph: &mut CompilerGraphBuilder,
+    passes: PrefixScanGraphPasses,
+) -> Result<(), String> {
+    graph.assign_kernel(passes.local, "scan/counted/00_local")?;
+    graph.assign_kernel(passes.hierarchy_up_first, "scan/counted/01_hierarchy_up")?;
+    if graph.pass_names.contains(passes.hierarchy_up_rest) {
+        graph.assign_kernel(passes.hierarchy_up_rest, "scan/counted/01_hierarchy_up")?;
+    }
+    if graph.pass_names.contains(passes.hierarchy_down) {
+        graph.assign_kernel(passes.hierarchy_down, "scan/counted/02_hierarchy_down")?;
+    }
+    graph.assign_kernel(passes.apply, "scan/counted/02_apply")
+}
+
 /// Stable graph names for storage internal to a counted prefix scan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrefixScanGraphResourceNames {
@@ -1892,6 +1982,7 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
                 ],
             )?,
         })?;
+        assign_prefix_scan_kernels(graph, self.passes)?;
         Ok(((l.output_prefix, l.total), (r.output_prefix, r.total)))
     }
 }
@@ -2011,6 +2102,7 @@ impl CompilerGraphFragment for PrefixScanGraph {
                 PassAccess::write(total_name, r.total),
             ],
         })?;
+        assign_prefix_scan_kernels(graph, self.passes)?;
         Ok((r.output_prefix, r.total))
     }
 }
@@ -2019,6 +2111,7 @@ impl CompilerGraphFragment for PrefixScanGraph {
 pub struct CompilerGraphBuilder {
     resources: Vec<ResourceDesc>,
     passes: Vec<PassDesc>,
+    pass_kernels: Vec<Option<&'static str>>,
     resource_names: BTreeSet<&'static str>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
     pass_names: BTreeSet<&'static str>,
@@ -2029,6 +2122,33 @@ pub struct CompilerGraphBuilder {
 }
 
 impl CompilerGraphBuilder {
+    /// Associates a semantic graph pass with the generated shader that
+    /// implements it. High-level operations use this after expanding their
+    /// internal schedule so pipeline selection remains part of the graph.
+    pub(crate) fn assign_kernel(
+        &mut self,
+        pass_name: &str,
+        kernel: &'static str,
+    ) -> Result<(), String> {
+        let pass = self
+            .passes
+            .iter()
+            .position(|pass| pass.name == pass_name)
+            .map(PassId)
+            .ok_or_else(|| {
+                format!("cannot assign kernel `{kernel}` to unknown pass `{pass_name}`")
+            })?;
+        match self.pass_kernels[pass.index()] {
+            Some(existing) if existing != kernel => Err(format!(
+                "compiler pass `{pass_name}` already uses kernel `{existing}`, not `{kernel}`",
+            )),
+            _ => {
+                self.pass_kernels[pass.index()] = Some(kernel);
+                Ok(())
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -2039,6 +2159,32 @@ impl CompilerGraphBuilder {
             .position(|resource| resource.name == name)
             .map(ResourceId)
             .or_else(|| self.resource_aliases.get(name).copied())
+    }
+
+    /// Retains graph-owned relations after the last recorded pass.
+    ///
+    /// This is the explicit stage-output boundary corresponding to an array
+    /// returned from a Futhark entry point: output storage cannot be colored
+    /// over by later scratch even when its final in-graph read has completed.
+    pub fn retain_outputs(&mut self, names: &[&str]) -> Result<(), String> {
+        for &name in names {
+            let resource = self
+                .resource_id(name)
+                .ok_or_else(|| format!("cannot retain unknown compiler resource `{name}`"))?;
+            let desc = &mut self.resources[resource.index()];
+            match desc.class {
+                ResourceClass::Workspace | ResourceClass::Artifact => {
+                    desc.class = ResourceClass::Output;
+                }
+                ResourceClass::Output => {}
+                class => {
+                    return Err(format!(
+                        "compiler resource `{name}` has ownership class {class:?}; only graph-owned workspace or artifacts can become outputs",
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Gives one physical ownership identity another logical operation name.
@@ -2447,6 +2593,7 @@ impl CompilerGraphBuilder {
         }
         let id = PassId(self.passes.len());
         self.passes.push(desc);
+        self.pass_kernels.push(None);
         Ok(id)
     }
 
@@ -2588,6 +2735,47 @@ impl CompilerGraphBuilder {
             });
         }
         self.add_reflected_compute_pass(name, phase, dispatch_domain, reflection, &bindings)
+    }
+
+    /// Registers a graph pass directly from one generated kernel identity.
+    /// Reflection supplies the binding/access surface and the graph retains
+    /// the same identity for later pipeline preparation and execution.
+    pub(crate) fn add_kernel_pass_by_name(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        kernels: &impl KernelReflections,
+        kernel: &'static str,
+        overrides: &[ReflectedResourceBinding],
+    ) -> Result<PassId, String> {
+        let pass = self.add_reflected_compute_pass_by_name(
+            name,
+            phase,
+            dispatch_domain,
+            kernels.reflection(kernel)?,
+            overrides,
+        )?;
+        self.pass_kernels[pass.index()] = Some(kernel);
+        Ok(pass)
+    }
+
+    pub(crate) fn add_kernel_initializer_by_name(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        kernels: &impl KernelReflections,
+        kernel: &'static str,
+    ) -> Result<PassId, String> {
+        let pass = self.add_reflected_initializer_by_name(
+            name,
+            phase,
+            dispatch_domain,
+            kernels.reflection(kernel)?,
+        )?;
+        self.pass_kernels[pass.index()] = Some(kernel);
+        Ok(pass)
     }
 
     /// Adds a same-named reflected pass while refining the access mode of a
@@ -2941,6 +3129,7 @@ impl CompilerGraphBuilder {
             resources: self.resources,
             resource_aliases: self.resource_aliases,
             passes: self.passes,
+            pass_kernels: self.pass_kernels,
             lifetimes,
             repeated_regions: self.repeated_regions,
             paged_regions: self.paged_regions,
@@ -3174,6 +3363,38 @@ mod tests {
         assert_eq!(graph.lifetime(hir).unwrap().producer, Some(hir_pass));
         assert_eq!(graph.workspace_plan().slots.len(), 1);
         assert_eq!(graph.workspace_plan().slots[0].bytes, 96);
+    }
+
+    #[test]
+    fn retained_stage_output_cannot_alias_later_scratch() {
+        let mut builder = CompilerGraphBuilder::new();
+        let output = builder
+            .add_resource(workspace("stage.output", ResourceDomain::Types, 64))
+            .unwrap();
+        let scratch = builder
+            .add_resource(workspace("later.scratch", ResourceDomain::Types, 64))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "stage.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("output", output)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "later.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("scratch", scratch)],
+            })
+            .unwrap();
+        builder.retain_outputs(&["stage.output"]).unwrap();
+
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.resource(output).unwrap().class, ResourceClass::Output);
+        assert_eq!(graph.workspace_plan().slots.len(), 2);
     }
 
     #[test]
@@ -4156,6 +4377,7 @@ mod tests {
             .unwrap();
         let spec = ReflectedComputeSpec::new(
             "semantic.project.spec",
+            "test/semantic/project",
             CompilerPhase::SemanticLowering,
             ResourceDomain::HirNodes,
         )
@@ -4164,7 +4386,7 @@ mod tests {
             resource: "semantic.rows",
             mode: Some(AccessMode::Write),
         }]);
-        let pass = spec.register(&mut builder, &reflection).unwrap();
+        let pass = spec.register_reflection(&mut builder, &reflection).unwrap();
         let graph = builder.build().unwrap();
 
         assert_eq!(graph.pass(pass).unwrap().name, spec.name);
@@ -4173,6 +4395,7 @@ mod tests {
             graph.pass(pass).unwrap().accesses[1].mode,
             AccessMode::Write
         );
+        assert_eq!(graph.pass_kernel(pass), Some("test/semantic/project"));
     }
 
     #[test]

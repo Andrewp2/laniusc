@@ -4542,22 +4542,16 @@ mod tests {
                 "codegen/lir/semantic/execution_rank_step",
             ),
             ("lir.semantic.count", "codegen/lir/semantic/count"),
-            (
-                "lir.semantic.scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.semantic.scan.local", "scan/counted/00_local"),
             (
                 "lir.semantic.scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.semantic.scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.semantic.scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.semantic.scan.apply", "scan/counted/02_apply"),
             ("lir.semantic.scatter", "codegen/lir/semantic/scatter"),
             ("lir.semantic.validate", "codegen/lir/semantic/validate"),
             (
@@ -4599,22 +4593,16 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             ("lir.wasm.count", "codegen/lir/wasm/count"),
-            (
-                "lir.target.count_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.count_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.count_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.count_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.count_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.scatter", "codegen/lir/wasm/scatter"),
             ("lir.wasm.validate", "codegen/lir/wasm/validate"),
             (
@@ -4622,22 +4610,16 @@ mod tests {
                 "codegen/lir/wasm/materialize_function_ids",
             ),
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
-            (
-                "lir.target.function_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.function_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.function_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.function_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.function_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.target.functions.scatter_starts",
                 "codegen/lir/functions/scatter_starts",
@@ -4647,22 +4629,16 @@ mod tests {
                 "codegen/lir/functions/finalize",
             ),
             ("lir.wasm.byte_count", "codegen/lir/wasm/byte_count"),
-            (
-                "lir.target.byte_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.byte_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.byte_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.byte_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.byte_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.emit", "codegen/lir/wasm/emit"),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
@@ -4694,42 +4670,30 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             ("lir.x86.count", "codegen/lir/x86/count"),
-            (
-                "lir.target.count_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.count_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.count_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.count_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.count_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.x86.scatter", "codegen/lir/x86/scatter"),
             ("lir.x86.validate", "codegen/lir/x86/validate"),
             ("lir.x86.resolve", "codegen/lir/x86/resolve"),
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
-            (
-                "lir.target.function_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.function_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.function_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.function_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.function_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.target.functions.scatter_starts",
                 "codegen/lir/functions/scatter_starts",
@@ -4747,22 +4711,16 @@ mod tests {
                 "codegen/lir/x86/decl_slots_scatter",
             ),
             ("lir.x86.byte_count", "codegen/lir/x86/byte_count"),
-            (
-                "lir.target.byte_scan.local",
-                "type_checker/counted/scan/00_local",
-            ),
+            ("lir.target.byte_scan.local", "scan/counted/00_local"),
             (
                 "lir.target.byte_scan.hierarchy_up",
-                "type_checker/counted/scan/01_hierarchy_up",
+                "scan/counted/01_hierarchy_up",
             ),
             (
                 "lir.target.byte_scan.hierarchy_down",
-                "type_checker/counted/scan/02_hierarchy_down",
+                "scan/counted/02_hierarchy_down",
             ),
-            (
-                "lir.target.byte_scan.apply",
-                "type_checker/counted/scan/02_apply",
-            ),
+            ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.x86.entrypoint.clear",
                 "codegen/lir/x86/entrypoint_clear",

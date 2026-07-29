@@ -40,37 +40,22 @@ pub(in crate::type_checker) fn create_record_discovery(
     layout: Layout,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
+    resources: &ResourceMap<'_>,
 ) -> Result<RecordDiscovery> {
-    let mark_records = bind_group::create_bind_group_from_bindings(
+    let mark_records = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_00_mark_records"),
-        &passes.modules_mark_records,
-        0,
-        &[
-            ("gParams", inputs.params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                inputs.hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "record_family_bits",
-                buffers.record_family_bits.as_entire_binding(),
-            ),
-        ],
+        "type_check_modules_00_mark_records",
+        &passes.kernel("type_checker/modules/00_mark_records"),
+        &[(
+            "record_family_bits",
+            buffers.record_family_bits.as_entire_binding(),
+        )],
     )?;
 
     let (extract_module_record_flag_params, extract_module_record_flag) =
         create_record_flag_extract(
             device,
-            &passes.modules_extract_record_flag,
+            &passes.kernel("type_checker/modules/00b_extract_record_flag"),
             "type_check.modules.extract_module_record_flag.params",
             "type_check_modules_00b_extract_record_flag.module",
             inputs.hir_node_capacity,
@@ -81,7 +66,7 @@ pub(in crate::type_checker) fn create_record_discovery(
     let (extract_import_record_flag_params, extract_import_record_flag) =
         create_record_flag_extract(
             device,
-            &passes.modules_extract_record_flag,
+            &passes.kernel("type_checker/modules/00b_extract_record_flag"),
             "type_check.modules.extract_import_record_flag.params",
             "type_check_modules_00b_extract_record_flag.import",
             inputs.hir_node_capacity,
@@ -91,7 +76,7 @@ pub(in crate::type_checker) fn create_record_discovery(
         )?;
     let (extract_decl_record_flag_params, extract_decl_record_flag) = create_record_flag_extract(
         device,
-        &passes.modules_extract_record_flag,
+        &passes.kernel("type_checker/modules/00b_extract_record_flag"),
         "type_check.modules.extract_decl_record_flag.params",
         "type_check_modules_00b_extract_record_flag.decl",
         inputs.hir_node_capacity,
@@ -100,41 +85,11 @@ pub(in crate::type_checker) fn create_record_discovery(
         &buffers.record_family_flag,
     )?;
 
-    let scatter_paths = bind_group::create_bind_group_from_bindings(
+    let scatter_paths = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01_scatter_paths"),
-        &passes.modules_scatter_paths,
-        0,
+        "type_check_modules_01_scatter_paths",
+        &passes.kernel("type_checker/modules/01_scatter_paths"),
         &[
-            ("gParams", inputs.params.as_entire_binding()),
-            (
-                "compact_hir_count",
-                inputs.hir_items.hir.count.as_entire_binding(),
-            ),
-            (
-                "compact_hir_core",
-                inputs.hir_items.hir.core.as_entire_binding(),
-            ),
-            (
-                "compact_hir_expr_parent",
-                inputs.hir_items.hir.expr_parent.as_entire_binding(),
-            ),
-            (
-                "compact_path_count",
-                inputs.hir_items.hir.path_count.as_entire_binding(),
-            ),
-            (
-                "compact_paths",
-                inputs.hir_items.hir.paths.as_entire_binding(),
-            ),
-            (
-                "compact_path_segment_count",
-                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "compact_path_segments",
-                inputs.hir_items.hir.path_segments.as_entire_binding(),
-            ),
             ("path_start", buffers.path_start.as_entire_binding()),
             ("path_len", buffers.path_len.as_entire_binding()),
             ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
@@ -157,7 +112,7 @@ pub(in crate::type_checker) fn create_record_discovery(
     )?;
     let (path_dispatch_params, path_dispatch_args) = create_count_dispatch(
         device,
-        &passes.count_dispatch_args,
+        &passes.kernel("type_checker/count/dispatch_args"),
         "type_check.modules.path_dispatch.params",
         "type_check_modules_path_dispatch_args",
         layout.record_capacity_u32,
@@ -167,7 +122,7 @@ pub(in crate::type_checker) fn create_record_discovery(
     )?;
     let (import_dispatch_params, import_dispatch_args) = create_count_dispatch(
         device,
-        &passes.count_dispatch_args,
+        &passes.kernel("type_checker/count/dispatch_args"),
         "type_check.modules.import_dispatch.params",
         "type_check_modules_import_dispatch_args",
         layout.record_capacity_u32,
@@ -175,25 +130,11 @@ pub(in crate::type_checker) fn create_record_discovery(
         &buffers.import_count_out,
         &buffers.import_dispatch_args,
     )?;
-    let count_path_segments = bind_group::create_bind_group_from_bindings(
+    let count_path_segments = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01b_count_path_segments"),
-        &passes.modules_count_path_segments,
-        0,
+        "type_check_modules_01b_count_path_segments",
+        &passes.kernel("type_checker/modules/01b/count_path_segments"),
         &[
-            ("gParams", inputs.params.as_entire_binding()),
-            (
-                "compact_path_count",
-                inputs.hir_items.hir.path_count.as_entire_binding(),
-            ),
-            (
-                "compact_paths",
-                inputs.hir_items.hir.paths.as_entire_binding(),
-            ),
-            (
-                "compact_path_segment_count",
-                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
-            ),
             (
                 "path_segment_base",
                 buffers.path_segment_base.as_entire_binding(),
@@ -212,33 +153,11 @@ pub(in crate::type_checker) fn create_record_discovery(
             ),
         ],
     )?;
-    let scatter_path_segments = bind_group::create_bind_group_from_bindings(
+    let scatter_path_segments = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_01b_scatter_path_segments"),
-        &passes.modules_scatter_path_segments,
-        0,
+        "type_check_modules_01b_scatter_path_segments",
+        &passes.kernel("type_checker/modules/01b/scatter_path_segments"),
         &[
-            ("gParams", inputs.params.as_entire_binding()),
-            (
-                "compact_path_count",
-                inputs.hir_items.hir.path_count.as_entire_binding(),
-            ),
-            (
-                "compact_paths",
-                inputs.hir_items.hir.paths.as_entire_binding(),
-            ),
-            (
-                "compact_path_segment_count",
-                inputs.hir_items.hir.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "compact_path_segments",
-                inputs.hir_items.hir.path_segments.as_entire_binding(),
-            ),
-            (
-                "name_id_by_token",
-                inputs.name_id_by_token.as_entire_binding(),
-            ),
             (
                 "path_segment_name_id",
                 buffers.path_segment_name_id.as_entire_binding(),
@@ -254,10 +173,6 @@ pub(in crate::type_checker) fn create_record_discovery(
             (
                 "path_prefix_id_a",
                 buffers.path_prefix_id_a.as_entire_binding(),
-            ),
-            (
-                "predicate_syntax_token",
-                inputs.predicate_syntax_token.as_entire_binding(),
             ),
         ],
     )?;
@@ -285,19 +200,19 @@ pub(in crate::type_checker) fn create_record_discovery(
     ]);
     let module_scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::MODULE_RECORD_SCAN,
     )?;
     let import_scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::IMPORT_RECORD_SCAN,
     )?;
     let decl_scan = PrefixScanOperation::from_spec(
         device,
-        passes.into(),
+        passes,
         &scan_resources,
         compiler_graph::DECL_RECORD_SCAN,
     )?;

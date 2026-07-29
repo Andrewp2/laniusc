@@ -41,15 +41,6 @@ pub(in crate::type_checker) struct FnContextParams {
     pub(in crate::type_checker) scan_step: u32,
 }
 
-/// Uniform for counted scans used while compacting name-like rows.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct NameScanParams {
-    pub(in crate::type_checker) n_items: u32,
-    pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) scan_step: u32,
-}
-
 /// Capacity packet for GPU-produced exact path-prefix dispatches.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -155,18 +146,6 @@ pub(in crate::type_checker) struct DependencyCanonicalTypeParams {
     pub(in crate::type_checker) member_count: u32,
     pub(in crate::type_checker) path_capacity: u32,
     pub(in crate::type_checker) token_capacity: u32,
-}
-
-/// Uniform for one level of the 256-way counted-scan hierarchy.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct CountedScanHierarchyParams {
-    pub(in crate::type_checker) n_items: u32,
-    pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) level_divisor: u32,
-    pub(in crate::type_checker) level_offset: u32,
-    pub(in crate::type_checker) parent_divisor: u32,
-    pub(in crate::type_checker) parent_offset: u32,
 }
 
 /// Uniform for one visible-declaration scope-tree construction level.
@@ -315,17 +294,6 @@ pub(in crate::type_checker) fn predicate_capacity_for_features(
         1
     } else {
         hir_node_capacity.max(1)
-    }
-}
-
-pub(in crate::type_checker) fn member_capacity_for_features(
-    token_capacity: u32,
-    parser_feature_flags: u32,
-) -> u32 {
-    if parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MEMBERS == 0 {
-        1
-    } else {
-        token_capacity.max(1)
     }
 }
 
