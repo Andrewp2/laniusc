@@ -27,11 +27,11 @@ StructuredBuffer<uint> hir_visible_decl_count_out;
 StructuredBuffer<uint> hir_visible_decl_owner_fn;
 StructuredBuffer<uint> hir_visible_decl_name_id;
 StructuredBuffer<uint> hir_visible_decl_token;
-StructuredBuffer<uint> hir_visible_decl_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> hir_visible_decl_key_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -84,7 +84,7 @@ public struct HirVisibleDeclKeyScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return hir_visible_decl_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -97,7 +97,7 @@ public struct HirVisibleDeclKeyOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        hir_visible_decl_key_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

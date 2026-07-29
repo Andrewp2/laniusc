@@ -447,6 +447,8 @@ pub struct SemanticLirFunction {
     /// or `u32::MAX` for a private/non-exported function.
     pub symbol_local_index: u32,
     pub symbol_flags: u32,
+    /// Canonical runtime host-service identity, or `u32::MAX`.
+    pub host_service: u32,
 }
 
 #[repr(C)]
@@ -925,20 +927,15 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let semantic_array_lengths = graph.add_resource(input(
+        "typecheck.semantic_array_lengths_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let checked_value_decls = graph.add_resource(input(
         "typecheck.semantic_value_decls_by_hir",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
-    ))?;
-    let name_ids_by_token = graph.add_resource(input(
-        "typecheck.name_ids_by_token",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
-    ))?;
-    let language_name_ids = graph.add_resource(input(
-        "typecheck.language_name_ids",
-        ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<u32>(63),
     ))?;
     let checked_value_types = graph.add_resource(input(
         "typecheck.semantic_value_types_by_hir",
@@ -958,24 +955,29 @@ fn build_lowering_compiler_graph(
         ),
     ))?;
     let member_field_ordinals = graph.add_resource(input(
-        "typecheck.member_field_ordinals",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
+        "typecheck.semantic_member_field_ordinals_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let struct_init_field_ordinals = graph.add_resource(input(
         "typecheck.struct_init_field_ordinals",
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.aggregate_elements),
     ))?;
-    let call_return_types = graph.add_resource(input(
-        "typecheck.call_return_types",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    let semantic_function_return_types_by_hir = graph.add_resource(input(
+        "typecheck.semantic_function_return_types_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let function_entrypoint_tags = graph.add_resource(input(
-        "typecheck.function_entrypoint_tags",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    let semantic_function_entrypoints_by_hir = graph.add_resource(input(
+        "typecheck.semantic_function_entrypoints_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let semantic_function_host_services_by_hir = graph.add_resource(input(
+        "typecheck.semantic_function_host_services_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let public_decl_index_by_hir = graph.add_resource(input(
         "typecheck.public_decl_index_by_hir",
@@ -1007,10 +1009,10 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let if_depth = graph.add_resource(input(
-        "typecheck.if_depth",
-        ResourceDomain::Tokens,
-        LoweringCapacities::bytes::<i32>(capacities.tokens),
+    let semantic_control_depths = graph.add_resource(input(
+        "typecheck.semantic_control_depths_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let semantic_value_ids = graph.add_resource(artifact(
         "semantic.value_ids",
@@ -1621,8 +1623,18 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
             PassAccess::read("semantic_local_prefix", semantic_local_prefix),
             PassAccess::read("semantic_local_total", semantic_local_total),
-            PassAccess::read("call_return_type", call_return_types),
-            PassAccess::read("fn_entrypoint_tag", function_entrypoint_tags),
+            PassAccess::read(
+                "semantic_function_return_type_by_hir",
+                semantic_function_return_types_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_function_entrypoint_by_hir",
+                semantic_function_entrypoints_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_function_host_service_by_hir",
+                semantic_function_host_services_by_hir,
+            ),
             PassAccess::read("public_decl_index_by_hir", public_decl_index_by_hir),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
             PassAccess::read(
@@ -1671,8 +1683,6 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_expr_root", hir_expr_root),
             PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
-            PassAccess::read("name_id_by_token", name_ids_by_token),
-            PassAccess::read("language_name_id", language_name_ids),
             PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::read("dependency_counts", dependency_counts),
             PassAccess::read(
@@ -1839,6 +1849,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_expr_parent", hir_expr_parent),
             PassAccess::read("semantic_function_id", semantic_function_ids),
+            PassAccess::read("semantic_array_length", semantic_array_lengths),
             PassAccess::write("semantic_lir_count", semantic_counts),
         ],
     })?;
@@ -1913,6 +1924,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_expr_type", semantic_types),
             PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
             PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read("semantic_array_length", semantic_array_lengths),
             PassAccess::read("semantic_value_id", semantic_value_ids),
             PassAccess::read("semantic_value_type", semantic_value_types),
             PassAccess::read("semantic_call_target", semantic_call_targets),
@@ -1932,8 +1944,8 @@ fn build_lowering_compiler_graph(
             ),
             PassAccess::read("semantic_function_id", semantic_function_ids),
             PassAccess::read("semantic_lir_functions", semantic_functions),
-            PassAccess::read("semantic_if_depth", if_depth),
-            PassAccess::read("member_result_field_ordinal", member_field_ordinals),
+            PassAccess::read("semantic_control_depth_by_hir", semantic_control_depths),
+            PassAccess::read("semantic_member_field_ordinal", member_field_ordinals),
             PassAccess::read("compact_expr_root", hir_expr_root),
             PassAccess::read("compact_nearest_loop", hir_nearest_loop),
             PassAccess::read("compact_array_element_start", hir_array_element_start),

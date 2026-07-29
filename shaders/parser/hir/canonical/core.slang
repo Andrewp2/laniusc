@@ -28,6 +28,8 @@ StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_len_token;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> hir_type_root_owner;
+StructuredBuffer<uint> hir_method_impl_receiver_type;
 StructuredBuffer<uint> hir_type_alias_target_node;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
@@ -36,6 +38,7 @@ StructuredBuffer<uint> hir_stmt_scope_end;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
+StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
@@ -59,6 +62,7 @@ RWStructuredBuffer<uint> hir_canonical_nearest_block;
 RWStructuredBuffer<uint> hir_canonical_nearest_control;
 RWStructuredBuffer<uint> hir_canonical_nearest_fn;
 RWStructuredBuffer<uint> hir_canonical_fn_return_type;
+RWStructuredBuffer<uint> hir_canonical_type_root_owner;
 RWStructuredBuffer<uint> hir_canonical_type_alias_target;
 RWStructuredBuffer<uint> hir_canonical_const_type;
 RWStructuredBuffer<uint> hir_canonical_const_value;
@@ -87,6 +91,8 @@ static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_IMPL = 35u;
+static const uint HIR_IMPL_INHERENT = 1u;
+static const uint HIR_IMPL_TRAIT = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_CHAR = 29u;
@@ -99,7 +105,6 @@ uint dense_id(uint raw)
 {
     return valid_raw(raw) ? canonical_raw_to_dense[raw] : INVALID;
 }
-
 uint expression_id(uint raw)
 {
     if (!valid_raw(raw)) return INVALID;
@@ -174,7 +179,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint stmt_base = raw * 4u;
     uint stmt_kind = hir_stmt_record[stmt_base];
     uint expr_form = hir_expr_record[stmt_base];
-    if (item_kind != 0u)
+    if (core.kind == HIR_IMPL)
+    {
+        // Trait predicate compaction fills payload.b/c with the dense trait
+        // bound and target type.  Keeping the impl flavour here makes the
+        // compact HIR self-describing even for inherent impls, which have no
+        // predicate-family row.
+        payload.a = production == PROD_IMPL_TRAIT
+            ? HIR_IMPL_TRAIT
+            : HIR_IMPL_INHERENT;
+        payload.c = dense_id(hir_method_impl_receiver_type[raw]);
+    }
+    else if (item_kind != 0u)
     {
         payload.a = item_kind;
         payload.b = hir_item_name_token[raw];
@@ -257,8 +273,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Member access keeps its receiver and selected name entirely in the
         // compact expression domain. Backends may project the dense receiver
         // to their own executable row without retaining parser member columns.
+        uint raw_receiver = hir_member_receiver_node[raw];
         payload.a = expr_form;
-        payload.b = dense_id(hir_member_receiver_node[raw]);
+        payload.b = valid_raw(raw_receiver) && hir_kind[raw_receiver] == HIR_MEMBER_EXPR
+            ? dense_id(raw_receiver)
+            : expression_id(raw_receiver);
         payload.c = hir_member_name_token[raw];
         payload.d = hir_member_receiver_token[raw];
     }
@@ -298,6 +317,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             payload.b = hir_expr_int_value[raw];
         else if (expr_form == HIR_EXPR_FLOAT)
             payload.b = hir_expr_float_bits[raw];
+        else if (core.kind == HIR_NAME_EXPR)
+            payload.b = hir_expr_name_role[raw];
     }
 
     hir_core[row] = core;
@@ -309,6 +330,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_canonical_nearest_control[row] = dense_id(hir_nearest_enclosing_control_node[raw]);
     hir_canonical_nearest_fn[row] = dense_id(hir_nearest_fn_node[raw]);
     hir_canonical_fn_return_type[row] = dense_id(hir_fn_return_type_node[raw]);
+    hir_canonical_type_root_owner[row] = dense_id(hir_type_root_owner[raw]);
     hir_canonical_type_alias_target[row] = dense_id(hir_type_alias_target_node[raw]);
     hir_canonical_const_type[row] = item_kind == 3u
         ? dense_id(hir_stmt_record[stmt_base + 3u])

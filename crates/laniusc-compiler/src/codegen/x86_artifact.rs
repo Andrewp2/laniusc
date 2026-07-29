@@ -29,11 +29,6 @@ struct X86ArtifactParams {
     artifact_capacity: u32,
 }
 
-pub(crate) struct GpuX86ArtifactView<'a> {
-    pub length: &'a LaniusBuffer<u32>,
-    pub words: &'a LaniusBuffer<u32>,
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct GpuX86ArtifactObjectView<'a> {
     pub byte_lengths: &'a LaniusBuffer<u32>,
@@ -64,7 +59,6 @@ pub(crate) struct GpuX86ArtifactStage {
     _params: LaniusBuffer<X86ArtifactParams>,
     byte_lengths: LaniusBuffer<u32>,
     byte_offsets: LaniusBuffer<u32>,
-    body_length: LaniusBuffer<u32>,
     entrypoint_state: LaniusBuffer<u32>,
     layout: LaniusBuffer<X86ArtifactLayout>,
     length: LaniusBuffer<u32>,
@@ -358,7 +352,6 @@ impl GpuX86ArtifactStage {
             _params: params,
             byte_lengths,
             byte_offsets,
-            body_length,
             entrypoint_state,
             layout,
             length,
@@ -419,13 +412,6 @@ impl GpuX86ArtifactStage {
             self.artifact_capacity as u64,
         );
         Ok(())
-    }
-
-    pub(crate) fn output(&self) -> GpuX86ArtifactView<'_> {
-        GpuX86ArtifactView {
-            length: &self.length,
-            words: &self.words,
-        }
     }
 
     pub(crate) fn object_view(&self) -> GpuX86ArtifactObjectView<'_> {

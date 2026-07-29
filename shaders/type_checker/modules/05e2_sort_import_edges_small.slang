@@ -14,7 +14,7 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_module_id;
 StructuredBuffer<uint> import_status;
-RWStructuredBuffer<uint> import_edge_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint IMPORT_STATUS_OK = 0u;
@@ -95,5 +95,5 @@ void main(uint3 ltid: SV_GroupThreadID)
         }
     }
     for (uint i = lane; i < active_count; i += WG_SIZE)
-        import_edge_key_order[i] = shared_order[i];
+        radix_order[i] = shared_order[i];
 }

@@ -70,8 +70,6 @@ pub(crate) struct GpuWasmObjectView<'a> {
     pub relocations: &'a LaniusBuffer<WasmObjectRelocationRow>,
     pub functions: &'a LaniusBuffer<WasmObjectFunctionRow>,
     pub definitions: &'a LaniusBuffer<WasmObjectDefinitionRow>,
-    pub type_words: &'a LaniusBuffer<u32>,
-    pub body_words: &'a LaniusBuffer<u32>,
 }
 
 pub(crate) struct GpuWasmObjectStage {
@@ -520,8 +518,6 @@ impl GpuWasmObjectStage {
             relocations: &self.relocations,
             functions: &self.functions,
             definitions: &self.definitions,
-            type_words: &self.type_words,
-            body_words: &self.body_words,
         }
     }
 

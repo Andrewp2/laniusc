@@ -6,7 +6,6 @@ mod method_keys;
 mod methods;
 mod names;
 mod predicates;
-mod scan;
 mod type_instances;
 mod visible;
 
@@ -18,6 +17,5 @@ pub(super) use method_keys::*;
 pub(super) use methods::*;
 pub(super) use names::*;
 pub(super) use predicates::*;
-pub(super) use scan::*;
 pub(super) use type_instances::*;
 pub(super) use visible::*;

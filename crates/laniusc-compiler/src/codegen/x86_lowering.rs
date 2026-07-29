@@ -8,7 +8,7 @@ use super::{
     lowering::{GpuSemanticLirView, bound, make_group, record_direct, target_lowering_allocations},
     lowering_ir::{LoweringCapacities, LoweringStatus, X86LirCore, X86LirOperands},
     scan::{GpuResidentExclusiveScan, GraphScanContract},
-    x86_artifact::{GpuX86ArtifactStage, GpuX86ArtifactView},
+    x86_artifact::GpuX86ArtifactStage,
     x86_object_artifact::GpuX86ObjectStage,
 };
 use crate::gpu::{
@@ -57,8 +57,6 @@ pub(crate) struct GpuX86LirView<'a> {
     pub total: &'a LaniusBuffer<u32>,
     pub core: &'a LaniusBuffer<X86LirCore>,
     pub operands: &'a LaniusBuffer<X86LirOperands>,
-    pub functions: GpuTargetFunctionView<'a>,
-    pub frame_slot_by_decl_token: &'a LaniusBuffer<u32>,
 }
 
 /// Produces the uniform x86 virtual records consumed by register allocation
@@ -88,7 +86,6 @@ pub(crate) struct GpuX86LirStage {
     total: LaniusBuffer<u32>,
     core: LaniusBuffer<X86LirCore>,
     operands: LaniusBuffer<X86LirOperands>,
-    scheduled_function_ids: LaniusBuffer<u32>,
     _origins: LaniusBuffer<u32>,
     _flags: LaniusBuffer<u32>,
     frame_slot_by_decl_token: LaniusBuffer<u32>,
@@ -522,7 +519,6 @@ impl GpuX86LirStage {
             total,
             core,
             operands,
-            scheduled_function_ids,
             _origins: origins,
             _flags: flags,
             frame_slot_by_decl_token,
@@ -540,8 +536,6 @@ impl GpuX86LirStage {
             total: &self.total,
             core: &self.core,
             operands: &self.operands,
-            functions: self.functions.output(),
-            frame_slot_by_decl_token: &self.frame_slot_by_decl_token,
         }
     }
 
@@ -604,10 +598,6 @@ impl GpuX86LirStage {
             &self.decl_slots_scatter_group,
             self.decl_slot_dispatch_capacity,
         )
-    }
-
-    pub(crate) fn artifact(&self) -> GpuX86ArtifactView<'_> {
-        self.artifact.output()
     }
 
     pub(crate) fn finish_artifact(&self, device: &wgpu::Device) -> Result<Vec<u8>> {
@@ -1201,6 +1191,7 @@ mod tests {
         assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
 
         let output = stage.output();
+        let functions = stage.functions.output();
         let total_rb = readback_bytes(&gpu.device, "test.x86_lir.total.rb", 4, 1);
         let core_rb = readback_bytes(&gpu.device, "test.x86_lir.core.rb", 160, 40);
         let operands_rb = readback_bytes(&gpu.device, "test.x86_lir.operands.rb", 160, 40);
@@ -1211,23 +1202,11 @@ mod tests {
         encoder.copy_buffer_to_buffer(&output.total.buffer, 0, &total_rb.buffer, 0, 4);
         encoder.copy_buffer_to_buffer(&output.core.buffer, 0, &core_rb.buffer, 0, 160);
         encoder.copy_buffer_to_buffer(&output.operands.buffer, 0, &operands_rb.buffer, 0, 160);
-        encoder.copy_buffer_to_buffer(
-            &output.functions.count.buffer,
-            0,
-            &function_count_rb.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.functions.rows.buffer,
-            0,
-            &functions_rb.buffer,
-            0,
-            64,
-        );
+        encoder.copy_buffer_to_buffer(&functions.count.buffer, 0, &function_count_rb.buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(&functions.rows.buffer, 0, &functions_rb.buffer, 0, 64);
         encoder.copy_buffer_to_buffer(&status.buffer, 0, &status_rb.buffer, 0, 16);
         encoder.copy_buffer_to_buffer(
-            &output.frame_slot_by_decl_token.buffer,
+            &stage.frame_slot_by_decl_token.buffer,
             0,
             &frame_slots_rb.buffer,
             0,

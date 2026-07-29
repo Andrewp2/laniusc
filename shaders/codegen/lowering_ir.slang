@@ -538,6 +538,7 @@ struct SemanticLirFunction
     // object layer combines this with its library/unit identity.
     uint symbol_local_index;
     uint symbol_flags;
+    uint host_service;
 };
 
 struct SemanticLirParam

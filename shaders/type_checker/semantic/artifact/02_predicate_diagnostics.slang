@@ -90,41 +90,39 @@ uint fallback_bound_arg_token(uint raw)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (raw >= active_raw_count()) return;
-
-    uint dense = raw_to_compact_hir[raw];
-    if (dense == INVALID || dense >= active_compact_count()) return;
-
-    if (compact_predicate_diagnostic_facts[dense].winner_raw != raw) return;
-
-    PredicateDiagnosticFact fact = compact_predicate_diagnostic_facts[dense];
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint compact_count = active_compact_count();
     bool has_predicate_storage =
         (gParams.parser_feature_flags &
          (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES)) != 0u;
-    if (has_predicate_storage)
+    if (has_predicate_storage && row < active_raw_count())
     {
-        fact.status = predicate_status[raw];
-        fact.first_arg_token = predicate_bound_first_arg_token[raw];
-        fact.second_arg_token = predicate_bound_second_arg_token[raw];
-        fact.fallback_arg_token = fallback_bound_arg_token(raw);
-        fact.method_contract_status = predicate_method_contract_status[raw];
-
-        // Preserve the method-row result directly for compact method-family
-        // diagnostics. Impl owners additionally receive the reduced first
-        // failing row so missing/aggregate contract errors have one owner.
-        fact.method_validation_status = predicate_method_validation_status[raw];
-        fact.method_validation_detail_token =
-            predicate_method_validation_detail_token[raw];
-        uint error_row = predicate_method_validation_first_error_row[dense];
-        if ((fact.method_validation_status == INVALID ||
-             fact.method_validation_status == 0u) &&
-            error_row != INVALID && error_row < active_raw_count())
+        uint dense = raw_to_compact_hir[row];
+        if (dense < compact_count &&
+            compact_predicate_diagnostic_facts[dense].winner_raw == row)
         {
-            fact.method_validation_status = predicate_method_validation_status[error_row];
-            fact.method_validation_detail_token =
-                predicate_method_validation_detail_token[error_row];
+            compact_predicate_diagnostic_facts[dense].status = predicate_status[row];
+            compact_predicate_diagnostic_facts[dense].first_arg_token =
+                predicate_bound_first_arg_token[row];
+            compact_predicate_diagnostic_facts[dense].second_arg_token =
+                predicate_bound_second_arg_token[row];
+            compact_predicate_diagnostic_facts[dense].fallback_arg_token =
+                fallback_bound_arg_token(row);
         }
     }
-    compact_predicate_diagnostic_facts[dense] = fact;
+
+    if (row >= compact_count) return;
+    compact_predicate_diagnostic_facts[row].method_contract_status =
+        predicate_method_contract_status[row];
+    uint validation_status = predicate_method_validation_status[row];
+    uint validation_detail = predicate_method_validation_detail_token[row];
+    uint error_row = predicate_method_validation_first_error_row[row];
+    if ((validation_status == INVALID || validation_status == 0u) &&
+        error_row < compact_count)
+    {
+        validation_status = predicate_method_validation_status[error_row];
+        validation_detail = predicate_method_validation_detail_token[error_row];
+    }
+    compact_predicate_diagnostic_facts[row].method_validation_status = validation_status;
+    compact_predicate_diagnostic_facts[row].method_validation_detail_token = validation_detail;
 }

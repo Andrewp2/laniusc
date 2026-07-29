@@ -62,9 +62,7 @@ StructuredBuffer<uint> hir_type_arg_count;
 #if PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> hir_type_arg_next;
 #endif
-StructuredBuffer<uint> hir_item_name_token;
 #if PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_item_visibility;
 StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 #endif
@@ -148,11 +146,9 @@ StructuredBuffer<uint> predicate_method_contract_owner_node;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_method_contract_param_count;
-StructuredBuffer<uint> predicate_method_contract_first_param_node;
 StructuredBuffer<uint> predicate_method_contract_return_type_node;
 StructuredBuffer<uint> predicate_method_contract_visibility;
 StructuredBuffer<uint> predicate_method_contract_status;
-StructuredBuffer<uint> predicate_method_contract_param_next_node;
 StructuredBuffer<uint> predicate_method_contract_param_type_node;
 StructuredBuffer<uint> predicate_method_contract_key_order;
 StructuredBuffer<uint> predicate_method_contract_owner_range_first;
@@ -317,8 +313,12 @@ uint generic_owner_token_for_decl(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint name_token = hir_item_name_token[decl_node];
-    return valid_token(name_token) ? name_token : hir_token_pos[decl_node];
+    uint dense = raw_to_compact_hir[decl_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= count)
+        return hir_token_pos[decl_node];
+    uint name_token = compact_hir_payload[dense].b;
+    return valid_token(name_token) ? name_token : compact_hir_core[dense].token_start;
 }
 
 #if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
@@ -840,7 +840,9 @@ uint owner_module_for_decl_node(uint owner_decl_node)
     if (!valid_node(owner_decl_node))
         return INVALID;
 
-    uint name_token = hir_item_name_token[owner_decl_node];
+    uint dense = raw_to_compact_hir[owner_decl_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint name_token = dense < count ? compact_hir_payload[dense].b : INVALID;
     if (!valid_token(name_token))
         return INVALID;
 
@@ -1748,7 +1750,9 @@ bool trait_impl_header_is_public(uint impl_node)
 {
     if (!valid_node(impl_node))
         return false;
-    if (hir_item_visibility[impl_node] == HIR_ITEM_VIS_PUBLIC)
+    uint dense = raw_to_compact_hir[impl_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense < count && compact_hir_payload[dense].d == HIR_ITEM_VIS_PUBLIC)
         return true;
 
     uint parent_i = parent_node(impl_node);

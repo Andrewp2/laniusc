@@ -51,6 +51,7 @@ StructuredBuffer<uint> call_dependency_decl;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
+StructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -166,6 +167,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     call.return_ref_tag = decl_type_ref_tag[target];
                     call.return_ref_payload = decl_type_ref_payload[target];
                 }
+            }
+            // Generic and aggregate call checking publishes a concrete result
+            // instance by dense call HIR row. Prefer that checked call-site
+            // fact over the callee declaration's potentially symbolic return
+            // instance so downstream semantic consumers never have to repeat
+            // generic substitution.
+            uint result_instance = call_result_instance[row];
+            if (valid_token(result_instance))
+            {
+                call.return_ref_tag = 3u;
+                call.return_ref_payload = result_instance;
             }
         }
         call.receiver_hir = valid_hir(callee) &&

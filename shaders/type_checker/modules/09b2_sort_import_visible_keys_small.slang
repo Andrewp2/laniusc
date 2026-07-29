@@ -13,7 +13,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_visible_count_out;
 StructuredBuffer<uint> import_visible_module_id;
 StructuredBuffer<uint> import_visible_name_id;
-RWStructuredBuffer<uint> import_visible_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -86,5 +86,5 @@ void main(uint3 ltid: SV_GroupThreadID)
         }
     }
     for (uint i = lane; i < active_count; i += WG_SIZE)
-        import_visible_key_order[i] = shared_order[i];
+        radix_order[i] = shared_order[i];
 }

@@ -38,7 +38,6 @@ StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> hir_item_name_token;
 
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
@@ -92,16 +91,11 @@ bool impl_node_kind(uint kind)
     return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
-uint compact_item_kind_for_raw_decl(uint node)
+bool generic_decl_item_production(uint prod)
 {
-    if (!valid_node(node))
-        return INVALID;
-    uint token = hir_item_name_token[node];
-    if (!valid_token(token))
-        return INVALID;
-    uint dense = type_decl_hir_node_by_token[token];
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    return dense < count ? compact_hir_payload[dense].a : INVALID;
+    return prod == PROD_FN || prod == PROD_EXTERN_FN ||
+           prod == PROD_STRUCT || prod == PROD_ENUM ||
+           prod == PROD_TYPE_ALIAS || prod == PROD_TRAIT;
 }
 
 uint compact_method_signature_flags_for_raw_decl(uint node)
@@ -126,7 +120,7 @@ bool generic_decl_node(uint node)
     if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
         return (compact_method_signature_flags_for_raw_decl(node) &
                 METHOD_SIGNATURE_HAS_GENERICS) != 0u;
-    return generic_decl_item_kind(compact_item_kind_for_raw_decl(node)) ||
+    return generic_decl_item_production(prod) ||
            prod == PROD_IMPL_INHERENT ||
            prod == PROD_IMPL_TRAIT;
 }

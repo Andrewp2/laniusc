@@ -175,14 +175,74 @@ pub struct LaniusBuffer<T> {
     /// number of logical T elements
     pub count: usize,
     _allocation: Option<Arc<BufferAllocationLedger>>,
+    _borrowed_allocation_id: Option<u64>,
     _marker: std::marker::PhantomData<T>,
+}
+
+/// Borrowed, type-erased view of a tracked GPU allocation.
+///
+/// Compiler phase boundaries often reuse storage with a different logical
+/// element type. Passing only `&wgpu::Buffer` across that boundary loses the
+/// allocation identity needed by compiler-graph ownership validation. This
+/// view keeps the physical identity and byte extent without pretending that
+/// the producer's element type is still meaningful to the consumer.
+#[derive(Clone, Copy)]
+pub struct TrackedBufferView<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    pub byte_size: u64,
+    allocation_id: Option<u64>,
+}
+
+impl<'a> TrackedBufferView<'a> {
+    pub fn allocation_id(self) -> Option<u64> {
+        self.allocation_id
+    }
+
+    pub fn as_entire_binding(self) -> wgpu::BindingResource<'a> {
+        self.buffer.as_entire_binding()
+    }
+
+    /// Reinterprets this borrowed allocation without losing the producer's
+    /// compiler allocation identity. The producer remains responsible for
+    /// ledger accounting and physical lifetime.
+    pub fn alias<T>(self, count: usize) -> LaniusBuffer<T> {
+        LaniusBuffer {
+            buffer: self.buffer.clone(),
+            byte_size: self.byte_size as usize,
+            count,
+            _allocation: None,
+            _borrowed_allocation_id: self.allocation_id,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl std::ops::Deref for TrackedBufferView<'_> {
+    type Target = wgpu::Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        self.buffer
+    }
+}
+
+impl<'a, T> From<&'a LaniusBuffer<T>> for TrackedBufferView<'a> {
+    fn from(buffer: &'a LaniusBuffer<T>) -> Self {
+        Self {
+            buffer: &buffer.buffer,
+            byte_size: buffer.byte_size as u64,
+            allocation_id: buffer.allocation_id(),
+        }
+    }
 }
 
 impl<T> LaniusBuffer<T> {
     /// Stable identity of the physical GPU allocation shared by all aliases.
     /// Buffers wrapped through `untracked_alias` have no compiler-owned id.
     pub fn allocation_id(&self) -> Option<u64> {
-        self._allocation.as_ref().map(|allocation| allocation.id)
+        self._allocation
+            .as_ref()
+            .map(|allocation| allocation.id)
+            .or(self._borrowed_allocation_id)
     }
 
     /// Wraps a raw `wgpu::Buffer` plus byte size and logical element count.
@@ -202,6 +262,7 @@ impl<T> LaniusBuffer<T> {
             byte_size: byte_size as usize,
             count,
             _allocation: Some(BufferAllocationLedger::new(byte_size, label)),
+            _borrowed_allocation_id: None,
             _marker: std::marker::PhantomData,
         }
     }
@@ -214,6 +275,7 @@ impl<T> LaniusBuffer<T> {
             byte_size: self.byte_size,
             count,
             _allocation: self._allocation,
+            _borrowed_allocation_id: self._borrowed_allocation_id,
             _marker: std::marker::PhantomData,
         }
     }
@@ -226,6 +288,7 @@ impl<T> LaniusBuffer<T> {
             byte_size: self.byte_size,
             count,
             _allocation: self._allocation.clone(),
+            _borrowed_allocation_id: self._borrowed_allocation_id,
             _marker: std::marker::PhantomData,
         }
     }
@@ -238,6 +301,7 @@ impl<T> LaniusBuffer<T> {
             byte_size: byte_size as usize,
             count,
             _allocation: None,
+            _borrowed_allocation_id: None,
             _marker: std::marker::PhantomData,
         }
     }

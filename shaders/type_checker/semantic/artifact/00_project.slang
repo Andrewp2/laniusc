@@ -22,10 +22,19 @@ StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> fn_entrypoint_tag;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
+StructuredBuffer<int> if_depth;
 RWStructuredBuffer<uint> semantic_value_decl_by_hir;
 RWStructuredBuffer<uint> semantic_value_type_by_hir;
 RWStructuredBuffer<uint> semantic_param_type_by_row;
 RWStructuredBuffer<uint> semantic_enclosing_fn_by_hir;
+RWStructuredBuffer<uint> semantic_function_return_type_by_hir;
+RWStructuredBuffer<uint> semantic_function_entrypoint_by_hir;
+RWStructuredBuffer<uint> semantic_function_host_service_by_hir;
+RWStructuredBuffer<uint> semantic_control_depth_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
@@ -36,10 +45,26 @@ static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
+static const uint HOST_SERVICE_FIRST = 20u;
+static const uint HOST_SERVICE_END = 63u;
+static const uint HOST_SERVICE_I32_ARRAY_DATA_PTR = 52u;
 
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint host_service_for_function(HirPayload payload)
+{
+    if (payload.a != HIR_ITEM_KIND_EXTERN_FN || !valid_token(payload.b)) return INVALID;
+    uint name_id = name_id_by_token[payload.b];
+    for (uint service = HOST_SERVICE_FIRST; service < HOST_SERVICE_END; ++service)
+    {
+        if (service == HOST_SERVICE_I32_ARRAY_DATA_PTR) continue;
+        if (language_name_id[service] == name_id) return service;
+    }
+    return INVALID;
 }
 
 [shader("compute")]
@@ -80,6 +105,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_value_type_by_hir[row] = type_id;
         uint token = row < hir_count ? compact_hir_core[row].token_start : INVALID;
         semantic_enclosing_fn_by_hir[row] = valid_token(token) ? enclosing_fn[token] : 0u;
+        semantic_function_return_type_by_hir[row] = valid_token(token) ? call_return_type[token] : 0u;
+        semantic_function_entrypoint_by_hir[row] = valid_token(token) ? fn_entrypoint_tag[token] : 0u;
+        semantic_function_host_service_by_hir[row] = row < hir_count
+            ? host_service_for_function(compact_hir_payload[row]) : INVALID;
+        semantic_control_depth_by_hir[row] = valid_token(token)
+            ? uint(max(if_depth[token], 0)) : 0u;
 
     }
 

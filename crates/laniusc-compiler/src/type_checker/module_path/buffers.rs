@@ -149,8 +149,6 @@ pub(super) struct Buffers {
     pub(super) path_count_out: LaniusBuffer<u32>,
     pub(super) path_dispatch_args: LaniusBuffer<u32>,
     pub(super) import_dispatch_args: LaniusBuffer<u32>,
-    pub(super) scan_steps: Vec<NameScanStep>,
-    pub(super) record_scan_steps: Vec<NameScanStep>,
 }
 
 impl Buffers {
@@ -159,8 +157,6 @@ impl Buffers {
         let Layout {
             n_blocks,
             record_capacity,
-            record_capacity_u32,
-            record_n_blocks,
             module_capacity,
             import_record_capacity,
             import_visible_capacity,
@@ -169,7 +165,6 @@ impl Buffers {
         } = layout;
         let hir_node_capacity = inputs.hir_node_capacity;
         let token_capacity = inputs.token_capacity;
-        let external = inputs.external_scratch;
         let retained_path_external = inputs.external_scratch;
         let path_segment_capacity = token_capacity.max(1) as usize;
         let path_segment_name_id = typed_alias_or_storage_u32(
@@ -178,116 +173,55 @@ impl Buffers {
             path_segment_capacity,
             retained_path_external.map(|scratch| scratch.path_segment_name_id),
         );
-        let scan_params = NameScanParams {
-            n_items: hir_node_capacity,
-            n_blocks,
-            scan_step: 0,
-        };
-        let scan_steps = make_name_scan_steps(device, scan_params);
-        let record_scan_params = NameScanParams {
-            n_items: record_capacity_u32,
-            n_blocks: record_n_blocks,
-            scan_step: 0,
-        };
-        let record_scan_steps = make_name_scan_steps(device, record_scan_params);
-        // Module/path family bits are dead before type-instance passes reuse this
-        // HIR-indexed storage for const-generic declaration counts and, later,
-        // function entrypoint tags.
+        // Module/path family rows have graph-owned identities. The compiler graph
+        // may still color their phase-local lifetimes onto reusable physical slots,
+        // but this constructor never borrows an unrelated semantic relation.
         let record_family_bits = inputs
-            .record_family_bits_scratch
+            .module_record_family_bits
             .alias(hir_node_capacity.max(1) as usize);
-        // Record-family flags feed module/path scans and resident visible-decl
-        // scans. Struct-init by-node ordinals are recorded later, after those scans.
         let record_family_flag = inputs
-            .record_family_flag_scratch
+            .module_record_family_flag
             .alias(hir_node_capacity.max(1) as usize);
         let module_record_flag = record_family_flag.clone();
         let import_record_flag = record_family_flag.clone();
         let decl_record_flag = record_family_flag.clone();
         let path_record_flag = record_family_flag.clone();
-        // Parser list-workspace buffers are dead before typecheck starts. Use one
-        // as shared HIR-keyed module/import/decl/path prefix scratch instead of
-        // allocating a second max-capacity buffer.
-        let module_record_prefix = external
-            .map(|scratch| {
-                scratch
-                    .module_record_prefix
-                    .alias(hir_node_capacity as usize)
-            })
-            .unwrap_or_else(|| {
-                typed_storage_u32_rw(
-                    device,
-                    "type_check.resident.module_record_prefix",
-                    hir_node_capacity as usize,
-                    wgpu::BufferUsages::empty(),
-                )
-            });
+        let module_record_prefix = inputs
+            .module_record_prefix
+            .alias(hir_node_capacity.max(1) as usize);
         // Module, import, and declaration record prefixes are consumed by their
         // scatter passes before the next record-family scan runs, so one prefix
         // buffer is enough.
         let import_record_prefix = module_record_prefix.clone();
         let decl_record_prefix = module_record_prefix.clone();
-        // The counted-scan local prefix is scratch for module/path and visible
-        // declaration scans. Reuse a dead parser list-workspace buffer.
-        let record_scan_local_prefix = external
-            .map(|scratch| {
-                scratch
-                    .record_scan_local_prefix
-                    .alias(hir_node_capacity as usize)
-            })
-            .unwrap_or_else(|| {
-                typed_storage_u32_rw(
-                    device,
-                    "type_check.resident.record_scan_local_prefix",
-                    hir_node_capacity as usize,
-                    wgpu::BufferUsages::empty(),
-                )
-            });
-        let record_scan_block_sum = typed_storage_u32_rw(
-            device,
-            "type_check.resident.record_scan_block_sum",
-            n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let record_scan_prefix_a = typed_storage_u32_rw(
-            device,
-            "type_check.resident.record_scan_prefix_a",
-            n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let record_scan_prefix_b = typed_storage_u32_rw(
-            device,
-            "type_check.resident.record_scan_prefix_b",
-            n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        // Module/import/decl key radix histograms are phase-local scratch. Borrow
-        // dead parser delimiter workspaces when they are large enough; very small
-        // tests still need the 256-bucket minimum allocation.
-        let key_radix_block_histogram = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.module_path_key_radix_block_histogram",
-            key_radix_histogram_len,
-            external.map(|scratch| scratch.module_path_key_radix_block_histogram),
-        );
-        let key_radix_block_bucket_prefix = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.module_path_key_radix_block_bucket_prefix",
-            key_radix_histogram_len,
-            external.map(|scratch| scratch.module_path_key_radix_block_bucket_prefix),
-        );
-        let key_radix_bucket_total = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_path_key_radix_bucket_total",
-            NAME_RADIX_BUCKETS as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let key_radix_bucket_base = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_path_key_radix_bucket_base",
-            NAME_RADIX_BUCKETS as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let record_scan_local_prefix = inputs
+            .module_record_scan_workspace
+            .local_prefix
+            .alias(hir_node_capacity.max(1) as usize);
+        let record_scan_block_sum = inputs
+            .module_record_scan_workspace
+            .block_sum
+            .alias(n_blocks.max(1) as usize);
+        let record_scan_prefix_a = inputs
+            .module_record_scan_workspace
+            .block_prefix
+            .alias(n_blocks.max(1) as usize);
+        let record_scan_prefix_b = inputs
+            .module_record_scan_workspace
+            .hierarchy
+            .alias(n_blocks.max(1) as usize);
+        let key_radix_block_histogram = inputs
+            .module_path_key_radix_block_histogram
+            .alias(key_radix_histogram_len);
+        let key_radix_block_bucket_prefix = inputs
+            .module_path_key_radix_block_bucket_prefix
+            .alias(key_radix_histogram_len);
+        let key_radix_bucket_total = inputs
+            .module_path_key_radix_bucket_total
+            .alias(NAME_RADIX_BUCKETS as usize);
+        let key_radix_bucket_base = inputs
+            .module_path_key_radix_bucket_base
+            .alias(NAME_RADIX_BUCKETS as usize);
         let module_count_out = typed_storage_u32_rw(
             device,
             "type_check.resident.module_count_out",
@@ -384,7 +318,6 @@ impl Buffers {
             module_capacity,
             wgpu::BufferUsages::empty(),
         );
-        let external: Option<GpuTypeCheckExternalScratchBuffers<'_>> = None;
         let import_module_file_id = typed_storage_u32_rw(
             device,
             "type_check.resident.import_module_file_id",
@@ -460,7 +393,7 @@ impl Buffers {
             device,
             "type_check.resident.decl_module_file_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_module_file_id),
+            None::<&wgpu::Buffer>,
         );
         let decl_module_id = typed_storage_u32_rw(
             device,
@@ -472,41 +405,27 @@ impl Buffers {
             device,
             "type_check.resident.decl_name_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_name_id),
+            None::<&wgpu::Buffer>,
         );
-        // Name-radix scratch is dead before module/path recording runs. These
-        // declaration metadata buffers are retained for x86, so keep them in
-        // typechecker-owned scratch rather than parser scratch that backend passes
-        // may later borrow for their own phase-local work.
-        let decl_name_token = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_name_token",
-            record_capacity,
-            Some(inputs.decl_name_token_scratch),
-        );
-        let decl_id_by_name_token = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_id_by_name_token",
-            token_capacity.max(1) as usize,
-            Some(inputs.decl_id_by_name_token_scratch),
-        );
-        let decl_kind = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_kind",
-            record_capacity,
-            Some(inputs.decl_kind_scratch),
-        );
+        // Declaration relations have long type-check lifetimes and therefore
+        // own explicit compiler-graph workspace identities. Do not hide them
+        // behind the short-lived name-mark rows they replaced.
+        let decl_name_token = inputs.decl_name_token.alias(record_capacity);
+        let decl_id_by_name_token = inputs
+            .decl_id_by_name_token
+            .alias(token_capacity.max(1) as usize);
+        let decl_kind = inputs.decl_kind.alias(record_capacity);
         let decl_namespace = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_namespace",
             record_capacity,
-            external.map(|scratch| scratch.decl_namespace),
+            None::<&wgpu::Buffer>,
         );
         let decl_visibility = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_visibility",
             record_capacity,
-            external.map(|scratch| scratch.decl_visibility),
+            None::<&wgpu::Buffer>,
         );
         // Canonical name hashes remain live through dependency resolution and
         // semantic-interface export. These declaration rows therefore need
@@ -529,25 +448,25 @@ impl Buffers {
             device,
             "type_check.resident.decl_token_start",
             record_capacity,
-            external.map(|scratch| scratch.decl_token_start),
+            None::<&wgpu::Buffer>,
         );
         let decl_token_end = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_token_end",
             record_capacity,
-            external.map(|scratch| scratch.decl_token_end),
+            None::<&wgpu::Buffer>,
         );
         let decl_key_to_decl_id = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_key_to_decl_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_key_to_decl_id),
+            None::<&wgpu::Buffer>,
         );
         let decl_key_order_tmp = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_key_order_tmp",
             record_capacity,
-            external.map(|scratch| scratch.decl_key_order_tmp),
+            None::<&wgpu::Buffer>,
         );
         let decl_key_radix_dispatch_args = typed_storage_u32_rw(
             device,
@@ -559,62 +478,38 @@ impl Buffers {
         let decl_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
         let decl_key_radix_bucket_total = key_radix_bucket_total.clone();
         let decl_key_radix_bucket_base = key_radix_bucket_base.clone();
-        let decl_status = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_status",
-            record_capacity,
-            external.map(|scratch| scratch.decl_status),
-        );
+        let decl_status = inputs.decl_status.alias(record_capacity);
         // Duplicate rows are consumed before type-instance passes populate the
         // HIR-keyed generic-param count table.
         let decl_duplicate_of = typed_alias_or_storage_u32(
             device,
             "type_check.resident.decl_duplicate_of",
             record_capacity,
-            external.map(|scratch| scratch.type_decl_generic_param_count_by_owner_token),
+            Some(inputs.type_decl_generic_param_count_by_owner_token),
         );
         // Declaration namespace/public flags are consumed during module-path
-        // visibility setup, before type-instance argument tag/payload tables are
-        // written by later typecheck passes.
+        // visibility setup before the graph-owned type-instance argument
+        // tag/payload tables are written. Reuse those graph slots directly so
+        // this phase no longer keeps parser allocations alive.
         let decl_type_key_flag = typed_alias_or_storage_u32(
             device,
             "type_check.resident.decl_type_key_flag",
             record_capacity,
-            external.map(|scratch| scratch.type_instance_arg_ref_tag),
+            Some(inputs.type_instance_arg_ref_tag),
         );
         let decl_value_key_flag = typed_alias_or_storage_u32(
             device,
             "type_check.resident.decl_value_key_flag",
             record_capacity,
-            external.map(|scratch| scratch.type_instance_arg_ref_payload),
+            Some(inputs.type_instance_arg_ref_payload),
         );
         // Declaration key prefixes are consumed before import-visible key scans
         // populate their prefixes, so both families can share the same external
         // token-capacity prefix workspaces.
-        let decl_type_key_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_type_key_prefix",
-            record_capacity,
-            external.map(|scratch| scratch.import_visible_type_prefix),
-        );
-        let decl_value_key_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_value_key_prefix",
-            record_capacity,
-            external.map(|scratch| scratch.import_visible_value_prefix),
-        );
-        let decl_type_key_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_type_key_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let decl_value_key_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_value_key_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let decl_type_key_prefix = inputs.decl_type_key_prefix.alias(record_capacity);
+        let decl_value_key_prefix = inputs.decl_value_key_prefix.alias(record_capacity);
+        let decl_type_key_count_out = inputs.decl_type_key_count_out.clone();
+        let decl_value_key_count_out = inputs.decl_value_key_count_out.clone();
         // Type declaration-key lookup is retained by module/path consumers, but
         // lexer DFA summary scratch is dead after tokenization and is not part of
         // the typecheck or x86 input surface.
@@ -622,7 +517,7 @@ impl Buffers {
             device,
             "type_check.resident.decl_type_key_to_decl_id",
             record_capacity,
-            None,
+            None::<&wgpu::Buffer>,
         );
         // Module-path value-key lookup is consumed inside typecheck and is not
         // retained by the x86 handoff. Reuse dead parser list-workspace rows.
@@ -630,7 +525,7 @@ impl Buffers {
             device,
             "type_check.resident.decl_value_key_to_decl_id",
             record_capacity,
-            None,
+            None::<&wgpu::Buffer>,
         );
         // Persisted semantic-interface declaration identity crosses the point
         // where namespace/public-key scratch is reused by type instances.
@@ -658,42 +553,12 @@ impl Buffers {
             record_capacity,
             wgpu::BufferUsages::empty(),
         );
-        let import_visible_type_count = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.import_visible_type_count",
-            record_capacity,
-            None,
-        );
-        let import_visible_value_count = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.import_visible_value_count",
-            record_capacity,
-            None,
-        );
-        let import_visible_type_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.import_visible_type_prefix",
-            record_capacity,
-            None,
-        );
-        let import_visible_value_prefix = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.import_visible_value_prefix",
-            record_capacity,
-            None,
-        );
-        let import_visible_type_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let import_visible_type_count = inputs.import_visible_type_count.alias(record_capacity);
+        let import_visible_value_count = inputs.import_visible_value_count.alias(record_capacity);
+        let import_visible_type_prefix = inputs.import_visible_type_prefix.alias(record_capacity);
+        let import_visible_value_prefix = inputs.import_visible_value_prefix.alias(record_capacity);
+        let import_visible_type_count_out = inputs.import_visible_type_count_out.clone();
+        let import_visible_value_count_out = inputs.import_visible_value_count_out.clone();
         let import_visible_type_module_id = typed_storage_u32_rw(
             device,
             "type_check.resident.import_visible_type_module_id",
@@ -970,14 +835,15 @@ impl Buffers {
             record_capacity,
             retained_path_external.map(|scratch| scratch.path_owner_token),
         );
-        // Path ids are retained for later typecheck and x86 lowering, but the
-        // parser list workspace is no longer read after HIR construction, so it
-        // can carry this owner-HIR map.
+        // Path ids are a retained semantic artifact and are read by passes
+        // that also rebuild type metadata in parser list workspaces. Keep the
+        // map independent from raw-tree scratch so those workspaces can be
+        // recolored without creating a same-dispatch read/write alias.
         let path_id_by_owner_hir = typed_alias_or_storage_u32(
             device,
             "type_check.resident.path_id_by_owner_hir",
             hir_node_capacity.max(1) as usize,
-            retained_path_external.map(|scratch| scratch.path_id_by_owner_hir),
+            None::<&wgpu::Buffer>,
         );
         let path_id_by_owner_token = typed_storage_u32_fill_rw(
             device,
@@ -1161,8 +1027,6 @@ impl Buffers {
             path_count_out,
             path_dispatch_args,
             import_dispatch_args,
-            scan_steps,
-            record_scan_steps,
         }
     }
 }

@@ -19,6 +19,52 @@ const STATUS_WORDS: usize = 4;
 const TYPE_WORDS: usize = 9;
 const MEMBER_WORDS: usize = 10;
 
+#[allow(clippy::too_many_arguments)]
+fn graph_prefix_scan(
+    device: &wgpu::Device,
+    label: &'static str,
+    params: NameScanParams,
+    passes: PrefixScanPasses<'_>,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    scan: compiler_graph::SemanticInterfaceScan,
+    count: &wgpu::Buffer,
+    dispatch_args: &wgpu::Buffer,
+    input: &wgpu::Buffer,
+    output_prefix: &LaniusBuffer<u32>,
+    total: &LaniusBuffer<u32>,
+    workspace: PrefixScanWorkspace<&LaniusBuffer<u32>>,
+) -> Result<PrefixScanOperation> {
+    let mut resources = ResourceMap::new();
+    for (name, buffer) in [
+        ("scan_count", count),
+        ("scan_input", input),
+        ("scan_dispatch_args", dispatch_args),
+    ] {
+        resources.add(name, buffer.as_entire_binding());
+    }
+    resources.buffers([
+        ("scan_output_prefix", output_prefix),
+        ("scan_total", total),
+        ("scan_local_prefix", workspace.local_prefix),
+        ("scan_block_sum", workspace.block_sum),
+        ("scan_block_prefix", workspace.block_prefix),
+        ("scan_hierarchy", workspace.hierarchy),
+    ]);
+    graph.validate_semantic_interface_scan(scan, &resources)?;
+    PrefixScanOperation::with_workspace(
+        device,
+        label,
+        params,
+        passes,
+        count,
+        dispatch_args,
+        input,
+        output_prefix,
+        total,
+        workspace,
+    )
+}
+
 struct RecordedSemanticInterfaceTypeTopology {
     type_capacity: usize,
     edge_capacity: usize,
@@ -33,10 +79,6 @@ struct RecordedSemanticInterfaceTypeTopology {
     _root_owner_b: LaniusBuffer<u32>,
     _reverse_flag: LaniusBuffer<u32>,
     _reverse_prefix: LaniusBuffer<u32>,
-    _scan_local_prefix: LaniusBuffer<u32>,
-    _scan_block_sum: LaniusBuffer<u32>,
-    _scan_prefix_a: LaniusBuffer<u32>,
-    _scan_prefix_b: LaniusBuffer<u32>,
     _count: LaniusBuffer<u32>,
     _scan_count: LaniusBuffer<u32>,
     _dispatch_args: LaniusBuffer<u32>,
@@ -61,10 +103,6 @@ struct RecordedSemanticInterfaceTypeTopology {
     _complete_edge_total: LaniusBuffer<u32>,
     _signature_scan_count: LaniusBuffer<u32>,
     _signature_dispatch_args: LaniusBuffer<u32>,
-    _signature_scan_local_prefix: LaniusBuffer<u32>,
-    _signature_scan_block_sum: LaniusBuffer<u32>,
-    _signature_scan_prefix_a: LaniusBuffer<u32>,
-    _signature_scan_prefix_b: LaniusBuffer<u32>,
     _variant_count_by_hir: LaniusBuffer<u32>,
     _field_count_by_hir: LaniusBuffer<u32>,
     _generic_type_count_by_decl: LaniusBuffer<u32>,
@@ -99,18 +137,10 @@ pub struct RecordedSemanticInterface {
     name_byte_capacity: usize,
     _name_ref_len: LaniusBuffer<u32>,
     _name_ref_prefix: LaniusBuffer<u32>,
-    _scan_local_prefix: LaniusBuffer<u32>,
-    _scan_block_sum: LaniusBuffer<u32>,
-    _scan_prefix_a: LaniusBuffer<u32>,
-    _scan_prefix_b: LaniusBuffer<u32>,
     _scan_total: LaniusBuffer<u32>,
     _scan_count: LaniusBuffer<u32>,
     _scan_dispatch_args: LaniusBuffer<u32>,
     _module_segment_prefix: LaniusBuffer<u32>,
-    _module_scan_local_prefix: LaniusBuffer<u32>,
-    _module_scan_block_sum: LaniusBuffer<u32>,
-    _module_scan_prefix_a: LaniusBuffer<u32>,
-    _module_scan_prefix_b: LaniusBuffer<u32>,
     _module_segment_total: LaniusBuffer<u32>,
     _module_scan_dispatch_args: LaniusBuffer<u32>,
     _modules: LaniusBuffer<u32>,
@@ -152,9 +182,11 @@ impl GpuTypeChecker {
         let module_path = state.module_path.as_ref().ok_or_else(|| {
             anyhow::anyhow!("semantic-interface export requires resident module/declaration tables")
         })?;
+        let name_scan_total = state.typecheck_graph.u32_buffer("name_scan_total")?;
+        let name_spans = state.typecheck_graph.u32_buffer("name_spans")?;
         let inputs = GpuSemanticInterfaceIdentityBuffers {
-            name_count_out: &state.name_scan_total,
-            name_spans: &state.name_spans,
+            name_count_out: &name_scan_total,
+            name_spans: &name_spans,
             name_hash_lo: &state.name_order_in,
             name_hash_hi: &state.name_order_tmp,
             name_id_by_token: &state.name_id_by_token,
@@ -175,10 +207,12 @@ impl GpuTypeChecker {
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
             public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
-            type_expr_ref_tag: &state.type_expr_ref_tag,
-            type_expr_ref_payload: &state.type_expr_ref_payload,
-            type_generic_param_slot_by_token: &state.type_generic_param_slot_by_token,
-            type_const_param_slot_by_token: &state.type_const_param_slot_by_token,
+            type_expr_ref_tag: &state.typecheck_graph.type_expr_ref_tag,
+            type_expr_ref_payload: &state.typecheck_graph.type_expr_ref_payload,
+            type_generic_param_slot_by_token: &state
+                .typecheck_graph
+                .type_generic_param_slot_by_token,
+            type_const_param_slot_by_token: &state.typecheck_graph.type_const_param_slot_by_token,
             type_instance_decl_token: &state.type_instance_decl_token,
             type_instance_external_canonical: &state.type_instance_external_canonical,
             dependency_type_count: module_path
@@ -194,14 +228,16 @@ impl GpuTypeChecker {
             path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
-            generic_param_count_out: &state.generic_param_count_out,
-            generic_param_owner_token: &state.generic_param_owner_token,
-            generic_param_name_id: &state.generic_param_name_id,
-            generic_param_token: &state.generic_param_token,
-            generic_param_kind: &state.generic_param_kind,
+            generic_param_count_out: &state.typecheck_graph.generic_param_count_out,
+            generic_param_owner_token: &state.typecheck_graph.generic_param_owner_token,
+            generic_param_name_id: &state.typecheck_graph.generic_param_name_id,
+            generic_param_token: &state.typecheck_graph.generic_param_token,
+            generic_param_kind: &state.typecheck_graph.generic_param_kind,
             type_decl_generic_param_count_by_owner_token: &state
+                .typecheck_graph
                 .type_decl_generic_param_count_by_owner_token,
             type_decl_const_param_count_by_owner_token: &state
+                .typecheck_graph
                 .type_decl_const_param_count_by_owner_token,
         };
         self.record_semantic_interface_from_buffers(
@@ -213,6 +249,7 @@ impl GpuTypeChecker {
             source_bytes,
             hir,
             inputs,
+            &state.typecheck_graph,
         )
     }
 
@@ -227,6 +264,7 @@ impl GpuTypeChecker {
         source_bytes: &wgpu::Buffer,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: GpuSemanticInterfaceIdentityBuffers<'_>,
+        typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterface> {
         let name_capacity = u32_capacity(inputs.name_spans, 4, "name spans")?;
         let module_capacity = u32_capacity(
@@ -283,6 +321,7 @@ impl GpuTypeChecker {
             .max(module_capacity)
             .max(decl_capacity)
             .max(member_capacity);
+        let scan_scratch = typecheck_graph.semantic_interface_scan_workspace();
 
         let name_ref_len = typed_storage_u32_rw(
             device,
@@ -294,30 +333,6 @@ impl GpuTypeChecker {
             device,
             "type_check.interface.name_ref_prefix",
             name_ref_count as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.scan_local_prefix",
-            name_ref_count as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_block_sum = typed_storage_u32_rw(
-            device,
-            "type_check.interface.scan_block_sum",
-            scan_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_prefix_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.scan_prefix_a",
-            scan_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_prefix_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.scan_prefix_b",
-            scan_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
         let scan_total = typed_storage_u32_rw(
@@ -344,56 +359,28 @@ impl GpuTypeChecker {
             &[dispatch_x, dispatch_y, dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
-        let scan_steps = make_name_scan_steps(
+        let scan = graph_prefix_scan(
             device,
+            "type_check.interface.name_scan",
             NameScanParams {
                 n_items: name_ref_count,
                 n_blocks: scan_n_blocks,
                 scan_step: 0,
             },
-        );
-        let scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            device,
-            "type_check.interface.name_scan",
-            &scan_steps,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::Names,
             &scan_count,
+            &scan_dispatch_args,
             &name_ref_len,
             &name_ref_prefix,
             &scan_total,
-            &scan_local_prefix,
-            &scan_block_sum,
-            &scan_prefix_a,
-            &scan_prefix_b,
+            scan_scratch,
         )?;
         let module_segment_prefix = typed_storage_u32_rw(
             device,
             "type_check.interface.module_segment_prefix",
             module_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_scan_local_prefix",
-            module_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_scan_block_sum = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_scan_block_sum",
-            module_scan_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_scan_prefix_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_scan_prefix_a",
-            module_scan_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_scan_prefix_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_scan_prefix_b",
-            module_scan_n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
         let module_segment_total = typed_storage_u32_rw(
@@ -413,27 +400,23 @@ impl GpuTypeChecker {
             &[module_dispatch_x, module_dispatch_y, module_dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
-        let module_scan_steps = make_name_scan_steps(
+        let module_scan = graph_prefix_scan(
             device,
+            "type_check.interface.module_segment_scan",
             NameScanParams {
                 n_items: module_capacity,
                 n_blocks: module_scan_n_blocks,
                 scan_step: 0,
             },
-        );
-        let module_scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            device,
-            "type_check.interface.module_segment_scan",
-            &module_scan_steps,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::Modules,
             inputs.module_count_out,
+            &module_scan_dispatch_args,
             inputs.module_key_segment_count,
             &module_segment_prefix,
             &module_segment_total,
-            &module_scan_local_prefix,
-            &module_scan_block_sum,
-            &module_scan_prefix_a,
-            &module_scan_prefix_b,
+            scan_scratch,
         )?;
 
         let modules = typed_storage_u32_rw(
@@ -474,7 +457,15 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::STORAGE,
         );
         let type_topology = self.record_semantic_interface_type_topology(
-            device, encoder, library_id, unit_id, hir, &inputs, &status,
+            device,
+            encoder,
+            library_id,
+            unit_id,
+            hir,
+            &inputs,
+            &status,
+            scan_scratch,
+            typecheck_graph,
         )?;
 
         let size_params = uniform_from_val(
@@ -739,14 +730,7 @@ impl GpuTypeChecker {
         record_typecheck_clear_buffer(encoder, &name_ref_len, 0, None);
         record_typecheck_clear_buffer(encoder, &name_byte_words, 0, None);
         record_typecheck_clear_buffer(encoder, &counts, 0, None);
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            module_scan_n_blocks,
-            &module_scan_dispatch_args,
-            &module_scan,
-            "type_check.interface.module_segment_scan",
-        )?;
+        module_scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_identity_sizes,
@@ -754,14 +738,7 @@ impl GpuTypeChecker {
             "type_check.interface.identity_sizes",
             identity_work_capacity,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            scan_n_blocks,
-            &scan_dispatch_args,
-            &scan,
-            "type_check.interface.name_scan",
-        )?;
+        scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_identity_records,
@@ -851,18 +828,10 @@ impl GpuTypeChecker {
             name_byte_capacity: name_byte_capacity as usize,
             _name_ref_len: name_ref_len,
             _name_ref_prefix: name_ref_prefix,
-            _scan_local_prefix: scan_local_prefix,
-            _scan_block_sum: scan_block_sum,
-            _scan_prefix_a: scan_prefix_a,
-            _scan_prefix_b: scan_prefix_b,
             _scan_total: scan_total,
             _scan_count: scan_count,
             _scan_dispatch_args: scan_dispatch_args,
             _module_segment_prefix: module_segment_prefix,
-            _module_scan_local_prefix: module_scan_local_prefix,
-            _module_scan_block_sum: module_scan_block_sum,
-            _module_scan_prefix_a: module_scan_prefix_a,
-            _module_scan_prefix_b: module_scan_prefix_b,
             _module_segment_total: module_segment_total,
             _module_scan_dispatch_args: module_scan_dispatch_args,
             _modules: modules,
@@ -890,6 +859,8 @@ impl GpuTypeChecker {
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: &GpuSemanticInterfaceIdentityBuffers<'_>,
         status: &wgpu::Buffer,
+        scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
+        typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
         let hir_capacity = u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?;
         let decl_capacity = u32_capacity(
@@ -987,30 +958,6 @@ impl GpuTypeChecker {
             device,
             "type_check.interface.type_topology.reverse_prefix",
             capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.scan_local_prefix",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_block_sum = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.scan_block_sum",
-            n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_prefix_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.scan_prefix_a",
-            n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_prefix_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.scan_prefix_b",
-            n_blocks as usize,
             wgpu::BufferUsages::empty(),
         );
         let count = typed_storage_u32_rw(
@@ -1141,30 +1088,6 @@ impl GpuTypeChecker {
             &[signature_capacity],
             wgpu::BufferUsages::STORAGE,
         );
-        let signature_scan_local_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.scan_local_prefix",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_scan_block_sum = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.scan_block_sum",
-            signature_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_scan_prefix_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.scan_prefix_a",
-            signature_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_scan_prefix_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.scan_prefix_b",
-            signature_n_blocks as usize,
-            wgpu::BufferUsages::empty(),
-        );
         let member_capacity = capacity
             .checked_add(token_capacity)
             .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
@@ -1234,56 +1157,11 @@ impl GpuTypeChecker {
             member_capacity as usize,
             wgpu::BufferUsages::COPY_DST,
         );
-        let signature_scan_steps = make_name_scan_steps(
-            device,
-            NameScanParams {
-                n_items: signature_capacity,
-                n_blocks: signature_n_blocks,
-                scan_step: 0,
-            },
-        );
-        let signature_type_scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            device,
-            "type_check.interface.signature.type_scan",
-            &signature_scan_steps,
-            &signature_scan_count,
-            &signature_type_flag,
-            &signature_type_prefix,
-            &signature_type_total,
-            &signature_scan_local_prefix,
-            &signature_scan_block_sum,
-            &signature_scan_prefix_a,
-            &signature_scan_prefix_b,
-        )?;
-        let signature_edge_scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            device,
-            "type_check.interface.signature.edge_scan",
-            &signature_scan_steps,
-            &signature_scan_count,
-            &signature_edge_count,
-            &signature_edge_prefix,
-            &signature_edge_total,
-            &signature_scan_local_prefix,
-            &signature_scan_block_sum,
-            &signature_scan_prefix_a,
-            &signature_scan_prefix_b,
-        )?;
-        let member_scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            device,
-            "type_check.interface.members.scan",
-            &signature_scan_steps,
-            &signature_scan_count,
-            &member_count,
-            &member_prefix,
-            &member_total,
-            &signature_scan_local_prefix,
-            &signature_scan_block_sum,
-            &signature_scan_prefix_a,
-            &signature_scan_prefix_b,
-        )?;
+        let signature_scan_params = NameScanParams {
+            n_items: signature_capacity,
+            n_blocks: signature_n_blocks,
+            scan_step: 0,
+        };
         let (signature_dispatch_x, signature_dispatch_y, signature_dispatch_z) = plan_workgroups(
             DispatchDim::D1,
             InputElements::Elements1D(signature_capacity),
@@ -1303,6 +1181,48 @@ impl GpuTypeChecker {
             ],
             wgpu::BufferUsages::INDIRECT,
         );
+        let signature_type_scan = graph_prefix_scan(
+            device,
+            "type_check.interface.signature.type_scan",
+            signature_scan_params,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::SignatureTypes,
+            &signature_scan_count,
+            &signature_dispatch_args,
+            &signature_type_flag,
+            &signature_type_prefix,
+            &signature_type_total,
+            scan_scratch,
+        )?;
+        let signature_edge_scan = graph_prefix_scan(
+            device,
+            "type_check.interface.signature.edge_scan",
+            signature_scan_params,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::SignatureEdges,
+            &signature_scan_count,
+            &signature_dispatch_args,
+            &signature_edge_count,
+            &signature_edge_prefix,
+            &signature_edge_total,
+            scan_scratch,
+        )?;
+        let member_scan = graph_prefix_scan(
+            device,
+            "type_check.interface.members.scan",
+            signature_scan_params,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::Members,
+            &signature_scan_count,
+            &signature_dispatch_args,
+            &member_count,
+            &member_prefix,
+            &member_total,
+            scan_scratch,
+        )?;
         let [tgsx, tgsy, _] = self.passes.counted_scan_local.thread_group_size;
         let (dispatch_x, dispatch_y, dispatch_z) = plan_workgroups(
             DispatchDim::D1,
@@ -1315,41 +1235,38 @@ impl GpuTypeChecker {
             &[dispatch_x, dispatch_y, dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
-        let scan_steps = make_name_scan_steps(
-            device,
-            NameScanParams {
-                n_items: capacity,
-                n_blocks,
-                scan_step: 0,
-            },
-        );
-        let scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
+        let scan_params = NameScanParams {
+            n_items: capacity,
+            n_blocks,
+            scan_step: 0,
+        };
+        let scan = graph_prefix_scan(
             device,
             "type_check.interface.type_topology.scan",
-            &scan_steps,
+            scan_params,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::TypeOrder,
             &scan_count,
+            &dispatch_args,
             &reverse_flag,
             &reverse_prefix,
             &count,
-            &scan_local_prefix,
-            &scan_block_sum,
-            &scan_prefix_a,
-            &scan_prefix_b,
+            scan_scratch,
         )?;
-        let edge_scan = create_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
+        let edge_scan = graph_prefix_scan(
             device,
             "type_check.interface.type_topology.edge_scan",
-            &scan_steps,
+            scan_params,
+            (&self.passes).into(),
+            typecheck_graph,
+            compiler_graph::SemanticInterfaceScan::TypeEdges,
             &scan_count,
+            &dispatch_args,
             &edge_count,
             &edge_prefix,
             &edge_total,
-            &scan_local_prefix,
-            &scan_block_sum,
-            &scan_prefix_a,
-            &scan_prefix_b,
+            scan_scratch,
         )?;
 
         let bind =
@@ -2444,14 +2361,7 @@ impl GpuTypeChecker {
             "type_check.interface.type_topology.mark_reverse",
             capacity,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            n_blocks,
-            &dispatch_args,
-            &scan,
-            "type_check.interface.type_topology.scan",
-        )?;
+        scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_type_topology_scatter,
@@ -2466,14 +2376,7 @@ impl GpuTypeChecker {
             "type_check.interface.type_topology.edge_counts",
             capacity,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            n_blocks,
-            &dispatch_args,
-            &edge_scan,
-            "type_check.interface.type_topology.edge_scan",
-        )?;
+        edge_scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_type_topology_edge_scatter,
@@ -2519,22 +2422,8 @@ impl GpuTypeChecker {
             "type_check.interface.signature.flags",
             signature_capacity,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            signature_n_blocks,
-            &signature_dispatch_args,
-            &signature_type_scan,
-            "type_check.interface.signature.type_scan",
-        )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            signature_n_blocks,
-            &signature_dispatch_args,
-            &signature_edge_scan,
-            "type_check.interface.signature.edge_scan",
-        )?;
+        signature_type_scan.record(encoder)?;
+        signature_edge_scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_signature_totals,
@@ -2597,14 +2486,7 @@ impl GpuTypeChecker {
             "type_check.interface.members.counts",
             signature_capacity,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            &self.passes,
-            encoder,
-            signature_n_blocks,
-            &signature_dispatch_args,
-            &member_scan,
-            "type_check.interface.members.scan",
-        )?;
+        member_scan.record(encoder)?;
         record_compute(
             encoder,
             &self.passes.interface_members_scatter_hir,
@@ -2728,10 +2610,6 @@ impl GpuTypeChecker {
             _root_owner_b: root_owner_b,
             _reverse_flag: reverse_flag,
             _reverse_prefix: reverse_prefix,
-            _scan_local_prefix: scan_local_prefix,
-            _scan_block_sum: scan_block_sum,
-            _scan_prefix_a: scan_prefix_a,
-            _scan_prefix_b: scan_prefix_b,
             _count: count,
             _scan_count: scan_count,
             _dispatch_args: dispatch_args,
@@ -2756,10 +2634,6 @@ impl GpuTypeChecker {
             _complete_edge_total: complete_edge_total,
             _signature_scan_count: signature_scan_count,
             _signature_dispatch_args: signature_dispatch_args,
-            _signature_scan_local_prefix: signature_scan_local_prefix,
-            _signature_scan_block_sum: signature_scan_block_sum,
-            _signature_scan_prefix_a: signature_scan_prefix_a,
-            _signature_scan_prefix_b: signature_scan_prefix_b,
             _variant_count_by_hir: variant_count_by_hir,
             _field_count_by_hir: field_count_by_hir,
             _generic_type_count_by_decl: generic_type_count_by_decl,

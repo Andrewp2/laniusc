@@ -29,6 +29,12 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> call_generic_return_arg_node;
 RWStructuredBuffer<uint> compact_expr_scalar_type_out;
@@ -40,6 +46,7 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -71,6 +78,12 @@ static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_STRING = 7u;
+static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint SCALAR_TYPE_SHIFT = 28u;
 static const uint SCALAR_TYPE_LINK_MASK = 0x0fffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -103,6 +116,45 @@ uint compact_call_result_type(uint call)
     return valid_hir(call)
                ? checked_scalar_type(semantic_calls_by_hir[call].return_type)
                : TY_UNKNOWN;
+}
+
+uint name_token_for_hir(uint node)
+{
+    if (!valid_hir(node)) return INVALID;
+    uint kind = compact_hir_core[node].kind;
+    if (kind != HIR_NAME_EXPR && kind != HIR_PATH_EXPR) return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : INVALID;
+}
+
+uint scalar_type_from_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR) return checked_scalar_type(payload);
+    if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
+    {
+        uint slot = type_generic_param_slot_by_token[payload];
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    return TY_UNKNOWN;
+}
+
+uint compact_index_result_type(uint index_node)
+{
+    if (!valid_hir(index_node) || compact_hir_core[index_node].kind != HIR_INDEX_EXPR)
+        return TY_UNKNOWN;
+    uint base = compact_hir_payload[index_node].b;
+    uint token = name_token_for_hir(base);
+    uint decl = valid_token(token) ? visible_decl[token] : INVALID;
+    if (!valid_token(decl) || decl_type_ref_tag[decl] != TYPE_REF_INSTANCE)
+        return TY_UNKNOWN;
+    uint instance = decl_type_ref_payload[decl];
+    if (!valid_token(instance)) return TY_UNKNOWN;
+    uint kind = type_instance_kind[instance];
+    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return TY_UNKNOWN;
+    return scalar_type_from_ref(
+        type_instance_elem_ref_tag[instance],
+        type_instance_elem_ref_payload[instance]);
 }
 
 uint pack_scalar_type(uint ty, uint link)
@@ -139,7 +191,9 @@ uint direct_result_type(uint node)
         return visible_type_for_token(payload.d);
     if (core.kind == HIR_MEMBER_EXPR)
         return visible_type_for_token(payload.c);
-    if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MATCH_EXPR)
+    if (core.kind == HIR_INDEX_EXPR)
+        return compact_index_result_type(node);
+    if (core.kind == HIR_MATCH_EXPR)
         return visible_type_for_token(core.token_start);
 
     uint form = payload.a;

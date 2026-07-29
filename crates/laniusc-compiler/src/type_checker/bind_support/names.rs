@@ -1,4 +1,4 @@
-use super::{super::*, scan::create_counted_u32_scan_bind_groups_from_passes};
+use super::super::*;
 
 /// Builds bind groups for compacting source lexemes into stable name ids.
 #[allow(clippy::too_many_arguments)]
@@ -6,13 +6,12 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     input: NameInput<'_>,
+    resources: &ResourceMap<'_>,
 ) -> Result<NameBindGroups> {
     let params = input.params;
     let source_len = input.source_len;
     let name_capacity = input.cap;
-    let token_scan_n_blocks = input.token_blocks;
     let name_n_blocks = input.name_blocks;
-    let scan_steps = input.steps;
     let token_buf = input.token_words;
     let token_count_buf = input.token_count;
     let source_buf = input.source_bytes;
@@ -20,10 +19,6 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
     let name_lexeme_flag = input.lexemes.flag;
     let name_lexeme_kind = input.lexemes.kind;
     let name_lexeme_prefix = input.lexemes.prefix;
-    let name_scan_local_prefix = input.scan.local_prefix;
-    let name_scan_block_sum = input.scan.block_sum;
-    let name_scan_prefix_a = input.scan.prefix_a;
-    let name_scan_prefix_b = input.scan.prefix_b;
     let name_scan_total = input.total;
     let name_max_len = input.max_len;
     let name_spans = input.spans;
@@ -34,8 +29,8 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
     let language_symbol_len = input.symbols.len;
     let name_id_by_token = input.ids.by_token;
     let language_name_id = input.ids.language;
-    let radix_block_histogram = input.radix.histogram;
-    let radix_block_bucket_prefix = input.radix.bucket_prefix;
+    let name_hash_table_a = input.hash.table_a;
+    let name_hash_table_b = input.hash.table_b;
     let sorted_name_id = input.ids.sorted;
     let name_id_by_input = input.ids.by_input;
     let unique_name_count = input.ids.unique_count;
@@ -54,22 +49,11 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
         ],
     )?;
 
-    let name_lexeme_scan = create_counted_u32_scan_bind_groups_from_passes(
-        &passes.counted_scan_local,
-        &passes.counted_scan_hierarchy_up,
-        &passes.counted_scan_hierarchy_down,
-        &passes.counted_scan_apply,
+    let name_lexeme_scan = PrefixScanOperation::from_spec(
         device,
-        "type_check.names.lexeme_scan",
-        scan_steps,
-        token_count_buf,
-        name_lexeme_flag,
-        name_lexeme_prefix,
-        name_scan_total,
-        name_scan_local_prefix,
-        name_scan_block_sum,
-        name_scan_prefix_a,
-        name_scan_prefix_b,
+        passes.into(),
+        resources,
+        compiler_graph::NAMES_SCAN,
     )?;
 
     let scatter = bind_group::create_bind_group_from_bindings(
@@ -124,14 +108,8 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
         ),
         ("name_hash_lo", name_order_in.as_entire_binding()),
         ("name_hash_hi", name_order_tmp.as_entire_binding()),
-        (
-            "name_hash_table_a",
-            radix_block_histogram.as_entire_binding(),
-        ),
-        (
-            "name_hash_table_b",
-            radix_block_bucket_prefix.as_entire_binding(),
-        ),
+        ("name_hash_table_a", name_hash_table_a.as_entire_binding()),
+        ("name_hash_table_b", name_hash_table_b.as_entire_binding()),
         ("status", status_buf.as_entire_binding()),
         ("sorted_name_id", sorted_name_id.as_entire_binding()),
         ("name_id_by_input", name_id_by_input.as_entire_binding()),
@@ -162,8 +140,6 @@ pub(in crate::type_checker) fn create_name_bind_groups_with_passes(
     )?;
 
     Ok(NameBindGroups {
-        token_scan_n_blocks,
-        name_max_len: (*name_max_len).clone(),
         mark,
         scan: name_lexeme_scan,
         scatter,

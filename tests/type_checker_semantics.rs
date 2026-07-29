@@ -1021,6 +1021,16 @@ fn main() -> i32 {
 }
 
 #[test]
+fn type_checker_resolves_visible_declarations_through_large_radix_path() {
+    let mut source = String::from("fn main() -> i32 {\n");
+    for index in 0..2_100 {
+        source.push_str(&format!("let value_{index}: i32 = {index};\n"));
+    }
+    source.push_str("return value_2099;\n}\n");
+    assert_gpu_type_check_ok(&source);
+}
+
+#[test]
 fn type_checker_rejects_names_after_their_compact_scope_ends() {
     assert_gpu_type_check_diagnostic(
         r#"

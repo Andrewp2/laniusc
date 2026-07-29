@@ -1,11 +1,6 @@
 use super::{
     super::*,
-    bind_helpers::{
-        create_pair_max_dispatch,
-        create_radix_bucket_bases,
-        create_radix_bucket_prefix,
-        create_radix_dispatch,
-    },
+    bind_helpers::{create_pair_max_dispatch, create_radix_dispatch},
     buffers::Buffers,
     dependency_visibility,
     inputs::CreateInputs,
@@ -75,11 +70,7 @@ pub(in crate::type_checker) fn create_with_passes(
         build_module_keys,
         module_key_radix_dispatch_params,
         module_key_radix_dispatch,
-        sort_module_keys_small,
-        sort_module_key_histogram,
-        sort_module_key_bucket_prefix,
-        sort_module_key_bucket_bases,
-        sort_module_key_scatter,
+        sort_module_keys,
         validate_modules,
         dependency_module_params,
         clear_dependency_module_lookup,
@@ -89,13 +80,9 @@ pub(in crate::type_checker) fn create_with_passes(
         resolve_imports,
         seed_import_edge_key_order,
         import_edge_key_radix_dispatch,
-        sort_import_edges_small,
-        sort_import_edge_key_histogram,
-        sort_import_edge_key_bucket_prefix,
-        sort_import_edge_key_bucket_bases,
-        sort_import_edge_key_scatter,
+        sort_import_edges,
         validate_import_cycles,
-        mut retained_key_params,
+        mut retained_params,
     } = create_module_index(passes, device, layout, &inputs, &buffers)?;
     let ProjectionBindGroups {
         clear_type_path_types,
@@ -260,8 +247,6 @@ pub(in crate::type_checker) fn create_with_passes(
         path_count_out,
         path_dispatch_args,
         import_dispatch_args,
-        scan_steps,
-        record_scan_steps,
     } = buffers;
     let CreateInputs {
         params,
@@ -418,123 +403,85 @@ pub(in crate::type_checker) fn create_with_passes(
         &decl_key_radix_dispatch_args,
     )?;
 
-    let sort_decl_keys_small = if record_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
-        Some(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_06a2_sort_decl_keys_small"),
-            &passes.modules_sort_decl_keys_small,
-            0,
-            &[
-                (
-                    "gParams",
-                    decl_key_radix_dispatch_params.as_entire_binding(),
-                ),
-                ("decl_count_out", decl_count_out.as_entire_binding()),
-                ("decl_module_id", decl_module_id.as_entire_binding()),
-                ("decl_namespace", decl_namespace.as_entire_binding()),
-                ("decl_name_id", decl_name_id.as_entire_binding()),
-                ("decl_key_order", decl_key_to_decl_id.as_entire_binding()),
-            ],
-        )?)
-    } else {
-        None
-    };
-
     let (decl_key_radix_widths, decl_key_radix_steps) =
         decl_key_radix_layout(token_capacity, module_capacity_u32);
-    let mut sort_decl_key_histogram = Vec::with_capacity(decl_key_radix_steps as usize);
-    let mut sort_decl_key_bucket_prefix = Vec::with_capacity(decl_key_radix_steps as usize);
-    let mut sort_decl_key_bucket_bases = Vec::with_capacity(decl_key_radix_steps as usize);
-    let mut sort_decl_key_scatter = Vec::with_capacity(decl_key_radix_steps as usize);
-    for key_step in 0..decl_key_radix_steps {
-        let step_params = uniform_from_val(
-            device,
-            &format!("type_check.modules.decl_key_radix.params.{key_step}"),
-            &ModuleKeyRadixParams {
-                module_capacity: record_capacity_u32,
-                reserved: decl_key_radix_widths,
-                n_blocks: record_n_blocks,
-                key_step,
+    let decl_key_resources = HashMap::from([
+        (
+            "decl_count_out".to_owned(),
+            decl_count_out.as_entire_binding(),
+        ),
+        (
+            "decl_module_id".to_owned(),
+            decl_module_id.as_entire_binding(),
+        ),
+        (
+            "decl_namespace".to_owned(),
+            decl_namespace.as_entire_binding(),
+        ),
+        ("decl_name_id".to_owned(), decl_name_id.as_entire_binding()),
+        (
+            "decl_key_order".to_owned(),
+            decl_key_to_decl_id.as_entire_binding(),
+        ),
+        (
+            "decl_key_order_tmp".to_owned(),
+            decl_key_order_tmp.as_entire_binding(),
+        ),
+        (
+            "decl_key_radix_block_histogram".to_owned(),
+            decl_key_radix_block_histogram.as_entire_binding(),
+        ),
+        (
+            "decl_key_radix_block_bucket_prefix".to_owned(),
+            decl_key_radix_block_bucket_prefix.as_entire_binding(),
+        ),
+        (
+            "decl_key_radix_bucket_total".to_owned(),
+            decl_key_radix_bucket_total.as_entire_binding(),
+        ),
+        (
+            "decl_key_radix_bucket_base".to_owned(),
+            decl_key_radix_bucket_base.as_entire_binding(),
+        ),
+    ]);
+    let sort_decl_keys = RadixSortOperation::new(
+        device,
+        &decl_key_resources,
+        RadixSortPlan {
+            label: "type_check.modules.decl_keys",
+            capacity: record_capacity_u32,
+            small_capacity: MODULE_RELATION_SMALL_SORT_CAPACITY,
+            steps: decl_key_radix_steps,
+            passes: RadixSortPasses {
+                small: Some(&passes.modules_sort_decl_keys_small),
+                histogram: &passes.modules_sort_decl_keys,
+                bucket_prefix: &passes.names_radix_bucket_prefix,
+                bucket_bases: &passes.names_radix_bucket_bases,
+                scatter: &passes.modules_sort_decl_keys_scatter,
             },
-        );
-        let read_order = if key_step % 2 == 0 {
-            &decl_key_to_decl_id
-        } else {
-            &decl_key_order_tmp
-        };
-        let write_order = if key_step % 2 == 0 {
-            &decl_key_order_tmp
-        } else {
-            &decl_key_to_decl_id
-        };
-
-        sort_decl_key_histogram.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_06_sort_decl_keys"),
-            &passes.modules_sort_decl_keys,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                ("decl_count_out", decl_count_out.as_entire_binding()),
-                ("decl_module_id", decl_module_id.as_entire_binding()),
-                ("decl_namespace", decl_namespace.as_entire_binding()),
-                ("decl_name_id", decl_name_id.as_entire_binding()),
-                ("decl_key_order_in", read_order.as_entire_binding()),
-                (
-                    "radix_block_histogram",
-                    decl_key_radix_block_histogram.as_entire_binding(),
-                ),
-            ],
-        )?);
-
-        sort_decl_key_bucket_prefix.push(create_radix_bucket_prefix(
-            device,
-            &passes.names_radix_bucket_prefix,
-            "type_check_modules.decl_key_radix_bucket_prefix",
-            &step_params,
-            &decl_count_out,
-            &decl_key_radix_block_histogram,
-            &decl_key_radix_block_bucket_prefix,
-            &decl_key_radix_bucket_total,
-        )?);
-
-        sort_decl_key_bucket_bases.push(create_radix_bucket_bases(
-            device,
-            &passes.names_radix_bucket_bases,
-            "type_check_modules.decl_key_radix_bucket_bases",
-            &step_params,
-            &decl_key_radix_bucket_total,
-            &decl_key_radix_bucket_base,
-        )?);
-
-        sort_decl_key_scatter.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_06b_sort_decl_keys_scatter"),
-            &passes.modules_sort_decl_keys_scatter,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                ("decl_count_out", decl_count_out.as_entire_binding()),
-                ("decl_module_id", decl_module_id.as_entire_binding()),
-                ("decl_namespace", decl_namespace.as_entire_binding()),
-                ("decl_name_id", decl_name_id.as_entire_binding()),
-                ("decl_key_order_in", read_order.as_entire_binding()),
-                (
-                    "radix_bucket_base",
-                    decl_key_radix_bucket_base.as_entire_binding(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    decl_key_radix_block_bucket_prefix.as_entire_binding(),
-                ),
-                ("decl_key_order_out", write_order.as_entire_binding()),
-            ],
-        )?);
-
-        retained_key_params.push(ModuleKeyRadixStep {
-            _params: step_params,
-        });
-    }
+            dispatch: RadixSortDispatch {
+                small: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
+                rows: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
+                bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS.saturating_mul(256)),
+                bucket_bases: RadixDispatchDomain::Direct(256),
+            },
+            resources: RadixSortResources {
+                count: "decl_count_out",
+                order: "decl_key_order",
+                temporary_order: "decl_key_order_tmp",
+                histogram: "decl_key_radix_block_histogram",
+                bucket_prefix: "decl_key_radix_block_bucket_prefix",
+                bucket_total: "decl_key_radix_bucket_total",
+                bucket_base: "decl_key_radix_bucket_base",
+            },
+        },
+        |key_step| ModuleKeyRadixParams {
+            module_capacity: record_capacity_u32,
+            reserved: decl_key_radix_widths,
+            n_blocks: record_n_blocks,
+            key_step,
+        },
+    )?;
 
     let validate_decl_params = uniform_from_val(
         device,
@@ -594,58 +541,70 @@ pub(in crate::type_checker) fn create_with_passes(
     // Give the value scan its own scratch so the paired dispatches remain
     // independent within one compute pass. This secondary scratch is reused by
     // all later type/value scan pairs in the module pipeline.
-    let value_scan_local_prefix = typed_storage_u32_rw(
-        device,
-        "type_check.modules.value_scan_local_prefix",
-        record_capacity_u32 as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let value_scan_block_sum = typed_storage_u32_rw(
-        device,
-        "type_check.modules.value_scan_block_sum",
-        record_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let value_scan_prefix_a = typed_storage_u32_rw(
-        device,
-        "type_check.modules.value_scan_prefix_a",
-        record_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let value_scan_prefix_b = typed_storage_u32_rw(
-        device,
-        "type_check.modules.value_scan_prefix_b",
-        record_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let value_scan_local_prefix: LaniusBuffer<u32> = inputs
+        .module_value_scan_workspace
+        .local_prefix
+        .alias(record_capacity_u32 as usize);
+    let value_scan_block_sum: LaniusBuffer<u32> = inputs
+        .module_value_scan_workspace
+        .block_sum
+        .alias(record_n_blocks as usize);
+    let value_scan_prefix_a: LaniusBuffer<u32> = inputs
+        .module_value_scan_workspace
+        .block_prefix
+        .alias(record_n_blocks as usize);
+    let value_scan_prefix_b: LaniusBuffer<u32> = inputs
+        .module_value_scan_workspace
+        .hierarchy
+        .alias(record_n_blocks as usize);
 
-    let decl_type_key_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
+    let mut scan_resources = ResourceMap::new();
+    scan_resources.buffers([
+        ("decl_count_out", &decl_count_out),
+        (
+            "decl_key_radix_dispatch_args",
+            &decl_key_radix_dispatch_args,
+        ),
+        ("type_instance_arg_ref_tag", &decl_type_key_flag),
+        ("type_instance_arg_ref_payload", &decl_value_key_flag),
+        ("decl_type_key_prefix", &decl_type_key_prefix),
+        ("decl_value_key_prefix", &decl_value_key_prefix),
+        ("decl_type_key_count_out", &decl_type_key_count_out),
+        ("decl_value_key_count_out", &decl_value_key_count_out),
+        ("module_record_scan_local_prefix", &record_scan_local_prefix),
+        ("module_record_scan_block_sum", &record_scan_block_sum),
+        ("module_record_scan_prefix_a", &record_scan_prefix_a),
+        ("module_record_scan_prefix_b", &record_scan_prefix_b),
+        ("module_value_scan_local_prefix", &value_scan_local_prefix),
+        ("module_value_scan_block_sum", &value_scan_block_sum),
+        ("module_value_scan_prefix_a", &value_scan_prefix_a),
+        ("module_value_scan_prefix_b", &value_scan_prefix_b),
+        ("decl_status", &decl_status),
+        (
+            "type_decl_generic_param_count_by_owner_token",
+            &decl_duplicate_of,
+        ),
+        ("import_visible_type_count", &import_visible_type_count),
+        ("import_visible_value_count", &import_visible_value_count),
+        ("import_visible_type_prefix", &import_visible_type_prefix),
+        ("import_visible_value_prefix", &import_visible_value_prefix),
+        (
+            "import_visible_type_count_out",
+            &import_visible_type_count_out,
+        ),
+        (
+            "import_visible_value_count_out",
+            &import_visible_value_count_out,
+        ),
+        ("import_record_count_out", &import_count_out),
+        ("import_dispatch_args", &import_dispatch_args),
+    ]);
+
+    let (decl_type_key_scan, decl_value_key_scan) = PrefixScanOperation::from_pair_spec(
         device,
-        "type_check_modules.decl_type_keys",
-        &record_scan_steps,
-        &decl_count_out,
-        &decl_type_key_flag,
-        &decl_type_key_prefix,
-        &decl_type_key_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
-    )?;
-    let decl_value_key_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check_modules.decl_value_keys",
-        &record_scan_steps,
-        &decl_count_out,
-        &decl_value_key_flag,
-        &decl_value_key_prefix,
-        &decl_value_key_count_out,
-        &value_scan_local_prefix,
-        &value_scan_block_sum,
-        &value_scan_prefix_a,
-        &value_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::DECL_NAMESPACE_SCAN,
     )?;
 
     let scatter_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
@@ -727,33 +686,11 @@ pub(in crate::type_checker) fn create_with_passes(
     let decl_value_public_prefix =
         typed_alias_storage_u32(&decl_duplicate_of, record_capacity_u32 as usize);
 
-    let decl_type_public_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
+    let (decl_type_public_scan, decl_value_public_scan) = PrefixScanOperation::from_pair_spec(
         device,
-        "type_check_modules.decl_type_public_keys",
-        &record_scan_steps,
-        &decl_type_key_count_out,
-        &decl_type_key_flag,
-        &decl_type_public_prefix,
-        &import_visible_type_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
-    )?;
-    let decl_value_public_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check_modules.decl_value_public_keys",
-        &record_scan_steps,
-        &decl_value_key_count_out,
-        &decl_value_key_flag,
-        &decl_value_public_prefix,
-        &import_visible_value_count_out,
-        &value_scan_local_prefix,
-        &value_scan_block_sum,
-        &value_scan_prefix_a,
-        &value_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::DECL_PUBLIC_SCAN,
     )?;
     let clear_interface_public_decls = bind_group::create_bind_group_from_bindings(
         device,
@@ -908,34 +845,13 @@ pub(in crate::type_checker) fn create_with_passes(
         ],
     )?;
 
-    let import_visible_type_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check_modules.import_visible_type",
-        &record_scan_steps,
-        &import_count_out,
-        &import_visible_type_count,
-        &import_visible_type_prefix,
-        &import_visible_type_count_out,
-        &record_scan_local_prefix,
-        &record_scan_block_sum,
-        &record_scan_prefix_a,
-        &record_scan_prefix_b,
-    )?;
-    let import_visible_value_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check_modules.import_visible_value",
-        &record_scan_steps,
-        &import_count_out,
-        &import_visible_value_count,
-        &import_visible_value_prefix,
-        &import_visible_value_count_out,
-        &value_scan_local_prefix,
-        &value_scan_block_sum,
-        &value_scan_prefix_a,
-        &value_scan_prefix_b,
-    )?;
+    let (import_visible_type_scan, import_visible_value_scan) =
+        PrefixScanOperation::from_pair_spec(
+            device,
+            passes.into(),
+            &scan_resources,
+            compiler_graph::IMPORT_VISIBLE_SCAN,
+        )?;
 
     let scatter_import_visible_type = bind_group::create_bind_group_from_bindings(
         device,
@@ -1078,157 +994,88 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visible_type_key_radix_dispatch_args,
     )?;
 
-    let sort_import_visible_type_keys_small =
-        if import_visible_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
-            Some(bind_group::create_bind_group_from_bindings(
-                device,
-                Some("type_check_modules_09b2_sort_import_visible_type_keys_small"),
-                &passes.modules_sort_import_visible_keys_small,
-                0,
-                &[
-                    (
-                        "gParams",
-                        import_visible_type_key_radix_dispatch_params.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_count_out",
-                        import_visible_type_count_out.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_module_id",
-                        import_visible_type_module_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_name_id",
-                        import_visible_type_name_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_key_order",
-                        import_visible_type_key_order.as_entire_binding(),
-                    ),
-                ],
-            )?)
-        } else {
-            None
-        };
-
-    let mut sort_import_visible_type_key_histogram =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_type_key_bucket_prefix =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_type_key_bucket_bases =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_type_key_scatter =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    for key_step in 0..IMPORT_VISIBLE_KEY_RADIX_STEPS {
-        let step_params = uniform_from_val(
-            device,
-            &format!("type_check.modules.import_visible_type_radix.params.{key_step}"),
-            &ModuleKeyRadixParams {
-                module_capacity: import_visible_capacity_u32,
-                reserved: 0,
-                n_blocks: import_visible_n_blocks,
-                key_step,
-            },
-        );
-        let read_order = if key_step % 2 == 0 {
-            &import_visible_type_key_order
-        } else {
-            &import_visible_type_key_order_tmp
-        };
-        let write_order = if key_step % 2 == 0 {
-            &import_visible_type_key_order_tmp
-        } else {
-            &import_visible_type_key_order
-        };
-        sort_import_visible_type_key_histogram.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_09c_sort_import_visible_keys"),
-            &passes.modules_sort_import_visible_keys,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "import_visible_count_out",
-                    import_visible_type_count_out.as_entire_binding(),
-                ),
-                (
-                    "import_visible_module_id",
-                    import_visible_type_module_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_name_id",
-                    import_visible_type_name_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_in",
-                    read_order.as_entire_binding(),
-                ),
-                (
-                    "radix_block_histogram",
-                    import_visible_key_radix_block_histogram.as_entire_binding(),
-                ),
-            ],
-        )?);
-        sort_import_visible_type_key_bucket_prefix.push(create_radix_bucket_prefix(
-            device,
-            &passes.names_radix_bucket_prefix,
-            "type_check_modules.import_visible_type_bucket_prefix",
-            &step_params,
-            &import_visible_type_count_out,
-            &import_visible_key_radix_block_histogram,
-            &import_visible_key_radix_block_bucket_prefix,
-            &import_visible_key_radix_bucket_total,
-        )?);
-        sort_import_visible_type_key_bucket_bases.push(create_radix_bucket_bases(
-            device,
-            &passes.names_radix_bucket_bases,
-            "type_check_modules.import_visible_type_bucket_bases",
-            &step_params,
-            &import_visible_key_radix_bucket_total,
-            &import_visible_key_radix_bucket_base,
-        )?);
-        sort_import_visible_type_key_scatter.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_09d_sort_import_visible_keys_scatter"),
-            &passes.modules_sort_import_visible_keys_scatter,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "import_visible_count_out",
-                    import_visible_type_count_out.as_entire_binding(),
-                ),
-                (
-                    "import_visible_module_id",
-                    import_visible_type_module_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_name_id",
-                    import_visible_type_name_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_in",
-                    read_order.as_entire_binding(),
-                ),
-                (
-                    "radix_bucket_base",
-                    import_visible_key_radix_bucket_base.as_entire_binding(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    import_visible_key_radix_block_bucket_prefix.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_out",
-                    write_order.as_entire_binding(),
-                ),
-            ],
-        )?);
-        retained_key_params.push(ModuleKeyRadixStep {
-            _params: step_params,
-        });
-    }
+    let import_visible_type_key_resources = HashMap::from([
+        (
+            "import_visible_count_out".to_owned(),
+            import_visible_type_count_out.as_entire_binding(),
+        ),
+        (
+            "import_visible_module_id".to_owned(),
+            import_visible_type_module_id.as_entire_binding(),
+        ),
+        (
+            "import_visible_name_id".to_owned(),
+            import_visible_type_name_id.as_entire_binding(),
+        ),
+        (
+            "import_visible_key_order".to_owned(),
+            import_visible_type_key_order.as_entire_binding(),
+        ),
+        (
+            "import_visible_key_order_tmp".to_owned(),
+            import_visible_type_key_order_tmp.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_histogram".to_owned(),
+            import_visible_key_radix_block_histogram.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_prefix".to_owned(),
+            import_visible_key_radix_block_bucket_prefix.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_total".to_owned(),
+            import_visible_key_radix_bucket_total.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_base".to_owned(),
+            import_visible_key_radix_bucket_base.as_entire_binding(),
+        ),
+    ]);
+    let import_visible_sort_plan = |label, resources, dispatch_args| RadixSortPlan {
+        label,
+        capacity: import_visible_capacity_u32,
+        small_capacity: MODULE_RELATION_SMALL_SORT_CAPACITY,
+        steps: IMPORT_VISIBLE_KEY_RADIX_STEPS,
+        passes: RadixSortPasses {
+            small: Some(&passes.modules_sort_import_visible_keys_small),
+            histogram: &passes.modules_sort_import_visible_keys,
+            bucket_prefix: &passes.names_radix_bucket_prefix,
+            bucket_bases: &passes.names_radix_bucket_bases,
+            scatter: &passes.modules_sort_import_visible_keys_scatter,
+        },
+        dispatch: RadixSortDispatch {
+            small: RadixDispatchDomain::Indirect(dispatch_args),
+            rows: RadixDispatchDomain::Indirect(dispatch_args),
+            bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS.saturating_mul(256)),
+            bucket_bases: RadixDispatchDomain::Direct(256),
+        },
+        resources,
+    };
+    let import_visible_resources = RadixSortResources {
+        count: "import_visible_count_out",
+        order: "import_visible_key_order",
+        temporary_order: "import_visible_key_order_tmp",
+        histogram: "import_visible_radix_histogram",
+        bucket_prefix: "import_visible_radix_prefix",
+        bucket_total: "import_visible_radix_total",
+        bucket_base: "import_visible_radix_base",
+    };
+    let sort_import_visible_type_keys = RadixSortOperation::new(
+        device,
+        &import_visible_type_key_resources,
+        import_visible_sort_plan(
+            "type_check.modules.import_visible_type_keys",
+            import_visible_resources,
+            &import_visible_type_key_radix_dispatch_args,
+        ),
+        |key_step| ModuleKeyRadixParams {
+            module_capacity: import_visible_capacity_u32,
+            reserved: 0,
+            n_blocks: import_visible_n_blocks,
+            key_step,
+        },
+    )?;
 
     let import_visible_value_key_radix_dispatch_params = uniform_from_val(
         device,
@@ -1249,48 +1096,6 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visible_value_key_radix_dispatch_args,
     )?;
 
-    let sort_import_visible_value_keys_small =
-        if import_visible_capacity_u32 <= MODULE_RELATION_SMALL_SORT_CAPACITY {
-            Some(bind_group::create_bind_group_from_bindings(
-                device,
-                Some("type_check_modules_09b2_sort_import_visible_value_keys_small"),
-                &passes.modules_sort_import_visible_keys_small,
-                0,
-                &[
-                    (
-                        "gParams",
-                        import_visible_value_key_radix_dispatch_params.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_count_out",
-                        import_visible_value_count_out.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_module_id",
-                        import_visible_value_module_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_name_id",
-                        import_visible_value_name_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_key_order",
-                        import_visible_value_key_order.as_entire_binding(),
-                    ),
-                ],
-            )?)
-        } else {
-            None
-        };
-
-    let mut sort_import_visible_value_key_histogram =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_value_key_bucket_prefix =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_value_key_bucket_bases =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
-    let mut sort_import_visible_value_key_scatter =
-        Vec::with_capacity(IMPORT_VISIBLE_KEY_RADIX_STEPS as usize);
     // Type and value visibility keys are sorted stage-by-stage in parallel.
     // Keep one secondary radix scratch set for the value namespace so those
     // dispatches have no write hazards inside their shared compute passes.
@@ -1318,115 +1123,59 @@ pub(in crate::type_checker) fn create_with_passes(
         import_visible_key_radix_bucket_base.count,
         wgpu::BufferUsages::empty(),
     );
-    for key_step in 0..IMPORT_VISIBLE_KEY_RADIX_STEPS {
-        let step_params = uniform_from_val(
-            device,
-            &format!("type_check.modules.import_visible_value_radix.params.{key_step}"),
-            &ModuleKeyRadixParams {
-                module_capacity: import_visible_capacity_u32,
-                reserved: 0,
-                n_blocks: import_visible_n_blocks,
-                key_step,
-            },
-        );
-        let read_order = if key_step % 2 == 0 {
-            &import_visible_value_key_order
-        } else {
-            &import_visible_value_key_order_tmp
-        };
-        let write_order = if key_step % 2 == 0 {
-            &import_visible_value_key_order_tmp
-        } else {
-            &import_visible_value_key_order
-        };
-        sort_import_visible_value_key_histogram.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_09c_sort_import_visible_keys"),
-            &passes.modules_sort_import_visible_keys,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "import_visible_count_out",
-                    import_visible_value_count_out.as_entire_binding(),
-                ),
-                (
-                    "import_visible_module_id",
-                    import_visible_value_module_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_name_id",
-                    import_visible_value_name_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_in",
-                    read_order.as_entire_binding(),
-                ),
-                (
-                    "radix_block_histogram",
-                    import_visible_value_radix_block_histogram.as_entire_binding(),
-                ),
-            ],
-        )?);
-        sort_import_visible_value_key_bucket_prefix.push(create_radix_bucket_prefix(
-            device,
-            &passes.names_radix_bucket_prefix,
-            "type_check_modules.import_visible_value_bucket_prefix",
-            &step_params,
-            &import_visible_value_count_out,
-            &import_visible_value_radix_block_histogram,
-            &import_visible_value_radix_block_bucket_prefix,
-            &import_visible_value_radix_bucket_total,
-        )?);
-        sort_import_visible_value_key_bucket_bases.push(create_radix_bucket_bases(
-            device,
-            &passes.names_radix_bucket_bases,
-            "type_check_modules.import_visible_value_bucket_bases",
-            &step_params,
-            &import_visible_value_radix_bucket_total,
-            &import_visible_value_radix_bucket_base,
-        )?);
-        sort_import_visible_value_key_scatter.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_modules_09d_sort_import_visible_keys_scatter"),
-            &passes.modules_sort_import_visible_keys_scatter,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "import_visible_count_out",
-                    import_visible_value_count_out.as_entire_binding(),
-                ),
-                (
-                    "import_visible_module_id",
-                    import_visible_value_module_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_name_id",
-                    import_visible_value_name_id.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_in",
-                    read_order.as_entire_binding(),
-                ),
-                (
-                    "radix_bucket_base",
-                    import_visible_value_radix_bucket_base.as_entire_binding(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    import_visible_value_radix_block_bucket_prefix.as_entire_binding(),
-                ),
-                (
-                    "import_visible_key_order_out",
-                    write_order.as_entire_binding(),
-                ),
-            ],
-        )?);
-        retained_key_params.push(ModuleKeyRadixStep {
-            _params: step_params,
-        });
-    }
+    let import_visible_value_key_resources = HashMap::from([
+        (
+            "import_visible_count_out".to_owned(),
+            import_visible_value_count_out.as_entire_binding(),
+        ),
+        (
+            "import_visible_module_id".to_owned(),
+            import_visible_value_module_id.as_entire_binding(),
+        ),
+        (
+            "import_visible_name_id".to_owned(),
+            import_visible_value_name_id.as_entire_binding(),
+        ),
+        (
+            "import_visible_key_order".to_owned(),
+            import_visible_value_key_order.as_entire_binding(),
+        ),
+        (
+            "import_visible_key_order_tmp".to_owned(),
+            import_visible_value_key_order_tmp.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_histogram".to_owned(),
+            import_visible_value_radix_block_histogram.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_prefix".to_owned(),
+            import_visible_value_radix_block_bucket_prefix.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_total".to_owned(),
+            import_visible_value_radix_bucket_total.as_entire_binding(),
+        ),
+        (
+            "import_visible_radix_base".to_owned(),
+            import_visible_value_radix_bucket_base.as_entire_binding(),
+        ),
+    ]);
+    let sort_import_visible_value_keys = RadixSortOperation::new(
+        device,
+        &import_visible_value_key_resources,
+        import_visible_sort_plan(
+            "type_check.modules.import_visible_value_keys",
+            import_visible_resources,
+            &import_visible_value_key_radix_dispatch_args,
+        ),
+        |key_step| ModuleKeyRadixParams {
+            module_capacity: import_visible_capacity_u32,
+            reserved: 0,
+            n_blocks: import_visible_n_blocks,
+            key_step,
+        },
+    )?;
 
     let build_import_visible_type_key_table = bind_group::create_bind_group_from_bindings(
         device,
@@ -2018,27 +1767,13 @@ pub(in crate::type_checker) fn create_with_passes(
             ),
         ],
     )?;
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: decl_module_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: attach_record_modules_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: build_file_module_map_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: validate_decl_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: import_visibility_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: import_visibility_mark_params,
-    });
-    retained_key_params.push(ModuleKeyRadixStep {
-        _params: resolve_qualified_path_params,
-    });
+    retained_params.push(decl_module_params);
+    retained_params.push(attach_record_modules_params);
+    retained_params.push(build_file_module_map_params);
+    retained_params.push(validate_decl_params);
+    retained_params.push(import_visibility_params);
+    retained_params.push(import_visibility_mark_params);
+    retained_params.push(resolve_qualified_path_params);
 
     Ok(State {
         n_blocks,
@@ -2192,8 +1927,6 @@ pub(in crate::type_checker) fn create_with_passes(
         path_kind,
         path_count_out,
         path_dispatch_args,
-        scan_steps,
-        record_scan_steps,
         _extract_module_record_flag_params: extract_module_record_flag_params,
         _extract_import_record_flag_params: extract_import_record_flag_params,
         _extract_decl_record_flag_params: extract_decl_record_flag_params,
@@ -2207,7 +1940,7 @@ pub(in crate::type_checker) fn create_with_passes(
             import_visible_type_key_radix_dispatch_params,
         _import_visible_value_key_radix_dispatch_params:
             import_visible_value_key_radix_dispatch_params,
-        _retained_key_params: retained_key_params,
+        _retained_params: retained_params,
         bind_groups: BindGroups {
             mark_records,
             scatter_paths,
@@ -2232,11 +1965,7 @@ pub(in crate::type_checker) fn create_with_passes(
             scatter_decl_span_records,
             build_module_keys,
             module_key_radix_dispatch,
-            sort_module_keys_small,
-            sort_module_key_histogram,
-            sort_module_key_bucket_prefix,
-            sort_module_key_bucket_bases,
-            sort_module_key_scatter,
+            sort_module_keys,
             validate_modules,
             clear_dependency_module_lookup,
             build_dependency_module_lookup,
@@ -2244,11 +1973,7 @@ pub(in crate::type_checker) fn create_with_passes(
             resolve_imports,
             seed_import_edge_key_order,
             import_edge_key_radix_dispatch,
-            sort_import_edges_small,
-            sort_import_edge_key_histogram,
-            sort_import_edge_key_bucket_prefix,
-            sort_import_edge_key_bucket_bases,
-            sort_import_edge_key_scatter,
+            sort_import_edges,
             validate_import_cycles,
             clear_file_module_map,
             build_file_module_map,
@@ -2256,11 +1981,7 @@ pub(in crate::type_checker) fn create_with_passes(
             import_dispatch_args: import_dispatch_args_group,
             seed_decl_key_order,
             decl_key_radix_dispatch,
-            sort_decl_keys_small,
-            sort_decl_key_histogram,
-            sort_decl_key_bucket_prefix,
-            sort_decl_key_bucket_bases,
-            sort_decl_key_scatter,
+            sort_decl_keys,
             validate_decls,
             mark_decl_namespace_keys,
             decl_type_key_scan,
@@ -2277,17 +1998,9 @@ pub(in crate::type_checker) fn create_with_passes(
             scatter_import_visible_type,
             scatter_import_visible_value,
             import_visible_type_key_radix_dispatch,
-            sort_import_visible_type_keys_small,
-            sort_import_visible_type_key_histogram,
-            sort_import_visible_type_key_bucket_prefix,
-            sort_import_visible_type_key_bucket_bases,
-            sort_import_visible_type_key_scatter,
+            sort_import_visible_type_keys,
             import_visible_value_key_radix_dispatch,
-            sort_import_visible_value_keys_small,
-            sort_import_visible_value_key_histogram,
-            sort_import_visible_value_key_bucket_prefix,
-            sort_import_visible_value_key_bucket_bases,
-            sort_import_visible_value_key_scatter,
+            sort_import_visible_value_keys,
             build_import_visible_type_key_table,
             build_import_visible_value_key_table,
             import_visible_validate_dispatch_args: import_visible_validate_dispatch_args_group,

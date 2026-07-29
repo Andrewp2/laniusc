@@ -41,10 +41,12 @@ StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
-StructuredBuffer<uint4> hir_param_record;
+struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_id;
-StructuredBuffer<uint> predicate_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -159,15 +161,12 @@ bool valid_method_contract(uint node)
 
 bool valid_method_param(uint node)
 {
-    if (!valid_node(node))
+    uint param_count = min(compact_param_count[0u], gParams.predicate_capacity);
+    if (node >= param_count)
         return false;
-
-    uint4 record = hir_param_record[node];
-    uint owner = record.x;
-    uint ordinal = record.y;
-    return record.w == node &&
-           valid_method_contract(owner) &&
-           ordinal != INVALID;
+    HirParam parameter = compact_params[node];
+    return valid_method_contract(parameter.owner) &&
+           parameter.ordinal != INVALID;
 }
 
 uint owner_key_field(uint pred, uint field_i)
@@ -240,11 +239,11 @@ uint method_param_key_lane(uint node, uint lane)
     if (!valid_method_param(node))
         return 0u;
 
-    uint4 record = hir_param_record[node];
+    HirParam parameter = compact_params[node];
     if (lane == 0u)
-        return encode_key_value(record.x, INVALID);
+        return encode_key_value(parameter.owner, INVALID);
     if (lane == 1u)
-        return encode_key_value(record.y, INVALID);
+        return encode_key_value(parameter.ordinal, INVALID);
     return encode_key_value(node, INVALID);
 }
 
@@ -287,7 +286,7 @@ public struct PredicateKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return predicate_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

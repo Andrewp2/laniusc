@@ -56,6 +56,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
                 b.hir_type_arg_rank_a.as_entire_binding(),
             ),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
+            ("hir_payload".into(), b.hir_payload.as_entire_binding()),
             (
                 "family_count".into(),
                 b.hir_predicate_table_count.as_entire_binding(),

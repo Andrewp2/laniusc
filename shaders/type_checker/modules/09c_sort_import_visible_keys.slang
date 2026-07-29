@@ -27,7 +27,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_visible_count_out;
 StructuredBuffer<uint> import_visible_module_id;
 StructuredBuffer<uint> import_visible_name_id;
-StructuredBuffer<uint> import_visible_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -71,7 +71,7 @@ public struct VisibleKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return import_visible_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

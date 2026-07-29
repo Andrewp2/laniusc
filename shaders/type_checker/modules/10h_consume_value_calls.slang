@@ -17,22 +17,24 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
+
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
-StructuredBuffer<uint> path_owner_hir;
+StructuredBuffer<uint> path_call_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_name_token;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_call_parent_by_callee;
-StructuredBuffer<uint> hir_call_arg_count;
-StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_param_count;
 
@@ -81,7 +83,7 @@ bool valid_token(uint token)
 
 bool valid_node(uint node)
 {
-    return node != INVALID && node < gParams.n_hir_nodes;
+    return node != INVALID && node < min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
 bool is_generic_type(uint ty)
@@ -94,13 +96,6 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-uint call_node_for_callee_token(uint callee_i)
-{
-    if (!valid_token(callee_i))
-        return INVALID;
-    return call_arg_record[callee_i].z;
-}
-
 uint call_node_for_marked_head(uint owner_token)
 {
     if (!valid_token(owner_token))
@@ -111,18 +106,7 @@ uint call_node_for_marked_head(uint owner_token)
         return INVALID;
 
     uint call_node = encoded - 1u;
-    return valid_node(call_node) && hir_kind[call_node] == HIR_CALL_EXPR
-        ? call_node
-        : INVALID;
-}
-
-uint call_node_for_owner_hir(uint path_i)
-{
-    uint owner_hir = path_i < active_path_count() ? path_owner_hir[path_i] : INVALID;
-    if (!valid_node(owner_hir))
-        return INVALID;
-    uint call_node = hir_call_parent_by_callee[owner_hir];
-    return valid_node(call_node) && hir_kind[call_node] == HIR_CALL_EXPR
+    return valid_node(call_node) && compact_hir_core[call_node].kind == HIR_CALL_EXPR
         ? call_node
         : INVALID;
 }
@@ -159,33 +143,26 @@ uint call_node_for_owner_token(uint path_i, uint owner_token)
     if (valid_node(call_node))
         return call_node;
 
-    call_node = call_node_for_owner_hir(path_i);
-    if (valid_node(call_node))
-        return call_node;
-
-    call_node = call_node_for_callee_token(owner_token);
-    if (valid_node(call_node))
-        return call_node;
-
     uint leaf_token = path_leaf_token(path_i, owner_token);
     if (leaf_token != owner_token)
     {
-        call_node = call_node_for_callee_token(leaf_token);
+        call_node = call_node_for_marked_head(leaf_token);
         if (valid_node(call_node))
             return call_node;
     }
 
-    uint call_head = module_value_path_call_open[owner_token];
-    return valid_token(call_head) ? call_node_for_callee_token(call_head) : INVALID;
+    call_node = path_i < active_path_count() ? path_call_hir[path_i] : INVALID;
+    return valid_node(call_node) && compact_hir_core[call_node].kind == HIR_CALL_EXPR
+        ? call_node
+        : INVALID;
 }
 
 uint call_arg_count_for_call(uint owner_token, uint call_node)
 {
-    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
     if (!valid_node(call_node))
-        return record_count;
+        return 0u;
     uint compact_count = call_arg_row_count[call_node];
-    return max(max(record_count, hir_call_arg_count[call_node]), compact_count);
+    return max(compact_hir_payload[call_node].c, compact_count);
 }
 
 bool valid_function_decl(uint decl_i, out uint fn_token)

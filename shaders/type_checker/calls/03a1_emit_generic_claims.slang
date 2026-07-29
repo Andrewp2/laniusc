@@ -42,6 +42,8 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_ref_tag;
@@ -661,8 +663,18 @@ uint actual_instance_arg_type(uint arg_node, uint expected_instance, uint instan
 {
     uint actual_tag;
     uint actual_payload;
-    if (!arg_decl_type_ref(arg_node, actual_tag, actual_payload))
+    uint node = resolve_expr(arg_node);
+    bool have_ref = valid_node(node) &&
+                    semantic_expr_ref_tag_by_hir[node] == TYPE_REF_INSTANCE;
+    if (have_ref)
+    {
+        actual_tag = TYPE_REF_INSTANCE;
+        actual_payload = semantic_expr_ref_payload_by_hir[node];
+    }
+    else if (!arg_decl_type_ref(arg_node, actual_tag, actual_payload))
+    {
         return TY_UNKNOWN;
+    }
     if (actual_tag != TYPE_REF_INSTANCE ||
         !same_named_instance_decl(expected_instance, actual_payload))
         return TY_UNKNOWN;

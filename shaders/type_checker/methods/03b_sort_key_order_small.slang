@@ -24,7 +24,7 @@ StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_hash;
-RWStructuredBuffer<uint> method_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -180,5 +180,5 @@ void main(uint3 ltid: SV_GroupThreadID)
     }
 
     for (uint i = lane; i < active_count; i += WG_SIZE)
-        method_key_order[i] = shared_order[i];
+        radix_order[i] = shared_order[i];
 }

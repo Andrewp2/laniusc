@@ -13,7 +13,6 @@ RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> fn_start_token_by_decl_token;
 RWStructuredBuffer<uint> backend_call_fn_index;
 RWStructuredBuffer<uint> call_intrinsic_tag;
-RWStructuredBuffer<uint> fn_entrypoint_tag;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_param_count;
@@ -113,7 +112,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (i < gParams.n_hir_nodes)
     {
-        fn_entrypoint_tag[i] = 0u;
         call_has_array_arg[i] = 0u;
         call_result_instance[i] = INVALID;
     }

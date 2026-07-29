@@ -28,7 +28,7 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> struct_field_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -95,7 +95,7 @@ public struct StructFieldKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return struct_field_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

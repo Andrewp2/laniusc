@@ -30,10 +30,12 @@ StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
-StructuredBuffer<uint4> hir_param_record;
+struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_id;
-RWStructuredBuffer<uint> predicate_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint PREDICATE_KEY_MODE_OWNER = 0u;
@@ -124,12 +126,12 @@ bool valid_method_contract(uint node)
 
 bool valid_method_param(uint node)
 {
-    if (!valid_node(node))
+    uint param_count = min(compact_param_count[0u], gParams.predicate_capacity);
+    if (node >= param_count)
         return false;
-    uint4 record = hir_param_record[node];
-    return record.w == node &&
-           valid_method_contract(record.x) &&
-           record.y != INVALID;
+    HirParam parameter = compact_params[node];
+    return valid_method_contract(parameter.owner) &&
+           parameter.ordinal != INVALID;
 }
 
 uint owner_key_lane(uint pred, uint lane)
@@ -175,11 +177,11 @@ uint method_param_key_lane(uint node, uint lane)
 {
     if (!valid_method_param(node))
         return 0u;
-    uint4 record = hir_param_record[node];
+    HirParam parameter = compact_params[node];
     if (lane == 0u)
-        return encoded_nullable(record.x, INVALID);
+        return encoded_nullable(parameter.owner, INVALID);
     if (lane == 1u)
-        return encoded_nullable(record.y, INVALID);
+        return encoded_nullable(parameter.ordinal, INVALID);
     return encoded_nullable(node, INVALID);
 }
 
@@ -266,5 +268,5 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     }
 
     for (uint i = lane; i < active_count; i += WG_SIZE)
-        predicate_key_order[i] = shared_order[i];
+        radix_order[i] = shared_order[i];
 }

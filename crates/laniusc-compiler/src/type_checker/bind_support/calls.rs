@@ -1,68 +1,40 @@
-use super::{
-    super::*,
-    common::reflected_bind_group_from_resources,
-    scan::create_counted_u32_scan_bind_groups_with_passes,
-};
-
-const GENERIC_CLAIM_KEY_FIELD_COUNT: u32 = 3;
-const GENERIC_CLAIM_KEY_MAX_RADIX_STEPS: u32 = 12;
-
-fn generic_claim_radix_bytes(token_capacity: u32, claim_capacity: u32) -> u32 {
-    let max_key = token_capacity
-        .max(claim_capacity)
-        .saturating_add(8192)
-        .saturating_add(1)
-        .max(1);
-    if max_key <= 0xff {
-        1
-    } else if max_key <= 0xffff {
-        2
-    } else if max_key <= 0x00ff_ffff {
-        3
-    } else {
-        4
-    }
-}
-
-fn generic_claim_radix_steps(token_capacity: u32, claim_capacity: u32) -> u32 {
-    let steps =
-        generic_claim_radix_bytes(token_capacity, claim_capacity) * GENERIC_CLAIM_KEY_FIELD_COUNT;
-    let even_steps = if steps % 2 == 0 { steps } else { steps + 1 };
-    even_steps.min(GENERIC_CLAIM_KEY_MAX_RADIX_STEPS)
-}
-
-/// Scan wiring for compact call-row families such as params, args, and claims.
-pub(in crate::type_checker) struct CompactCallRowScanInput<'a> {
-    pub(in crate::type_checker) scan_steps: &'a [NameScanStep],
-    pub(in crate::type_checker) scan_count: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_input: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_output_prefix: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_total: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_local_prefix: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_block_sum: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_prefix_a: &'a wgpu::Buffer,
-    pub(in crate::type_checker) scan_prefix_b: &'a wgpu::Buffer,
-    pub(in crate::type_checker) n_blocks: u32,
-}
+use super::{super::*, common::reflected_bind_group_from_resources};
 
 /// Builds bind groups for call collection, argument matching, and claim validation.
 pub(in crate::type_checker) fn create_call_bind_groups(
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     passes: &TypeCheckPasses,
-    resources: &HashMap<String, wgpu::BindingResource<'_>>,
+    resources: &ResourceMap<'_>,
+    hir_dispatch_args: &wgpu::Buffer,
     token_capacity: u32,
+    hir_capacity: u32,
+    call_param_capacity: u32,
     claim_capacity: u32,
     call_generic_claim_radix_dispatch_args: &LaniusBuffer<u32>,
     call_const_claim_radix_dispatch_args: &LaniusBuffer<u32>,
     call_required_generic_dispatch_args: &LaniusBuffer<u32>,
-    compact_param_scan: CompactCallRowScanInput<'_>,
-    compact_arg_scan: CompactCallRowScanInput<'_>,
-    generic_claim_scan: CompactCallRowScanInput<'_>,
-    required_generic_scan: CompactCallRowScanInput<'_>,
 ) -> Result<CallBindGroups> {
-    let claim_n_blocks = claim_capacity.div_ceil(256).max(1);
-    let claim_radix_bytes = generic_claim_radix_bytes(token_capacity, claim_capacity);
-    let claim_radix_steps = generic_claim_radix_steps(token_capacity, claim_capacity);
+    let indirect = |spec, pass| {
+        ComputeOperation::indirect_spec(device, graph, resources, spec, pass, hir_dispatch_args)
+    };
+    let direct = |spec, pass, workgroups| {
+        ComputeOperation::direct_spec(device, graph, resources, spec, pass, workgroups)
+    };
+    let direct_name = |name, pass, workgroups| {
+        ComputeOperation::direct(device, graph, resources, name, pass, workgroups)
+    };
+    let lookup_work = token_capacity
+        .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+        .max(token_capacity.saturating_mul(2))
+        .max(hir_capacity);
+    let call_arg_slot_work = hir_capacity
+        .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+        .max(token_capacity)
+        .max(1);
+    let semantic_work = token_capacity.max(hir_capacity).max(512);
+    let prefix_scan_spec =
+        |spec| PrefixScanOperation::from_spec(device, passes.into(), resources, spec);
     let required_generic_dispatch_params = uniform_from_val(
         device,
         "type_check.calls.required_generic_dispatch.params",
@@ -73,33 +45,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             reserved1: 0,
         },
     );
-    let claim_radix_dispatch_params = uniform_from_val(
-        device,
-        "type_check.calls.generic_claim_radix.dispatch.params",
-        &ModuleKeyRadixParams {
-            module_capacity: claim_capacity,
-            reserved: claim_radix_bytes,
-            n_blocks: claim_n_blocks,
-            key_step: 0,
-        },
-    );
-    let generic_claim_radix_dispatch = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check.calls.generic_claim_radix_dispatch"),
-        &passes.names_radix_dispatch_args,
-        0,
-        &[
-            ("gParams", claim_radix_dispatch_params.as_entire_binding()),
-            (
-                "name_count_in",
-                resources["call_generic_claim_count_out"].clone(),
-            ),
-            (
-                "radix_dispatch_args",
-                resources["call_generic_claim_radix_dispatch_args"].clone(),
-            ),
-        ],
-    )?;
     let required_generic_dispatch = bind_group::create_bind_group_from_bindings(
         device,
         Some("type_check.calls.required_generic_dispatch"),
@@ -120,570 +65,154 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             ),
         ],
     )?;
-
-    let mut generic_claim_radix_step_params = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_generic_claim_histogram = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_generic_claim_bucket_prefix = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_generic_claim_bucket_bases = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_generic_claim_scatter = Vec::with_capacity(claim_radix_steps as usize);
-    for key_step in 0..claim_radix_steps {
-        let step_params = uniform_from_val(
-            device,
-            &format!("type_check.calls.generic_claim_radix.params.{key_step}"),
-            &ModuleKeyRadixParams {
-                module_capacity: claim_capacity,
-                reserved: claim_radix_bytes,
-                n_blocks: claim_n_blocks,
-                key_step,
-            },
-        );
-        let read_order = if key_step % 2 == 0 {
-            resources["call_generic_claim_order"].clone()
-        } else {
-            resources["call_generic_claim_order_tmp"].clone()
-        };
-        let write_order = if key_step % 2 == 0 {
-            resources["call_generic_claim_order_tmp"].clone()
-        } else {
-            resources["call_generic_claim_order"].clone()
-        };
-
-        sort_generic_claim_histogram.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_calls_03a2_sort_generic_claims"),
-            &passes.calls_sort_generic_claims,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "call_generic_claim_count_out",
-                    resources["call_generic_claim_count_out"].clone(),
-                ),
-                (
-                    "call_generic_claim_callee",
-                    resources["call_generic_claim_callee"].clone(),
-                ),
-                (
-                    "call_generic_claim_slot",
-                    resources["call_generic_claim_slot"].clone(),
-                ),
-                (
-                    "call_generic_claim_type",
-                    resources["call_generic_claim_type"].clone(),
-                ),
-                (
-                    "call_generic_claim_ref_tag",
-                    resources["call_generic_claim_ref_tag"].clone(),
-                ),
-                ("call_generic_claim_order_in", read_order.clone()),
-                (
-                    "radix_block_histogram",
-                    resources["call_generic_claim_radix_block_histogram"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_generic_claim_bucket_prefix.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.calls.generic_claim_radix_bucket_prefix"),
-            &passes.names_radix_bucket_prefix,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "name_count_in",
-                    resources["call_generic_claim_count_out"].clone(),
-                ),
-                (
-                    "radix_block_histogram",
-                    resources["call_generic_claim_radix_block_histogram"].clone(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    resources["call_generic_claim_radix_block_bucket_prefix"].clone(),
-                ),
-                (
-                    "radix_bucket_total",
-                    resources["call_generic_claim_radix_bucket_total"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_generic_claim_bucket_bases.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.calls.generic_claim_radix_bucket_bases"),
-            &passes.names_radix_bucket_bases,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "radix_bucket_total",
-                    resources["call_generic_claim_radix_bucket_total"].clone(),
-                ),
-                (
-                    "radix_bucket_base",
-                    resources["call_generic_claim_radix_bucket_base"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_generic_claim_scatter.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_calls_03a3_sort_generic_claims_scatter"),
-            &passes.calls_sort_generic_claims_scatter,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "call_generic_claim_count_out",
-                    resources["call_generic_claim_count_out"].clone(),
-                ),
-                (
-                    "call_generic_claim_callee",
-                    resources["call_generic_claim_callee"].clone(),
-                ),
-                (
-                    "call_generic_claim_slot",
-                    resources["call_generic_claim_slot"].clone(),
-                ),
-                (
-                    "call_generic_claim_type",
-                    resources["call_generic_claim_type"].clone(),
-                ),
-                (
-                    "call_generic_claim_ref_tag",
-                    resources["call_generic_claim_ref_tag"].clone(),
-                ),
-                ("call_generic_claim_order_in", read_order),
-                (
-                    "radix_bucket_base",
-                    resources["call_generic_claim_radix_bucket_base"].clone(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    resources["call_generic_claim_radix_block_bucket_prefix"].clone(),
-                ),
-                ("call_generic_claim_order_out", write_order),
-            ],
-        )?);
-
-        generic_claim_radix_step_params.push(ModuleKeyRadixStep {
-            _params: step_params,
-        });
-    }
-
-    let const_claim_radix_dispatch_params = uniform_from_val(
+    let generic_claim_keys = CallClaimKeyPipeline::new(
         device,
-        "type_check.calls.const_claim_radix.dispatch.params",
-        &ModuleKeyRadixParams {
-            module_capacity: claim_capacity,
-            reserved: claim_radix_bytes,
-            n_blocks: claim_n_blocks,
-            key_step: 0,
+        passes,
+        CallClaimKeyBuild {
+            kind: CallClaimKind::Generic,
+            token_capacity,
+            claim_capacity,
+            dispatch_args: call_generic_claim_radix_dispatch_args,
+            resources,
         },
+    )?;
+    let const_claim_keys = CallClaimKeyPipeline::new(
+        device,
+        passes,
+        CallClaimKeyBuild {
+            kind: CallClaimKind::Const,
+            token_capacity,
+            claim_capacity,
+            dispatch_args: call_const_claim_radix_dispatch_args,
+            resources,
+        },
+    )?;
+
+    let argument_matching = CallArgumentMatchingOperation::new(
+        direct(
+            CALLS_ARGUMENT_MATCH_INITIALIZE,
+            &passes.calls_match_arg_params_init,
+            semantic_work,
+        )?,
+        direct(
+            CALLS_ARGUMENT_MATCH_CONSUME,
+            &passes.calls_collect_row_args,
+            semantic_work,
+        )?,
     );
-    let const_claim_radix_dispatch = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check.calls.const_claim_radix_dispatch"),
-        &passes.names_radix_dispatch_args,
-        0,
-        &[
-            (
-                "gParams",
-                const_claim_radix_dispatch_params.as_entire_binding(),
-            ),
-            ("name_count_in", resources["call_arg_row_count_out"].clone()),
-            (
-                "radix_dispatch_args",
-                resources["call_const_claim_radix_dispatch_args"].clone(),
-            ),
-        ],
-    )?;
-
-    let mut const_claim_radix_step_params = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_const_claim_histogram = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_const_claim_bucket_prefix = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_const_claim_bucket_bases = Vec::with_capacity(claim_radix_steps as usize);
-    let mut sort_const_claim_scatter = Vec::with_capacity(claim_radix_steps as usize);
-    for key_step in 0..claim_radix_steps {
-        let step_params = uniform_from_val(
-            device,
-            &format!("type_check.calls.const_claim_radix.params.{key_step}"),
-            &ModuleKeyRadixParams {
-                module_capacity: claim_capacity,
-                reserved: claim_radix_bytes,
-                n_blocks: claim_n_blocks,
-                key_step,
-            },
-        );
-        let read_order = if key_step % 2 == 0 {
-            resources["call_const_claim_order"].clone()
-        } else {
-            resources["call_const_claim_order_tmp"].clone()
-        };
-        let write_order = if key_step % 2 == 0 {
-            resources["call_const_claim_order_tmp"].clone()
-        } else {
-            resources["call_const_claim_order"].clone()
-        };
-
-        sort_const_claim_histogram.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_calls_03a2_sort_const_claims"),
-            &passes.calls_sort_generic_claims,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "call_generic_claim_count_out",
-                    resources["call_arg_row_count_out"].clone(),
-                ),
-                (
-                    "call_generic_claim_callee",
-                    resources["call_const_claim_callee"].clone(),
-                ),
-                (
-                    "call_generic_claim_slot",
-                    resources["call_const_claim_slot"].clone(),
-                ),
-                (
-                    "call_generic_claim_type",
-                    resources["call_const_claim_len"].clone(),
-                ),
-                (
-                    "call_generic_claim_ref_tag",
-                    resources["call_generic_claim_ref_tag"].clone(),
-                ),
-                ("call_generic_claim_order_in", read_order.clone()),
-                (
-                    "radix_block_histogram",
-                    resources["call_const_claim_radix_block_histogram"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_const_claim_bucket_prefix.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.calls.const_claim_radix_bucket_prefix"),
-            &passes.names_radix_bucket_prefix,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                ("name_count_in", resources["call_arg_row_count_out"].clone()),
-                (
-                    "radix_block_histogram",
-                    resources["call_const_claim_radix_block_histogram"].clone(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    resources["call_const_claim_radix_block_bucket_prefix"].clone(),
-                ),
-                (
-                    "radix_bucket_total",
-                    resources["call_const_claim_radix_bucket_total"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_const_claim_bucket_bases.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.calls.const_claim_radix_bucket_bases"),
-            &passes.names_radix_bucket_bases,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "radix_bucket_total",
-                    resources["call_const_claim_radix_bucket_total"].clone(),
-                ),
-                (
-                    "radix_bucket_base",
-                    resources["call_const_claim_radix_bucket_base"].clone(),
-                ),
-            ],
-        )?);
-
-        sort_const_claim_scatter.push(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check_calls_03a3_sort_const_claims_scatter"),
-            &passes.calls_sort_generic_claims_scatter,
-            0,
-            &[
-                ("gParams", step_params.as_entire_binding()),
-                (
-                    "call_generic_claim_count_out",
-                    resources["call_arg_row_count_out"].clone(),
-                ),
-                (
-                    "call_generic_claim_callee",
-                    resources["call_const_claim_callee"].clone(),
-                ),
-                (
-                    "call_generic_claim_slot",
-                    resources["call_const_claim_slot"].clone(),
-                ),
-                (
-                    "call_generic_claim_type",
-                    resources["call_const_claim_len"].clone(),
-                ),
-                (
-                    "call_generic_claim_ref_tag",
-                    resources["call_generic_claim_ref_tag"].clone(),
-                ),
-                ("call_generic_claim_order_in", read_order),
-                (
-                    "radix_bucket_base",
-                    resources["call_const_claim_radix_bucket_base"].clone(),
-                ),
-                (
-                    "radix_block_bucket_prefix",
-                    resources["call_const_claim_radix_block_bucket_prefix"].clone(),
-                ),
-                ("call_generic_claim_order_out", write_order),
-            ],
-        )?);
-
-        const_claim_radix_step_params.push(ModuleKeyRadixStep {
-            _params: step_params,
+    let generic_claim_validation =
+        CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
+            required_dispatch_pass: passes.count_dispatch_args.clone(),
+            claim_scan: prefix_scan_spec(compiler_graph::GENERIC_CLAIM_SCAN)?,
+            emit_claims: direct(
+                CALLS_GENERIC_CLAIM_EMIT,
+                &passes.calls_emit_generic_claims,
+                claim_capacity.saturating_add(1),
+            )?,
+            validate_generic: ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                CALLS_GENERIC_CLAIM_VALIDATE,
+                &passes.calls_validate_generic_claims,
+                generic_claim_keys.dispatch_args(),
+            )?,
+            generic_keys: generic_claim_keys,
+            mark_required: indirect(
+                CALLS_REQUIRED_GENERIC_MARK,
+                &passes.calls_mark_required_generics,
+            )?,
+            required_scan: prefix_scan_spec(compiler_graph::REQUIRED_GENERIC_SCAN)?,
+            required_dispatch: required_generic_dispatch,
+            required_dispatch_params: required_generic_dispatch_params,
+            validate_required: ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                CALLS_REQUIRED_GENERIC_VALIDATE,
+                &passes.calls_validate_required_generics,
+                call_required_generic_dispatch_args,
+            )?,
+            validate_const: ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                CALLS_CONST_CLAIM_VALIDATE,
+                &passes.calls_validate_const_claims,
+                const_claim_keys.dispatch_args(),
+            )?,
+            const_keys: const_claim_keys,
         });
-    }
-
-    let match_arg_params_init = reflected_bind_group_from_resources(
-        device,
-        "type_check_resident_calls_match_arg_params_init",
-        &passes.calls_match_arg_params_init,
-        resources,
-    )?;
 
     Ok(CallBindGroups {
-        clear: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_clear",
-            &passes.calls_clear,
-            resources,
+        clear: direct(CALLS_CLEAR, &passes.calls_clear, lookup_work)?,
+        clear_entrypoints: direct(
+            CALLS_ENTRYPOINT_CLEAR,
+            &passes.calls_clear_entrypoints,
+            hir_capacity,
         )?,
-        return_refs: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_return_refs",
-            &passes.calls_return_refs,
-            resources,
-        )?,
-        entrypoints: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_entrypoints",
-            &passes.calls_entrypoints,
-            resources,
-        )?,
-        functions: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_functions",
-            &passes.calls_functions,
-            resources,
-        )?,
-        param_types: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_param_types",
+        return_refs: indirect(CALLS_RETURN_REFS, &passes.calls_return_refs)?,
+        entrypoints: indirect(CALLS_ENTRYPOINT_PROJECT, &passes.calls_entrypoints)?,
+        functions: indirect(CALLS_FUNCTIONS, &passes.calls_functions)?,
+        param_types: direct(
+            CALLS_PARAM_TYPES,
             &passes.calls_param_types,
-            resources,
+            call_param_capacity,
         )?,
-        intrinsics: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_intrinsics",
-            &passes.calls_intrinsics,
-            resources,
-        )?,
-        clear_hir_call_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_clear_hir_call_args",
+        intrinsics: indirect(CALLS_INTRINSICS, &passes.calls_intrinsics)?,
+        clear_hir_call_args: direct(
+            CALLS_ARGUMENT_CLEAR,
             &passes.calls_clear_hir_call_args,
-            resources,
+            call_arg_slot_work,
         )?,
-        pack_hir_call_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_pack_hir_call_args",
+        pack_hir_call_args: direct(
+            CALLS_ARGUMENT_PACK,
             &passes.calls_pack_hir_call_args,
-            resources,
+            hir_capacity,
         )?,
-        mark_compact_hir_call_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_mark_compact_hir_call_args",
+        mark_compact_hir_call_args: indirect(
+            CALLS_ARGUMENT_MARK,
             &passes.calls_mark_compact_hir_call_args,
-            resources,
         )?,
-        compact_hir_call_arg_scan: create_counted_u32_scan_bind_groups_with_passes(
-            passes,
-            device,
-            "type_check.calls.compact_hir_call_arg_scan",
-            compact_arg_scan.scan_steps,
-            compact_arg_scan.scan_count,
-            compact_arg_scan.scan_input,
-            compact_arg_scan.scan_output_prefix,
-            compact_arg_scan.scan_total,
-            compact_arg_scan.scan_local_prefix,
-            compact_arg_scan.scan_block_sum,
-            compact_arg_scan.scan_prefix_a,
-            compact_arg_scan.scan_prefix_b,
-        )?,
-        compact_hir_call_arg_scan_n_blocks: compact_arg_scan.n_blocks,
-        scatter_compact_hir_call_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_scatter_compact_hir_call_args",
+        compact_hir_call_arg_scan: prefix_scan_spec(compiler_graph::CALL_ARG_ROW_SCAN)?,
+        scatter_compact_hir_call_args: indirect(
+            CALLS_ARGUMENT_SCATTER,
             &passes.calls_scatter_compact_hir_call_args,
-            resources,
         )?,
-        call_param_segment_scan: create_counted_u32_scan_bind_groups_with_passes(
-            passes,
-            device,
-            "type_check.calls.call_param_segment_scan",
-            compact_param_scan.scan_steps,
-            compact_param_scan.scan_count,
-            compact_param_scan.scan_input,
-            compact_param_scan.scan_output_prefix,
-            compact_param_scan.scan_total,
-            compact_param_scan.scan_local_prefix,
-            compact_param_scan.scan_block_sum,
-            compact_param_scan.scan_prefix_a,
-            compact_param_scan.scan_prefix_b,
-        )?,
-        call_param_segment_scan_n_blocks: compact_param_scan.n_blocks,
-        scatter_compact_hir_params: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_scatter_compact_hir_params",
+        call_param_segment_scan: prefix_scan_spec(compiler_graph::CALL_PARAM_ROW_SCAN)?,
+        scatter_compact_hir_params: direct(
+            CALLS_PARAM_SCATTER,
             &passes.calls_scatter_compact_hir_params,
-            resources,
+            call_param_capacity,
         )?,
-        resolve: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_resolve",
-            &passes.calls_resolve,
-            resources,
-        )?,
-        backend_targets: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_backend_targets",
+        resolve: indirect(CALLS_RESOLVE, &passes.calls_resolve)?,
+        backend_targets: direct_name(
+            compiler_graph::CALLS_BACKEND_TARGETS_PASS,
             &passes.calls_backend_targets,
-            resources,
+            token_capacity,
         )?,
-        match_arg_params_init,
-        collect_row_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_collect_row_args",
-            &passes.calls_collect_row_args,
-            resources,
-        )?,
-        generic_claim_scan: create_counted_u32_scan_bind_groups_with_passes(
-            passes,
-            device,
-            "type_check.calls.generic_claim_scan",
-            generic_claim_scan.scan_steps,
-            generic_claim_scan.scan_count,
-            generic_claim_scan.scan_input,
-            generic_claim_scan.scan_output_prefix,
-            generic_claim_scan.scan_total,
-            generic_claim_scan.scan_local_prefix,
-            generic_claim_scan.scan_block_sum,
-            generic_claim_scan.scan_prefix_a,
-            generic_claim_scan.scan_prefix_b,
-        )?,
-        generic_claim_scan_n_blocks: generic_claim_scan.n_blocks,
-        emit_generic_claims: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_emit_generic_claims",
-            &passes.calls_emit_generic_claims,
-            resources,
-        )?,
-        generic_claim_capacity: claim_capacity,
-        generic_claim_radix_dispatch,
-        generic_claim_radix_dispatch_args: call_generic_claim_radix_dispatch_args.clone(),
-        _generic_claim_radix_steps: generic_claim_radix_step_params,
-        sort_generic_claim_histogram,
-        sort_generic_claim_bucket_prefix,
-        sort_generic_claim_bucket_bases,
-        sort_generic_claim_scatter,
-        validate_generic_claims: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_validate_generic_claims",
-            &passes.calls_validate_generic_claims,
-            resources,
-        )?,
-        clear_generic_claim_type_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_clear_generic_claim_type_args",
+        argument_matching,
+        generic_claim_validation,
+        clear_generic_claim_type_args: indirect(
+            CALLS_GENERIC_CLAIM_CLEAR,
             &passes.calls_clear_generic_claim_type_args,
-            resources,
         )?,
-        mark_required_generics: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_mark_required_generics",
-            &passes.calls_mark_required_generics,
-            resources,
-        )?,
-        required_generic_scan: create_counted_u32_scan_bind_groups_with_passes(
-            passes,
-            device,
-            "type_check.calls.required_generic_scan",
-            required_generic_scan.scan_steps,
-            required_generic_scan.scan_count,
-            required_generic_scan.scan_input,
-            required_generic_scan.scan_output_prefix,
-            required_generic_scan.scan_total,
-            required_generic_scan.scan_local_prefix,
-            required_generic_scan.scan_block_sum,
-            required_generic_scan.scan_prefix_a,
-            required_generic_scan.scan_prefix_b,
-        )?,
-        required_generic_scan_n_blocks: required_generic_scan.n_blocks,
-        required_generic_dispatch,
-        required_generic_dispatch_args: call_required_generic_dispatch_args.clone(),
-        _required_generic_dispatch_params: required_generic_dispatch_params,
-        validate_required_generics: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_validate_required_generics",
-            &passes.calls_validate_required_generics,
-            resources,
-        )?,
-        const_claim_radix_dispatch,
-        const_claim_radix_dispatch_args: call_const_claim_radix_dispatch_args.clone(),
-        _const_claim_radix_steps: const_claim_radix_step_params,
-        sort_const_claim_histogram,
-        sort_const_claim_bucket_prefix,
-        sort_const_claim_bucket_bases,
-        sort_const_claim_scatter,
-        validate_const_claims: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_validate_const_claims",
-            &passes.calls_validate_const_claims,
-            resources,
-        )?,
-        apply_row_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_apply_row_args",
-            &passes.calls_apply_row_args,
-            resources,
-        )?,
+        apply_row_args: indirect(CALLS_APPLY_ARGUMENTS, &passes.calls_apply_row_args)?,
         infer_array_generics: reflected_bind_group_from_resources(
             device,
             "type_check_resident_calls_infer_array_generics",
             &passes.calls_infer_array_generics,
             resources,
         )?,
-        validate_array_results: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_validate_array_results",
+        validate_array_results: direct(
+            CALLS_ARRAY_STATE_CONSUME,
             &passes.calls_validate_array_results,
-            resources,
+            hir_capacity,
         )?,
-        mark_array_args: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_mark_array_args",
-            &passes.calls_mark_array_args,
-            resources,
-        )?,
-        project_result_instances: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_calls_project_result_instances",
+        mark_array_args: indirect(CALLS_ARRAY_STATE_PUBLISH, &passes.calls_mark_array_args)?,
+        project_result_instances: indirect(
+            CALLS_RESULT_INSTANCE_PROJECT,
             &passes.calls_project_result_instances,
-            resources,
         )?,
         erase_generic_params: reflected_bind_group_from_resources(
             device,

@@ -44,7 +44,7 @@ pub(in crate::type_checker) fn record_typecheck_copy_buffer_to_buffer(
 pub(in crate::type_checker) fn stamp_typecheck_timer(
     timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
     encoder: &mut wgpu::CommandEncoder,
-    label: &'static str,
+    label: &str,
 ) {
     if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
         eprintln!(
@@ -62,7 +62,7 @@ pub(in crate::type_checker) fn record_compute(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
-    label: &'static str,
+    label: &str,
     n_elements: u32,
 ) -> Result<()> {
     count_recorded_compute_pass();
@@ -90,7 +90,7 @@ pub(in crate::type_checker) fn record_compute_indirect(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
-    label: &'static str,
+    label: &str,
     dispatch_args: &wgpu::Buffer,
 ) -> Result<()> {
     count_recorded_compute_pass();

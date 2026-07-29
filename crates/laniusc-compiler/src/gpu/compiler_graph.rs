@@ -180,11 +180,132 @@ pub struct ReflectedResourceBinding {
     pub mode: Option<AccessMode>,
 }
 
+/// The graph-facing contract of one reflected compute operation.
+///
+/// Slang reflection supplies the complete storage surface. The specification
+/// only names the operation's semantic position and the uncommon writable
+/// bindings which are initialized rather than read-modified-written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReflectedComputeSpec {
+    pub name: &'static str,
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub modes: &'static [(&'static str, AccessMode)],
+    pub aliases: &'static [ReflectedResourceAlias],
+    pub initializes_writable_bindings: bool,
+}
+
+impl ReflectedComputeSpec {
+    pub const fn new(
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+    ) -> Self {
+        Self {
+            name,
+            phase,
+            dispatch_domain,
+            modes: &[],
+            aliases: &[],
+            initializes_writable_bindings: false,
+        }
+    }
+
+    pub const fn with_modes(mut self, modes: &'static [(&'static str, AccessMode)]) -> Self {
+        self.modes = modes;
+        self
+    }
+
+    pub const fn initializer(mut self) -> Self {
+        self.initializes_writable_bindings = true;
+        self
+    }
+
+    pub const fn with_aliases(mut self, aliases: &'static [ReflectedResourceAlias]) -> Self {
+        self.aliases = aliases;
+        self
+    }
+
+    pub fn register(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        reflection: &SlangReflection,
+    ) -> Result<PassId, String> {
+        if self.initializes_writable_bindings {
+            if !self.modes.is_empty() || !self.aliases.is_empty() {
+                return Err(format!(
+                    "reflected compute specification {} combines initializer semantics with explicit modes",
+                    self.name,
+                ));
+            }
+            graph.add_reflected_initializer_by_name(
+                self.name,
+                self.phase,
+                self.dispatch_domain,
+                reflection,
+            )
+        } else {
+            let mut overrides = Vec::with_capacity(self.modes.len() + self.aliases.len());
+            for &(binding, mode) in self.modes {
+                overrides.push(ReflectedResourceBinding {
+                    binding,
+                    resource: graph.resource_id(binding).ok_or_else(|| {
+                        format!(
+                            "reflected compute specification {} references unknown resource {binding}",
+                            self.name,
+                        )
+                    })?,
+                    mode: Some(mode),
+                });
+            }
+            for alias in self.aliases {
+                overrides.push(ReflectedResourceBinding {
+                    binding: alias.binding,
+                    resource: graph.resource_id(alias.resource).ok_or_else(|| {
+                        format!(
+                            "reflected compute specification {} aliases {} to unknown resource {}",
+                            self.name, alias.binding, alias.resource,
+                        )
+                    })?,
+                    mode: alias.mode,
+                });
+            }
+            graph.add_reflected_compute_pass_by_name(
+                self.name,
+                self.phase,
+                self.dispatch_domain,
+                reflection,
+                &overrides,
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReflectedResourceAlias {
+    pub binding: &'static str,
+    pub resource: &'static str,
+    pub mode: Option<AccessMode>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResourceLifetime {
     pub first_pass: PassId,
     pub last_pass: PassId,
     pub producer: Option<PassId>,
+}
+
+/// Conservatively extends one resource across a known execution interval.
+///
+/// This is a migration boundary for compiler phases whose complete command
+/// schedule has not yet been imported into the graph. It prevents workspace
+/// coloring from aliasing storage across omitted passes without pretending
+/// those passes read or write bindings that they do not expose here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResourceLifetimeFence {
+    pub resource: ResourceId,
+    pub first_pass: &'static str,
+    pub last_pass: &'static str,
 }
 
 /// A contiguous graph body executed more than once. Liveness covers the
@@ -280,11 +401,13 @@ impl BoundGraphResource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompilerGraph {
     resources: Vec<ResourceDesc>,
+    resource_aliases: BTreeMap<&'static str, ResourceId>,
     passes: Vec<PassDesc>,
     lifetimes: Vec<Option<ResourceLifetime>>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
     paged_resources: Vec<Option<PagedResourceDesc>>,
+    lifetime_fences: Vec<ResourceLifetimeFence>,
     workspace: WorkspacePlan,
 }
 
@@ -306,6 +429,45 @@ pub struct CompilerGraphAllocations {
 
 impl CompilerGraphWorkspace {
     pub fn new(device: &wgpu::Device, label: &str, graph: &CompilerGraph) -> Result<Self, String> {
+        Self::new_with_imports(device, label, graph, &[])
+    }
+
+    /// Builds graph workspace while importing dead upstream allocations for
+    /// selected slots. Every logical resource assigned to an imported slot
+    /// continues to use the graph's lifetime and alias plan; only the physical
+    /// allocation comes from the preceding compiler phase.
+    pub fn new_with_imports(
+        device: &wgpu::Device,
+        label: &str,
+        graph: &CompilerGraph,
+        imports: &[(ResourceId, LaniusBuffer<u8>)],
+    ) -> Result<Self, String> {
+        let mut imported_by_slot = BTreeMap::<u32, LaniusBuffer<u8>>::new();
+        for (resource, buffer) in imports {
+            let desc = graph
+                .resource(*resource)
+                .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
+            if desc.class != ResourceClass::Workspace {
+                return Err(format!(
+                    "compiler resource {} cannot import a workspace slot because it is {:?}",
+                    desc.name, desc.class,
+                ));
+            }
+            let slot = graph
+                .workspace
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == desc.name)
+                .map(|assignment| assignment.slot)
+                .ok_or_else(|| format!("compiler resource {} has no workspace slot", desc.name))?;
+            if let Some(previous) = imported_by_slot.insert(slot, buffer.clone()) {
+                if previous.allocation_id() != buffer.allocation_id() {
+                    return Err(format!(
+                        "workspace slot {slot} has imports from two different allocations",
+                    ));
+                }
+            }
+        }
         let mut slots = Vec::with_capacity(graph.workspace.slots.len());
         for plan in &graph.workspace.slots {
             if plan.slot as usize != slots.len() {
@@ -314,25 +476,42 @@ impl CompilerGraphWorkspace {
                     plan.slot
                 ));
             }
-            let usage = wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST
-                | match plan.usage {
-                    WorkspaceUsageClass::Storage => wgpu::BufferUsages::empty(),
-                    WorkspaceUsageClass::StorageIndirect => wgpu::BufferUsages::INDIRECT,
-                };
-            let raw = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("{label}.slot.{}", plan.slot)),
-                size: plan.bytes,
-                usage,
-                mapped_at_creation: false,
-            });
-            slots.push(LaniusBuffer::new_labeled(
-                (raw, plan.bytes),
-                plan.bytes as usize,
-                format!("{label}.slot.{}", plan.slot),
-            ));
+            if let Some(imported) = imported_by_slot.remove(&plan.slot) {
+                if plan.usage != WorkspaceUsageClass::Storage {
+                    return Err(format!(
+                        "workspace slot {} requires {:?} usage and cannot import storage-only phase scratch",
+                        plan.slot, plan.usage,
+                    ));
+                }
+                if imported.byte_size < plan.bytes as usize {
+                    return Err(format!(
+                        "workspace slot {} requires {} bytes but its upstream allocation has {}",
+                        plan.slot, plan.bytes, imported.byte_size,
+                    ));
+                }
+                slots.push(imported);
+            } else {
+                let usage = wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST
+                    | match plan.usage {
+                        WorkspaceUsageClass::Storage => wgpu::BufferUsages::empty(),
+                        WorkspaceUsageClass::StorageIndirect => wgpu::BufferUsages::INDIRECT,
+                    };
+                let raw = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("{label}.slot.{}", plan.slot)),
+                    size: plan.bytes,
+                    usage,
+                    mapped_at_creation: false,
+                });
+                slots.push(LaniusBuffer::new_labeled(
+                    (raw, plan.bytes),
+                    plan.bytes as usize,
+                    format!("{label}.slot.{}", plan.slot),
+                ));
+            }
         }
+        debug_assert!(imported_by_slot.is_empty());
         let mut slot_by_resource = vec![None; graph.resources.len()];
         for assignment in &graph.workspace.assignments {
             let resource = graph.resource_id(assignment.name).ok_or_else(|| {
@@ -377,6 +556,21 @@ impl CompilerGraphWorkspace {
             .get(slot as usize)
             .map(|buffer| buffer.alias(count))
             .ok_or_else(|| format!("compiler resource {} names missing slot {slot}", desc.name))
+    }
+
+    /// Returns a typed view of the allocation selected for a named logical
+    /// resource. Shader-facing layers generally know the reflected resource
+    /// name, while resource IDs remain a graph-construction detail.
+    pub fn alias_named<T>(
+        &self,
+        graph: &CompilerGraph,
+        name: &str,
+        count: usize,
+    ) -> Result<LaniusBuffer<T>, String> {
+        let resource = graph
+            .resource_id(name)
+            .ok_or_else(|| format!("compiler graph has no resource `{name}`"))?;
+        self.alias(graph, resource, count)
     }
 
     pub fn allocation_count(&self) -> usize {
@@ -506,6 +700,10 @@ impl CompilerGraph {
         &self.paged_regions
     }
 
+    pub fn lifetime_fences(&self) -> &[ResourceLifetimeFence] {
+        &self.lifetime_fences
+    }
+
     pub fn lifetime(&self, resource: ResourceId) -> Option<ResourceLifetime> {
         self.lifetimes.get(resource.index()).copied().flatten()
     }
@@ -541,6 +739,7 @@ impl CompilerGraph {
             .iter()
             .position(|resource| resource.name == name)
             .map(ResourceId)
+            .or_else(|| self.resource_aliases.get(name).copied())
     }
 
     pub fn pass_id(&self, name: &str) -> Option<PassId> {
@@ -665,14 +864,16 @@ impl CompilerGraph {
             let bound = matches[0];
             let resource = self.resources[access.resource.index()];
             let paged = self.paged_resources[access.resource.index()];
-            // Input resources describe the maximum logical job capacity, not
-            // a promise that every upstream producer allocated that maximum.
-            // Active count buffers guard their runtime extent. Graph-owned
-            // workspace and outputs, by contrast, must cover their complete
-            // declared range because downstream passes may write any row in it.
+            // Input and External resources describe the maximum logical job
+            // capacity. Their concrete job slice may be smaller and is guarded
+            // by active-count buffers. Graph-owned storage must cover its full
+            // declared range because the graph controls that allocation.
             let required = paged.map_or_else(
                 || {
-                    if resource.class == ResourceClass::Input {
+                    if matches!(
+                        resource.class,
+                        ResourceClass::Input | ResourceClass::External
+                    ) {
                         1
                     } else {
                         resource.bytes
@@ -884,15 +1085,947 @@ fn reflected_parameters(reflection: &SlangReflection) -> Vec<&ParameterReflectio
         .unwrap_or_else(|| reflection.parameters.iter().collect())
 }
 
+/// A cohesive compiler operation which contributes logical resources and
+/// passes to a graph.
+///
+/// Fragments are the graph-level counterpart of high-level parallel array
+/// operations: callers provide typed boundary resources, while the fragment
+/// keeps its internal scans, sorts, and dispatch sequence private.  This
+/// prevents phase drivers from duplicating a shader family as resource lists,
+/// pass lists, bind-group lists, and recording lists.
+pub trait CompilerGraphFragment {
+    type Output;
+
+    fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String>;
+}
+
+/// Stable names for one digit step of a radix sort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadixSortGraphStepPasses {
+    pub histogram: &'static str,
+    pub bucket_prefix: &'static str,
+    pub bucket_bases: &'static str,
+    pub scatter: &'static str,
+}
+
+/// Stable names for the logical stages of one radix sort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadixSortGraphPasses {
+    pub order_to_temporary: RadixSortGraphStepPasses,
+    pub temporary_to_order: RadixSortGraphStepPasses,
+}
+
+/// Pass names for a radix implementation whose block-prefix relation is
+/// scanned hierarchically across workgroups.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HierarchicalRadixSortGraphStepPasses {
+    pub histogram: &'static str,
+    pub bucket_local: &'static str,
+    pub bucket_chunks: &'static str,
+    pub bucket_apply: &'static str,
+    pub bucket_bases: &'static str,
+    pub scatter: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HierarchicalRadixSortGraphPasses {
+    pub order_to_temporary: HierarchicalRadixSortGraphStepPasses,
+    pub temporary_to_order: HierarchicalRadixSortGraphStepPasses,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadixSortGraphSchedule {
+    Standard(RadixSortGraphPasses),
+    Hierarchical(HierarchicalRadixSortGraphPasses),
+}
+
+impl RadixSortGraphPasses {
+    pub fn names(self) -> [&'static str; 8] {
+        [
+            self.order_to_temporary.histogram,
+            self.order_to_temporary.bucket_prefix,
+            self.order_to_temporary.bucket_bases,
+            self.order_to_temporary.scatter,
+            self.temporary_to_order.histogram,
+            self.temporary_to_order.bucket_prefix,
+            self.temporary_to_order.bucket_bases,
+            self.temporary_to_order.scatter,
+        ]
+    }
+}
+
+/// Logical arrays used by one radix sort.
+///
+/// `keys` contains the arrays read by the compiled key projection. The graph
+/// owns the lifetime of all temporary arrays; callers do not declare access
+/// modes or reproduce the implementation's pass sequence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RadixSortGraphResources {
+    pub count: ResourceId,
+    pub keys: Vec<ResourceId>,
+    pub order: ResourceId,
+    pub temporary_order: ResourceId,
+    pub dispatch_args: ResourceId,
+    pub histogram: ResourceId,
+    pub bucket_prefix: ResourceId,
+    pub bucket_total: ResourceId,
+    pub bucket_base: ResourceId,
+}
+
+/// Stable graph names for storage internal to a radix sort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadixSortGraphResourceNames {
+    pub order: &'static str,
+    pub temporary_order: &'static str,
+    pub dispatch_args: &'static str,
+    pub histogram: &'static str,
+    pub bucket_prefix: &'static str,
+    pub bucket_total: &'static str,
+    pub bucket_base: &'static str,
+}
+
+/// A stable least-significant-digit radix sort in the compiler graph.
+///
+/// The semantic inputs are the row count, key projection inputs, number of
+/// digit steps, and order relation. Histogram, scan, scatter, ping-pong, and
+/// access metadata are implementation details expanded by this fragment.
+pub struct RadixSortGraph {
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub digit_steps: u32,
+    pub schedule: RadixSortGraphSchedule,
+    pub resources: RadixSortGraphResources,
+}
+
+fn hierarchical_radix_sort_step_passes(
+    graph: &CompilerGraphBuilder,
+    phase: CompilerPhase,
+    dispatch_domain: ResourceDomain,
+    passes: HierarchicalRadixSortGraphStepPasses,
+    resources: &RadixSortGraphResources,
+    input: ResourceId,
+    output: ResourceId,
+) -> Vec<PassDesc> {
+    let r = resources;
+    let name = |resource: ResourceId| graph.resources[resource.index()].name;
+    let key_reads = || {
+        r.keys
+            .iter()
+            .map(|resource| PassAccess::read(name(*resource), *resource))
+            .collect::<Vec<_>>()
+    };
+    let mut histogram_accesses = key_reads();
+    histogram_accesses.extend([
+        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(name(input), input),
+        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::write(name(r.histogram), r.histogram),
+    ]);
+    let mut scatter_accesses = key_reads();
+    scatter_accesses.extend([
+        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(name(input), input),
+        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::read(name(r.bucket_prefix), r.bucket_prefix),
+        PassAccess::read(name(r.bucket_base), r.bucket_base),
+        PassAccess::write(name(output), output),
+    ]);
+    vec![
+        PassDesc {
+            name: passes.histogram,
+            phase,
+            dispatch_domain,
+            accesses: histogram_accesses,
+        },
+        PassDesc {
+            name: passes.bucket_local,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.count), r.count),
+                PassAccess::read_write(name(r.histogram), r.histogram),
+                PassAccess::write(name(r.bucket_prefix), r.bucket_prefix),
+                PassAccess::write(name(r.bucket_total), r.bucket_total),
+            ],
+        },
+        PassDesc {
+            name: passes.bucket_chunks,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.count), r.count),
+                PassAccess::read_write(name(r.histogram), r.histogram),
+                PassAccess::read_write(name(r.bucket_total), r.bucket_total),
+            ],
+        },
+        PassDesc {
+            name: passes.bucket_apply,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.count), r.count),
+                PassAccess::read(name(r.histogram), r.histogram),
+                PassAccess::read_write(name(r.bucket_prefix), r.bucket_prefix),
+            ],
+        },
+        PassDesc {
+            name: passes.bucket_bases,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.bucket_total), r.bucket_total),
+                PassAccess::write(name(r.bucket_base), r.bucket_base),
+            ],
+        },
+        PassDesc {
+            name: passes.scatter,
+            phase,
+            dispatch_domain,
+            accesses: scatter_accesses,
+        },
+    ]
+}
+
+fn validate_radix_sort_resources(
+    graph: &CompilerGraphBuilder,
+    label: &str,
+    resources: &RadixSortGraphResources,
+) -> Result<(), String> {
+    let mut distinct = BTreeSet::new();
+    for resource in [
+        resources.count,
+        resources.order,
+        resources.temporary_order,
+        resources.dispatch_args,
+        resources.histogram,
+        resources.bucket_prefix,
+        resources.bucket_total,
+        resources.bucket_base,
+    ]
+    .into_iter()
+    .chain(resources.keys.iter().copied())
+    {
+        let Some(desc) = graph.resources.get(resource.index()) else {
+            return Err(format!(
+                "radix sort {label} references unknown resource {}",
+                resource.index(),
+            ));
+        };
+        if !distinct.insert(resource) {
+            return Err(format!(
+                "radix sort {label} uses resource {} for two simultaneous roles",
+                desc.name,
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn radix_sort_step_passes(
+    graph: &CompilerGraphBuilder,
+    phase: CompilerPhase,
+    dispatch_domain: ResourceDomain,
+    passes: RadixSortGraphStepPasses,
+    resources: &RadixSortGraphResources,
+    input: ResourceId,
+    output: ResourceId,
+) -> Vec<PassDesc> {
+    let r = resources;
+    let name = |resource: ResourceId| graph.resources[resource.index()].name;
+    let key_reads = || {
+        r.keys
+            .iter()
+            .map(|resource| PassAccess::read(name(*resource), *resource))
+            .collect::<Vec<_>>()
+    };
+    let mut histogram_accesses = key_reads();
+    histogram_accesses.extend([
+        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(name(input), input),
+        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::write(name(r.histogram), r.histogram),
+    ]);
+    let mut scatter_accesses = key_reads();
+    scatter_accesses.extend([
+        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(name(input), input),
+        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::read(name(r.bucket_prefix), r.bucket_prefix),
+        PassAccess::read(name(r.bucket_base), r.bucket_base),
+        PassAccess::write(name(output), output),
+    ]);
+    vec![
+        PassDesc {
+            name: passes.histogram,
+            phase,
+            dispatch_domain,
+            accesses: histogram_accesses,
+        },
+        PassDesc {
+            name: passes.bucket_prefix,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.count), r.count),
+                PassAccess::read(name(r.histogram), r.histogram),
+                PassAccess::write(name(r.bucket_prefix), r.bucket_prefix),
+                PassAccess::write(name(r.bucket_total), r.bucket_total),
+            ],
+        },
+        PassDesc {
+            name: passes.bucket_bases,
+            phase,
+            dispatch_domain,
+            accesses: vec![
+                PassAccess::read(name(r.bucket_total), r.bucket_total),
+                PassAccess::write(name(r.bucket_base), r.bucket_base),
+            ],
+        },
+        PassDesc {
+            name: passes.scatter,
+            phase,
+            dispatch_domain,
+            accesses: scatter_accesses,
+        },
+    ]
+}
+
+impl CompilerGraphFragment for RadixSortGraph {
+    type Output = ResourceId;
+
+    fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
+        let label = match self.schedule {
+            RadixSortGraphSchedule::Standard(passes) => passes.order_to_temporary.histogram,
+            RadixSortGraphSchedule::Hierarchical(passes) => passes.order_to_temporary.histogram,
+        };
+        if self.digit_steps == 0 || self.digit_steps % 2 != 0 {
+            return Err(format!(
+                "radix sort {} requires a positive even digit-step count, got {}",
+                label, self.digit_steps,
+            ));
+        }
+        let r = &self.resources;
+        validate_radix_sort_resources(graph, label, r)?;
+        let body = match self.schedule {
+            RadixSortGraphSchedule::Standard(passes) => {
+                let mut body = radix_sort_step_passes(
+                    graph,
+                    self.phase,
+                    self.dispatch_domain,
+                    passes.order_to_temporary,
+                    r,
+                    r.order,
+                    r.temporary_order,
+                );
+                body.extend(radix_sort_step_passes(
+                    graph,
+                    self.phase,
+                    self.dispatch_domain,
+                    passes.temporary_to_order,
+                    r,
+                    r.temporary_order,
+                    r.order,
+                ));
+                body
+            }
+            RadixSortGraphSchedule::Hierarchical(passes) => {
+                let mut body = hierarchical_radix_sort_step_passes(
+                    graph,
+                    self.phase,
+                    self.dispatch_domain,
+                    passes.order_to_temporary,
+                    r,
+                    r.order,
+                    r.temporary_order,
+                );
+                body.extend(hierarchical_radix_sort_step_passes(
+                    graph,
+                    self.phase,
+                    self.dispatch_domain,
+                    passes.temporary_to_order,
+                    r,
+                    r.temporary_order,
+                    r.order,
+                ));
+                body
+            }
+        };
+        graph.add_repeated_region(self.digit_steps / 2, body)?;
+        Ok(r.order)
+    }
+}
+
+/// Two independent stable radix sorts whose stages are recorded together.
+///
+/// Read-only domains may be shared. Ordering and workspace arrays must be
+/// distinct because both histograms are produced before either prefix pass.
+pub struct RadixSortPairGraph {
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub digit_steps: u32,
+    pub left_passes: RadixSortGraphPasses,
+    pub right_passes: RadixSortGraphPasses,
+    pub left: RadixSortGraphResources,
+    pub right: RadixSortGraphResources,
+}
+
+impl CompilerGraphFragment for RadixSortPairGraph {
+    type Output = (ResourceId, ResourceId);
+
+    fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
+        if self.digit_steps == 0 || self.digit_steps % 2 != 0 {
+            return Err(format!(
+                "paired radix sorts require a positive even digit-step count, got {}",
+                self.digit_steps,
+            ));
+        }
+        validate_radix_sort_resources(
+            graph,
+            self.left_passes.order_to_temporary.histogram,
+            &self.left,
+        )?;
+        validate_radix_sort_resources(
+            graph,
+            self.right_passes.order_to_temporary.histogram,
+            &self.right,
+        )?;
+        let left_mutable = [
+            self.left.order,
+            self.left.temporary_order,
+            self.left.histogram,
+            self.left.bucket_prefix,
+            self.left.bucket_total,
+            self.left.bucket_base,
+        ];
+        let right_mutable = [
+            self.right.order,
+            self.right.temporary_order,
+            self.right.histogram,
+            self.right.bucket_prefix,
+            self.right.bucket_total,
+            self.right.bucket_base,
+        ];
+        if let Some(resource) = left_mutable
+            .into_iter()
+            .find(|resource| right_mutable.contains(resource))
+        {
+            return Err(format!(
+                "paired radix sorts share mutable resource {}",
+                graph.resources[resource.index()].name,
+            ));
+        }
+
+        let interleave = |left: Vec<PassDesc>, right: Vec<PassDesc>| {
+            left.into_iter()
+                .zip(right)
+                .flat_map(|(left, right)| [left, right])
+                .collect::<Vec<_>>()
+        };
+        let mut body = interleave(
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.left_passes.order_to_temporary,
+                &self.left,
+                self.left.order,
+                self.left.temporary_order,
+            ),
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.right_passes.order_to_temporary,
+                &self.right,
+                self.right.order,
+                self.right.temporary_order,
+            ),
+        );
+        body.extend(interleave(
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.left_passes.temporary_to_order,
+                &self.left,
+                self.left.temporary_order,
+                self.left.order,
+            ),
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.right_passes.temporary_to_order,
+                &self.right,
+                self.right.temporary_order,
+                self.right.order,
+            ),
+        ));
+        graph.add_repeated_region(self.digit_steps / 2, body)?;
+        Ok((self.left.order, self.right.order))
+    }
+}
+
+/// Stable pass names for one counted exclusive prefix scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanGraphPasses {
+    pub local: &'static str,
+    pub hierarchy_up_first: &'static str,
+    pub hierarchy_up_rest: &'static str,
+    pub hierarchy_down: &'static str,
+    pub apply: &'static str,
+}
+
+impl PrefixScanGraphPasses {
+    pub fn names(self) -> [&'static str; 5] {
+        [
+            self.local,
+            self.hierarchy_up_first,
+            self.hierarchy_up_rest,
+            self.hierarchy_down,
+            self.apply,
+        ]
+    }
+}
+
+/// Resources used by one counted exclusive prefix scan.
+///
+/// The graph instantiates this with [`ResourceId`]; the runtime instantiates
+/// the same shape with GPU buffer references. Keeping one resource schema
+/// prevents execution and ownership declarations from drifting apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanResources<T> {
+    pub count: T,
+    pub input: T,
+    pub output_prefix: T,
+    pub total: T,
+    pub dispatch_args: T,
+    pub local_prefix: T,
+    pub block_sum: T,
+    pub block_prefix: T,
+    pub hierarchy: T,
+}
+
+/// Reusable phase-local storage required by a prefix scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanWorkspace<T> {
+    pub local_prefix: T,
+    pub block_sum: T,
+    pub block_prefix: T,
+    pub hierarchy: T,
+}
+
+impl<T> PrefixScanWorkspace<T> {
+    pub fn as_ref(&self) -> PrefixScanWorkspace<&T> {
+        PrefixScanWorkspace {
+            local_prefix: &self.local_prefix,
+            block_sum: &self.block_sum,
+            block_prefix: &self.block_prefix,
+            hierarchy: &self.hierarchy,
+        }
+    }
+}
+
+impl<T: Copy> PrefixScanResources<T> {
+    pub fn workspace(self) -> PrefixScanWorkspace<T> {
+        PrefixScanWorkspace {
+            local_prefix: self.local_prefix,
+            block_sum: self.block_sum,
+            block_prefix: self.block_prefix,
+            hierarchy: self.hierarchy,
+        }
+    }
+}
+
+pub type PrefixScanGraphResources = PrefixScanResources<ResourceId>;
+
+/// Stable graph names for storage internal to a counted prefix scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanGraphResourceNames {
+    pub output_prefix: &'static str,
+    pub total: &'static str,
+    pub local_prefix: &'static str,
+    pub block_sum: &'static str,
+    pub block_prefix: &'static str,
+    pub hierarchy: &'static str,
+}
+
+impl PrefixScanGraphResourceNames {
+    pub fn workspace(self) -> PrefixScanWorkspace<&'static str> {
+        PrefixScanWorkspace {
+            local_prefix: self.local_prefix,
+            block_sum: self.block_sum,
+            block_prefix: self.block_prefix,
+            hierarchy: self.hierarchy,
+        }
+    }
+}
+
+/// A GPU counted exclusive prefix scan.
+///
+/// Callers provide the count, input relation, and dispatch domain. The
+/// operation owns output, hierarchy, and temporary storage and derives every
+/// pass access.
+/// The first hierarchy level initializes the loop-carried buffers; later up
+/// and down levels explicitly read and write that state.
+pub struct PrefixScanGraph {
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub hierarchy_levels: u32,
+    pub passes: PrefixScanGraphPasses,
+    pub resources: PrefixScanGraphResources,
+}
+
+/// One named prefix scan shared by graph construction and runtime binding.
+///
+/// The specification is the semantic operation; hierarchy depth and concrete
+/// buffers are capacity-dependent materialization details.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanSpec {
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub passes: PrefixScanGraphPasses,
+    pub resources: PrefixScanResources<&'static str>,
+}
+
+impl PrefixScanSpec {
+    pub fn register(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        hierarchy_levels: u32,
+    ) -> Result<(ResourceId, ResourceId), String> {
+        let resources = graph.resolve_prefix_scan_resources(self.resources)?;
+        graph.add_fragment(PrefixScanGraph {
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            hierarchy_levels,
+            passes: self.passes,
+            resources,
+        })
+    }
+}
+
+/// Two independent counted prefix scans recorded stage-by-stage in the same
+/// compute passes. Shared read-only count and dispatch resources are allowed;
+/// every mutable relation must remain distinct.
+pub struct PrefixScanPairGraph {
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub hierarchy_levels: u32,
+    pub passes: PrefixScanGraphPasses,
+    pub left: PrefixScanGraphResources,
+    pub right: PrefixScanGraphResources,
+}
+
+/// Two independent prefix scans recorded stage-by-stage as one operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefixScanPairSpec {
+    pub left_label: &'static str,
+    pub right_label: &'static str,
+    pub phase: CompilerPhase,
+    pub dispatch_domain: ResourceDomain,
+    pub passes: PrefixScanGraphPasses,
+    pub left: PrefixScanResources<&'static str>,
+    pub right: PrefixScanResources<&'static str>,
+}
+
+impl PrefixScanPairSpec {
+    pub fn register(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        hierarchy_levels: u32,
+    ) -> Result<((ResourceId, ResourceId), (ResourceId, ResourceId)), String> {
+        let left = graph.resolve_prefix_scan_resources(self.left)?;
+        let right = graph.resolve_prefix_scan_resources(self.right)?;
+        graph.add_fragment(PrefixScanPairGraph {
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            hierarchy_levels,
+            passes: self.passes,
+            left,
+            right,
+        })
+    }
+}
+
+fn paired_scan_accesses(
+    graph: &CompilerGraphBuilder,
+    accesses: impl IntoIterator<Item = (AccessMode, ResourceId)>,
+) -> Result<Vec<PassAccess>, String> {
+    let mut merged = Vec::<PassAccess>::new();
+    for (mode, resource) in accesses {
+        let desc = graph.resources.get(resource.index()).ok_or_else(|| {
+            format!(
+                "prefix scan references unknown resource {}",
+                resource.index()
+            )
+        })?;
+        if let Some(previous) = merged.iter().find(|access| access.resource == resource) {
+            if previous.mode == AccessMode::Read && mode == AccessMode::Read {
+                continue;
+            }
+            return Err(format!(
+                "paired prefix scans use mutable resource {} in two simultaneous roles",
+                desc.name,
+            ));
+        }
+        merged.push(PassAccess {
+            binding: desc.name,
+            resource,
+            mode,
+        });
+    }
+    Ok(merged)
+}
+
+impl CompilerGraphFragment for PrefixScanPairGraph {
+    type Output = ((ResourceId, ResourceId), (ResourceId, ResourceId));
+
+    fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
+        if self.hierarchy_levels == 0 {
+            return Err(format!(
+                "paired prefix scan {} requires at least one hierarchy level",
+                self.passes.local,
+            ));
+        }
+        let l = self.left;
+        let r = self.right;
+        graph.add_pass(PassDesc {
+            name: self.passes.local,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: paired_scan_accesses(
+                graph,
+                [
+                    (AccessMode::Read, l.count),
+                    (AccessMode::Read, l.input),
+                    (AccessMode::Read, l.dispatch_args),
+                    (AccessMode::Write, l.local_prefix),
+                    (AccessMode::Write, l.block_sum),
+                    (AccessMode::Read, r.count),
+                    (AccessMode::Read, r.input),
+                    (AccessMode::Read, r.dispatch_args),
+                    (AccessMode::Write, r.local_prefix),
+                    (AccessMode::Write, r.block_sum),
+                ],
+            )?,
+        })?;
+        graph.add_pass(PassDesc {
+            name: self.passes.hierarchy_up_first,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: paired_scan_accesses(
+                graph,
+                [
+                    (AccessMode::Read, l.count),
+                    (AccessMode::Read, l.block_sum),
+                    (AccessMode::Write, l.block_prefix),
+                    (AccessMode::Write, l.hierarchy),
+                    (AccessMode::Read, r.count),
+                    (AccessMode::Read, r.block_sum),
+                    (AccessMode::Write, r.block_prefix),
+                    (AccessMode::Write, r.hierarchy),
+                ],
+            )?,
+        })?;
+        if self.hierarchy_levels > 1 {
+            graph.add_repeated_region(
+                self.hierarchy_levels - 1,
+                vec![PassDesc {
+                    name: self.passes.hierarchy_up_rest,
+                    phase: self.phase,
+                    dispatch_domain: self.dispatch_domain,
+                    accesses: paired_scan_accesses(
+                        graph,
+                        [
+                            (AccessMode::Read, l.count),
+                            (AccessMode::Read, l.block_sum),
+                            (AccessMode::ReadWrite, l.block_prefix),
+                            (AccessMode::ReadWrite, l.hierarchy),
+                            (AccessMode::Read, r.count),
+                            (AccessMode::Read, r.block_sum),
+                            (AccessMode::ReadWrite, r.block_prefix),
+                            (AccessMode::ReadWrite, r.hierarchy),
+                        ],
+                    )?,
+                }],
+            )?;
+            graph.add_repeated_region(
+                self.hierarchy_levels - 1,
+                vec![PassDesc {
+                    name: self.passes.hierarchy_down,
+                    phase: self.phase,
+                    dispatch_domain: self.dispatch_domain,
+                    accesses: paired_scan_accesses(
+                        graph,
+                        [
+                            (AccessMode::Read, l.count),
+                            (AccessMode::ReadWrite, l.block_prefix),
+                            (AccessMode::ReadWrite, l.hierarchy),
+                            (AccessMode::Read, r.count),
+                            (AccessMode::ReadWrite, r.block_prefix),
+                            (AccessMode::ReadWrite, r.hierarchy),
+                        ],
+                    )?,
+                }],
+            )?;
+        }
+        graph.add_pass(PassDesc {
+            name: self.passes.apply,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: paired_scan_accesses(
+                graph,
+                [
+                    (AccessMode::Read, l.count),
+                    (AccessMode::Read, l.dispatch_args),
+                    (AccessMode::Read, l.local_prefix),
+                    (AccessMode::Read, l.block_prefix),
+                    (AccessMode::Write, l.output_prefix),
+                    (AccessMode::Write, l.total),
+                    (AccessMode::Read, r.count),
+                    (AccessMode::Read, r.dispatch_args),
+                    (AccessMode::Read, r.local_prefix),
+                    (AccessMode::Read, r.block_prefix),
+                    (AccessMode::Write, r.output_prefix),
+                    (AccessMode::Write, r.total),
+                ],
+            )?,
+        })?;
+        Ok(((l.output_prefix, l.total), (r.output_prefix, r.total)))
+    }
+}
+
+impl CompilerGraphFragment for PrefixScanGraph {
+    type Output = (ResourceId, ResourceId);
+
+    fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
+        if self.hierarchy_levels == 0 {
+            return Err(format!(
+                "prefix scan {} requires at least one hierarchy level",
+                self.passes.local,
+            ));
+        }
+        let r = self.resources;
+        let mut distinct = BTreeSet::new();
+        for resource in [
+            r.count,
+            r.input,
+            r.output_prefix,
+            r.total,
+            r.dispatch_args,
+            r.local_prefix,
+            r.block_sum,
+            r.block_prefix,
+            r.hierarchy,
+        ] {
+            if graph.resources.get(resource.index()).is_none() {
+                return Err(format!(
+                    "prefix scan {} references unknown resource {}",
+                    self.passes.local,
+                    resource.index(),
+                ));
+            }
+            if !distinct.insert(resource) {
+                return Err(format!(
+                    "prefix scan {} uses resource {} for two simultaneous roles",
+                    self.passes.local,
+                    graph.resources[resource.index()].name,
+                ));
+            }
+        }
+
+        let count_name = graph.resources[r.count.index()].name;
+        let input_name = graph.resources[r.input.index()].name;
+        let output_prefix_name = graph.resources[r.output_prefix.index()].name;
+        let total_name = graph.resources[r.total.index()].name;
+        let dispatch_args_name = graph.resources[r.dispatch_args.index()].name;
+        let local_prefix_name = graph.resources[r.local_prefix.index()].name;
+        let block_sum_name = graph.resources[r.block_sum.index()].name;
+        let block_prefix_name = graph.resources[r.block_prefix.index()].name;
+        let hierarchy_name = graph.resources[r.hierarchy.index()].name;
+        graph.add_pass(PassDesc {
+            name: self.passes.local,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: vec![
+                PassAccess::read(count_name, r.count),
+                PassAccess::read(input_name, r.input),
+                PassAccess::read(dispatch_args_name, r.dispatch_args),
+                PassAccess::write(local_prefix_name, r.local_prefix),
+                PassAccess::write(block_sum_name, r.block_sum),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: self.passes.hierarchy_up_first,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: vec![
+                PassAccess::read(count_name, r.count),
+                PassAccess::read(block_sum_name, r.block_sum),
+                PassAccess::write(block_prefix_name, r.block_prefix),
+                PassAccess::write(hierarchy_name, r.hierarchy),
+            ],
+        })?;
+
+        if self.hierarchy_levels > 1 {
+            graph.add_repeated_region(
+                self.hierarchy_levels - 1,
+                vec![PassDesc {
+                    name: self.passes.hierarchy_up_rest,
+                    phase: self.phase,
+                    dispatch_domain: self.dispatch_domain,
+                    accesses: vec![
+                        PassAccess::read(count_name, r.count),
+                        PassAccess::read(block_sum_name, r.block_sum),
+                        PassAccess::read_write(block_prefix_name, r.block_prefix),
+                        PassAccess::read_write(hierarchy_name, r.hierarchy),
+                    ],
+                }],
+            )?;
+            graph.add_repeated_region(
+                self.hierarchy_levels - 1,
+                vec![PassDesc {
+                    name: self.passes.hierarchy_down,
+                    phase: self.phase,
+                    dispatch_domain: self.dispatch_domain,
+                    accesses: vec![
+                        PassAccess::read(count_name, r.count),
+                        PassAccess::read_write(block_prefix_name, r.block_prefix),
+                        PassAccess::read_write(hierarchy_name, r.hierarchy),
+                    ],
+                }],
+            )?;
+        }
+
+        graph.add_pass(PassDesc {
+            name: self.passes.apply,
+            phase: self.phase,
+            dispatch_domain: self.dispatch_domain,
+            accesses: vec![
+                PassAccess::read(count_name, r.count),
+                PassAccess::read(dispatch_args_name, r.dispatch_args),
+                PassAccess::read(local_prefix_name, r.local_prefix),
+                PassAccess::read(block_prefix_name, r.block_prefix),
+                PassAccess::write(output_prefix_name, r.output_prefix),
+                PassAccess::write(total_name, r.total),
+            ],
+        })?;
+        Ok((r.output_prefix, r.total))
+    }
+}
+
 #[derive(Default)]
 pub struct CompilerGraphBuilder {
     resources: Vec<ResourceDesc>,
     passes: Vec<PassDesc>,
     resource_names: BTreeSet<&'static str>,
+    resource_aliases: BTreeMap<&'static str, ResourceId>,
     pass_names: BTreeSet<&'static str>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
     paged_resources: Vec<Option<PagedResourceDesc>>,
+    lifetime_fences: Vec<ResourceLifetimeFence>,
 }
 
 impl CompilerGraphBuilder {
@@ -900,17 +2033,344 @@ impl CompilerGraphBuilder {
         Self::default()
     }
 
+    pub fn resource_id(&self, name: &str) -> Option<ResourceId> {
+        self.resources
+            .iter()
+            .position(|resource| resource.name == name)
+            .map(ResourceId)
+            .or_else(|| self.resource_aliases.get(name).copied())
+    }
+
+    /// Gives one physical ownership identity another logical operation name.
+    pub fn add_resource_alias(
+        &mut self,
+        alias: &'static str,
+        resource: ResourceId,
+    ) -> Result<(), String> {
+        if self.resource_id(alias).is_some() {
+            return Err(format!("duplicate compiler resource alias {alias}"));
+        }
+        if self.resources.get(resource.index()).is_none() {
+            return Err(format!(
+                "compiler resource alias {alias} targets unknown resource {}",
+                resource.index(),
+            ));
+        }
+        self.resource_aliases.insert(alias, resource);
+        Ok(())
+    }
+
+    /// Adds one high-level operation to the graph.
+    pub fn add_fragment<F>(&mut self, fragment: F) -> Result<F::Output, String>
+    where
+        F: CompilerGraphFragment,
+    {
+        fragment.add_to(self)
+    }
+
     pub fn add_resource(&mut self, desc: ResourceDesc) -> Result<ResourceId, String> {
         if desc.bytes == 0 {
             return Err(format!("compiler resource {} has zero bytes", desc.name));
         }
-        if !self.resource_names.insert(desc.name) {
+        if self.resource_aliases.contains_key(desc.name) || !self.resource_names.insert(desc.name) {
             return Err(format!("duplicate compiler resource {}", desc.name));
         }
         let id = ResourceId(self.resources.len());
         self.resources.push(desc);
         self.paged_resources.push(None);
         Ok(id)
+    }
+
+    /// Adds a GPU storage relation to the graph.
+    ///
+    /// Storage usage is an implementation property shared by compiler phases;
+    /// phase-specific graph builders should only need to state the relation's
+    /// semantic domain, ownership class, and extent.
+    pub fn add_storage(
+        &mut self,
+        name: &'static str,
+        domain: ResourceDomain,
+        class: ResourceClass,
+        bytes: u64,
+    ) -> Result<ResourceId, String> {
+        self.add_resource(ResourceDesc {
+            name,
+            domain,
+            class,
+            bytes,
+            usage: WorkspaceUsageClass::Storage,
+        })
+    }
+
+    /// Adds a storage relation which also serves as an indirect dispatch buffer.
+    pub fn add_indirect_storage(
+        &mut self,
+        name: &'static str,
+        domain: ResourceDomain,
+        class: ResourceClass,
+        bytes: u64,
+    ) -> Result<ResourceId, String> {
+        self.add_resource(ResourceDesc {
+            name,
+            domain,
+            class,
+            bytes,
+            usage: WorkspaceUsageClass::StorageIndirect,
+        })
+    }
+
+    /// Resolves the one shared named resource specification used by both a
+    /// runtime prefix scan and its compiler-graph fragment.
+    pub fn resolve_prefix_scan_resources(
+        &self,
+        names: PrefixScanResources<&str>,
+    ) -> Result<PrefixScanGraphResources, String> {
+        let resource = |name: &str| {
+            self.resources
+                .iter()
+                .position(|resource| resource.name == name)
+                .map(ResourceId)
+                .ok_or_else(|| format!("prefix scan resource `{name}` is not registered"))
+        };
+        Ok(PrefixScanResources {
+            count: resource(names.count)?,
+            input: resource(names.input)?,
+            output_prefix: resource(names.output_prefix)?,
+            total: resource(names.total)?,
+            dispatch_args: resource(names.dispatch_args)?,
+            local_prefix: resource(names.local_prefix)?,
+            block_sum: resource(names.block_sum)?,
+            block_prefix: resource(names.block_prefix)?,
+            hierarchy: resource(names.hierarchy)?,
+        })
+    }
+
+    /// Reserves the result and temporary storage required by a radix sort.
+    ///
+    /// Buffer sizes, usage flags, and resource domains are properties of the
+    /// algorithm. A caller provides the count and key arrays plus the maximum
+    /// row count; it does not reproduce the storage calculation.
+    pub fn add_radix_sort_resources(
+        &mut self,
+        count: ResourceId,
+        keys: Vec<ResourceId>,
+        domain: ResourceDomain,
+        capacity: u64,
+        rows_per_block: u64,
+        bucket_count: u64,
+        names: RadixSortGraphResourceNames,
+    ) -> Result<RadixSortGraphResources, String> {
+        if rows_per_block == 0 || bucket_count == 0 {
+            return Err("radix sort requires nonzero rows per block and bucket count".into());
+        }
+        let capacity = capacity.max(1);
+        let row_bytes = capacity
+            .checked_mul(4)
+            .ok_or_else(|| "radix sort order storage size overflows".to_owned())?;
+        let histogram_bytes = capacity
+            .div_ceil(rows_per_block)
+            .checked_mul(bucket_count)
+            .and_then(|rows| rows.checked_mul(4))
+            .ok_or_else(|| "radix sort histogram storage size overflows".to_owned())?;
+        let bucket_bytes = bucket_count
+            .checked_mul(4)
+            .ok_or_else(|| "radix sort bucket storage size overflows".to_owned())?;
+        let mut storage = |name, resource_domain, bytes, usage| {
+            self.add_resource(ResourceDesc {
+                name,
+                domain: resource_domain,
+                class: ResourceClass::Workspace,
+                bytes,
+                usage,
+            })
+        };
+        let order = storage(names.order, domain, row_bytes, WorkspaceUsageClass::Storage)?;
+        let temporary_order = storage(
+            names.temporary_order,
+            domain,
+            row_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        let dispatch_args = storage(
+            names.dispatch_args,
+            ResourceDomain::DispatchArguments,
+            12,
+            WorkspaceUsageClass::StorageIndirect,
+        )?;
+        let histogram = storage(
+            names.histogram,
+            domain,
+            histogram_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        let bucket_prefix = storage(
+            names.bucket_prefix,
+            domain,
+            histogram_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        let bucket_total = storage(
+            names.bucket_total,
+            domain,
+            bucket_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        let bucket_base = storage(
+            names.bucket_base,
+            domain,
+            bucket_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        Ok(RadixSortGraphResources {
+            count,
+            keys,
+            order,
+            temporary_order,
+            dispatch_args,
+            histogram,
+            bucket_prefix,
+            bucket_total,
+            bucket_base,
+        })
+    }
+
+    /// Reserves the output and temporary storage for a counted prefix scan.
+    pub fn add_prefix_scan_resources(
+        &mut self,
+        count: ResourceId,
+        input: ResourceId,
+        dispatch_args: ResourceId,
+        domain: ResourceDomain,
+        capacity: u64,
+        rows_per_block: u64,
+        names: PrefixScanGraphResourceNames,
+    ) -> Result<PrefixScanGraphResources, String> {
+        if rows_per_block == 0 {
+            return Err("prefix scan requires a nonzero row block size".into());
+        }
+        let capacity = capacity.max(1);
+        let row_bytes = capacity
+            .checked_mul(4)
+            .ok_or_else(|| "prefix scan row storage size overflows".to_owned())?;
+        let mut storage = |name, resource_domain, bytes, usage| {
+            self.add_resource(ResourceDesc {
+                name,
+                domain: resource_domain,
+                class: ResourceClass::Workspace,
+                bytes,
+                usage,
+            })
+        };
+        let output_prefix = storage(
+            names.output_prefix,
+            domain,
+            row_bytes,
+            WorkspaceUsageClass::Storage,
+        )?;
+        let total = storage(names.total, domain, 4, WorkspaceUsageClass::Storage)?;
+        let workspace =
+            self.add_prefix_scan_workspace(domain, capacity, rows_per_block, names.workspace())?;
+        Ok(PrefixScanGraphResources {
+            count,
+            input,
+            dispatch_args,
+            output_prefix,
+            total,
+            local_prefix: workspace.local_prefix,
+            block_sum: workspace.block_sum,
+            block_prefix: workspace.block_prefix,
+            hierarchy: workspace.hierarchy,
+        })
+    }
+
+    /// Reserves reusable internal storage without prescribing scan inputs or outputs.
+    pub fn add_prefix_scan_workspace(
+        &mut self,
+        domain: ResourceDomain,
+        capacity: u64,
+        rows_per_block: u64,
+        names: PrefixScanWorkspace<&'static str>,
+    ) -> Result<PrefixScanWorkspace<ResourceId>, String> {
+        if rows_per_block == 0 {
+            return Err("prefix scan requires a nonzero row block size".into());
+        }
+        let capacity = capacity.max(1);
+        let row_bytes = capacity
+            .checked_mul(4)
+            .ok_or_else(|| "prefix scan row storage size overflows".to_owned())?;
+        let block_bytes = capacity
+            .div_ceil(rows_per_block)
+            .max(1)
+            .checked_mul(4)
+            .ok_or_else(|| "prefix scan block storage size overflows".to_owned())?;
+        let mut add = |name, bytes| {
+            self.add_resource(ResourceDesc {
+                name,
+                domain,
+                class: ResourceClass::Workspace,
+                bytes,
+                usage: WorkspaceUsageClass::Storage,
+            })
+        };
+        Ok(PrefixScanWorkspace {
+            local_prefix: add(names.local_prefix, row_bytes)?,
+            block_sum: add(names.block_sum, block_bytes)?,
+            block_prefix: add(names.block_prefix, block_bytes)?,
+            hierarchy: add(names.hierarchy, block_bytes)?,
+        })
+    }
+
+    /// Keeps `resource` live from the named first pass through the named last
+    /// pass. Both endpoints must exist and be ordered when the graph is built.
+    pub fn fence_resource_lifetime(
+        &mut self,
+        resource: ResourceId,
+        first_pass: &'static str,
+        last_pass: &'static str,
+    ) -> Result<(), String> {
+        if self.resources.get(resource.index()).is_none() {
+            return Err(format!(
+                "cannot fence unknown compiler resource {}",
+                resource.index()
+            ));
+        }
+        self.lifetime_fences.push(ResourceLifetimeFence {
+            resource,
+            first_pass,
+            last_pass,
+        });
+        Ok(())
+    }
+
+    /// Keeps every resource accessed by the selected passes live across an
+    /// execution interval that is not yet represented as graph nodes.
+    ///
+    /// This is intended for incremental migration of an existing recorder:
+    /// the selected passes describe the complete resource surface of an
+    /// operation, while `first_pass` and `last_pass` bound the real interval
+    /// over which that operation is invoked. Once every invocation is a graph
+    /// node, the ordinary pass schedule makes this fence unnecessary.
+    pub fn fence_resources_accessed_by_passes(
+        &mut self,
+        pass_names: &[&str],
+        first_pass: &'static str,
+        last_pass: &'static str,
+    ) -> Result<(), String> {
+        let mut resources = BTreeSet::new();
+        for pass_name in pass_names {
+            let pass = self
+                .passes
+                .iter()
+                .find(|pass| pass.name == *pass_name)
+                .ok_or_else(|| {
+                    format!("cannot fence resources for unknown compiler pass {pass_name}")
+                })?;
+            resources.extend(pass.accesses.iter().map(|access| access.resource));
+        }
+        for resource in resources {
+            self.fence_resource_lifetime(resource, first_pass, last_pass)?;
+        }
+        Ok(())
     }
 
     /// Marks a resource as a bounded resident window over a larger logical
@@ -1130,6 +2590,97 @@ impl CompilerGraphBuilder {
         self.add_reflected_compute_pass(name, phase, dispatch_domain, reflection, &bindings)
     }
 
+    /// Adds a same-named reflected pass while refining the access mode of a
+    /// small number of bindings. This is the common case for Slang
+    /// `RWStructuredBuffer` outputs that a shader only initializes. Resource
+    /// remapping remains explicit through `ReflectedResourceBinding`.
+    pub fn add_reflected_compute_pass_by_name_with_modes(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        reflection: &SlangReflection,
+        modes: &[(&'static str, AccessMode)],
+    ) -> Result<PassId, String> {
+        let overrides = modes
+            .iter()
+            .map(|&(binding, mode)| {
+                let resource = self
+                    .resources
+                    .iter()
+                    .position(|resource| resource.name == binding)
+                    .map(ResourceId)
+                    .ok_or_else(|| {
+                    format!(
+                        "compiler pass {name} refines access for {binding}, which has no same-named graph resource"
+                    )
+                })?;
+                Ok(ReflectedResourceBinding {
+                    binding,
+                    resource,
+                    mode: Some(mode),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.add_reflected_compute_pass_by_name(
+            name,
+            phase,
+            dispatch_domain,
+            reflection,
+            &overrides,
+        )
+    }
+
+    /// Adds a reflected compute pass whose writable storage bindings are
+    /// initialized rather than updated. Read-only bindings remain ordinary
+    /// inputs; writable bindings begin their logical resource lifetimes here.
+    pub fn add_reflected_initializer_by_name(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        dispatch_domain: ResourceDomain,
+        reflection: &SlangReflection,
+    ) -> Result<PassId, String> {
+        let overrides = reflected_parameters(reflection)
+            .into_iter()
+            .filter_map(|parameter| {
+                let binding_type = slang_category_and_type_to_wgpu(parameter, &parameter.ty)?;
+                let writable = matches!(
+                    binding_type,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        ..
+                    }
+                );
+                writable.then(|| {
+                    let resource = self
+                        .resources
+                        .iter()
+                        .position(|resource| resource.name == parameter.name)
+                        .map(ResourceId)
+                        .ok_or_else(|| {
+                            format!(
+                                "compiler pass {name} has reflected initializer binding {} with no same-named graph resource",
+                                parameter.name,
+                            )
+                        })?;
+                    Ok(ReflectedResourceBinding {
+                        binding: self.resources[resource.index()].name,
+                        resource,
+                        mode: Some(AccessMode::Write),
+                    })
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.add_reflected_compute_pass_by_name(
+            name,
+            phase,
+            dispatch_domain,
+            reflection,
+            &overrides,
+        )
+    }
+
     /// Adds one contiguous loop body to the graph. Pass descriptors remain
     /// individually addressable for reflection/binding validation.
     pub fn add_repeated_region(
@@ -1326,6 +2877,51 @@ impl CompilerGraphBuilder {
             }
         }
 
+        for fence in &self.lifetime_fences {
+            let first = self
+                .passes
+                .iter()
+                .position(|pass| pass.name == fence.first_pass)
+                .map(PassId)
+                .ok_or_else(|| {
+                    format!(
+                        "compiler resource lifetime fence for {} starts at unknown pass {}",
+                        self.resources[fence.resource.index()].name,
+                        fence.first_pass,
+                    )
+                })?;
+            let last = self
+                .passes
+                .iter()
+                .position(|pass| pass.name == fence.last_pass)
+                .map(PassId)
+                .ok_or_else(|| {
+                    format!(
+                        "compiler resource lifetime fence for {} ends at unknown pass {}",
+                        self.resources[fence.resource.index()].name,
+                        fence.last_pass,
+                    )
+                })?;
+            if first > last {
+                return Err(format!(
+                    "compiler resource lifetime fence for {} is reversed: {} follows {}",
+                    self.resources[fence.resource.index()].name,
+                    fence.first_pass,
+                    fence.last_pass,
+                ));
+            }
+            let index = fence.resource.index();
+            let Some(resource_first) = first_pass[index] else {
+                return Err(format!(
+                    "compiler resource lifetime fence for {} has no graph access",
+                    self.resources[index].name,
+                ));
+            };
+            let resource_last = last_pass[index].expect("accessed resource has a last pass");
+            first_pass[index] = Some(resource_first.min(first));
+            last_pass[index] = Some(resource_last.max(last));
+        }
+
         let graph_end = PassId(self.passes.len().saturating_sub(1));
         let lifetimes = (0..self.resources.len())
             .map(|index| {
@@ -1343,11 +2939,13 @@ impl CompilerGraphBuilder {
         let workspace = plan_graph_workspace(&self.resources, &lifetimes)?;
         Ok(CompilerGraph {
             resources: self.resources,
+            resource_aliases: self.resource_aliases,
             passes: self.passes,
             lifetimes,
             repeated_regions: self.repeated_regions,
             paged_regions: self.paged_regions,
             paged_resources: self.paged_resources,
+            lifetime_fences: self.lifetime_fences,
             workspace,
         })
     }
@@ -1389,16 +2987,36 @@ fn plan_graph_workspace(
         )
     });
 
+    // This diagnostic mode is intentionally internal: it preserves the graph
+    // and all pass bindings while giving every logical workspace resource a
+    // distinct allocation. A semantic difference between colored and
+    // uncolored runs therefore identifies an incomplete lifetime declaration
+    // rather than a shader or scheduling difference.
+    let disable_coloring = std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some();
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
-        let reusable = (resource.class != ResourceClass::Resident)
+        let dedicated = resource.class == ResourceClass::Resident;
+        let reusable = (!disable_coloring && !dedicated)
             .then(|| {
-                slots.iter().position(|slot| {
-                    !slot.dedicated
-                        && slot.plan.usage == resource.usage
-                        && slot.last_pass < lifetime.first_pass
-                })
+                slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, slot)| {
+                        !slot.dedicated
+                            && slot.plan.usage == resource.usage
+                            && slot.last_pass < lifetime.first_pass
+                    })
+                    .min_by_key(|(_, slot)| {
+                        let resulting_bytes = slot.plan.bytes.max(resource.bytes);
+                        (
+                            resulting_bytes - slot.plan.bytes,
+                            resulting_bytes,
+                            std::cmp::Reverse(slot.last_pass),
+                            slot.plan.slot,
+                        )
+                    })
+                    .map(|(index, _)| index)
             })
             .flatten();
         let slot_index = reusable.unwrap_or_else(|| {
@@ -1410,7 +3028,7 @@ fn plan_graph_workspace(
                     usage: resource.usage,
                 },
                 last_pass: lifetime.last_pass,
-                dedicated: resource.class == ResourceClass::Resident,
+                dedicated,
             });
             index
         });
@@ -1420,7 +3038,7 @@ fn plan_graph_workspace(
         assignment_by_resource.insert(resource_index, slot.plan.slot);
     }
 
-    Ok(WorkspacePlan {
+    let plan = WorkspacePlan {
         assignments: resources
             .iter()
             .enumerate()
@@ -1435,7 +3053,25 @@ fn plan_graph_workspace(
             })
             .collect(),
         slots: slots.into_iter().map(|slot| slot.plan).collect(),
-    })
+    };
+    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+        for assignment in &plan.assignments {
+            let resource_index = resources
+                .iter()
+                .position(|resource| resource.name == assignment.name)
+                .expect("workspace assignment resource");
+            let lifetime = lifetimes[resource_index].expect("workspace resource lifetime");
+            eprintln!(
+                "compiler_graph_slot slot={} index={} resource={} first={} last={}",
+                assignment.slot,
+                resource_index,
+                assignment.name,
+                lifetime.first_pass.index(),
+                lifetime.last_pass.index(),
+            );
+        }
+    }
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -1492,7 +3128,7 @@ mod tests {
             .validate_pass_bindings(
                 pass,
                 &[
-                    BoundGraphResource::whole("semantic_state", external, 11, 64),
+                    BoundGraphResource::whole("semantic_state", external, 11, 4),
                     BoundGraphResource::whole("scratch", scratch, 12, 64),
                 ],
             )
@@ -1538,6 +3174,160 @@ mod tests {
         assert_eq!(graph.lifetime(hir).unwrap().producer, Some(hir_pass));
         assert_eq!(graph.workspace_plan().slots.len(), 1);
         assert_eq!(graph.workspace_plan().slots[0].bytes, 96);
+    }
+
+    #[test]
+    fn logical_resource_alias_preserves_one_ownership_identity() {
+        let mut builder = CompilerGraphBuilder::new();
+        let scratch = builder
+            .add_resource(workspace("radix.scratch", ResourceDomain::Declarations, 64))
+            .unwrap();
+        builder
+            .add_resource_alias("generic_params.radix.scratch", scratch)
+            .unwrap();
+        assert_eq!(
+            builder.resource_id("generic_params.radix.scratch"),
+            Some(scratch)
+        );
+        builder
+            .add_pass(PassDesc {
+                name: "radix.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses: vec![PassAccess::write("scratch", scratch)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        assert_eq!(
+            graph.resource_id("generic_params.radix.scratch"),
+            Some(scratch)
+        );
+    }
+
+    #[test]
+    fn lifetime_fence_prevents_aliasing_across_omitted_execution_passes() {
+        let mut builder = CompilerGraphBuilder::new();
+        let carried = builder
+            .add_resource(workspace("carried", ResourceDomain::Types, 64))
+            .unwrap();
+        let late = builder
+            .add_resource(workspace("late", ResourceDomain::Types, 64))
+            .unwrap();
+        let begin = builder
+            .add_pass(PassDesc {
+                name: "schedule.begin",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("carried", carried)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "schedule.middle",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![],
+            })
+            .unwrap();
+        let end = builder
+            .add_pass(PassDesc {
+                name: "schedule.end",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("late", late)],
+            })
+            .unwrap();
+        builder
+            .fence_resource_lifetime(carried, "schedule.begin", "schedule.end")
+            .unwrap();
+        let graph = builder.build().unwrap();
+
+        assert_eq!(graph.lifetime(carried).unwrap().first_pass, begin);
+        assert_eq!(graph.lifetime(carried).unwrap().last_pass, end);
+        assert_eq!(graph.workspace_plan().slots.len(), 2);
+        assert_eq!(graph.lifetime_fences().len(), 1);
+    }
+
+    #[test]
+    fn lifetime_fence_rejects_reversed_execution_interval() {
+        let mut builder = CompilerGraphBuilder::new();
+        let carried = builder
+            .add_resource(workspace("carried", ResourceDomain::Types, 64))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "first",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("carried", carried)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "last",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![],
+            })
+            .unwrap();
+        builder
+            .fence_resource_lifetime(carried, "last", "first")
+            .unwrap();
+
+        let error = builder.build().unwrap_err();
+        assert!(error.contains("is reversed"), "{error}");
+    }
+
+    #[test]
+    fn operation_resource_fence_extends_every_selected_pass_resource() {
+        let mut builder = CompilerGraphBuilder::new();
+        let first = builder
+            .add_resource(workspace("first_resource", ResourceDomain::Types, 64))
+            .unwrap();
+        let second = builder
+            .add_resource(workspace("second_resource", ResourceDomain::Types, 64))
+            .unwrap();
+        let begin = builder
+            .add_pass(PassDesc {
+                name: "operation.begin",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("first_resource", first)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "operation.consume",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![
+                    PassAccess::read("first_resource", first),
+                    PassAccess::write("second_resource", second),
+                ],
+            })
+            .unwrap();
+        let end = builder
+            .add_pass(PassDesc {
+                name: "operation.interval_end",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![],
+            })
+            .unwrap();
+        builder
+            .fence_resources_accessed_by_passes(
+                &["operation.begin", "operation.consume"],
+                "operation.begin",
+                "operation.interval_end",
+            )
+            .unwrap();
+
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.lifetime(first).unwrap().first_pass, begin);
+        assert_eq!(graph.lifetime(first).unwrap().last_pass, end);
+        assert_eq!(graph.lifetime(second).unwrap().first_pass, begin);
+        assert_eq!(graph.lifetime(second).unwrap().last_pass, end);
+        assert_eq!(graph.workspace_plan().slots.len(), 2);
     }
 
     #[test]
@@ -1660,6 +3450,496 @@ mod tests {
         );
         assert_eq!(graph.lifetime(early).unwrap().last_pass, ids[1]);
         assert_eq!(graph.lifetime(late).unwrap().first_pass, ids[0]);
+    }
+
+    #[test]
+    fn radix_sort_adds_its_internal_passes_and_accesses() {
+        let mut builder = CompilerGraphBuilder::new();
+        let count = builder
+            .add_resource(ResourceDesc {
+                name: "sort.count",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let key = builder
+            .add_resource(ResourceDesc {
+                name: "sort.key",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4_096,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let resources = builder
+            .add_radix_sort_resources(
+                count,
+                vec![key],
+                ResourceDomain::Declarations,
+                1_024,
+                256,
+                256,
+                RadixSortGraphResourceNames {
+                    order: "sort.order",
+                    temporary_order: "sort.temporary_order",
+                    dispatch_args: "sort.dispatch_args",
+                    histogram: "sort.histogram",
+                    bucket_prefix: "sort.bucket_prefix",
+                    bucket_total: "sort.bucket_total",
+                    bucket_base: "sort.bucket_base",
+                },
+            )
+            .unwrap();
+        let order = resources.order;
+        let temporary_order = resources.temporary_order;
+        builder
+            .add_pass(PassDesc {
+                name: "sort.initialize",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses: vec![
+                    PassAccess::write("sort.order", resources.order),
+                    PassAccess::write("sort.dispatch_args", resources.dispatch_args),
+                ],
+            })
+            .unwrap();
+        let result = builder
+            .add_fragment(RadixSortGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                digit_steps: 6,
+                schedule: RadixSortGraphSchedule::Standard(RadixSortGraphPasses {
+                    order_to_temporary: RadixSortGraphStepPasses {
+                        histogram: "sort.a.histogram",
+                        bucket_prefix: "sort.a.prefix",
+                        bucket_bases: "sort.a.bases",
+                        scatter: "sort.a.scatter",
+                    },
+                    temporary_to_order: RadixSortGraphStepPasses {
+                        histogram: "sort.b.histogram",
+                        bucket_prefix: "sort.b.prefix",
+                        bucket_bases: "sort.b.bases",
+                        scatter: "sort.b.scatter",
+                    },
+                }),
+                resources,
+            })
+            .unwrap();
+        assert_eq!(result, order);
+
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.resource(order).unwrap().bytes, 4_096);
+        assert_eq!(
+            graph
+                .resource(graph.resource_id("sort.histogram").unwrap())
+                .unwrap()
+                .bytes,
+            4_096,
+        );
+        assert_eq!(
+            graph
+                .resource(graph.resource_id("sort.dispatch_args").unwrap())
+                .unwrap()
+                .usage,
+            WorkspaceUsageClass::StorageIndirect,
+        );
+        assert_eq!(
+            graph.repeated_regions(),
+            &[RepeatedPassRegion {
+                first_pass: graph.pass_id("sort.a.histogram").unwrap(),
+                pass_count: 8,
+                iterations: 3,
+            }]
+        );
+        let a_scatter = graph
+            .pass(graph.pass_id("sort.a.scatter").unwrap())
+            .unwrap();
+        assert!(
+            a_scatter
+                .accesses
+                .iter()
+                .any(|access| { access.resource == order && access.mode == AccessMode::Read })
+        );
+        assert!(a_scatter.accesses.iter().any(|access| {
+            access.resource == temporary_order && access.mode == AccessMode::Write
+        }));
+        let b_scatter = graph
+            .pass(graph.pass_id("sort.b.scatter").unwrap())
+            .unwrap();
+        assert!(b_scatter.accesses.iter().any(|access| {
+            access.resource == temporary_order && access.mode == AccessMode::Read
+        }));
+        assert!(
+            b_scatter
+                .accesses
+                .iter()
+                .any(|access| { access.resource == order && access.mode == AccessMode::Write })
+        );
+    }
+
+    #[test]
+    fn paired_radix_sorts_reject_shared_mutable_storage() {
+        let mut builder = CompilerGraphBuilder::new();
+        let count = builder
+            .add_resource(ResourceDesc {
+                name: "pair.count",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let key = builder
+            .add_resource(ResourceDesc {
+                name: "pair.key",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4_096,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let resources = builder
+            .add_radix_sort_resources(
+                count,
+                vec![key],
+                ResourceDomain::Declarations,
+                1_024,
+                256,
+                256,
+                RadixSortGraphResourceNames {
+                    order: "pair.order",
+                    temporary_order: "pair.temporary_order",
+                    dispatch_args: "pair.dispatch_args",
+                    histogram: "pair.histogram",
+                    bucket_prefix: "pair.bucket_prefix",
+                    bucket_total: "pair.bucket_total",
+                    bucket_base: "pair.bucket_base",
+                },
+            )
+            .unwrap();
+        let passes = |prefix| RadixSortGraphPasses {
+            order_to_temporary: RadixSortGraphStepPasses {
+                histogram: prefix,
+                bucket_prefix: "pair.a.prefix",
+                bucket_bases: "pair.a.bases",
+                scatter: "pair.a.scatter",
+            },
+            temporary_to_order: RadixSortGraphStepPasses {
+                histogram: "pair.b.histogram",
+                bucket_prefix: "pair.b.prefix",
+                bucket_bases: "pair.b.bases",
+                scatter: "pair.b.scatter",
+            },
+        };
+        let error = builder
+            .add_fragment(RadixSortPairGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                digit_steps: 4,
+                left_passes: passes("pair.left.histogram"),
+                right_passes: passes("pair.right.histogram"),
+                left: resources.clone(),
+                right: resources,
+            })
+            .unwrap_err();
+        assert!(error.contains("share mutable resource"), "{error}");
+    }
+
+    #[test]
+    fn radix_sort_rejects_an_odd_digit_step_count() {
+        let mut builder = CompilerGraphBuilder::new();
+        let mut add = |name, class| {
+            builder
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class,
+                    bytes: 4,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .unwrap()
+        };
+        let count = add("odd.count", ResourceClass::Input);
+        let key = add("odd.key", ResourceClass::Input);
+        let order = add("odd.order", ResourceClass::Workspace);
+        let temporary_order = add("odd.temporary_order", ResourceClass::Workspace);
+        let dispatch_args = add("odd.dispatch_args", ResourceClass::Workspace);
+        let histogram = add("odd.histogram", ResourceClass::Workspace);
+        let bucket_prefix = add("odd.bucket_prefix", ResourceClass::Workspace);
+        let bucket_total = add("odd.bucket_total", ResourceClass::Workspace);
+        let bucket_base = add("odd.bucket_base", ResourceClass::Workspace);
+        let error = builder
+            .add_fragment(RadixSortGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                digit_steps: 3,
+                schedule: RadixSortGraphSchedule::Standard(RadixSortGraphPasses {
+                    order_to_temporary: RadixSortGraphStepPasses {
+                        histogram: "odd.a.histogram",
+                        bucket_prefix: "odd.a.prefix",
+                        bucket_bases: "odd.a.bases",
+                        scatter: "odd.a.scatter",
+                    },
+                    temporary_to_order: RadixSortGraphStepPasses {
+                        histogram: "odd.b.histogram",
+                        bucket_prefix: "odd.b.prefix",
+                        bucket_bases: "odd.b.bases",
+                        scatter: "odd.b.scatter",
+                    },
+                }),
+                resources: RadixSortGraphResources {
+                    count,
+                    keys: vec![key],
+                    order,
+                    temporary_order,
+                    dispatch_args,
+                    histogram,
+                    bucket_prefix,
+                    bucket_total,
+                    bucket_base,
+                },
+            })
+            .unwrap_err();
+        assert!(error.contains("positive even digit-step count"), "{error}");
+    }
+
+    #[test]
+    fn prefix_scan_adds_hierarchy_state_and_derived_accesses() {
+        let mut builder = CompilerGraphBuilder::new();
+        let count = builder
+            .add_resource(ResourceDesc {
+                name: "scan.count",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let input = builder
+            .add_resource(ResourceDesc {
+                name: "scan.input",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Input,
+                bytes: 4096,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let dispatch_args = builder
+            .add_resource(ResourceDesc {
+                name: "scan.dispatch_args",
+                domain: ResourceDomain::DispatchArguments,
+                class: ResourceClass::Input,
+                bytes: 12,
+                usage: WorkspaceUsageClass::StorageIndirect,
+            })
+            .unwrap();
+        let resources = builder
+            .add_prefix_scan_resources(
+                count,
+                input,
+                dispatch_args,
+                ResourceDomain::Declarations,
+                1024,
+                256,
+                PrefixScanGraphResourceNames {
+                    output_prefix: "scan.output",
+                    total: "scan.total",
+                    local_prefix: "scan.local_prefix",
+                    block_sum: "scan.block_sum",
+                    block_prefix: "scan.block_prefix",
+                    hierarchy: "scan.hierarchy",
+                },
+            )
+            .unwrap();
+        let (output, total) = builder
+            .add_fragment(PrefixScanGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                hierarchy_levels: 3,
+                passes: PrefixScanGraphPasses {
+                    local: "scan.local",
+                    hierarchy_up_first: "scan.up.first",
+                    hierarchy_up_rest: "scan.up.rest",
+                    hierarchy_down: "scan.down",
+                    apply: "scan.apply",
+                },
+                resources,
+            })
+            .unwrap();
+        assert_eq!(output, resources.output_prefix);
+        assert_eq!(total, resources.total);
+
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.resource(output).unwrap().bytes, 4096);
+        assert_eq!(graph.resource(resources.block_sum).unwrap().bytes, 16);
+        assert_eq!(
+            graph.resource(resources.dispatch_args).unwrap().usage,
+            WorkspaceUsageClass::StorageIndirect,
+        );
+        assert_eq!(
+            graph.repeated_regions(),
+            &[
+                RepeatedPassRegion {
+                    first_pass: graph.pass_id("scan.up.rest").unwrap(),
+                    pass_count: 1,
+                    iterations: 2,
+                },
+                RepeatedPassRegion {
+                    first_pass: graph.pass_id("scan.down").unwrap(),
+                    pass_count: 1,
+                    iterations: 2,
+                },
+            ],
+        );
+        let first_up = graph.pass(graph.pass_id("scan.up.first").unwrap()).unwrap();
+        assert!(first_up.accesses.iter().any(|access| {
+            access.resource == resources.hierarchy && access.mode == AccessMode::Write
+        }));
+        let later_up = graph.pass(graph.pass_id("scan.up.rest").unwrap()).unwrap();
+        assert!(later_up.accesses.iter().any(|access| {
+            access.resource == resources.hierarchy && access.mode == AccessMode::ReadWrite
+        }));
+    }
+
+    #[test]
+    fn paired_prefix_scan_shares_only_read_only_resources() {
+        let mut builder = CompilerGraphBuilder::new();
+        let mut add_input = |name, bytes, usage| {
+            builder
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class: ResourceClass::Input,
+                    bytes,
+                    usage,
+                })
+                .unwrap()
+        };
+        let count = add_input("pair.count", 4, WorkspaceUsageClass::Storage);
+        let left_input = add_input("pair.left.input", 4096, WorkspaceUsageClass::Storage);
+        let right_input = add_input("pair.right.input", 4096, WorkspaceUsageClass::Storage);
+        let dispatch_args = add_input("pair.dispatch", 12, WorkspaceUsageClass::StorageIndirect);
+        let left = builder
+            .add_prefix_scan_resources(
+                count,
+                left_input,
+                dispatch_args,
+                ResourceDomain::Declarations,
+                1024,
+                256,
+                PrefixScanGraphResourceNames {
+                    output_prefix: "pair.left.output",
+                    total: "pair.left.total",
+                    local_prefix: "pair.left.local",
+                    block_sum: "pair.left.sum",
+                    block_prefix: "pair.left.prefix",
+                    hierarchy: "pair.left.hierarchy",
+                },
+            )
+            .unwrap();
+        let right = builder
+            .add_prefix_scan_resources(
+                count,
+                right_input,
+                dispatch_args,
+                ResourceDomain::Declarations,
+                1024,
+                256,
+                PrefixScanGraphResourceNames {
+                    output_prefix: "pair.right.output",
+                    total: "pair.right.total",
+                    local_prefix: "pair.right.local",
+                    block_sum: "pair.right.sum",
+                    block_prefix: "pair.right.prefix",
+                    hierarchy: "pair.right.hierarchy",
+                },
+            )
+            .unwrap();
+        builder
+            .add_fragment(PrefixScanPairGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                hierarchy_levels: 2,
+                passes: PrefixScanGraphPasses {
+                    local: "pair.local",
+                    hierarchy_up_first: "pair.up.first",
+                    hierarchy_up_rest: "pair.up.rest",
+                    hierarchy_down: "pair.down",
+                    apply: "pair.apply",
+                },
+                left,
+                right,
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let local = graph.pass(graph.pass_id("pair.local").unwrap()).unwrap();
+        assert_eq!(
+            local
+                .accesses
+                .iter()
+                .filter(|access| access.resource == count)
+                .count(),
+            1,
+        );
+        let slot = |resource| {
+            let name = graph.resource(resource).unwrap().name;
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap()
+                .slot
+        };
+        assert_ne!(slot(left.local_prefix), slot(right.local_prefix));
+        assert_ne!(slot(left.block_sum), slot(right.block_sum));
+        assert_ne!(slot(left.block_prefix), slot(right.block_prefix));
+        assert_ne!(slot(left.hierarchy), slot(right.hierarchy));
+    }
+
+    #[test]
+    fn prefix_scan_rejects_an_empty_hierarchy() {
+        let mut builder = CompilerGraphBuilder::new();
+        let mut add = |name, class| {
+            builder
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class,
+                    bytes: 4,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .unwrap()
+        };
+        let resources = PrefixScanGraphResources {
+            count: add("empty.count", ResourceClass::Input),
+            input: add("empty.input", ResourceClass::Input),
+            output_prefix: add("empty.output", ResourceClass::Workspace),
+            total: add("empty.total", ResourceClass::Workspace),
+            dispatch_args: add("empty.dispatch", ResourceClass::Workspace),
+            local_prefix: add("empty.local", ResourceClass::Workspace),
+            block_sum: add("empty.sum", ResourceClass::Workspace),
+            block_prefix: add("empty.prefix", ResourceClass::Workspace),
+            hierarchy: add("empty.hierarchy", ResourceClass::Workspace),
+        };
+        let error = builder
+            .add_fragment(PrefixScanGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                hierarchy_levels: 0,
+                passes: PrefixScanGraphPasses {
+                    local: "empty.local.pass",
+                    hierarchy_up_first: "empty.up.first",
+                    hierarchy_up_rest: "empty.up.rest",
+                    hierarchy_down: "empty.down",
+                    apply: "empty.apply",
+                },
+                resources,
+            })
+            .unwrap_err();
+        assert!(error.contains("at least one hierarchy level"));
     }
 
     #[test]
@@ -1846,6 +4126,53 @@ mod tests {
         assert_eq!(accesses[0].binding, "compact_hir_core");
         assert_eq!(accesses[1].resource, output);
         assert_eq!(accesses[1].mode, AccessMode::Write);
+    }
+
+    #[test]
+    fn reflected_compute_spec_is_the_graph_access_contract() {
+        let reflection = SlangReflection {
+            parameters: vec![
+                reflected_storage("compact_hir_core", false),
+                reflected_storage("semantic_out", true),
+            ],
+            ..Default::default()
+        };
+        let mut builder = CompilerGraphBuilder::new();
+        builder
+            .add_storage(
+                "compact_hir_core",
+                ResourceDomain::HirNodes,
+                ResourceClass::Input,
+                64,
+            )
+            .unwrap();
+        builder
+            .add_storage(
+                "semantic.rows",
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                64,
+            )
+            .unwrap();
+        let spec = ReflectedComputeSpec::new(
+            "semantic.project.spec",
+            CompilerPhase::SemanticLowering,
+            ResourceDomain::HirNodes,
+        )
+        .with_aliases(&[ReflectedResourceAlias {
+            binding: "semantic_out",
+            resource: "semantic.rows",
+            mode: Some(AccessMode::Write),
+        }]);
+        let pass = spec.register(&mut builder, &reflection).unwrap();
+        let graph = builder.build().unwrap();
+
+        assert_eq!(graph.pass(pass).unwrap().name, spec.name);
+        assert_eq!(graph.pass(pass).unwrap().accesses[0].mode, AccessMode::Read);
+        assert_eq!(
+            graph.pass(pass).unwrap().accesses[1].mode,
+            AccessMode::Write
+        );
     }
 
     #[test]

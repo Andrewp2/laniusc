@@ -20,16 +20,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
 struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_parent_by_callee;
-StructuredBuffer<uint> hir_member_receiver_node;
-StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_field_key_order;
@@ -83,7 +80,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -93,7 +90,7 @@ bool valid_node(uint node)
 
 uint active_compact_hir_count()
 {
-    return min(compact_hir_count[0u], gParams.n_tokens);
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
 uint active_compact_field_count()
@@ -285,26 +282,26 @@ bool instance_arg_ref(uint instance, uint slot, out uint tag, out uint payload)
 
 bool member_expr_is_call_callee(uint node)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_MEMBER_EXPR)
         return false;
-    uint call_node = hir_call_parent_by_callee[node];
+    uint call_node = compact_hir_expr_parent[node];
     return valid_node(call_node) &&
-           hir_kind[call_node] == HIR_CALL_EXPR &&
-           hir_call_callee_node[call_node] == node;
+           compact_hir_core[call_node].kind == HIR_CALL_EXPR &&
+           compact_hir_payload[call_node].a == node;
 }
 
 void publish_member_field_chain_for_root(uint member_node)
 {
-    if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
+    if (!valid_node(member_node) || compact_hir_core[member_node].kind != HIR_MEMBER_EXPR)
         return;
     if (member_expr_is_call_callee(member_node))
         return;
 
-    uint receiver_node = hir_member_receiver_node[member_node];
-    if (valid_node(receiver_node) && hir_kind[receiver_node] == HIR_MEMBER_EXPR)
+    uint receiver_node = compact_hir_payload[member_node].b;
+    if (valid_node(receiver_node) && compact_hir_core[receiver_node].kind == HIR_MEMBER_EXPR)
         return;
 
-    uint first_token = hir_member_name_token[member_node];
+    uint first_token = compact_hir_payload[member_node].c;
     if (!valid_token(first_token))
         return;
     uint receiver_tag = member_result_ref_tag[first_token];
@@ -314,10 +311,10 @@ void publish_member_field_chain_for_root(uint member_node)
 
     uint steps = 0u;
     while (valid_node(member_node) &&
-           hir_kind[member_node] == HIR_MEMBER_EXPR &&
+           compact_hir_core[member_node].kind == HIR_MEMBER_EXPR &&
            steps < active_hir_node_count())
     {
-        uint member_token = hir_member_name_token[member_node];
+        uint member_token = compact_hir_payload[member_node].c;
         if (!valid_token(member_token) || member_expr_is_call_callee(member_node))
             return;
 

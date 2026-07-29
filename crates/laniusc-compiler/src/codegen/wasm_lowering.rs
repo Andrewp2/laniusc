@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    functions::{GpuTargetFunctionTable, GpuTargetFunctionView},
+    functions::GpuTargetFunctionTable,
     lowering::{GpuSemanticLirView, bound, make_group, record_direct, target_lowering_allocations},
     lowering_ir::{
         LoweringCapacities,
@@ -95,21 +95,6 @@ struct WasmAttachBodyParams {
     reserved1: u32,
 }
 
-pub(crate) struct GpuWasmLirView<'a> {
-    pub total: &'a LaniusBuffer<u32>,
-    pub instructions: &'a LaniusBuffer<WasmLirInstruction>,
-    pub operands: &'a LaniusBuffer<WasmLirOperands>,
-    pub functions: GpuTargetFunctionView<'a>,
-    pub abi_functions: &'a LaniusBuffer<WasmLirFunction>,
-    pub abi_function_count: &'a LaniusBuffer<u32>,
-}
-
-pub(crate) struct GpuWasmArtifactView<'a> {
-    pub length: &'a LaniusBuffer<u32>,
-    /// Packed little-endian byte storage; `length` is the logical byte count.
-    pub words: &'a LaniusBuffer<u32>,
-}
-
 /// The complete second lowering level for Wasm through stable scheduling.
 /// Every object needed by `record` is resident and bound during construction.
 pub(crate) struct GpuWasmLirStage {
@@ -153,27 +138,14 @@ pub(crate) struct GpuWasmLirStage {
     _attach_body_params: LaniusBuffer<WasmAttachBodyParams>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
-    total: LaniusBuffer<u32>,
     instructions: LaniusBuffer<WasmLirInstruction>,
-    operands: LaniusBuffer<WasmLirOperands>,
-    scheduled_function_ids: LaniusBuffer<u32>,
-    byte_lengths: LaniusBuffer<u32>,
-    byte_offsets: LaniusBuffer<u32>,
-    artifact_length: LaniusBuffer<u32>,
-    artifact_words: LaniusBuffer<u32>,
-    _param_widths: LaniusBuffer<u32>,
-    param_prefix: LaniusBuffer<u32>,
-    param_value_total: LaniusBuffer<u32>,
-    _local_widths: LaniusBuffer<u32>,
-    local_prefix: LaniusBuffer<u32>,
-    local_value_total: LaniusBuffer<u32>,
     abi_functions: LaniusBuffer<WasmLirFunction>,
-    abi_function_count: LaniusBuffer<u32>,
-    local_index_by_token: LaniusBuffer<u32>,
     module: GpuWasmModuleStage,
     object: GpuWasmObjectStage,
     artifact_length_readback: LaniusBuffer<u8>,
     artifact_readback: LaniusBuffer<u8>,
+    _param_widths: LaniusBuffer<u32>,
+    _local_widths: LaniusBuffer<u32>,
 }
 
 impl GpuWasmLirStage {
@@ -875,47 +847,15 @@ impl GpuWasmLirStage {
             _attach_body_params: attach_body_params,
             _counts: counts,
             _offsets: offsets,
-            total,
             instructions,
-            operands,
-            scheduled_function_ids,
-            byte_lengths,
-            byte_offsets,
-            artifact_length,
-            artifact_words,
-            _param_widths: param_widths,
-            param_prefix,
-            param_value_total,
-            _local_widths: local_widths,
-            local_prefix,
-            local_value_total,
             abi_functions,
-            abi_function_count: semantic.function_count.clone(),
-            local_index_by_token,
             module,
             object,
             artifact_length_readback,
             artifact_readback,
+            _param_widths: param_widths,
+            _local_widths: local_widths,
         })
-    }
-
-    pub(crate) fn output(&self) -> GpuWasmLirView<'_> {
-        GpuWasmLirView {
-            total: &self.total,
-            instructions: &self.instructions,
-            operands: &self.operands,
-            functions: self.functions.output(),
-            abi_functions: &self.abi_functions,
-            abi_function_count: &self.abi_function_count,
-        }
-    }
-
-    pub(crate) fn artifact(&self) -> GpuWasmArtifactView<'_> {
-        let module = self.module.output();
-        GpuWasmArtifactView {
-            length: module.length,
-            words: module.words,
-        }
     }
 
     pub(crate) fn object(&self) -> GpuWasmObjectView<'_> {
@@ -1581,6 +1521,11 @@ mod tests {
         let graph = lowering_compiler_graph(capacities, LoweringTarget::Wasm).unwrap();
         let workspace =
             CompilerGraphWorkspace::new(&gpu.device, "test.wasm_stage", &graph).unwrap();
+        let workspace_u32 = |name: &str, count: usize| -> LaniusBuffer<u32> {
+            workspace
+                .alias(&graph, graph.resource_id(name).unwrap(), count)
+                .unwrap()
+        };
         let semantic_status: LaniusBuffer<LoweringStatus> = workspace
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
@@ -1765,8 +1710,11 @@ mod tests {
         assert_eq!(pipeline_creation_count(), pipelines_before);
         assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
 
-        let output = stage.output();
-        let artifact = stage.artifact();
+        let functions = stage.functions.output();
+        let artifact = stage.module.output();
+        let target_total = workspace_u32("lir.wasm.total", 1);
+        let body_length = workspace_u32("lir.wasm.body_length", 1);
+        let body_words = workspace_u32("lir.wasm.body_bytes", 16);
         let total_readback = readback_bytes(&gpu.device, "test.wasm_stage.total.rb", 4, 1);
         let core_readback = readback_bytes(&gpu.device, "test.wasm_stage.core.rb", 160, 40);
         let function_count_readback =
@@ -1782,49 +1730,25 @@ mod tests {
         let body_length_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.body_length.rb", 4, 1);
         let body_readback = readback_bytes(&gpu.device, "test.wasm_stage.body.rb", 64, 16);
-        encoder.copy_buffer_to_buffer(&output.total.buffer, 0, &total_readback.buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(&target_total.buffer, 0, &total_readback.buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(&stage.instructions.buffer, 0, &core_readback.buffer, 0, 160);
         encoder.copy_buffer_to_buffer(
-            &output.instructions.buffer,
-            0,
-            &core_readback.buffer,
-            0,
-            160,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.functions.count.buffer,
+            &functions.count.buffer,
             0,
             &function_count_readback.buffer,
             0,
             4,
         );
+        encoder.copy_buffer_to_buffer(&functions.rows.buffer, 0, &functions_readback.buffer, 0, 64);
         encoder.copy_buffer_to_buffer(
-            &output.functions.rows.buffer,
-            0,
-            &functions_readback.buffer,
-            0,
-            64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.abi_functions.buffer,
+            &stage.abi_functions.buffer,
             0,
             &abi_functions_readback.buffer,
             0,
             224,
         );
-        encoder.copy_buffer_to_buffer(
-            &stage.artifact_length.buffer,
-            0,
-            &body_length_readback.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &stage.artifact_words.buffer,
-            0,
-            &body_readback.buffer,
-            0,
-            64,
-        );
+        encoder.copy_buffer_to_buffer(&body_length.buffer, 0, &body_length_readback.buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(&body_words.buffer, 0, &body_readback.buffer, 0, 64);
         stage.module.record(&mut encoder).unwrap();
         encoder.copy_buffer_to_buffer(
             &artifact.length.buffer,

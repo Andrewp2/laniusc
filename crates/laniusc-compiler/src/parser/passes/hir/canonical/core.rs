@@ -102,6 +102,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_fn_return_type_node.as_entire_binding(),
             ),
             (
+                "hir_type_root_owner".into(),
+                b.hir_type_root_owner.as_entire_binding(),
+            ),
+            (
+                "hir_method_impl_receiver_type".into(),
+                b.hir_method_impl_receiver_type_node.as_entire_binding(),
+            ),
+            (
                 "hir_type_alias_target_node".into(),
                 b.hir_type_alias_target_node.as_entire_binding(),
             ),
@@ -132,6 +140,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_expr_float_bits".into(),
                 b.hir_expr_float_bits.as_entire_binding(),
+            ),
+            (
+                "hir_expr_name_role".into(),
+                b.hir_expr_name_role.as_entire_binding(),
             ),
             (
                 "hir_expr_result_root_node".into(),
@@ -215,6 +227,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_canonical_fn_return_type".into(),
                 b.hir_canonical_fn_return_type.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_type_root_owner".into(),
+                b.hir_canonical_type_root_owner.as_entire_binding(),
             ),
             (
                 "hir_canonical_type_alias_target".into(),

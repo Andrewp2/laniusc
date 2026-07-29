@@ -28,6 +28,8 @@ StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> module_value_path_associated_method_token;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> hir_value_decl_name_present;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -40,6 +42,8 @@ static const uint INTRINSIC_NONE = 0u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
+static const uint ERR_CALL_MISMATCH = 10u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -108,6 +112,14 @@ bool token_resolved(uint token)
             method_call_name_id[token] != INVALID);
 }
 
+bool known_non_free_declaration_name(uint token)
+{
+    if (!valid_token(token)) return false;
+    uint name = name_id_by_token[token];
+    return name != INVALID && name < gParams.n_tokens + LANGUAGE_SYMBOL_COUNT &&
+           hir_value_decl_name_present[name] != 0u;
+}
+
 void observe(uint token, inout bool resolved)
 {
     if (token_resolved(token)) resolved = true;
@@ -171,9 +183,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (!valid_token(error_token))
         error_token = site;
 
+    // A name which belongs to a declaration family but has no free-function
+    // target is a call-resolution failure. A spelling absent from every value
+    // declaration family remains an unresolved identifier.
+    uint code = known_non_free_declaration_name(error_token) ||
+                known_non_free_declaration_name(direct) ||
+                known_non_free_declaration_name(owner) ||
+                known_non_free_declaration_name(leaf)
+                    ? ERR_CALL_MISMATCH
+                    : ERR_UNRESOLVED_IDENT;
     record_min_token_error(
         status,
         valid_token(error_token) ? error_token : 0u,
-        ERR_UNRESOLVED_IDENT,
+        code,
         detail);
 }

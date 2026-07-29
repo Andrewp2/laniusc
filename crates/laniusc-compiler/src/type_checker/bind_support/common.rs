@@ -7,6 +7,10 @@ pub(in crate::type_checker) trait ResourceBinding<'a> {
     /// Returns the compiler allocation identity when this binding is backed by
     /// a tracked `LaniusBuffer`, plus the complete bound byte extent.
     fn graph_identity(self) -> (Option<u64>, u64);
+
+    /// Logical byte extent of this view, which may be smaller than its aliased
+    /// physical allocation.
+    fn logical_byte_size(self) -> u64;
 }
 
 impl<'a> ResourceBinding<'a> for &'a wgpu::Buffer {
@@ -16,6 +20,10 @@ impl<'a> ResourceBinding<'a> for &'a wgpu::Buffer {
 
     fn graph_identity(self) -> (Option<u64>, u64) {
         (None, self.size())
+    }
+
+    fn logical_byte_size(self) -> u64 {
+        self.size()
     }
 }
 
@@ -27,6 +35,10 @@ impl<'a, 'b> ResourceBinding<'a> for &'b &'a wgpu::Buffer {
     fn graph_identity(self) -> (Option<u64>, u64) {
         (None, self.size())
     }
+
+    fn logical_byte_size(self) -> u64 {
+        self.size()
+    }
 }
 
 impl<'a, T> ResourceBinding<'a> for &'a LaniusBuffer<T> {
@@ -37,12 +49,45 @@ impl<'a, T> ResourceBinding<'a> for &'a LaniusBuffer<T> {
     fn graph_identity(self) -> (Option<u64>, u64) {
         (self.allocation_id(), self.byte_size as u64)
     }
+
+    fn logical_byte_size(self) -> u64 {
+        (self.count as u64).saturating_mul(std::mem::size_of::<T>() as u64)
+    }
+}
+
+impl<'a> ResourceBinding<'a> for crate::gpu::buffers::TrackedBufferView<'a> {
+    fn binding(self) -> wgpu::BindingResource<'a> {
+        self.as_entire_binding()
+    }
+
+    fn graph_identity(self) -> (Option<u64>, u64) {
+        (self.allocation_id(), self.byte_size)
+    }
+
+    fn logical_byte_size(self) -> u64 {
+        self.byte_size
+    }
+}
+
+impl<'a, 'b, T> ResourceBinding<'a> for &'b &'a LaniusBuffer<T> {
+    fn binding(self) -> wgpu::BindingResource<'a> {
+        (*self).as_entire_binding()
+    }
+
+    fn graph_identity(self) -> (Option<u64>, u64) {
+        (self.allocation_id(), self.byte_size as u64)
+    }
+
+    fn logical_byte_size(self) -> u64 {
+        (self.count as u64).saturating_mul(std::mem::size_of::<T>() as u64)
+    }
 }
 
 #[derive(Clone, Copy)]
 struct GraphResourceIdentity {
     allocation_id: Option<u64>,
     byte_size: u64,
+    logical_byte_size: u64,
 }
 
 /// Name-keyed binding resource map used by reflection-based bind-group builders.
@@ -66,6 +111,24 @@ impl<'a> ResourceMap<'a> {
         name: &'static str,
         resource: wgpu::BindingResource<'a>,
     ) {
+        // Raw upstream buffers are valid immutable graph inputs even when
+        // they are not wrapped in `LaniusBuffer`. Preserve their extent here;
+        // writable graph resources still fail validation without an owned
+        // allocation identity.
+        if let wgpu::BindingResource::Buffer(binding) = &resource {
+            let byte_size = binding
+                .size
+                .map(std::num::NonZeroU64::get)
+                .unwrap_or_else(|| binding.buffer.size().saturating_sub(binding.offset));
+            self.graph_identities.insert(
+                name.to_owned(),
+                GraphResourceIdentity {
+                    allocation_id: None,
+                    byte_size,
+                    logical_byte_size: byte_size,
+                },
+            );
+        }
         self.resources.insert(name.to_owned(), resource);
     }
 
@@ -75,14 +138,53 @@ impl<'a> ResourceMap<'a> {
         B: ResourceBinding<'a> + Copy,
     {
         let (allocation_id, byte_size) = buffer.graph_identity();
+        let logical_byte_size = buffer.logical_byte_size();
+        self.add(name, buffer.binding());
         self.graph_identities.insert(
             name.to_owned(),
             GraphResourceIdentity {
                 allocation_id,
                 byte_size,
+                logical_byte_size,
             },
         );
-        self.add(name, buffer.binding());
+    }
+
+    pub(in crate::type_checker) fn buffers<B, const N: usize>(
+        &mut self,
+        buffers: [(&'static str, B); N],
+    ) where
+        B: ResourceBinding<'a> + Copy,
+    {
+        for (name, buffer) in buffers {
+            self.buffer(name, buffer);
+        }
+    }
+
+    /// Logical number of `u32` rows exposed by a registered typed view.
+    pub(in crate::type_checker) fn logical_u32_count(&self, name: &str) -> Result<u32> {
+        let identity = self
+            .graph_identities
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("type-check resource `{name}` is not registered"))?;
+        Ok((identity.logical_byte_size / 4).min(u64::from(u32::MAX)) as u32)
+    }
+
+    /// Builds one reflected bind group from the shared resource registry,
+    /// replacing only the bindings which are local to this invocation.
+    ///
+    /// Most compiler passes bind resources by their Slang names.  Algorithms
+    /// such as radix sort additionally have a per-step uniform and ping-pong
+    /// input/output aliases.  Keeping those few aliases here lets reflection
+    /// remain the source of truth for the rest of the shader interface.
+    pub(in crate::type_checker) fn reflected_bind_group_with_overrides(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        pass: &PassData,
+        overrides: &[(&str, wgpu::BindingResource<'a>)],
+    ) -> Result<wgpu::BindGroup> {
+        reflected_bind_group_with_overrides(device, label, pass, &self.resources, overrides)
     }
 
     /// Resolves one graph pass's concrete storage bindings from the same
@@ -96,6 +198,17 @@ impl<'a> ResourceMap<'a> {
         graph: &crate::gpu::compiler_graph::CompilerGraph,
         pass_name: &str,
     ) -> Result<Vec<crate::gpu::compiler_graph::BoundGraphResource>> {
+        self.graph_bindings_with_aliases(graph, pass_name, &[])
+    }
+
+    /// Resolves a pass whose reflected binding names deliberately select
+    /// different physical ping-pong buffers in different graph nodes.
+    pub(in crate::type_checker) fn graph_bindings_with_aliases(
+        &self,
+        graph: &crate::gpu::compiler_graph::CompilerGraph,
+        pass_name: &str,
+        aliases: &[(&str, &str)],
+    ) -> Result<Vec<crate::gpu::compiler_graph::BoundGraphResource>> {
         let pass = graph
             .pass_id(pass_name)
             .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
@@ -105,9 +218,15 @@ impl<'a> ResourceMap<'a> {
             .accesses
             .iter()
             .map(|access| {
-                let identity = self.graph_identities.get(access.binding).ok_or_else(|| {
+                let registered_name = aliases
+                    .iter()
+                    .find_map(|(binding, registered)| {
+                        (*binding == access.binding).then_some(*registered)
+                    })
+                    .unwrap_or(access.binding);
+                let identity = self.graph_identities.get(registered_name).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "compiler pass `{pass_name}` binding `{}` is not registered as a buffer",
+                        "compiler pass `{pass_name}` binding `{}` maps to `{registered_name}`, which is not registered as a buffer",
                         access.binding,
                     )
                 })?;
@@ -122,6 +241,29 @@ impl<'a> ResourceMap<'a> {
             })
             .collect()
     }
+}
+
+/// Builds a reflected bind group from any name-keyed registry plus a small set
+/// of operation-local aliases.
+pub(in crate::type_checker) fn reflected_bind_group_with_overrides<'a>(
+    device: &wgpu::Device,
+    label: &str,
+    pass: &PassData,
+    resources: &HashMap<String, wgpu::BindingResource<'a>>,
+    overrides: &[(&str, wgpu::BindingResource<'a>)],
+) -> Result<wgpu::BindGroup> {
+    let mut bindings = resources.clone();
+    for (name, resource) in overrides {
+        bindings.insert((*name).to_owned(), resource.clone());
+    }
+    bind_group::create_bind_group_from_reflection(
+        device,
+        Some(label),
+        &pass.bind_group_layouts[0],
+        &pass.reflection,
+        0,
+        &bindings,
+    )
 }
 
 impl<'a> std::ops::Deref for ResourceMap<'a> {

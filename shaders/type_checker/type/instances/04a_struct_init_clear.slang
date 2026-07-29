@@ -18,6 +18,7 @@ RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
 RWStructuredBuffer<uint> array_element_struct_literal_node;
+RWStructuredBuffer<uint> struct_init_field_decl_node_by_node;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
 RWStructuredBuffer<uint> struct_init_field_decl_token_by_row;
 
@@ -53,6 +54,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         struct_lit_context_decl_token[i] = INVALID;
         struct_lit_context_instance[i] = INVALID;
         array_element_struct_literal_node[i] = INVALID;
+        struct_init_field_decl_node_by_node[i] = INVALID;
         struct_init_field_ordinal_by_row[i] = INVALID;
         struct_init_field_decl_token_by_row[i] = INVALID;
     }

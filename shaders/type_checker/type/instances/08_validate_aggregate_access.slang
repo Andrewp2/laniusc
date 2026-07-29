@@ -18,6 +18,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
 struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 
 StructuredBuffer<uint> hir_status;
@@ -25,20 +26,18 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_parent_by_callee;
-StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_expr_parent;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
-StructuredBuffer<uint> method_call_name_id;
-StructuredBuffer<uint> method_call_site_module_id;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> name_id_by_token;
@@ -124,6 +123,19 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+bool valid_compact_node(uint node)
+{
+    return node != INVALID && node < active_compact_hir_count();
+}
+
+uint compact_node_for_raw(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint compact = raw_to_compact_hir[node];
+    return valid_compact_node(compact) ? compact : INVALID;
 }
 
 uint active_compact_hir_count()
@@ -270,22 +282,21 @@ uint direct_arithmetic_operand_type(uint node)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    uint call = compact_node_for_raw(call_node);
+    if (!valid_compact_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint callee_node = result_expr(hir_call_callee_node[call_node]);
-    if (!valid_node(callee_node))
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_compact_node(callee))
         return INVALID;
 
-    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[callee].kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[callee_node];
+        uint member_token = compact_hir_payload[callee].c;
         return valid_token(member_token) ? member_token : INVALID;
     }
 
-    uint token = expr_value_token(callee_node);
-    if (!valid_token(token))
-        token = hir_token_pos[callee_node];
+    uint token = compact_hir_core[callee].token_start;
     return valid_token(token) ? token : INVALID;
 }
 
@@ -360,7 +371,10 @@ uint direct_value_type(uint node)
 
     if (hir_kind[node] == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[node];
+        uint member = compact_node_for_raw(node);
+        uint member_token = valid_compact_node(member)
+            ? compact_hir_payload[member].c
+            : INVALID;
         return visible_type_for_token(member_token);
     }
 
@@ -429,40 +443,40 @@ void validate_struct_literal_field_node(uint node)
     }
 }
 
-bool member_expr_is_marked_method_call(uint member_token)
-{
-    return valid_token(member_token) &&
-           (method_call_name_id[member_token] != INVALID ||
-            method_call_site_module_id[member_token] != INVALID);
-}
-
 bool member_expr_is_call_callee(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
         return false;
-    uint call_node = hir_call_parent_by_callee[node];
-    return valid_node(call_node) &&
-           hir_kind[call_node] == HIR_CALL_EXPR &&
-           hir_call_callee_node[call_node] == node;
+    uint member = compact_node_for_raw(node);
+    if (!valid_compact_node(member))
+        return false;
+    uint call = compact_hir_expr_parent[member];
+    return valid_compact_node(call) &&
+           compact_hir_core[call].kind == HIR_CALL_EXPR &&
+           compact_hir_payload[call].a == member;
 }
 
 void validate_member_expr_node(uint node)
 {
-    uint member_token = hir_member_name_token[node];
+    uint member = compact_node_for_raw(node);
+    uint member_token = valid_compact_node(member)
+        ? compact_hir_payload[member].c
+        : INVALID;
     if (!valid_token(member_token))
         return;
 
-    if (member_expr_is_marked_method_call(member_token) || member_expr_is_call_callee(node))
+    if (member_expr_is_call_callee(node))
         return;
 
     if (member_result_field_ordinal[member_token] != INVALID)
         return;
 
     uint receiver_tag = member_result_ref_tag[member_token];
-    if (receiver_tag != TYPE_REF_INVALID)
-    {
-        record_error(member_token, ERR_INVALID_MEMBER_ACCESS, receiver_tag);
-    }
+    // This is the final aggregate-validation stage. A non-call member without
+    // a materialized field ordinal is invalid even if receiver resolution
+    // produced no type ref; treating an unresolved receiver as success would
+    // make the checker unsound.
+    record_error(member_token, ERR_INVALID_MEMBER_ACCESS, receiver_tag);
 }
 
 [shader("compute")]

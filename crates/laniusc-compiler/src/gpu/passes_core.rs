@@ -347,6 +347,7 @@ pub(crate) fn submit_with_optional_validation(
 }
 
 /// Reflected compute-pipeline data shared by pass wrappers.
+#[derive(Clone)]
 pub struct PassData {
     /// Compiled compute pipeline.
     pub pipeline: Arc<wgpu::ComputePipeline>,
@@ -1096,6 +1097,67 @@ pub mod bind_group {
         reflection.parameters.as_slice()
     }
 
+    fn validate_reflected_buffer_aliases(
+        reflection: &SlangReflection,
+        set_index: usize,
+        resources: &HashMap<String, wgpu::BindingResource<'_>>,
+        label: &str,
+    ) -> Result<()> {
+        struct BoundBuffer<'a> {
+            name: &'a str,
+            buffer: &'a wgpu::Buffer,
+            start: u64,
+            end: u64,
+            writable: bool,
+        }
+
+        let mut buffers = Vec::<BoundBuffer<'_>>::new();
+        for parameter in reflected_parameters_for_set(reflection, set_index) {
+            let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+            else {
+                continue;
+            };
+            let writable = matches!(
+                binding_type,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    ..
+                }
+            );
+            let Some(wgpu::BindingResource::Buffer(binding)) = resources.get(&parameter.name)
+            else {
+                continue;
+            };
+            let start = binding.offset;
+            let size = binding
+                .size
+                .map(std::num::NonZeroU64::get)
+                .unwrap_or_else(|| binding.buffer.size().saturating_sub(start));
+            let end = start.saturating_add(size);
+            for prior in &buffers {
+                if binding.buffer == prior.buffer
+                    && start < prior.end
+                    && prior.start < end
+                    && (writable || prior.writable)
+                {
+                    return Err(anyhow!(
+                        "bind group `{label}` binds overlapping buffer ranges as `{}` and `{}` while at least one binding is writable",
+                        prior.name,
+                        parameter.name,
+                    ));
+                }
+            }
+            buffers.push(BoundBuffer {
+                name: &parameter.name,
+                buffer: binding.buffer,
+                start,
+                end,
+                writable,
+            });
+        }
+        Ok(())
+    }
+
     /// Creates a bind group by looking up resources by reflected parameter name.
     pub fn create_bind_group_from_reflection<'a>(
         device: &wgpu::Device,
@@ -1105,6 +1167,10 @@ pub mod bind_group {
         set_index: usize,
         resources: &HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<wgpu::BindGroup> {
+        let resolved_label = label.unwrap_or("<unnamed>");
+        if resolved_label.starts_with("type_check") {
+            validate_reflected_buffer_aliases(reflection, set_index, resources, resolved_label)?;
+        }
         let mut entries = Vec::<wgpu::BindGroupEntry>::new();
         for p in reflected_parameters_for_set(reflection, set_index) {
             if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {

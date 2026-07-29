@@ -13,7 +13,6 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
 ) -> Result<()> {
     let hir_work = state.n_blocks.saturating_mul(256).max(1);
     let module_work = state.module_n_blocks.saturating_mul(256).max(1);
-    let record_n_blocks = state.record_n_blocks.max(1);
     let file_map_clear_work = hir_work;
 
     record_compute_indirect(
@@ -108,14 +107,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.extract_module_record_flag",
         hir_active_dispatch_args,
     )?;
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        state.n_blocks,
-        hir_active_dispatch_args,
-        &state.bind_groups.module_scan,
-        "type_check.modules.module_record_scan",
-    )?;
+    state.bind_groups.module_scan.record(encoder)?;
     record_compute(
         encoder,
         &passes.modules_scatter_module_records,
@@ -138,46 +130,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.module_key_radix_dispatch_args",
         1,
     )?;
-    if let Some(sort_module_keys_small) = &state.bind_groups.sort_module_keys_small {
-        record_compute_indirect(
-            encoder,
-            &passes.modules_sort_module_keys_small,
-            sort_module_keys_small,
-            "type_check.modules.sort_module_keys_small",
-            &state.module_key_radix_dispatch_args,
-        )?;
-    } else {
-        for i in 0..state.bind_groups.sort_module_key_scatter.len() {
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_module_keys_histogram,
-                &state.bind_groups.sort_module_key_histogram[i],
-                "type_check.modules.sort_module_keys_histogram",
-                &state.module_key_radix_dispatch_args,
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_prefix,
-                &state.bind_groups.sort_module_key_bucket_prefix[i],
-                "type_check.modules.sort_module_keys_bucket_prefix",
-                NAME_RADIX_BUCKETS.saturating_mul(256),
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_bases,
-                &state.bind_groups.sort_module_key_bucket_bases[i],
-                "type_check.modules.sort_module_keys_bucket_bases",
-                256,
-            )?;
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_module_keys_scatter,
-                &state.bind_groups.sort_module_key_scatter[i],
-                "type_check.modules.sort_module_keys_scatter",
-                &state.module_key_radix_dispatch_args,
-            )?;
-        }
-    }
+    state.bind_groups.sort_module_keys.record(encoder)?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,
@@ -212,14 +165,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.extract_import_record_flag",
         hir_active_dispatch_args,
     )?;
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        state.n_blocks,
-        hir_active_dispatch_args,
-        &state.bind_groups.import_scan,
-        "type_check.modules.import_record_scan",
-    )?;
+    state.bind_groups.import_scan.record(encoder)?;
     record_compute_indirect(
         encoder,
         &passes.modules_scatter_import_records,
@@ -241,14 +187,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.extract_decl_record_flag",
         hir_active_dispatch_args,
     )?;
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        state.n_blocks,
-        hir_active_dispatch_args,
-        &state.bind_groups.decl_scan,
-        "type_check.modules.decl_record_scan",
-    )?;
+    state.bind_groups.decl_scan.record(encoder)?;
     record_compute(
         encoder,
         &passes.modules_append_variant_decl_count,
@@ -341,46 +280,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.seed_import_edge_key_order",
         &state.import_edge_key_radix_dispatch_args,
     )?;
-    if let Some(sort_import_edges_small) = &state.bind_groups.sort_import_edges_small {
-        record_compute_indirect(
-            encoder,
-            &passes.modules_sort_import_edges_small,
-            sort_import_edges_small,
-            "type_check.modules.sort_import_edges_small",
-            &state.import_edge_key_radix_dispatch_args,
-        )?;
-    } else {
-        for i in 0..state.bind_groups.sort_import_edge_key_scatter.len() {
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_import_edges,
-                &state.bind_groups.sort_import_edge_key_histogram[i],
-                "type_check.modules.sort_import_edges_histogram",
-                &state.import_edge_key_radix_dispatch_args,
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_prefix,
-                &state.bind_groups.sort_import_edge_key_bucket_prefix[i],
-                "type_check.modules.sort_import_edges_bucket_prefix",
-                NAME_RADIX_BUCKETS.saturating_mul(256),
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_bases,
-                &state.bind_groups.sort_import_edge_key_bucket_bases[i],
-                "type_check.modules.sort_import_edges_bucket_bases",
-                256,
-            )?;
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_import_edges_scatter,
-                &state.bind_groups.sort_import_edge_key_scatter[i],
-                "type_check.modules.sort_import_edges_scatter",
-                &state.import_edge_key_radix_dispatch_args,
-            )?;
-        }
-    }
+    state.bind_groups.sort_import_edges.record(encoder)?;
     record_compute_indirect(
         encoder,
         &passes.modules_validate_import_cycles,
@@ -407,46 +307,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.seed_decl_key_order",
         &state.decl_key_radix_dispatch_args,
     )?;
-    if let Some(sort_decl_keys_small) = &state.bind_groups.sort_decl_keys_small {
-        record_compute_indirect(
-            encoder,
-            &passes.modules_sort_decl_keys_small,
-            sort_decl_keys_small,
-            "type_check.modules.sort_decl_keys_small",
-            &state.decl_key_radix_dispatch_args,
-        )?;
-    } else {
-        for i in 0..state.bind_groups.sort_decl_key_scatter.len() {
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_decl_keys,
-                &state.bind_groups.sort_decl_key_histogram[i],
-                "type_check.modules.sort_decl_keys_histogram",
-                &state.decl_key_radix_dispatch_args,
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_prefix,
-                &state.bind_groups.sort_decl_key_bucket_prefix[i],
-                "type_check.modules.sort_decl_keys_bucket_prefix",
-                NAME_RADIX_BUCKETS.saturating_mul(256),
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_bases,
-                &state.bind_groups.sort_decl_key_bucket_bases[i],
-                "type_check.modules.sort_decl_keys_bucket_bases",
-                256,
-            )?;
-            record_compute_indirect(
-                encoder,
-                &passes.modules_sort_decl_keys_scatter,
-                &state.bind_groups.sort_decl_key_scatter[i],
-                "type_check.modules.sort_decl_keys_scatter",
-                &state.decl_key_radix_dispatch_args,
-            )?;
-        }
-    }
+    state.bind_groups.sort_decl_keys.record(encoder)?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.sort_decl_keys.done");
     record_compute_indirect(
         encoder,
@@ -462,16 +323,10 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.mark_decl_namespace_keys",
         &state.decl_key_radix_dispatch_args,
     )?;
-    record_counted_u32_scan_pair_with_passes(
-        passes,
-        encoder,
-        record_n_blocks,
-        &state.decl_key_radix_dispatch_args,
+    PrefixScanOperation::record_pair(
         &state.bind_groups.decl_type_key_scan,
-        record_n_blocks,
-        &state.decl_key_radix_dispatch_args,
         &state.bind_groups.decl_value_key_scan,
-        "type_check.modules.decl_namespace_key_scans",
+        encoder,
     )?;
     record_compute_indirect(
         encoder,
@@ -487,16 +342,10 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.mark_public_decl_keys",
         &state.decl_key_radix_dispatch_args,
     )?;
-    record_counted_u32_scan_pair_with_passes(
-        passes,
-        encoder,
-        record_n_blocks,
-        &state.decl_key_radix_dispatch_args,
+    PrefixScanOperation::record_pair(
         &state.bind_groups.decl_type_public_scan,
-        record_n_blocks,
-        &state.decl_key_radix_dispatch_args,
         &state.bind_groups.decl_value_public_scan,
-        "type_check.modules.decl_public_scans",
+        encoder,
     )?;
     let interface_decl_capacity =
         u32::try_from(state.interface_public_decl_local_id.count).unwrap_or(u32::MAX);
@@ -526,16 +375,10 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         "type_check.modules.count_import_visibility",
         &state.import_dispatch_args,
     )?;
-    record_counted_u32_scan_pair_with_passes(
-        passes,
-        encoder,
-        record_n_blocks,
-        &state.import_dispatch_args,
+    PrefixScanOperation::record_pair(
         &state.bind_groups.import_visible_type_scan,
-        record_n_blocks,
-        &state.import_dispatch_args,
         &state.bind_groups.import_visible_value_scan,
-        "type_check.modules.import_visible_scans",
+        encoder,
     )?;
     record_compute(
         encoder,
@@ -570,113 +413,17 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         encoder,
         "typecheck.modules.import_visibility_scatter.done",
     );
-    match (
-        &state.bind_groups.sort_import_visible_type_keys_small,
-        &state.bind_groups.sort_import_visible_value_keys_small,
-    ) {
-        (Some(type_sort), Some(value_sort)) => {
-            count_recorded_compute_pass();
-            let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(
-                encoder,
-                "type_check.modules.sort_import_visible_keys_small.paired",
-            );
-            batch.record_raw_indirect(
-                &passes.modules_sort_import_visible_keys_small,
-                type_sort,
-                &state.import_visible_type_key_radix_dispatch_args,
-            );
-            batch.record_raw_indirect(
-                &passes.modules_sort_import_visible_keys_small,
-                value_sort,
-                &state.import_visible_value_key_radix_dispatch_args,
-            );
-        }
-        (None, None) => {
-            let steps = state.bind_groups.sort_import_visible_type_key_scatter.len();
-            debug_assert_eq!(
-                steps,
-                state
-                    .bind_groups
-                    .sort_import_visible_value_key_scatter
-                    .len()
-            );
-            for i in 0..steps {
-                count_recorded_compute_pass();
-                let mut histogram = crate::gpu::passes_core::ComputePassBatch::begin(
-                    encoder,
-                    "type_check.modules.sort_import_visible_keys.histogram.paired",
-                );
-                histogram.record_raw_indirect(
-                    &passes.modules_sort_import_visible_keys,
-                    &state.bind_groups.sort_import_visible_type_key_histogram[i],
-                    &state.import_visible_type_key_radix_dispatch_args,
-                );
-                histogram.record_raw_indirect(
-                    &passes.modules_sort_import_visible_keys,
-                    &state.bind_groups.sort_import_visible_value_key_histogram[i],
-                    &state.import_visible_value_key_radix_dispatch_args,
-                );
-                drop(histogram);
-
-                count_recorded_compute_pass();
-                let mut prefix = crate::gpu::passes_core::ComputePassBatch::begin(
-                    encoder,
-                    "type_check.modules.sort_import_visible_keys.prefix.paired",
-                );
-                prefix.record_raw(
-                    &passes.names_radix_bucket_prefix,
-                    &state.bind_groups.sort_import_visible_type_key_bucket_prefix[i],
-                    NAME_RADIX_BUCKETS.saturating_mul(256),
-                )?;
-                prefix.record_raw(
-                    &passes.names_radix_bucket_prefix,
-                    &state
-                        .bind_groups
-                        .sort_import_visible_value_key_bucket_prefix[i],
-                    NAME_RADIX_BUCKETS.saturating_mul(256),
-                )?;
-                drop(prefix);
-
-                count_recorded_compute_pass();
-                let mut bases = crate::gpu::passes_core::ComputePassBatch::begin(
-                    encoder,
-                    "type_check.modules.sort_import_visible_keys.bases.paired",
-                );
-                bases.record_raw(
-                    &passes.names_radix_bucket_bases,
-                    &state.bind_groups.sort_import_visible_type_key_bucket_bases[i],
-                    256,
-                )?;
-                bases.record_raw(
-                    &passes.names_radix_bucket_bases,
-                    &state.bind_groups.sort_import_visible_value_key_bucket_bases[i],
-                    256,
-                )?;
-                drop(bases);
-
-                count_recorded_compute_pass();
-                let mut scatter = crate::gpu::passes_core::ComputePassBatch::begin(
-                    encoder,
-                    "type_check.modules.sort_import_visible_keys.scatter.paired",
-                );
-                scatter.record_raw_indirect(
-                    &passes.modules_sort_import_visible_keys_scatter,
-                    &state.bind_groups.sort_import_visible_type_key_scatter[i],
-                    &state.import_visible_type_key_radix_dispatch_args,
-                );
-                scatter.record_raw_indirect(
-                    &passes.modules_sort_import_visible_keys_scatter,
-                    &state.bind_groups.sort_import_visible_value_key_scatter[i],
-                    &state.import_visible_value_key_radix_dispatch_args,
-                );
-            }
-        }
-        _ => {
-            return Err(anyhow::anyhow!(
-                "type/value import visibility sorts selected incompatible radix paths"
-            ));
-        }
-    }
+    record_radix_sort_batch(
+        &[
+            RadixSortBatchItem {
+                sort: &state.bind_groups.sort_import_visible_type_keys,
+            },
+            RadixSortBatchItem {
+                sort: &state.bind_groups.sort_import_visible_value_keys,
+            },
+        ],
+        encoder,
+    )?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,
@@ -733,14 +480,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
             "type_check.dependencies.count_import_visibility",
             &state.import_dispatch_args,
         )?;
-        record_counted_u32_scan_bind_groups_with_passes(
-            passes,
-            encoder,
-            record_n_blocks,
-            &state.import_dispatch_args,
-            &dependency_visibility.scan,
-            "type_check.dependencies.import_visibility_scan",
-        )?;
+        dependency_visibility.scan.record(encoder)?;
         record_compute(
             encoder,
             &passes.dependencies.scatter_import_visibility,

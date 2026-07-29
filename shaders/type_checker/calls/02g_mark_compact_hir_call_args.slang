@@ -22,9 +22,6 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> call_arg_row_scan_input;
-RWStructuredBuffer<uint> call_arg_row_node;
-RWStructuredBuffer<uint> call_arg_row_call_node;
-RWStructuredBuffer<uint> call_arg_row_ordinal;
 RWStructuredBuffer<uint> call_arg_row_start;
 RWStructuredBuffer<uint> call_arg_row_count;
 RWStructuredBuffer<uint> call_generic_return_arg_node;

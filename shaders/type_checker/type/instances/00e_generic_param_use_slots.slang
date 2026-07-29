@@ -35,7 +35,6 @@ StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_token;
 StructuredBuffer<uint> hir_nearest_fn_node;
@@ -106,8 +105,12 @@ uint generic_owner_token(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint name_token = hir_item_name_token[decl_node];
-    return valid_token(name_token) ? name_token : hir_token_pos[decl_node];
+    uint dense = raw_to_compact_hir[decl_node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= hir_count)
+        return hir_token_pos[decl_node];
+    uint name_token = compact_hir_payload[dense].b;
+    return valid_token(name_token) ? name_token : compact_hir_core[dense].token_start;
 }
 
 bool owner_has_generic_params(uint owner_token)

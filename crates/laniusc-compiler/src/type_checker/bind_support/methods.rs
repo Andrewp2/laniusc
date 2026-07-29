@@ -1,61 +1,58 @@
-use super::{super::*, common::reflected_bind_group_from_resources};
+use super::super::*;
 
 /// Builds method declaration and method-call resolution bind groups.
 pub(in crate::type_checker) fn create_method_bind_groups(
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     passes: &TypeCheckPasses,
-    resources: &HashMap<String, wgpu::BindingResource<'_>>,
-    keys: MethodKeyBindGroups,
+    resources: &ResourceMap<'_>,
+    keys: MethodKeyPipeline,
+    token_args: &wgpu::Buffer,
+    method_token_args: &wgpu::Buffer,
+    method_compact_args: &wgpu::Buffer,
+    method_hir_args: &wgpu::Buffer,
+    method_token_hir_args: &wgpu::Buffer,
 ) -> Result<MethodBindGroups> {
+    let indirect = |spec, pass, args| {
+        ComputeOperation::indirect_spec(device, graph, resources, spec, pass, args)
+    };
     Ok(MethodBindGroups {
-        clear: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_clear",
-            &passes.methods_clear,
-            resources,
-        )?,
-        collect: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_collect",
+        clear: indirect(METHODS_CLEAR, &passes.methods_clear, token_args)?,
+        collect: indirect(
+            METHODS_COLLECT,
             &passes.methods_collect,
-            resources,
+            method_compact_args,
         )?,
-        attach_metadata: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_attach_metadata",
+        attach_metadata: indirect(
+            METHODS_ATTACH_METADATA,
             &passes.methods_attach_metadata,
-            resources,
+            method_token_args,
         )?,
-        bind_self_receivers: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_bind_self_receivers",
+        bind_self_receivers: indirect(
+            METHODS_BIND_SELF_RECEIVERS,
             &passes.methods_bind_self_receivers,
-            resources,
+            method_hir_args,
         )?,
         keys,
-        mark_call_keys: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_mark_call_keys",
+        mark_call_keys: indirect(
+            METHODS_MARK_CALL_KEYS,
             &passes.methods_mark_call_keys,
-            resources,
+            method_token_hir_args,
         )?,
-        mark_call_return_keys: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_mark_call_return_keys",
+        mark_call_return_keys: indirect(
+            METHODS_MARK_CALL_RETURN_KEYS,
             &passes.methods_mark_call_return_keys,
-            resources,
+            method_hir_args,
         )?,
-        resolve_table: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_resolve_table",
+        resolve_table: indirect(
+            METHODS_RESOLVE_TABLE,
             &passes.methods_resolve_table,
-            resources,
+            method_token_args,
         )?,
-        resolve: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_methods_resolve",
+        resolve: indirect(
+            METHODS_RESOLVE,
             &passes.methods_resolve,
-            resources,
+            method_token_hir_args,
         )?,
     })
 }

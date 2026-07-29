@@ -1,9 +1,8 @@
 // Mark compact-HIR value paths and calls for downstream value consumers.
 //
 // Paths, their owners, and call callees all use dense compact-HIR ids. The
-// token-indexed call summary is retained only as a migration bridge for the
-// downstream call passes that have not yet moved to compact call-argument
-// rows; it is never used to discover whether a path is a call.
+// The token-indexed call summary stores the dense compact-HIR call id plus one;
+// zero remains the non-call sentinel for the other value-path consumers.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
@@ -22,7 +21,6 @@ StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
-StructuredBuffer<uint4> call_arg_record;
 
 RWStructuredBuffer<uint> module_value_path_call_head;
 RWStructuredBuffer<uint> module_value_path_call_open;
@@ -106,11 +104,7 @@ void mark_value_call(uint call_node)
 
     module_value_path_expr_head[owner_token] = 1u;
 
-    // This field still carries a raw call id. Keep it behind this explicit
-    // compatibility boundary until the downstream call-row migration.
-    uint legacy_call_node = call_arg_record[owner_token].z;
-    module_value_path_call_head[owner_token] =
-        legacy_call_node != INVALID ? legacy_call_node + 1u : 1u;
+    module_value_path_call_head[owner_token] = call_node + 1u;
     module_value_path_call_open[owner_token] = call_token;
     module_value_path_call_path_id[owner_token] = path;
     module_value_path_call_path_id[call_token] = path;

@@ -8,6 +8,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> language_name_id;
+RWStructuredBuffer<uint> name_max_len;
 
 static const uint INVALID = 0xffffffffu;
 static const uint LANGUAGE_NAME_COUNT = 29u;
@@ -17,6 +18,8 @@ static const uint LANGUAGE_NAME_COUNT = 29u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = dtid.x;
+    if (i == 0u)
+        name_max_len[0u] = 0u;
     if (i < LANGUAGE_NAME_COUNT)
         language_name_id[i] = INVALID;
 }

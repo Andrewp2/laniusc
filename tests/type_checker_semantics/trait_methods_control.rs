@@ -834,6 +834,23 @@ fn main() {{
 }
 
 #[test]
+fn type_checker_accepts_trait_method_sets_through_large_radix_path() {
+    let methods = (0..768)
+        .map(|i| format!("    fn method_{i}(value: i32) -> i32;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let implementations = (0..768)
+        .map(|i| format!("    fn method_{i}(value: i32) -> i32 {{\n        return value;\n    }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let src = format!(
+        "trait Wide {{\n{methods}\n}}\nimpl Wide for i32 {{\n{implementations}\n}}\nfn main() {{ return 0; }}"
+    );
+
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
 fn type_checker_reports_missing_trait_impl_method_beyond_old_record_window() {
     let trait_methods = (0..33)
         .map(|i| format!("    fn method_{i}(value: T) -> T;"))
@@ -1347,6 +1364,34 @@ fn main() {
             "trait impl method signature does not match the trait declaration",
         ],
     );
+}
+
+#[test]
+fn type_checker_accepts_generic_params_above_small_sort_capacity() {
+    let padding = (0..300)
+        .map(|i| format!("struct Padding{i} {{ value: i32, }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let src = format!(
+        r#"
+{padding}
+
+struct Boxed<T> {{
+    value: T,
+}}
+
+fn keep<T>(value: T) -> T {{
+    return value;
+}}
+
+fn main() {{
+    let value: i32 = keep(7);
+    return value;
+}}
+"#,
+    );
+
+    assert_gpu_type_check_ok(&src);
 }
 
 #[test]
@@ -2225,7 +2270,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_bound_argument_paths_beyond_predicate_row_width() {
+fn type_checker_reports_unresolved_trait_bound_argument_paths_without_width_truncation() {
     let source = r#"
 trait Rel<T> {
 }
@@ -2236,10 +2281,10 @@ fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {
 "#;
 
     let err = super::common::type_check_source_with_timeout(source)
-        .expect_err("over-wide bound argument paths should fail predicate validation");
+        .expect_err("unresolved bound argument paths should fail type resolution");
     match err {
         CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0008");
+            assert_eq!(diagnostic.code, "LNC0007");
             let rendered = diagnostic.render();
             let label = diagnostic
                 .primary_label
@@ -2250,20 +2295,20 @@ fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {
             assert_eq!(label.source_line.as_deref(), Some(source_line));
             assert_eq!(
                 label.column,
-                source_line.find("i::j").unwrap() + 1,
+                source_line.rfind('j').unwrap() + 1,
                 "{rendered}"
             );
-            assert_eq!(label.length, "i".len());
+            assert_eq!(label.length, "j".len());
 
-            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
-            assert!(rendered.contains("trait bound path exceeds the current trait path limit"));
+            assert!(rendered.contains("error[LNC0007]: unknown type"));
+            assert!(rendered.contains("type not found"));
         }
         other => panic!("expected over-wide bound argument diagnostic, got {other:?}"),
     }
 }
 
 #[test]
-fn type_checker_rejects_trait_bound_target_paths_beyond_predicate_row_width() {
+fn type_checker_reports_unresolved_trait_bound_target_paths_without_width_truncation() {
     let source = r#"
 fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
     return value;
@@ -2271,7 +2316,7 @@ fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
 "#;
 
     let err = super::common::type_check_source_with_timeout(source)
-        .expect_err("over-wide bound target paths should fail predicate validation");
+        .expect_err("unresolved bound target paths should fail predicate validation");
     match err {
         CompileError::Diagnostic(diagnostic) => {
             assert_eq!(diagnostic.code, "LNC0008");
@@ -2284,13 +2329,13 @@ fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
             assert_eq!(label.source_line.as_deref(), Some(source_line));
             assert_eq!(
                 label.column,
-                source_line.find("i::j").unwrap() + 1,
+                source_line.find("a::b").unwrap() + 1,
                 "{rendered}"
             );
-            assert_eq!(label.length, "i".len());
+            assert_eq!(label.length, "a".len());
 
             assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
-            assert!(rendered.contains("trait bound path exceeds the current trait path limit"));
+            assert!(rendered.contains("trait bound target does not resolve to a trait"));
         }
         other => panic!("expected over-wide bound target diagnostic, got {other:?}"),
     }

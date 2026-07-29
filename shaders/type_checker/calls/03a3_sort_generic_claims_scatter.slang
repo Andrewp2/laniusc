@@ -20,11 +20,11 @@ StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
 StructuredBuffer<uint> call_generic_claim_ref_tag;
-StructuredBuffer<uint> call_generic_claim_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> call_generic_claim_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -90,7 +90,7 @@ public struct GenericClaimScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return call_generic_claim_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -103,7 +103,7 @@ public struct GenericClaimOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        call_generic_claim_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

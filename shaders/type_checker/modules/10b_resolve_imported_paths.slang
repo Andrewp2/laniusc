@@ -42,6 +42,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
+static const uint PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR = 5u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
@@ -119,7 +120,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint path_i = linear_thread_id(dtid);
     if (path_i >= active_path_count() ||
         (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR &&
-         path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR))
+         path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR &&
+         path_kind[path_i] != PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR))
         return;
     if (path_segment_count[path_i] != 1u || resolved_decl[path_i] != INVALID)
         return;

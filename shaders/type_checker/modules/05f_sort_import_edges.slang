@@ -26,7 +26,7 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_module_id;
 StructuredBuffer<uint> import_status;
-StructuredBuffer<uint> import_edge_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -85,7 +85,7 @@ public struct ImportEdgeRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return import_edge_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

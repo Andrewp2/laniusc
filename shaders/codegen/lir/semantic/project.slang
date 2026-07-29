@@ -23,8 +23,6 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_root;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
-StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> language_name_id;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> dependency_counts;
 StructuredBuffer<uint> dependency_declaration_library_id;
@@ -62,21 +60,6 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
-
-uint host_service_for_name_token(uint token)
-{
-    if (!valid_token(token)) return INVALID;
-    uint name_id = name_id_by_token[token];
-    // Slot 52 is compiler-only array data projection. Numeric conversion at
-    // slot 28 intentionally crosses this ABI classifier, then target lowering
-    // selects a native instruction instead of an imported/runtime call.
-    for (uint symbol = HOST_SERVICE_FIRST; symbol < HOST_SERVICE_END; ++symbol)
-    {
-        if (symbol == HOST_SERVICE_I32_ARRAY_DATA_PTR) continue;
-        if (language_name_id[symbol] == name_id) return symbol;
-    }
-    return INVALID;
-}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -130,11 +113,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (target != INVALID)
             {
                 SemanticLirFunction function = semantic_lir_functions[target];
-                uint target_hir = function.hir_function;
-                bool external = target_hir < count &&
-                    compact_hir_payload[target_hir].a == 5u;
-                uint service = external
-                    ? host_service_for_name_token(function.name_token) : INVALID;
+                uint service = function.host_service;
                 semantic_call_kind[node] = service != INVALID
                     ? SEMANTIC_CALL_HOST : SEMANTIC_CALL_FUNCTION;
                 semantic_call_target[node] = service != INVALID ? service : target;

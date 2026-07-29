@@ -92,7 +92,6 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
     enclosing_fn: &wgpu::Buffer,
-    enclosing_fn_start_token: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
     fn_event_end: &wgpu::Buffer,
@@ -114,7 +113,6 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
         resources,
         params,
         enclosing_fn,
-        enclosing_fn_start_token,
         enclosing_fn_end,
         fn_event_value,
         fn_event_end,
@@ -140,7 +138,6 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
     enclosing_fn: &wgpu::Buffer,
-    enclosing_fn_start_token: &wgpu::Buffer,
     enclosing_fn_end: &wgpu::Buffer,
     fn_event_value: &wgpu::Buffer,
     fn_event_end: &wgpu::Buffer,
@@ -159,10 +156,6 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         &[
             ("gParams", params.as_entire_binding()),
             ("enclosing_fn", enclosing_fn.as_entire_binding()),
-            (
-                "enclosing_fn_start_token",
-                enclosing_fn_start_token.as_entire_binding(),
-            ),
             ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
             ("fn_event_value", fn_event_value.as_entire_binding()),
             ("fn_event_end", fn_event_end.as_entire_binding()),
@@ -219,12 +212,7 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
             ("fn_event_end", fn_event_end.as_entire_binding()),
             ("fn_event_inblock", fn_event_inblock.as_entire_binding()),
             ("block_prefix", fn_block_prefix.as_entire_binding()),
-            ("compact_hir_core", resources["compact_hir_core"].clone()),
             ("enclosing_fn", enclosing_fn.as_entire_binding()),
-            (
-                "enclosing_fn_start_token",
-                enclosing_fn_start_token.as_entire_binding(),
-            ),
             ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
         ],
     )?;
@@ -245,12 +233,8 @@ pub(in crate::type_checker) fn create_if_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     params: &LaniusBuffer<IfDepthParams>,
-    token_buf: &wgpu::Buffer,
-    token_count_buf: &wgpu::Buffer,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
+    compact_hir_count: &wgpu::Buffer,
+    compact_hir_core: &wgpu::Buffer,
     if_delta: &wgpu::Buffer,
     if_depth_inblock: &wgpu::Buffer,
     if_block_sum: &wgpu::Buffer,
@@ -268,12 +252,8 @@ pub(in crate::type_checker) fn create_if_depth_bind_groups_with_passes(
         &passes.if_depth_hierarchy_down,
         &passes.if_depth_apply,
         params,
-        token_buf,
-        token_count_buf,
-        hir_kind_buf,
-        hir_token_pos_buf,
-        hir_token_end_buf,
-        hir_status_buf,
+        compact_hir_count,
+        compact_hir_core,
         if_delta,
         if_depth_inblock,
         if_block_sum,
@@ -295,12 +275,8 @@ pub(in crate::type_checker) fn create_if_depth_bind_groups_from_passes(
     hierarchy_down_pass: &PassData,
     apply_pass: &PassData,
     params: &LaniusBuffer<IfDepthParams>,
-    token_buf: &wgpu::Buffer,
-    token_count_buf: &wgpu::Buffer,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
+    compact_hir_count: &wgpu::Buffer,
+    compact_hir_core: &wgpu::Buffer,
     if_delta: &wgpu::Buffer,
     if_depth_inblock: &wgpu::Buffer,
     if_block_sum: &wgpu::Buffer,
@@ -327,12 +303,8 @@ pub(in crate::type_checker) fn create_if_depth_bind_groups_from_passes(
         0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
-            ("token_count", token_count_buf.as_entire_binding()),
+            ("compact_hir_count", compact_hir_count.as_entire_binding()),
+            ("compact_hir_core", compact_hir_core.as_entire_binding()),
             ("if_delta", if_delta.as_entire_binding()),
         ],
     )?;
@@ -386,4 +358,197 @@ pub(in crate::type_checker) fn create_if_depth_bind_groups_from_passes(
         hierarchy_down,
         apply,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        gpu::{
+            buffers::{readback_bytes, storage_ro_from_bytes, storage_ro_from_u32s},
+            device,
+            passes_core::{make_pass_data_from_shader_key, map_readback_blocking},
+        },
+        parser::buffers::HirCore,
+    };
+
+    fn words<const N: usize>(records: &[[u32; N]]) -> Vec<u8> {
+        records
+            .iter()
+            .flat_map(|record| record.iter())
+            .flat_map(|word| word.to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn physical_gpu_marks_compact_hir_if_spans() {
+        let gpu = device::global();
+        let mark_pass = make_pass_data_from_shader_key(
+            &gpu.device,
+            "test.if_depth.mark",
+            "main",
+            "type_checker/loop/depth/02_mark",
+        )
+        .unwrap();
+        let local_pass = make_pass_data_from_shader_key(
+            &gpu.device,
+            "test.if_depth.local",
+            "main",
+            "type_checker/loop/depth/03_local",
+        )
+        .unwrap();
+        let apply_pass = make_pass_data_from_shader_key(
+            &gpu.device,
+            "test.if_depth.apply",
+            "main",
+            "type_checker/loop/depth/05_apply",
+        )
+        .unwrap();
+        let params = uniform_from_val(
+            &gpu.device,
+            "test.if_depth.params",
+            &IfDepthParams {
+                n_tokens: 64,
+                n_hir_nodes: 3,
+                n_blocks: 1,
+                scan_step: 0,
+            },
+        );
+        let count = storage_ro_from_u32s(&gpu.device, "test.if_depth.count", &[3]);
+        let core = storage_ro_from_bytes::<HirCore>(
+            &gpu.device,
+            "test.if_depth.core",
+            &words(&[[11, u32::MAX, 4, 60], [10, 0, 16, 40], [13, 1, 24, 25]]),
+            3,
+        );
+        let delta = crate::gpu::buffers::storage_rw_for_array::<i32>(
+            &gpu.device,
+            "test.if_depth.delta",
+            64,
+        );
+        gpu.queue.write_buffer(&delta.buffer, 0, &vec![0u8; 64 * 4]);
+        let inblock = crate::gpu::buffers::storage_rw_for_array::<i32>(
+            &gpu.device,
+            "test.if_depth.inblock",
+            64,
+        );
+        let block_sum = crate::gpu::buffers::storage_rw_for_array::<i32>(
+            &gpu.device,
+            "test.if_depth.block_sum",
+            1,
+        );
+        let block_prefix = crate::gpu::buffers::storage_rw_for_array::<i32>(
+            &gpu.device,
+            "test.if_depth.block_prefix",
+            1,
+        );
+        let depth = crate::gpu::buffers::storage_rw_for_array::<i32>(
+            &gpu.device,
+            "test.if_depth.depth",
+            64,
+        );
+        for buffer in [&inblock, &block_sum, &block_prefix, &depth] {
+            gpu.queue
+                .write_buffer(&buffer.buffer, 0, &vec![0u8; buffer.byte_size as usize]);
+        }
+        let mark_group = bind_group::create_bind_group_from_bindings(
+            &gpu.device,
+            Some("test.if_depth.mark"),
+            &mark_pass,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                ("compact_hir_count", count.as_entire_binding()),
+                ("compact_hir_core", core.as_entire_binding()),
+                ("if_delta", delta.as_entire_binding()),
+            ],
+        )
+        .unwrap();
+        let local_group = bind_group::create_bind_group_from_bindings(
+            &gpu.device,
+            Some("test.if_depth.local"),
+            &local_pass,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                ("if_delta", delta.as_entire_binding()),
+                ("if_depth_inblock", inblock.as_entire_binding()),
+                ("block_sum", block_sum.as_entire_binding()),
+            ],
+        )
+        .unwrap();
+        let apply_group = bind_group::create_bind_group_from_bindings(
+            &gpu.device,
+            Some("test.if_depth.apply"),
+            &apply_pass,
+            0,
+            &[
+                ("gParams", params.as_entire_binding()),
+                ("if_depth_inblock", inblock.as_entire_binding()),
+                ("block_prefix", block_prefix.as_entire_binding()),
+                ("if_depth", depth.as_entire_binding()),
+            ],
+        )
+        .unwrap();
+        let delta_readback = readback_bytes(&gpu.device, "test.if_depth.delta.rb", 64 * 4, 64);
+        let depth_readback = readback_bytes(&gpu.device, "test.if_depth.depth.rb", 64 * 4, 64);
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("test.if_depth.encoder"),
+            });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.if_depth.mark"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&mark_pass.pipeline);
+            compute.set_bind_group(0, Some(&mark_group), &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&delta.buffer, 0, &delta_readback.buffer, 0, 64 * 4);
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.if_depth.local"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&local_pass.pipeline);
+            compute.set_bind_group(0, Some(&local_group), &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test.if_depth.apply"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&apply_pass.pipeline);
+            compute.set_bind_group(0, Some(&apply_group), &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&depth.buffer, 0, &depth_readback.buffer, 0, 64 * 4);
+        gpu.queue.submit(Some(encoder.finish()));
+        let slice = delta_readback.slice(..);
+        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth mark").unwrap();
+        let mapped = slice.get_mapped_range();
+        let actual = mapped
+            .chunks_exact(4)
+            .map(|bytes| i32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual[16], 1);
+        assert_eq!(actual[40], -1);
+        drop(mapped);
+        delta_readback.unmap();
+
+        let slice = depth_readback.slice(..);
+        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth apply").unwrap();
+        let mapped = slice.get_mapped_range();
+        let actual = mapped
+            .chunks_exact(4)
+            .map(|bytes| i32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual[15], 0);
+        assert_eq!(actual[16], 1);
+        assert_eq!(actual[39], 1);
+        assert_eq!(actual[40], 0);
+    }
 }

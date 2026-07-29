@@ -38,11 +38,11 @@ StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_arg_hash;
-StructuredBuffer<uint> method_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> method_key_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -172,7 +172,7 @@ public struct MethodKeyScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return method_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -185,7 +185,7 @@ public struct MethodKeyOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        method_key_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

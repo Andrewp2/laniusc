@@ -2,7 +2,7 @@
 //
 // Scheduling contract:
 // - Dispatch after type_check_modules_06a_seed_decl_key_order.slang or an
-//   equivalent GPU declaration-order seed has initialized decl_key_order_in.
+//   equivalent GPU declaration-order seed has initialized radix_order_in.
 // - For each capacity-derived key byte, the host schedules histogram, GPU
 //   bucket-prefix scan, GPU bucket-base scan, and stable scatter.
 // - key_step walks the declaration key from least-significant to
@@ -31,7 +31,7 @@ StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
-StructuredBuffer<uint> decl_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -81,7 +81,7 @@ public struct DeclKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return decl_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

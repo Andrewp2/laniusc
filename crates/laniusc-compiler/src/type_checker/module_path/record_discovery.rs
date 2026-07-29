@@ -28,9 +28,9 @@ pub(in crate::type_checker) struct RecordDiscovery {
     pub(in crate::type_checker) import_dispatch_args: wgpu::BindGroup,
     pub(in crate::type_checker) count_path_segments: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_path_segments: wgpu::BindGroup,
-    pub(in crate::type_checker) module_scan: U32ScanBindGroups,
-    pub(in crate::type_checker) import_scan: U32ScanBindGroups,
-    pub(in crate::type_checker) decl_scan: U32ScanBindGroups,
+    pub(in crate::type_checker) module_scan: PrefixScanOperation,
+    pub(in crate::type_checker) import_scan: PrefixScanOperation,
+    pub(in crate::type_checker) decl_scan: PrefixScanOperation,
 }
 
 /// Creates bind groups for the record-discovery portion of module/path state.
@@ -255,49 +255,51 @@ pub(in crate::type_checker) fn create_record_discovery(
                 "path_prefix_id_a",
                 buffers.path_prefix_id_a.as_entire_binding(),
             ),
+            (
+                "predicate_syntax_token",
+                inputs.predicate_syntax_token.as_entire_binding(),
+            ),
         ],
     )?;
-    let module_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
+    let mut scan_resources = ResourceMap::new();
+    scan_resources.buffers([
+        ("hir_active_count", inputs.hir_active_count_buf),
+        ("hir_active_dispatch_args", inputs.hir_active_dispatch_args),
+    ]);
+    scan_resources.buffers([
+        ("module_record_family_flag", &buffers.record_family_flag),
+        ("module_record_prefix", &buffers.module_record_prefix),
+        ("module_record_count_out", &buffers.module_count_out),
+        ("import_record_count_out", &buffers.import_count_out),
+        ("decl_count_out", &buffers.decl_count_out),
+        (
+            "module_record_scan_local_prefix",
+            &buffers.record_scan_local_prefix,
+        ),
+        (
+            "module_record_scan_block_sum",
+            &buffers.record_scan_block_sum,
+        ),
+        ("module_record_scan_prefix_a", &buffers.record_scan_prefix_a),
+        ("module_record_scan_prefix_b", &buffers.record_scan_prefix_b),
+    ]);
+    let module_scan = PrefixScanOperation::from_spec(
         device,
-        "type_check_modules.module_records",
-        &buffers.scan_steps,
-        inputs.hir_active_count_buf,
-        &buffers.module_record_flag,
-        &buffers.module_record_prefix,
-        &buffers.module_count_out,
-        &buffers.record_scan_local_prefix,
-        &buffers.record_scan_block_sum,
-        &buffers.record_scan_prefix_a,
-        &buffers.record_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::MODULE_RECORD_SCAN,
     )?;
-    let import_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
+    let import_scan = PrefixScanOperation::from_spec(
         device,
-        "type_check_modules.import_records",
-        &buffers.scan_steps,
-        inputs.hir_active_count_buf,
-        &buffers.import_record_flag,
-        &buffers.import_record_prefix,
-        &buffers.import_count_out,
-        &buffers.record_scan_local_prefix,
-        &buffers.record_scan_block_sum,
-        &buffers.record_scan_prefix_a,
-        &buffers.record_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::IMPORT_RECORD_SCAN,
     )?;
-    let decl_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
+    let decl_scan = PrefixScanOperation::from_spec(
         device,
-        "type_check_modules.decl_records",
-        &buffers.scan_steps,
-        inputs.hir_active_count_buf,
-        &buffers.decl_record_flag,
-        &buffers.decl_record_prefix,
-        &buffers.decl_count_out,
-        &buffers.record_scan_local_prefix,
-        &buffers.record_scan_block_sum,
-        &buffers.record_scan_prefix_a,
-        &buffers.record_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::DECL_RECORD_SCAN,
     )?;
 
     Ok(RecordDiscovery {

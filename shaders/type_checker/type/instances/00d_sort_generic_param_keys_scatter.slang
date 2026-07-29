@@ -19,11 +19,11 @@ StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_node;
-StructuredBuffer<uint> generic_param_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> generic_param_key_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -75,7 +75,7 @@ public struct GenericParamKeyScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return generic_param_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -88,7 +88,7 @@ public struct GenericParamKeyOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        generic_param_key_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

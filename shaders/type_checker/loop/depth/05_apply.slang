@@ -28,5 +28,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gParams.n_tokens)
         return;
 
-    if_depth[i] = block_prefix[i / WG_SIZE] + if_depth_inblock[i];
+    // An exclusive scan's first block prefix is always zero. The hierarchy
+    // has no dispatch level when there is only one block, so its workspace
+    // row is intentionally unwritten and may contain data from an aliased
+    // earlier pass.
+    int prefix = i < WG_SIZE ? 0 : block_prefix[i / WG_SIZE];
+    if_depth[i] = prefix + if_depth_inblock[i];
 }

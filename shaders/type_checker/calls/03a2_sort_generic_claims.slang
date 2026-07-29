@@ -22,7 +22,7 @@ StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
 StructuredBuffer<uint> call_generic_claim_ref_tag;
-StructuredBuffer<uint> call_generic_claim_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -84,7 +84,7 @@ public struct GenericClaimRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return call_generic_claim_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

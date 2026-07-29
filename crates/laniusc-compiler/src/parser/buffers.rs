@@ -2093,6 +2093,11 @@ impl ParserBuffers {
             "parser.hir_canonical_fn_return_type",
             hir_canonical_capacity as usize,
         );
+        let hir_canonical_type_root_owner = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_canonical_type_root_owner",
+            hir_canonical_capacity as usize,
+        );
         let hir_canonical_type_alias_target = storage_rw_for_array::<u32>(
             device,
             "parser.hir_canonical_type_alias_target",
@@ -2612,6 +2617,7 @@ impl ParserBuffers {
             hir_canonical_nearest_control,
             hir_canonical_nearest_fn,
             hir_canonical_fn_return_type,
+            hir_canonical_type_root_owner,
             hir_canonical_type_alias_target,
             hir_canonical_const_type,
             hir_canonical_const_value,

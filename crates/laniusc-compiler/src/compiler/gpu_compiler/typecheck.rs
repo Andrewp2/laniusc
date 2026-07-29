@@ -306,26 +306,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                             typecheck_parse.hir.capacity,
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        let pipeline = match target {
-                            LoweringTarget::X86_64 => self.x86_lowering_pipeline(),
-                            LoweringTarget::Wasm => self.wasm_lowering_pipeline(),
-                        }
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        self.type_checker
-                            .with_codegen_buffers(|semantic| {
-                                pipeline.record_checked_hir(
-                                    device,
-                                    encoder,
-                                    &typecheck_parse.hir,
-                                    semantic,
-                                    None,
-                                )
-                            })
-                            .ok_or_else(|| {
-                                CompileError::GpuCodegen(
-                                    "semantic lowering buffers are unavailable".into(),
-                                )
-                            })?
+                        let pipeline = self
+                            .lowering_pipeline(target)
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                            CompileError::GpuCodegen(
+                                "semantic lowering buffers are unavailable".into(),
+                            )
+                        })?;
+                        pipeline
+                            .record_checked_hir(
+                                device,
+                                encoder,
+                                &typecheck_parse.hir,
+                                semantic.view(),
+                                None,
+                            )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     Ok(type_check)
@@ -343,21 +339,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 err,
                             )
                         })?;
-                    match target {
-                        None => Ok(None),
-                        Some(LoweringTarget::X86_64) => self
-                            .x86_lowering_pipeline()
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                            .finish_x86_artifact(device)
-                            .map(Some)
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string())),
-                        Some(LoweringTarget::Wasm) => self
-                            .wasm_lowering_pipeline()
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                            .finish_wasm_artifact(device)
-                            .map(Some)
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string())),
-                    }
+                    target
+                        .map(|target| {
+                            self.lowering_pipeline(target)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                                .finish_artifact(device)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        })
+                        .transpose()
                 },
             )
             .await
@@ -638,28 +627,24 @@ impl<'gpu> GpuCompiler<'gpu> {
                             typecheck_parse.hir.capacity,
                         )
                         .map_err(CompileError::GpuCodegen)?;
-                        let pipeline = match target {
-                            LoweringTarget::X86_64 => self.x86_lowering_pipeline(),
-                            LoweringTarget::Wasm => self.wasm_lowering_pipeline(),
-                        }
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        self.type_checker
-                            .with_codegen_buffers(|semantic| {
-                                pipeline.record_checked_hir(
-                                    device,
-                                    encoder,
-                                    &typecheck_parse.hir,
-                                    semantic,
-                                    dependency_state
-                                        .as_ref()
-                                        .map(|dependencies| dependencies.symbol_buffers()),
-                                )
-                            })
-                            .ok_or_else(|| {
-                                CompileError::GpuCodegen(
-                                    "semantic lowering buffers are unavailable".into(),
-                                )
-                            })?
+                        let pipeline = self
+                            .lowering_pipeline(target)
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                            CompileError::GpuCodegen(
+                                "semantic lowering buffers are unavailable".into(),
+                            )
+                        })?;
+                        pipeline
+                            .record_checked_hir(
+                                device,
+                                encoder,
+                                &typecheck_parse.hir,
+                                semantic.view(),
+                                dependency_state
+                                    .as_ref()
+                                    .map(|dependencies| dependencies.symbol_buffers()),
+                            )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     if let Some(request) = object_request {
@@ -669,50 +654,29 @@ impl<'gpu> GpuCompiler<'gpu> {
                             typecheck_parse.hir.capacity,
                         )
                         .map_err(CompileError::GpuCodegen)?;
-                        let pipeline = match request {
-                            LoweringObjectRequest::X86_64 { .. } => self.x86_lowering_pipeline(),
-                            LoweringObjectRequest::Wasm { .. } => self.wasm_lowering_pipeline(),
-                        }
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        self.type_checker
-                            .with_codegen_buffers(|semantic| {
-                                let dependencies = dependency_state
-                                    .as_ref()
-                                    .map(|dependencies| dependencies.symbol_buffers());
-                                match request {
-                                    LoweringObjectRequest::X86_64 {
-                                        library_id,
-                                        unit_id,
-                                    } => pipeline.record_checked_hir_x86_object(
-                                        device,
-                                        queue,
-                                        encoder,
-                                        &typecheck_parse.hir,
-                                        semantic,
-                                        dependencies,
-                                        library_id,
-                                        unit_id,
-                                    ),
-                                    LoweringObjectRequest::Wasm {
-                                        library_id,
-                                        unit_id,
-                                    } => pipeline.record_checked_hir_wasm_object(
-                                        device,
-                                        queue,
-                                        encoder,
-                                        &typecheck_parse.hir,
-                                        semantic,
-                                        dependencies,
-                                        library_id,
-                                        unit_id,
-                                    ),
-                                }
-                            })
-                            .ok_or_else(|| {
-                                CompileError::GpuCodegen(
-                                    "semantic lowering buffers are unavailable".into(),
-                                )
-                            })?
+                        let pipeline = self
+                            .lowering_pipeline(request.target())
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                            CompileError::GpuCodegen(
+                                "semantic lowering buffers are unavailable".into(),
+                            )
+                        })?;
+                        let dependencies = dependency_state
+                            .as_ref()
+                            .map(|dependencies| dependencies.symbol_buffers());
+                        let (library_id, unit_id) = request.ids();
+                        pipeline
+                            .record_checked_hir_object(
+                                device,
+                                queue,
+                                encoder,
+                                &typecheck_parse.hir,
+                                semantic.view(),
+                                dependencies,
+                                library_id,
+                                unit_id,
+                            )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     Ok(RecordedTypeCheckWithDiagnosticBuffers {
@@ -746,21 +710,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 })
                         })
                         .transpose()?;
-                    let target_artifact = match lowering_target {
-                        None => None,
-                        Some(LoweringTarget::X86_64) => Some(
-                            self.x86_lowering_pipeline()
+                    let target_artifact = lowering_target
+                        .map(|target| {
+                            self.lowering_pipeline(target)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_x86_artifact(device)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?,
-                        ),
-                        Some(LoweringTarget::Wasm) => Some(
-                            self.wasm_lowering_pipeline()
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_wasm_artifact(device)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?,
-                        ),
-                    };
+                                .finish_artifact(device)
+                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        })
+                        .transpose()?;
                     let x86_object = object_request
                         .and_then(|request| match request {
                             LoweringObjectRequest::X86_64 {
@@ -770,7 +727,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             LoweringObjectRequest::Wasm { .. } => None,
                         })
                         .map(|(library_id, unit_id)| {
-                            self.x86_lowering_pipeline()
+                            self.lowering_pipeline(LoweringTarget::X86_64)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                                 .finish_x86_object(device, library_id, unit_id)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
@@ -785,7 +742,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             LoweringObjectRequest::X86_64 { .. } => None,
                         })
                         .map(|(library_id, unit_id)| {
-                            self.wasm_lowering_pipeline()
+                            self.lowering_pipeline(LoweringTarget::Wasm)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                                 .finish_wasm_object(device, library_id, unit_id)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
@@ -858,110 +815,26 @@ impl<'gpu> GpuCompiler<'gpu> {
         // do not borrow source/token buffers or parser HIR records that are
         // still read by typecheck or x86 lowering.
         gpu_type_checker::GpuTypeCheckExternalScratchBuffers {
-            fn_entrypoint_tag: &parse_bufs.tree_prefix,
-            // Path byte spans are consumed before type-instance metadata is
-            // cleared and collected. Reuse their lexer-backed storage for the
-            // type-expression ref rows instead of allocating two more
-            // token-sized typecheck buffers.
-            type_expr_ref_tag: &lexer_bufs.end_positions.buffer,
-            type_expr_ref_payload: &lexer_bufs.types_compact.buffer,
-            // Module-path key-radix scratch is consumed before type-instance
-            // generic/const-param slot maps are cleared and populated.
-            type_generic_param_slot_by_token: &parse_bufs.hir_list_rank_node,
-            type_const_param_slot_by_token: &parse_bufs.hir_list_rank_local_prefix,
             record_family_flag: Some(&parse_bufs.hir_list_rank_flag),
-            module_record_prefix: &parse_bufs.hir_type_alias_owner_value_b,
-            record_scan_local_prefix: &parse_bufs.hir_type_alias_owner_link_a,
-            module_path_key_radix_block_histogram: &parse_bufs.hir_list_rank_local_prefix,
-            module_path_key_radix_block_bucket_prefix: &parse_bufs.hir_list_rank_node,
-            path_id_by_owner_hir: &parse_bufs.hir_type_alias_owner_link_b,
-            decl_module_file_id: &parse_bufs.token_brace_semantic_kind,
-            decl_module_id: &parse_bufs.token_bracket_semantic_kind,
-            decl_name_id: &parse_bufs.token_statement_context_kind,
-            decl_namespace: &parse_bufs.token_brace_match_depth,
-            decl_visibility: &parse_bufs.semantic_token_kinds,
-            decl_token_start: &parse_bufs.token_depth_brace_inblock,
-            decl_token_end: &parse_bufs.token_depth_bracket_inblock,
-            decl_key_to_decl_id: &parse_bufs.hir_semantic_prefix_before_node,
-            decl_key_order_tmp: &parse_bufs.hir_array_element_previous,
-            decl_status: &parse_bufs.out_headers,
-            call_param_count: &parse_bufs.hir_type_arg_rank_b,
-            call_param_type: &parse_bufs.out_headers,
-            call_arg_record: &parse_bufs.hir_match_rank_node,
-            function_lookup_key: &parse_bufs.hir_match_rank_local_prefix,
-            function_lookup_fn: &parse_bufs.hir_match_arm_previous,
-            // Declaration generic-arity counts are live after module-path
-            // status scratch is consumed and before method-name token scratch
-            // is cleared/filled.
-            type_decl_generic_param_count: &parse_bufs.out_headers,
-            // Expression-root pointer jumping has finished at the parser/typecheck
-            // boundary. Unlike the parser list workspaces, this allocation is not
-            // also exposed as retained module-path state.
-            type_decl_generic_param_count_by_owner_token: &parse_bufs
-                .hir_expr_result_root_scratch_node,
-            type_instance_head_token: &parse_bufs.default_token_file_id,
-            // Module declaration file/end rows are consumed by the upfront
-            // module-path pipeline before type-instance argument spans are
-            // cleared and collected.
-            type_instance_arg_start: &parse_bufs.token_brace_semantic_kind,
-            type_instance_arg_count: &parse_bufs.token_depth_bracket_inblock,
-            type_instance_arg_ref_tag: &parse_bufs.hir_variant_rank_a,
-            type_instance_arg_ref_payload: &parse_bufs.hir_variant_payload_link_a,
-            type_instance_elem_ref_tag: &lexer_bufs.dfa_02_ping.buffer,
-            type_instance_elem_ref_payload: &lexer_bufs.dfa_02_pong.buffer,
-            // Declaration visibility and type-key tables are consumed by the
-            // upfront module-path pipeline before type-instance length
-            // metadata is cleared and later handed to x86.
-            type_instance_len_kind: &parse_bufs.semantic_token_kinds,
-            type_instance_len_payload: &lexer_bufs.dfa_chunk_summaries.buffer,
-            // Module declaration ids are consumed by the upfront module-path
-            // pipeline before the type-instance state row is cleared. The row
-            // is typecheck-only and is not handed to x86.
-            type_instance_state: &parse_bufs.token_bracket_semantic_kind,
-            decl_type_key_to_decl_id: &lexer_bufs.dfa_chunk_summaries.buffer,
-            decl_value_key_to_decl_id: &parse_bufs.hir_variant_payload_link_b,
-            method_decl_module_id: &parse_bufs.hir_type_alias_owner_value_b,
-            method_decl_method_row: &parse_bufs.hir_type_alias_owner_link_a,
-            method_decl_name_token: &parse_bufs.match_for_index,
-            method_decl_name_id: &parse_bufs.hir_variant_payload_rank_a,
-            method_decl_param_offset: &parse_bufs.hir_semantic_parent,
-            method_decl_receiver_mode: &parse_bufs.hir_variant_payload_rank_b,
-            method_decl_visibility: &parse_bufs.hir_variant_payload_owner_a,
-            method_key_to_fn_token: &parse_bufs.hir_fn_signature_owner_link_b,
-            method_key_status: &parse_bufs.hir_match_rank_node,
-            method_key_radix_block_histogram: &parse_bufs.hir_fn_signature_function_owner_a,
-            method_key_radix_block_bucket_prefix: &parse_bufs.hir_fn_signature_function_owner_b,
-            method_call_receiver_ref_tag: &parse_bufs.hir_type_arg_previous,
-            method_call_receiver_ref_payload: &parse_bufs.hir_match_rank_local_prefix,
-            method_call_name_id: &parse_bufs.hir_variant_payload_owner_b,
-            method_call_site_module_id: &parse_bufs.hir_variant_payload_link_b,
-            import_visible_type_count: &parse_bufs.hir_variant_payload_rank_a,
-            import_visible_value_count: &parse_bufs.hir_variant_payload_rank_b,
-            import_visible_type_prefix: &parse_bufs.hir_variant_payload_owner_a,
-            import_visible_value_prefix: &parse_bufs.hir_variant_payload_owner_b,
-            resolved_type_decl: &lexer_bufs.tok_types.buffer,
-            resolved_value_decl: &lexer_bufs.flags_packed.buffer,
-            resolved_type_status: &lexer_bufs.s_all_final.buffer,
-            resolved_value_status: &lexer_bufs.s_keep_final.buffer,
-            // List-ranking workspaces are dead after parser HIR construction
-            // and are not borrowed by x86. Use them for retained member/struct
-            // type metadata produced after type-instance collection.
-            member_result_ref_payload: &parse_bufs.hir_call_arg_owner_a,
-            member_result_field_ordinal: &parse_bufs.hir_call_arg_owner_b,
-            struct_init_field_expected_ref_tag: &parse_bufs.hir_call_arg_link_a,
-            struct_init_field_expected_ref_payload: &parse_bufs.hir_call_arg_link_b,
-            struct_init_field_context_instance: &parse_bufs.hir_call_arg_rank_a,
-            struct_init_field_ordinal: &parse_bufs.hir_call_arg_rank_b,
-            path_start: &lexer_bufs.end_positions.buffer,
-            path_len: &lexer_bufs.types_compact.buffer,
-            path_segment_count: &lexer_bufs.all_index_compact.buffer,
-            path_segment_base: &parse_bufs.sc_offsets,
-            path_segment_name_id: &parse_bufs.emit_offsets,
-            path_segment_token: &parse_bufs.pack_sc_prefix_a,
-            path_owner_hir: &parse_bufs.pack_sc_prefix_b,
-            path_owner_token: &parse_bufs.pack_emit_prefix_a,
-            path_owner_module_id: &parse_bufs.pack_emit_prefix_b,
-            path_kind: &parse_bufs.hir_match_arm_owner_a,
+            path_id_by_owner_hir: (&parse_bufs.hir_type_alias_owner_link_b).into(),
+            // Declaration type-key lookup is consumed before the shared DFA
+            // chunk storage is populated with type-instance length payloads.
+            decl_type_key_to_decl_id: (&lexer_bufs.dfa_chunk_summaries).into(),
+            decl_value_key_to_decl_id: (&parse_bufs.hir_variant_payload_link_b).into(),
+            resolved_type_decl: (&lexer_bufs.tok_types).into(),
+            resolved_value_decl: (&lexer_bufs.flags_packed).into(),
+            resolved_type_status: (&lexer_bufs.s_all_final).into(),
+            resolved_value_status: (&lexer_bufs.s_keep_final).into(),
+            path_start: (&lexer_bufs.end_positions).into(),
+            path_len: (&lexer_bufs.types_compact).into(),
+            path_segment_count: (&lexer_bufs.all_index_compact).into(),
+            path_segment_base: (&parse_bufs.sc_offsets).into(),
+            path_segment_name_id: (&parse_bufs.emit_offsets).into(),
+            path_segment_token: (&parse_bufs.pack_sc_prefix_a).into(),
+            path_owner_hir: (&parse_bufs.pack_sc_prefix_b).into(),
+            path_owner_token: (&parse_bufs.pack_emit_prefix_a).into(),
+            path_owner_module_id: (&parse_bufs.pack_emit_prefix_b).into(),
+            path_kind: (&parse_bufs.hir_match_arm_owner_a).into(),
         }
     }
 }
@@ -976,6 +849,28 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
 enum LoweringObjectRequest {
     X86_64 { library_id: u32, unit_id: u32 },
     Wasm { library_id: u32, unit_id: u32 },
+}
+
+impl LoweringObjectRequest {
+    fn target(self) -> LoweringTarget {
+        match self {
+            Self::X86_64 { .. } => LoweringTarget::X86_64,
+            Self::Wasm { .. } => LoweringTarget::Wasm,
+        }
+    }
+
+    fn ids(self) -> (u32, u32) {
+        match self {
+            Self::X86_64 {
+                library_id,
+                unit_id,
+            }
+            | Self::Wasm {
+                library_id,
+                unit_id,
+            } => (library_id, unit_id),
+        }
+    }
 }
 
 struct CheckedSourcePackArtifacts {
@@ -1074,26 +969,6 @@ fn type_check_error_to_compile_error_for_source_pack(
         }
         _ => type_check_execution_failed_for_source_pack(diagnostic_files, err),
     }
-}
-
-pub(super) fn type_check_error_to_compile_error_for_source_pack_tokens(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    token_buffer: &LaniusBuffer<crate::lexer::GpuToken>,
-    diagnostic_files: &[DiagnosticSourceFile],
-    err: GpuTypeCheckError,
-) -> CompileError {
-    let diagnostic_tokens = DiagnosticTokenBuffer {
-        buffer: token_buffer.clone(),
-        byte_size: token_buffer.byte_size,
-    };
-    type_check_error_to_compile_error_for_source_pack(
-        device,
-        queue,
-        &diagnostic_tokens,
-        diagnostic_files,
-        err,
-    )
 }
 
 fn source_pack_fallback_type_check_span(

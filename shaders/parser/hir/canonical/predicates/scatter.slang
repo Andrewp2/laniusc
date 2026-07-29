@@ -3,6 +3,7 @@ import prefix_scan;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
+struct HirPayload { uint a; uint b; uint c; uint d; };
 struct HirPredicate { uint owner; uint subject; uint bound; uint metadata; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
@@ -16,6 +17,7 @@ StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> subject_anchor;
 StructuredBuffer<uint> owner_value;
 StructuredBuffer<HirLinks> hir_links;
+RWStructuredBuffer<HirPayload> hir_payload;
 RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirPredicate> predicates;
 RWStructuredBuffer<uint> canonical_status;
@@ -24,6 +26,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint PREDICATE_GENERIC_BOUND = 1u;
 static const uint PREDICATE_TRAIT_IMPL = 2u;
+static const uint HIR_IMPL_TRAIT = 2u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
 
@@ -69,4 +72,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     predicate.metadata = (hir_links[predicate.owner].file_id << 8u) | kind;
     predicates[row] = predicate;
+
+    if (kind == PREDICATE_TRAIT_IMPL &&
+        predicate.owner < gCanonical.canonical_capacity)
+    {
+        HirPayload payload = hir_payload[predicate.owner];
+        payload.a = HIR_IMPL_TRAIT;
+        payload.b = predicate.bound;
+        payload.c = predicate.subject;
+        hir_payload[predicate.owner] = payload;
+    }
 }

@@ -1,16 +1,11 @@
-// Publish predicate-owned trait/impl method contract records.
+// Publish predicate-owned method contracts from compact HIR families.
 //
-// This pass is a bounded bridge toward sorted trait-method contract keys: each
-// method node gets explicit owner/name/visibility/status/signature-head records.
-// Method names, owners, visibility, signature flags, return types, and
-// parameters consume parser-owned `hir_method_*`, `hir_method_signature_flags`,
-// `hir_fn_return_type_node`, `hir_param_record`, and `hir_param_type_node` rows
-// for trait declarations plus inherent and trait impls. Method rows are
-// identified by parser productions; ownership comes from parser-owned
-// `hir_method_owner_node` records.
+// Contract identity is the dense method HIR id. Parameter identity is the
+// compact parameter-family row. No raw production, parent, sibling, or
+// raw-to-compact relation crosses this pass boundary.
 
+import fixed.compact_method;
 import atomics;
-import generated_parse_production_ids;
 
 struct Params
 {
@@ -19,32 +14,49 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct HirMethodSignature
+{
+    uint first_param_token;
+    uint impl_receiver_type;
+    uint receiver_mode;
+    uint metadata;
+};
+
+struct HirParam
+{
+    uint owner;
+    uint name_token;
+    uint type_node;
+    uint ordinal;
+};
+
+struct HirRange
+{
+    uint start;
+    uint count;
+};
+
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> raw_to_compact_hir;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> hir_method_owner_node;
-StructuredBuffer<uint> hir_method_name_token;
-StructuredBuffer<uint> hir_method_visibility;
-StructuredBuffer<uint> hir_method_signature_flags;
-StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<CompactMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
+StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint4> hir_param_record;
-StructuredBuffer<uint> hir_param_type_node;
 
 RWStructuredBuffer<uint> predicate_method_contract_owner_hir;
 RWStructuredBuffer<uint> predicate_method_contract_name_token;
 RWStructuredBuffer<uint> predicate_method_contract_name_id;
 RWStructuredBuffer<uint> predicate_method_contract_param_count;
-RWStructuredBuffer<uint> predicate_method_contract_first_param_node;
 RWStructuredBuffer<uint> predicate_method_contract_return_type_node;
 RWStructuredBuffer<uint> predicate_method_contract_visibility;
 RWStructuredBuffer<uint> predicate_method_contract_status;
-RWStructuredBuffer<uint> predicate_method_contract_param_next_node;
 RWStructuredBuffer<uint> predicate_method_contract_param_type_node;
+RWStructuredBuffer<uint> hir_value_decl_name_present;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -55,26 +67,34 @@ static const uint PREDICATE_STATUS_METHOD_ARITY_MISMATCH = 7u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE = 17u;
 static const uint MAX_METHOD_SIGNATURE_PARAMS = 65535u;
+static const uint LANGUAGE_SYMBOL_COUNT = 63u;
 static const uint METHOD_PARAM_COUNT_UNSUPPORTED = MAX_METHOD_SIGNATURE_PARAMS + 1u;
 static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 static const uint METHOD_SIGNATURE_HAS_WHERE = 2u;
-
-static const uint METHOD_VIS_PRIVATE = 0u;
-static const uint METHOD_VIS_PUBLIC = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
+uint active_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-bool valid_node(uint node)
+uint active_method_count()
 {
-    return node != INVALID && node < active_hir_node_count();
+    return min(compact_method_count[0u], gParams.n_hir_nodes);
+}
+
+uint active_param_count()
+{
+    return min(compact_param_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_hir(uint hir)
+{
+    return hir != INVALID && hir < active_hir_count();
 }
 
 bool valid_token(uint token)
@@ -82,97 +102,10 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
+uint contract_status(uint flags, bool structurally_valid)
 {
-    return valid_node(node) ? parent[node] : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint child = first_child[node];
-    return valid_node(child) && parent_node(child) == node ? child : INVALID;
-}
-
-bool trait_method_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_TRAIT_METHOD || kind == PROD_TRAIT_METHOD_PUB;
-}
-
-bool method_contract_production(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    return trait_method_node(node) ||
-           node_kind[node] == PROD_IMPL_FN;
-}
-
-bool method_contract_node(uint node)
-{
-    return method_contract_production(node) &&
-           valid_node(hir_method_owner_node[node]);
-}
-
-bool param_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_PARAM_NAMED ||
-           kind == PROD_PARAM_SELF ||
-           kind == PROD_PARAM_SELF_REF;
-}
-
-uint method_name_token(uint method_node)
-{
-    if (valid_node(method_node))
-    {
-        uint parser_method_token = hir_method_name_token[method_node];
-        if (valid_token(parser_method_token))
-            return parser_method_token;
-    }
-    return INVALID;
-}
-
-uint method_name_id(uint method_node)
-{
-    uint token = method_name_token(method_node);
-    return valid_token(token) ? name_id_by_token[token] : INVALID;
-}
-
-bool valid_visibility(uint visibility)
-{
-    return visibility == METHOD_VIS_PRIVATE || visibility == METHOD_VIS_PUBLIC;
-}
-
-uint method_owner_node(uint method_node)
-{
-    uint parser_owner = valid_node(method_node) ? hir_method_owner_node[method_node] : INVALID;
-    return valid_node(parser_owner) ? parser_owner : INVALID;
-}
-
-uint method_visibility(uint method_node)
-{
-    uint parser_visibility = valid_node(method_node) ? hir_method_visibility[method_node] : METHOD_VIS_PRIVATE;
-    uint parser_owner = valid_node(method_node) ? hir_method_owner_node[method_node] : INVALID;
-    return valid_visibility(parser_visibility) && valid_node(parser_owner)
-        ? parser_visibility
-        : METHOD_VIS_PRIVATE;
-}
-
-uint method_return_type_node(uint method_node)
-{
-    uint type_node = valid_node(method_node) ? hir_fn_return_type_node[method_node] : INVALID;
-    return valid_node(type_node) ? type_node : INVALID;
-}
-
-uint method_contract_status(uint method_node)
-{
-    uint flags = valid_node(method_node) ? hir_method_signature_flags[method_node] : 0u;
+    if (!structurally_valid)
+        return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
     if ((flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
         return PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC;
     if ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
@@ -180,142 +113,70 @@ uint method_contract_status(uint method_node)
     return PREDICATE_STATUS_OK;
 }
 
-uint param_from_container(uint container)
+void publish_method(uint row)
 {
-    uint param = first_child_node(container);
-    return param_node(param) ? param : INVALID;
-}
-
-uint previous_param_for_after_comma_container(uint container)
-{
-    if (!valid_node(container) || node_kind[container] != PROD_PARAMS_AFTER_COMMA_MORE)
-        return INVALID;
-
-    uint more = parent_node(container);
-    uint previous_container = parent_node(more);
-    return param_from_container(previous_container);
-}
-
-uint previous_param_node(uint param)
-{
-    uint container = parent_node(param);
-    return previous_param_for_after_comma_container(container);
-}
-
-uint parser_parameter_type_node(uint node)
-{
-    uint type_node = valid_node(node) ? hir_param_type_node[node] : INVALID;
-    return valid_node(type_node) ? type_node : INVALID;
-}
-
-bool parser_method_param_record(uint param, out uint owner, out uint ordinal)
-{
-    owner = INVALID;
-    ordinal = INVALID;
-    if (!valid_node(param))
-        return false;
-
-    uint4 record = hir_param_record[param];
-    uint record_owner = record.x;
-    if (record.w != param || !valid_node(record_owner) ||
-        !method_contract_node(record_owner))
-        return false;
-
-    owner = record_owner;
-    ordinal = record.y;
-    return true;
-}
-
-bool parser_method_param_record_matches(uint param, uint expected_owner, uint expected_ordinal)
-{
-    uint owner = INVALID;
-    uint ordinal = INVALID;
-    return parser_method_param_record(param, owner, ordinal) &&
-           owner == expected_owner &&
-           ordinal == expected_ordinal;
-}
-
-void mark_method_param_sequence_unsupported(uint owner)
-{
-    atomic_u32_max(
-        predicate_method_contract_param_count,
-        owner,
-        METHOD_PARAM_COUNT_UNSUPPORTED);
-}
-
-void publish_method_record(uint node)
-{
-    uint owner = method_owner_node(node);
-    uint name_token = method_name_token(node);
-    uint name_id = method_name_id(node);
-    uint status = method_contract_status(node);
-    if (!valid_node(owner) || !valid_token(name_token) || name_id == INVALID)
-        status = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
-
-    uint owner_hir = valid_node(owner) ? raw_to_compact_hir[owner] : INVALID;
-    predicate_method_contract_owner_hir[node] = owner_hir;
-    predicate_method_contract_name_token[node] = name_token;
-    predicate_method_contract_name_id[node] = name_id;
-    predicate_method_contract_return_type_node[node] = method_return_type_node(node);
-    predicate_method_contract_visibility[node] = method_visibility(node);
-    predicate_method_contract_status[node] = status;
-}
-
-void publish_param_record(uint node)
-{
-    uint owner = INVALID;
-    uint ordinal = INVALID;
-    bool valid_ordinal = false;
-    if (parser_method_param_record(node, owner, ordinal))
-    {
-        valid_ordinal = ordinal < METHOD_PARAM_COUNT_UNSUPPORTED;
-    }
-    else
-    {
+    if (row >= active_method_count())
         return;
-    }
 
-    if (!valid_ordinal || ordinal >= MAX_METHOD_SIGNATURE_PARAMS)
-    {
-        mark_method_param_sequence_unsupported(owner);
+    CompactMethodCore core = compact_method_cores[row];
+    HirMethodSignature signature = compact_method_signatures[row];
+    if (!valid_hir(core.node))
         return;
-    }
 
-    atomic_u32_max(predicate_method_contract_param_count, owner, ordinal + 1u);
-    predicate_method_contract_param_type_node[node] = parser_parameter_type_node(node);
+    uint name_id = valid_token(core.name_token)
+        ? name_id_by_token[core.name_token]
+        : INVALID;
+    if (name_id != INVALID && name_id < gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
+        atomic_u32_or(hir_value_decl_name_present, name_id, 1u);
+    HirRange params = compact_param_ranges[core.node];
+    uint param_count = active_param_count();
+    bool valid_range = params.count <= MAX_METHOD_SIGNATURE_PARAMS &&
+                       (params.count == 0u ||
+                        (params.start <= param_count &&
+                         params.count <= param_count - params.start));
+    bool valid_contract = valid_hir(core.owner) &&
+                          valid_token(core.name_token) &&
+                          name_id != INVALID &&
+                          valid_range;
+    uint flags = signature.metadata >> 16u;
 
-    if (ordinal == 0u)
-    {
-        if (valid_node(previous_param_node(node)))
-        {
-            mark_method_param_sequence_unsupported(owner);
-            return;
-        }
-        predicate_method_contract_first_param_node[owner] = node;
+    predicate_method_contract_owner_hir[core.node] = core.owner;
+    predicate_method_contract_name_token[core.node] = core.name_token;
+    predicate_method_contract_name_id[core.node] = name_id;
+    predicate_method_contract_param_count[core.node] = valid_range
+        ? params.count
+        : METHOD_PARAM_COUNT_UNSUPPORTED;
+    uint return_type = compact_fn_return_type[core.node];
+    predicate_method_contract_return_type_node[core.node] =
+        valid_hir(return_type) ? return_type : INVALID;
+    predicate_method_contract_visibility[core.node] = signature.metadata & 0xffffu;
+    predicate_method_contract_status[core.node] = contract_status(flags, valid_contract);
+}
+
+void publish_param(uint row)
+{
+    uint count = active_param_count();
+    if (row >= count)
         return;
-    }
 
-    uint previous = previous_param_node(node);
-    if (parser_method_param_record_matches(previous, owner, ordinal - 1u))
-    {
-        predicate_method_contract_param_next_node[previous] = node;
+    HirParam parameter = compact_params[row];
+    uint method_row = compact_method_row_for_hir(
+        compact_method_cores,
+        active_method_count(),
+        parameter.owner);
+    if (method_row >= active_method_count() ||
+        compact_method_cores[method_row].node != parameter.owner)
         return;
-    }
 
-    mark_method_param_sequence_unsupported(owner);
+    predicate_method_contract_param_type_node[row] =
+        valid_hir(parameter.type_node) ? parameter.type_node : INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
-        return;
-
-    if (method_contract_production(node))
-        publish_method_record(node);
-
-    if (param_node(node))
-        publish_param_record(node);
+    uint row = linear_thread_id(dtid);
+    publish_method(row);
+    publish_param(row);
 }

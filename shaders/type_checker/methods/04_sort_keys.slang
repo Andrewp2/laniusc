@@ -2,7 +2,7 @@
 //
 // Scheduling contract:
 // - Dispatch after type_check_methods_03_seed_key_order.slang or the previous
-//   stable scatter pass has initialized method_key_order_in.
+//   stable scatter pass has initialized radix_order_in.
 // - For key_step 0..23, the host schedules histogram, GPU bucket-prefix scan,
 //   GPU bucket-base scan, and stable scatter.
 // - key_step walks the fixed method key from least-significant to
@@ -42,7 +42,7 @@ StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_arg_hash;
-StructuredBuffer<uint> method_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -168,7 +168,7 @@ public struct MethodKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return method_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

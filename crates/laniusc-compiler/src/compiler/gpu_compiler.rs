@@ -362,12 +362,16 @@ impl<'gpu> GpuCompiler<'gpu> {
         ))
     }
 
-    pub(super) fn x86_lowering_pipeline(&self) -> Result<&GpuLoweringPipeline, &str> {
-        self.x86_lowering.as_deref().map_err(String::as_str)
-    }
-
-    pub(super) fn wasm_lowering_pipeline(&self) -> Result<&GpuLoweringPipeline, &str> {
-        self.wasm_lowering.as_deref().map_err(String::as_str)
+    pub(super) fn lowering_pipeline(
+        &self,
+        target: LoweringTarget,
+    ) -> Result<&GpuLoweringPipeline, &str> {
+        match target {
+            LoweringTarget::X86_64 => &self.x86_lowering,
+            LoweringTarget::Wasm => &self.wasm_lowering,
+        }
+        .as_deref()
+        .map_err(String::as_str)
     }
 
     /// Releases source/job-sized GPU buffers across every compiler phase while
@@ -389,9 +393,15 @@ impl<'gpu> GpuCompiler<'gpu> {
 #[cfg(test)]
 mod tests {
     use super::{GpuCompiler, GpuCompilerBackends};
-    use crate::codegen::{
-        lowering_ir::{LoweringCapacities, LoweringTarget},
-        lowering_pipeline::GpuLoweringPipeline,
+    use crate::{
+        codegen::{
+            lowering_ir::{LoweringCapacities, LoweringTarget},
+            lowering_pipeline::GpuLoweringPipeline,
+        },
+        gpu::{
+            buffers::readback_bytes,
+            passes_core::{map_readback_blocking, submit_with_progress},
+        },
     };
 
     #[test]
@@ -610,7 +620,14 @@ mod tests {
             ),
         ];
 
+        let selected_case = std::env::var("LANIUS_CHECKED_HIR_TEST_CASE").ok();
         for (case, source, expected) in cases {
+            if selected_case
+                .as_deref()
+                .is_some_and(|selected| selected != case)
+            {
+                continue;
+            }
             pollster::block_on(compiler.type_check_source(source)).unwrap_or_else(|error| {
                 panic!("produce checked frontend artifacts for {case}: {error}")
             });
@@ -619,18 +636,22 @@ mod tests {
                 .current_resident_hir()
                 .unwrap_or_else(|| panic!("parser should retain compact HIR for {case}"));
 
+            if case == "break_continue" {
+                assert_checked_branch_control_depths(&gpu.device, &gpu.queue, &hir, &compiler);
+            }
+
             for (target, pipeline) in &pipelines {
                 let mut encoder =
                     gpu.device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("checked-hir lowering integration"),
                         });
-                compiler
+                let semantic = compiler
                     .type_checker
-                    .with_codegen_buffers(|semantic| {
-                        pipeline.record_checked_hir(&gpu.device, &mut encoder, &hir, semantic, None)
-                    })
-                    .expect("type checker should retain semantic artifact")
+                    .semantic_artifact()
+                    .expect("type checker should retain semantic artifact");
+                pipeline
+                    .record_checked_hir(&gpu.device, &mut encoder, &hir, semantic.view(), None)
                     .unwrap_or_else(|error| {
                         panic!("record {target:?} lowering for {case}: {error}")
                     });
@@ -640,16 +661,99 @@ mod tests {
                     encoder.finish(),
                 );
 
-                let artifact_result = match target {
-                    LoweringTarget::X86_64 => pipeline.finish_x86_artifact(&gpu.device),
-                    LoweringTarget::Wasm => pipeline.finish_wasm_artifact(&gpu.device),
-                };
+                let artifact_result = pipeline.finish_artifact(&gpu.device);
                 let artifact = artifact_result.unwrap_or_else(|error| {
                     panic!("finish {target:?} artifact for {case}: {error}")
                 });
                 assert_lowered_program_result(*target, case, &artifact, expected);
             }
         }
+    }
+
+    fn readback_words(
+        device: &wgpu::Device,
+        buffer: &crate::gpu::buffers::LaniusBuffer<u8>,
+    ) -> Vec<u32> {
+        let slice = buffer.slice(..);
+        map_readback_blocking(device, &slice, "checked control-depth readback")
+            .expect("map checked control-depth readback");
+        let mapped = slice.get_mapped_range();
+        let words = mapped
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        drop(mapped);
+        buffer.unmap();
+        words
+    }
+
+    fn assert_checked_branch_control_depths(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        hir: &crate::parser::buffers::GpuHirView,
+        compiler: &GpuCompiler,
+    ) {
+        let semantic = compiler
+            .type_checker
+            .semantic_artifact()
+            .expect("type checker should retain semantic artifact");
+        let semantic = semantic.view();
+        let count_readback = readback_bytes(device, "test.control_depth.count.rb", 4, 1);
+        let core_bytes =
+            hir.capacity as usize * std::mem::size_of::<crate::parser::buffers::HirCore>();
+        let core_readback = readback_bytes(
+            device,
+            "test.control_depth.core.rb",
+            core_bytes,
+            hir.capacity as usize * 4,
+        );
+        let depth_bytes = hir.capacity as usize * 4;
+        let depth_readback = readback_bytes(
+            device,
+            "test.control_depth.depth.rb",
+            depth_bytes,
+            hir.capacity as usize,
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test.control_depth.encoder"),
+        });
+        encoder.copy_buffer_to_buffer(&hir.count.buffer, 0, &count_readback.buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(
+            &hir.core.buffer,
+            0,
+            &core_readback.buffer,
+            0,
+            core_bytes as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &semantic.checked.control_depth_by_hir.buffer,
+            0,
+            &depth_readback.buffer,
+            0,
+            depth_bytes as u64,
+        );
+        submit_with_progress(queue, "checked control-depth readback", encoder.finish());
+
+        let count = readback_words(device, &count_readback)[0] as usize;
+        let cores = readback_words(device, &core_readback);
+        let depths = readback_words(device, &depth_readback);
+        let control_rows = (0..count)
+            .filter_map(|row| {
+                let core = &cores[row * 4..row * 4 + 4];
+                matches!(core[0], 10..=13).then_some((row, core.to_vec(), depths[row]))
+            })
+            .collect::<Vec<_>>();
+        let branches = (0..count)
+            .filter_map(|row| {
+                let kind = cores[row * 4];
+                matches!(kind, 12 | 13).then_some((kind, depths[row]))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            branches,
+            [(13, 1), (12, 1)],
+            "control_rows={control_rows:?}"
+        );
     }
 
     fn assert_lowered_program_result(

@@ -30,6 +30,7 @@ static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
 static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
 static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_IMPL = 35u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -59,6 +60,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (compact_hir_core[node].kind == HIR_MATCH_EXPR)
         flags |= SEMANTIC_FEATURE_MATCH;
+    if (compact_hir_core[node].kind == HIR_IMPL)
+        flags |= SEMANTIC_FEATURE_PREDICATES;
     if (flags != 0u)
         atomic_u32_or(semantic_feature_flags, 0u, flags);
 }

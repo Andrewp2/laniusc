@@ -13,8 +13,10 @@ RWStructuredBuffer<uint> path_segment_name_id;
 RWStructuredBuffer<uint> path_segment_token;
 RWStructuredBuffer<uint> path_prefix_base;
 RWStructuredBuffer<uint> path_prefix_id_a;
+RWStructuredBuffer<uint> predicate_syntax_token;
 
 static const uint INVALID = 0xffffffffu;
+static const uint PATH_KIND_BOUND_TYPE = 5u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -40,4 +42,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     path_segment_token[row] = token;
     path_prefix_base[row] = path.segment_start;
     path_prefix_id_a[row] = name_id_by_token[token];
+    // Every segment of a bound path belongs to the compact predicate family.
+    // Marking by compact segment row keeps this parallel and removes the old
+    // first/second-argument width limit from diagnostic ownership.
+    if (path.kind == PATH_KIND_BOUND_TYPE)
+        predicate_syntax_token[token] = 1u;
 }

@@ -821,10 +821,6 @@ impl TypeCheckPasses {
                 "type_check_type_instances_05b_array_literal_return_refs",
                 "type_checker/type/instances/05b_array_literal_return_refs"
             ),
-            type_instances_array_index_results: pass!(
-                "type_check_type_instances_07_array_index_results",
-                "type_checker/type/instances/07_array_index_results"
-            ),
             type_instances_validate_aggregate_access: pass!(
                 "type_check_type_instances_08_validate_aggregate_access",
                 "type_checker/type/instances/08_validate_aggregate_access"
@@ -857,10 +853,6 @@ impl TypeCheckPasses {
                 "type_check_predicates_01_collect_impls",
                 "type_checker/predicates/01_collect_impls"
             ),
-            predicates_collect_methods: pass!(
-                "type_check_predicates_01_collect_methods",
-                "type_checker/predicates/01_collect_methods"
-            ),
             predicates_seed_key_order: pass!(
                 "type_check_predicates_01b_seed_key_order",
                 "type_checker/predicates/01b_seed_key_order"
@@ -882,6 +874,10 @@ impl TypeCheckPasses {
                 "type_check_predicates_01f_emit_method_validation_rows",
                 "type_checker/predicates/01f_emit_method_validation_rows"
             ),
+            predicates_emit_method_param_validation_rows: pass!(
+                "type_check_predicates_01f1_emit_method_param_validation_rows",
+                "type_checker/predicates/01f1_emit_method_param_validation_rows"
+            ),
             predicates_validate_method_type_arg_rows: pass!(
                 "type_check_predicates_01f2_validate_method_type_arg_rows",
                 "type_checker/predicates/01f2_validate_method_type_arg_rows"
@@ -890,9 +886,13 @@ impl TypeCheckPasses {
                 "type_check_predicates_01g_reduce_method_validation_errors",
                 "type_checker/predicates/01g_reduce_method_validation_errors"
             ),
-            predicates_obligations: pass!(
-                "type_check_predicates_02_obligations",
-                "type_checker/predicates/02_obligations"
+            predicates_count_obligations: pass!(
+                "type_check_predicates_02a_count_obligations",
+                "type_checker/predicates/02a_count_obligations"
+            ),
+            predicates_validate_obligations: pass!(
+                "type_check_predicates_02b_validate_obligations",
+                "type_checker/predicates/02b_validate_obligations"
             ),
             semantic_predicate_diagnostics_clear: pass!(
                 "type_check_semantic_artifact_00_predicate_diagnostics_clear",
@@ -959,6 +959,10 @@ impl TypeCheckPasses {
                 "type_check_semantic_artifact_struct_literal_refs",
                 "type_checker/semantic/artifact/01a_struct_literal_refs"
             ),
+            semantic_array_index_refs_project: pass!(
+                "type_check_semantic_artifact_array_index_refs",
+                "type_checker/semantic/artifact/01b_array_index_refs"
+            ),
             conditions_aggregate_args: pass!(
                 "type_check_conditions_aggregate_args",
                 "type_checker/conditions/aggregate_args"
@@ -971,6 +975,10 @@ impl TypeCheckPasses {
             calls_clear: pass!(
                 "type_check_calls_01_resolve",
                 "type_checker/calls/01_resolve"
+            ),
+            calls_clear_entrypoints: pass!(
+                "type_check_calls_01a_clear_entrypoints",
+                "type_checker/calls/01a_clear_entrypoints"
             ),
             calls_return_refs: pass!(
                 "type_check_calls_02a_return_refs_from_hir",

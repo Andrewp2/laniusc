@@ -1,8 +1,8 @@
 // HIR array-return projection.
 //
-// This pass consumes parser-owned return-statement records, expression-result
-// roots, visible-decl records, declaration type refs, and function return type
-// refs. It publishes the array-return sentinel for `return values;` and
+// This pass consumes parser-owned return-statement records and expression-result
+// roots plus compact call payloads, visible-decl records, declaration type refs,
+// and function return type refs. It publishes the array-return sentinel for `return values;` and
 // bounded one-argument `return copy(values);` call results only when the returned declaration or
 // declaration-backed call argument has the same bounded array instance as the
 // enclosing function return type. It does not inspect token kinds, token
@@ -22,6 +22,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 struct HirPayload { uint a; uint b; uint c; uint d; };
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
@@ -29,8 +30,6 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
@@ -41,7 +40,9 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
@@ -241,12 +242,25 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
-    uint callee_node = hir_call_callee_node[call_node];
-    if (!valid_node(callee_node))
+    uint call_hir = raw_to_compact_hir[call_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (call_hir >= count)
+        return INVALID;
+    uint callee_hir = compact_hir_payload[call_hir].a;
+    if (callee_hir >= count)
         return INVALID;
 
-    uint token = hir_token_pos[callee_node];
+    uint token = compact_hir_core[callee_hir].token_start;
     return valid_token(token) ? token : INVALID;
+}
+
+uint compact_call_arg_count(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return 0u;
+    uint call_hir = raw_to_compact_hir[call_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return call_hir < count ? compact_hir_payload[call_hir].c : 0u;
 }
 
 uint direct_array_return_call_node(uint return_node)
@@ -256,7 +270,7 @@ uint direct_array_return_call_node(uint return_node)
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
-    if (hir_call_arg_count[call_node] != 1u)
+    if (compact_call_arg_count(call_node) != 1u)
         return INVALID;
 
     uint callee_token = call_callee_token(call_node);

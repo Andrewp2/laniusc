@@ -38,14 +38,7 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         encoder,
         "typecheck.visible.mark_hir_decl_names.done",
     );
-    record_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        encoder,
-        groups.hir_decl_scan_n_blocks,
-        &groups.hir_semantic_dispatch_args,
-        &groups.hir_decl_scan,
-        "type_check.visible.hir_decl_scan",
-    )?;
+    groups.hir_decl_scan.record(encoder)?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.visible.hir_decl_scan.done");
     record_compute_indirect(
         encoder,
@@ -85,60 +78,7 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         encoder,
         "typecheck.visible.scatter_match_payload_decls.done",
     );
-    record_compute(
-        encoder,
-        &passes.names_radix_dispatch_args,
-        &groups.hir_decl_key_radix_dispatch,
-        "type_check.visible.hir_decl_key_radix_dispatch_args",
-        1,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.visible_seed_hir_decl_order,
-        &groups.seed_hir_decl_order,
-        "type_check.visible.seed_hir_decl_order",
-        &groups.hir_decl_key_radix_dispatch_args,
-    )?;
-    if let Some(sort_hir_decl_keys_small) = &groups.sort_hir_decl_keys_small {
-        record_compute_indirect(
-            encoder,
-            &passes.visible_sort_hir_decl_keys_small,
-            sort_hir_decl_keys_small,
-            "type_check.visible.sort_hir_decl_keys_small",
-            &groups.hir_decl_key_radix_dispatch_args,
-        )?;
-    } else {
-        for i in 0..groups.sort_hir_decl_key_scatter.len() {
-            record_compute_indirect(
-                encoder,
-                &passes.visible_sort_hir_decl_keys,
-                &groups.sort_hir_decl_key_histogram[i],
-                "type_check.visible.sort_hir_decl_keys_histogram",
-                &groups.hir_decl_key_radix_dispatch_args,
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_prefix,
-                &groups.sort_hir_decl_key_bucket_prefix[i],
-                "type_check.visible.sort_hir_decl_keys_bucket_prefix",
-                NAME_RADIX_BUCKETS.saturating_mul(256),
-            )?;
-            record_compute(
-                encoder,
-                &passes.names_radix_bucket_bases,
-                &groups.sort_hir_decl_key_bucket_bases[i],
-                "type_check.visible.sort_hir_decl_keys_bucket_bases",
-                256,
-            )?;
-            record_compute_indirect(
-                encoder,
-                &passes.visible_sort_hir_decl_keys_scatter,
-                &groups.sort_hir_decl_key_scatter[i],
-                "type_check.visible.sort_hir_decl_keys_scatter",
-                &groups.hir_decl_key_radix_dispatch_args,
-            )?;
-        }
-    }
+    groups.declarations.record(passes, encoder)?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,

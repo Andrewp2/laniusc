@@ -11,30 +11,13 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) canonical_type_count: u32,
     pub(in crate::type_checker) canonical_declaration_count: u32,
     pub(in crate::type_checker) canonical_member_count: u32,
-    pub(in crate::type_checker) count: LaniusBuffer<u32>,
-    pub(in crate::type_checker) prefix: LaniusBuffer<u32>,
-    pub(in crate::type_checker) total: LaniusBuffer<u32>,
-    pub(in crate::type_checker) owner_module: LaniusBuffer<u32>,
-    pub(in crate::type_checker) declaration: LaniusBuffer<u32>,
-    pub(in crate::type_checker) lookup: LaniusBuffer<u32>,
-    pub(in crate::type_checker) resolved_type_decl: LaniusBuffer<u32>,
-    pub(in crate::type_checker) resolved_value_decl: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_dependency_decl: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_prefix: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_total: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_expected_type: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_actual_instance: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_error_token: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_dispatch_args: LaniusBuffer<u32>,
-    pub(in crate::type_checker) canonical_type_roots_a: LaniusBuffer<u32>,
-    pub(in crate::type_checker) canonical_type_roots_b: LaniusBuffer<u32>,
     pub(in crate::type_checker) canonical_type_subtree: Box<DependencyCanonicalTypeSubtreeState>,
-    pub(in crate::type_checker) declaration_generic_arity: LaniusBuffer<u32>,
+    _retained_buffers: Box<[LaniusBuffer<u32>]>,
     pub(in crate::type_checker) canonical_type_jump_rounds: u32,
-    pub(in crate::type_checker) call_compare_scan_n_blocks: u32,
-    pub(in crate::type_checker) scan: U32ScanBindGroups,
-    pub(in crate::type_checker) call_compare_scan: U32ScanBindGroups,
+    pub(in crate::type_checker) scan: PrefixScanOperation,
+    pub(in crate::type_checker) call_compare_scan: PrefixScanOperation,
     pub(in crate::type_checker) count_group: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_group: wgpu::BindGroup,
     pub(in crate::type_checker) clear_lookup_group: wgpu::BindGroup,
@@ -59,22 +42,11 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) _type_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _value_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _canonical_type_params: LaniusBuffer<DependencyCanonicalTypeParams>,
-    pub(in crate::type_checker) _scan_steps: Vec<NameScanStep>,
-    pub(in crate::type_checker) _scan_local_prefix: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _scan_block_sum: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _scan_prefix_a: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _scan_prefix_b: LaniusBuffer<u32>,
     pub(in crate::type_checker) _call_compare_dispatch_params: LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) _call_compare_scan_steps: Vec<NameScanStep>,
-    pub(in crate::type_checker) _call_compare_scan_local_prefix: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _call_compare_scan_block_sum: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _call_compare_scan_prefix_a: LaniusBuffer<u32>,
-    pub(in crate::type_checker) _call_compare_scan_prefix_b: LaniusBuffer<u32>,
 }
 
 #[allow(dead_code)]
 pub(in crate::type_checker) struct DependencyCanonicalTypeSubtreeState {
-    pub(in crate::type_checker) scratch: LaniusBuffer<u32>,
     pub(in crate::type_checker) init_group: wgpu::BindGroup,
     pub(in crate::type_checker) jump_a_to_b_group: wgpu::BindGroup,
     pub(in crate::type_checker) jump_b_to_a_group: wgpu::BindGroup,
@@ -103,7 +75,6 @@ pub(in crate::type_checker) fn create(
         .and_then(u32::checked_next_power_of_two)
         .ok_or_else(|| anyhow::anyhow!("dependency visibility lookup capacity exceeds u32"))?;
     let path_capacity = layout.record_capacity_u32.max(1);
-    let n_blocks = import_capacity.div_ceil(256).max(1);
 
     let params_value = DependencyInterfaceVisibilityParams {
         declaration_count: dependencies.declaration_count,
@@ -166,52 +137,6 @@ pub(in crate::type_checker) fn create(
         1,
         wgpu::BufferUsages::empty(),
     );
-    let scan_local_prefix = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.scan_local_prefix",
-        import_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let scan_block_sum = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.scan_block_sum",
-        n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let scan_prefix_a = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.scan_prefix_a",
-        n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let scan_prefix_b = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.scan_prefix_b",
-        n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let scan_steps = make_name_scan_steps(
-        device,
-        NameScanParams {
-            n_items: import_capacity,
-            n_blocks,
-            scan_step: 0,
-        },
-    );
-    let scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check.dependencies.visible.scan",
-        &scan_steps,
-        &buffers.import_count_out,
-        &count,
-        &prefix,
-        &total,
-        &scan_local_prefix,
-        &scan_block_sum,
-        &scan_prefix_a,
-        &scan_prefix_b,
-    )?;
     let owner_module = typed_storage_u32_fill_rw(
         device,
         "type_check.dependencies.visible.owner_module",
@@ -249,15 +174,6 @@ pub(in crate::type_checker) fn create(
     );
     let call_dependency_decl = inputs.call_dependency_decl.clone();
     let call_compare_capacity = inputs.hir_node_capacity.max(1);
-    let call_compare_n_blocks = call_compare_capacity.div_ceil(256).max(1);
-    let call_compare_scan_steps = make_name_scan_steps(
-        device,
-        NameScanParams {
-            n_items: call_compare_capacity,
-            n_blocks: call_compare_n_blocks,
-            scan_step: 0,
-        },
-    );
     let call_compare_scan_input = typed_storage_u32_rw(
         device,
         "type_check.dependencies.call_compare.scan_input",
@@ -297,43 +213,69 @@ pub(in crate::type_checker) fn create(
         u32::MAX,
         wgpu::BufferUsages::empty(),
     );
-    let call_compare_scan_local_prefix = typed_storage_u32_rw(
+    let mut scan_resources = ResourceMap::new();
+    scan_resources.buffers([
+        ("hir_active_count", inputs.hir_active_count_buf),
+        ("hir_active_dispatch_args", inputs.hir_active_dispatch_args),
+    ]);
+    scan_resources.buffers([
+        ("import_record_count_out", &buffers.import_count_out),
+        ("import_dispatch_args", &buffers.import_dispatch_args),
+        ("dependency_visible_count", &count),
+        ("dependency_visible_prefix", &prefix),
+        ("dependency_visible_total", &total),
+        (
+            "dependency_call_compare_scan_input",
+            &call_compare_scan_input,
+        ),
+        ("dependency_call_compare_prefix", &call_compare_prefix),
+        ("dependency_call_compare_total", &call_compare_total),
+    ]);
+    scan_resources.buffers([
+        (
+            "module_record_scan_local_prefix",
+            inputs.module_record_scan_workspace.local_prefix,
+        ),
+        (
+            "module_record_scan_block_sum",
+            inputs.module_record_scan_workspace.block_sum,
+        ),
+        (
+            "module_record_scan_prefix_a",
+            inputs.module_record_scan_workspace.block_prefix,
+        ),
+        (
+            "module_record_scan_prefix_b",
+            inputs.module_record_scan_workspace.hierarchy,
+        ),
+        (
+            "module_value_scan_local_prefix",
+            inputs.module_value_scan_workspace.local_prefix,
+        ),
+        (
+            "module_value_scan_block_sum",
+            inputs.module_value_scan_workspace.block_sum,
+        ),
+        (
+            "module_value_scan_prefix_a",
+            inputs.module_value_scan_workspace.block_prefix,
+        ),
+        (
+            "module_value_scan_prefix_b",
+            inputs.module_value_scan_workspace.hierarchy,
+        ),
+    ]);
+    let scan = PrefixScanOperation::from_spec(
         device,
-        "type_check.dependencies.call_compare.scan_local_prefix",
-        call_compare_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_scan_block_sum = typed_storage_u32_rw(
+        passes.into(),
+        &scan_resources,
+        compiler_graph::DEPENDENCY_VISIBLE_SCAN,
+    )?;
+    let call_compare_scan = PrefixScanOperation::from_spec(
         device,
-        "type_check.dependencies.call_compare.scan_block_sum",
-        call_compare_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_scan_prefix_a = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.scan_prefix_a",
-        call_compare_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_scan_prefix_b = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.scan_prefix_b",
-        call_compare_n_blocks as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_scan = create_counted_u32_scan_bind_groups_with_passes(
-        passes,
-        device,
-        "type_check.dependencies.call_compare.scan",
-        &call_compare_scan_steps,
-        inputs.hir_active_count_buf,
-        &call_compare_scan_input,
-        &call_compare_prefix,
-        &call_compare_total,
-        &call_compare_scan_local_prefix,
-        &call_compare_scan_block_sum,
-        &call_compare_scan_prefix_a,
-        &call_compare_scan_prefix_b,
+        passes.into(),
+        &scan_resources,
+        compiler_graph::DEPENDENCY_CALL_COMPARE_SCAN,
     )?;
     let call_compare_dispatch_args = typed_storage_u32_rw(
         device,
@@ -1541,33 +1483,34 @@ pub(in crate::type_checker) fn create(
         canonical_type_count: dependencies.type_count,
         canonical_declaration_count: dependencies.declaration_count,
         canonical_member_count: dependencies.member_count,
-        count,
-        prefix,
-        total,
-        owner_module,
-        declaration,
-        lookup,
-        resolved_type_decl,
-        resolved_value_decl,
-        call_dependency_decl,
         call_compare_scan_input,
-        call_compare_prefix,
-        call_compare_total,
-        call_compare_expected_type,
-        call_compare_actual_instance,
-        call_compare_error_token,
         call_compare_dispatch_args,
-        canonical_type_roots_a,
-        canonical_type_roots_b,
         canonical_type_subtree: Box::new(DependencyCanonicalTypeSubtreeState {
-            scratch: canonical_type_subtree_scratch,
             init_group: init_canonical_type_subtree_start_group,
             jump_a_to_b_group: jump_canonical_type_subtree_start_a_to_b_group,
             jump_b_to_a_group: jump_canonical_type_subtree_start_b_to_a_group,
         }),
-        declaration_generic_arity,
+        _retained_buffers: Box::new([
+            count,
+            prefix,
+            total,
+            owner_module,
+            declaration,
+            lookup,
+            resolved_type_decl,
+            resolved_value_decl,
+            call_dependency_decl,
+            call_compare_prefix,
+            call_compare_total,
+            call_compare_expected_type,
+            call_compare_actual_instance,
+            call_compare_error_token,
+            canonical_type_roots_a,
+            canonical_type_roots_b,
+            canonical_type_subtree_scratch,
+            declaration_generic_arity,
+        ]),
         canonical_type_jump_rounds,
-        call_compare_scan_n_blocks: call_compare_n_blocks,
         scan,
         call_compare_scan,
         count_group,
@@ -1594,16 +1537,6 @@ pub(in crate::type_checker) fn create(
         _type_params: type_params,
         _value_params: value_params,
         _canonical_type_params: canonical_type_params,
-        _scan_steps: scan_steps,
-        _scan_local_prefix: scan_local_prefix,
-        _scan_block_sum: scan_block_sum,
-        _scan_prefix_a: scan_prefix_a,
-        _scan_prefix_b: scan_prefix_b,
         _call_compare_dispatch_params: call_compare_dispatch_params,
-        _call_compare_scan_steps: call_compare_scan_steps,
-        _call_compare_scan_local_prefix: call_compare_scan_local_prefix,
-        _call_compare_scan_block_sum: call_compare_scan_block_sum,
-        _call_compare_scan_prefix_a: call_compare_scan_prefix_a,
-        _call_compare_scan_prefix_b: call_compare_scan_prefix_b,
     })))
 }

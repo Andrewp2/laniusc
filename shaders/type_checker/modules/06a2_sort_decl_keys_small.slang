@@ -15,7 +15,7 @@ StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
-RWStructuredBuffer<uint> decl_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -95,5 +95,5 @@ void main(uint3 ltid: SV_GroupThreadID)
         }
     }
     for (uint i = lane; i < active_count; i += WG_SIZE)
-        decl_key_order[i] = shared_order[i];
+        radix_order[i] = shared_order[i];
 }

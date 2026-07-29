@@ -13,7 +13,6 @@ mod visible;
 pub(in crate::type_checker) use calls::*;
 pub(in crate::type_checker) use compute::*;
 pub(in crate::type_checker) use control_flow::*;
-pub(in crate::type_checker) use methods::*;
 pub(in crate::type_checker) use module_paths::*;
 pub(in crate::type_checker) use names::*;
 pub(in crate::type_checker) use predicates::*;

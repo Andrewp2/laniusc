@@ -16,8 +16,9 @@ StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_local_total;
-StructuredBuffer<uint> call_return_type;
-StructuredBuffer<uint> fn_entrypoint_tag;
+StructuredBuffer<uint> semantic_function_return_type_by_hir;
+StructuredBuffer<uint> semantic_function_entrypoint_by_hir;
+StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_struct_hir_by_name_token;
@@ -51,7 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     result.param_start = range.count == 0u ? LIR_INVALID : range.start;
     result.param_count = range.count;
     result.result_type = constant ? semantic_value_type_by_hir[hir]
-        : valid_token(core.token_start) ? call_return_type[core.token_start] : 0u;
+        : semantic_function_return_type_by_hir[hir];
     result.result_word_count = 0u;
     if (result.result_type >= TY_STRUCT_BASE && result.result_type < TY_ENUM_BASE)
     {
@@ -61,7 +62,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (struct_hir < hir_count)
             result.result_word_count = semantic_struct_field_count_by_hir[struct_hir];
     }
-    result.flags = !constant && valid_token(core.token_start) && fn_entrypoint_tag[core.token_start] != 0u
+    result.flags = !constant && semantic_function_entrypoint_by_hir[hir] != 0u
         ? SEMANTIC_FUNCTION_FLAG_ENTRYPOINT : 0u;
     result.file_id = compact_hir_links[hir].file_id;
     uint local_start = semantic_local_prefix[hir];
@@ -72,6 +73,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     result.local_count = local_end - local_start;
     result.symbol_local_index = constant ? LIR_INVALID : public_decl_index_by_hir[hir];
     result.symbol_flags = 0u;
+    result.host_service = semantic_function_host_service_by_hir[hir];
     semantic_lir_functions[function_id] = result;
 
     // Type checking deliberately exposes backend call targets in the

@@ -172,6 +172,17 @@ impl CompileError {
     /// This is the non-consuming form used by `Display` and other reporting
     /// paths that must not leak legacy phase-specific strings.
     pub fn to_public_diagnostic(&self) -> Diagnostic {
+        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            match self {
+                CompileError::GpuFrontend(detail)
+                | CompileError::GpuSyntax(detail)
+                | CompileError::GpuTypeCheck(detail)
+                | CompileError::GpuCodegen(detail) => {
+                    eprintln!("internal compiler phase error: {detail}");
+                }
+                CompileError::Diagnostic(_) => {}
+            }
+        }
         match self {
             CompileError::Diagnostic(diagnostic) => diagnostic.clone(),
             CompileError::GpuFrontend(_) => compiler_execution_failed_diagnostic(

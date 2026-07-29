@@ -17,31 +17,22 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct ObligationParams
-{
-    uint stage;
-    uint reserved0;
-    uint reserved1;
-    uint reserved2;
-};
-
 ConstantBuffer<Params> gParams;
-ConstantBuffer<ObligationParams> gObligations;
 
+struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
@@ -83,9 +74,13 @@ StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
 StructuredBuffer<uint> predicate_owner_key_order;
 StructuredBuffer<uint> predicate_impl_key_order;
+#if defined(LANIUS_OBLIGATION_COUNT_PASS)
 RWStructuredBuffer<uint> predicate_obligation_count_by_call;
+#else
+StructuredBuffer<uint> predicate_obligation_count_by_call;
 StructuredBuffer<uint> predicate_obligation_prefix_by_call;
 StructuredBuffer<uint> predicate_obligation_pair_total;
+#endif
 
 RWStructuredBuffer<uint> status;
 
@@ -181,8 +176,6 @@ static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW = 27u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
 
-static const uint OBLIGATION_STAGE_COUNT = 0u;
-static const uint OBLIGATION_STAGE_VALIDATE = 1u;
 static const uint PREDICATE_OBLIGATION_WINDOW = 32u;
 
 static const uint WG_SIZE = 256u;
@@ -298,21 +291,27 @@ uint call_callee_token(uint call_node)
         return INVALID;
 
     uint call_token = hir_token_pos[call_node];
-    uint callee_node = hir_call_callee_node[call_node];
-    if (!valid_node(callee_node))
+    uint call_hir = raw_to_compact_hir[call_node];
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (call_hir == INVALID || call_hir >= compact_count)
         return INVALID;
 
-    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    HirCore call_core = compact_hir_core[call_hir];
+    uint callee_hir = compact_hir_payload[call_hir].a;
+    if (call_core.kind != HIR_CALL_EXPR || callee_hir == INVALID || callee_hir >= compact_count)
+        return INVALID;
+
+    HirCore callee_core = compact_hir_core[callee_hir];
+    if (callee_core.kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[callee_node];
+        uint member_token = compact_hir_payload[callee_hir].c;
         return valid_token(member_token) ? member_token : INVALID;
     }
 
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint token = hir_token_pos[callee_node];
-    return valid_token(token) ? token : INVALID;
+    return valid_token(callee_core.token_start) ? callee_core.token_start : INVALID;
 }
 
 uint direct_node_type(uint node)
@@ -480,7 +479,11 @@ uint generic_owner_token(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint name_token = hir_item_name_token[decl_node];
+    uint dense = raw_to_compact_hir[decl_node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (dense >= count)
+        return canonical_function_token(decl_node);
+    uint name_token = compact_hir_payload[dense].b;
     return valid_token(name_token) ? name_token : canonical_function_token(decl_node);
 }
 
@@ -1356,6 +1359,7 @@ bool owner_lookup_range_matches_key(QueryRange range, uint owner_token)
            owner_lookup_row_matches_key(range.end - 1u, owner_token);
 }
 
+#if defined(LANIUS_OBLIGATION_COUNT_PASS)
 void count_call_predicate_obligations(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -1395,7 +1399,9 @@ void count_call_predicate_obligations(uint call_node)
 
     predicate_obligation_count_by_call[call_node] = obligation_count;
 }
+#endif
 
+#if defined(LANIUS_OBLIGATION_VALIDATE_PASS)
 public struct ObligationPairLookupKey
 {
     uint pair_row;
@@ -1487,24 +1493,4 @@ void validate_call_predicate_obligation_pair(uint pair_row)
 
     validate_trait_obligation_for_call(pred, fn_node, call_node);
 }
-
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
-{
-    uint row = linear_thread_id(dtid);
-    if (gObligations.stage == OBLIGATION_STAGE_VALIDATE)
-    {
-        validate_call_predicate_obligation_pair(row);
-        return;
-    }
-
-    uint node = row;
-    if (!valid_node(node))
-        return;
-
-    predicate_obligation_count_by_call[node] = 0u;
-    validate_predicate_fail_closed_status(node);
-    validate_unique_impl_key(node);
-    count_call_predicate_obligations(node);
-}
+#endif

@@ -52,9 +52,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_callee_path_node;
-StructuredBuffer<uint> hir_call_parent_by_callee;
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
 StructuredBuffer<uint> hir_type_arg_next;
@@ -66,7 +63,6 @@ struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_token;
@@ -249,16 +245,6 @@ bool receiver_decl_type_ref(uint receiver_i, out uint tag, out uint payload)
         payload = member_result_ref_payload[receiver_i];
     }
     return tag != TYPE_REF_INVALID && payload != INVALID;
-}
-
-uint module_for_hir_node(uint node)
-{
-    uint token_i = node < active_hir_node_count() ? hir_token_pos[node] : INVALID;
-    uint file_id = token_i < active_token_count() ? token_file_id[token_i] : INVALID;
-    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
-    if (module_id != INVALID)
-        return module_id;
-    return file_id == 0u || file_id == INVALID ? 0u : INVALID;
 }
 
 uint module_for_compact_hir(uint hir)
@@ -504,26 +490,13 @@ uint associated_method_token(uint path_i)
     return valid_token(method_token) ? method_token : leaf;
 }
 
-uint path_id_for_callee_node(uint callee_node)
+uint path_id_for_associated_call(uint call_hir, uint callee_hir)
 {
-    if (!valid_node(callee_node))
+    if (!valid_dense(call_hir) || !valid_dense(callee_hir))
         return INVALID;
-    uint call_node = hir_call_parent_by_callee[callee_node];
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
-        return INVALID;
-    uint path_node = hir_call_callee_path_node[call_node];
-    uint path_owner = valid_node(path_node) ? raw_to_compact_hir[path_node] : INVALID;
-    uint path_i = path_owner < gParams.n_hir_nodes
-        ? path_id_by_owner_hir[path_owner]
-        : INVALID;
-    return valid_path(path_i) ? path_i : INVALID;
-}
-
-uint path_id_for_associated_call(uint call_node, uint callee_node)
-{
-    uint path_i = path_id_for_callee_node(callee_node);
-    uint callee_token = valid_node(callee_node) ? hir_token_pos[callee_node] : INVALID;
-    uint call_token = valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
+    uint path_i = path_id_by_owner_hir[callee_hir];
+    uint callee_token = compact_hir_core[callee_hir].token_start;
+    uint call_token = compact_hir_core[call_hir].token_start;
 
     if (!valid_path(path_i))
         path_i = path_id_for_call_open(call_token);
@@ -546,12 +519,12 @@ uint local_or_imported_type_decl_for_segment(uint path_i, uint segment_i)
     return find_imported_type_decl(module_id, name_id);
 }
 
-uint local_or_imported_type_decl_for_token(uint owner_node, uint token_i)
+uint local_or_imported_type_decl_for_compact_hir(uint owner_hir, uint token_i)
 {
     if (!valid_token(token_i))
         return INVALID;
 
-    uint module_id = module_for_hir_node(owner_node);
+    uint module_id = module_for_compact_hir(owner_hir);
     uint name_id = name_id_by_token[token_i];
     uint decl_i = find_local_type_decl(module_id, name_id);
     if (decl_i != INVALID)
@@ -1095,13 +1068,19 @@ bool associated_receiver_ref(
     return true;
 }
 
-void publish_associated_method_call(uint call_node, uint callee_node)
+void publish_compact_associated_method_call(uint call_hir)
 {
-    uint path_i = path_id_for_associated_call(call_node, callee_node);
+    if (!valid_dense(call_hir) || compact_hir_core[call_hir].kind != HIR_CALL_EXPR)
+        return;
+    uint callee_hir = compact_hir_payload[call_hir].a;
+    if (!valid_dense(callee_hir) || compact_hir_core[callee_hir].kind == HIR_MEMBER_EXPR)
+        return;
+
+    uint path_i = path_id_for_associated_call(call_hir, callee_hir);
     bool has_path = valid_path(path_i) &&
                     (path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR ||
                      path_kind[path_i] == PATH_RECORD_KIND_HIR_TYPE_EXPR);
-    uint call_token = valid_node(call_node) ? hir_token_pos[call_node] : INVALID;
+    uint call_token = compact_hir_core[call_hir].token_start;
     if (!has_path && !valid_token(call_token))
         return;
 
@@ -1123,7 +1102,7 @@ void publish_associated_method_call(uint call_node, uint callee_node)
 
     uint receiver_decl = has_path
         ? associated_receiver_decl(path_i, receiver_segment_count)
-        : local_or_imported_type_decl_for_token(call_node, receiver_token);
+        : local_or_imported_type_decl_for_compact_hir(call_hir, receiver_token);
     uint receiver_decl_token =
         receiver_decl < gParams.n_hir_nodes ? decl_name_token[receiver_decl] : INVALID;
     uint receiver_tag;
@@ -1139,8 +1118,7 @@ void publish_associated_method_call(uint call_node, uint callee_node)
     method_call_name_id[method_i] = name_id_by_token[method_i];
     method_call_site_module_id[method_i] = has_path ? module_for_path(path_i) : INVALID;
     if (method_call_site_module_id[method_i] == INVALID)
-        method_call_site_module_id[method_i] = module_for_hir_node(
-            valid_node(callee_node) ? callee_node : call_node);
+        method_call_site_module_id[method_i] = module_for_compact_hir(callee_hir);
     method_call_receiver_ref_tag[method_i] = receiver_tag;
     method_call_receiver_ref_payload[method_i] = receiver_payload;
     module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_INVALID;
@@ -1185,14 +1163,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_associated_method_call_for_method_token(i);
 
     if (i < active_compact_hir_count())
-        publish_compact_direct_method_call(i);
-
-    if (i >= active_hir_node_count() || hir_kind[i] != HIR_CALL_EXPR)
-        return;
-
-    uint callee_node = hir_call_callee_node[i];
-    if (!valid_node(callee_node) || hir_kind[callee_node] != HIR_MEMBER_EXPR)
     {
-        publish_associated_method_call(i, callee_node);
+        publish_compact_direct_method_call(i);
+        publish_compact_associated_method_call(i);
     }
 }

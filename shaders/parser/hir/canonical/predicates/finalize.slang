@@ -7,8 +7,8 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> raw_to_hir;
-StructuredBuffer<uint> canonical_flag;
-StructuredBuffer<uint> type_arg_owner;
+StructuredBuffer<uint> hir_to_raw;
+StructuredBuffer<uint> type_root_owner;
 StructuredBuffer<uint> subject_anchor;
 StructuredBuffer<HirCore> hir_core;
 RWStructuredBuffer<uint> family_flag;
@@ -26,10 +26,19 @@ bool direct_generic_bound(uint raw)
     if (!bound_type(node_kind[raw])) return false;
     uint dense = raw_to_hir[raw];
     uint anchor = subject_anchor[raw];
-    if (canonical_flag[raw] == 0u || !valid_dense(dense) || !valid_raw(anchor)) return false;
+    if (!valid_dense(dense) || hir_to_raw[dense] != raw || !valid_raw(anchor)) return false;
     uint anchor_prod = node_kind[anchor];
     if (anchor_prod != PROD_ENUM_TYPE_PARAM && anchor_prod != PROD_WHERE_TYPE_BOUND) return false;
-    return type_arg_owner[raw] == INVALID;
+    // Bound-path forwarding wrappers can be published as the raw type-argument
+    // owner even though they canonicalize to the same semantic type. Only a
+    // distinct dense owner means this bound is nested argument syntax rather
+    // than the predicate root itself.
+    // Type-root ownership is the canonical, pointer-jumped relation. Raw
+    // type-argument owners may still name grammar forwarding wrappers, which
+    // can incorrectly classify a predicate root as its own nested argument.
+    uint raw_root = type_root_owner[raw];
+    uint dense_root = valid_raw(raw_root) ? raw_to_hir[raw_root] : INVALID;
+    return dense_root == INVALID || dense_root == dense;
 }
 
 bool trait_impl_bound(uint raw)

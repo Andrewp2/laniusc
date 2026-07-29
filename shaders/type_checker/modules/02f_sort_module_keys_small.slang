@@ -16,7 +16,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> module_key_canonical_id;
-RWStructuredBuffer<uint> module_key_order;
+RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint SMALL_MODULE_SORT_CAPACITY = 256u;
@@ -78,5 +78,5 @@ void main(uint3 ltid: SV_GroupThreadID)
     }
 
     if (lane < active_count)
-        module_key_order[lane] = shared_order[lane];
+        radix_order[lane] = shared_order[lane];
 }

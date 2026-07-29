@@ -220,21 +220,6 @@ pub(in crate::type_checker) struct CountPairMaxDispatchParams {
     pub(in crate::type_checker) reserved: u32,
 }
 
-/// Uniform for predicate-obligation collection and validation phases.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct PredicateObligationParams {
-    pub(in crate::type_checker) stage: u32,
-    pub(in crate::type_checker) reserved0: u32,
-    pub(in crate::type_checker) reserved1: u32,
-    pub(in crate::type_checker) reserved2: u32,
-}
-
-/// Predicate-obligation stage that counts emitted obligation pairs.
-pub(in crate::type_checker) const PREDICATE_OBLIGATION_STAGE_COUNT: u32 = 0;
-/// Predicate-obligation stage that validates previously counted pairs.
-pub(in crate::type_checker) const PREDICATE_OBLIGATION_STAGE_VALIDATE: u32 = 1;
-
 /// Uniform for extracting one semantic record family from HIR records.
 ///
 /// `family_bit` selects the path, module, import, declaration, or related
@@ -294,7 +279,6 @@ pub(in crate::type_checker) const CALL_PARAM_CACHE_STRIDE: usize = 4;
 /// Each argument reference carries a tag/payload pair plus reserved slots used
 /// by projection and hashing passes. This is a row stride, not a semantic limit
 /// on how many type arguments an item may have.
-pub const TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 /// Upper bound multiplier for generic claim scratch relative to call rows.
 pub(in crate::type_checker) const GENERIC_CLAIM_CAPACITY_MULTIPLIER: u32 = 32;
 
@@ -319,27 +303,6 @@ pub(in crate::type_checker) fn generic_claim_capacity_for_features(
         1
     } else {
         generic_claim_capacity(token_capacity)
-    }
-}
-
-pub(in crate::type_checker) fn aggregate_compare_capacity_for_features(
-    hir_node_capacity: u32,
-    parser_feature_flags: u32,
-) -> u32 {
-    use crate::lexer::features::{
-        PARSER_FEATURE_ARRAYS,
-        PARSER_FEATURE_ENUMS,
-        PARSER_FEATURE_STRUCTS,
-        PARSER_FEATURE_TYPE_ARGS,
-    };
-    const AGGREGATE_FEATURES: u32 = PARSER_FEATURE_TYPE_ARGS
-        | PARSER_FEATURE_ARRAYS
-        | PARSER_FEATURE_ENUMS
-        | PARSER_FEATURE_STRUCTS;
-    if parser_feature_flags & AGGREGATE_FEATURES == 0 {
-        1
-    } else {
-        hir_node_capacity.max(1)
     }
 }
 
@@ -432,12 +395,14 @@ pub(in crate::type_checker) fn aggregate_passes_required(parser_feature_flags: u
     use crate::lexer::features::{
         PARSER_FEATURE_ARRAYS,
         PARSER_FEATURE_ENUMS,
+        PARSER_FEATURE_MEMBERS,
         PARSER_FEATURE_STRUCTS,
         PARSER_FEATURE_TYPE_ARGS,
     };
     parser_feature_flags
         & (PARSER_FEATURE_ARRAYS
             | PARSER_FEATURE_ENUMS
+            | PARSER_FEATURE_MEMBERS
             | PARSER_FEATURE_STRUCTS
             | PARSER_FEATURE_TYPE_ARGS)
         != 0
@@ -716,6 +681,7 @@ mod tests {
         for feature in [
             PARSER_FEATURE_ARRAYS,
             PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_MEMBERS,
             PARSER_FEATURE_STRUCTS,
             PARSER_FEATURE_TYPE_ARGS,
         ] {

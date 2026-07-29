@@ -26,11 +26,11 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> struct_field_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> struct_field_key_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STRUCT_ITEM = 27u;
@@ -101,7 +101,7 @@ public struct StructFieldKeyScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return struct_field_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -114,7 +114,7 @@ public struct StructFieldKeyOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        struct_field_key_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

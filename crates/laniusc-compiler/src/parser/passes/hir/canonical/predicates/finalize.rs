@@ -35,12 +35,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
                 b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             (
-                "canonical_flag".into(),
-                b.hir_semantic_flag.as_entire_binding(),
+                "hir_to_raw".into(),
+                b.hir_canonical_dense_to_raw.as_entire_binding(),
             ),
             (
-                "type_arg_owner".into(),
-                b.hir_type_arg_owner_a.as_entire_binding(),
+                "type_root_owner".into(),
+                b.hir_type_root_owner.as_entire_binding(),
             ),
             (
                 "subject_anchor".into(),

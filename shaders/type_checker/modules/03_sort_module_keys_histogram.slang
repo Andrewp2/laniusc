@@ -24,7 +24,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> module_key_canonical_id;
-StructuredBuffer<uint> module_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
@@ -56,7 +56,7 @@ public struct ModuleKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
-        return module_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint row, uint key_step)

@@ -79,6 +79,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint active_methods = min(compact_method_count[0u], gParams.n_hir_nodes);
     bool methods = feature_enabled(SEMANTIC_FEATURE_METHODS);
     bool predicates = feature_enabled(SEMANTIC_FEATURE_PREDICATES);
+    // Method-contract validation shares the predicate-family radix and HIR
+    // passes, but a trait declaration can have methods without producing any
+    // compact predicate rows. Keep that scheduling dependency explicit.
+    bool predicate_or_method_work = predicates || methods;
     bool match_syntax = feature_enabled(SEMANTIC_FEATURE_MATCH);
 
     write_record_args(method_token_dispatch_args, active_tokens, methods);
@@ -89,9 +93,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     write_fixed_args(method_radix_bases_dispatch_args, 1u, methods);
 
     write_record_args(predicate_token_dispatch_args, active_tokens, predicates);
-    write_record_args(predicate_hir_dispatch_args, active_hir, predicates);
-    write_fixed_args(predicate_radix_prefix_dispatch_args, RADIX_BUCKETS, predicates);
-    write_fixed_args(predicate_radix_bases_dispatch_args, 1u, predicates);
-    write_fixed_args(predicate_single_dispatch_args, 1u, predicates);
+    write_record_args(predicate_hir_dispatch_args, active_hir, predicate_or_method_work);
+    write_fixed_args(
+        predicate_radix_prefix_dispatch_args,
+        RADIX_BUCKETS,
+        predicate_or_method_work);
+    write_fixed_args(predicate_radix_bases_dispatch_args, 1u, predicate_or_method_work);
+    write_fixed_args(predicate_single_dispatch_args, 1u, predicate_or_method_work);
     write_record_args(match_hir_dispatch_args, active_hir, match_syntax);
 }

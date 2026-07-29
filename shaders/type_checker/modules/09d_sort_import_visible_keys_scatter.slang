@@ -26,11 +26,11 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_visible_count_out;
 StructuredBuffer<uint> import_visible_module_id;
 StructuredBuffer<uint> import_visible_name_id;
-StructuredBuffer<uint> import_visible_key_order_in;
+StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 
-RWStructuredBuffer<uint> import_visible_key_order_out;
+RWStructuredBuffer<uint> radix_order_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -78,7 +78,7 @@ public struct VisibleKeyScatterSource : IStableRadixScatterSource<uint>
 
     public static uint ordered_value(uint order_i)
     {
-        return import_visible_key_order_in[order_i];
+        return radix_order_in[order_i];
     }
 
     public static uint radix_key(uint value, uint key_step)
@@ -91,7 +91,7 @@ public struct VisibleKeyOrderOutSink : IScatterSink<uint>
 {
     public static void store(uint dst, uint value)
     {
-        import_visible_key_order_out[dst] = value;
+        radix_order_out[dst] = value;
     }
 }
 

@@ -298,13 +298,6 @@ pub(crate) struct GpuSemanticLirView<'a> {
     pub status: &'a LaniusBuffer<LoweringStatus>,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct GpuSemanticPageView<'a> {
-    pub count: &'a LaniusBuffer<u32>,
-    pub descriptors: &'a LaniusBuffer<u8>,
-    pub dispatch: &'a LaniusBuffer<LirDispatchArgs>,
-}
-
 /// Creates the physical ownership scope for a target-lowering stage. Semantic
 /// artifacts are explicit imports at this boundary; target scratch and outputs
 /// retain the graph workspace's allocation identities.
@@ -445,7 +438,6 @@ pub(crate) struct GpuSemanticLoweringStage {
     validate_params: LaniusBuffer<SemanticValidateParams>,
     scan_params: LaniusBuffer<ScanParams>,
     page_plan_params: LaniusBuffer<SemanticPagePlanParams>,
-    semantic_schedule_params: Option<LaniusBuffer<SemanticScheduleParams>>,
     scan_hierarchy_params: Vec<LaniusBuffer<ScanHierarchyParams>>,
     scan_levels: Vec<HierarchicalScanLevel>,
     execution_rank_pairs: u32,
@@ -497,8 +489,6 @@ pub(crate) struct GpuSemanticLoweringStage {
     core: LaniusBuffer<SemanticLirCore>,
     operands: LaniusBuffer<SemanticLirOperands>,
     schedule: LaniusBuffer<SemanticLirSchedule>,
-    semantic_schedule_sort_keys: Option<LaniusBuffer<TargetScheduleKey>>,
-    semantic_schedule_order: Option<LaniusBuffer<u32>>,
     semantic_schedule_group: Option<wgpu::BindGroup>,
     semantic_sorter: Option<GpuStableScheduleSorter>,
     call_args: LaniusBuffer<SemanticLirCallArg>,
@@ -886,82 +876,71 @@ impl GpuSemanticLoweringStage {
         } else {
             None
         };
-        let (
-            semantic_schedule_params,
-            semantic_schedule_sort_keys,
-            semantic_schedule_order,
-            semantic_schedule_group,
-            semantic_sorter,
-        ) = if let Some(order_name) = schedule_order_resource {
-            let keys = schedule
-                .alias::<TargetScheduleKey>(capacities.semantic_instructions.max(1) as usize);
-            let order = workspace
-                .alias(
-                    &graph,
-                    resource(order_name)?,
-                    capacities.semantic_instructions.max(1) as usize,
-                )
-                .map_err(anyhow::Error::msg)?;
-            let params = uniform_from_val(
-                device,
-                "lir.semantic.schedule.init.params",
-                &SemanticScheduleParams {
-                    semantic_capacity: capacities.semantic_instructions.max(1),
-                    reserved0: 0,
-                    reserved1: 0,
-                    reserved2: 0,
-                },
-            );
-            graph
-                .validate_pass_reflection(
-                    graph.pass_id("lir.semantic.schedule.init").unwrap(),
-                    passes.schedule_init.reflection.as_ref(),
-                )
-                .map_err(anyhow::Error::msg)?;
-            allocations
-                .validate_pass_bindings(
-                    &graph,
-                    graph.pass_id("lir.semantic.schedule.init").unwrap(),
+        let (semantic_schedule_group, semantic_sorter) =
+            if let Some(order_name) = schedule_order_resource {
+                let keys = schedule
+                    .alias::<TargetScheduleKey>(capacities.semantic_instructions.max(1) as usize);
+                let order = workspace
+                    .alias(
+                        &graph,
+                        resource(order_name)?,
+                        capacities.semantic_instructions.max(1) as usize,
+                    )
+                    .map_err(anyhow::Error::msg)?;
+                let params = uniform_from_val(
+                    device,
+                    "lir.semantic.schedule.init.params",
+                    &SemanticScheduleParams {
+                        semantic_capacity: capacities.semantic_instructions.max(1),
+                        reserved0: 0,
+                        reserved1: 0,
+                        reserved2: 0,
+                    },
+                );
+                graph
+                    .validate_pass_reflection(
+                        graph.pass_id("lir.semantic.schedule.init").unwrap(),
+                        passes.schedule_init.reflection.as_ref(),
+                    )
+                    .map_err(anyhow::Error::msg)?;
+                allocations
+                    .validate_pass_bindings(
+                        &graph,
+                        graph.pass_id("lir.semantic.schedule.init").unwrap(),
+                        &[
+                            bound(
+                                "semantic_lir_total",
+                                resource("lir.semantic.total")?,
+                                &total,
+                            )?,
+                            bound("target_schedule_order", resource(order_name)?, &order)?,
+                        ],
+                    )
+                    .map_err(anyhow::Error::msg)?;
+                let group = make_group(
+                    device,
+                    &passes.schedule_init,
+                    "lir.semantic.schedule.init.bind_group",
                     &[
-                        bound(
-                            "semantic_lir_total",
-                            resource("lir.semantic.total")?,
-                            &total,
-                        )?,
-                        bound("target_schedule_order", resource(order_name)?, &order)?,
+                        ("gParams", params.as_entire_binding()),
+                        ("semantic_lir_total", total.as_entire_binding()),
+                        ("target_schedule_order", order.as_entire_binding()),
                     ],
-                )
-                .map_err(anyhow::Error::msg)?;
-            let group = make_group(
-                device,
-                &passes.schedule_init,
-                "lir.semantic.schedule.init.bind_group",
-                &[
-                    ("gParams", params.as_entire_binding()),
-                    ("semantic_lir_total", total.as_entire_binding()),
-                    ("target_schedule_order", order.as_entire_binding()),
-                ],
-            )?;
-            let sorter = GpuStableScheduleSorter::new_semantic(
-                device,
-                &graph,
-                workspace,
-                &allocations,
-                capacities.semantic_instructions.max(1),
-                &total,
-                &keys,
-                &order,
-            )?;
-            (
-                Some(params),
-                Some(keys),
-                Some(order),
-                Some(group),
-                Some(sorter),
-            )
-        } else {
-            (None, None, None, None, None)
-        };
+                )?;
+                let sorter = GpuStableScheduleSorter::new_semantic(
+                    device,
+                    &graph,
+                    workspace,
+                    &allocations,
+                    capacities.semantic_instructions.max(1),
+                    &total,
+                    &keys,
+                    &order,
+                )?;
+                (Some(group), Some(sorter))
+            } else {
+                (None, None)
+            };
 
         Ok(Self {
             capacities,
@@ -1067,7 +1046,6 @@ impl GpuSemanticLoweringStage {
                     max_pages,
                 },
             ),
-            semantic_schedule_params,
             scan_hierarchy_params,
             scan_levels,
             execution_rank_pairs: (u32::BITS - hir_nodes.leading_zeros()).max(1).div_ceil(2),
@@ -1122,8 +1100,6 @@ impl GpuSemanticLoweringStage {
             core,
             operands,
             schedule,
-            semantic_schedule_sort_keys,
-            semantic_schedule_order,
             semantic_schedule_group,
             semantic_sorter,
             call_args,
@@ -1175,14 +1151,6 @@ impl GpuSemanticLoweringStage {
                 .as_ref()
                 .map(GpuStableScheduleSorter::output_order),
             status: &self.status,
-        }
-    }
-
-    pub(crate) fn pages(&self) -> GpuSemanticPageView<'_> {
-        GpuSemanticPageView {
-            count: &self.page_count,
-            descriptors: &self.pages,
-            dispatch: &self.page_dispatch,
         }
     }
 
@@ -1248,16 +1216,6 @@ impl GpuSemanticLoweringStage {
                     "semantic_value_type_by_hir",
                     resource("typecheck.semantic_value_types_by_hir"),
                     semantic.checked.value_type_by_hir,
-                )?,
-                bound(
-                    "name_id_by_token",
-                    resource("typecheck.name_ids_by_token"),
-                    semantic.name_id_by_token,
-                )?,
-                bound(
-                    "language_name_id",
-                    resource("typecheck.language_name_ids"),
-                    semantic.language_name_id,
                 )?,
                 bound(
                     "semantic_calls_by_hir",
@@ -1390,14 +1348,6 @@ impl GpuSemanticLoweringStage {
                     semantic.checked.value_type_by_hir.as_entire_binding(),
                 ),
                 (
-                    "name_id_by_token",
-                    semantic.name_id_by_token.as_entire_binding(),
-                ),
-                (
-                    "language_name_id",
-                    semantic.language_name_id.as_entire_binding(),
-                ),
-                (
                     "semantic_calls_by_hir",
                     semantic.checked.calls_by_hir.as_entire_binding(),
                 ),
@@ -1505,6 +1455,11 @@ impl GpuSemanticLoweringStage {
                     &self.function_ids,
                 )?,
                 bound(
+                    "semantic_array_length",
+                    resource("typecheck.semantic_array_lengths_by_hir"),
+                    semantic.checked.array_length_by_hir,
+                )?,
+                bound(
                     "semantic_lir_count",
                     resource("lir.semantic.count_by_hir"),
                     &self.counts,
@@ -1524,6 +1479,10 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_function_id",
                     self.function_ids.as_entire_binding(),
+                ),
+                (
+                    "semantic_array_length",
+                    semantic.checked.array_length_by_hir.as_entire_binding(),
                 ),
                 ("semantic_lir_count", self.counts.as_entire_binding()),
             ],
@@ -1631,6 +1590,11 @@ impl GpuSemanticLoweringStage {
                     semantic.checked.expr_ref_payload_by_hir,
                 )?,
                 bound(
+                    "semantic_array_length",
+                    resource("typecheck.semantic_array_lengths_by_hir"),
+                    semantic.checked.array_length_by_hir,
+                )?,
+                bound(
                     "semantic_value_id",
                     resource("semantic.value_ids"),
                     &self.value_ids,
@@ -1681,14 +1645,14 @@ impl GpuSemanticLoweringStage {
                     &self.functions,
                 )?,
                 bound(
-                    "semantic_if_depth",
-                    resource("typecheck.if_depth"),
-                    semantic.if_depth,
+                    "semantic_control_depth_by_hir",
+                    resource("typecheck.semantic_control_depths_by_hir"),
+                    semantic.checked.control_depth_by_hir,
                 )?,
                 bound(
-                    "member_result_field_ordinal",
-                    resource("typecheck.member_field_ordinals"),
-                    semantic.member_result_field_ordinal,
+                    "semantic_member_field_ordinal",
+                    resource("typecheck.semantic_member_field_ordinals_by_hir"),
+                    semantic.checked.member_field_ordinal_by_hir,
                 )?,
                 bound(
                     "compact_expr_root",
@@ -1781,6 +1745,10 @@ impl GpuSemanticLoweringStage {
                         "semantic_expr_ref_payload",
                         semantic.checked.expr_ref_payload_by_hir.as_entire_binding(),
                     ),
+                    (
+                        "semantic_array_length",
+                        semantic.checked.array_length_by_hir.as_entire_binding(),
+                    ),
                     ("semantic_value_id", self.value_ids.as_entire_binding()),
                     ("semantic_value_type", self.value_types.as_entire_binding()),
                     (
@@ -1809,10 +1777,16 @@ impl GpuSemanticLoweringStage {
                         self.function_ids.as_entire_binding(),
                     ),
                     ("semantic_lir_functions", self.functions.as_entire_binding()),
-                    ("semantic_if_depth", semantic.if_depth.as_entire_binding()),
                     (
-                        "member_result_field_ordinal",
-                        semantic.member_result_field_ordinal.as_entire_binding(),
+                        "semantic_control_depth_by_hir",
+                        semantic.checked.control_depth_by_hir.as_entire_binding(),
+                    ),
+                    (
+                        "semantic_member_field_ordinal",
+                        semantic
+                            .checked
+                            .member_field_ordinal_by_hir
+                            .as_entire_binding(),
                     ),
                     ("compact_expr_root", hir.expr_root.as_entire_binding()),
                     ("compact_nearest_loop", hir.nearest_loop.as_entire_binding()),
@@ -2427,14 +2401,19 @@ impl GpuSemanticLoweringStage {
                     &self.local_count,
                 )?,
                 bound(
-                    "call_return_type",
-                    resource("typecheck.call_return_types"),
-                    semantic.call_return_type,
+                    "semantic_function_return_type_by_hir",
+                    resource("typecheck.semantic_function_return_types_by_hir"),
+                    semantic.checked.function_return_type_by_hir,
                 )?,
                 bound(
-                    "fn_entrypoint_tag",
-                    resource("typecheck.function_entrypoint_tags"),
-                    semantic.fn_entrypoint_tag,
+                    "semantic_function_entrypoint_by_hir",
+                    resource("typecheck.semantic_function_entrypoints_by_hir"),
+                    semantic.checked.function_entrypoint_by_hir,
+                )?,
+                bound(
+                    "semantic_function_host_service_by_hir",
+                    resource("typecheck.semantic_function_host_services_by_hir"),
+                    semantic.checked.function_host_service_by_hir,
                 )?,
                 bound(
                     "public_decl_index_by_hir",
@@ -2499,12 +2478,25 @@ impl GpuSemanticLoweringStage {
                 ),
                 ("semantic_local_total", self.local_count.as_entire_binding()),
                 (
-                    "call_return_type",
-                    semantic.call_return_type.as_entire_binding(),
+                    "semantic_function_return_type_by_hir",
+                    semantic
+                        .checked
+                        .function_return_type_by_hir
+                        .as_entire_binding(),
                 ),
                 (
-                    "fn_entrypoint_tag",
-                    semantic.fn_entrypoint_tag.as_entire_binding(),
+                    "semantic_function_entrypoint_by_hir",
+                    semantic
+                        .checked
+                        .function_entrypoint_by_hir
+                        .as_entire_binding(),
+                ),
+                (
+                    "semantic_function_host_service_by_hir",
+                    semantic
+                        .checked
+                        .function_host_service_by_hir
+                        .as_entire_binding(),
                 ),
                 (
                     "public_decl_index_by_hir",
@@ -4215,10 +4207,10 @@ mod tests {
         let visible = storage_ro_from_u32s(&gpu.device, "test.lir.visible", &[u32::MAX; 16]);
         let mut name_ids = [u32::MAX; 16];
         name_ids[11] = 99;
-        let name_ids = storage_ro_from_u32s(&gpu.device, "test.lir.name_ids", &name_ids);
+        let _name_ids = storage_ro_from_u32s(&gpu.device, "test.lir.name_ids", &name_ids);
         let mut language_names = [u32::MAX; 63];
         language_names[49] = 99;
-        let language_names =
+        let _language_names =
             storage_ro_from_u32s(&gpu.device, "test.lir.language_names", &language_names);
         let mut enclosing_fn = [0u32; 16];
         enclosing_fn[0] = 7;
@@ -4247,7 +4239,6 @@ mod tests {
                 [u32::MAX, 0, 0, 7, u32::MAX, u32::MAX, 0, 0],
             ],
         );
-        let if_depth = enclosing_fn.clone().reinterpret::<i32>(enclosing_fn.count);
         let semantic_ref_tags = storage_ro_from_u32s(
             &gpu.device,
             "test.lir.semantic_ref_tags",
@@ -4257,6 +4248,11 @@ mod tests {
             &gpu.device,
             "test.lir.semantic_ref_payloads",
             &[3, 3, 3, u32::MAX, u32::MAX, 7, u32::MAX, u32::MAX, 7, 42],
+        );
+        let semantic_array_lengths = storage_ro_from_u32s(
+            &gpu.device,
+            "test.lir.semantic_array_lengths",
+            &[u32::MAX; 10],
         );
         let dependency_counts =
             storage_ro_from_u32s(&gpu.device, "test.lir.dependency_counts", &[0, 0, 0, 1]);
@@ -4321,18 +4317,18 @@ mod tests {
                         value_type_by_hir: &enclosing_fn,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &checked_enclosing_fn,
+                        function_return_type_by_hir: &enclosing_fn,
+                        function_entrypoint_by_hir: &enclosing_fn,
+                        function_host_service_by_hir: &semantic_array_lengths,
+                        control_depth_by_hir: &enclosing_fn,
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        array_length_by_hir: &semantic_array_lengths,
+                        member_field_ordinal_by_hir: &visible,
                     },
                     compact_expr_scalar_type: &expression_types,
-                    name_id_by_token: &name_ids,
-                    language_name_id: &language_names,
-                    if_depth: &if_depth,
-                    call_return_type: &enclosing_fn,
-                    fn_entrypoint_tag: &enclosing_fn,
                     public_decl_index_by_hir: &visible,
-                    member_result_field_ordinal: &visible,
                     struct_init_field_ordinal_by_row: &visible,
                 },
                 Some(GpuDependencySymbolBuffers {
@@ -4489,11 +4485,11 @@ mod tests {
         let checked_param_types =
             storage_ro_from_u32s(&gpu.device, "test.abi.checked_param_types", &[3, 7]);
         let mut return_types = vec![0; 12];
-        return_types[4] = 3;
+        return_types[0] = 3;
         let return_types =
             storage_ro_from_u32s(&gpu.device, "test.abi.return_types", &return_types);
         let mut entrypoints = vec![0; 12];
-        entrypoints[4] = 1;
+        entrypoints[0] = 1;
         let entrypoints = storage_ro_from_u32s(&gpu.device, "test.abi.entrypoints", &entrypoints);
         let public_declarations = storage_ro_from_u32s(
             &gpu.device,
@@ -4502,7 +4498,7 @@ mod tests {
         );
         let invalid_tokens =
             storage_ro_from_u32s(&gpu.device, "test.abi.invalid_tokens", &[u32::MAX; 12]);
-        let language_names =
+        let _language_names =
             storage_ro_from_u32s(&gpu.device, "test.abi.language_names", &[u32::MAX; 63]);
         let mut enclosing_functions = vec![0; 12];
         enclosing_functions[8] = 1;
@@ -4522,9 +4518,6 @@ mod tests {
             "test.abi.checked_calls",
             &[[u32::MAX, u32::MAX, 0, u32::MAX, u32::MAX, 0, 0, 0]; 4],
         );
-        let if_depth = enclosing_functions
-            .clone()
-            .reinterpret::<i32>(enclosing_functions.count);
         let expression_types = storage_ro_from_u32s(
             &gpu.device,
             "test.abi.expression_types",
@@ -4535,6 +4528,11 @@ mod tests {
         let semantic_ref_payloads = storage_ro_from_u32s(
             &gpu.device,
             "test.abi.semantic_ref_payloads",
+            &[u32::MAX; 4],
+        );
+        let semantic_array_lengths = storage_ro_from_u32s(
+            &gpu.device,
+            "test.abi.semantic_array_lengths",
             &[u32::MAX; 4],
         );
         let stage = GpuSemanticLoweringStage::new(
@@ -4592,24 +4590,24 @@ mod tests {
                         value_type_by_hir: &checked_value_types,
                         param_type_by_row: &checked_param_types,
                         enclosing_fn_by_hir: &checked_enclosing_functions,
+                        function_return_type_by_hir: &return_types,
+                        function_entrypoint_by_hir: &entrypoints,
+                        function_host_service_by_hir: &semantic_array_lengths,
+                        control_depth_by_hir: &enclosing_functions,
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        array_length_by_hir: &semantic_array_lengths,
+                        member_field_ordinal_by_hir: &invalid_tokens,
                     },
                     compact_expr_scalar_type: &expression_types,
-                    name_id_by_token: &invalid_tokens,
-                    language_name_id: &language_names,
-                    if_depth: &if_depth,
-                    call_return_type: &return_types,
-                    fn_entrypoint_tag: &entrypoints,
                     public_decl_index_by_hir: &public_declarations,
-                    member_result_field_ordinal: &invalid_tokens,
                     struct_init_field_ordinal_by_row: &invalid_tokens,
                 },
                 None,
             )
             .unwrap();
-        let function_readback = readback_bytes(&gpu.device, "test.abi.functions.rb", 48, 12);
+        let function_readback = readback_bytes(&gpu.device, "test.abi.functions.rb", 52, 13);
         let param_readback = readback_bytes(&gpu.device, "test.abi.params.rb", 32, 8);
         let local_readback = readback_bytes(&gpu.device, "test.abi.locals.rb", 16, 4);
         let schedule_readback = readback_bytes(&gpu.device, "test.abi.schedule.rb", 32, 8);
@@ -4623,7 +4621,7 @@ mod tests {
             0,
             &function_readback.buffer,
             0,
-            48,
+            52,
         );
         encoder.copy_buffer_to_buffer(&output.params.buffer, 0, &param_readback.buffer, 0, 32);
         encoder.copy_buffer_to_buffer(&output.locals.buffer, 0, &local_readback.buffer, 0, 16);
@@ -4653,7 +4651,7 @@ mod tests {
 
         assert_eq!(
             read_words(&gpu.device, &function_readback),
-            &[0, 5, 0, 2, 3, 1, 2, 0, 1, 0, 23, 0]
+            &[0, 5, 0, 2, 3, 1, 2, 0, 1, 0, 23, 0, u32::MAX]
         );
         assert_eq!(
             read_words(&gpu.device, &param_readback),
@@ -4753,7 +4751,7 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.family.string_data", &[0x6968, 0, 0, 0]);
         let types = storage_ro_from_u32s(&gpu.device, "test.family.types", &[3 << 28; 4]);
         let visible = storage_ro_from_u32s(&gpu.device, "test.family.visible", &[u32::MAX; 16]);
-        let language_names =
+        let _language_names =
             storage_ro_from_u32s(&gpu.device, "test.family.language_names", &[u32::MAX; 63]);
         let enclosing = storage_ro_from_u32s(&gpu.device, "test.family.enclosing", &[0; 16]);
         let checked_calls = checked_calls(
@@ -4761,12 +4759,16 @@ mod tests {
             "test.family.checked_calls",
             &[[u32::MAX, u32::MAX, 0, u32::MAX, u32::MAX, 0, 0, 0]; 4],
         );
-        let if_depth = enclosing.clone().reinterpret::<i32>(enclosing.count);
         let semantic_ref_tags =
             storage_ro_from_u32s(&gpu.device, "test.family.semantic_ref_tags", &[0; 4]);
         let semantic_ref_payloads = storage_ro_from_u32s(
             &gpu.device,
             "test.family.semantic_ref_payloads",
+            &[u32::MAX; 4],
+        );
+        let semantic_array_lengths = storage_ro_from_u32s(
+            &gpu.device,
+            "test.family.semantic_array_lengths",
             &[u32::MAX; 4],
         );
         let stage = GpuSemanticLoweringStage::new(
@@ -4824,18 +4826,18 @@ mod tests {
                         value_type_by_hir: &enclosing,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &enclosing,
+                        function_return_type_by_hir: &enclosing,
+                        function_entrypoint_by_hir: &enclosing,
+                        function_host_service_by_hir: &semantic_array_lengths,
+                        control_depth_by_hir: &enclosing,
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        array_length_by_hir: &semantic_array_lengths,
+                        member_field_ordinal_by_hir: &visible,
                     },
                     compact_expr_scalar_type: &types,
-                    name_id_by_token: &visible,
-                    language_name_id: &language_names,
-                    if_depth: &if_depth,
-                    call_return_type: &enclosing,
-                    fn_entrypoint_tag: &enclosing,
                     public_decl_index_by_hir: &visible,
-                    member_result_field_ordinal: &visible,
                     struct_init_field_ordinal_by_row: &enclosing,
                 },
                 None,
@@ -4888,17 +4890,18 @@ mod tests {
     #[test]
     fn physical_gpu_materializes_control_events_and_unsupported_rows() {
         let gpu = device::global();
-        let hir_count = storage_ro_from_u32s(&gpu.device, "test.control.hir_count", &[4]);
+        let hir_count = storage_ro_from_u32s(&gpu.device, "test.control.hir_count", &[5]);
         let hir_core = storage_ro_from_bytes::<HirCore>(
             &gpu.device,
             "test.control.hir_core",
             &words(&[
                 [23, 1, 1, 2],
                 [7, u32::MAX, 0, 8],
-                [20, u32::MAX, 9, 12],
+                [34, u32::MAX, 9, 12],
                 [7, u32::MAX, 13, 20],
+                [3, u32::MAX, 0, 20],
             ]),
-            4,
+            5,
         );
         let hir_links = storage_ro_from_bytes::<crate::parser::buffers::HirLinks>(
             &gpu.device,
@@ -4908,8 +4911,9 @@ mod tests {
                 [0, 2, 2, 0],
                 [u32::MAX, 3, 3, 0],
                 [0, u32::MAX, 4, 0],
+                [1, u32::MAX, 5, 0],
             ]),
-            4,
+            5,
         );
         let hir_payload = storage_ro_from_bytes::<HirPayload>(
             &gpu.device,
@@ -4919,12 +4923,14 @@ mod tests {
                 [3, 0, u32::MAX, u32::MAX],
                 [26, 0, 0, u32::MAX],
                 [6, 0, u32::MAX, u32::MAX],
+                [4, 0, u32::MAX, u32::MAX],
             ]),
-            4,
+            5,
         );
         let expr_parent =
-            storage_ro_from_u32s(&gpu.device, "test.control.expr_parent", &[u32::MAX; 4]);
-        let expr_root = storage_ro_from_u32s(&gpu.device, "test.control.expr_root", &[0, 1, 2, 3]);
+            storage_ro_from_u32s(&gpu.device, "test.control.expr_parent", &[u32::MAX; 5]);
+        let expr_root =
+            storage_ro_from_u32s(&gpu.device, "test.control.expr_root", &[0, 1, 2, 3, 4]);
         let call_arg_count = storage_ro_from_u32s(&gpu.device, "test.control.arg_count", &[0]);
         let call_args = storage_ro_from_bytes::<HirCallArg>(
             &gpu.device,
@@ -4934,7 +4940,7 @@ mod tests {
         );
         let family_count = storage_ro_from_u32s(&gpu.device, "test.control.family_count", &[0]);
         let family_by_hir =
-            storage_ro_from_u32s(&gpu.device, "test.control.family_by_hir", &[0; 4]);
+            storage_ro_from_u32s(&gpu.device, "test.control.family_by_hir", &[0; 5]);
         let fields = storage_ro_from_bytes::<crate::parser::buffers::HirField>(
             &gpu.device,
             "test.control.fields",
@@ -4950,8 +4956,8 @@ mod tests {
         let param_ranges = storage_ro_from_bytes::<crate::parser::buffers::HirRange>(
             &gpu.device,
             "test.control.param_ranges",
-            &words(&[[u32::MAX, 0, 0, 0]; 4]),
-            4,
+            &words(&[[u32::MAX, 0, 0, 0]; 5]),
+            5,
         );
         let array_elements = storage_ro_from_bytes::<crate::parser::buffers::HirArrayElement>(
             &gpu.device,
@@ -4966,31 +4972,41 @@ mod tests {
             4,
         );
         let string_data = storage_ro_from_u32s(&gpu.device, "test.control.string_data", &[0; 4]);
-        let expression_types =
-            storage_ro_from_u32s(&gpu.device, "test.control.types", &[2 << 28, 0, 3 << 28, 0]);
+        let expression_types = storage_ro_from_u32s(
+            &gpu.device,
+            "test.control.types",
+            &[2 << 28, 0, 3 << 28, 0, 0],
+        );
         let visible = storage_ro_from_u32s(&gpu.device, "test.control.visible", &[u32::MAX; 16]);
-        let language_names =
+        let _language_names =
             storage_ro_from_u32s(&gpu.device, "test.control.language_names", &[u32::MAX; 63]);
-        let enclosing_fn = storage_ro_from_u32s(&gpu.device, "test.control.enclosing_fn", &[7; 16]);
+        let mut enclosing_fn = vec![0; 16];
+        enclosing_fn[..4].fill(5);
+        let enclosing_fn =
+            storage_ro_from_u32s(&gpu.device, "test.control.enclosing_fn", &enclosing_fn);
         let checked_calls = checked_calls(
             &gpu.device,
             "test.control.checked_calls",
-            &[[u32::MAX, u32::MAX, 0, u32::MAX, u32::MAX, 0, 0, 0]; 4],
+            &[[u32::MAX, u32::MAX, 0, u32::MAX, u32::MAX, 0, 0, 0]; 5],
         );
-        let if_depth = enclosing_fn.clone().reinterpret::<i32>(enclosing_fn.count);
         let semantic_ref_tags =
-            storage_ro_from_u32s(&gpu.device, "test.control.semantic_ref_tags", &[0; 4]);
+            storage_ro_from_u32s(&gpu.device, "test.control.semantic_ref_tags", &[0; 5]);
         let semantic_ref_payloads = storage_ro_from_u32s(
             &gpu.device,
             "test.control.semantic_ref_payloads",
-            &[u32::MAX; 4],
+            &[u32::MAX; 5],
+        );
+        let semantic_array_lengths = storage_ro_from_u32s(
+            &gpu.device,
+            "test.control.semantic_array_lengths",
+            &[u32::MAX; 5],
         );
         let stage = GpuSemanticLoweringStage::new(
             &gpu.device,
             LoweringCapacities {
                 source_bytes: 16,
                 tokens: 16,
-                hir_nodes: 4,
+                hir_nodes: 5,
                 semantic_instructions: 10,
                 call_arguments: 1,
                 parameters: 1,
@@ -5040,18 +5056,18 @@ mod tests {
                         value_type_by_hir: &enclosing_fn,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &enclosing_fn,
+                        function_return_type_by_hir: &enclosing_fn,
+                        function_entrypoint_by_hir: &enclosing_fn,
+                        function_host_service_by_hir: &semantic_array_lengths,
+                        control_depth_by_hir: &enclosing_fn,
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        array_length_by_hir: &semantic_array_lengths,
+                        member_field_ordinal_by_hir: &visible,
                     },
                     compact_expr_scalar_type: &expression_types,
-                    name_id_by_token: &visible,
-                    language_name_id: &language_names,
-                    if_depth: &if_depth,
-                    call_return_type: &enclosing_fn,
-                    fn_entrypoint_tag: &enclosing_fn,
                     public_decl_index_by_hir: &visible,
-                    member_result_field_ordinal: &visible,
                     struct_init_field_ordinal_by_row: &visible,
                 },
                 None,
@@ -5082,7 +5098,12 @@ mod tests {
         );
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &count_readback)[0], 10);
+        let status = read_words(&gpu.device, &status_readback);
+        assert_eq!(
+            read_words(&gpu.device, &count_readback)[0],
+            10,
+            "lowering status: {status:?}"
+        );
         let core = read_words(&gpu.device, &core_readback);
         assert_eq!(
             [core[0], core[6], core[12], core[18]],
@@ -5111,7 +5132,6 @@ mod tests {
         let operands = read_words(&gpu.device, &operands_readback);
         assert_eq!(&operands[24..28], &[6, 0, 1, 9]);
         assert_eq!(&operands[28..32], &[7, 5, 0, u32::MAX]);
-        let status = read_words(&gpu.device, &status_readback);
         assert_ne!(
             status[0] & super::super::lowering_ir::opcode::LOWERING_STATUS_UNSUPPORTED_SEMANTIC,
             0
@@ -5126,7 +5146,7 @@ mod tests {
                 schedule[12],
                 schedule[16]
             ],
-            [u32::MAX; 5]
+            [0; 5]
         );
     }
 }

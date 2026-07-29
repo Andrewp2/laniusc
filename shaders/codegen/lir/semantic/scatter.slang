@@ -12,6 +12,7 @@ StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> semantic_expr_type;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> semantic_array_length;
 StructuredBuffer<uint> semantic_value_id;
 StructuredBuffer<uint> semantic_value_type;
 StructuredBuffer<uint> semantic_call_target;
@@ -22,8 +23,8 @@ StructuredBuffer<uint> semantic_call_symbol_unit_id;
 StructuredBuffer<uint> semantic_call_symbol_local_index;
 StructuredBuffer<uint> semantic_function_id;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
-StructuredBuffer<int> semantic_if_depth;
-StructuredBuffer<uint> member_result_field_ordinal;
+StructuredBuffer<uint> semantic_control_depth_by_hir;
+StructuredBuffer<uint> semantic_member_field_ordinal;
 StructuredBuffer<uint> compact_expr_root;
 StructuredBuffer<uint> compact_nearest_loop;
 StructuredBuffer<uint> compact_array_element_start;
@@ -89,9 +90,15 @@ void write_schedule(uint row, uint node, uint local_row, uint local_count,
     uint root = expression_row ? compact_expr_root[node] : LIR_INVALID;
     uint local_op = semantic_lir_local_op(hir, payload, local_row, local_count);
     bool range_for = local_count == 17u && semantic_lir_is_loop(hir, payload);
-    if (range_for)
+    bool array_for = local_count == 21u && semantic_lir_is_loop(hir, payload);
+    if (range_for || array_for)
     {
-        HirPayload range = compact_hir_payload[payload.c];
+        HirPayload range;
+        range.a = 0u;
+        range.b = payload.c;
+        range.c = payload.c;
+        range.d = LIR_INVALID;
+        if (range_for) range = compact_hir_payload[payload.c];
         uint start_node = range.b;
         uint end_node = range.c;
         uint start_token = bounded_token(start_node, hir_count, hir.token_start);
@@ -100,11 +107,11 @@ void write_schedule(uint row, uint node, uint local_row, uint local_count,
             schedule.execution_region = start_token;
         else if (local_row <= 7u)
             schedule.execution_region = end_token;
-        else if (local_row == 8u)
+        else if (local_row == 8u || (array_for && local_row <= 12u))
         {
             schedule.execution_region = bounded_token(payload.d, hir_count, hir.token_start);
             schedule.execution_rank = 0u;
-            schedule.execution_tie = 0u;
+            schedule.execution_tie = local_row - 8u;
             semantic_lir_schedule[row] = schedule;
             return;
         }
@@ -201,7 +208,9 @@ void write_schedule(uint row, uint node, uint local_row, uint local_count,
         }
         else if (!loop)
         {
-            schedule.execution_region = hir.token_end;
+            uint closing_arm = payload.d < hir_count ? payload.d : payload.c;
+            schedule.execution_region = closing_arm < hir_count
+                ? compact_hir_core[closing_arm].token_end : hir.token_end;
             schedule.execution_rank = 0xffffffffu;
             schedule.execution_tie = 0xffffffffu;
             if (links.subtree_end <= node)
@@ -260,6 +269,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool compound_assignment = semantic_lir_is_assignment(hir, payload) &&
         payload.d != HIR_ASSIGN_OP_SET && local_count == 3u;
     bool range_for = local_count == 17u && semantic_lir_is_loop(hir, payload);
+    bool array_for = local_count == 21u && semantic_lir_is_loop(hir, payload);
     HirPayload range_payload;
     range_payload.a = 0u;
     range_payload.b = LIR_INVALID;
@@ -292,6 +302,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (local_row == 12u) op = SEMANTIC_LIR_OP_ADD;
         else if (local_row == 13u) op = SEMANTIC_LIR_OP_STORE;
         else if (local_row == 14u) op = SEMANTIC_LIR_OP_BRANCH;
+        else op = SEMANTIC_LIR_OP_CONTROL_END;
+    }
+    else if (array_for)
+    {
+        if (local_row == 0u || local_row == 5u || local_row == 15u)
+            op = SEMANTIC_LIR_OP_CONST_I32;
+        else if (local_row == 1u || local_row == 12u)
+            op = SEMANTIC_LIR_OP_VALUE_SET;
+        else if (local_row == 2u || local_row == 8u)
+            op = SEMANTIC_LIR_OP_BLOCK_BEGIN;
+        else if (local_row == 3u)
+            op = SEMANTIC_LIR_OP_LOOP_BEGIN;
+        else if (local_row == 4u || local_row == 9u || local_row == 10u ||
+                 local_row == 14u)
+            op = SEMANTIC_LIR_OP_VALUE_GET;
+        else if (local_row == 6u) op = SEMANTIC_LIR_OP_COMPARE;
+        else if (local_row == 7u) op = SEMANTIC_LIR_OP_BRANCH_IF;
+        else if (local_row == 11u) op = SEMANTIC_LIR_OP_LOAD;
+        else if (local_row == 16u) op = SEMANTIC_LIR_OP_ADD;
+        else if (local_row == 17u) op = SEMANTIC_LIR_OP_STORE;
+        else if (local_row == 18u) op = SEMANTIC_LIR_OP_BRANCH;
         else op = SEMANTIC_LIR_OP_CONTROL_END;
     }
     if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 2u)
@@ -335,6 +366,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.type_ref_tag = 1u;
         core.type_ref_payload = 3u;
     }
+    if (array_for)
+    {
+        core.type_id = 3u;
+        core.type_ref_tag = 1u;
+        core.type_ref_payload = 3u;
+        if (local_row == 9u)
+        {
+            core.type_id = semantic_type_for_hir(payload.c, hir_count);
+            semantic_type_ref_for_hir(payload.c, hir_count,
+                core.type_ref_tag, core.type_ref_payload);
+        }
+        else if (local_row == 11u || local_row == 12u)
+        {
+            core.type_id = semantic_value_type[node];
+            semantic_type_ref_for_hir(node, hir_count,
+                core.type_ref_tag, core.type_ref_payload);
+        }
+    }
     // Comparisons produce bool but machine selection depends on the operand
     // representation. The semantic instruction type therefore records the
     // compared value type for this opcode.
@@ -346,7 +395,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     core.source_hir = node;
     core.flags = 0u;
-    if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_INDEX_EXPR)
+    if (op == SEMANTIC_LIR_OP_LOAD && (hir.kind == HIR_INDEX_EXPR || array_for))
         core.flags |= SEMANTIC_LIR_FLAG_INDEXED;
     if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_MEMBER_EXPR)
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
@@ -354,7 +403,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (compound_assignment &&
         (payload.b >= hir_count || semantic_value_id[payload.b] == LIR_INVALID))
         core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
-    if (semantic_lir_is_control(hir, payload) || range_for)
+    if (semantic_lir_is_control(hir, payload) || range_for || array_for)
         core.flags |= SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
     if (hir.kind == HIR_CONTINUE_STMT)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_CONTINUE;
@@ -366,8 +415,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (explicit_loop_branch)
     {
         HirCore loop_core = compact_hir_core[enclosing_loop];
-        int branch_depth = semantic_if_depth[hir.token_start];
-        int loop_depth = semantic_if_depth[loop_core.token_start];
+        uint branch_depth = semantic_control_depth_by_hir[node];
+        uint loop_depth = semantic_control_depth_by_hir[enclosing_loop];
         if (branch_depth < loop_depth)
             explicit_loop_branch = false;
         else
@@ -383,9 +432,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID;
     if (structured_loop && local_row == 2u)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_FALSE;
-    if (range_for && (local_row == 7u || local_row == 14u))
+    if ((range_for && (local_row == 7u || local_row == 14u)) ||
+        (array_for && (local_row == 7u || local_row == 18u)))
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID;
-    if (range_for && local_row == 7u)
+    if ((range_for || array_for) && local_row == 7u)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_FALSE;
 
     SemanticLirOperands operands;
@@ -435,6 +485,59 @@ void main(uint3 dtid: SV_DispatchThreadID)
             operands.b = first_row + 12u;
         }
         else if (local_row == 14u)
+        {
+            operands.a = first_row + 3u;
+            operands.b = 0u;
+        }
+    }
+    else if (array_for)
+    {
+        uint index_value_id = gParams.n_tokens + node;
+        if (local_row == 0u || local_row == 15u)
+            operands.a = local_row == 0u ? 0u : 1u;
+        else if (local_row == 1u)
+        {
+            operands.a = index_value_id;
+            operands.b = first_row;
+        }
+        else if (local_row == 4u || local_row == 10u || local_row == 14u)
+            operands.a = index_value_id;
+        else if (local_row == 5u)
+            operands.a = semantic_array_length[payload.c];
+        else if (local_row == 6u)
+        {
+            operands.a = first_row + 4u;
+            operands.b = first_row + 5u;
+        }
+        else if (local_row == 7u)
+        {
+            operands.a = first_row + 6u;
+            operands.b = 1u;
+            operands.c = first_row + 20u;
+        }
+        else if (local_row == 9u)
+            operands.a = semantic_value_id[payload.c];
+        else if (local_row == 11u)
+        {
+            operands.a = first_row + 9u;
+            operands.b = first_row + 10u;
+        }
+        else if (local_row == 12u)
+        {
+            operands.a = payload.b;
+            operands.b = first_row + 11u;
+        }
+        else if (local_row == 16u)
+        {
+            operands.a = first_row + 14u;
+            operands.b = first_row + 15u;
+        }
+        else if (local_row == 17u)
+        {
+            operands.a = index_value_id;
+            operands.b = first_row + 16u;
+        }
+        else if (local_row == 18u)
         {
             operands.a = first_row + 3u;
             operands.b = 0u;
@@ -529,8 +632,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // `pair` in `pair.left + pair.right` into the binary result and create
         // a target-level use-before-definition cycle.
         operands.a = lir_for_hir(payload.b, hir_count);
-        operands.b = payload.c < gParams.n_tokens
-            ? member_result_field_ordinal[payload.c] : LIR_INVALID;
+        operands.b = semantic_member_field_ordinal[node];
     }
     else if (op == SEMANTIC_LIR_OP_BRANCH)
     {
@@ -538,11 +640,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (operands.a != LIR_INVALID)
         {
             HirCore loop_core = compact_hir_core[compact_nearest_loop[node]];
-            bool range_loop = semantic_lir_count[compact_nearest_loop[node]] == 17u &&
-                semantic_lir_is_loop(loop_core,
-                    compact_hir_payload[compact_nearest_loop[node]]);
-            operands.a += range_loop
-                ? (hir.kind == HIR_CONTINUE_STMT ? 9u : 16u)
+            bool expanded_loop = semantic_lir_is_loop(loop_core,
+                compact_hir_payload[compact_nearest_loop[node]]);
+            uint loop_rows = semantic_lir_count[compact_nearest_loop[node]];
+            uint continue_offset = loop_rows == 17u ? 9u
+                : loop_rows == 21u ? 14u : 1u;
+            uint break_offset = loop_rows == 17u ? 16u
+                : loop_rows == 21u ? 20u : 5u;
+            operands.a += expanded_loop
+                ? (hir.kind == HIR_CONTINUE_STMT ? continue_offset : break_offset)
                 : (hir.kind == HIR_CONTINUE_STMT ? 1u : 5u);
         }
         operands.b = explicit_loop_branch ? explicit_branch_depth : LIR_INVALID;
@@ -561,7 +667,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // namespace. Comparison predicates range from 0..5 and previously
     // collided with UNSUPPORTED/SYNTHETIC_CONTROL/BRANCH_CONTINUE.
     if (op == SEMANTIC_LIR_OP_COMPARE)
-        operands.c = range_for
+        operands.c = range_for || array_for
             ? (range_payload.a == HIR_EXPR_RANGE_INCLUSIVE ? 4u : 2u)
             : comparison_predicate(payload.a);
 

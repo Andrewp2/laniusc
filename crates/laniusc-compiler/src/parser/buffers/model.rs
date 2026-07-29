@@ -252,6 +252,8 @@ pub struct GpuHirView {
     pub nearest_fn: LaniusBuffer<u32>,
     /// Dense return-type HIR id keyed by dense function HIR id.
     pub fn_return_type: LaniusBuffer<u32>,
+    /// Dense outer signature-type root keyed by dense nested type HIR id.
+    pub type_root_owner: LaniusBuffer<u32>,
     /// Dense target-type HIR id keyed by dense type-alias declaration HIR id.
     pub type_alias_target: LaniusBuffer<u32>,
     /// Dense annotated-type HIR id keyed by dense constant declaration HIR id.
@@ -565,6 +567,7 @@ pub struct ParserBuffers {
     pub hir_canonical_nearest_control: LaniusBuffer<u32>,
     pub hir_canonical_nearest_fn: LaniusBuffer<u32>,
     pub hir_canonical_fn_return_type: LaniusBuffer<u32>,
+    pub hir_canonical_type_root_owner: LaniusBuffer<u32>,
     pub hir_canonical_type_alias_target: LaniusBuffer<u32>,
     pub hir_canonical_const_type: LaniusBuffer<u32>,
     pub hir_canonical_const_value: LaniusBuffer<u32>,
@@ -902,6 +905,7 @@ impl GpuHirView {
             nearest_control: buffers.hir_canonical_nearest_control.clone(),
             nearest_fn: buffers.hir_canonical_nearest_fn.clone(),
             fn_return_type: buffers.hir_canonical_fn_return_type.clone(),
+            type_root_owner: buffers.hir_canonical_type_root_owner.clone(),
             type_alias_target: buffers.hir_canonical_type_alias_target.clone(),
             const_type: buffers.hir_canonical_const_type.clone(),
             const_value: buffers.hir_canonical_const_value.clone(),

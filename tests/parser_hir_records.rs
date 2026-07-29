@@ -5331,11 +5331,11 @@ impl A<i32> for S {}
         assert_ne!(bound, INVALID);
         assert!(parsed.hir_canonical_raw_to_dense.contains(&owner));
         assert!(parsed.hir_canonical_raw_to_dense.contains(&bound));
-        let bound_raw = parsed
-            .hir_canonical_raw_to_dense
-            .iter()
-            .position(|dense| *dense == bound)
-            .expect("predicate bound must have a raw-to-dense source row");
+        let bound_raw = *parsed
+            .hir_canonical_dense_to_raw
+            .get(bound as usize)
+            .expect("predicate bound must have a dense-to-raw source row")
+            as usize;
         assert_eq!(
             parsed.hir_kind[bound_raw], HIR_NODE_TYPE,
             "predicate bounds must cross the phase boundary as ordinary dense type HIR"
@@ -5349,6 +5349,26 @@ impl A<i32> for S {}
     }
     let impl_subject = parsed.hir_compact_predicate_subject[3];
     assert!(parsed.hir_canonical_raw_to_dense.contains(&impl_subject));
+}
+
+#[test]
+fn parser_compact_hir_preserves_long_where_bound_paths() {
+    let parsed = parse_resident_source(
+        r#"
+fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
+    return value;
+}
+"#,
+    );
+    assert!(parsed.ll1.accepted);
+    assert_eq!(parsed.hir_compact_predicate_bound.len(), 1);
+    let bound = parsed.hir_compact_predicate_bound[0] as usize;
+    let path = parsed
+        .hir_path_owner
+        .iter()
+        .position(|owner| *owner as usize == bound)
+        .expect("long bound must retain its compact path row");
+    assert_eq!(parsed.hir_path_segment_count[path], 10);
 }
 
 #[test]
