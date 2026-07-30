@@ -11,16 +11,16 @@ use super::{
 /// These passes mark record-family bits, extract one family at a time, scan the
 /// flags, and scatter compacted row ids consumed by later module passes.
 pub(in crate::type_checker) struct RecordDiscovery {
-    pub(in crate::type_checker) mark_records: wgpu::BindGroup,
+    pub(in crate::type_checker) mark_records: ComputeOperation,
     pub(in crate::type_checker) extract_module_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) extract_module_record_flag: wgpu::BindGroup,
+    pub(in crate::type_checker) extract_module_record_flag: ComputeOperation,
     pub(in crate::type_checker) extract_import_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) extract_import_record_flag: wgpu::BindGroup,
+    pub(in crate::type_checker) extract_import_record_flag: ComputeOperation,
     pub(in crate::type_checker) extract_decl_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) extract_decl_record_flag: wgpu::BindGroup,
+    pub(in crate::type_checker) extract_decl_record_flag: ComputeOperation,
     pub(in crate::type_checker) scatter_paths: wgpu::BindGroup,
     pub(in crate::type_checker) path_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) path_dispatch_args: wgpu::BindGroup,
@@ -36,53 +36,59 @@ pub(in crate::type_checker) struct RecordDiscovery {
 /// Creates bind groups for the record-discovery portion of module/path state.
 pub(in crate::type_checker) fn create_record_discovery(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     layout: Layout,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
     resources: &ResourceMap<'_>,
 ) -> Result<RecordDiscovery> {
-    let mark_records = resources.reflected_bind_group_with_overrides(
+    let mark_records = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_00_mark_records",
-        &passes.kernel("type_checker/modules/00_mark_records"),
-        &[(
-            "record_family_bits",
-            buffers.record_family_bits.as_entire_binding(),
-        )],
+        graph,
+        resources,
+        passes,
+        MODULE_RECORDS_MARK,
+        inputs.hir_active_dispatch_args,
     )?;
 
     let (extract_module_record_flag_params, extract_module_record_flag) =
         create_record_flag_extract(
             device,
-            &passes.kernel("type_checker/modules/00b_extract_record_flag"),
+            graph,
+            passes,
+            MODULE_RECORD_FLAG,
             "type_check.modules.extract_module_record_flag.params",
-            "type_check_modules_00b_extract_record_flag.module",
             inputs.hir_node_capacity,
             1u32,
             &buffers.record_family_bits,
             &buffers.record_family_flag,
+            inputs.hir_active_dispatch_args,
         )?;
     let (extract_import_record_flag_params, extract_import_record_flag) =
         create_record_flag_extract(
             device,
-            &passes.kernel("type_checker/modules/00b_extract_record_flag"),
+            graph,
+            passes,
+            IMPORT_RECORD_FLAG,
             "type_check.modules.extract_import_record_flag.params",
-            "type_check_modules_00b_extract_record_flag.import",
             inputs.hir_node_capacity,
             1u32 << 1,
             &buffers.record_family_bits,
             &buffers.record_family_flag,
+            inputs.hir_active_dispatch_args,
         )?;
     let (extract_decl_record_flag_params, extract_decl_record_flag) = create_record_flag_extract(
         device,
-        &passes.kernel("type_checker/modules/00b_extract_record_flag"),
+        graph,
+        passes,
+        DECL_RECORD_FLAG,
         "type_check.modules.extract_decl_record_flag.params",
-        "type_check_modules_00b_extract_record_flag.decl",
         inputs.hir_node_capacity,
         1u32 << 2,
         &buffers.record_family_bits,
         &buffers.record_family_flag,
+        inputs.hir_active_dispatch_args,
     )?;
 
     let scatter_paths = resources.reflected_bind_group_with_overrides(
@@ -90,9 +96,8 @@ pub(in crate::type_checker) fn create_record_discovery(
         "type_check_modules_01_scatter_paths",
         &passes.kernel("type_checker/modules/01_scatter_paths"),
         &[
-            ("path_start", buffers.path_start.as_entire_binding()),
-            ("path_len", buffers.path_len.as_entire_binding()),
             ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
+            ("path_len", buffers.path_len.as_entire_binding()),
             ("path_call_hir", buffers.path_call_hir.as_entire_binding()),
             (
                 "path_owner_token",

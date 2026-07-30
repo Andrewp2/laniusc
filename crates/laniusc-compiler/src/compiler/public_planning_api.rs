@@ -168,7 +168,7 @@ pub(super) fn artifact_prepare_result_from_indexes(
 /// Stores compact build manifests after all planning indexes have been prepared.
 pub(super) fn store_compact_build_manifests_from_indexes(
     store: &FilesystemArtifactStore,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<(PathBuf, PathBuf), CompileError> {
@@ -250,7 +250,7 @@ pub(super) fn artifact_prepare_step(
 /// items and report the current preparation stage.
 pub fn prepare_artifact_build_chunk(
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -548,7 +548,7 @@ pub fn prepare_artifact_build_chunk(
 /// completes or the full-prepare step limit is reached.
 pub fn prepare_artifact_build(
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -580,7 +580,7 @@ pub fn prepare_artifact_build(
 pub(super) fn prepare_dependency_stream_work_queue_chunk<I, PI, DI, P>(
     libraries: I,
     artifact_root: &Path,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -631,7 +631,7 @@ pub(super) fn prepare_path_stream_work_queue_chunk<'a, SI, UI, P>(
     user_source_file_count: usize,
     user_paths: UI,
     artifact_root: &Path,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,

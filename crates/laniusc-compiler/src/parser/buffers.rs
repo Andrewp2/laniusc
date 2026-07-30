@@ -58,6 +58,36 @@ use crate::gpu::buffers::{
     uniform_from_val,
 };
 
+pub(crate) const POST_HIR_WORKSPACE_COUNT: usize = 19;
+
+impl ParserBuffers {
+    /// Returns independently allocated parser storage whose contents are dead
+    /// once the compact HIR has been materialized.
+    pub(crate) fn post_hir_workspace(&self) -> [LaniusBuffer<u32>; POST_HIR_WORKSPACE_COUNT] {
+        [
+            self.hir_param_record.clone(),
+            self.hir_expr_record.clone(),
+            self.hir_stmt_record.clone(),
+            self.hir_type_root_owner.clone(),
+            self.hir_nearest_loop_node.clone(),
+            self.hir_type_value_node.clone(),
+            self.hir_type_len_value.clone(),
+            self.hir_struct_lit_context_stmt_node.clone(),
+            self.hir_array_lit_context_stmt_node.clone(),
+            self.sc_offsets.clone(),
+            self.emit_offsets.clone(),
+            self.pack_sc_prefix_a.clone(),
+            self.pack_sc_prefix_b.clone(),
+            self.pack_emit_prefix_a.clone(),
+            self.pack_emit_prefix_b.clone(),
+            self.hir_match_arm_owner_a.clone(),
+            self.hir_type_alias_owner_link_b.clone(),
+            self.hir_variant_payload_link_b.clone(),
+            self.hir_list_rank_flag.clone(),
+        ]
+    }
+}
+
 impl ParserBuffers {
     fn new_with_sizing(
         device: &wgpu::Device,
@@ -507,16 +537,6 @@ impl ParserBuffers {
                 }
             })
             .max(1);
-        let parser_workspace_plan = storage::parser_phase_workspace_plan(tree_capacity);
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
-            for assignment in &parser_workspace_plan.assignments {
-                let slot = &parser_workspace_plan.slots[assignment.slot as usize];
-                eprintln!(
-                    "gpu_workspace logical={:?} slot={} bytes={} usage={:?}",
-                    assignment.name, assignment.slot, slot.bytes, slot.usage,
-                );
-            }
-        }
         let emit_capacity = if resident_partial_parse_capacity {
             tree_capacity
         } else {
@@ -1297,7 +1317,7 @@ impl ParserBuffers {
         let hir_item_name_token = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_name_token",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         // `hir_item_decl_token` is a late projection from `hir_item_kind` and
         // `hir_token_pos`. The scheduler writes it after all pointer-jump list
@@ -1308,41 +1328,44 @@ impl ParserBuffers {
         let hir_item_namespace = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_namespace",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         let hir_item_visibility = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_visibility",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         let hir_item_path_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_path_start",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
-        let hir_item_path_end =
-            storage_rw_for_array::<u32>(device, "parser.hir_item_path_end", tree_capacity as usize);
+        let hir_item_path_end = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_path_end",
+            token_input_capacity as usize,
+        );
         let hir_item_path_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_path_node",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         let hir_item_file_id =
             alias_storage_buffer::<u32, u32>(&hir_token_file_id, tree_capacity as usize);
         let hir_item_import_target_kind = storage_rw_for_array::<u32>(
             device,
             "parser.hir_item_import_target_kind",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         let hir_param_record = storage_rw_for_array::<u32>(
             device,
             "parser.hir_param_record",
-            tree_capacity.saturating_mul(4) as usize,
+            token_input_capacity.saturating_mul(4) as usize,
         );
         let hir_param_type_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_param_type_node",
-            tree_capacity as usize,
+            token_input_capacity as usize,
         );
         let method_required =
             parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES != 0;

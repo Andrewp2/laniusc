@@ -1,8 +1,7 @@
+import hir_records;
 import canonical_hir_identity;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirString { uint node; uint data_offset; uint decoded_len; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> raw_to_hir;

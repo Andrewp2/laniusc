@@ -1,11 +1,22 @@
 import codegen.lowering_ir;
 import gpu_index;
 
-struct Params { uint target_capacity; uint n_tokens; uint semantic_capacity; uint reserved1; };
+struct Params
+{
+    uint target_capacity;
+    uint n_tokens;
+    uint semantic_capacity;
+    uint target_start;
+    uint page_capacity;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<uint> wasm_local_index_by_decl_token;
-StructuredBuffer<SemanticLirSchedule> semantic_lir_schedule;
+StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<WasmLirFunction> wasm_lir_functions;
 RWStructuredBuffer<WasmLirInstruction> target_lir_core;
 
@@ -18,15 +29,18 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
     uint count = min(target_lir_total[0u], gParams.target_capacity);
     if (row >= count) return;
-    WasmLirInstruction inst = target_lir_core[row];
+    WasmLirInstruction inst = target_lir_core[page_row];
     if (inst.opcode == WASM_LIR_OP_LOCAL_GET || inst.opcode == WASM_LIR_OP_LOCAL_SET)
     {
         uint declaration = inst.immediate;
         uint function_id = inst.semantic_instruction < gParams.semantic_capacity
-            ? semantic_lir_schedule[inst.semantic_instruction].function_id : INVALID;
+            ? semantic_function_id_by_hir[
+                semantic_owner_by_instruction[inst.semantic_instruction]] : INVALID;
         if ((declaration == WASM_SYNTHETIC_I32_TEMP ||
              declaration == WASM_SYNTHETIC_F32_TEMP) && function_id != INVALID)
         {
@@ -39,5 +53,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 ? wasm_local_index_by_decl_token[declaration] : INVALID;
         if (inst.immediate == INVALID) inst.flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
-    target_lir_core[row] = inst;
+    target_lir_core[page_row] = inst;
 }

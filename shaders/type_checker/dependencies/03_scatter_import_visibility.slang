@@ -1,5 +1,6 @@
 // Scatter the import/declaration relation after its per-import count scan.
 
+import dependency_interface;
 import gpu_index;
 import status;
 
@@ -19,7 +20,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_dependency_module_id;
-StructuredBuffer<uint> dependency_declaration_words;
 StructuredBuffer<uint> dependency_visible_count;
 StructuredBuffer<uint> dependency_visible_prefix;
 StructuredBuffer<uint> dependency_visible_total;
@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> dependency_visible_decl;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+static const uint IMPORT_IDENTITY_STRIDE = 4u;
 static const uint DECL_WORDS = 14u;
 static const uint ERR_NAME_LIMIT = 11u;
 static const uint WG_SIZE = 256u;
@@ -45,13 +46,13 @@ uint active_import_count()
 
 uint declaration_module(uint declaration_i)
 {
-    return dependency_declaration_words[declaration_i * DECL_WORDS];
+    return dependency_declaration_word(declaration_i * DECL_WORDS);
 }
 
 uint lower_module_bound(uint module_i)
 {
     uint first = 0u;
-    uint count = gParams.declaration_count;
+    uint count = dependency_declaration_count();
     while (count != 0u)
     {
         uint step = count >> 1u;
@@ -102,9 +103,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_i = visible_i - dependency_visible_prefix[import_i];
     if (local_i >= dependency_visible_count[import_i])
         return;
-    uint target = import_target_dependency_module_id[import_i];
+    uint target = import_target_dependency_module_id[import_i * IMPORT_IDENTITY_STRIDE];
     uint declaration_i = lower_module_bound(target) + local_i;
-    if (declaration_i >= gParams.declaration_count ||
+    if (declaration_i >= dependency_declaration_count() ||
         declaration_module(declaration_i) != target)
         return;
     dependency_visible_owner_module[visible_i] = import_module_id[import_i];

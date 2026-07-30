@@ -1,5 +1,6 @@
 // Count the union of compact module/import/declaration/path candidate rows.
 
+import hir_records;
 import atomics;
 import prefix_scan;
 import type_checker.modules.record_candidates;
@@ -14,8 +15,6 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

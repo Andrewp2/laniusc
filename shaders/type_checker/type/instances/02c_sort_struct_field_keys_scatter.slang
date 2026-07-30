@@ -1,5 +1,6 @@
 // GPU struct-field key radix stable scatter.
 
+import hir_records;
 import gpu_index;
 import radix;
 import scatter;
@@ -19,8 +20,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

@@ -35,27 +35,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
-    /// Compiles one bounded source-pack unit to a durable relocatable Wasm object.
-    pub(in crate::compiler) async fn compile_source_pack_to_wasm_object<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        library_id: u32,
-        unit_id: u32,
-        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
-    ) -> Result<wasm::GpuWasmRelocatableObject, CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
-            "compile source pack to Wasm object",
-            sources,
-        )?;
-        self.compile_checked_source_pack_to_wasm_object_with_lowering(
-            sources,
-            library_id,
-            unit_id,
-            dependency_interfaces,
-        )
-        .await
-    }
-
     /// Compile an explicit in-memory source-pack manifest through the WASM
     /// backend and preserve manifest source paths for diagnostics.
     pub async fn compile_source_pack_manifest_to_wasm(
@@ -97,7 +76,7 @@ mod tests {
     #[test]
     fn gpu_projects_compiled_user_call_to_relocatable_wasm_object() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
+        let object = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
             &[r#"
 pub fn seven() -> i32 {
     return 7;
@@ -110,8 +89,12 @@ fn main() -> i32 {
             11,
             3,
             &[],
+            SourcePackArtifactTarget::Wasm,
         ))
-        .expect("compile relocatable Wasm object");
+        .expect("compile relocatable Wasm unit")
+        .object
+        .into_wasm()
+        .expect("select Wasm object");
         assert_eq!(object.library_id, 11);
         assert_eq!(object.unit_id, 3);
         assert_eq!(object.functions.len(), 2);
@@ -146,16 +129,21 @@ pub fn seven() -> i32 {
     return 7;
 }
 "#];
-        let provider_interface =
-            pollster::block_on(compiler.semantic_interface_for_source_pack(7, &provider_source))
-                .expect("project provider semantic interface");
-        let provider_object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
+        let noise_interface = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            8,
+            &["module noise::unused;\npub fn zero() -> i32 { return 0; }"],
+        ))
+        .expect("project unrelated semantic interface");
+        let provider = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
             &provider_source,
             7,
             0,
             &[],
+            SourcePackArtifactTarget::Wasm,
         ))
-        .expect("compile provider Wasm object");
+        .expect("compile provider Wasm unit");
+        let provider_interface = provider.interface;
+        let provider_object = provider.object.into_wasm().expect("provider Wasm object");
         assert_eq!(provider_object.entry_function, None);
 
         let consumer_source = [r#"
@@ -163,16 +151,21 @@ module app::main;
 import core::math;
 
 fn main() -> i32 {
-    return seven();
+    return core::math::seven();
 }
 "#];
-        let consumer_object = pollster::block_on(compiler.compile_source_pack_to_wasm_object(
-            &consumer_source,
-            11,
-            2,
-            &[provider_interface],
-        ))
-        .expect("compile consumer Wasm object against provider interface");
+        let consumer_object =
+            pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+                &consumer_source,
+                11,
+                2,
+                &[vec![noise_interface], vec![provider_interface]],
+                SourcePackArtifactTarget::Wasm,
+            ))
+            .expect("compile consumer Wasm unit against provider interface")
+            .object
+            .into_wasm()
+            .expect("consumer Wasm object");
         assert_eq!(consumer_object.entry_function, Some(0));
         assert_eq!(consumer_object.relocations.len(), 1);
         let relocation = &consumer_object.relocations[0];

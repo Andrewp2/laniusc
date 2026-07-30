@@ -1,5 +1,6 @@
 // Parallel open-address construction for dependency module identities.
 
+import dependency_interface;
 import atomics;
 import gpu_index;
 
@@ -12,8 +13,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> dependency_module_words;
-StructuredBuffer<uint> dependency_module_segment_words;
 RWStructuredBuffer<uint> dependency_module_lookup;
 RWStructuredBuffer<uint> status;
 
@@ -39,16 +38,16 @@ uint mix(uint hash, uint value)
 uint module_hash(uint module_i)
 {
     uint base = module_i * MODULE_WORDS;
-    uint first = dependency_module_words[base + 0u];
-    uint count = dependency_module_words[base + 1u];
+    uint first = dependency_module_word(base + 0u);
+    uint count = dependency_module_word(base + 1u);
     uint hash = mix(2166136261u, count);
     for (uint segment_i = 0u; segment_i < 8u; segment_i += 1u)
     {
         if (segment_i >= count)
             break;
         uint segment = (first + segment_i) * SEGMENT_WORDS;
-        hash = mix(hash, dependency_module_segment_words[segment + 0u]);
-        hash = mix(hash, dependency_module_segment_words[segment + 1u]);
+        hash = mix(hash, dependency_module_segment_word(segment + 0u));
+        hash = mix(hash, dependency_module_segment_word(segment + 1u));
     }
     return hash;
 }
@@ -58,7 +57,7 @@ uint module_hash(uint module_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint module_i = linear_thread_id(dtid);
-    if (module_i >= gParams.module_count || gParams.lookup_capacity == 0u)
+    if (module_i >= dependency_module_count() || gParams.lookup_capacity == 0u)
         return;
     uint mask = gParams.lookup_capacity - 1u;
     uint slot = module_hash(module_i) & mask;

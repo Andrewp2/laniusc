@@ -1,3 +1,5 @@
+import hir_records;
+
 // Compact-HIR function return type-reference projection.
 //
 // The canonical parser artifact owns the dense function -> dense return-type
@@ -11,8 +13,6 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gParams;
 

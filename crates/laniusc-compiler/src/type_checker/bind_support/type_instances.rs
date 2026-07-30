@@ -87,6 +87,7 @@ pub(in crate::type_checker) fn generic_decl_owner_step_count(hir_node_capacity: 
 /// Builds bind groups for collecting, sorting, and projecting type instances.
 pub(in crate::type_checker) fn create_type_instance_bind_groups(
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     passes: &TypeCheckPasses,
     resources: &ResourceMap<'_>,
     token_capacity: u32,
@@ -124,11 +125,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             key_step: 0,
         },
     );
-    let struct_field_key_radix_dispatch = bind_group::create_bind_group_from_bindings(
+    let struct_field_key_radix_dispatch = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check.type_instances.struct_field_key_radix_dispatch"),
+        "type_check.type_instances.struct_field_key_radix_dispatch",
         &passes.kernel("type_checker/type/instances/02a_struct_field_radix_dispatch"),
-        0,
         &[
             ("gParams", struct_field_radix_params.as_entire_binding()),
             (
@@ -202,11 +202,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             resources["predicate_bound_list_by_node_a"].clone()
         };
-        propagate_generic_decl_owner.push(bind_group::create_bind_group_from_bindings(
+        propagate_generic_decl_owner.push(resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check_type_instances_00a1_propagate_generic_decl_owner"),
+            "type_check_type_instances_00a1_propagate_generic_decl_owner",
             &passes.kernel("type_checker/type/instances/00a1_propagate_generic_decl_owner"),
-            0,
             &[
                 ("gParams", resources["gParams"].clone()),
                 ("hir_status", resources["hir_status"].clone()),
@@ -230,13 +229,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     // These scans are recorded before aggregate comparison begins, so the
     // aggregate scan workspace can safely serve both relations without
     // increasing resident scratch memory.
-    let semantic_type_scan = Box::new(PrefixScanOperation::from_spec(
-        device,
-        passes,
-        resources,
-        compiler_graph::TYPE_SEMANTIC_SCAN,
-    )?);
-
     Ok(TypeInstanceBindGroups {
         clear: reflected_bind_group_from_resources(
             device,
@@ -315,18 +307,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.kernel("type_checker/type/instances/01h_clear_semantic_type_rows"),
             resources,
         )?),
-        mark_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
+        semantic_type_rows: Box::new(CompactionOperation::indirect(
             device,
-            "type_check_resident_type_instances_mark_semantic_type_rows",
-            &passes.kernel("type_checker/type/instances/01i_mark_semantic_type_rows"),
+            graph,
             resources,
-        )?),
-        semantic_type_scan,
-        scatter_semantic_type_rows: Box::new(reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_type_instances_scatter_semantic_type_rows",
-            &passes.kernel("type_checker/type/instances/01j_scatter_semantic_type_rows"),
-            resources,
+            passes,
+            TYPE_SEMANTIC_COMPACTION,
+            buffer_from_resources(resources, "hir_active_dispatch_args")?,
         )?),
         decl_refs: reflected_bind_group_from_resources(
             device,

@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 use super::{ExplicitSourcePathFile, SourcePackShardSourceFile};
 use crate::{
     codegen::unit::{
-        CodegenUnit,
-        CodegenUnitLimits,
+        CompilationUnit,
+        CompilationUnitLimits,
         DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES,
-        FrontendUnit,
         LibraryUnit,
         SourcePackArtifactRef,
         SourcePackArtifactTarget,
@@ -42,10 +41,8 @@ pub const SOURCE_PACK_LIBRARY_BUILD_UNIT_PAGE_VERSION: u32 = 1;
 /// Inline build-unit cap before unit metadata spills to unit pages.
 pub const SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP: usize =
     DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
-/// Version for persisted frontend-unit pages.
-pub const SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION: u32 = 1;
-/// Version for persisted codegen-unit pages.
-pub const SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION: u32 = 1;
+/// Version for persisted compilation-unit pages.
+pub const SOURCE_PACK_LIBRARY_COMPILATION_UNIT_PAGE_VERSION: u32 = 1;
 /// Version for the persisted library schedule index.
 pub const SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION: u32 = 1;
 /// Version for library schedule preparation progress records.
@@ -239,42 +236,25 @@ pub struct SourcePackLibraryBuildUnitPage {
     pub source_byte_count: usize,
     #[serde(default)]
     pub source_line_count: usize,
-    pub limits: CodegenUnitLimits,
+    pub limits: CompilationUnitLimits,
     pub frontend_unit: LibraryUnit,
     #[serde(default)]
-    pub frontend_unit_count: usize,
-    #[serde(default)]
-    pub codegen_unit_count: usize,
+    pub unit_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub frontend_units: Vec<FrontendUnit>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub codegen_units: Vec<CodegenUnit>,
+    pub units: Vec<CompilationUnit>,
 }
 
-/// Persisted frontend unit page for a library partition.
+/// Persisted compilation unit page for a library partition.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourcePackLibraryFrontendUnitPage {
+pub struct SourcePackLibraryCompilationUnitPage {
     pub version: u32,
     pub target: SourcePackArtifactTarget,
     pub partition_index: usize,
     pub library_id: u32,
-    pub limits: CodegenUnitLimits,
-    pub frontend_unit_index: usize,
-    pub frontend_unit_count: usize,
-    pub unit: FrontendUnit,
-}
-
-/// Persisted codegen unit page for a library partition.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourcePackLibraryCodegenUnitPage {
-    pub version: u32,
-    pub target: SourcePackArtifactTarget,
-    pub partition_index: usize,
-    pub library_id: u32,
-    pub limits: CodegenUnitLimits,
-    pub codegen_unit_index: usize,
-    pub codegen_unit_count: usize,
-    pub unit: CodegenUnit,
+    pub limits: CompilationUnitLimits,
+    pub unit_index: usize,
+    pub unit_count: usize,
+    pub unit: CompilationUnit,
 }
 
 /// Entry in the library schedule index for one partition.

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{super::*, buffers::Buffers, inputs::CreateInputs};
+use super::{super::*, inputs::CreateInputs};
 
 /// Bind groups for projecting resolved paths into semantic type/value facts.
 ///
@@ -67,308 +67,32 @@ pub(in crate::type_checker) struct TypeAliasProjection {
     _normalized_source: LaniusBuffer<u32>,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn create_project_type_alias_instances_bind_group(
-    device: &wgpu::Device,
-    pass: &PassData,
-    params: &LaniusBuffer<TypeCheckParams>,
-    hir: &GpuTypeCheckHirItemBuffers<'_>,
-    path_count_out: &wgpu::Buffer,
-    path_id_by_owner_hir: &wgpu::Buffer,
-    path_segment_count: &wgpu::Buffer,
-    path_segment_base: &wgpu::Buffer,
-    path_segment_token: &wgpu::Buffer,
-    type_instance_decl_token: &wgpu::Buffer,
-    type_decl_hir_node_by_token: &wgpu::Buffer,
-    type_generic_param_slot_by_token: &wgpu::Buffer,
-    type_instance_arg_row_start: &wgpu::Buffer,
-    type_instance_arg_row_count_out: &wgpu::Buffer,
-    type_instance_arg_row_ref_tag: &wgpu::Buffer,
-    type_instance_arg_row_ref_payload: &wgpu::Buffer,
-    alias_normalized_source: &LaniusBuffer<u32>,
-    type_expr_ref_tag: &wgpu::Buffer,
-    type_expr_ref_payload: &wgpu::Buffer,
-) -> Result<Box<wgpu::BindGroup>> {
-    bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_10e0k_project_type_alias_instances"),
-        pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir.hir.core.as_entire_binding()),
-            ("compact_hir_payload", hir.hir.payload.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            (
-                "type_instance_decl_token",
-                type_instance_decl_token.as_entire_binding(),
-            ),
-            (
-                "type_decl_hir_node_by_token",
-                type_decl_hir_node_by_token.as_entire_binding(),
-            ),
-            (
-                "type_generic_param_slot_by_token",
-                type_generic_param_slot_by_token.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_start",
-                type_instance_arg_row_start.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_count_out",
-                type_instance_arg_row_count_out.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_tag",
-                type_instance_arg_row_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_payload",
-                type_instance_arg_row_ref_payload.as_entire_binding(),
-            ),
-            (
-                "alias_normalized_source",
-                alias_normalized_source.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-        ],
-    )
-    .map(Box::new)
-}
-
 /// Creates bind groups for path projection and value/type path validation.
 pub(in crate::type_checker) fn create_projection_bind_groups(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
     inputs: &CreateInputs<'_>,
-    buffers: &Buffers,
+    resources: &ResourceMap<'_>,
 ) -> Result<ProjectionBindGroups> {
-    let CreateInputs {
-        params,
-        token_buf,
-        token_count_buf,
-        hir_status_buf,
-        hir_kind_buf,
-        hir_token_pos_buf,
-        hir_token_end_buf,
-        status_buf,
-        hir_items,
-        name_id_by_token,
-        language_name_id,
-        module_type_path_type,
-        module_type_path_status,
-        module_value_path_expr_head,
-        module_value_path_call_head,
-        module_value_path_call_open,
-        module_value_path_call_path_id,
-        module_value_path_call_leaf,
-        module_value_path_associated_method_token,
-        module_value_path_associated_receiver_token,
-        module_value_path_const_head,
-        module_value_path_const_end,
-        module_value_path_status,
-        visible_decl,
-        visible_type,
-        enclosing_fn,
-        call_fn_index,
-        call_return_type,
-        call_return_type_token,
-        call_generic_slot_type,
-        call_generic_slot_ordinal,
-        method_call_name_id,
-        call_param_count,
-        call_arg_row_node,
-        call_arg_row_call_node,
-        call_arg_row_ordinal,
-        call_arg_row_start,
-        call_arg_row_count,
-        type_expr_ref_tag,
-        type_expr_ref_payload,
-        type_instance_kind,
-        type_instance_decl_token,
-        type_instance_arg_start,
-        type_instance_arg_count,
-        type_instance_arg_ref_tag,
-        type_instance_arg_ref_payload,
-        type_instance_arg_row_start,
-        type_instance_arg_row_count_out,
-        type_instance_arg_row_ref_tag,
-        type_instance_arg_row_ref_payload,
-        type_decl_generic_param_count,
-        type_decl_generic_param_count_by_owner_token,
-        type_generic_param_slot_by_token,
-        type_decl_hir_node_by_token,
-        generic_param_count_out,
-        generic_param_owner_token,
-        generic_param_name_id,
-        generic_param_token,
-        generic_param_kind,
-        generic_param_key_order,
-        generic_param_slot_order,
-        type_instance_state,
-        decl_type_ref_tag,
-        decl_type_ref_payload,
-        fn_return_ref_tag,
-        fn_return_ref_payload,
-        ..
-    } = inputs;
-    let Buffers {
-        decl_count_out,
-        decl_name_token,
-        decl_id_by_name_token,
-        decl_kind,
-        decl_namespace,
-        decl_hir_node,
-        decl_parent_type_decl,
-        resolved_type_decl,
-        resolved_value_decl,
-        resolved_type_status,
-        resolved_value_status,
-        path_segment_count,
-        path_segment_base,
-        path_segment_token,
-        path_owner_hir,
-        path_call_hir,
-        path_owner_token,
-        path_id_by_owner_hir,
-        path_kind,
-        path_count_out,
-        ..
-    } = buffers;
+    let params = inputs.params;
 
-    let clear_type_path_types = bind_group::create_bind_group_from_bindings(
+    let clear_type_path_types = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10d_clear_type_path_types"),
+        "type_check_modules_10d_clear_type_path_types",
         &passes.kernel("type_checker/modules/10d_clear_type_path_types"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "module_type_path_type",
-                module_type_path_type.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                module_type_path_status.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_open",
-                module_value_path_call_open.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_path_id",
-                module_value_path_call_path_id.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_leaf",
-                module_value_path_call_leaf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_method_token",
-                module_value_path_associated_method_token.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_receiver_token",
-                module_value_path_associated_receiver_token.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_head",
-                module_value_path_const_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_end",
-                module_value_path_const_end.as_entire_binding(),
-            ),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let project_type_paths = bind_group::create_bind_group_from_bindings(
+    let project_type_paths = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e_project_type_paths"),
+        "type_check_modules_10e_project_type_paths",
         &passes.kernel("type_checker/modules/10e_project_type_paths"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "resolved_type_status",
-                resolved_type_status.as_entire_binding(),
-            ),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            (
-                "module_type_path_type",
-                module_type_path_type.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                module_type_path_status.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let validate_type_paths = bind_group::create_bind_group_from_bindings(
+    let validate_type_paths = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e3_validate_type_paths"),
+        "type_check_modules_10e3_validate_type_paths",
         &passes.kernel("type_checker/modules/10e3_validate_type_paths"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            (
-                "resolved_type_status",
-                resolved_type_status.as_entire_binding(),
-            ),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
     let aliases_required = type_alias_passes_required(inputs.hir_items.parser_feature_flags);
     let alias_root_capacity = if aliases_required {
@@ -454,165 +178,69 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         &alias_forwarding_valid_arg_count,
         alias_hir_capacity as usize,
     );
-    let clear_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
+    let mut alias_resources = resources.clone();
+    alias_resources.buffer("alias_forwarding", &alias_forwarding);
+    alias_resources.buffer(
+        "alias_forwarding_target_decl",
+        &alias_forwarding_target_decl,
+    );
+    alias_resources.buffer(
+        "alias_forwarding_valid_arg_count",
+        &alias_forwarding_valid_arg_count,
+    );
+    alias_resources.buffer("alias_decl_by_target_hir", &alias_decl_by_target_hir);
+    alias_resources.buffer("alias_source_hir_by_target_hir", &alias_decl_by_target_hir);
+    alias_resources.buffer("alias_equiv_parent_a", &alias_equiv_parent_a);
+    alias_resources.buffer("alias_equiv_parent_b", &alias_equiv_parent_b);
+    alias_resources.buffer("alias_equiv_edge_0", &alias_equiv_edge_0);
+    alias_resources.buffer("alias_equiv_edge_1", &alias_equiv_edge_1);
+    alias_resources.buffer(
+        "alias_equiv_component_source",
+        &alias_equiv_component_source,
+    );
+    alias_resources.buffer("alias_normalized_source", &alias_normalized_source);
+
+    let clear_type_alias_forwarding = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0_clear_type_alias_forwarding"),
+        "type_check_modules_10e0_clear_type_alias_forwarding",
         &passes.kernel("type_checker/modules/10e0_clear_type_alias_forwarding"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("alias_forwarding", alias_forwarding.as_entire_binding()),
-            (
-                "alias_forwarding_target_decl",
-                alias_forwarding_target_decl.as_entire_binding(),
-            ),
-            (
-                "alias_forwarding_valid_arg_count",
-                alias_forwarding_valid_arg_count.as_entire_binding(),
-            ),
-            (
-                "alias_decl_by_target_hir",
-                alias_decl_by_target_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let init_type_alias_forwarding = bind_group::create_bind_group_from_bindings(
+    let init_type_alias_forwarding = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0a_init_type_alias_forwarding"),
+        "type_check_modules_10e0a_init_type_alias_forwarding",
         &passes.kernel("type_checker/modules/10e0a_init_type_alias_forwarding"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_type_alias_target",
-                hir_items.hir.type_alias_target.as_entire_binding(),
-            ),
-            (
-                "compact_type_arg_ranges",
-                hir_items.hir.type_arg_ranges.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "type_decl_generic_param_count_by_owner_token",
-                type_decl_generic_param_count_by_owner_token.as_entire_binding(),
-            ),
-            ("alias_forwarding", alias_forwarding.as_entire_binding()),
-            (
-                "alias_forwarding_target_decl",
-                alias_forwarding_target_decl.as_entire_binding(),
-            ),
-            (
-                "alias_decl_by_target_hir",
-                alias_decl_by_target_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let validate_type_alias_forwarding_args = bind_group::create_bind_group_from_bindings(
+    let validate_type_alias_forwarding_args = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0b_validate_type_alias_forwarding_args"),
+        "type_check_modules_10e0b_validate_type_alias_forwarding_args",
         &passes.kernel("type_checker/modules/10e0b_validate_type_alias_forwarding_args"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_type_arg_count",
-                hir_items.hir.type_arg_count.as_entire_binding(),
-            ),
-            (
-                "compact_type_args",
-                hir_items.hir.type_args.as_entire_binding(),
-            ),
-            (
-                "type_generic_param_slot_by_token",
-                type_generic_param_slot_by_token.as_entire_binding(),
-            ),
-            ("alias_forwarding", alias_forwarding.as_entire_binding()),
-            (
-                "alias_forwarding_valid_arg_count",
-                alias_forwarding_valid_arg_count.as_entire_binding(),
-            ),
-            (
-                "alias_decl_by_target_hir",
-                alias_decl_by_target_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let init_type_alias_roots = bind_group::create_bind_group_from_bindings(
+    let init_type_alias_roots = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e1_init_type_alias_roots"),
+        "type_check_modules_10e1_init_type_alias_roots",
         &passes.kernel("type_checker/modules/10e1_init_type_alias_roots"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_type_alias_target",
-                hir_items.hir.type_alias_target.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "type_decl_generic_param_count_by_owner_token",
-                type_decl_generic_param_count_by_owner_token.as_entire_binding(),
-            ),
-            (
-                "compact_type_arg_ranges",
-                hir_items.hir.type_arg_ranges.as_entire_binding(),
-            ),
-            ("alias_forwarding", alias_forwarding.as_entire_binding()),
-            (
-                "alias_forwarding_target_decl",
-                alias_forwarding_target_decl.as_entire_binding(),
-            ),
-            (
-                "alias_forwarding_valid_arg_count",
-                alias_forwarding_valid_arg_count.as_entire_binding(),
-            ),
             ("alias_root_decl", alias_root_a.as_entire_binding()),
         ],
     )?;
-    let jump_type_alias_roots_a_to_b = bind_group::create_bind_group_from_bindings(
+    let jump_type_alias_roots_a_to_b = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e1a_jump_type_alias_roots_a_to_b"),
+        "type_check_modules_10e1a_jump_type_alias_roots_a_to_b",
         &passes.kernel("type_checker/modules/10e1a_jump_type_alias_roots"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
             ("alias_root_decl_in", alias_root_a.as_entire_binding()),
             ("alias_root_decl_out", alias_root_b.as_entire_binding()),
         ],
     )?;
-    let jump_type_alias_roots_b_to_a = bind_group::create_bind_group_from_bindings(
+    let jump_type_alias_roots_b_to_a = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e1a_jump_type_alias_roots_b_to_a"),
+        "type_check_modules_10e1a_jump_type_alias_roots_b_to_a",
         &passes.kernel("type_checker/modules/10e1a_jump_type_alias_roots"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
             ("alias_root_decl_in", alias_root_b.as_entire_binding()),
@@ -625,161 +253,31 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     } else {
         &alias_root_b
     };
-    let clear_alias_equivalence = bind_group::create_bind_group_from_bindings(
+    let clear_alias_equivalence = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0c_clear_type_alias_equivalence"),
+        "type_check_modules_10e0c_clear_type_alias_equivalence",
         &passes.kernel("type_checker/modules/10e0c_clear_type_alias_equivalence"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "alias_equiv_parent_a",
-                alias_equiv_parent_a.as_entire_binding(),
-            ),
-            (
-                "alias_equiv_parent_b",
-                alias_equiv_parent_b.as_entire_binding(),
-            ),
-            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
-            ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
-            (
-                "alias_equiv_component_source",
-                alias_equiv_component_source.as_entire_binding(),
-            ),
-            (
-                "alias_normalized_source",
-                alias_normalized_source.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let init_alias_decl_edges = bind_group::create_bind_group_from_bindings(
+    let init_alias_decl_edges = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0d_init_type_alias_decl_edges"),
+        "type_check_modules_10e0d_init_type_alias_decl_edges",
         &passes.kernel("type_checker/modules/10e0d_init_type_alias_decl_edges"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_type_alias_target",
-                hir_items.hir.type_alias_target.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "generic_param_count_out",
-                generic_param_count_out.as_entire_binding(),
-            ),
-            (
-                "generic_param_owner_token",
-                generic_param_owner_token.as_entire_binding(),
-            ),
-            (
-                "generic_param_token",
-                generic_param_token.as_entire_binding(),
-            ),
-            ("generic_param_kind", generic_param_kind.as_entire_binding()),
-            (
-                "generic_param_slot_order",
-                generic_param_slot_order.as_entire_binding(),
-            ),
-            (
-                "type_generic_param_slot_by_token",
-                type_generic_param_slot_by_token.as_entire_binding(),
-            ),
-            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
-            (
-                "alias_source_hir_by_target_hir",
-                alias_decl_by_target_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let init_alias_arg_edges = bind_group::create_bind_group_from_bindings(
+    let init_alias_arg_edges = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0e_init_type_alias_arg_edges"),
+        "type_check_modules_10e0e_init_type_alias_arg_edges",
         &passes.kernel("type_checker/modules/10e0e_init_type_alias_arg_edges"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_type_arg_count",
-                hir_items.hir.type_arg_count.as_entire_binding(),
-            ),
-            (
-                "compact_type_args",
-                hir_items.hir.type_args.as_entire_binding(),
-            ),
-            (
-                "alias_source_hir_by_target_hir",
-                alias_decl_by_target_hir.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "generic_param_count_out",
-                generic_param_count_out.as_entire_binding(),
-            ),
-            (
-                "generic_param_owner_token",
-                generic_param_owner_token.as_entire_binding(),
-            ),
-            (
-                "generic_param_token",
-                generic_param_token.as_entire_binding(),
-            ),
-            ("generic_param_kind", generic_param_kind.as_entire_binding()),
-            (
-                "generic_param_slot_order",
-                generic_param_slot_order.as_entire_binding(),
-            ),
-            (
-                "type_generic_param_slot_by_token",
-                type_generic_param_slot_by_token.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-            ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
-            ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
     let hook_alias_equivalence = |label: &'static str, parent: &LaniusBuffer<u32>| {
-        bind_group::create_bind_group_from_bindings(
+        alias_resources.reflected_bind_group_with_overrides(
             device,
-            Some(label),
+            label,
             &passes.kernel("type_checker/modules/10e0f_hook_type_alias_equivalence"),
-            0,
             &[
                 ("gParams", params.as_entire_binding()),
-                ("alias_equiv_edge_0", alias_equiv_edge_0.as_entire_binding()),
-                ("alias_equiv_edge_1", alias_equiv_edge_1.as_entire_binding()),
                 ("alias_equiv_parent", parent.as_entire_binding()),
             ],
         )
@@ -794,11 +292,10 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     )?;
     let jump_alias_equivalence =
         |label: &'static str, input: &LaniusBuffer<u32>, output: &LaniusBuffer<u32>| {
-            bind_group::create_bind_group_from_bindings(
+            alias_resources.reflected_bind_group_with_overrides(
                 device,
-                Some(label),
+                label,
                 &passes.kernel("type_checker/modules/10e0g_jump_type_alias_equivalence"),
-                0,
                 &[
                     ("gParams", params.as_entire_binding()),
                     ("alias_equiv_parent_in", input.as_entire_binding()),
@@ -827,159 +324,56 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     } else {
         &alias_equiv_parent_b
     };
-    let select_alias_generic_sources = bind_group::create_bind_group_from_bindings(
+    let select_alias_generic_sources = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0h_select_type_alias_generic_sources"),
+        "type_check_modules_10e0h_select_type_alias_generic_sources",
         &passes.kernel("type_checker/modules/10e0h_select_type_alias_generic_sources"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
-            (
-                "generic_param_count_out",
-                generic_param_count_out.as_entire_binding(),
-            ),
-            (
-                "generic_param_owner_token",
-                generic_param_owner_token.as_entire_binding(),
-            ),
-            (
-                "generic_param_token",
-                generic_param_token.as_entire_binding(),
-            ),
-            ("generic_param_kind", generic_param_kind.as_entire_binding()),
-            (
-                "type_decl_hir_node_by_token",
-                type_decl_hir_node_by_token.as_entire_binding(),
-            ),
             (
                 "alias_equiv_parent",
                 final_alias_equiv_parent.as_entire_binding(),
             ),
-            (
-                "alias_normalized_source",
-                alias_normalized_source.as_entire_binding(),
-            ),
         ],
     )?;
-    let select_alias_concrete_sources = bind_group::create_bind_group_from_bindings(
+    let select_alias_concrete_sources = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0i_select_type_alias_concrete_sources"),
+        "type_check_modules_10e0i_select_type_alias_concrete_sources",
         &passes.kernel("type_checker/modules/10e0i_select_type_alias_concrete_sources"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
             (
                 "alias_equiv_parent",
                 final_alias_equiv_parent.as_entire_binding(),
             ),
-            (
-                "alias_equiv_component_source",
-                alias_equiv_component_source.as_entire_binding(),
-            ),
         ],
     )?;
-    let finalize_alias_equivalence = bind_group::create_bind_group_from_bindings(
+    let finalize_alias_equivalence = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e0j_finalize_type_alias_equivalence"),
+        "type_check_modules_10e0j_finalize_type_alias_equivalence",
         &passes.kernel("type_checker/modules/10e0j_finalize_type_alias_equivalence"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
             (
                 "alias_equiv_parent",
                 final_alias_equiv_parent.as_entire_binding(),
             ),
-            (
-                "alias_equiv_component_source",
-                alias_equiv_component_source.as_entire_binding(),
-            ),
-            (
-                "alias_normalized_source",
-                alias_normalized_source.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "module_type_path_type",
-                module_type_path_type.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                module_type_path_status.as_entire_binding(),
-            ),
         ],
     )?;
-    let project_type_alias_instances = create_project_type_alias_instances_bind_group(
+    let project_type_alias_instances = alias_resources.reflected_bind_group_with_overrides(
         device,
+        "type_check_modules_10e0k_project_type_alias_instances",
         &passes.kernel("type_checker/modules/10e0k_project_type_alias_instances"),
-        params,
-        hir_items,
-        path_count_out,
-        path_id_by_owner_hir,
-        path_segment_count,
-        path_segment_base,
-        path_segment_token,
-        type_instance_decl_token,
-        type_decl_hir_node_by_token,
-        type_generic_param_slot_by_token,
-        type_instance_arg_row_start,
-        type_instance_arg_row_count_out,
-        type_instance_arg_row_ref_tag,
-        type_instance_arg_row_ref_payload,
-        &alias_normalized_source,
-        type_expr_ref_tag,
-        type_expr_ref_payload,
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let project_type_aliases = bind_group::create_bind_group_from_bindings(
+    let project_type_alias_instances = Box::new(project_type_alias_instances);
+    let project_type_aliases = alias_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10e2_project_type_aliases"),
+        "type_check_modules_10e2_project_type_aliases",
         &passes.kernel("type_checker/modules/10e2_project_type_aliases"),
-        0,
         &[
             ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_type_alias_target",
-                hir_items.hir.type_alias_target.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
             ("alias_root_decl", final_alias_root.as_entire_binding()),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "module_type_path_type",
-                module_type_path_type.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                module_type_path_status.as_entire_binding(),
-            ),
         ],
     )?;
     let type_aliases = Box::new(TypeAliasProjection {
@@ -1016,806 +410,83 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         _equiv_component_source: alias_equiv_component_source,
         _normalized_source: alias_normalized_source,
     });
-    let project_type_instances = bind_group::create_bind_group_from_bindings(
+    let project_type_instances = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10k_project_type_instances"),
+        "type_check_modules_10k_project_type_instances",
         &passes.kernel("type_checker/modules/10k_project_type_instances"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            ("path_owner_hir", path_owner_hir.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("node_kind", hir_items.node_kind.as_entire_binding()),
-            ("parent", hir_items.parent.as_entire_binding()),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("type_instance_kind", type_instance_kind.as_entire_binding()),
-            (
-                "type_instance_arg_count",
-                type_instance_arg_count.as_entire_binding(),
-            ),
-            (
-                "type_decl_generic_param_count",
-                type_decl_generic_param_count.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_decl_token",
-                type_instance_decl_token.as_entire_binding(),
-            ),
-            (
-                "type_instance_state",
-                type_instance_state.as_entire_binding(),
-            ),
-            (
-                "module_type_path_type",
-                module_type_path_type.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let mark_value_call_paths = bind_group::create_bind_group_from_bindings(
+    let mark_value_call_paths = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10f_mark_value_call_paths"),
+        "type_check_modules_10f_mark_value_call_paths",
         &passes.kernel("type_checker/modules/10f_mark_value_call_paths"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_open",
-                module_value_path_call_open.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_path_id",
-                module_value_path_call_path_id.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_leaf",
-                module_value_path_call_leaf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_method_token",
-                module_value_path_associated_method_token.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_receiver_token",
-                module_value_path_associated_receiver_token.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let project_value_paths = bind_group::create_bind_group_from_bindings(
+    let project_value_paths = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10g_project_value_paths"),
+        "type_check_modules_10g_project_value_paths",
         &passes.kernel("type_checker/modules/10g_project_value_paths"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("first_child", hir_items.first_child.as_entire_binding()),
-            ("next_sibling", hir_items.next_sibling.as_entire_binding()),
-            ("subtree_end", hir_items.subtree_end.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            (
-                "hir_member_name_token",
-                hir_items.member_name_token.as_entire_binding(),
-            ),
-            ("hir_expr_record", hir_items.expr_record.as_entire_binding()),
-            ("hir_stmt_record", hir_items.stmt_record.as_entire_binding()),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_count",
-                hir_items.hir.variant_payload_count.as_entire_binding(),
-            ),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            (
-                "module_type_path_status",
-                module_type_path_status.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_method_token",
-                module_value_path_associated_method_token.as_entire_binding(),
-            ),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let consume_value_calls = bind_group::create_bind_group_from_bindings(
+    let consume_value_calls = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10h_consume_value_calls"),
+        "type_check_modules_10h_consume_value_calls",
         &passes.kernel("type_checker/modules/10h_consume_value_calls"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            ("path_call_hir", path_call_hir.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("resolved_type_decl", resolved_type_decl.as_entire_binding()),
-            (
-                "resolved_value_decl",
-                resolved_value_decl.as_entire_binding(),
-            ),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            ("call_arg_row_count", call_arg_row_count.as_entire_binding()),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_open",
-                module_value_path_call_open.as_entire_binding(),
-            ),
-            (
-                "module_value_path_associated_method_token",
-                module_value_path_associated_method_token.as_entire_binding(),
-            ),
-            ("call_param_count", call_param_count.as_entire_binding()),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            ("call_fn_index", call_fn_index.as_entire_binding()),
-            ("call_return_type", call_return_type.as_entire_binding()),
-            (
-                "call_return_type_token",
-                call_return_type_token.as_entire_binding(),
-            ),
-            (
-                "method_call_name_id",
-                method_call_name_id.as_entire_binding(),
-            ),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let mirror_value_call_leaf = bind_group::create_bind_group_from_bindings(
+    let mirror_value_call_leaf = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10h2_mirror_value_call_leaf"),
+        "type_check_modules_10h2_mirror_value_call_leaf",
         &passes.kernel("type_checker/modules/10h2_mirror_value_call_leaf"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            ("call_fn_index", call_fn_index.as_entire_binding()),
-            ("call_return_type", call_return_type.as_entire_binding()),
-            (
-                "call_return_type_token",
-                call_return_type_token.as_entire_binding(),
-            ),
-            (
-                "call_generic_slot_type",
-                call_generic_slot_type.as_entire_binding(),
-            ),
-            (
-                "call_generic_slot_ordinal",
-                call_generic_slot_ordinal.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let consume_value_consts = bind_group::create_bind_group_from_bindings(
+    let consume_value_consts = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10i_consume_value_consts"),
+        "type_check_modules_10i_consume_value_consts",
         &passes.kernel("type_checker/modules/10i_consume_value_consts"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("node_kind", hir_items.node_kind.as_entire_binding()),
-            ("parent", hir_items.parent.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_expr_record", hir_items.expr_record.as_entire_binding()),
-            ("hir_stmt_record", hir_items.stmt_record.as_entire_binding()),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_count",
-                hir_items.hir.variant_payload_count.as_entire_binding(),
-            ),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            ("path_segment_token", path_segment_token.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            (
-                "resolved_value_decl",
-                resolved_value_decl.as_entire_binding(),
-            ),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_head",
-                module_value_path_const_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_end",
-                module_value_path_const_end.as_entire_binding(),
-            ),
-            ("visible_decl", visible_decl.as_entire_binding()),
-            ("enclosing_fn", enclosing_fn.as_entire_binding()),
-            ("visible_type", visible_type.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let consume_value_enum_units = bind_group::create_bind_group_from_bindings(
+    let consume_value_enum_units = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10j_consume_value_enum_units"),
+        "type_check_modules_10j_consume_value_enum_units",
         &passes.kernel("type_checker/modules/10j_consume_value_enum_units"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            (
-                "resolved_value_decl",
-                resolved_value_decl.as_entire_binding(),
-            ),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "decl_parent_type_decl",
-                decl_parent_type_decl.as_entire_binding(),
-            ),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_count",
-                hir_items.hir.variant_payload_count.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_expr_head",
-                module_value_path_expr_head.as_entire_binding(),
-            ),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            ("visible_decl", visible_decl.as_entire_binding()),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            ("visible_type", visible_type.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let enum_call_bindings = [
-        ("gParams", params.as_entire_binding()),
-        ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-        ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-        (
-            "compact_hir_payload",
-            hir_items.hir.payload.as_entire_binding(),
-        ),
-        (
-            "compact_variant_count",
-            hir_items.hir.variant_count.as_entire_binding(),
-        ),
-        (
-            "compact_variants",
-            hir_items.hir.variants.as_entire_binding(),
-        ),
-        (
-            "compact_variant_payload_start",
-            hir_items.hir.variant_payload_start.as_entire_binding(),
-        ),
-        (
-            "compact_variant_payload_count",
-            hir_items.hir.variant_payload_count.as_entire_binding(),
-        ),
-        (
-            "compact_variant_payload_row_count",
-            hir_items.hir.variant_payload_row_count.as_entire_binding(),
-        ),
-        (
-            "compact_variant_payloads",
-            hir_items.hir.variant_payloads.as_entire_binding(),
-        ),
-        ("node_kind", hir_items.node_kind.as_entire_binding()),
-        ("path_count_out", path_count_out.as_entire_binding()),
-        ("path_kind", path_kind.as_entire_binding()),
-        ("path_call_hir", path_call_hir.as_entire_binding()),
-        ("path_segment_count", path_segment_count.as_entire_binding()),
-        ("path_segment_base", path_segment_base.as_entire_binding()),
-        ("path_segment_token", path_segment_token.as_entire_binding()),
-        ("path_owner_token", path_owner_token.as_entire_binding()),
-        (
-            "resolved_value_decl",
-            resolved_value_decl.as_entire_binding(),
-        ),
-        (
-            "resolved_value_status",
-            resolved_value_status.as_entire_binding(),
-        ),
-        ("decl_kind", decl_kind.as_entire_binding()),
-        ("decl_namespace", decl_namespace.as_entire_binding()),
-        ("decl_name_token", decl_name_token.as_entire_binding()),
-        (
-            "decl_parent_type_decl",
-            decl_parent_type_decl.as_entire_binding(),
-        ),
-        ("decl_hir_node", decl_hir_node.as_entire_binding()),
-        (
-            "module_value_path_call_head",
-            module_value_path_call_head.as_entire_binding(),
-        ),
-        (
-            "module_value_path_expr_head",
-            module_value_path_expr_head.as_entire_binding(),
-        ),
-        (
-            "type_decl_generic_param_count",
-            type_decl_generic_param_count.as_entire_binding(),
-        ),
-        (
-            "type_generic_param_slot_by_token",
-            type_generic_param_slot_by_token.as_entire_binding(),
-        ),
-        (
-            "generic_param_count_out",
-            generic_param_count_out.as_entire_binding(),
-        ),
-        (
-            "generic_param_owner_token",
-            generic_param_owner_token.as_entire_binding(),
-        ),
-        (
-            "generic_param_name_id",
-            generic_param_name_id.as_entire_binding(),
-        ),
-        (
-            "generic_param_token",
-            generic_param_token.as_entire_binding(),
-        ),
-        ("generic_param_kind", generic_param_kind.as_entire_binding()),
-        (
-            "generic_param_key_order",
-            generic_param_key_order.as_entire_binding(),
-        ),
-        ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-        (
-            "type_expr_ref_payload",
-            type_expr_ref_payload.as_entire_binding(),
-        ),
-        (
-            "type_instance_decl_token",
-            type_instance_decl_token.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_start",
-            type_instance_arg_start.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_count",
-            type_instance_arg_count.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_ref_tag",
-            type_instance_arg_ref_tag.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_ref_payload",
-            type_instance_arg_ref_payload.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_row_start",
-            type_instance_arg_row_start.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_row_count_out",
-            type_instance_arg_row_count_out.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_row_ref_tag",
-            type_instance_arg_row_ref_tag.as_entire_binding(),
-        ),
-        (
-            "type_instance_arg_row_ref_payload",
-            type_instance_arg_row_ref_payload.as_entire_binding(),
-        ),
-        (
-            "type_instance_state",
-            type_instance_state.as_entire_binding(),
-        ),
-        ("decl_type_ref_tag", decl_type_ref_tag.as_entire_binding()),
-        (
-            "decl_type_ref_payload",
-            decl_type_ref_payload.as_entire_binding(),
-        ),
-        ("fn_return_ref_tag", fn_return_ref_tag.as_entire_binding()),
-        (
-            "fn_return_ref_payload",
-            fn_return_ref_payload.as_entire_binding(),
-        ),
-        ("visible_decl", visible_decl.as_entire_binding()),
-        ("enclosing_fn", enclosing_fn.as_entire_binding()),
-        ("visible_type", visible_type.as_entire_binding()),
-        ("name_id_by_token", name_id_by_token.as_entire_binding()),
-        ("call_arg_row_node", call_arg_row_node.as_entire_binding()),
-        (
-            "call_arg_row_call_node",
-            call_arg_row_call_node.as_entire_binding(),
-        ),
-        (
-            "call_arg_row_ordinal",
-            call_arg_row_ordinal.as_entire_binding(),
-        ),
-        ("call_arg_row_start", call_arg_row_start.as_entire_binding()),
-        ("call_arg_row_count", call_arg_row_count.as_entire_binding()),
-        (
-            "module_value_path_status",
-            module_value_path_status.as_entire_binding(),
-        ),
-        ("call_return_type", call_return_type.as_entire_binding()),
-    ];
-    let consume_value_enum_calls = bind_group::create_bind_group_from_bindings(
+    let consume_value_enum_calls = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10l_consume_value_enum_calls"),
+        "type_check_modules_10l_consume_value_enum_calls",
         &passes.kernel("type_checker/modules/10l_consume_value_enum_calls"),
-        0,
-        &enum_call_bindings,
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let validate_value_enum_call_payloads = bind_group::create_bind_group_from_bindings(
+    let validate_value_enum_call_payloads = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10l2_validate_value_enum_call_payloads"),
+        "type_check_modules_10l2_validate_value_enum_call_payloads",
         &passes.kernel("type_checker/modules/10l2_validate_value_enum_call_payloads"),
-        0,
-        &enum_call_bindings,
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let finalize_value_enum_calls = bind_group::create_bind_group_from_bindings(
+    let finalize_value_enum_calls = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10l3_finalize_value_enum_calls"),
+        "type_check_modules_10l3_finalize_value_enum_calls",
         &passes.kernel("type_checker/modules/10l3_finalize_value_enum_calls"),
-        0,
-        &enum_call_bindings,
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let bind_match_patterns = bind_group::create_bind_group_from_bindings(
+    let bind_match_patterns = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10m_bind_match_patterns"),
+        "type_check_modules_10m_bind_match_patterns",
         &passes.kernel("type_checker/modules/10m_bind_match_patterns"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
-            (
-                "compact_match_arm_count",
-                hir_items.hir.match_arm_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_arms",
-                hir_items.hir.match_arms.as_entire_binding(),
-            ),
-            (
-                "compact_match_payload_start",
-                hir_items.hir.match_payload_start.as_entire_binding(),
-            ),
-            (
-                "compact_match_payload_count",
-                hir_items.hir.match_payload_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_payload_row_count",
-                hir_items.hir.match_payload_row_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_payloads",
-                hir_items.hir.match_payloads.as_entire_binding(),
-            ),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_count",
-                hir_items.hir.variant_payload_count.as_entire_binding(),
-            ),
-            ("token_words", token_buf.as_entire_binding()),
-            ("language_name_id", language_name_id.as_entire_binding()),
-            ("node_kind", hir_items.node_kind.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("subtree_end", hir_items.subtree_end.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_owner_hir", path_owner_hir.as_entire_binding()),
-            (
-                "path_id_by_owner_hir",
-                path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("path_owner_token", path_owner_token.as_entire_binding()),
-            (
-                "resolved_value_decl",
-                resolved_value_decl.as_entire_binding(),
-            ),
-            (
-                "resolved_value_status",
-                resolved_value_status.as_entire_binding(),
-            ),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "decl_parent_type_decl",
-                decl_parent_type_decl.as_entire_binding(),
-            ),
-            ("name_id_by_token", name_id_by_token.as_entire_binding()),
-            ("visible_decl", visible_decl.as_entire_binding()),
-            ("visible_type", visible_type.as_entire_binding()),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let type_match_payloads = bind_group::create_bind_group_from_bindings(
+    let type_match_payloads = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10m2_type_match_payloads"),
+        "type_check_modules_10m2_type_match_payloads",
         &passes.kernel("type_checker/modules/10m2_type_match_payloads"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_match_arm_count",
-                hir_items.hir.match_arm_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_arms",
-                hir_items.hir.match_arms.as_entire_binding(),
-            ),
-            (
-                "compact_match_payload_row_count",
-                hir_items.hir.match_payload_row_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_payloads",
-                hir_items.hir.match_payloads.as_entire_binding(),
-            ),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_start",
-                hir_items.hir.variant_payload_start.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_count",
-                hir_items.hir.variant_payload_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payload_row_count",
-                hir_items.hir.variant_payload_row_count.as_entire_binding(),
-            ),
-            (
-                "compact_variant_payloads",
-                hir_items.hir.variant_payloads.as_entire_binding(),
-            ),
-            ("token_words", token_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("node_kind", hir_items.node_kind.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("visible_decl", visible_decl.as_entire_binding()),
-            (
-                "module_value_path_status",
-                module_value_path_status.as_entire_binding(),
-            ),
-            ("visible_type", visible_type.as_entire_binding()),
-            (
-                "decl_id_by_name_token",
-                decl_id_by_name_token.as_entire_binding(),
-            ),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "decl_parent_type_decl",
-                decl_parent_type_decl.as_entire_binding(),
-            ),
-            ("decl_type_ref_tag", decl_type_ref_tag.as_entire_binding()),
-            (
-                "decl_type_ref_payload",
-                decl_type_ref_payload.as_entire_binding(),
-            ),
-            ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-            (
-                "type_expr_ref_payload",
-                type_expr_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_decl_token",
-                type_instance_decl_token.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_start",
-                type_instance_arg_start.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_count",
-                type_instance_arg_count.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_ref_tag",
-                type_instance_arg_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_ref_payload",
-                type_instance_arg_ref_payload.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_start",
-                type_instance_arg_row_start.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_count_out",
-                type_instance_arg_row_count_out.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_tag",
-                type_instance_arg_row_ref_tag.as_entire_binding(),
-            ),
-            (
-                "type_instance_arg_row_ref_payload",
-                type_instance_arg_row_ref_payload.as_entire_binding(),
-            ),
-            ("name_id_by_token", name_id_by_token.as_entire_binding()),
-            (
-                "type_generic_param_slot_by_token",
-                type_generic_param_slot_by_token.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
-    let type_match_exprs = bind_group::create_bind_group_from_bindings(
+    let type_match_exprs = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10n_type_match_exprs"),
+        "type_check_modules_10n_type_match_exprs",
         &passes.kernel("type_checker/modules/10n_type_match_exprs"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            (
-                "compact_match_arm_count",
-                hir_items.hir.match_arm_count.as_entire_binding(),
-            ),
-            (
-                "compact_match_arms",
-                hir_items.hir.match_arms.as_entire_binding(),
-            ),
-            ("token_count", token_count_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("node_kind", hir_items.node_kind.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_expr_record", hir_items.expr_record.as_entire_binding()),
-            (
-                "hir_expr_result_root_node",
-                hir_items.expr_result_root_node.as_entire_binding(),
-            ),
-            (
-                "hir_member_name_token",
-                hir_items.member_name_token.as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_head_node",
-                hir_items.struct_lit_head_node.as_entire_binding(),
-            ),
-            ("visible_decl", visible_decl.as_entire_binding()),
-            ("visible_type", visible_type.as_entire_binding()),
-            ("call_return_type", call_return_type.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
 
     Ok(ProjectionBindGroups {

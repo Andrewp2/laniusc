@@ -10,6 +10,7 @@
 // It consumes the compact row inference state; it does not inspect source
 // bytes, token spellings, token kinds, helper names, or function bodies.
 
+import hir_records;
 import status;
 
 struct Params
@@ -21,8 +22,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

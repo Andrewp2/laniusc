@@ -503,7 +503,7 @@ struct SemanticLirCallArg
     uint call_instruction;
     uint value_instruction;
     uint ordinal;
-    uint flags;
+    uint value_metadata;
 };
 
 struct SemanticLirAggregateElement
@@ -512,7 +512,35 @@ struct SemanticLirAggregateElement
     uint value_instruction;
     uint ordinal;
     uint name_token;
+    uint value_metadata;
 };
+
+struct TargetSemanticPage
+{
+    uint semantic_start;
+    uint semantic_count;
+    uint target_start;
+    uint target_count;
+};
+
+static const uint SEMANTIC_LIR_VALUE_TYPE_MASK = 0x00ffffffu;
+static const uint SEMANTIC_LIR_VALUE_AGGREGATE = 1u << 24u;
+static const uint SEMANTIC_LIR_VALUE_STRING = 1u << 25u;
+
+uint semantic_lir_value_metadata(uint type_id, uint type_ref_tag,
+                                 uint type_ref_payload)
+{
+    bool aggregate = type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
+        (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
+         type_ref_payload >= 128u) ||
+        (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && type_id >= 128u);
+    bool string_value =
+        (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && type_ref_payload == 7u) ||
+        (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && type_id == 7u);
+    return (type_id & SEMANTIC_LIR_VALUE_TYPE_MASK) |
+        (aggregate ? SEMANTIC_LIR_VALUE_AGGREGATE : 0u) |
+        (string_value ? SEMANTIC_LIR_VALUE_STRING : 0u);
+}
 
 struct SemanticLirString
 {

@@ -12,10 +12,12 @@ use super::passes_core::{
     plan_workgroups,
 };
 
+mod compute;
 mod hierarchical_radix_sort;
 mod prefix_scan;
 mod radix_sort;
 
+pub(crate) use compute::{ComputeGraph, ComputeKernels, ComputeOperation};
 pub(crate) use hierarchical_radix_sort::{
     HierarchicalRadixSortDefinition,
     HierarchicalRadixSortDispatch,

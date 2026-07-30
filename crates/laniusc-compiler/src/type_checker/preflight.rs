@@ -45,42 +45,41 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::COPY_DST,
         );
         record_typecheck_clear_buffer(encoder, &candidate_counts, 0, Some(12));
-        let bind_group = bind_group::create_bind_group_from_bindings(
+        let mut resources = ResourceMap::new();
+        resources.add("gParams", self.params_buf.as_entire_binding());
+        resources.add(
+            "compact_hir_count",
+            parse_bufs.hir_canonical_count.as_entire_binding(),
+        );
+        resources.add("compact_hir_core", parse_bufs.hir_core.as_entire_binding());
+        resources.add(
+            "compact_hir_payload",
+            parse_bufs.hir_payload.as_entire_binding(),
+        );
+        resources.add(
+            "compact_path_count",
+            parse_bufs.hir_path_table_count.as_entire_binding(),
+        );
+        resources.add(
+            "compact_param_count",
+            parse_bufs.hir_param_table_count.as_entire_binding(),
+        );
+        resources.add(
+            "compact_call_arg_count",
+            parse_bufs.hir_call_arg_table_count.as_entire_binding(),
+        );
+        resources.add(
+            "compact_variant_count",
+            parse_bufs.hir_variant_table_count.as_entire_binding(),
+        );
+        resources.add("candidate_counts", candidate_counts.as_entire_binding());
+        let bind_group = reflected_bind_group_from_resources(
             device,
-            Some("type_check_modules_00a_count_record_candidates"),
+            "type_check_modules_00a_count_record_candidates",
             &self
                 .passes
                 .kernel("type_checker/modules/00a_count_record_candidates"),
-            0,
-            &[
-                ("gParams", self.params_buf.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    parse_bufs.hir_canonical_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", parse_bufs.hir_core.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    parse_bufs.hir_payload.as_entire_binding(),
-                ),
-                (
-                    "compact_path_count",
-                    parse_bufs.hir_path_table_count.as_entire_binding(),
-                ),
-                (
-                    "compact_param_count",
-                    parse_bufs.hir_param_table_count.as_entire_binding(),
-                ),
-                (
-                    "compact_call_arg_count",
-                    parse_bufs.hir_call_arg_table_count.as_entire_binding(),
-                ),
-                (
-                    "compact_variant_count",
-                    parse_bufs.hir_variant_table_count.as_entire_binding(),
-                ),
-                ("candidate_counts", candidate_counts.as_entire_binding()),
-            ],
+            &resources,
         )?;
         record_compute(
             encoder,

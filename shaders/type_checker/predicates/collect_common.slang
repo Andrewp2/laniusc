@@ -8,6 +8,7 @@
 // contract shape so later validation can reject bad predicates without treating
 // bounds or impls as comments.
 
+import hir_records;
 import generated_parse_production_ids;
 import fixed.key;
 import range_query;
@@ -36,8 +37,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 #if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

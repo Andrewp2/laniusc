@@ -8,8 +8,7 @@ use super::*;
 /// Complete target-independent job plan for one source pack.
 pub struct SourcePackJobPlan {
     pub libraries: LibraryUnitPlan,
-    pub frontend_units: FrontendUnitPlan,
-    pub codegen_units: CodegenUnitPlan,
+    pub units: CompilationUnitPlan,
     pub library_dependencies: Vec<SourcePackLibraryDependency>,
 }
 
@@ -87,13 +86,13 @@ pub struct SourcePackJobBatchLimits {
 
 impl Default for SourcePackJobBatchLimits {
     fn default() -> Self {
-        Self::from_codegen_unit_limits(CodegenUnitLimits::default())
+        Self::from_codegen_unit_limits(CompilationUnitLimits::default())
     }
 }
 
 impl SourcePackJobBatchLimits {
     /// Derives batch bounds from codegen unit limits.
-    pub fn from_codegen_unit_limits(limits: CodegenUnitLimits) -> Self {
+    pub fn from_codegen_unit_limits(limits: CompilationUnitLimits) -> Self {
         let limits = limits.normalized();
         Self {
             max_jobs_per_batch: limits.max_source_files,
@@ -104,7 +103,7 @@ impl SourcePackJobBatchLimits {
 
     /// Returns limits clamped to the manifest record capacities.
     pub fn normalized(self) -> Self {
-        let record_caps = Self::from_codegen_unit_limits(CodegenUnitLimits::default());
+        let record_caps = Self::from_codegen_unit_limits(CompilationUnitLimits::default());
         Self {
             max_jobs_per_batch: self
                 .max_jobs_per_batch
@@ -266,6 +265,26 @@ impl SourcePackJobIndexRange {
     /// Returns an iterator range when the exclusive end index does not overflow.
     pub fn iter(&self) -> Option<Range<usize>> {
         self.end_job_index().map(|end| self.first_job_index..end)
+    }
+
+    /// Splits this range around one excluded job. Jobs before and after the
+    /// excluded index remain compact ranges; an index outside the range leaves
+    /// the original range unchanged.
+    pub fn excluding(&self, job_index: usize) -> Option<[Option<Self>; 2]> {
+        let end = self.end_job_index()?;
+        if !self.contains(job_index) {
+            return Some([Some(self.clone()), None]);
+        }
+        let before = (self.first_job_index < job_index).then(|| Self {
+            first_job_index: self.first_job_index,
+            job_count: job_index - self.first_job_index,
+        });
+        let after_start = job_index + 1;
+        let after = (after_start < end).then(|| Self {
+            first_job_index: after_start,
+            job_count: end - after_start,
+        });
+        Some([before, after])
     }
 }
 

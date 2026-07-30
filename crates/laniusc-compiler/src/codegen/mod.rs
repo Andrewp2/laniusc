@@ -13,6 +13,7 @@ pub mod lowering_ir;
 pub(crate) mod lowering_pipeline;
 pub(crate) mod scan;
 pub(crate) mod schedule;
+pub(crate) mod target_pages;
 pub(crate) mod wasm_lowering;
 pub(crate) mod wasm_module;
 pub(crate) mod wasm_object_artifact;

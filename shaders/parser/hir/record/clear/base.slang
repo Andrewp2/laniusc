@@ -13,6 +13,7 @@ struct Params
 ConstantBuffer<Params> gClear;
 
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> token_count;
 
 RWStructuredBuffer<uint> hir_item_kind;
 RWStructuredBuffer<uint> hir_item_name_token;
@@ -87,18 +88,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= active_node_count())
         return;
 
+    // Parameter temporaries are token-anchored rather than raw-tree-indexed.
+    // The raw-tree dispatch is always at least as wide as the token stream.
+    if (node < token_count[0u])
+    {
+        hir_item_name_token[node] = INVALID;
+        hir_item_namespace[node] = HIR_ITEM_NAMESPACE_NONE;
+        hir_item_visibility[node] = HIR_ITEM_VIS_PRIVATE;
+        hir_item_path_start[node] = INVALID;
+        hir_item_path_end[node] = INVALID;
+        hir_item_path_node[node] = INVALID;
+        hir_item_import_target_kind[node] = HIR_ITEM_IMPORT_TARGET_NONE;
+        hir_param_type_node[node] = INVALID;
+        hir_param_record[slot(node, 0u)] = INVALID;
+        hir_param_record[slot(node, 1u)] = INVALID;
+        hir_param_record[slot(node, 2u)] = INVALID;
+        hir_param_record[slot(node, 3u)] = INVALID;
+    }
+
     hir_item_kind[node] = HIR_ITEM_KIND_NONE;
-    hir_item_name_token[node] = INVALID;
-    hir_item_namespace[node] = HIR_ITEM_NAMESPACE_NONE;
-    hir_item_visibility[node] = HIR_ITEM_VIS_PRIVATE;
-    hir_item_path_start[node] = INVALID;
-    hir_item_path_end[node] = INVALID;
-    hir_item_path_node[node] = INVALID;
-    hir_item_import_target_kind[node] = HIR_ITEM_IMPORT_TARGET_NONE;
     hir_type_alias_target_node[node] = INVALID;
     hir_fn_return_type_node[node] = INVALID;
     hir_type_len_value[node] = INVALID;
-    hir_param_type_node[node] = INVALID;
     hir_method_owner_node[node] = INVALID;
     hir_method_impl_node[node] = INVALID;
     hir_method_name_token[node] = INVALID;
@@ -107,11 +118,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_method_visibility[node] = HIR_ITEM_VIS_PRIVATE;
     hir_method_signature_flags[node] = 0u;
     hir_method_impl_receiver_type_node[node] = INVALID;
-
-    hir_param_record[slot(node, 0u)] = INVALID;
-    hir_param_record[slot(node, 1u)] = INVALID;
-    hir_param_record[slot(node, 2u)] = INVALID;
-    hir_param_record[slot(node, 3u)] = INVALID;
 
     hir_expr_record[slot(node, 0u)] = HIR_EXPR_NONE;
     hir_expr_record[slot(node, 1u)] = INVALID;

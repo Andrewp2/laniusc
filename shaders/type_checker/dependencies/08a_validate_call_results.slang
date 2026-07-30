@@ -2,6 +2,8 @@
 // authoritative return type. Compound children are published into the same
 // prefix-scanned comparison relation used for dependency-call arguments.
 
+import dependency_interface;
+import hir_records;
 import gpu_index;
 import status;
 
@@ -18,24 +20,24 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_subtree_end;
 StructuredBuffer<uint> enclosing_fn;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
-StructuredBuffer<uint> type_instance_external_canonical;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> dependency_counts;
-StructuredBuffer<uint> dependency_type_words;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> canonical_type_subtree_start;
 StructuredBuffer<uint> type_semantic_row_by_token;
@@ -111,25 +113,31 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.visible_capacity;
 }
 
-bool canonical_nominal_matches(uint expected_type_i, uint actual_type_i)
+bool dependency_nominal_matches_token(uint expected_type_i, uint token)
 {
-    uint type_count = dependency_counts[4u];
-    if (expected_type_i >= type_count || actual_type_i >= type_count)
+    uint type_count = dependency_count(4u);
+    if (expected_type_i >= type_count || !valid_token(token))
         return false;
     uint expected = canonical_type_roots[expected_type_i];
-    uint actual = canonical_type_roots[actual_type_i];
-    uint expected_base = expected * TYPE_WORDS;
-    uint actual_base = actual * TYPE_WORDS;
-    return dependency_type_words[expected_base] == INTERFACE_TYPE_DECLARATION &&
-           dependency_type_words[actual_base] == INTERFACE_TYPE_DECLARATION &&
-           dependency_type_words[expected_base + 1u] == dependency_type_words[actual_base + 1u] &&
-           dependency_type_words[expected_base + 2u] == dependency_type_words[actual_base + 2u] &&
-           dependency_type_words[expected_base + 8u] == dependency_type_words[actual_base + 8u];
+    uint base = expected * TYPE_WORDS;
+    return dependency_type_word(base) == INTERFACE_TYPE_DECLARATION &&
+           dependency_type_word(base + 1u) == external_type_library_id[token] &&
+           dependency_type_word(base + 2u) == external_type_local_index[token] &&
+           dependency_type_word(base + 8u) == external_type_unit_id[token];
+}
+
+bool stable_nominal_equal(uint lhs_token, uint rhs_token)
+{
+    return valid_token(lhs_token) && valid_token(rhs_token) &&
+           external_type_library_id[lhs_token] != INVALID &&
+           external_type_library_id[lhs_token] == external_type_library_id[rhs_token] &&
+           external_type_unit_id[lhs_token] == external_type_unit_id[rhs_token] &&
+           external_type_local_index[lhs_token] == external_type_local_index[rhs_token];
 }
 
 uint canonical_subtree_count(uint root)
 {
-    uint type_count = dependency_counts[4u];
+    uint type_count = dependency_count(4u);
     if (root >= type_count)
         return INVALID;
     uint start = canonical_type_subtree_start[root];
@@ -185,18 +193,22 @@ void substitute_direct_generic_call(uint call_node)
         ? callee_payload.c
         : callee_payload.d;
     if (!valid_token(callee_token)) callee_token = callee_core.token_start;
-    if (!valid_token(callee_token) || call_dependency_decl[callee_token] == INVALID ||
+    if (!valid_token(callee_token) ||
+        dependency_find_declaration(
+            call_dependency_library_id[callee_token],
+            call_dependency_unit_id[callee_token],
+            call_dependency_local_index[callee_token]) == INVALID ||
         decl_type_ref_tag[callee_token] != TYPE_REF_EXTERNAL_CANONICAL)
         return;
     uint return_i = decl_type_ref_payload[callee_token];
-    uint type_count = dependency_counts[4u];
+    uint type_count = dependency_count(4u);
     if (return_i >= type_count)
         return;
     uint return_root = canonical_type_roots[return_i];
     uint return_base = return_root * TYPE_WORDS;
-    if (dependency_type_words[return_base] != INTERFACE_TYPE_GENERIC_PARAMETER)
+    if (dependency_type_word(return_base) != INTERFACE_TYPE_GENERIC_PARAMETER)
         return;
-    uint slot = dependency_type_words[return_base + 1u];
+    uint slot = dependency_type_word(return_base + 1u);
     uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
     uint lo = 0u;
     uint hi = count;
@@ -265,7 +277,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? callee_payload.c
         : callee_payload.d;
     if (!valid_token(callee_token)) callee_token = callee_core.token_start;
-    if (!valid_token(callee_token) || call_dependency_decl[callee_token] == INVALID)
+    if (!valid_token(callee_token) ||
+        dependency_find_declaration(
+            call_dependency_library_id[callee_token],
+            call_dependency_unit_id[callee_token],
+            call_dependency_local_index[callee_token]) == INVALID)
         return;
     uint actual_tag = decl_type_ref_tag[callee_token];
     uint actual_payload = decl_type_ref_payload[callee_token];
@@ -283,11 +299,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             mismatch(callee_token);
             return;
         }
-        uint actual_nominal = type_instance_external_canonical[actual_payload];
-        uint expected_nominal = type_instance_external_canonical[expected_payload];
         uint child_count = type_instance_arg_count[actual_payload];
-        if (actual_nominal == INVALID || expected_nominal == INVALID ||
-            !canonical_nominal_matches(actual_nominal, expected_nominal) ||
+        if (!stable_nominal_equal(actual_payload, expected_payload) ||
             child_count != type_instance_arg_count[expected_payload])
         {
             mismatch(callee_token);
@@ -307,7 +320,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint actual_canonical = actual_payload;
-    uint type_count = dependency_counts[4u];
+    uint type_count = dependency_count(4u);
     if (actual_canonical >= type_count)
     {
         mismatch(callee_token);
@@ -319,30 +332,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // a storage barrier for return validation. A return lane may observe the
     // pre-substitution generic root during the first dispatch; defer it rather
     // than racing the call lane and recording a false mismatch.
-    if (dependency_type_words[actual_base] == INTERFACE_TYPE_GENERIC_PARAMETER)
+    if (dependency_type_word(actual_base) == INTERFACE_TYPE_GENERIC_PARAMETER)
         return;
-    uint actual_count = dependency_type_words[actual_base + 4u];
+    uint actual_count = dependency_type_word(actual_base + 4u);
     if (expected_tag == TYPE_REF_EXTERNAL_CANONICAL)
     {
-        uint expected_root = expected_payload < type_count
-            ? canonical_type_roots[expected_payload]
-            : INVALID;
-        bool matches = expected_root != INVALID &&
-            canonical_nominal_matches(actual_root, expected_root) &&
-            dependency_type_words[expected_root * TYPE_WORDS + 4u] == actual_count;
+        bool matches = dependency_nominal_matches_token(actual_root, fn_token) &&
+            actual_count == 0u;
         if (!matches || actual_count != 0u)
             mismatch(callee_token);
         return;
     }
     if (expected_tag != TYPE_REF_INSTANCE || !valid_token(expected_payload))
         return;
-    uint actual_kind = dependency_type_words[actual_base];
+    uint actual_kind = dependency_type_word(actual_base);
     bool matches = false;
     if (actual_kind == INTERFACE_TYPE_DECLARATION)
     {
-        uint expected_nominal = type_instance_external_canonical[expected_payload];
-        matches = expected_nominal != INVALID &&
-            canonical_nominal_matches(actual_root, expected_nominal) &&
+        matches = dependency_nominal_matches_token(actual_root, expected_payload) &&
             type_instance_arg_count[expected_payload] == actual_count;
     }
     else if (actual_kind == INTERFACE_TYPE_ARRAY || actual_kind == INTERFACE_TYPE_SLICE)
@@ -353,9 +360,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         matches = type_instance_kind[expected_payload] == expected_kind && actual_count == 1u;
         if (matches && actual_kind == INTERFACE_TYPE_ARRAY)
             matches = type_instance_len_kind[expected_payload] ==
-                          dependency_type_words[actual_base + 5u] &&
+                          dependency_type_word(actual_base + 5u) &&
                       type_instance_len_payload[expected_payload] ==
-                          dependency_type_words[actual_base + 6u];
+                          dependency_type_word(actual_base + 6u);
     }
     if (!matches)
     {

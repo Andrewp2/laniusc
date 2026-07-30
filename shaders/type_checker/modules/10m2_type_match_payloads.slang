@@ -1,11 +1,8 @@
+import hir_records;
+
 // Substitute enum match payload types from compact HIR family rows.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
-struct HirMatchPayload { uint arm; uint pattern; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

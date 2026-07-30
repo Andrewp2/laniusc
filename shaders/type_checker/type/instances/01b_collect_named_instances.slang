@@ -1,9 +1,8 @@
+import hir_records;
+
 // Collect named generic instances from dense HIR owners and compact type args.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirRange { uint start; uint count; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

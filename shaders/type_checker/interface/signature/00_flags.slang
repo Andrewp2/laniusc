@@ -1,6 +1,7 @@
 // Size synthetic declaration-signature records and their edge ranges. One
 // thread handles one persisted public declaration; scans provide stable bases.
 
+import hir_records;
 import atomics;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
@@ -9,7 +10,6 @@ StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
-struct HirRange { uint start; uint count; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> compact_variant_count;

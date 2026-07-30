@@ -4,20 +4,23 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    functions::GpuTargetFunctionView,
-    lowering::{GpuSemanticLirView, bound, make_group, record_direct},
-    lowering_ir::{LoweringCapacities, X86ArtifactLayout, X86LirCore, X86LirOperands},
+    lowering::GpuSemanticLirView,
+    lowering_ir::{
+        LoweringCapacities,
+        TARGET_LIR_PAGE_ROWS,
+        X86ArtifactLayout,
+        X86LirCore,
+        X86LirOperands,
+    },
     scan::{GpuResidentExclusiveScan, GraphScanContract},
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
-    compiler_graph::{
-        BoundGraphResource,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphWorkspace,
-    },
+    compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    operations::ComputeOperation,
     passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    readback::PagedReadback,
+    resource_registry::ResourceMap,
 };
 
 #[repr(C)]
@@ -27,44 +30,35 @@ struct X86ArtifactParams {
     token_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
+    target_start: u32,
+    page_capacity: u32,
+    reserved0: u32,
+    reserved1: u32,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct GpuX86ArtifactObjectView<'a> {
-    pub byte_lengths: &'a LaniusBuffer<u32>,
-    pub byte_offsets: &'a LaniusBuffer<u32>,
-    pub entrypoint_state: &'a LaniusBuffer<u32>,
     pub layout: &'a LaniusBuffer<X86ArtifactLayout>,
-    pub words: &'a LaniusBuffer<u32>,
 }
 
 pub(crate) struct GpuX86ArtifactStage {
-    target_capacity: u32,
-    emit_capacity: u32,
-    function_capacity: u32,
     artifact_capacity: u32,
-    byte_count_pass: PassData,
-    entrypoint_clear_pass: PassData,
-    entrypoint_reduce_pass: PassData,
-    layout_pass: PassData,
-    clear_pass: PassData,
-    emit_pass: PassData,
-    byte_count_group: wgpu::BindGroup,
-    entrypoint_clear_group: wgpu::BindGroup,
-    entrypoint_reduce_group: wgpu::BindGroup,
-    layout_group: wgpu::BindGroup,
-    clear_group: wgpu::BindGroup,
-    emit_group: wgpu::BindGroup,
+    byte_counts: Vec<ComputeOperation>,
+    entrypoint_clear: ComputeOperation,
+    entrypoint_reduce: ComputeOperation,
+    layout_op: ComputeOperation,
+    clear: ComputeOperation,
+    emits: Vec<ComputeOperation>,
     byte_scan: GpuResidentExclusiveScan,
-    _params: LaniusBuffer<X86ArtifactParams>,
-    byte_lengths: LaniusBuffer<u32>,
-    byte_offsets: LaniusBuffer<u32>,
-    entrypoint_state: LaniusBuffer<u32>,
+    _params: Vec<LaniusBuffer<X86ArtifactParams>>,
+    _byte_lengths: LaniusBuffer<u32>,
+    _byte_offsets: LaniusBuffer<u32>,
+    _entrypoint_state: LaniusBuffer<u32>,
     layout: LaniusBuffer<X86ArtifactLayout>,
     length: LaniusBuffer<u32>,
     words: LaniusBuffer<u32>,
     length_readback: LaniusBuffer<u8>,
-    artifact_readback: LaniusBuffer<u8>,
+    output_readback: PagedReadback,
 }
 
 impl GpuX86ArtifactStage {
@@ -79,9 +73,7 @@ impl GpuX86ArtifactStage {
         total: &LaniusBuffer<u32>,
         core: &LaniusBuffer<X86LirCore>,
         operands: &LaniusBuffer<X86LirOperands>,
-        scheduled_function_ids: &LaniusBuffer<u32>,
-        functions: GpuTargetFunctionView<'_>,
-        frame_slot_by_decl_token: &LaniusBuffer<u32>,
+        semantic_origins: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let resource = |name: &str| {
             graph
@@ -105,19 +97,33 @@ impl GpuX86ArtifactStage {
             .map_err(anyhow::Error::msg)?;
         let length = alias_u32("artifact.x86.length", 1)?;
         let words = alias_u32("artifact.x86.bytes", artifact_capacity.div_ceil(4))?;
-        let params = uniform_from_val(
-            device,
-            "lir.x86.artifact.params",
-            &X86ArtifactParams {
-                target_capacity,
-                token_capacity: capacities
-                    .tokens
-                    .saturating_add(capacities.hir_nodes)
-                    .max(1),
-                function_capacity: capacities.hir_nodes.max(1),
-                artifact_capacity,
-            },
-        );
+        let token_capacity = capacities
+            .tokens
+            .saturating_add(capacities.hir_nodes)
+            .max(1);
+        let function_capacity = capacities.hir_nodes.max(1);
+        let params = (0..emit_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
+            .map(|page_id| {
+                let target_start = page_id * TARGET_LIR_PAGE_ROWS;
+                uniform_from_val(
+                    device,
+                    &format!("lir.x86.artifact.page.{page_id}.params"),
+                    &X86ArtifactParams {
+                        target_capacity,
+                        token_capacity,
+                        function_capacity,
+                        artifact_capacity,
+                        target_start,
+                        page_capacity: emit_capacity
+                            .saturating_sub(target_start)
+                            .min(TARGET_LIR_PAGE_ROWS),
+                        reserved0: 0,
+                        reserved1: 0,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let fixed_params = &params[0];
 
         let byte_count_pass = load(device, "lir.x86.byte_count", "codegen/lir/x86/byte_count")?;
         let entrypoint_clear_pass = load(
@@ -141,38 +147,34 @@ impl GpuX86ArtifactStage {
             "codegen/lir/x86/artifact_clear",
         )?;
         let emit_pass = load(device, "lir.x86.emit", "codegen/lir/x86/emit")?;
-
-        let byte_count_group = make_group(
-            device,
-            &byte_count_pass,
-            "lir.x86.byte_count.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                ("target_lir_core", core.as_entire_binding()),
-                ("target_lir_operands", operands.as_entire_binding()),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-                ("target_function_count", functions.count.as_entire_binding()),
-                ("target_functions", functions.rows.as_entire_binding()),
-                (
-                    "target_function_index_by_semantic",
-                    functions.index_by_semantic.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                ("target_byte_length", byte_lengths.as_entire_binding()),
-                ("lowering_status", semantic.status.as_entire_binding()),
-            ],
-        )?;
+        let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
+        let mut resources = ResourceMap::new();
+        resources.register_graph_bindings(graph, &graph_bindings);
+        semantic.register(graph, &mut resources)?;
+        resources.graph_buffer(graph, "lir.x86.total", total)?;
+        resources.graph_buffer(graph, "lir.x86.core", core)?;
+        resources.graph_buffer(graph, "lir.x86.operands", operands)?;
+        resources.graph_buffer(graph, "lir.x86.semantic_origins", semantic_origins)?;
+        let context = (graph, allocations);
+        let byte_counts = params
+            .iter()
+            .enumerate()
+            .take(target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS) as usize)
+            .map(|(page_id, params)| {
+                let target_start = page_id as u32 * TARGET_LIR_PAGE_ROWS;
+                ComputeOperation::direct_with_uniform(
+                    device,
+                    &context,
+                    &resources,
+                    "lir.x86.byte_count",
+                    &byte_count_pass,
+                    params,
+                    target_capacity
+                        .saturating_sub(target_start)
+                        .min(TARGET_LIR_PAGE_ROWS),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let byte_scan = GpuResidentExclusiveScan::new(
             device,
             graph,
@@ -198,510 +200,182 @@ impl GpuX86ArtifactStage {
             &byte_offsets,
             &body_length,
         )?;
-        let entrypoint_clear_group = make_group(
+        let entrypoint_clear = ComputeOperation::direct(
             device,
+            &context,
+            &resources,
+            "lir.x86.entrypoint.clear",
             &entrypoint_clear_pass,
-            "lir.x86.entrypoint.clear.bind_group",
-            &[("x86_entrypoint_state", entrypoint_state.as_entire_binding())],
+            1,
         )?;
-        let entrypoint_reduce_group = make_group(
+        let entrypoint_reduce = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "lir.x86.entrypoint.reduce",
             &entrypoint_reduce_pass,
-            "lir.x86.entrypoint.reduce.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                ("x86_entrypoint_state", entrypoint_state.as_entire_binding()),
-            ],
+            fixed_params,
+            capacities.hir_nodes.max(1),
         )?;
-        let layout_group = make_group(
+        let layout_op = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "lir.x86.artifact.layout",
             &layout_pass,
-            "lir.x86.artifact.layout.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("x86_body_length", body_length.as_entire_binding()),
-                ("x86_entrypoint_state", entrypoint_state.as_entire_binding()),
-                ("target_function_count", functions.count.as_entire_binding()),
-                ("target_functions", functions.rows.as_entire_binding()),
-                (
-                    "target_function_index_by_semantic",
-                    functions.index_by_semantic.as_entire_binding(),
-                ),
-                ("target_byte_offset", byte_offsets.as_entire_binding()),
-                (
-                    "semantic_lir_string_pool_len",
-                    semantic.string_pool_len.as_entire_binding(),
-                ),
-                ("x86_artifact_layout", layout.as_entire_binding()),
-                ("x86_artifact_length", length.as_entire_binding()),
-                ("lowering_status", semantic.status.as_entire_binding()),
-            ],
+            fixed_params,
+            1,
         )?;
-        let clear_group = make_group(
+        let clear = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "lir.x86.artifact.clear",
             &clear_pass,
-            "lir.x86.artifact.clear.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("artifact_bytes", words.as_entire_binding()),
-            ],
+            fixed_params,
+            artifact_capacity.div_ceil(4),
         )?;
-        let emit_group = make_group(
-            device,
-            &emit_pass,
-            "lir.x86.emit.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                ("target_lir_core", core.as_entire_binding()),
-                ("target_lir_operands", operands.as_entire_binding()),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-                ("target_function_count", functions.count.as_entire_binding()),
-                ("target_functions", functions.rows.as_entire_binding()),
-                (
-                    "target_function_index_by_semantic",
-                    functions.index_by_semantic.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_string_total",
-                    semantic.string_count.as_entire_binding(),
-                ),
-                ("semantic_lir_strings", semantic.strings.as_entire_binding()),
-                (
-                    "semantic_lir_string_pool_len",
-                    semantic.string_pool_len.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_string_data",
-                    semantic.string_data_words.as_entire_binding(),
-                ),
-                (
-                    "x86_frame_slot_by_decl_token",
-                    frame_slot_by_decl_token.as_entire_binding(),
-                ),
-                ("target_byte_length", byte_lengths.as_entire_binding()),
-                ("target_byte_offset", byte_offsets.as_entire_binding()),
-                ("x86_artifact_layout", layout.as_entire_binding()),
-                ("artifact_bytes", words.as_entire_binding()),
-            ],
-        )?;
-
-        validate(
-            graph,
-            allocations,
-            semantic,
-            total,
-            core,
-            operands,
-            scheduled_function_ids,
-            functions,
-            frame_slot_by_decl_token,
-            &byte_lengths,
-            &byte_offsets,
-            &body_length,
-            &entrypoint_state,
-            &layout,
-            &length,
-            &words,
-        )?;
+        let emits = params
+            .iter()
+            .enumerate()
+            .map(|(page_id, params)| {
+                let target_start = page_id as u32 * TARGET_LIR_PAGE_ROWS;
+                ComputeOperation::direct_with_uniform(
+                    device,
+                    &context,
+                    &resources,
+                    "lir.x86.emit",
+                    &emit_pass,
+                    params,
+                    emit_capacity
+                        .saturating_sub(target_start)
+                        .min(TARGET_LIR_PAGE_ROWS),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         let length_readback = readback_bytes(device, "artifact.x86.length.readback", 4, 4);
-        let artifact_readback = readback_bytes(
+        let output_readback = PagedReadback::new(
             device,
             "artifact.x86.bytes.readback",
-            artifact_capacity as usize,
-            artifact_capacity as usize,
+            (artifact_capacity as usize).min(4 << 20),
         );
         Ok(Self {
-            target_capacity,
-            emit_capacity,
-            function_capacity: capacities.hir_nodes.max(1),
             artifact_capacity,
-            byte_count_pass,
-            entrypoint_clear_pass,
-            entrypoint_reduce_pass,
-            layout_pass,
-            clear_pass,
-            emit_pass,
-            byte_count_group,
-            entrypoint_clear_group,
-            entrypoint_reduce_group,
-            layout_group,
-            clear_group,
-            emit_group,
+            byte_counts,
+            entrypoint_clear,
+            entrypoint_reduce,
+            layout_op,
+            clear,
+            emits,
             byte_scan,
             _params: params,
-            byte_lengths,
-            byte_offsets,
-            entrypoint_state,
+            _byte_lengths: byte_lengths,
+            _byte_offsets: byte_offsets,
+            _entrypoint_state: entrypoint_state,
             layout,
             length,
             words,
             length_readback,
-            artifact_readback,
+            output_readback,
         })
     }
 
-    pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_layout(encoder)?;
-        self.record_emission(encoder)
+    pub(crate) fn record_byte_count(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        page_id: usize,
+    ) -> Result<()> {
+        self.byte_counts
+            .get(page_id)
+            .context("x86 target page has no byte-count operation")?
+            .record(encoder)
     }
 
-    pub(crate) fn record_layout(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.byte_count_pass,
-            &self.byte_count_group,
-            self.target_capacity,
-        )?;
+    pub(crate) fn record_layout_after_byte_counts(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
         self.byte_scan.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.entrypoint_clear_pass,
-            &self.entrypoint_clear_group,
-            1,
-        )?;
-        record_direct(
-            encoder,
-            &self.entrypoint_reduce_pass,
-            &self.entrypoint_reduce_group,
-            self.function_capacity,
-        )?;
-        record_direct(encoder, &self.layout_pass, &self.layout_group, 1)?;
+        self.entrypoint_clear.record(encoder)?;
+        self.entrypoint_reduce.record(encoder)?;
+        self.layout_op.record(encoder)?;
         Ok(())
     }
 
-    pub(crate) fn record_emission(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.clear_pass,
-            &self.clear_group,
-            self.artifact_capacity.div_ceil(4),
-        )?;
-        record_direct(
-            encoder,
-            &self.emit_pass,
-            &self.emit_group,
-            self.emit_capacity,
-        )?;
+    pub(crate) fn record_clear(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.clear.record(encoder)
+    }
+
+    pub(crate) fn record_emit(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        page_id: usize,
+    ) -> Result<()> {
+        self.emits
+            .get(page_id)
+            .context("x86 target page has no emit operation")?
+            .record(encoder)
+    }
+
+    pub(crate) fn record_extra_emits(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        first_page: usize,
+    ) -> Result<()> {
+        for emit in &self.emits[first_page..] {
+            emit.record(encoder)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn record_length_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.copy_buffer_to_buffer(&self.length.buffer, 0, &self.length_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(
-            &self.words.buffer,
-            0,
-            &self.artifact_readback.buffer,
-            0,
-            self.artifact_capacity as u64,
-        );
+    }
+
+    #[cfg(test)]
+    fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_byte_count(encoder, 0)?;
+        self.record_layout_after_byte_counts(encoder)?;
+        self.record_clear(encoder)?;
+        self.record_emit(encoder, 0)?;
+        self.record_extra_emits(encoder, 1)?;
+        self.record_length_readback(encoder);
         Ok(())
     }
 
     pub(crate) fn object_view(&self) -> GpuX86ArtifactObjectView<'_> {
         GpuX86ArtifactObjectView {
-            byte_lengths: &self.byte_lengths,
-            byte_offsets: &self.byte_offsets,
-            entrypoint_state: &self.entrypoint_state,
             layout: &self.layout,
-            words: &self.words,
         }
     }
 
-    pub(crate) fn finish(&self, device: &wgpu::Device) -> Result<Vec<u8>> {
+    pub(crate) fn finish(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Vec<u8>> {
         let length_slice = self.length_readback.slice(..);
         map_readback_blocking(device, &length_slice, "x86 artifact length readback")?;
         let mapped = length_slice.get_mapped_range();
         let length = u32::from_le_bytes(mapped[..4].try_into().unwrap()) as usize;
         drop(mapped);
         self.length_readback.unmap();
-        if length > self.artifact_readback.byte_size {
+        if length > self.artifact_capacity as usize {
             anyhow::bail!(
                 "GPU x86 artifact requires {length} bytes but the daemon workspace provides {}",
-                self.artifact_readback.byte_size,
+                self.artifact_capacity,
             );
         }
-        let artifact_slice = self.artifact_readback.slice(..);
-        map_readback_blocking(device, &artifact_slice, "x86 artifact byte readback")?;
-        let mapped = artifact_slice.get_mapped_range();
-        let bytes = mapped[..length].to_vec();
-        drop(mapped);
-        self.artifact_readback.unmap();
-        Ok(bytes)
+        self.output_readback.read(
+            device,
+            queue,
+            &self.words.buffer,
+            0,
+            length,
+            "x86 artifact byte readback",
+        )
     }
 }
 
 fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
     make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate(
-    graph: &CompilerGraph,
-    allocations: &CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    total: &LaniusBuffer<u32>,
-    core: &LaniusBuffer<X86LirCore>,
-    operands: &LaniusBuffer<X86LirOperands>,
-    function_ids: &LaniusBuffer<u32>,
-    functions: GpuTargetFunctionView<'_>,
-    frame_slots: &LaniusBuffer<u32>,
-    byte_lengths: &LaniusBuffer<u32>,
-    byte_offsets: &LaniusBuffer<u32>,
-    body_length: &LaniusBuffer<u32>,
-    entrypoint_state: &LaniusBuffer<u32>,
-    layout: &LaniusBuffer<X86ArtifactLayout>,
-    length: &LaniusBuffer<u32>,
-    words: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "lir.x86.byte_count",
-        vec![
-            bound("target_lir_total", resource("lir.x86.total"), total)?,
-            bound("target_lir_core", resource("lir.x86.core"), core)?,
-            bound(
-                "target_lir_operands",
-                resource("lir.x86.operands"),
-                operands,
-            )?,
-            bound(
-                "scheduled_function_id",
-                resource("lir.target.scheduled_function_ids"),
-                function_ids,
-            )?,
-            bound(
-                "target_function_count",
-                resource("lir.target.function_count"),
-                functions.count,
-            )?,
-            bound(
-                "target_functions",
-                resource("lir.target.functions"),
-                functions.rows,
-            )?,
-            bound(
-                "target_function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                functions.index_by_semantic,
-            )?,
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "target_byte_length",
-                resource("lir.x86.byte_lengths"),
-                byte_lengths,
-            )?,
-            bound(
-                "lowering_status",
-                resource("lowering.status"),
-                semantic.status,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.x86.entrypoint.clear",
-        vec![bound(
-            "x86_entrypoint_state",
-            resource("lir.x86.entrypoint_state"),
-            entrypoint_state,
-        )?],
-    )?;
-    run(
-        "lir.x86.entrypoint.reduce",
-        vec![
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "x86_entrypoint_state",
-                resource("lir.x86.entrypoint_state"),
-                entrypoint_state,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.x86.artifact.layout",
-        vec![
-            bound(
-                "x86_body_length",
-                resource("lir.x86.body_length"),
-                body_length,
-            )?,
-            bound(
-                "x86_entrypoint_state",
-                resource("lir.x86.entrypoint_state"),
-                entrypoint_state,
-            )?,
-            bound(
-                "target_function_count",
-                resource("lir.target.function_count"),
-                functions.count,
-            )?,
-            bound(
-                "target_functions",
-                resource("lir.target.functions"),
-                functions.rows,
-            )?,
-            bound(
-                "target_function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                functions.index_by_semantic,
-            )?,
-            bound(
-                "target_byte_offset",
-                resource("lir.x86.byte_offsets"),
-                byte_offsets,
-            )?,
-            bound(
-                "semantic_lir_string_pool_len",
-                resource("lir.semantic.string_pool_len"),
-                semantic.string_pool_len,
-            )?,
-            bound(
-                "x86_artifact_layout",
-                resource("lir.x86.artifact_layout"),
-                layout,
-            )?,
-            bound(
-                "x86_artifact_length",
-                resource("artifact.x86.length"),
-                length,
-            )?,
-            bound(
-                "lowering_status",
-                resource("lowering.status"),
-                semantic.status,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.x86.artifact.clear",
-        vec![bound(
-            "artifact_bytes",
-            resource("artifact.x86.bytes"),
-            words,
-        )?],
-    )?;
-    run(
-        "lir.x86.emit",
-        vec![
-            bound("target_lir_total", resource("lir.x86.total"), total)?,
-            bound("target_lir_core", resource("lir.x86.core"), core)?,
-            bound(
-                "target_lir_operands",
-                resource("lir.x86.operands"),
-                operands,
-            )?,
-            bound(
-                "scheduled_function_id",
-                resource("lir.target.scheduled_function_ids"),
-                function_ids,
-            )?,
-            bound(
-                "target_function_count",
-                resource("lir.target.function_count"),
-                functions.count,
-            )?,
-            bound(
-                "target_functions",
-                resource("lir.target.functions"),
-                functions.rows,
-            )?,
-            bound(
-                "target_function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                functions.index_by_semantic,
-            )?,
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "semantic_lir_string_total",
-                resource("lir.semantic.string_total"),
-                semantic.string_count,
-            )?,
-            bound(
-                "semantic_lir_strings",
-                resource("lir.semantic.strings"),
-                semantic.strings,
-            )?,
-            bound(
-                "semantic_lir_string_pool_len",
-                resource("lir.semantic.string_pool_len"),
-                semantic.string_pool_len,
-            )?,
-            bound(
-                "semantic_lir_string_data",
-                resource("lir.semantic.string_data"),
-                semantic.string_data_words,
-            )?,
-            bound(
-                "x86_frame_slot_by_decl_token",
-                resource("lir.x86.frame_slot_by_decl_token"),
-                frame_slots,
-            )?,
-            bound(
-                "target_byte_length",
-                resource("lir.x86.byte_lengths"),
-                byte_lengths,
-            )?,
-            bound(
-                "target_byte_offset",
-                resource("lir.x86.byte_offsets"),
-                byte_offsets,
-            )?,
-            bound(
-                "x86_artifact_layout",
-                resource("lir.x86.artifact_layout"),
-                layout,
-            )?,
-            bound("artifact_bytes", resource("artifact.x86.bytes"), words)?,
-        ],
-    )
 }
 
 #[cfg(test)]
@@ -720,7 +394,6 @@ mod tests {
                 SemanticLirLocal,
                 SemanticLirOperands,
                 SemanticLirParam,
-                SemanticLirSchedule,
                 SemanticLirString,
                 TargetLirFunction,
                 X86LirCore,
@@ -782,7 +455,7 @@ mod tests {
         let semantic_call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.x86_artifact.sem.call_args",
-            &records(&[[u32::MAX; 4]; 2]),
+            &records(&[[u32::MAX; 5]; 2]),
             2,
         );
         let zero = storage_ro_from_u32s(&gpu.device, "test.x86_artifact.zero", &[0]);
@@ -811,8 +484,8 @@ mod tests {
             &gpu.device,
             "test.x86_artifact.sem.functions",
             &records(&[
-                [0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0],
-                [1, 1, 1, 0, 3, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, u32::MAX],
+                [1, 1, 1, 0, 3, 1, 0, 0, 0, 0, 0, 0, u32::MAX],
             ]),
             2,
         );
@@ -830,20 +503,16 @@ mod tests {
             &records(&[[u32::MAX; 4]; 2]),
             2,
         );
-        let semantic_schedule = storage_ro_from_bytes::<SemanticLirSchedule>(
-            &gpu.device,
-            "test.x86_artifact.sem.schedule",
-            &records(&[[0; 4]; 12]),
-            12,
-        );
         let semantic = GpuSemanticLirView {
             count: &semantic_total,
             core: &semantic_core,
             operands: &semantic_operands,
+            owner_by_instruction: &no_call_counts,
+            op_by_instruction: &no_call_counts,
+            function_id_by_hir: &no_call_counts,
             call_args: &semantic_call_args,
-            call_arg_count: &zero,
-            call_arg_start_by_instruction: &no_call_starts,
-            call_arg_count_by_instruction: &no_call_counts,
+            call_arg_start_by_hir: &no_call_starts,
+            call_arg_count_by_hir: &no_call_counts,
             aggregate_elements: &aggregate_elements,
             aggregate_element_count: &zero,
             strings: &strings,
@@ -856,7 +525,6 @@ mod tests {
             param_count: &zero,
             locals: &semantic_locals,
             local_count: &zero,
-            schedule: &semantic_schedule,
             execution_order: None,
             status: &status,
         };
@@ -871,12 +539,10 @@ mod tests {
         let operands = workspace
             .alias::<X86LirOperands>(&graph, graph.resource_id("lir.x86.operands").unwrap(), 12)
             .unwrap();
-        let function_ids = workspace
+        let semantic_origins = workspace
             .alias::<u32>(
                 &graph,
-                graph
-                    .resource_id("lir.target.scheduled_function_ids")
-                    .unwrap(),
+                graph.resource_id("lir.x86.semantic_origins").unwrap(),
                 12,
             )
             .unwrap();
@@ -951,9 +617,9 @@ mod tests {
             ]),
         );
         gpu.queue.write_buffer(
-            &function_ids.buffer,
+            &semantic_origins.buffer,
             0,
-            &records(&[[0], [0], [0], [0], [0], [0], [1], [1], [1], [1], [1], [1]]),
+            &records(&[[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]),
         );
         gpu.queue
             .write_buffer(&function_count.buffer, 0, &2u32.to_le_bytes());
@@ -977,13 +643,7 @@ mod tests {
             &total,
             &core,
             &operands,
-            &function_ids,
-            GpuTargetFunctionView {
-                count: &function_count,
-                rows: &functions,
-                index_by_semantic: &function_index_by_semantic,
-            },
-            &frame_slots,
+            &semantic_origins,
         )
         .unwrap();
         let mut encoder = gpu
@@ -993,7 +653,7 @@ mod tests {
             });
         stage.record(&mut encoder).unwrap();
         gpu.queue.submit(Some(encoder.finish()));
-        let bytes = stage.finish(&gpu.device).unwrap();
+        let bytes = stage.finish(&gpu.device, &gpu.queue).unwrap();
         assert_eq!(&bytes[..4], b"\x7fELF");
         assert!(bytes.len() > 190);
 

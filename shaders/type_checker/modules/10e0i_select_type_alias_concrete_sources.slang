@@ -2,6 +2,7 @@
 // Only components reached from alias output nodes are consumed by finalization;
 // unrelated syntax remains harmlessly isolated.
 
+import hir_records;
 import atomics;
 import gpu_index;
 
@@ -13,7 +14,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> type_expr_ref_tag;

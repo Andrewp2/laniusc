@@ -1,5 +1,7 @@
 // Validate direct-call generic claims after final call resolution.
 
+import external_type_identity;
+import hir_records;
 import status;
 
 struct Params
@@ -12,7 +14,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> call_generic_claim_count_out;
@@ -24,7 +25,6 @@ StructuredBuffer<uint> call_generic_claim_ref_tag;
 StructuredBuffer<uint> call_generic_claim_ref_payload;
 StructuredBuffer<uint> call_generic_claim_arg_row;
 StructuredBuffer<uint> call_generic_claim_order;
-StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_len_kind;
@@ -153,10 +153,6 @@ void validate_claim_at(uint order_i)
             bool valid_instances = valid_token(instance) && valid_token(prev_instance);
             uint kind = valid_instances ? type_instance_kind[instance] : 0u;
             uint prev_kind = valid_instances ? type_instance_kind[prev_instance] : 0u;
-            uint nominal = valid_instances ? type_instance_external_canonical[instance] : INVALID;
-            uint prev_nominal = valid_instances
-                ? type_instance_external_canonical[prev_instance]
-                : INVALID;
             uint child_count = valid_instances ? type_instance_arg_count[instance] : 0u;
             bool matches = valid_instances && kind == prev_kind && child_count ==
                 type_instance_arg_count[prev_instance];
@@ -164,7 +160,7 @@ void validate_claim_at(uint order_i)
                 matches = type_instance_len_kind[instance] == type_instance_len_kind[prev_instance] &&
                     type_instance_len_payload[instance] == type_instance_len_payload[prev_instance];
             if (matches && kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
-                matches = nominal != INVALID && nominal == prev_nominal;
+                matches = external_type_identity_equal(instance, prev_instance);
             if (!matches)
             {
                 record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, 0u);

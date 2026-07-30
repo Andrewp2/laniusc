@@ -1,3 +1,5 @@
+import hir_records;
+
 // Project compact inherent-method rows into token-keyed lookup metadata.
 
 struct Params
@@ -9,14 +11,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirMethodCore { uint node; uint owner; uint impl_node; uint name_token; };
-struct HirMethodSignature
-{
-    uint first_param_token;
-    uint impl_receiver_type;
-    uint receiver_mode;
-    uint metadata;
-};
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;

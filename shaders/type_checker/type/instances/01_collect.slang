@@ -1,3 +1,5 @@
+import hir_records;
+
 // HIR-driven scalar/path type-reference collection.
 //
 // This pass consumes parser-owned HIR type-form records plus resolver-produced
@@ -15,9 +17,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

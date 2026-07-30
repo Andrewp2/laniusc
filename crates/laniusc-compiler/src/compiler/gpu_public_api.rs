@@ -4,7 +4,7 @@ use super::*;
 /// Builds a path-backed source-pack manifest for test assertions.
 pub(super) fn source_pack_path_build_manifest(
     manifest: &ExplicitSourcePackPathManifest,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     artifacts: SourcePackBuildArtifactManifest,
 ) -> SourcePackPathBuildManifest {
@@ -252,7 +252,7 @@ pub(super) fn validate_in_memory_source_pack_fits_default_codegen_unit<S: AsRef<
     operation: &str,
     sources: &[S],
 ) -> Result<(), CompileError> {
-    let limits = CodegenUnitLimits::default().normalized();
+    let limits = CompilationUnitLimits::default().normalized();
     if sources.len() > limits.max_source_files {
         return Err(source_pack_input_limit_exceeded(
             operation,
@@ -724,7 +724,7 @@ pub async fn step_prepared_descriptor_worker_for_target(
 pub async fn step_library_path_worker_to_wasm<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -753,7 +753,7 @@ where
 pub async fn step_library_path_worker_to_x86_64<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -784,7 +784,7 @@ where
 pub async fn run_path_stream_worker_to_wasm<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -818,7 +818,7 @@ where
 pub async fn step_path_stream_worker_to_wasm<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -850,7 +850,7 @@ where
 pub async fn run_path_stream_worker_to_x86_64<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -884,7 +884,7 @@ where
 pub async fn step_path_stream_worker_to_x86_64<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -916,7 +916,7 @@ where
 pub async fn run_dependency_stream_worker_to_wasm<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -951,7 +951,7 @@ where
 pub async fn step_dependency_stream_worker_to_wasm<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -984,7 +984,7 @@ where
 pub async fn run_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,
@@ -1019,7 +1019,7 @@ where
 pub async fn step_dependency_stream_worker_to_x86_64<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     worker_id: impl Into<String>,

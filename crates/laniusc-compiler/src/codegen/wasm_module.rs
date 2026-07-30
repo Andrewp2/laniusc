@@ -35,14 +35,9 @@ pub(crate) struct GpuWasmModuleView<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct GpuWasmModuleObjectView<'a> {
-    pub type_lengths: &'a LaniusBuffer<u32>,
-    pub type_offsets: &'a LaniusBuffer<u32>,
     pub type_total: &'a LaniusBuffer<u32>,
-    pub code_lengths: &'a LaniusBuffer<u32>,
-    pub code_offsets: &'a LaniusBuffer<u32>,
     pub code_total: &'a LaniusBuffer<u32>,
     pub layout: &'a LaniusBuffer<WasmModuleLayout>,
-    pub words: &'a LaniusBuffer<u32>,
 }
 
 pub(crate) struct GpuWasmModuleStage {
@@ -343,14 +338,9 @@ impl GpuWasmModuleStage {
 
     pub(crate) fn object_projection_inputs(&self) -> GpuWasmModuleObjectView<'_> {
         GpuWasmModuleObjectView {
-            type_lengths: &self._type_lengths,
-            type_offsets: &self._type_offsets,
             type_total: &self._type_total,
-            code_lengths: &self._code_lengths,
-            code_offsets: &self._code_offsets,
             code_total: &self._code_total,
             layout: &self._layout,
-            words: &self.words,
         }
     }
 

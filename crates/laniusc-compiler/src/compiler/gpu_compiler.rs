@@ -1,4 +1,5 @@
 use super::*;
+use crate::codegen::unit::DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES;
 
 mod backends;
 pub use backends::GpuCompilerBackends;
@@ -61,19 +62,10 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringPipeline>, String>,
 }
 
-// First graph-owned daemon capacity while production entry points move onto
-// the lowering pipeline. Source packs already have a separate bounded-unit
-// boundary; resident high-water growth is kept explicit instead of silently
-// falling back to a legacy backend.
-const INITIAL_LOWERING_SOURCE_CAPACITY: u32 = 1024 * 1024;
-
 fn initial_lowering_capacities(target: LoweringTarget) -> Result<LoweringCapacities, String> {
-    LoweringCapacities::from_frontend_unit(
-        INITIAL_LOWERING_SOURCE_CAPACITY,
-        INITIAL_LOWERING_SOURCE_CAPACITY,
-        INITIAL_LOWERING_SOURCE_CAPACITY,
-        target,
-    )
+    let unit_capacity = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
+        .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
+    LoweringCapacities::from_frontend_unit(unit_capacity, unit_capacity, unit_capacity, target)
 }
 
 type PipelineFamilyInitialization = (
@@ -345,21 +337,6 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// drivers.
     pub fn gpu(&self) -> &'gpu GpuDevice {
         self.gpu
-    }
-
-    pub(super) fn ensure_lowering_capacity(
-        &self,
-        source_bytes: u32,
-        tokens: u32,
-        hir_nodes: u32,
-    ) -> Result<(), String> {
-        let required = source_bytes.max(tokens).max(hir_nodes);
-        if required <= INITIAL_LOWERING_SOURCE_CAPACITY {
-            return Ok(());
-        }
-        Err(format!(
-            "compilation unit requires {required} lowering rows/bytes, exceeding the daemon's resident graph capacity of {INITIAL_LOWERING_SOURCE_CAPACITY}; split the source into bounded compilation units"
-        ))
     }
 
     pub(super) fn lowering_pipeline(
@@ -651,7 +628,7 @@ mod tests {
                     .semantic_artifact()
                     .expect("type checker should retain semantic artifact");
                 pipeline
-                    .record_checked_hir(&gpu.device, &mut encoder, &hir, semantic.view(), None)
+                    .record_checked_hir(&gpu.device, &mut encoder, &hir, semantic.view())
                     .unwrap_or_else(|error| {
                         panic!("record {target:?} lowering for {case}: {error}")
                     });
@@ -661,7 +638,7 @@ mod tests {
                     encoder.finish(),
                 );
 
-                let artifact_result = pipeline.finish_artifact(&gpu.device);
+                let artifact_result = pipeline.finish_artifact(&gpu.device, &gpu.queue);
                 let artifact = artifact_result.unwrap_or_else(|error| {
                     panic!("finish {target:?} artifact for {case}: {error}")
                 });

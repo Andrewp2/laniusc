@@ -1,13 +1,8 @@
-use crate::gpu::compiler_graph::{AccessMode, CompilerPhase, ReflectedComputeSpec, ResourceDomain};
+use crate::gpu::compiler_graph::{AccessMode, CompactionSpec, ReflectedComputeSpec};
 
 macro_rules! call_pass {
     ($suffix:literal, $domain:ident, $kernel:literal) => {
-        ReflectedComputeSpec::new(
-            concat!("type_check.calls.", $suffix),
-            $kernel,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::$domain,
-        )
+        typecheck_pass!(concat!("type_check.calls.", $suffix), $domain, $kernel)
     };
 }
 
@@ -100,18 +95,23 @@ pub(in crate::type_checker) const CALLS_ARGUMENT_PACK: ReflectedComputeSpec = ca
     "type_checker/calls/02e_pack_hir_call_args"
 )
 .initializer();
-pub(in crate::type_checker) const CALLS_ARGUMENT_MARK: ReflectedComputeSpec = call_pass!(
+const CALLS_ARGUMENT_MARK: ReflectedComputeSpec = call_pass!(
     "arg_rows.mark",
     HirNodes,
     "type_checker/calls/02g_mark_compact_hir_call_args"
 )
 .initializer();
-pub(in crate::type_checker) const CALLS_ARGUMENT_SCATTER: ReflectedComputeSpec = call_pass!(
+const CALLS_ARGUMENT_SCATTER: ReflectedComputeSpec = call_pass!(
     "arg_rows.scatter",
     HirNodes,
     "type_checker/calls/02h_scatter_compact_hir_call_args"
 )
 .initializer();
+pub(in crate::type_checker) const CALL_ARGUMENT_COMPACTION: CompactionSpec = CompactionSpec {
+    mark: CALLS_ARGUMENT_MARK,
+    scan: super::super::compiler_graph::CALL_ARG_ROW_SCAN,
+    scatter: CALLS_ARGUMENT_SCATTER,
+};
 pub(in crate::type_checker) const CALLS_RESOLVE: ReflectedComputeSpec =
     call_pass!("resolve", HirNodes, "type_checker/calls/03_resolve");
 pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_INITIALIZE: ReflectedComputeSpec =

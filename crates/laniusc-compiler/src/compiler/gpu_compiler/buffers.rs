@@ -1,9 +1,16 @@
 use super::*;
 use crate::gpu::buffers::LaniusBuffer;
 
+const TYPECHECK_FRONTEND_WORKSPACE_COUNT: usize =
+    crate::parser::buffers::POST_HIR_WORKSPACE_COUNT + 7;
+
 /// Owned parser buffers retained for type-check recording and diagnostics.
 pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) hir: crate::parser::buffers::GpuHirView,
+    /// Parser-only record storage whose contents are dead after compact HIR
+    /// materialization and may back type-check workspace slots.
+    pub(super) phase_workspace:
+        [LaniusBuffer<u32>; crate::parser::buffers::POST_HIR_WORKSPACE_COUNT],
     pub(super) raw_to_compact_hir: LaniusBuffer<u32>,
     pub(super) parser_feature_flags: u32,
     pub(super) module_record_capacity: u32,
@@ -23,43 +30,24 @@ pub(super) struct OwnedTypecheckParserBuffers {
     pub(super) hir_semantic_dense_node: LaniusBuffer<u32>,
     pub(super) hir_semantic_subtree_end: Box<LaniusBuffer<u32>>,
     pub(super) hir_type_form: LaniusBuffer<u32>,
-    pub(super) hir_type_value_node: LaniusBuffer<u32>,
     pub(super) hir_type_len_token: LaniusBuffer<u32>,
-    pub(super) hir_type_len_value: LaniusBuffer<u32>,
-    pub(super) hir_type_file_id: LaniusBuffer<u32>,
     pub(super) hir_type_path_leaf_node: LaniusBuffer<u32>,
     pub(super) hir_bound_path_owner_by_leaf: LaniusBuffer<u32>,
     pub(super) hir_type_arg_start: LaniusBuffer<u32>,
     pub(super) hir_type_arg_count: LaniusBuffer<u32>,
     pub(super) hir_type_arg_next: LaniusBuffer<u32>,
-    pub(super) hir_type_root_owner: LaniusBuffer<u32>,
-    pub(super) hir_type_alias_owner_link_b: LaniusBuffer<u32>,
     pub(super) hir_method_impl_receiver_type_node: LaniusBuffer<u32>,
-    pub(super) hir_stmt_record: LaniusBuffer<u32>,
-    pub(super) hir_nearest_loop_node: LaniusBuffer<u32>,
-    pub(super) hir_nearest_fn_node: LaniusBuffer<u32>,
-    pub(super) hir_expr_record: LaniusBuffer<u32>,
     pub(super) hir_expr_name_role: LaniusBuffer<u32>,
     pub(super) hir_expr_result_root_node: LaniusBuffer<u32>,
     pub(super) hir_member_receiver_node: LaniusBuffer<u32>,
     pub(super) hir_member_receiver_token: LaniusBuffer<u32>,
     pub(super) hir_member_name_token: LaniusBuffer<u32>,
-    pub(super) hir_array_lit_context_stmt_node: LaniusBuffer<u32>,
+    pub(super) hir_nearest_fn_node: LaniusBuffer<u32>,
     pub(super) hir_array_element_parent_lit: LaniusBuffer<u32>,
     pub(super) hir_nearest_array_element_node: LaniusBuffer<u32>,
-    pub(super) hir_variant_payload_link_b: LaniusBuffer<u32>,
-    pub(super) hir_match_arm_owner_a: LaniusBuffer<u32>,
     pub(super) hir_struct_lit_head_node: LaniusBuffer<u32>,
-    pub(super) hir_struct_lit_context_stmt_node: LaniusBuffer<u32>,
     pub(super) hir_struct_lit_field_parent_lit: LaniusBuffer<u32>,
     pub(super) hir_struct_lit_field_value_node: LaniusBuffer<u32>,
-    pub(super) hir_list_rank_flag: LaniusBuffer<u32>,
-    pub(super) sc_offsets: LaniusBuffer<u32>,
-    pub(super) emit_offsets: LaniusBuffer<u32>,
-    pub(super) pack_sc_prefix_a: LaniusBuffer<u32>,
-    pub(super) pack_sc_prefix_b: LaniusBuffer<u32>,
-    pub(super) pack_emit_prefix_a: LaniusBuffer<u32>,
-    pub(super) pack_emit_prefix_b: LaniusBuffer<u32>,
 }
 
 impl OwnedTypecheckParserBuffers {
@@ -67,11 +55,15 @@ impl OwnedTypecheckParserBuffers {
     pub(super) fn from_parser_buffers(bufs: &ParserBuffers) -> Self {
         Self {
             hir: crate::parser::buffers::GpuHirView::from_parser_buffers(bufs),
+            phase_workspace: bufs.post_hir_workspace(),
             raw_to_compact_hir: bufs.hir_canonical_raw_to_dense.clone(),
             parser_feature_flags: bufs.parser_feature_flags,
-            module_record_capacity: bufs.tree_capacity,
-            call_param_row_capacity: bufs.tree_capacity,
-            call_arg_row_capacity: bufs.tree_capacity,
+            // These compact families contain source-anchored semantic rows,
+            // never grammar scaffolding. Their worst-case capacity is the
+            // canonical token bound, not the raw production-tree bound.
+            module_record_capacity: bufs.hir_canonical_capacity,
+            call_param_row_capacity: bufs.hir_canonical_capacity,
+            call_arg_row_capacity: bufs.hir_canonical_capacity,
             ll1_status: bufs.ll1_status.clone(),
             node_kind: bufs.node_kind.clone(),
             parent: bufs.parent.clone(),
@@ -86,54 +78,62 @@ impl OwnedTypecheckParserBuffers {
             hir_semantic_dense_node: bufs.hir_semantic_dense_node.clone(),
             hir_semantic_subtree_end: Box::new(bufs.hir_semantic_subtree_end.clone()),
             hir_type_form: bufs.hir_type_form.clone(),
-            hir_type_value_node: bufs.hir_type_value_node.clone(),
             hir_type_len_token: bufs.hir_type_len_token.clone(),
-            hir_type_len_value: bufs.hir_type_len_value.clone(),
-            hir_type_file_id: bufs.hir_type_file_id.clone(),
             hir_type_path_leaf_node: bufs.hir_type_path_leaf_node.clone(),
             hir_bound_path_owner_by_leaf: bufs.hir_bound_path_owner_by_leaf.clone(),
             hir_type_arg_start: bufs.hir_type_arg_start.clone(),
             hir_type_arg_count: bufs.hir_type_arg_count.clone(),
             hir_type_arg_next: bufs.hir_type_arg_next.clone(),
-            hir_type_root_owner: bufs.hir_type_root_owner.clone(),
-            hir_type_alias_owner_link_b: bufs.hir_type_alias_owner_link_b.clone(),
             hir_method_impl_receiver_type_node: bufs.hir_method_impl_receiver_type_node.clone(),
-            hir_stmt_record: bufs.hir_stmt_record.clone(),
-            hir_nearest_loop_node: bufs.hir_nearest_loop_node.clone(),
-            hir_nearest_fn_node: bufs.hir_nearest_fn_node.clone(),
-            hir_expr_record: bufs.hir_expr_record.clone(),
             hir_expr_name_role: bufs.hir_expr_name_role.clone(),
             hir_expr_result_root_node: bufs.hir_expr_result_root_node.clone(),
             hir_member_receiver_node: bufs.hir_member_receiver_node.clone(),
             hir_member_receiver_token: bufs.hir_member_receiver_token.clone(),
             hir_member_name_token: bufs.hir_member_name_token.clone(),
-            hir_array_lit_context_stmt_node: bufs.hir_array_lit_context_stmt_node.clone(),
+            hir_nearest_fn_node: bufs.hir_nearest_fn_node.clone(),
             hir_array_element_parent_lit: bufs.hir_array_element_parent_lit.clone(),
             hir_nearest_array_element_node: bufs.hir_nearest_array_element_node.clone(),
-            hir_variant_payload_link_b: bufs.hir_variant_payload_link_b.clone(),
-            hir_match_arm_owner_a: bufs.hir_match_arm_owner_a.clone(),
             hir_struct_lit_head_node: bufs.hir_struct_lit_head_node.clone(),
-            hir_struct_lit_context_stmt_node: bufs.hir_struct_lit_context_stmt_node.clone(),
             hir_struct_lit_field_parent_lit: bufs.hir_struct_lit_field_parent_lit.clone(),
             hir_struct_lit_field_value_node: bufs.hir_struct_lit_field_value_node.clone(),
-            hir_list_rank_flag: bufs.hir_list_rank_flag.clone(),
-            sc_offsets: bufs.sc_offsets.clone(),
-            emit_offsets: bufs.emit_offsets.clone(),
-            pack_sc_prefix_a: bufs.pack_sc_prefix_a.clone(),
-            pack_sc_prefix_b: bufs.pack_sc_prefix_b.clone(),
-            pack_emit_prefix_a: bufs.pack_emit_prefix_a.clone(),
-            pack_emit_prefix_b: bufs.pack_emit_prefix_b.clone(),
         }
     }
 
     /// Builds the borrowed HIR-item buffer view expected by type-check kernels.
-    pub(super) fn hir_item_buffers(&self) -> gpu_type_checker::GpuTypeCheckHirItemBuffers<'_> {
+    pub(super) fn typecheck_workspace<'a>(
+        &'a self,
+        lexer: &'a LexerBuffers,
+    ) -> [crate::gpu::buffers::TrackedBufferView<'a>; TYPECHECK_FRONTEND_WORKSPACE_COUNT] {
+        let parser = self.phase_workspace.each_ref().map(Into::into);
+        let lexer = [
+            (&lexer.tok_types).into(),
+            (&lexer.flags_packed).into(),
+            (&lexer.s_all_final).into(),
+            (&lexer.s_keep_final).into(),
+            (&lexer.end_positions).into(),
+            (&lexer.types_compact).into(),
+            (&lexer.all_index_compact).into(),
+        ];
+        std::array::from_fn(|index| {
+            if index < parser.len() {
+                parser[index]
+            } else {
+                lexer[index - parser.len()]
+            }
+        })
+    }
+
+    pub(super) fn hir_item_buffers<'a>(
+        &'a self,
+        upstream_workspace: &'a [crate::gpu::buffers::TrackedBufferView<'a>],
+    ) -> gpu_type_checker::GpuTypeCheckHirItemBuffers<'a> {
         gpu_type_checker::GpuTypeCheckHirItemBuffers {
             parser_feature_flags: self.parser_feature_flags,
             module_record_capacity: self.module_record_capacity,
             call_param_row_capacity: self.call_param_row_capacity,
             call_arg_row_capacity: self.call_arg_row_capacity,
             hir: &self.hir,
+            upstream_workspace,
             raw_to_compact_hir: &self.raw_to_compact_hir,
             node_kind: &self.node_kind,
             parent: &self.parent,
@@ -141,31 +141,22 @@ impl OwnedTypecheckParserBuffers {
             next_sibling: &self.next_sibling,
             subtree_end: &self.subtree_end,
             type_form: &self.hir_type_form,
-            type_value_node: &self.hir_type_value_node,
             type_len_token: &self.hir_type_len_token,
-            type_len_value: &self.hir_type_len_value,
-            type_file_id: &self.hir_type_file_id,
             type_path_leaf_node: &self.hir_type_path_leaf_node,
             bound_path_owner_by_leaf: &self.hir_bound_path_owner_by_leaf,
             type_arg_start: &self.hir_type_arg_start,
             type_arg_count: &self.hir_type_arg_count,
             type_arg_next: &self.hir_type_arg_next,
-            type_root_owner: &self.hir_type_root_owner,
             method_impl_receiver_type_node: &self.hir_method_impl_receiver_type_node,
-            expr_record: &self.hir_expr_record,
             expr_name_role: &self.hir_expr_name_role,
             expr_result_root_node: &self.hir_expr_result_root_node,
             member_receiver_node: &self.hir_member_receiver_node,
             member_receiver_token: &self.hir_member_receiver_token,
             member_name_token: &self.hir_member_name_token,
-            stmt_record: &self.hir_stmt_record,
-            nearest_loop_node: &self.hir_nearest_loop_node,
             nearest_fn_node: &self.hir_nearest_fn_node,
-            array_lit_context_stmt_node: &self.hir_array_lit_context_stmt_node,
             array_element_parent_lit: &self.hir_array_element_parent_lit,
             nearest_array_element_node: &self.hir_nearest_array_element_node,
             struct_lit_head_node: &self.hir_struct_lit_head_node,
-            struct_lit_context_stmt_node: &self.hir_struct_lit_context_stmt_node,
             struct_lit_field_parent_lit: &self.hir_struct_lit_field_parent_lit,
             struct_lit_field_value_node: &self.hir_struct_lit_field_value_node,
             semantic_dense_node: &self.hir_semantic_dense_node,

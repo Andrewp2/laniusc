@@ -1,24 +1,6 @@
+import hir_records;
+
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirRange { uint start; uint count; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
-struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
-struct HirGenericParam { uint owner; uint name_token; uint kind; uint file_id; };
-struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
-struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
-struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
-struct HirMatchPayload { uint arm; uint pattern; uint ordinal; uint file_id; };
-struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
-struct HirString { uint node; uint data_offset; uint decoded_len; uint file_id; };
-struct HirMethodCore { uint node; uint owner; uint impl_node; uint name_token; };
-struct HirMethodSignature { uint first_param_token; uint impl_receiver_type; uint receiver_mode; uint metadata; };
-struct HirPredicate { uint owner; uint subject; uint bound; uint metadata; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;

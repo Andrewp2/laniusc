@@ -2,6 +2,7 @@
 // identity. Generic arguments remain in the ordinary local instance relation;
 // only the declaration identity lives in the external side table.
 
+import dependency_interface;
 import gpu_index;
 
 struct Params
@@ -20,20 +21,22 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> resolved_dependency_decl;
-StructuredBuffer<uint> dependency_declaration_words;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> declaration_generic_arity;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_decl_token;
-RWStructuredBuffer<uint> type_instance_external_canonical;
 RWStructuredBuffer<uint> type_instance_state;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
+static const uint TYPE_WORDS = 9u;
+static const uint TYPE_KIND_DECLARATION = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
@@ -50,28 +53,43 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_i >= min(path_count_out[0u], gParams.path_capacity) ||
         path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR)
         return;
-    uint declaration_i = resolved_dependency_decl[path_i];
     uint segment_count = path_segment_count[path_i];
-    if (declaration_i >= gParams.declaration_count || segment_count == 0u)
+    if (segment_count == 0u)
         return;
     uint leaf_token = path_segment_token[path_segment_base[path_i] + segment_count - 1u];
     uint owner_token = path_owner_token[path_i];
     if (leaf_token >= gParams.token_capacity || owner_token >= gParams.token_capacity ||
         type_instance_kind[leaf_token] != TYPE_INSTANCE_NAMED)
         return;
+    uint declaration_i = dependency_find_declaration(
+        external_type_library_id[owner_token],
+        external_type_unit_id[owner_token],
+        external_type_local_index[owner_token]);
+    if (declaration_i == INVALID)
+        return;
     if (type_instance_arg_count[leaf_token] != declaration_generic_arity[declaration_i])
     {
         type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
         return;
     }
-    uint signature = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
-    if (signature >= gParams.type_count)
+    uint signature = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+    if (signature >= dependency_type_count())
         return;
     uint root = canonical_type_roots[signature];
-    if (root >= gParams.type_count)
+    if (root >= dependency_type_count())
         return;
+    uint type_base = root * TYPE_WORDS;
+    uint kind = dependency_type_word(type_base);
     type_instance_decl_token[leaf_token] = INVALID;
-    type_instance_external_canonical[leaf_token] = root;
+    external_type_library_id[leaf_token] = kind == TYPE_KIND_DECLARATION
+        ? dependency_type_word(type_base + 1u)
+        : dependency_type_library_id(root);
+    external_type_unit_id[leaf_token] = kind == TYPE_KIND_DECLARATION
+        ? dependency_type_word(type_base + 8u)
+        : dependency_type_unit_id(root);
+    external_type_local_index[leaf_token] = kind == TYPE_KIND_DECLARATION
+        ? dependency_type_word(type_base + 2u)
+        : dependency_type_local_index(root);
     type_instance_state[leaf_token] = TYPE_INSTANCE_RESOLVED;
     type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
     type_expr_ref_payload[owner_token] = leaf_token;

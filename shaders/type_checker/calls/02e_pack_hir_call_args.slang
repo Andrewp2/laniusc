@@ -5,6 +5,7 @@
 // wide argument lists require no raw-tree reconstruction and no contended
 // per-argument writes.
 
+import hir_records;
 import gpu_index;
 
 struct Params
@@ -14,9 +15,6 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

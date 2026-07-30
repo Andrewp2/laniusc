@@ -1,3 +1,5 @@
+import hir_records;
+
 // Scatter compact HIR function-parameter rows.
 //
 // Parameter type projection writes per-HIR-node facts and per-function counts.
@@ -14,9 +16,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

@@ -4,6 +4,7 @@
 // Each compact argument row does O(1) type attribution for its own expression
 // and atomically marks the owning call when the argument is array-typed.
 
+import hir_records;
 import atomics;
 import hir_expr_semantics;
 
@@ -17,8 +18,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

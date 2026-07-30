@@ -3,14 +3,16 @@ use super::super::*;
 /// Creates the bind group that extracts one record-family bit into scan flags.
 pub(super) fn create_record_flag_extract(
     device: &wgpu::Device,
-    pass: &PassData,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    passes: &TypeCheckPasses,
+    spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
     param_label: &'static str,
-    bind_label: &'static str,
     hir_node_capacity: u32,
     family_bit: u32,
-    record_family_bits: &wgpu::Buffer,
-    record_family_flag: &wgpu::Buffer,
-) -> Result<(LaniusBuffer<RecordFamilyFlagParams>, wgpu::BindGroup)> {
+    record_family_bits: &LaniusBuffer<u32>,
+    record_family_flag: &LaniusBuffer<u32>,
+    dispatch_args: &wgpu::Buffer,
+) -> Result<(LaniusBuffer<RecordFamilyFlagParams>, ComputeOperation)> {
     let params = uniform_from_val(
         device,
         param_label,
@@ -21,18 +23,13 @@ pub(super) fn create_record_flag_extract(
             reserved1: 0,
         },
     );
-    let bind_group = bind_group::create_bind_group_from_bindings(
-        device,
-        Some(bind_label),
-        pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("record_family_bits", record_family_bits.as_entire_binding()),
-            ("record_family_flag", record_family_flag.as_entire_binding()),
-        ],
-    )?;
-    Ok((params, bind_group))
+    let mut resources = ResourceMap::new();
+    resources.buffer("gParams", &params);
+    resources.buffer("module_record_family_bits", record_family_bits);
+    resources.buffer("module_record_family_flag", record_family_flag);
+    let operation =
+        ComputeOperation::indirect_spec(device, graph, &resources, passes, spec, dispatch_args)?;
+    Ok((params, operation))
 }
 
 /// Creates a one-dispatch bind group that writes radix dispatch arguments.
@@ -44,17 +41,11 @@ pub(super) fn create_radix_dispatch(
     item_count: &wgpu::Buffer,
     dispatch_args: &wgpu::Buffer,
 ) -> Result<wgpu::BindGroup> {
-    bind_group::create_bind_group_from_bindings(
-        device,
-        Some(label),
-        pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("name_count_in", item_count.as_entire_binding()),
-            ("radix_dispatch_args", dispatch_args.as_entire_binding()),
-        ],
-    )
+    let mut resources = ResourceMap::new();
+    resources.buffer("gParams", params);
+    resources.buffer("name_count_in", item_count);
+    resources.buffer("radix_dispatch_args", dispatch_args);
+    resources.reflected_bind_group_with_overrides(device, label, pass, &[])
 }
 
 /// Creates a one-dispatch bind group that expands a count into dispatch args.
@@ -78,17 +69,12 @@ pub(super) fn create_count_dispatch(
             reserved1: 0,
         },
     );
-    let bind_group = bind_group::create_bind_group_from_bindings(
-        device,
-        Some(bind_label),
-        pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("count_in", count_in.as_entire_binding()),
-            ("dispatch_args", dispatch_args.as_entire_binding()),
-        ],
-    )?;
+    let mut resources = ResourceMap::new();
+    resources.buffer("gParams", &params);
+    resources.buffer("count_in", count_in);
+    resources.buffer("dispatch_args", dispatch_args);
+    let bind_group =
+        resources.reflected_bind_group_with_overrides(device, bind_label, pass, &[])?;
     Ok((params, bind_group))
 }
 
@@ -114,17 +100,12 @@ pub(super) fn create_pair_max_dispatch(
             reserved: 0,
         },
     );
-    let bind_group = bind_group::create_bind_group_from_bindings(
-        device,
-        Some(bind_label),
-        pass,
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("left_count_in", left_count_in.as_entire_binding()),
-            ("right_count_in", right_count_in.as_entire_binding()),
-            ("dispatch_args", dispatch_args.as_entire_binding()),
-        ],
-    )?;
+    let mut resources = ResourceMap::new();
+    resources.buffer("gParams", &params);
+    resources.buffer("left_count_in", left_count_in);
+    resources.buffer("right_count_in", right_count_in);
+    resources.buffer("dispatch_args", dispatch_args);
+    let bind_group =
+        resources.reflected_bind_group_with_overrides(device, bind_label, pass, &[])?;
     Ok((params, bind_group))
 }

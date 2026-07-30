@@ -173,7 +173,27 @@ pub(in crate::type_checker) fn create(
         u32::MAX,
         wgpu::BufferUsages::empty(),
     );
-    let call_dependency_decl = inputs.call_dependency_decl.clone();
+    let resolved_dependency_library_id = typed_storage_u32_fill_rw(
+        device,
+        "type_check.dependencies.resolved_value.library_id",
+        path_capacity as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let resolved_dependency_unit_id = typed_storage_u32_fill_rw(
+        device,
+        "type_check.dependencies.resolved_value.unit_id",
+        path_capacity as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let resolved_dependency_local_index = typed_storage_u32_fill_rw(
+        device,
+        "type_check.dependencies.resolved_value.local_index",
+        path_capacity as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
     let call_compare_capacity = inputs.hir_node_capacity.max(1);
     let call_compare_scan_input = typed_storage_u32_rw(
         device,
@@ -361,10 +381,6 @@ pub(in crate::type_checker) fn create(
                     .expect("dependency state has dependency import targets")
                     .as_entire_binding(),
             ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
             ("dependency_visible_count", count.as_entire_binding()),
         ],
     )?;
@@ -389,10 +405,6 @@ pub(in crate::type_checker) fn create(
                     .as_ref()
                     .expect("dependency state has dependency import targets")
                     .as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
             ),
             ("dependency_visible_count", count.as_entire_binding()),
             ("dependency_visible_prefix", prefix.as_entire_binding()),
@@ -425,10 +437,6 @@ pub(in crate::type_checker) fn create(
                 owner_module.as_entire_binding(),
             ),
             ("dependency_visible_decl", declaration.as_entire_binding()),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
             ("dependency_visible_lookup", lookup.as_entire_binding()),
         ],
     )?;
@@ -463,14 +471,6 @@ pub(in crate::type_checker) fn create(
                     buffers.path_owner_module_id.as_entire_binding(),
                 ),
                 (
-                    "dependency_declaration_words",
-                    dependencies.declaration_words.as_entire_binding(),
-                ),
-                (
-                    "dependency_name_byte_words",
-                    dependencies.name_byte_words.as_entire_binding(),
-                ),
-                (
                     "dependency_visible_owner_module",
                     owner_module.as_entire_binding(),
                 ),
@@ -481,6 +481,18 @@ pub(in crate::type_checker) fn create(
                     resolved_decl.as_entire_binding(),
                 ),
                 ("resolved_status", resolved_status.as_entire_binding()),
+                (
+                    "resolved_dependency_library_id",
+                    resolved_dependency_library_id.as_entire_binding(),
+                ),
+                (
+                    "resolved_dependency_unit_id",
+                    resolved_dependency_unit_id.as_entire_binding(),
+                ),
+                (
+                    "resolved_dependency_local_index",
+                    resolved_dependency_local_index.as_entire_binding(),
+                ),
             ],
         )
     };
@@ -502,26 +514,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "dependency_declaration_library_id",
-                dependencies.declaration_library_id.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_unit_id",
-                dependencies.declaration_unit_id.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_local_index",
-                dependencies.declaration_local_index.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
             (
                 "canonical_type_roots",
                 canonical_type_roots_a.as_entire_binding(),
@@ -565,14 +557,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/09a_init_canonical_type_subtree_start"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
-            ),
             (
                 "canonical_type_subtree_start",
                 canonical_type_root_scratch.as_entire_binding(),
@@ -629,14 +613,6 @@ pub(in crate::type_checker) fn create(
                 resolved_type_decl.as_entire_binding(),
             ),
             (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
@@ -660,10 +636,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/13_count_declaration_generic_arity"),
         &[
             ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "dependency_member_words",
-                dependencies.member_words.as_entire_binding(),
-            ),
             (
                 "declaration_generic_arity",
                 declaration_generic_arity.as_entire_binding(),
@@ -699,10 +671,6 @@ pub(in crate::type_checker) fn create(
                 resolved_type_decl.as_entire_binding(),
             ),
             (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
@@ -719,38 +687,24 @@ pub(in crate::type_checker) fn create(
         &[
             ("gParams", value_params.as_entire_binding()),
             (
-                "module_id_by_file_id",
-                buffers.module_id_by_file_id.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
-            ),
-            (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
             (
-                "dependency_name_byte_words",
-                dependencies.name_byte_words.as_entire_binding(),
+                "resolved_value_decl",
+                resolved_value_decl.as_entire_binding(),
             ),
             (
-                "dependency_visible_owner_module",
-                owner_module.as_entire_binding(),
+                "resolved_dependency_library_id",
+                resolved_dependency_library_id.as_entire_binding(),
             ),
-            ("dependency_visible_decl", declaration.as_entire_binding()),
-            ("dependency_visible_lookup", lookup.as_entire_binding()),
             (
-                "call_dependency_decl",
-                call_dependency_decl.as_entire_binding(),
+                "resolved_dependency_unit_id",
+                resolved_dependency_unit_id.as_entire_binding(),
+            ),
+            (
+                "resolved_dependency_local_index",
+                resolved_dependency_local_index.as_entire_binding(),
             ),
         ],
     )?;
@@ -758,21 +712,7 @@ pub(in crate::type_checker) fn create(
         device,
         "type_check_dependencies_07a_project_call_params",
         &passes.kernel("type_checker/dependencies/07a_project_call_params"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "call_dependency_decl",
-                call_dependency_decl.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", value_params.as_entire_binding())],
     )?;
     let scatter_call_params_group = resources.reflected_bind_group_with_overrides(
         device,
@@ -780,22 +720,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/07b_scatter_call_params"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            (
-                "call_dependency_decl",
-                call_dependency_decl.as_entire_binding(),
-            ),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
-            ),
             (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
@@ -808,19 +732,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/08_validate_call_args"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("dependency_counts", dependencies.counts.as_entire_binding()),
-            (
-                "dependency_declaration_words",
-                dependencies.declaration_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
-            ),
             (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
@@ -853,19 +764,8 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/08a_validate_call_results"),
         &{
             let mut bindings = Vec::with_capacity(45);
+            bindings.extend([("gParams", value_params.as_entire_binding())]);
             bindings.extend([
-                ("gParams", value_params.as_entire_binding()),
-                (
-                    "call_dependency_decl",
-                    call_dependency_decl.as_entire_binding(),
-                ),
-            ]);
-            bindings.extend([
-                ("dependency_counts", dependencies.counts.as_entire_binding()),
-                (
-                    "dependency_type_words",
-                    dependencies.type_words.as_entire_binding(),
-                ),
                 (
                     "canonical_type_roots",
                     canonical_type_roots.as_entire_binding(),
@@ -900,7 +800,6 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/08b_validate_call_type_args"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("dependency_counts", dependencies.counts.as_entire_binding()),
             (
                 "dependency_call_compare_scan_input",
                 call_compare_scan_input.as_entire_binding(),
@@ -924,14 +823,6 @@ pub(in crate::type_checker) fn create(
             (
                 "dependency_call_compare_error_token",
                 call_compare_error_token.as_entire_binding(),
-            ),
-            (
-                "dependency_type_words",
-                dependencies.type_words.as_entire_binding(),
-            ),
-            (
-                "dependency_type_edge_words",
-                dependencies.type_edge_words.as_entire_binding(),
             ),
             (
                 "canonical_type_roots",
@@ -966,7 +857,9 @@ pub(in crate::type_checker) fn create(
             lookup,
             resolved_type_decl,
             resolved_value_decl,
-            call_dependency_decl,
+            resolved_dependency_library_id,
+            resolved_dependency_unit_id,
+            resolved_dependency_local_index,
             call_compare_prefix,
             call_compare_total,
             call_compare_expected_type,

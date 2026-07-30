@@ -1,9 +1,8 @@
+import hir_records;
 import prefix_scan;
 import generated_parse_production_ids;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
-struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;

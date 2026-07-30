@@ -12,8 +12,7 @@ const STORE_LIBRARY_DEPENDENCY_PAGE_FILE_STEM: &str = "source-pack-library-depen
 const STORE_LIBRARY_SOURCE_FILE_PAGE_FILE_STEM: &str = "source-pack-library-source-files";
 const STORE_LIBRARY_SOURCE_FILE_RECORD_PAGE_FILE_STEM: &str = "source-pack-library-source-file";
 const STORE_LIBRARY_BUILD_UNIT_PAGE_FILE_STEM: &str = "source-pack-library-build-units";
-const STORE_LIBRARY_FRONTEND_UNIT_PAGE_FILE_STEM: &str = "source-pack-library-frontend-unit";
-const STORE_LIBRARY_CODEGEN_UNIT_PAGE_FILE_STEM: &str = "source-pack-library-codegen-unit";
+const STORE_LIBRARY_COMPILATION_UNIT_PAGE_FILE_STEM: &str = "source-pack-library-compilation-unit";
 const STORE_LIBRARY_SCHEDULE_INDEX_FILE: &str = "source-pack-library-schedule.json";
 const STORE_LIBRARY_SCHEDULE_PREPARE_PROGRESS_FILE: &str =
     "source-pack-library-schedule-progress.json";
@@ -192,28 +191,15 @@ impl FilesystemArtifactStore {
         target_path(&self.root, &file_name, target)
     }
 
-    /// Returns the path to one persisted frontend-unit page.
-    pub fn library_frontend_unit_page_path_for_target(
+    /// Returns the path to one persisted compilation-unit page.
+    pub fn library_compilation_unit_page_path_for_target(
         &self,
         target: SourcePackArtifactTarget,
         partition_index: usize,
-        frontend_unit_index: usize,
+        unit_index: usize,
     ) -> PathBuf {
         let file_name = format!(
-            "{STORE_LIBRARY_FRONTEND_UNIT_PAGE_FILE_STEM}-{partition_index:08}-{frontend_unit_index:08}.json"
-        );
-        target_path(&self.root, &file_name, target)
-    }
-
-    /// Returns the path to one persisted codegen-unit page.
-    pub fn library_codegen_unit_page_path_for_target(
-        &self,
-        target: SourcePackArtifactTarget,
-        partition_index: usize,
-        codegen_unit_index: usize,
-    ) -> PathBuf {
-        let file_name = format!(
-            "{STORE_LIBRARY_CODEGEN_UNIT_PAGE_FILE_STEM}-{partition_index:08}-{codegen_unit_index:08}.json"
+            "{STORE_LIBRARY_COMPILATION_UNIT_PAGE_FILE_STEM}-{partition_index:08}-{unit_index:08}.json"
         );
         target_path(&self.root, &file_name, target)
     }

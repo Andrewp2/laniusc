@@ -8,24 +8,10 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     encoder: &mut wgpu::CommandEncoder,
     _token_capacity: u32,
     _name_capacity: u32,
-    token_active_dispatch_args: &wgpu::Buffer,
+    _token_active_dispatch_args: &wgpu::Buffer,
     groups: &NameBindGroups,
 ) -> Result<()> {
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/names/00_mark_lexemes"),
-        &groups.mark,
-        "type_check.names.mark_lexemes",
-        token_active_dispatch_args,
-    )?;
-    groups.scan.record(encoder)?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/names/01_scatter_lexemes"),
-        &groups.scatter,
-        "type_check.names.scatter_lexemes",
-        token_active_dispatch_args,
-    )?;
+    groups.compaction.record(encoder)?;
     record_compute(
         encoder,
         &passes.kernel("type_checker/names/hash/00_prepare"),

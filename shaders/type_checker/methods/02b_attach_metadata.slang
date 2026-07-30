@@ -1,3 +1,5 @@
+import hir_records;
+
 // Attach method declaration metadata from GPU module/name/type tables.
 //
 // The receiver and owning file are read from compact method/dense-HIR records.
@@ -12,16 +14,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirMethodCore { uint node; uint owner; uint impl_node; uint name_token; };
-struct HirMethodSignature
-{
-    uint first_param_token;
-    uint impl_receiver_type;
-    uint receiver_mode;
-    uint metadata;
-};
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;

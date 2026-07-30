@@ -1,10 +1,8 @@
+import hir_records;
 import generated_parse_production_ids;
 import prefix_scan;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirPredicate { uint owner; uint subject; uint bound; uint metadata; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;

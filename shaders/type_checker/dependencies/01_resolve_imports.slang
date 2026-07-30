@@ -1,6 +1,7 @@
 // Resolve locally-unmatched imports against canonical dependency modules.
 // Each import probes the GPU-built module table independently.
 
+import dependency_interface;
 import atomics;
 import byte_packing;
 import gpu_index;
@@ -33,9 +34,6 @@ StructuredBuffer<uint> name_hash_lo;
 StructuredBuffer<uint> name_hash_hi;
 StructuredBuffer<NameSpan> name_spans;
 ByteAddressBuffer source_bytes;
-StructuredBuffer<uint> dependency_module_words;
-StructuredBuffer<uint> dependency_module_segment_words;
-StructuredBuffer<uint> dependency_name_byte_words;
 StructuredBuffer<uint> dependency_module_lookup;
 RWStructuredBuffer<uint> import_target_dependency_module_id;
 RWStructuredBuffer<uint> import_status;
@@ -51,6 +49,7 @@ static const uint IMPORT_STATUS_UNRESOLVED = 1u;
 static const uint IMPORT_STATUS_AMBIGUOUS = 5u;
 static const uint ERR_UNRESOLVED_IMPORT = 15u;
 static const uint ERR_DUPLICATE_MODULE = 18u;
+static const uint IMPORT_IDENTITY_STRIDE = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -82,19 +81,19 @@ uint path_hash(uint path_id)
 
 uint dependency_name_byte(uint byte_i)
 {
-    uint word = dependency_name_byte_words[byte_i >> 2u];
+    uint word = dependency_name_byte_word(byte_i >> 2u);
     return (word >> ((byte_i & 3u) * 8u)) & 0xffu;
 }
 
 bool segment_equal(uint name_id, uint dependency_segment)
 {
     uint segment = dependency_segment * SEGMENT_WORDS;
-    if (name_hash_lo[name_id] != dependency_module_segment_words[segment + 0u] ||
-        name_hash_hi[name_id] != dependency_module_segment_words[segment + 1u])
+    if (name_hash_lo[name_id] != dependency_module_segment_word(segment + 0u) ||
+        name_hash_hi[name_id] != dependency_module_segment_word(segment + 1u))
         return false;
     NameSpan span = name_spans[name_id];
-    uint dependency_start = dependency_module_segment_words[segment + 2u];
-    uint dependency_len = dependency_module_segment_words[segment + 3u];
+    uint dependency_start = dependency_module_segment_word(segment + 2u);
+    uint dependency_len = dependency_module_segment_word(segment + 3u);
     if (span.len != dependency_len)
         return false;
     for (uint byte_i = 0u; byte_i < 64u; byte_i += 1u)
@@ -111,8 +110,8 @@ bool segment_equal(uint name_id, uint dependency_segment)
 bool module_equal(uint path_id, uint module_i)
 {
     uint module = module_i * MODULE_WORDS;
-    uint module_first = dependency_module_words[module + 0u];
-    uint module_count = dependency_module_words[module + 1u];
+    uint module_first = dependency_module_word(module + 0u);
+    uint module_count = dependency_module_word(module + 1u);
     uint path_count = path_segment_count[path_id];
     if (path_count != module_count || path_count > 8u)
         return false;
@@ -140,9 +139,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint import_i = linear_thread_id(dtid);
     if (import_i >= gParams.import_capacity)
         return;
-    import_target_dependency_module_id[import_i] = INVALID;
-    if (import_i >= min(import_count_out[0u], gParams.import_capacity) ||
-        import_status[import_i] != IMPORT_STATUS_UNRESOLVED)
+    uint identity = import_i * IMPORT_IDENTITY_STRIDE;
+    import_target_dependency_module_id[identity] = INVALID;
+    if (import_i >= min(import_count_out[0u], gParams.import_capacity))
+        return;
+
+    uint prior_status = import_status[import_i];
+    if (dependency_is_first_page() && prior_status == IMPORT_STATUS_UNRESOLVED)
+    {
+        import_target_dependency_module_id[identity + 1u] = INVALID;
+        import_target_dependency_module_id[identity + 2u] = INVALID;
+        import_target_dependency_module_id[identity + 3u] = INVALID;
+    }
+    if (prior_status != IMPORT_STATUS_UNRESOLVED && prior_status != IMPORT_STATUS_OK)
         return;
 
     uint path_id = import_path_id[import_i];
@@ -155,7 +164,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint module_i = dependency_module_lookup[slot];
         if (module_i == INVALID)
             break;
-        if (module_i < gParams.module_count && module_equal(path_id, module_i))
+        if (module_i < dependency_module_count() && module_equal(path_id, module_i))
         {
             if (match != INVALID)
             {
@@ -169,9 +178,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (match == INVALID)
     {
-        record_error(token, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
+        if (prior_status == IMPORT_STATUS_UNRESOLVED && dependency_is_final_page())
+            record_error(token, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
-    import_target_dependency_module_id[import_i] = match;
+
+    uint library_id = dependency_module_library_id(match);
+    uint unit_id = dependency_module_unit_id(match);
+    uint local_index = dependency_module_local_index(match);
+    if (prior_status == IMPORT_STATUS_OK)
+    {
+        bool same = import_target_dependency_module_id[identity + 1u] == library_id &&
+                    import_target_dependency_module_id[identity + 2u] == unit_id &&
+                    import_target_dependency_module_id[identity + 3u] == local_index;
+        if (!same)
+        {
+            import_status[import_i] = IMPORT_STATUS_AMBIGUOUS;
+            record_error(token, ERR_DUPLICATE_MODULE, IMPORT_STATUS_AMBIGUOUS);
+            return;
+        }
+    }
+    import_target_dependency_module_id[identity] = match;
+    import_target_dependency_module_id[identity + 1u] = library_id;
+    import_target_dependency_module_id[identity + 2u] = unit_id;
+    import_target_dependency_module_id[identity + 3u] = local_index;
     import_status[import_i] = IMPORT_STATUS_OK;
 }

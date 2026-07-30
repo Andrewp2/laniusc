@@ -1,8 +1,8 @@
 // Seed direct dense type roots owned by public functions, constants, and aliases.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

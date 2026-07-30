@@ -3,6 +3,7 @@
 // scans compact only type nodes and expand comparison requests. Consequently
 // every lane compares one corresponding type node with no depth walk or cap.
 
+import external_type_identity;
 import gpu_index;
 import status;
 
@@ -35,7 +36,6 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
@@ -135,9 +135,7 @@ bool same_named_identity(uint lhs_instance, uint rhs_instance)
     uint rhs_decl = type_instance_decl_token[rhs_instance];
     if (valid_token(lhs_decl) || valid_token(rhs_decl))
         return valid_token(lhs_decl) && lhs_decl == rhs_decl;
-    uint lhs_external = type_instance_external_canonical[lhs_instance];
-    uint rhs_external = type_instance_external_canonical[rhs_instance];
-    return lhs_external != INVALID && lhs_external == rhs_external;
+    return external_type_identity_equal(lhs_instance, rhs_instance);
 }
 
 bool same_instance(uint lhs, uint rhs)

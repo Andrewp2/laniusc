@@ -1,12 +1,12 @@
+import hir_records;
 import prefix_scan;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
-struct HirRange { uint start; uint count; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 RWStructuredBuffer<uint> family_count;
@@ -37,11 +37,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedMax(canonical_status[3u], raw + 1u, ignored);
         return;
     }
-    uint4 source = hir_param_record[raw];
+    uint anchor = hir_token_pos[raw];
+    uint4 source = hir_param_record[anchor];
     HirParam parameter;
     parameter.owner = mapped(source.x);
     parameter.name_token = source.z;
-    parameter.type_node = mapped(hir_param_type_node[raw]);
+    parameter.type_node = mapped(hir_param_type_node[anchor]);
     parameter.ordinal = source.y;
     hir_params[row] = parameter;
     if (parameter.owner < gCanonical.canonical_capacity)

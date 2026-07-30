@@ -2,6 +2,7 @@
 // Dependency declarations are canonically grouped by module, so each lane
 // performs two logarithmic bound queries rather than scanning an interface.
 
+import dependency_interface;
 import gpu_index;
 
 struct Params
@@ -21,12 +22,12 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_status;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_dependency_module_id;
-StructuredBuffer<uint> dependency_declaration_words;
 RWStructuredBuffer<uint> dependency_visible_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
 static const uint IMPORT_STATUS_OK = 0u;
+static const uint IMPORT_IDENTITY_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -37,13 +38,13 @@ uint linear_thread_id(uint3 dtid)
 
 uint declaration_module(uint declaration_i)
 {
-    return dependency_declaration_words[declaration_i * DECL_WORDS];
+    return dependency_declaration_word(declaration_i * DECL_WORDS);
 }
 
 uint lower_module_bound(uint module_i)
 {
     uint first = 0u;
-    uint count = gParams.declaration_count;
+    uint count = dependency_declaration_count();
     while (count != 0u)
     {
         uint step = count >> 1u;
@@ -62,7 +63,7 @@ uint lower_module_bound(uint module_i)
 uint upper_module_bound(uint module_i)
 {
     uint first = 0u;
-    uint count = gParams.declaration_count;
+    uint count = dependency_declaration_count();
     while (count != 0u)
     {
         uint step = count >> 1u;
@@ -90,7 +91,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         import_status[import_i] != IMPORT_STATUS_OK ||
         import_module_id[import_i] == INVALID)
         return;
-    uint target = import_target_dependency_module_id[import_i];
+    uint target = import_target_dependency_module_id[import_i * IMPORT_IDENTITY_STRIDE];
     if (target == INVALID)
         return;
     dependency_visible_count[import_i] =

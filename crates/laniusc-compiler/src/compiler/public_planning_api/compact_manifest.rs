@@ -3,7 +3,7 @@ use super::*;
 /// Plans a compact artifact manifest from streamed library paths and dependencies.
 pub(in crate::compiler) fn compact_manifest_from_dependency_streams<I, PI, DI, P>(
     libraries: I,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
@@ -153,7 +153,7 @@ pub fn plan_source_pack_streams_compact_manifest<'a, SI, UI, P>(
     stdlib_paths: SI,
     user_source_file_count: usize,
     user_paths: UI,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
 where
@@ -179,7 +179,7 @@ pub fn plan_source_pack_streams_compact_manifest_for_target<'a, SI, UI, P>(
     stdlib_paths: SI,
     user_source_file_count: usize,
     user_paths: UI,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
@@ -218,7 +218,7 @@ where
 /// streams.
 pub fn plan_library_streams_compact_manifest<I, PI, P>(
     libraries: I,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
 where
@@ -238,7 +238,7 @@ where
 /// streams.
 pub fn plan_library_streams_compact_manifest_for_target<I, PI, P>(
     libraries: I,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
@@ -255,7 +255,7 @@ where
 /// streams.
 pub fn plan_dependency_streams_compact_manifest<I, PI, DI, P>(
     libraries: I,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
 where
@@ -276,7 +276,7 @@ where
 /// streams.
 pub fn plan_dependency_streams_compact_manifest_for_target<I, PI, DI, P>(
     libraries: I,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>

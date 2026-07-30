@@ -1,3 +1,5 @@
+import hir_records;
+
 // GPU HIR enum constructor payload validator.
 //
 // The constructor prepare pass keeps only structurally valid candidate calls in
@@ -19,10 +21,6 @@ StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_row_ordinal;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

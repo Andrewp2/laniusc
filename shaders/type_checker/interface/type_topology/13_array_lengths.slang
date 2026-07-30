@@ -1,12 +1,12 @@
 // Attach checked array-length semantics to already-emitted array records.
 
+import hir_records;
 import atomics;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 RWStructuredBuffer<uint> interface_types;

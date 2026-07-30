@@ -1,9 +1,9 @@
+import hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
 import gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
-struct HirRange { uint start; uint count; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

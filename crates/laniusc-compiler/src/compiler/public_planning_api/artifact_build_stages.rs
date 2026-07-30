@@ -3,7 +3,7 @@ use super::*;
 /// Fully prepare a target-specific artifact build using default shard limits.
 pub fn prepare_artifact_build_for_target(
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError> {
@@ -20,7 +20,7 @@ pub fn prepare_artifact_build_for_target(
 /// metadata.
 pub fn prepare_library_schedule_chunk(
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     target: SourcePackArtifactTarget,
     max_new_libraries: usize,
 ) -> Result<FilesystemLibrarySchedulePrepareStepResult, CompileError> {

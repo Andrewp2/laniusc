@@ -1,8 +1,7 @@
 // Derive aggregate member counts from compact field and variant family rows.
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;

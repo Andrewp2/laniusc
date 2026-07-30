@@ -1,7 +1,7 @@
+import hir_records;
 import prefix_scan;
 import canonical_hir_identity;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;

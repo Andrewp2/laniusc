@@ -4,7 +4,7 @@ use super::*;
 /// store.
 pub fn execute_libraries_store_build<P, E, S>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     executor: &mut E,
     store: &mut S,
@@ -26,7 +26,7 @@ where
 pub fn prepare_library_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<PrepareResult, CompileError>
 where
@@ -45,7 +45,7 @@ where
 pub fn prepare_library_paths_for_target<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError>
@@ -71,7 +71,7 @@ where
 pub fn prepare_ordered_library_paths<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<PrepareResult, CompileError>
 where
@@ -92,7 +92,7 @@ where
 pub fn prepare_ordered_library_paths_with_shards<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
 ) -> Result<PrepareResult, CompileError>
@@ -114,7 +114,7 @@ where
 pub fn prepare_ordered_library_paths_for_target<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError>
@@ -137,7 +137,7 @@ where
 pub fn prepare_ordered_library_paths_for_target_with_shards<I, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -166,7 +166,7 @@ where
 pub fn prepare_ordered_path_streams<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<PrepareResult, CompileError>
 where
@@ -188,7 +188,7 @@ where
 pub fn prepare_ordered_path_streams_with_shards<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
 ) -> Result<PrepareResult, CompileError>
@@ -211,7 +211,7 @@ where
 pub fn prepare_ordered_path_streams_for_target<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError>
@@ -235,7 +235,7 @@ where
 pub fn prepare_ordered_path_streams_for_target_with_shards<I, PI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -265,7 +265,7 @@ where
 pub fn prepare_dependency_streams<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<PrepareResult, CompileError>
 where
@@ -288,7 +288,7 @@ where
 pub fn prepare_dependency_streams_with_shards<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
 ) -> Result<PrepareResult, CompileError>
@@ -312,7 +312,7 @@ where
 pub fn prepare_dependency_streams_for_target<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError>
@@ -337,7 +337,7 @@ where
 pub fn prepare_dependency_streams_for_target_with_shards<I, PI, DI, P>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,

@@ -9,13 +9,9 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    functions::GpuTargetFunctionView,
-    lowering::{GpuSemanticLirView, bound, make_group, record_direct},
+    lowering::GpuSemanticLirView,
     lowering_ir::{
         LoweringCapacities,
-        WasmLirFunction,
-        WasmLirInstruction,
-        WasmLirOperands,
         WasmModuleLayout,
         WasmObjectDefinitionRow,
         WasmObjectFunctionRow,
@@ -35,13 +31,11 @@ use super::{
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
-    compiler_graph::{
-        BoundGraphResource,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphWorkspace,
-    },
+    compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    operations::ComputeOperation,
     passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    readback::PagedReadback,
+    resource_registry::ResourceMap,
 };
 
 #[repr(C)]
@@ -62,6 +56,7 @@ struct WasmObjectIdentity {
     reserved1: u32,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy)]
 pub(crate) struct GpuWasmObjectView<'a> {
     pub relocation_count: &'a LaniusBuffer<u32>,
@@ -73,19 +68,14 @@ pub(crate) struct GpuWasmObjectView<'a> {
 }
 
 pub(crate) struct GpuWasmObjectStage {
-    target_capacity: u32,
+    relocation_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
-    relocation_flags_pass: PassData,
-    definition_flags_pass: PassData,
-    relocations_pass: PassData,
-    functions_pass: PassData,
-    bytes_pass: PassData,
-    relocation_flags_group: wgpu::BindGroup,
-    definition_flags_group: wgpu::BindGroup,
-    relocations_group: wgpu::BindGroup,
-    functions_group: wgpu::BindGroup,
-    bytes_group: wgpu::BindGroup,
+    relocation_flags: ComputeOperation,
+    definition_flags_op: ComputeOperation,
+    relocations_op: ComputeOperation,
+    functions_op: ComputeOperation,
+    bytes_op: ComputeOperation,
     relocation_scan: GpuResidentExclusiveScan,
     symbol_scan: GpuResidentExclusiveScan,
     definition_scan: GpuResidentExclusiveScan,
@@ -110,18 +100,7 @@ pub(crate) struct GpuWasmObjectStage {
     code_total: LaniusBuffer<u32>,
     layout: LaniusBuffer<WasmModuleLayout>,
     metadata_readback: LaniusBuffer<u8>,
-    payload_readback: LaniusBuffer<u8>,
-    payload_layout: ObjectReadbackLayout,
-}
-
-#[derive(Clone, Copy)]
-struct ObjectReadbackLayout {
-    functions: u64,
-    relocations: u64,
-    definitions: u64,
-    types: u64,
-    bodies: u64,
-    total: u64,
+    payload_readback: PagedReadback,
 }
 
 impl GpuWasmObjectStage {
@@ -133,16 +112,10 @@ impl GpuWasmObjectStage {
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
         semantic: GpuSemanticLirView<'_>,
-        target_total: &LaniusBuffer<u32>,
-        target_instructions: &LaniusBuffer<WasmLirInstruction>,
-        target_operands: &LaniusBuffer<WasmLirOperands>,
-        scheduled_function_ids: &LaniusBuffer<u32>,
-        target_byte_offsets: &LaniusBuffer<u32>,
-        target_functions: GpuTargetFunctionView<'_>,
-        wasm_functions: &LaniusBuffer<WasmLirFunction>,
         module: GpuWasmModuleObjectView<'_>,
     ) -> Result<Self> {
         let target_capacity = capacities.target_instructions.max(1);
+        let relocation_capacity = capacities.semantic_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
         let artifact_capacity = capacities.artifact_bytes.max(1);
         let resource = |name: &str| {
@@ -155,12 +128,15 @@ impl GpuWasmObjectStage {
                 .alias(graph, resource(name)?, rows.max(1) as usize)
                 .map_err(anyhow::Error::msg)
         };
-        let relocation_flags = alias_u32("artifact.wasm.object.relocation_flags", target_capacity)?;
-        let relocation_prefix =
-            alias_u32("artifact.wasm.object.relocation_prefix", target_capacity)?;
+        let relocation_flags =
+            alias_u32("artifact.wasm.object.relocation_flags", relocation_capacity)?;
+        let relocation_prefix = alias_u32(
+            "artifact.wasm.object.relocation_prefix",
+            relocation_capacity,
+        )?;
         let relocation_total = alias_u32("artifact.wasm.object.relocation_total", 1)?;
-        let symbol_flags = alias_u32("artifact.wasm.object.symbol_flags", target_capacity)?;
-        let symbol_prefix = alias_u32("artifact.wasm.object.symbol_prefix", target_capacity)?;
+        let symbol_flags = alias_u32("artifact.wasm.object.symbol_flags", relocation_capacity)?;
+        let symbol_prefix = alias_u32("artifact.wasm.object.symbol_prefix", relocation_capacity)?;
         let symbol_total = alias_u32("artifact.wasm.object.symbol_total", 1)?;
         let definition_flags =
             alias_u32("artifact.wasm.object.definition_flags", function_capacity)?;
@@ -171,7 +147,7 @@ impl GpuWasmObjectStage {
             .alias(
                 graph,
                 resource("artifact.wasm.object.relocations")?,
-                target_capacity as usize,
+                relocation_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
         let functions = workspace
@@ -196,15 +172,12 @@ impl GpuWasmObjectStage {
             "artifact.wasm.object.body_bytes",
             artifact_capacity.div_ceil(4),
         )?;
-        let payload_layout =
-            ObjectReadbackLayout::new(function_capacity, target_capacity, artifact_capacity);
         let metadata_readback =
             readback_bytes(device, "artifact.wasm.object.metadata.readback", 96, 96);
-        let payload_readback = readback_bytes(
+        let payload_readback = PagedReadback::new(
             device,
             "artifact.wasm.object.payload.readback",
-            payload_layout.total as usize,
-            payload_layout.total as usize,
+            (artifact_capacity as usize).min(4 << 20),
         );
         let params = uniform_from_val(
             device,
@@ -253,31 +226,28 @@ impl GpuWasmObjectStage {
             "codegen/lir/wasm/object_bytes",
         )?;
 
-        let relocation_flags_group = make_group(
+        let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
+        let mut resources = ResourceMap::new();
+        resources.register_graph_bindings(graph, &graph_bindings);
+        semantic.register(graph, &mut resources)?;
+        let context = (graph, allocations);
+        let relocation_flags_op = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "artifact.wasm.object.relocation_flags",
             &relocation_flags_pass,
-            "artifact.wasm.object.relocation_flags.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                ("target_lir_core", target_instructions.as_entire_binding()),
-                ("semantic_lir_total", semantic.count.as_entire_binding()),
-                ("semantic_lir_core", semantic.core.as_entire_binding()),
-                (
-                    "wasm_object_relocation_flag",
-                    relocation_flags.as_entire_binding(),
-                ),
-                ("wasm_object_symbol_flag", symbol_flags.as_entire_binding()),
-            ],
+            &params,
+            relocation_capacity,
         )?;
         let relocation_scan = GpuResidentExclusiveScan::new(
             device,
             graph,
             workspace,
             allocations,
-            scan_contract("relocation", "lir.wasm.total"),
-            target_capacity,
-            target_total,
+            scan_contract("relocation", "lir.semantic.total"),
+            relocation_capacity,
+            semantic.count,
             &relocation_flags,
             &relocation_prefix,
             &relocation_total,
@@ -287,32 +257,21 @@ impl GpuWasmObjectStage {
             graph,
             workspace,
             allocations,
-            scan_contract("symbol", "lir.wasm.total"),
-            target_capacity,
-            target_total,
+            scan_contract("symbol", "lir.semantic.total"),
+            relocation_capacity,
+            semantic.count,
             &symbol_flags,
             &symbol_prefix,
             &symbol_total,
         )?;
-        let definition_flags_group = make_group(
+        let definition_flags_op = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "artifact.wasm.object.definition_flags",
             &definition_flags_pass,
-            "artifact.wasm.object.definition_flags.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                (
-                    "wasm_object_definition_flag",
-                    definition_flags.as_entire_binding(),
-                ),
-            ],
+            &params,
+            function_capacity,
         )?;
         let definition_scan = GpuResidentExclusiveScan::new(
             device,
@@ -326,149 +285,45 @@ impl GpuWasmObjectStage {
             &definition_prefix,
             &definition_total,
         )?;
-        let relocations_group = make_group(
+        let relocations_op = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "artifact.wasm.object.relocations",
             &relocations_pass,
-            "artifact.wasm.object.relocations.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                ("target_lir_core", target_instructions.as_entire_binding()),
-                ("target_lir_operands", target_operands.as_entire_binding()),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-                (
-                    "target_byte_offset",
-                    target_byte_offsets.as_entire_binding(),
-                ),
-                (
-                    "wasm_object_relocation_flag",
-                    relocation_flags.as_entire_binding(),
-                ),
-                (
-                    "wasm_object_relocation_prefix",
-                    relocation_prefix.as_entire_binding(),
-                ),
-                (
-                    "wasm_object_symbol_prefix",
-                    symbol_prefix.as_entire_binding(),
-                ),
-                ("wasm_lir_functions", wasm_functions.as_entire_binding()),
-                (
-                    "wasm_code_entry_offset",
-                    module.code_offsets.as_entire_binding(),
-                ),
-                ("wasm_object_relocations", relocations.as_entire_binding()),
-            ],
+            &params,
+            relocation_capacity,
         )?;
-        let functions_group = make_group(
+        let mut identity_resources = resources.clone();
+        identity_resources.buffer("gParams", &params);
+        identity_resources.buffer("gIdentity", &identity);
+        let functions_op = ComputeOperation::direct(
             device,
+            &context,
+            &identity_resources,
+            "artifact.wasm.object.functions",
             &functions_pass,
-            "artifact.wasm.object.functions.bind_group",
-            &[
-                ("gIdentity", identity.as_entire_binding()),
-                ("gParams", params.as_entire_binding()),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                ("wasm_lir_functions", wasm_functions.as_entire_binding()),
-                (
-                    "wasm_type_entry_length",
-                    module.type_lengths.as_entire_binding(),
-                ),
-                (
-                    "wasm_type_entry_offset",
-                    module.type_offsets.as_entire_binding(),
-                ),
-                (
-                    "wasm_code_entry_length",
-                    module.code_lengths.as_entire_binding(),
-                ),
-                (
-                    "wasm_code_entry_offset",
-                    module.code_offsets.as_entire_binding(),
-                ),
-                ("wasm_object_symbol_total", symbol_total.as_entire_binding()),
-                (
-                    "wasm_object_definition_flag",
-                    definition_flags.as_entire_binding(),
-                ),
-                (
-                    "wasm_object_definition_prefix",
-                    definition_prefix.as_entire_binding(),
-                ),
-                ("wasm_object_functions", functions.as_entire_binding()),
-                ("wasm_object_definitions", definitions.as_entire_binding()),
-            ],
+            function_capacity,
         )?;
-        let bytes_group = make_group(
+        let bytes_op = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "artifact.wasm.object.bytes",
             &bytes_pass,
-            "artifact.wasm.object.bytes.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "wasm_type_entries_length",
-                    module.type_total.as_entire_binding(),
-                ),
-                (
-                    "wasm_code_entries_length",
-                    module.code_total.as_entire_binding(),
-                ),
-                ("wasm_module_layout", module.layout.as_entire_binding()),
-                ("wasm_module_bytes", module.words.as_entire_binding()),
-                ("wasm_object_type_bytes", type_words.as_entire_binding()),
-                ("wasm_object_body_bytes", body_words.as_entire_binding()),
-            ],
-        )?;
-
-        validate_primary_passes(
-            graph,
-            allocations,
-            semantic,
-            target_total,
-            target_instructions,
-            target_operands,
-            scheduled_function_ids,
-            target_byte_offsets,
-            target_functions,
-            wasm_functions,
-            module,
-            &relocation_flags,
-            &relocation_prefix,
-            &symbol_flags,
-            &symbol_prefix,
-            &symbol_total,
-            &definition_flags,
-            &definition_prefix,
-            &relocations,
-            &functions,
-            &definitions,
-            &type_words,
-            &body_words,
+            &params,
+            artifact_capacity,
         )?;
 
         Ok(Self {
-            target_capacity,
+            relocation_capacity,
             function_capacity,
             artifact_capacity,
-            relocation_flags_pass,
-            definition_flags_pass,
-            relocations_pass,
-            functions_pass,
-            bytes_pass,
-            relocation_flags_group,
-            definition_flags_group,
-            relocations_group,
-            functions_group,
-            bytes_group,
+            relocation_flags: relocation_flags_op,
+            definition_flags_op,
+            relocations_op,
+            functions_op,
+            bytes_op,
             relocation_scan,
             symbol_scan,
             definition_scan,
@@ -494,7 +349,6 @@ impl GpuWasmObjectStage {
             layout: module.layout.clone(),
             metadata_readback,
             payload_readback,
-            payload_layout,
         })
     }
 
@@ -510,6 +364,7 @@ impl GpuWasmObjectStage {
         queue.write_buffer(&self.identity.buffer, 0, bytes.as_ref());
     }
 
+    #[cfg(test)]
     pub(crate) fn output(&self) -> GpuWasmObjectView<'_> {
         GpuWasmObjectView {
             relocation_count: &self.relocation_total,
@@ -522,39 +377,14 @@ impl GpuWasmObjectStage {
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.relocation_flags_pass,
-            &self.relocation_flags_group,
-            self.target_capacity,
-        )?;
+        self.relocation_flags.record(encoder)?;
         self.relocation_scan.record(encoder)?;
         self.symbol_scan.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.definition_flags_pass,
-            &self.definition_flags_group,
-            self.function_capacity,
-        )?;
+        self.definition_flags_op.record(encoder)?;
         self.definition_scan.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.relocations_pass,
-            &self.relocations_group,
-            self.target_capacity,
-        )?;
-        record_direct(
-            encoder,
-            &self.functions_pass,
-            &self.functions_group,
-            self.function_capacity,
-        )?;
-        record_direct(
-            encoder,
-            &self.bytes_pass,
-            &self.bytes_group,
-            self.artifact_capacity,
-        )?;
+        self.relocations_op.record(encoder)?;
+        self.functions_op.record(encoder)?;
+        self.bytes_op.record(encoder)?;
         for (source, destination) in [
             (&self.function_count.buffer, 0),
             (&self.type_total.buffer, 4),
@@ -578,47 +408,13 @@ impl GpuWasmObjectStage {
             32,
             64,
         );
-        encoder.copy_buffer_to_buffer(
-            &self.functions.buffer,
-            0,
-            &self.payload_readback.buffer,
-            self.payload_layout.functions,
-            u64::from(self.function_capacity) * 24,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.relocations.buffer,
-            0,
-            &self.payload_readback.buffer,
-            self.payload_layout.relocations,
-            u64::from(self.target_capacity) * 32,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.definitions.buffer,
-            0,
-            &self.payload_readback.buffer,
-            self.payload_layout.definitions,
-            u64::from(self.function_capacity) * 32,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.type_words.buffer,
-            0,
-            &self.payload_readback.buffer,
-            self.payload_layout.types,
-            u64::from(self.artifact_capacity.div_ceil(4) * 4),
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.body_words.buffer,
-            0,
-            &self.payload_readback.buffer,
-            self.payload_layout.bodies,
-            u64::from(self.artifact_capacity.div_ceil(4) * 4),
-        );
         Ok(())
     }
 
     pub(crate) fn finish(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
     ) -> Result<GpuWasmRelocatableObject> {
@@ -638,7 +434,7 @@ impl GpuWasmObjectStage {
         drop(metadata);
         self.metadata_readback.unmap();
         if function_count > self.function_capacity as usize
-            || relocation_count > self.target_capacity as usize
+            || relocation_count > self.relocation_capacity as usize
             || symbol_count > relocation_count
             || definition_count > self.function_capacity as usize
             || type_len > self.artifact_capacity as usize
@@ -647,7 +443,7 @@ impl GpuWasmObjectStage {
             anyhow::bail!(
                 "GPU Wasm object metadata exceeds resident capacity: functions={function_count}/{}, relocations={relocation_count}/{}, symbols={symbol_count}, definitions={definition_count}/{}, type={type_len}/{}, body={body_len}/{}",
                 self.function_capacity,
-                self.target_capacity,
+                self.relocation_capacity,
                 self.function_capacity,
                 self.artifact_capacity,
                 self.artifact_capacity,
@@ -662,22 +458,35 @@ impl GpuWasmObjectStage {
             );
         }
 
-        let payload_slice = self.payload_readback.slice(..);
-        map_readback_blocking(device, &payload_slice, "Wasm object payload readback")?;
-        let payload = payload_slice.get_mapped_range();
-        let section = |start: u64, len: usize| &payload[start as usize..start as usize + len];
-        let function_words =
-            decode_words(section(self.payload_layout.functions, function_count * 24));
-        let relocation_words = decode_words(section(
-            self.payload_layout.relocations,
+        let read = |buffer: &wgpu::Buffer, len: usize, label: &str| {
+            self.payload_readback
+                .read(device, queue, buffer, 0, len, label)
+        };
+        let function_words = decode_words(&read(
+            &self.functions.buffer,
+            function_count * 24,
+            "Wasm object function readback",
+        )?);
+        let relocation_words = decode_words(&read(
+            &self.relocations.buffer,
             relocation_count * 32,
-        ));
-        let definition_words = decode_words(section(
-            self.payload_layout.definitions,
+            "Wasm object relocation readback",
+        )?);
+        let definition_words = decode_words(&read(
+            &self.definitions.buffer,
             definition_count * 32,
-        ));
-        let type_bytes = section(self.payload_layout.types, type_len).to_vec();
-        let body_bytes = section(self.payload_layout.bodies, body_len).to_vec();
+            "Wasm object definition readback",
+        )?);
+        let type_bytes = read(
+            &self.type_words.buffer,
+            type_len,
+            "Wasm object type readback",
+        )?;
+        let body_bytes = read(
+            &self.body_words.buffer,
+            body_len,
+            "Wasm object body readback",
+        )?;
 
         let functions = function_words
             .chunks_exact(6)
@@ -749,9 +558,6 @@ impl GpuWasmObjectStage {
                 row[5],
             );
         }
-        drop(payload);
-        self.payload_readback.unmap();
-
         let object = GpuWasmRelocatableObject {
             version: GPU_WASM_OBJECT_VERSION,
             library_id,
@@ -766,25 +572,6 @@ impl GpuWasmObjectStage {
         };
         object.validate().map_err(anyhow::Error::msg)?;
         Ok(object)
-    }
-}
-
-impl ObjectReadbackLayout {
-    fn new(function_capacity: u32, target_capacity: u32, artifact_capacity: u32) -> Self {
-        let functions = 0;
-        let relocations = u64::from(function_capacity) * 24;
-        let definitions = relocations + u64::from(target_capacity) * 32;
-        let types = definitions + u64::from(function_capacity) * 32;
-        let artifact_bytes = u64::from(artifact_capacity.div_ceil(4) * 4);
-        let bodies = types + artifact_bytes;
-        Self {
-            functions,
-            relocations,
-            definitions,
-            types,
-            bodies,
-            total: bodies + artifact_bytes,
-        }
     }
 }
 
@@ -872,245 +659,4 @@ fn scan_contract(kind: &'static str, count: &'static str) -> GraphScanContract {
 
 fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
     make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate_primary_passes(
-    graph: &CompilerGraph,
-    allocations: &CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    target_total: &LaniusBuffer<u32>,
-    target_instructions: &LaniusBuffer<WasmLirInstruction>,
-    target_operands: &LaniusBuffer<WasmLirOperands>,
-    scheduled_function_ids: &LaniusBuffer<u32>,
-    target_byte_offsets: &LaniusBuffer<u32>,
-    _target_functions: GpuTargetFunctionView<'_>,
-    wasm_functions: &LaniusBuffer<WasmLirFunction>,
-    module: GpuWasmModuleObjectView<'_>,
-    relocation_flags: &LaniusBuffer<u32>,
-    relocation_prefix: &LaniusBuffer<u32>,
-    symbol_flags: &LaniusBuffer<u32>,
-    symbol_prefix: &LaniusBuffer<u32>,
-    symbol_total: &LaniusBuffer<u32>,
-    definition_flags: &LaniusBuffer<u32>,
-    definition_prefix: &LaniusBuffer<u32>,
-    relocations: &LaniusBuffer<WasmObjectRelocationRow>,
-    functions: &LaniusBuffer<WasmObjectFunctionRow>,
-    definitions: &LaniusBuffer<WasmObjectDefinitionRow>,
-    type_words: &LaniusBuffer<u32>,
-    body_words: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "artifact.wasm.object.relocation_flags",
-        vec![
-            bound("target_lir_total", resource("lir.wasm.total"), target_total)?,
-            bound(
-                "target_lir_core",
-                resource("lir.wasm.instructions"),
-                target_instructions,
-            )?,
-            bound(
-                "semantic_lir_total",
-                resource("lir.semantic.total"),
-                semantic.count,
-            )?,
-            bound(
-                "semantic_lir_core",
-                resource("lir.semantic.core"),
-                semantic.core,
-            )?,
-            bound(
-                "wasm_object_relocation_flag",
-                resource("artifact.wasm.object.relocation_flags"),
-                relocation_flags,
-            )?,
-            bound(
-                "wasm_object_symbol_flag",
-                resource("artifact.wasm.object.symbol_flags"),
-                symbol_flags,
-            )?,
-        ],
-    )?;
-    run(
-        "artifact.wasm.object.definition_flags",
-        vec![
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "wasm_object_definition_flag",
-                resource("artifact.wasm.object.definition_flags"),
-                definition_flags,
-            )?,
-        ],
-    )?;
-    run(
-        "artifact.wasm.object.relocations",
-        vec![
-            bound("target_lir_total", resource("lir.wasm.total"), target_total)?,
-            bound(
-                "target_lir_core",
-                resource("lir.wasm.instructions"),
-                target_instructions,
-            )?,
-            bound(
-                "target_lir_operands",
-                resource("lir.wasm.operands"),
-                target_operands,
-            )?,
-            bound(
-                "scheduled_function_id",
-                resource("lir.target.scheduled_function_ids"),
-                scheduled_function_ids,
-            )?,
-            bound(
-                "target_byte_offset",
-                resource("lir.wasm.byte_offsets"),
-                target_byte_offsets,
-            )?,
-            bound(
-                "wasm_object_relocation_flag",
-                resource("artifact.wasm.object.relocation_flags"),
-                relocation_flags,
-            )?,
-            bound(
-                "wasm_object_relocation_prefix",
-                resource("artifact.wasm.object.relocation_prefix"),
-                relocation_prefix,
-            )?,
-            bound(
-                "wasm_object_symbol_prefix",
-                resource("artifact.wasm.object.symbol_prefix"),
-                symbol_prefix,
-            )?,
-            bound(
-                "wasm_lir_functions",
-                resource("lir.wasm.functions"),
-                wasm_functions,
-            )?,
-            bound(
-                "wasm_code_entry_offset",
-                resource("lir.wasm.module.code_offsets"),
-                module.code_offsets,
-            )?,
-            bound(
-                "wasm_object_relocations",
-                resource("artifact.wasm.object.relocations"),
-                relocations,
-            )?,
-        ],
-    )?;
-    run(
-        "artifact.wasm.object.functions",
-        vec![
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "wasm_lir_functions",
-                resource("lir.wasm.functions"),
-                wasm_functions,
-            )?,
-            bound(
-                "wasm_type_entry_length",
-                resource("lir.wasm.module.type_lengths"),
-                module.type_lengths,
-            )?,
-            bound(
-                "wasm_type_entry_offset",
-                resource("lir.wasm.module.type_offsets"),
-                module.type_offsets,
-            )?,
-            bound(
-                "wasm_code_entry_length",
-                resource("lir.wasm.module.code_lengths"),
-                module.code_lengths,
-            )?,
-            bound(
-                "wasm_code_entry_offset",
-                resource("lir.wasm.module.code_offsets"),
-                module.code_offsets,
-            )?,
-            bound(
-                "wasm_object_symbol_total",
-                resource("artifact.wasm.object.symbol_total"),
-                symbol_total,
-            )?,
-            bound(
-                "wasm_object_definition_flag",
-                resource("artifact.wasm.object.definition_flags"),
-                definition_flags,
-            )?,
-            bound(
-                "wasm_object_definition_prefix",
-                resource("artifact.wasm.object.definition_prefix"),
-                definition_prefix,
-            )?,
-            bound(
-                "wasm_object_functions",
-                resource("artifact.wasm.object.functions"),
-                functions,
-            )?,
-            bound(
-                "wasm_object_definitions",
-                resource("artifact.wasm.object.definitions"),
-                definitions,
-            )?,
-        ],
-    )?;
-    run(
-        "artifact.wasm.object.bytes",
-        vec![
-            bound(
-                "wasm_type_entries_length",
-                resource("lir.wasm.module.type_total"),
-                module.type_total,
-            )?,
-            bound(
-                "wasm_code_entries_length",
-                resource("lir.wasm.module.code_total"),
-                module.code_total,
-            )?,
-            bound(
-                "wasm_module_layout",
-                resource("lir.wasm.module.layout"),
-                module.layout,
-            )?,
-            bound(
-                "wasm_module_bytes",
-                resource("artifact.wasm.bytes"),
-                module.words,
-            )?,
-            bound(
-                "wasm_object_type_bytes",
-                resource("artifact.wasm.object.type_bytes"),
-                type_words,
-            )?,
-            bound(
-                "wasm_object_body_bytes",
-                resource("artifact.wasm.object.body_bytes"),
-                body_words,
-            )?,
-        ],
-    )
 }

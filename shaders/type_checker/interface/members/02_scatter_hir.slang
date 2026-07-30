@@ -1,9 +1,7 @@
 // Scatter compact parameters, fields, and enum variants by semantic ordinal.
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;

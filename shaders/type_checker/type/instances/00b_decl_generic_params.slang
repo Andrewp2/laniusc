@@ -4,6 +4,7 @@
 // never by a raw parser node. Named declarations use their name token; impls
 // and other unnamed owners use the dense HIR core's anchor token.
 
+import hir_records;
 import atomics;
 import status;
 
@@ -14,9 +15,6 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirGenericParam { uint owner; uint name_token; uint kind; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

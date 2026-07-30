@@ -269,12 +269,6 @@ fn validate_store_artifact_ref(
             artifact.producing_job_index
         )));
     }
-    if artifact.artifact_index != artifact.producing_job_index {
-        return Err(source_pack_artifact_store_error(format!(
-            "source-pack {artifact_label} artifact ref {} records producer job {}; artifact refs must use the dense producer job as artifact index",
-            artifact.artifact_index, artifact.producing_job_index
-        )));
-    }
     Ok(())
 }
 

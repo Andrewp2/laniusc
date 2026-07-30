@@ -1,9 +1,8 @@
 // Seed public function parameter type roots from compact parameter rows.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

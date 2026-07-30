@@ -1,8 +1,8 @@
 // Scatter compact function parameter types into synthesized function signatures.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;

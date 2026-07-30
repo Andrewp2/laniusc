@@ -5,7 +5,7 @@ use super::*;
 pub fn execute_pack_paths_store_build<SP, UP, E, S>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     executor: &mut E,
     store: &mut S,

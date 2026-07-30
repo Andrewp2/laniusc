@@ -4,6 +4,7 @@
 // field row). Non-declaration rows encode to sentinel 0. Consumers range-query the sorted
 // table instead of scanning a struct declaration's field slice.
 
+import hir_records;
 import gpu_index;
 import radix;
 
@@ -21,8 +22,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

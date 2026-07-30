@@ -88,10 +88,16 @@ bool is_canonical(uint node)
     uint production = node_kind[node];
     uint expr_form = hir_expr_record[node * 4u];
     uint stmt_kind = hir_stmt_record[node * 4u];
-    return hir_token_pos[node] != INVALID && hir_token_pos[node] < gCanonical.canonical_capacity &&
+    uint anchor = hir_token_pos[node];
+    uint4 parameter = anchor < gCanonical.canonical_capacity
+        ? hir_param_record[anchor]
+        : uint4(INVALID, INVALID, INVALID, INVALID);
+    if (parameter.w != node)
+        parameter = uint4(INVALID, INVALID, INVALID, INVALID);
+    return anchor != INVALID && anchor < gCanonical.canonical_capacity &&
            (durable_kind(kind) || production == PROD_IMPL_INHERENT || production == PROD_IMPL_TRAIT ||
             hir_item_kind[node] != 0u || hir_type_form[node] != 0u ||
-            hir_param_record[node].x != INVALID || stmt_kind != 0u ||
+            parameter.x != INVALID || stmt_kind != 0u ||
             ((kind == HIR_EXPR || kind == HIR_ASSIGN_EXPR || kind == HIR_BINARY_EXPR ||
               kind == HIR_UNARY_EXPR || kind == HIR_POSTFIX_EXPR) &&
              expr_form > HIR_EXPR_FORWARD));

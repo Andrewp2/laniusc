@@ -6,6 +6,7 @@
 // Generic field refs use the precomputed generic-parameter slot table instead
 // of scanning declaration subtrees.
 
+import hir_records;
 import fixed.key;
 import range_query;
 
@@ -20,9 +21,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 

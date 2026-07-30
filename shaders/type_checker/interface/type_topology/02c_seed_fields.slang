@@ -1,9 +1,8 @@
 // Seed public aggregate field type roots from compact field-family rows.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

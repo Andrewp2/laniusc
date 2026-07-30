@@ -6,6 +6,7 @@
 // and declaration-type pass so this shader stays within the WebGPU storage
 // buffer limit.
 
+import hir_records;
 import lookup;
 
 struct Params
@@ -17,8 +18,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

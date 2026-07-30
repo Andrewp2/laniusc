@@ -1,19 +1,8 @@
-use crate::gpu::compiler_graph::{
-    AccessMode,
-    CompilerPhase,
-    ReflectedComputeSpec,
-    ReflectedResourceAlias,
-    ResourceDomain,
-};
+use crate::gpu::compiler_graph::{AccessMode, ReflectedComputeSpec};
 
 macro_rules! method_pass {
     ($suffix:literal, $domain:ident, $kernel:literal) => {
-        ReflectedComputeSpec::new(
-            concat!("type_check.methods.", $suffix),
-            $kernel,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::$domain,
-        )
+        typecheck_pass!(concat!("type_check.methods.", $suffix), $domain, $kernel)
     };
 }
 
@@ -63,10 +52,8 @@ pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec = 
     Calls,
     "type_checker/methods/07_resolve_table"
 )
-.with_aliases(&[ReflectedResourceAlias {
-    binding: "sorted_method_key_order",
-    resource: "method_key_to_fn_token",
-    mode: Some(AccessMode::Read),
-}]);
+.with_aliases(&[typecheck_resource!(
+    "sorted_method_key_order" => "method_key_to_fn_token", Read
+)]);
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
     method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve");

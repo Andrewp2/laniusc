@@ -5,6 +5,7 @@
 // records. It does not rediscover calls by scanning token neighborhoods,
 // matching parentheses/commas in token ranges, or walking child lists.
 
+import hir_records;
 import gpu_index;
 import status;
 
@@ -21,8 +22,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint4> call_arg_record;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

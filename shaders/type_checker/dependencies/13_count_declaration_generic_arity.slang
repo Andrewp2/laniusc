@@ -1,5 +1,6 @@
 // Count generic type and const parameters with one lane per canonical member.
 
+import dependency_interface;
 import atomics;
 import gpu_index;
 
@@ -13,7 +14,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> dependency_member_words;
 RWStructuredBuffer<uint> declaration_generic_arity;
 
 static const uint MEMBER_WORDS = 10u;
@@ -27,13 +27,13 @@ static const uint MAX_GROUPS_X = 65535u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint member_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (member_i >= gParams.member_count)
+    if (member_i >= dependency_member_count())
         return;
     uint base = member_i * MEMBER_WORDS;
-    uint kind = dependency_member_words[base + 1u];
+    uint kind = dependency_member_word(base + 1u);
     if (kind != MEMBER_GENERIC_TYPE_PARAMETER && kind != MEMBER_GENERIC_CONST_PARAMETER)
         return;
-    uint owner = dependency_member_words[base];
-    if (owner < gParams.declaration_count)
+    uint owner = dependency_member_word(base);
+    if (owner < dependency_declaration_count())
         atomic_u32_add(declaration_generic_arity, owner, 1u);
 }

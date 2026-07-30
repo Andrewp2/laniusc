@@ -1,4 +1,4 @@
-use super::*;
+use super::{typecheck::CompiledSourcePackObject, *};
 
 /// Source-pack executor that emits GPU artifact descriptors into a filesystem store.
 ///
@@ -16,18 +16,34 @@ pub struct GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
 pub struct GpuSourcePackLibraryInterfaceBuildHandle {
     pub(super) job: SourcePackJob,
     pub(super) source_files: Vec<ExplicitSourcePathFile>,
-    pub(super) dependency_interfaces: GpuSourcePackDependencyInterfaceSummary,
-    pub(super) dependency_interface_artifacts: Vec<ArtifactPath>,
+    pub(super) dependencies: GpuSourcePackDependencyPages,
 }
 
 /// In-flight codegen-object descriptor build state.
 #[derive(Clone, Debug)]
 pub struct GpuSourcePackCodegenObjectBuildHandle {
     pub(super) job: SourcePackJob,
-    pub(super) source_files: Vec<ExplicitSourcePathFile>,
     pub(super) library_interface_artifact: ArtifactPath,
-    pub(super) dependency_interfaces: GpuSourcePackDependencyInterfaceSummary,
-    pub(super) dependency_interface_artifacts: Vec<ArtifactPath>,
+    pub(super) dependencies: GpuSourcePackDependencyInterfaceSummary,
+}
+
+/// Dependency artifact pages already established by the source-pack work
+/// queue. Preserving these boundaries is what lets the GPU executor consume
+/// one page and overwrite its fixed interface slot instead of reconstructing
+/// an unbounded flat dependency set at `finish` time.
+#[derive(Clone, Debug, Default)]
+pub struct GpuSourcePackDependencyPages {
+    pub(super) summary: GpuSourcePackDependencyInterfaceSummary,
+    pub(super) artifacts: Vec<Vec<ArtifactPath>>,
+}
+
+impl GpuSourcePackDependencyPages {
+    fn push(&mut self, artifacts: &[ArtifactPath]) {
+        self.summary.add_batch(artifacts.len());
+        if !artifacts.is_empty() {
+            self.artifacts.push(artifacts.to_vec());
+        }
+    }
 }
 
 /// Accumulated bounded inputs for one source-pack link.
@@ -207,23 +223,56 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             "source-pack library-interface job",
             &handle.source_files,
         )?;
-        let dependency_interfaces =
-            self.load_semantic_interface_artifacts(&handle.dependency_interface_artifacts)?;
+        let dependency_pages = self.load_semantic_interface_pages(&handle.dependencies)?;
+        let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error(format!(
                 "source-pack semantic-interface job {} phase-unit index {} exceeds u32",
                 handle.job.job_index, handle.job.phase_unit_index
             ))
         })?;
-        let interface = self
-            .compiler
-            .semantic_interface_for_source_pack_unit_with_dependencies(
+        let compiled = (self.target != SourcePackArtifactTarget::Generic).then(|| {
+            self.compiler
+                .compile_source_pack_unit_with_dependency_pages(
+                    &sources,
+                    handle.job.library_id,
+                    unit_id,
+                    &dependency_pages,
+                    self.target,
+                )
+        });
+        let (interface, object) = match compiled {
+            Some(compiled) => {
+                let compiled = compiled.await?;
+                (compiled.interface, Some(compiled.object))
+            }
+            None => (
+                self.compiler
+                    .semantic_interface_for_source_pack_unit_with_dependency_pages(
+                        handle.job.library_id,
+                        unit_id,
+                        &sources,
+                        &dependency_pages,
+                    )
+                    .await?,
+                None,
+            ),
+        };
+        if report_memory {
+            let live = crate::gpu::buffers::tracked_buffer_allocation_stats();
+            let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
+            eprintln!(
+                "source_pack_unit phase=frontend job={} library={} unit={} source_bytes={} dependency_pages={} dependency_interfaces={} live_gpu_bytes={} peak_gpu_bytes={}",
+                handle.job.job_index,
                 handle.job.library_id,
-                unit_id,
-                &sources,
-                &dependency_interfaces,
-            )
-            .await?;
+                handle.job.phase_unit_index,
+                handle.job.source_bytes,
+                handle.dependencies.artifacts.len(),
+                dependency_pages.iter().map(Vec::len).sum::<usize>(),
+                live.bytes,
+                peak.bytes,
+            );
+        }
         let interface_bytes = interface.to_bytes().map_err(|reason| {
             source_pack_artifact_store_error(format!(
                 "serialize source-pack semantic interface for job {}: {reason}",
@@ -235,7 +284,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         let mut descriptor = GpuSourcePackArtifactDescriptor::library_interface_for_job(
             self.target,
             &handle.job,
-            handle.dependency_interfaces,
+            handle.dependencies.summary,
         );
         attach_semantic_interface_artifact(
             &mut descriptor,
@@ -243,6 +292,39 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             semantic_interface_record_count(&interface),
             interface_bytes.len(),
         );
+        match object {
+            Some(CompiledSourcePackObject::X86_64(object)) => {
+                let bytes = object.to_bytes().map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "serialize source-pack x86 object for compiled unit {}: {reason}",
+                        handle.job.job_index
+                    ))
+                })?;
+                let artifact = self.write_x86_codegen_object_artifact(&handle.job, &bytes)?;
+                attach_x86_codegen_object_artifact(
+                    &mut descriptor,
+                    &artifact,
+                    &object,
+                    bytes.len(),
+                );
+            }
+            Some(CompiledSourcePackObject::Wasm(object)) => {
+                let bytes = object.to_bytes().map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "serialize source-pack Wasm object for compiled unit {}: {reason}",
+                        handle.job.job_index
+                    ))
+                })?;
+                let artifact = self.write_wasm_codegen_object_artifact(&handle.job, &bytes)?;
+                attach_wasm_codegen_object_artifact(
+                    &mut descriptor,
+                    &artifact,
+                    &object,
+                    bytes.len(),
+                );
+            }
+            None => {}
+        }
         descriptor.validate_contract().map_err(|reason| {
             source_pack_artifact_store_error(format!(
                 "validate source-pack semantic-interface descriptor for job {}: {reason}",
@@ -267,7 +349,6 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         &self,
         handle: GpuSourcePackCodegenObjectBuildHandle,
     ) -> Result<ArtifactPath, CompileError> {
-        self.validate_job_source_file_records("codegen", &handle.job, &handle.source_files)?;
         if !handle.library_interface_artifact.path.is_file() {
             return Err(source_pack_artifact_store_error(format!(
                 "source-pack codegen descriptor job {} is missing owning interface artifact {}",
@@ -275,105 +356,62 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 handle.library_interface_artifact.path.display()
             )));
         }
-        let owning_interfaces = self.load_semantic_interface_artifacts(std::slice::from_ref(
+        let owning_descriptor = self.load_descriptor_artifact(
             &handle.library_interface_artifact,
-        ))?;
-        let owning_interface = owning_interfaces.first().ok_or_else(|| {
-            source_pack_artifact_store_error(format!(
-                "source-pack codegen job {} has no owning semantic interface",
-                handle.job.job_index
-            ))
-        })?;
-        if owning_interface.library_id != handle.job.library_id {
+            GpuSourcePackArtifactStage::LibraryInterface,
+        )?;
+        if owning_descriptor.library_id != handle.job.library_id
+            || owning_descriptor.first_source_index != handle.job.first_source_index
+            || owning_descriptor.source_file_count != handle.job.source_file_count
+        {
             return Err(source_pack_artifact_store_error(format!(
-                "source-pack codegen job {} belongs to library {} but its owning semantic interface belongs to library {}",
-                handle.job.job_index, handle.job.library_id, owning_interface.library_id
+                "source-pack codegen job {} does not match compiled unit {}",
+                handle.job.job_index, owning_descriptor.job_index
             )));
         }
-        let dependency_interfaces =
-            self.load_semantic_interface_artifacts(&handle.dependency_interface_artifacts)?;
-        if dependency_interfaces.len() != handle.dependency_interfaces.interface_count {
-            return Err(source_pack_artifact_store_error(format!(
-                "source-pack codegen job {} loaded {} dependency semantic interfaces but its descriptor contract records {}",
-                handle.job.job_index,
-                dependency_interfaces.len(),
-                handle.dependency_interfaces.interface_count
-            )));
-        }
-
         let mut descriptor = GpuSourcePackArtifactDescriptor::codegen_object_contract_for_job(
             self.target,
             &handle.job,
-            handle.dependency_interfaces,
+            handle.dependencies,
         );
-        if self.target == SourcePackArtifactTarget::X86_64 {
-            let sources = read_explicit_source_path_files(
-                "source-pack x86 codegen-object job",
-                &handle.source_files,
-            )?;
-            let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
-                source_pack_artifact_store_error(format!(
-                    "source-pack x86 codegen job {} phase-unit index {} exceeds u32",
-                    handle.job.job_index, handle.job.phase_unit_index
-                ))
-            })?;
-            let object = self
-                .compiler
-                .compile_source_pack_to_x86_object(
-                    &sources,
-                    handle.job.library_id,
-                    unit_id,
-                    &dependency_interfaces,
-                )
-                .await?;
-            let object_bytes = object.to_bytes().map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "serialize source-pack x86 object for job {}: {reason}",
-                    handle.job.job_index
-                ))
-            })?;
-            let object_artifact =
-                self.write_x86_codegen_object_artifact(&handle.job, &object_bytes)?;
-            attach_x86_codegen_object_artifact(
-                &mut descriptor,
-                &object_artifact,
-                &object,
-                object_bytes.len(),
-            );
-        } else if self.target == SourcePackArtifactTarget::Wasm {
-            let sources = read_explicit_source_path_files(
-                "source-pack Wasm codegen-object job",
-                &handle.source_files,
-            )?;
-            let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
-                source_pack_artifact_store_error(format!(
-                    "source-pack Wasm codegen job {} phase-unit index {} exceeds u32",
-                    handle.job.job_index, handle.job.phase_unit_index
-                ))
-            })?;
-            let object = self
-                .compiler
-                .compile_source_pack_to_wasm_object(
-                    &sources,
-                    handle.job.library_id,
-                    unit_id,
-                    &dependency_interfaces,
-                )
-                .await?;
-            let object_bytes = object.to_bytes().map_err(|reason| {
-                source_pack_artifact_store_error(format!(
-                    "serialize source-pack Wasm object for job {}: {reason}",
-                    handle.job.job_index
-                ))
-            })?;
-            let object_artifact =
-                self.write_wasm_codegen_object_artifact(&handle.job, &object_bytes)?;
-            attach_wasm_codegen_object_artifact(
-                &mut descriptor,
-                &object_artifact,
-                &object,
-                object_bytes.len(),
-            );
+        let payload = owning_descriptor.codegen_object_payload.ok_or_else(|| {
+            source_pack_artifact_store_error(format!(
+                "compiled unit {} has no target object payload",
+                owning_descriptor.job_index
+            ))
+        })?;
+        let object_artifact = ArtifactPath {
+            path: artifact_path(&self.artifact_root, &payload.storage_key)?,
+            key: payload.storage_key,
+        };
+        let object_bytes = fs::read(&object_artifact.path).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "read compiled-unit object {}: {err}",
+                object_artifact.path.display()
+            ))
+        })?;
+        match self.target {
+            SourcePackArtifactTarget::X86_64 => {
+                let object = x86::GpuX86RelocatableObject::from_bytes(&object_bytes)
+                    .map_err(source_pack_artifact_store_error)?;
+                attach_x86_codegen_object_artifact(
+                    &mut descriptor,
+                    &object_artifact,
+                    &object,
+                    object_bytes.len(),
+                );
+            }
+            SourcePackArtifactTarget::Wasm => {
+                let object = wasm::GpuWasmRelocatableObject::from_bytes(&object_bytes)
+                    .map_err(source_pack_artifact_store_error)?;
+                attach_wasm_codegen_object_artifact(
+                    &mut descriptor,
+                    &object_artifact,
+                    &object,
+                    object_bytes.len(),
+                );
+            }
+            SourcePackArtifactTarget::Generic => {}
         }
         descriptor.validate_contract().map_err(|reason| {
             source_pack_artifact_store_error(format!(
@@ -420,8 +458,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 job.job_index
             ))
         })?;
-        self.write_descriptor_artifact(GpuSourcePackArtifactStage::LinkedOutput, job, &descriptor)?;
-        Ok(artifact)
+        self.write_descriptor_artifact(GpuSourcePackArtifactStage::LinkedOutput, job, &descriptor)
     }
 
     /// Finishes a hierarchical partial-link group with an ordered object-input bundle.
@@ -479,8 +516,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             GpuSourcePackArtifactStage::LinkedOutput,
             format!("group-{}", page.group_index),
             &descriptor,
-        )?;
-        Ok(artifact)
+        )
     }
 
     /// Writes a job-scoped descriptor artifact using the standard job key suffix.
@@ -860,39 +896,17 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok((ArtifactPath { key, path }, label))
     }
 
-    fn load_semantic_interface_artifacts(
+    fn load_semantic_interface_artifacts<'a>(
         &self,
-        descriptor_artifacts: &[ArtifactPath],
+        descriptor_artifacts: impl IntoIterator<Item = &'a ArtifactPath>,
     ) -> Result<Vec<GpuSemanticInterfaceArtifact>, CompileError> {
         descriptor_artifacts
-            .iter()
+            .into_iter()
             .map(|descriptor_artifact| {
-                let descriptor_bytes = fs::read(&descriptor_artifact.path).map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "read dependency interface descriptor {} at {}: {err}",
-                        descriptor_artifact.key,
-                        descriptor_artifact.path.display()
-                    ))
-                })?;
-                let descriptor: GpuSourcePackArtifactDescriptor =
-                    serde_json::from_slice(&descriptor_bytes).map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "parse dependency interface descriptor {} at {}: {err}",
-                            descriptor_artifact.key,
-                            descriptor_artifact.path.display()
-                        ))
-                    })?;
-                descriptor
-                    .validate_contract_for(
-                        GpuSourcePackArtifactStage::LibraryInterface,
-                        Some(self.target),
-                    )
-                    .map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "validate dependency interface descriptor {}: {reason}",
-                        descriptor_artifact.key
-                    ))
-                })?;
+                let descriptor = self.load_descriptor_artifact(
+                    descriptor_artifact,
+                    GpuSourcePackArtifactStage::LibraryInterface,
+                )?;
                 let storage_key = descriptor
                     .output_record_arrays
                     .iter()
@@ -917,6 +931,48 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     ))
                 })
             })
+            .collect()
+    }
+
+    fn load_descriptor_artifact(
+        &self,
+        artifact: &ArtifactPath,
+        stage: GpuSourcePackArtifactStage,
+    ) -> Result<GpuSourcePackArtifactDescriptor, CompileError> {
+        let bytes = fs::read(&artifact.path).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "read {stage:?} descriptor {} at {}: {err}",
+                artifact.key,
+                artifact.path.display()
+            ))
+        })?;
+        let descriptor: GpuSourcePackArtifactDescriptor =
+            serde_json::from_slice(&bytes).map_err(|err| {
+                source_pack_artifact_store_error(format!(
+                    "parse {stage:?} descriptor {} at {}: {err}",
+                    artifact.key,
+                    artifact.path.display()
+                ))
+            })?;
+        descriptor
+            .validate_contract_for(stage, Some(self.target))
+            .map_err(|reason| {
+                source_pack_artifact_store_error(format!(
+                    "validate {stage:?} descriptor {}: {reason}",
+                    artifact.key
+                ))
+            })?;
+        Ok(descriptor)
+    }
+
+    fn load_semantic_interface_pages(
+        &self,
+        pages: &GpuSourcePackDependencyPages,
+    ) -> Result<Vec<Vec<GpuSemanticInterfaceArtifact>>, CompileError> {
+        pages
+            .artifacts
+            .iter()
+            .map(|page| self.load_semantic_interface_artifacts(page))
             .collect()
     }
 
@@ -1341,8 +1397,7 @@ impl<'compiler, 'gpu> AsyncPagedArtifactBuildExecutor
             Ok(GpuSourcePackLibraryInterfaceBuildHandle {
                 job: job.clone(),
                 source_files: source_files.to_vec(),
-                dependency_interfaces: GpuSourcePackDependencyInterfaceSummary::default(),
-                dependency_interface_artifacts: Vec::new(),
+                dependencies: GpuSourcePackDependencyPages::default(),
             })
         })
     }
@@ -1359,12 +1414,7 @@ impl<'compiler, 'gpu> AsyncPagedArtifactBuildExecutor
                 job.job_index,
                 dependency_interfaces,
             )?;
-            handle
-                .dependency_interfaces
-                .add_batch(dependency_interfaces.len());
-            handle
-                .dependency_interface_artifacts
-                .extend_from_slice(dependency_interfaces);
+            handle.dependencies.push(dependency_interfaces);
             Ok(())
         })
     }
@@ -1380,16 +1430,14 @@ impl<'compiler, 'gpu> AsyncPagedArtifactBuildExecutor
     fn begin_codegen_object<'a>(
         &'a mut self,
         job: &'a SourcePackJob,
-        source_files: &'a [ExplicitSourcePathFile],
+        _source_files: &'a [ExplicitSourcePathFile],
         library_interface: &'a Self::LibraryInterfaceArtifact,
     ) -> SourcePackBoxFuture<'a, Self::CodegenObjectBuildHandle> {
         Box::pin(async move {
             Ok(GpuSourcePackCodegenObjectBuildHandle {
                 job: job.clone(),
-                source_files: source_files.to_vec(),
                 library_interface_artifact: library_interface.clone(),
-                dependency_interfaces: GpuSourcePackDependencyInterfaceSummary::default(),
-                dependency_interface_artifacts: Vec::new(),
+                dependencies: GpuSourcePackDependencyInterfaceSummary::default(),
             })
         })
     }
@@ -1406,12 +1454,7 @@ impl<'compiler, 'gpu> AsyncPagedArtifactBuildExecutor
                 job.job_index,
                 dependency_interfaces,
             )?;
-            handle
-                .dependency_interfaces
-                .add_batch(dependency_interfaces.len());
-            handle
-                .dependency_interface_artifacts
-                .extend_from_slice(dependency_interfaces);
+            handle.dependencies.add_batch(dependency_interfaces.len());
             Ok(())
         })
     }
@@ -1581,6 +1624,31 @@ impl<'compiler, 'gpu> AsyncHierarchicalLinkExecutor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dependency_input_preserves_work_queue_page_boundaries() {
+        let artifact = |key: &str| ArtifactPath {
+            key: key.into(),
+            path: PathBuf::from(key),
+        };
+        let mut pages = GpuSourcePackDependencyPages::default();
+        pages.push(&[artifact("a"), artifact("b")]);
+        pages.push(&[]);
+        pages.push(&[artifact("c")]);
+
+        assert_eq!(pages.summary.interface_count, 3);
+        assert_eq!(pages.summary.batch_count, 2);
+        assert_eq!(pages.artifacts.len(), 2);
+        assert_eq!(
+            pages
+                .artifacts
+                .iter()
+                .flatten()
+                .map(|artifact| artifact.key.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
+    }
 
     #[test]
     fn library_interface_descriptor_points_at_concrete_semantic_interface_bytes() {

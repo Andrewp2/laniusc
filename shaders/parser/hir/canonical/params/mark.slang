@@ -1,6 +1,7 @@
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint4> hir_param_record;
 RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
@@ -14,5 +15,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
-    family_flag[raw] = raw < active_count() && hir_param_record[raw].x != INVALID ? 1u : 0u;
+    uint anchor = raw < active_count() ? hir_token_pos[raw] : INVALID;
+    uint4 parameter = anchor < gCanonical.canonical_capacity
+        ? hir_param_record[anchor]
+        : uint4(INVALID, INVALID, INVALID, INVALID);
+    family_flag[raw] = parameter.x != INVALID && parameter.w == raw ? 1u : 0u;
 }

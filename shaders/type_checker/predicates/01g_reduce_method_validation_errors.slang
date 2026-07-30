@@ -1,10 +1,10 @@
 // Reduce dense method/type validation rows to the first failing row for each
 // compact trait-impl owner.
 
+import hir_records;
 import atomics;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;

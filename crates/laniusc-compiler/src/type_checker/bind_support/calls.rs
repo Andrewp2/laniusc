@@ -47,11 +47,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             reserved1: 0,
         },
     );
-    let required_generic_dispatch = bind_group::create_bind_group_from_bindings(
+    let required_generic_dispatch = resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check.calls.required_generic_dispatch"),
+        "type_check.calls.required_generic_dispatch",
         &passes.kernel("type_checker/count/dispatch_args"),
-        0,
         &[
             (
                 "gParams",
@@ -141,9 +140,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         intrinsics: indirect(CALLS_INTRINSICS)?,
         clear_hir_call_args: direct(CALLS_ARGUMENT_CLEAR, call_arg_slot_work)?,
         pack_hir_call_args: direct(CALLS_ARGUMENT_PACK, hir_capacity)?,
-        mark_compact_hir_call_args: indirect(CALLS_ARGUMENT_MARK)?,
-        compact_hir_call_arg_scan: prefix_scan_spec(compiler_graph::CALL_ARG_ROW_SCAN)?,
-        scatter_compact_hir_call_args: indirect(CALLS_ARGUMENT_SCATTER)?,
+        compact_hir_call_args: CompactionOperation::indirect(
+            device,
+            graph,
+            resources,
+            passes,
+            CALL_ARGUMENT_COMPACTION,
+            hir_dispatch_args,
+        )?,
         call_param_segment_scan: prefix_scan_spec(compiler_graph::CALL_PARAM_ROW_SCAN)?,
         scatter_compact_hir_params: direct(CALLS_PARAM_SCATTER, call_param_capacity)?,
         resolve: indirect(CALLS_RESOLVE)?,

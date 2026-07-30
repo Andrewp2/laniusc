@@ -1,137 +1,152 @@
 //! Reusable GPU-parallel operations used to assemble semantic passes.
 
+macro_rules! typecheck_pass {
+    ($name:expr, $domain:ident, $kernel:expr) => {
+        crate::gpu::compiler_graph::ReflectedComputeSpec::new(
+            $name,
+            $kernel,
+            crate::gpu::compiler_graph::CompilerPhase::TypeCheck,
+            crate::gpu::compiler_graph::ResourceDomain::$domain,
+        )
+    };
+}
+
+macro_rules! typecheck_resource {
+    ($binding:expr => $resource:expr) => {
+        crate::gpu::compiler_graph::ReflectedResourceAlias {
+            binding: $binding,
+            resource: $resource,
+            mode: None,
+        }
+    };
+    ($binding:expr => $resource:expr, $mode:ident) => {
+        crate::gpu::compiler_graph::ReflectedResourceAlias {
+            binding: $binding,
+            resource: $resource,
+            mode: Some(crate::gpu::compiler_graph::AccessMode::$mode),
+        }
+    };
+}
+
+macro_rules! typecheck_operation {
+    (
+        $name:expr, $domain:ident, $kernel:expr
+        $(; writes [$($write:expr),* $(,)?])?
+        $(; resources [$($resource:expr),* $(,)?])?
+    ) => {
+        typecheck_pass!($name, $domain, $kernel)
+            $(.with_modes(&[$(($write, crate::gpu::compiler_graph::AccessMode::Write)),*]))?
+            $(.with_aliases(&[$($resource),*]))?
+    };
+}
+
 mod call_argument_matching;
 mod call_claim_keys;
 mod call_generic_claim_validation;
 mod calls;
+mod conditions;
 mod generic_parameter_sorts;
 mod methods;
+mod module_paths;
+mod names;
+mod predicate_diagnostics;
 mod predicate_keys;
+mod returns;
+mod type_instances;
+mod visible;
 mod visible_decls;
 
 pub(super) use call_argument_matching::*;
 pub(super) use call_claim_keys::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
+pub(super) use conditions::*;
 pub(super) use generic_parameter_sorts::*;
 pub(super) use methods::*;
+pub(super) use module_paths::*;
+pub(super) use names::*;
+pub(super) use predicate_diagnostics::*;
 pub(super) use predicate_keys::*;
+pub(super) use returns::*;
+pub(super) use type_instances::*;
+pub(super) use visible::*;
 pub(super) use visible_decls::*;
 
 use super::*;
+pub(super) use crate::gpu::operations::ComputeOperation;
 
-enum ComputeDispatch {
-    Direct(u32),
-    Indirect(wgpu::Buffer),
+/// A stable GPU compaction: produce flags, scan them, then scatter dense rows.
+pub(super) struct CompactionOperation {
+    mark: ComputeOperation,
+    scan: PrefixScanOperation,
+    scatter: ComputeOperation,
 }
 
-/// One reflected shader together with its validated resources and dispatch.
-pub(super) struct ComputeOperation {
-    name: &'static str,
-    pass: PassData,
-    group: wgpu::BindGroup,
-    dispatch: ComputeDispatch,
+#[derive(Clone, Copy)]
+pub(super) enum CompactionStage {
+    Mark,
+    Scan,
+    Scatter,
 }
 
-impl ComputeOperation {
-    fn new(
-        device: &wgpu::Device,
-        graph: &compiler_graph::TypeCheckCompilerGraph,
-        resources: &ResourceMap<'_>,
-        name: &'static str,
-        pass: &PassData,
-        dispatch: ComputeDispatch,
-    ) -> Result<Self> {
-        graph.validate_registered_pass_bindings(name, resources)?;
-        Ok(Self {
-            name,
-            pass: pass.clone(),
-            group: reflected_bind_group_from_resources(device, name, pass, resources)?,
-            dispatch,
-        })
-    }
-
-    pub(super) fn direct(
-        device: &wgpu::Device,
-        graph: &compiler_graph::TypeCheckCompilerGraph,
-        resources: &ResourceMap<'_>,
-        name: &'static str,
-        pass: &PassData,
-        workgroups: u32,
-    ) -> Result<Self> {
-        Self::new(
-            device,
-            graph,
-            resources,
-            name,
-            pass,
-            ComputeDispatch::Direct(workgroups),
-        )
+impl CompactionOperation {
+    pub(super) fn new(
+        mark: ComputeOperation,
+        scan: PrefixScanOperation,
+        scatter: ComputeOperation,
+    ) -> Self {
+        Self {
+            mark,
+            scan,
+            scatter,
+        }
     }
 
     pub(super) fn indirect(
         device: &wgpu::Device,
         graph: &compiler_graph::TypeCheckCompilerGraph,
         resources: &ResourceMap<'_>,
-        name: &'static str,
-        pass: &PassData,
+        kernels: &KernelRegistry,
+        spec: crate::gpu::compiler_graph::CompactionSpec,
         dispatch_args: &wgpu::Buffer,
     ) -> Result<Self> {
-        Self::new(
-            device,
-            graph,
-            resources,
-            name,
-            pass,
-            ComputeDispatch::Indirect(dispatch_args.clone()),
-        )
-    }
-
-    pub(super) fn indirect_spec(
-        device: &wgpu::Device,
-        graph: &compiler_graph::TypeCheckCompilerGraph,
-        resources: &ResourceMap<'_>,
-        kernels: &KernelRegistry,
-        spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<Self> {
-        Self::indirect(
-            device,
-            graph,
-            resources,
-            spec.name,
-            kernels.kernel(spec.kernel),
-            dispatch_args,
-        )
-    }
-
-    pub(super) fn direct_spec(
-        device: &wgpu::Device,
-        graph: &compiler_graph::TypeCheckCompilerGraph,
-        resources: &ResourceMap<'_>,
-        kernels: &KernelRegistry,
-        spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
-        workgroups: u32,
-    ) -> Result<Self> {
-        Self::direct(
-            device,
-            graph,
-            resources,
-            spec.name,
-            kernels.kernel(spec.kernel),
-            workgroups,
-        )
+        Ok(Self::new(
+            ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                kernels,
+                spec.mark,
+                dispatch_args,
+            )?,
+            PrefixScanOperation::from_spec(device, kernels, resources, spec.scan)?,
+            ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                kernels,
+                spec.scatter,
+                dispatch_args,
+            )?,
+        ))
     }
 
     pub(super) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        match &self.dispatch {
-            ComputeDispatch::Direct(workgroups) => {
-                record_compute(encoder, &self.pass, &self.group, self.name, *workgroups)
-            }
-            ComputeDispatch::Indirect(args) => {
-                record_compute_indirect(encoder, &self.pass, &self.group, self.name, args)
-            }
-        }
+        self.record_staged(encoder, |_, _| {})
+    }
+
+    pub(super) fn record_staged(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        mut after: impl FnMut(CompactionStage, &mut wgpu::CommandEncoder),
+    ) -> Result<()> {
+        self.mark.record(encoder)?;
+        after(CompactionStage::Mark, encoder);
+        self.scan.record(encoder)?;
+        after(CompactionStage::Scan, encoder);
+        self.scatter.record(encoder)?;
+        after(CompactionStage::Scatter, encoder);
+        Ok(())
     }
 }
 

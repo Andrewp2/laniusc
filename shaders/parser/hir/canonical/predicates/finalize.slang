@@ -1,7 +1,7 @@
+import hir_records;
 import generated_parse_production_ids;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;

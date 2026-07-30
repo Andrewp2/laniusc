@@ -1,7 +1,7 @@
+import hir_records;
 import prefix_scan;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirRange { uint start; uint count; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_flag;
 StructuredBuffer<uint> canonical_local_prefix;

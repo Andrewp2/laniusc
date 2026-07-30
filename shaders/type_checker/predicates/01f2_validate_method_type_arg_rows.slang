@@ -1,3 +1,5 @@
+import hir_records;
+
 // Validate arbitrary-width top-level generic arguments through compact type
 // argument rows and dense type-peer relations.
 

@@ -980,7 +980,7 @@ mod tests {
 
     #[test]
     fn daemon_keeps_large_source_packs_path_backed() {
-        let limits = crate::codegen::unit::CodegenUnitLimits::default();
+        let limits = crate::codegen::unit::CompilationUnitLimits::default();
         let path_manifest = ExplicitSourcePackPathManifest {
             files: (0..=limits.max_source_files)
                 .map(|index| crate::compiler::ExplicitSourcePathFile {

@@ -1,5 +1,6 @@
 // Apply row-dispatched generic direct call inference.
 
+import hir_records;
 import status;
 
 struct Params
@@ -12,15 +13,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> method_call_name_id;
@@ -158,7 +157,7 @@ void apply_row_argument_call(uint call_node)
 
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) ||
-        call_dependency_decl[callee_i] != INVALID ||
+        call_dependency_library_id[callee_i] != INVALID ||
         method_call_name_id[callee_i] != INVALID ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;

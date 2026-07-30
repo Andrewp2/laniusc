@@ -707,6 +707,7 @@ impl GpuParser {
     /// This is the phase boundary used by graph-owned consumers after parsing:
     /// it cannot allocate a differently sized parser cache and it exposes none
     /// of the raw production/tree scratch that compact HIR replaced.
+    #[cfg(test)]
     pub(crate) fn current_resident_hir(&self) -> Option<crate::parser::buffers::GpuHirView> {
         let resident_guard = self
             .resident_buffers

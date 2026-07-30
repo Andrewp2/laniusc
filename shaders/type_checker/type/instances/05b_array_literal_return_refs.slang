@@ -10,6 +10,7 @@
 // It does not inspect token kinds, token spelling, source bytes, helper names,
 // or punctuation.
 
+import hir_records;
 import status;
 
 struct Params
@@ -21,9 +22,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -334,6 +332,34 @@ uint compact_direct_scalar_expr_type(uint node)
     return TY_UNKNOWN;
 }
 
+bool compact_index_element_ref(uint node, out uint tag, out uint payload)
+{
+    tag = 0u;
+    payload = INVALID;
+    if (!valid_compact_node(node) || compact_hir_core[node].kind != HIR_INDEX_EXPR)
+        return false;
+
+    uint base = compact_hir_payload[node].b;
+    if (!valid_compact_node(base))
+        return false;
+    HirCore base_core = compact_hir_core[base];
+    HirPayload base_payload = compact_hir_payload[base];
+    if (base_core.kind != HIR_NAME_EXPR && base_payload.a != HIR_EXPR_NAME)
+        return false;
+    uint token = valid_token(base_payload.d) ? base_payload.d : base_core.token_start;
+    uint declaration = valid_token(token) ? visible_decl[token] : INVALID;
+    if (!valid_token(declaration))
+        return false;
+    uint instance = decl_type_ref_tag[declaration] == TYPE_REF_INSTANCE
+        ? decl_type_ref_payload[declaration]
+        : INVALID;
+    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+        return false;
+    tag = type_instance_elem_ref_tag[instance];
+    payload = type_instance_elem_ref_payload[instance];
+    return tag != 0u && payload != INVALID;
+}
+
 bool compact_scalar_expr_ref(uint node, out uint tag, out uint payload)
 {
     tag = 0u;
@@ -344,6 +370,8 @@ bool compact_scalar_expr_ref(uint node, out uint tag, out uint payload)
     HirCore core = compact_hir_core[node];
     HirPayload expr = compact_hir_payload[node];
     uint form = expr.a;
+    if (core.kind == HIR_INDEX_EXPR)
+        return compact_index_element_ref(node, tag, payload);
     if (core.kind == HIR_STRUCT_LITERAL_EXPR)
         return publish_scalar_ref(
             struct_literal_head_type_for_token(core.token_start),

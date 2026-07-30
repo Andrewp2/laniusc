@@ -44,50 +44,27 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
             SOURCE_PACK_LIBRARY_DEPENDENCY_DEFAULT_PAGE_SIZE
         )));
     }
-    if page.frontend_units.len() > SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP {
+    if page.units.len() > SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {} stores {} inline frontend-unit records, exceeding record cap {}",
+            "build-unit page {} stores {} inline compilation-unit records, exceeding record cap {}",
             page.partition_index,
-            page.frontend_units.len(),
+            page.units.len(),
             SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP
         )));
     }
-    if page.codegen_units.len() > SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP {
+    let unit_count = library_build_unit_page_unit_count(page);
+    if unit_count == 0 {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {} stores {} inline codegen-unit records, exceeding record cap {}",
-            page.partition_index,
-            page.codegen_units.len(),
-            SOURCE_PACK_LIBRARY_BUILD_UNIT_INLINE_DEFAULT_RECORD_CAP
-        )));
-    }
-    let codegen_unit_count = library_build_unit_page_codegen_unit_count(page);
-    let frontend_unit_count = library_build_unit_page_frontend_unit_count(page);
-    if frontend_unit_count == 0 {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {} has no frontend units",
+            "build-unit page {} has no compilation units",
             page.partition_index
         )));
     }
-    if codegen_unit_count == 0 {
+    if !page.units.is_empty() && page.units.len() != unit_count {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {} has no codegen units",
-            page.partition_index
-        )));
-    }
-    if !page.frontend_units.is_empty() && page.frontend_units.len() != frontend_unit_count {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {} has {} inline frontend units but frontend_unit_count {}",
+            "build-unit page {} has {} inline compilation units but unit_count {}",
             page.partition_index,
-            page.frontend_units.len(),
-            frontend_unit_count
-        )));
-    }
-    if !page.codegen_units.is_empty() && page.codegen_units.len() != codegen_unit_count {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {} has {} inline codegen units but codegen_unit_count {}",
-            page.partition_index,
-            page.codegen_units.len(),
-            codegen_unit_count
+            page.units.len(),
+            unit_count
         )));
     }
     if page.limits != page.limits.normalized() {
@@ -129,12 +106,12 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
         )));
     }
 
-    if !page.frontend_units.is_empty() {
+    if !page.units.is_empty() {
         let mut expected_source_index = page.first_source_index;
         let mut source_byte_count = 0usize;
         let mut source_line_count = 0usize;
-        for (position, unit) in page.frontend_units.iter().enumerate() {
-            validate_frontend_unit_shape(
+        for (position, unit) in page.units.iter().enumerate() {
+            validate_compilation_unit_shape(
                 unit,
                 page.target,
                 page.partition_index,
@@ -144,7 +121,7 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
             )?;
             if unit.first_source_index != expected_source_index {
                 return Err(library_partition_contract_error(format!(
-                    "build-unit page {} frontend unit {} starts at source {}, expected {}",
+                    "build-unit page {} compilation unit {} starts at source {}, expected {}",
                     page.partition_index,
                     unit.unit_index,
                     unit.first_source_index,
@@ -155,7 +132,7 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
                 .checked_add(unit.source_file_count)
                 .ok_or_else(|| {
                     library_partition_contract_error(format!(
-                        "build-unit page {} frontend unit {} source range overflows",
+                        "build-unit page {} compilation unit {} source range overflows",
                         page.partition_index, unit.unit_index
                     ))
                 })?;
@@ -163,7 +140,7 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
                 .checked_add(unit.source_bytes)
                 .ok_or_else(|| {
                     library_partition_contract_error(format!(
-                        "build-unit page {} frontend byte count overflows",
+                        "build-unit page {} compilation-unit byte count overflows",
                         page.partition_index
                     ))
                 })?;
@@ -171,93 +148,26 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
                 .checked_add(unit.source_lines)
                 .ok_or_else(|| {
                     library_partition_contract_error(format!(
-                        "build-unit page {} frontend source-line count overflows",
+                        "build-unit page {} compilation-unit source-line count overflows",
                         page.partition_index
                     ))
                 })?;
         }
         if expected_source_index != source_end {
             return Err(library_partition_contract_error(format!(
-                "build-unit page {} frontend source range ends at {}, expected {}",
+                "build-unit page {} compilation-unit source range ends at {}, expected {}",
                 page.partition_index, expected_source_index, source_end
             )));
         }
         if source_byte_count != page.source_byte_count {
             return Err(library_partition_contract_error(format!(
-                "build-unit page {} frontend byte total {} does not match source_byte_count {}",
+                "build-unit page {} compilation-unit byte total {} does not match source_byte_count {}",
                 page.partition_index, source_byte_count, page.source_byte_count
             )));
         }
         if source_line_count != page.source_line_count {
             return Err(library_partition_contract_error(format!(
-                "build-unit page {} frontend source-line total {} does not match source_line_count {}",
-                page.partition_index, source_line_count, page.source_line_count
-            )));
-        }
-    }
-
-    if !page.codegen_units.is_empty() {
-        let mut expected_source_index = page.first_source_index;
-        let mut source_byte_count = 0usize;
-        let mut source_line_count = 0usize;
-        for (position, unit) in page.codegen_units.iter().enumerate() {
-            validate_codegen_unit_shape(
-                unit,
-                page.target,
-                page.partition_index,
-                page.library_id,
-                page.limits,
-                position,
-            )?;
-            if unit.first_source_index != expected_source_index {
-                return Err(library_partition_contract_error(format!(
-                    "build-unit page {} codegen unit {} starts at source {}, expected {}",
-                    page.partition_index,
-                    unit.unit_index,
-                    unit.first_source_index,
-                    expected_source_index
-                )));
-            }
-            expected_source_index = expected_source_index
-                .checked_add(unit.source_file_count)
-                .ok_or_else(|| {
-                    library_partition_contract_error(format!(
-                        "build-unit page {} codegen unit {} source range overflows",
-                        page.partition_index, unit.unit_index
-                    ))
-                })?;
-            source_byte_count = source_byte_count
-                .checked_add(unit.source_bytes)
-                .ok_or_else(|| {
-                    library_partition_contract_error(format!(
-                        "build-unit page {} codegen byte count overflows",
-                        page.partition_index
-                    ))
-                })?;
-            source_line_count = source_line_count
-                .checked_add(unit.source_lines)
-                .ok_or_else(|| {
-                    library_partition_contract_error(format!(
-                        "build-unit page {} codegen source-line count overflows",
-                        page.partition_index
-                    ))
-                })?;
-        }
-        if expected_source_index != source_end {
-            return Err(library_partition_contract_error(format!(
-                "build-unit page {} codegen source range ends at {}, expected {}",
-                page.partition_index, expected_source_index, source_end
-            )));
-        }
-        if source_byte_count != page.source_byte_count {
-            return Err(library_partition_contract_error(format!(
-                "build-unit page {} codegen byte total {} does not match source_byte_count {}",
-                page.partition_index, source_byte_count, page.source_byte_count
-            )));
-        }
-        if source_line_count != page.source_line_count {
-            return Err(library_partition_contract_error(format!(
-                "build-unit page {} codegen source-line total {} does not match source_line_count {}",
+                "build-unit page {} compilation-unit source-line total {} does not match source_line_count {}",
                 page.partition_index, source_line_count, page.source_line_count
             )));
         }
@@ -281,34 +191,34 @@ pub(in crate::compiler) fn validate_library_build_unit_page(
     Ok(())
 }
 
-/// Validates one frontend unit embedded in or referenced by a build-unit page.
+/// Validates one compilation unit embedded in or referenced by a build-unit page.
 ///
 /// A non-oversized unit must fit the normalized source-file and source-byte
 /// limits. Oversized units are allowed only for the explicit oversized-source
 /// path.
-pub(in crate::compiler) fn validate_frontend_unit_shape(
-    unit: &FrontendUnit,
+pub(in crate::compiler) fn validate_compilation_unit_shape(
+    unit: &CompilationUnit,
     _target: SourcePackArtifactTarget,
     partition_index: usize,
     library_id: u32,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     expected_unit_index: usize,
 ) -> Result<(), CompileError> {
     if unit.unit_index != expected_unit_index {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} frontend unit entry {expected_unit_index} has unit_index {}",
+            "build-unit page {partition_index} compilation unit entry {expected_unit_index} has unit_index {}",
             unit.unit_index
         )));
     }
     if unit.library_id != library_id {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} frontend unit {} has library {}, expected {}",
+            "build-unit page {partition_index} compilation unit {} has library {}, expected {}",
             unit.unit_index, unit.library_id, library_id
         )));
     }
     if unit.source_file_count == 0 {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} frontend unit {} has no source files",
+            "build-unit page {partition_index} compilation unit {} has no source files",
             unit.unit_index
         )));
     }
@@ -317,173 +227,70 @@ pub(in crate::compiler) fn validate_frontend_unit_shape(
             || unit.source_bytes > limits.max_source_bytes)
     {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} frontend unit {} exceeds limits {:?}",
+            "build-unit page {partition_index} compilation unit {} exceeds limits {:?}",
             unit.unit_index, limits
         )));
     }
     Ok(())
 }
 
-/// Validates a standalone frontend-unit page.
+/// Validates a standalone compilation-unit page.
 ///
 /// Standalone pages are used when build-unit pages cannot carry all units
 /// inline, so the page identity and embedded unit shape must agree.
-pub(in crate::compiler) fn validate_frontend_unit_page(
-    page: &SourcePackLibraryFrontendUnitPage,
+pub(in crate::compiler) fn validate_compilation_unit_page(
+    page: &SourcePackLibraryCompilationUnitPage,
     target: SourcePackArtifactTarget,
     expected_partition_index: Option<usize>,
-    expected_frontend_unit_index: Option<usize>,
+    expected_unit_index: Option<usize>,
 ) -> Result<(), CompileError> {
-    if page.version != SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION {
+    if page.version != SOURCE_PACK_LIBRARY_COMPILATION_UNIT_PAGE_VERSION {
         return Err(library_partition_contract_error(format!(
-            "unsupported source-pack library frontend-unit page version {}; expected {}",
-            page.version, SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION
+            "unsupported source-pack library compilation-unit page version {}; expected {}",
+            page.version, SOURCE_PACK_LIBRARY_COMPILATION_UNIT_PAGE_VERSION
         )));
     }
     if page.target != target {
         return Err(library_partition_contract_error(format!(
-            "frontend-unit page {}:{} target {:?} does not match requested target {:?}",
-            page.partition_index, page.frontend_unit_index, page.target, target
+            "compilation-unit page {}:{} target {:?} does not match requested target {:?}",
+            page.partition_index, page.unit_index, page.target, target
         )));
     }
     if let Some(expected_partition_index) = expected_partition_index {
         if page.partition_index != expected_partition_index {
             return Err(library_partition_contract_error(format!(
-                "loaded frontend-unit page partition {} but expected {}",
+                "loaded compilation-unit page partition {} but expected {}",
                 page.partition_index, expected_partition_index
             )));
         }
     }
-    if let Some(expected_frontend_unit_index) = expected_frontend_unit_index {
-        if page.frontend_unit_index != expected_frontend_unit_index {
+    if let Some(expected_unit_index) = expected_unit_index {
+        if page.unit_index != expected_unit_index {
             return Err(library_partition_contract_error(format!(
-                "loaded frontend-unit page {} but expected {}",
-                page.frontend_unit_index, expected_frontend_unit_index
+                "loaded compilation-unit page {} but expected {}",
+                page.unit_index, expected_unit_index
             )));
         }
     }
-    if page.frontend_unit_count == 0 || page.frontend_unit_index >= page.frontend_unit_count {
+    if page.unit_count == 0 || page.unit_index >= page.unit_count {
         return Err(library_partition_contract_error(format!(
-            "frontend-unit page {}:{} has invalid count {}",
-            page.partition_index, page.frontend_unit_index, page.frontend_unit_count
+            "compilation-unit page {}:{} has invalid count {}",
+            page.partition_index, page.unit_index, page.unit_count
         )));
     }
     if page.limits != page.limits.normalized() {
         return Err(library_partition_contract_error(format!(
-            "frontend-unit page {}:{} has unnormalized limits {:?}",
-            page.partition_index, page.frontend_unit_index, page.limits
+            "compilation-unit page {}:{} has unnormalized limits {:?}",
+            page.partition_index, page.unit_index, page.limits
         )));
     }
-    validate_frontend_unit_shape(
+    validate_compilation_unit_shape(
         &page.unit,
         page.target,
         page.partition_index,
         page.library_id,
         page.limits,
-        page.frontend_unit_index,
-    )?;
-    Ok(())
-}
-
-/// Validates one codegen unit embedded in or referenced by a build-unit page.
-///
-/// Codegen units follow the same source range and limit contract as frontend
-/// units, but represent the codegen phase's partitioning.
-pub(in crate::compiler) fn validate_codegen_unit_shape(
-    unit: &CodegenUnit,
-    _target: SourcePackArtifactTarget,
-    partition_index: usize,
-    library_id: u32,
-    limits: CodegenUnitLimits,
-    expected_unit_index: usize,
-) -> Result<(), CompileError> {
-    if unit.unit_index != expected_unit_index {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} codegen unit entry {expected_unit_index} has unit_index {}",
-            unit.unit_index
-        )));
-    }
-    if unit.library_id != library_id {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} codegen unit {} has library {}, expected {}",
-            unit.unit_index, unit.library_id, library_id
-        )));
-    }
-    if unit.source_file_count == 0 {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} codegen unit {} has no source files",
-            unit.unit_index
-        )));
-    }
-    if !unit.oversized_source_file
-        && (unit.source_file_count > limits.max_source_files
-            || unit.source_bytes > limits.max_source_bytes)
-    {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {partition_index} codegen unit {} exceeds limits {:?}",
-            unit.unit_index, limits
-        )));
-    }
-    Ok(())
-}
-
-/// Validates a standalone codegen-unit page.
-///
-/// Standalone pages are used when build-unit pages cannot carry all codegen
-/// units inline, so the page identity and embedded unit shape must agree.
-pub(in crate::compiler) fn validate_codegen_unit_page(
-    page: &SourcePackLibraryCodegenUnitPage,
-    target: SourcePackArtifactTarget,
-    expected_partition_index: Option<usize>,
-    expected_codegen_unit_index: Option<usize>,
-) -> Result<(), CompileError> {
-    if page.version != SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION {
-        return Err(library_partition_contract_error(format!(
-            "unsupported source-pack library codegen-unit page version {}; expected {}",
-            page.version, SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION
-        )));
-    }
-    if page.target != target {
-        return Err(library_partition_contract_error(format!(
-            "codegen-unit page {}:{} target {:?} does not match requested target {:?}",
-            page.partition_index, page.codegen_unit_index, page.target, target
-        )));
-    }
-    if let Some(expected_partition_index) = expected_partition_index {
-        if page.partition_index != expected_partition_index {
-            return Err(library_partition_contract_error(format!(
-                "loaded codegen-unit page partition {} but expected {}",
-                page.partition_index, expected_partition_index
-            )));
-        }
-    }
-    if let Some(expected_codegen_unit_index) = expected_codegen_unit_index {
-        if page.codegen_unit_index != expected_codegen_unit_index {
-            return Err(library_partition_contract_error(format!(
-                "loaded codegen-unit page {} but expected {}",
-                page.codegen_unit_index, expected_codegen_unit_index
-            )));
-        }
-    }
-    if page.codegen_unit_count == 0 || page.codegen_unit_index >= page.codegen_unit_count {
-        return Err(library_partition_contract_error(format!(
-            "codegen-unit page {}:{} has invalid count {}",
-            page.partition_index, page.codegen_unit_index, page.codegen_unit_count
-        )));
-    }
-    if page.limits != page.limits.normalized() {
-        return Err(library_partition_contract_error(format!(
-            "codegen-unit page {}:{} has unnormalized limits {:?}",
-            page.partition_index, page.codegen_unit_index, page.limits
-        )));
-    }
-    validate_codegen_unit_shape(
-        &page.unit,
-        page.target,
-        page.partition_index,
-        page.library_id,
-        page.limits,
-        page.codegen_unit_index,
+        page.unit_index,
     )?;
     Ok(())
 }

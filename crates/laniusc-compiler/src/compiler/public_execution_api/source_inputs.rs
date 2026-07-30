@@ -5,7 +5,7 @@ use super::*;
 pub async fn run_ordered_path_stream_artifact_worker_async<I, PI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -58,7 +58,7 @@ where
 pub fn execute_dependency_stream_artifact_build<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -92,7 +92,7 @@ where
 pub fn run_dependency_stream_artifact_worker<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
     worker_id: impl Into<String>,
@@ -130,7 +130,7 @@ where
 pub fn run_dependency_stream_artifact_worker_with_shards<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -179,7 +179,7 @@ where
 pub fn run_dependency_stream_path_artifact_worker<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
     worker_id: impl Into<String>,
@@ -217,7 +217,7 @@ where
 pub fn run_dependency_stream_path_artifact_worker_with_shards<I, PI, DI, P, E>(
     libraries: I,
     artifact_root: impl Into<PathBuf>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,
@@ -265,7 +265,7 @@ where
 pub(in crate::compiler) fn prepare_library_pages_artifact_build(
     prepared_pages: PreparedLibrarySchedulePages,
     store: &FilesystemArtifactStore,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
 ) -> Result<PrepareResult, CompileError> {
@@ -283,7 +283,7 @@ pub(in crate::compiler) fn prepare_library_pages_artifact_build(
 pub(in crate::compiler) fn prepare_library_pages_artifact_build_with_shards(
     prepared_pages: PreparedLibrarySchedulePages,
     store: &FilesystemArtifactStore,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     shard_limits: SourcePackBuildShardLimits,
     target: SourcePackArtifactTarget,

@@ -9,6 +9,7 @@
 // - This pass also publishes declaration-token to HIR-node facts for later
 //   consumers; it does not scan declaration subtrees.
 
+import hir_records;
 import generated_parse_production_ids;
 import fixed.compact_method;
 
@@ -21,14 +22,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirMethodSignature
-{
-    uint first_param_token;
-    uint impl_receiver_type;
-    uint receiver_mode;
-    uint metadata;
-};
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> raw_to_compact_hir;

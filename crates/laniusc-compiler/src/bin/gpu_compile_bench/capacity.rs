@@ -2,7 +2,7 @@ use laniusc_compiler::{
     codegen::{
         lowering_ir::{LoweringCapacities, LoweringTarget, lowering_compiler_graph},
         unit::{
-            CodegenUnitLimits,
+            CompilationUnitLimits,
             SourcePackArtifactTarget,
             SourcePackJobBatchLimits,
             SourcePackJobPlan,
@@ -281,14 +281,14 @@ pub(super) fn print_codegen_unit_estimate(
     library_ids: &[u32],
     library_dependencies: &[SourcePackLibraryDependency],
 ) {
-    let limits = CodegenUnitLimits::default();
+    let limits = CompilationUnitLimits::default();
     let plan = SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
         sources,
         library_ids,
         library_dependencies,
         limits,
     );
-    let codegen_units = &plan.codegen_units;
+    let codegen_units = &plan.units;
     println!(
         "estimate codegen_units unit_count={} max_unit_source_bytes={} max_unit_source_files={} oversized_units={} unit_max_source_bytes_limit={} unit_max_source_files_limit={} split_policy=file-and-library-boundaries",
         codegen_units.unit_count(),

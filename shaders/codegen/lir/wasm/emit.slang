@@ -2,7 +2,13 @@ import codegen.lir.wasm.byte_common;
 import codegen.lowering_ir;
 import gpu_index;
 
-struct Params { uint target_capacity; uint artifact_capacity; uint reserved0; uint reserved1; };
+struct Params
+{
+    uint target_capacity;
+    uint artifact_capacity;
+    uint target_start;
+    uint page_capacity;
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<WasmLirInstruction> target_lir_core;
@@ -34,10 +40,12 @@ void store_byte(uint pos, uint value)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint position = gParams.target_start + page_row;
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
     if (position >= total) return;
-    WasmLirInstruction inst = target_lir_core[position];
+    WasmLirInstruction inst = target_lir_core[page_row];
     uint len = target_byte_length[position];
     uint offset = target_byte_offset[position];
     for (uint byte_i = 0u; byte_i < len; byte_i += 1u)

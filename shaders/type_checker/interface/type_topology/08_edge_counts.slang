@@ -1,14 +1,13 @@
 // Publish the number of direct child edges for every compacted signature type.
 // The following exclusive scan assigns a deterministic edge range per parent.
 
+import hir_records;
 import atomics;
 
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirRange { uint start; uint count; };
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
 RWStructuredBuffer<uint> interface_type_edge_count;

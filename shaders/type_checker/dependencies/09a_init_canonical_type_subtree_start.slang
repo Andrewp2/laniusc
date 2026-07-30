@@ -3,6 +3,7 @@
 // its parent, so repeatedly following the final child reaches the first row of
 // the parent's contiguous subtree.
 
+import dependency_interface;
 import gpu_index;
 
 struct Params
@@ -15,8 +16,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> dependency_type_words;
-StructuredBuffer<uint> dependency_type_edge_words;
 RWStructuredBuffer<uint> canonical_type_subtree_start;
 
 static const uint TYPE_WORDS = 9u;
@@ -28,13 +27,13 @@ static const uint MAX_GROUPS_X = 65535u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint type_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (type_i >= gParams.type_count)
+    if (type_i >= dependency_type_count())
         return;
     uint base = type_i * TYPE_WORDS;
-    uint first_edge = dependency_type_words[base + 3u];
-    uint edge_count = dependency_type_words[base + 4u];
+    uint first_edge = dependency_type_word(base + 3u);
+    uint edge_count = dependency_type_word(base + 4u);
     uint last = edge_count == 0u
         ? type_i
-        : dependency_type_edge_words[first_edge + edge_count - 1u];
-    canonical_type_subtree_start[type_i] = last < gParams.type_count ? last : type_i;
+        : dependency_type_edge_word(first_edge + edge_count - 1u);
+    canonical_type_subtree_start[type_i] = last < dependency_type_count() ? last : type_i;
 }

@@ -1,9 +1,10 @@
+import hir_records;
+
 // Mark reachable public-signature type nodes in reverse HIR preorder. A GPU
 // scan over these flags gives descendants lower persisted indices than parents.
 
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> interface_type_root_owner;

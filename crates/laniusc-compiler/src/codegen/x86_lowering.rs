@@ -4,44 +4,44 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    functions::{GpuTargetFunctionTable, GpuTargetFunctionView},
-    lowering::{GpuSemanticLirView, bound, make_group, record_direct, target_lowering_allocations},
-    lowering_ir::{LoweringCapacities, LoweringStatus, X86LirCore, X86LirOperands},
+    functions::GpuTargetFunctionTable,
+    lowering::{GpuSemanticLirView, target_lowering_allocations},
+    lowering_ir::{
+        LoweringCapacities,
+        SEMANTIC_LIR_PAGE_ROWS,
+        TARGET_LIR_PAGE_ROWS,
+        X86LirCore,
+        X86LirOperands,
+    },
     scan::{GpuResidentExclusiveScan, GraphScanContract},
+    target_pages::GpuTargetPagePlanner,
     x86_artifact::GpuX86ArtifactStage,
     x86_object_artifact::GpuX86ObjectStage,
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    compiler_graph::{BoundGraphResource, CompilerGraph, CompilerGraphWorkspace},
+    compiler_graph::{CompilerGraph, CompilerGraphWorkspace},
+    operations::ComputeOperation,
     passes_core::{PassData, make_pass_data_from_shader_key},
+    resource_registry::ResourceMap,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct CountParams {
     semantic_capacity: u32,
-    reserved0: u32,
-    reserved1: u32,
-    reserved2: u32,
+    semantic_start: u32,
+    page_capacity: u32,
+    reserved: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-struct ScatterParams {
+struct TargetPageParams {
     semantic_capacity: u32,
     target_capacity: u32,
-    reserved0: u32,
-    reserved1: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-struct ScheduleParams {
-    target_capacity: u32,
-    semantic_capacity: u32,
-    reserved0: u32,
-    reserved1: u32,
+    target_start: u32,
+    page_capacity: u32,
 }
 
 #[repr(C)]
@@ -62,36 +62,47 @@ pub(crate) struct GpuX86LirView<'a> {
 /// Produces the uniform x86 virtual records consumed by register allocation
 /// and instruction selection. `record` performs no setup or allocation.
 pub(crate) struct GpuX86LirStage {
-    semantic_capacity: u32,
-    count_pass: PassData,
-    scatter_pass: PassData,
-    resolve_pass: PassData,
-    validate_pass: PassData,
-    decl_slots_clear_pass: PassData,
-    decl_slots_scatter_pass: PassData,
-    count_group: wgpu::BindGroup,
-    scatter_group: wgpu::BindGroup,
-    resolve_group: wgpu::BindGroup,
-    validate_group: wgpu::BindGroup,
-    decl_slots_clear_group: wgpu::BindGroup,
-    decl_slots_scatter_group: wgpu::BindGroup,
+    count_pages: Vec<ComputeOperation>,
+    pages: Vec<X86LirPage>,
+    decl_slots_clear: ComputeOperation,
+    decl_slots_scatter: ComputeOperation,
     count_scan: GpuResidentExclusiveScan,
+    target_pages: GpuTargetPagePlanner,
     functions: GpuTargetFunctionTable,
-    _count_params: LaniusBuffer<CountParams>,
-    _scatter_params: LaniusBuffer<ScatterParams>,
-    _schedule_params: LaniusBuffer<ScheduleParams>,
+    _count_params: Vec<LaniusBuffer<CountParams>>,
     _decl_slot_params: LaniusBuffer<DeclSlotParams>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
     total: LaniusBuffer<u32>,
     core: LaniusBuffer<X86LirCore>,
     operands: LaniusBuffer<X86LirOperands>,
-    _origins: LaniusBuffer<u32>,
-    _flags: LaniusBuffer<u32>,
+    #[cfg(test)]
     frame_slot_by_decl_token: LaniusBuffer<u32>,
-    decl_slot_dispatch_capacity: u32,
     artifact: GpuX86ArtifactStage,
     object: GpuX86ObjectStage,
+}
+
+struct X86LirPage {
+    _params: LaniusBuffer<TargetPageParams>,
+    scatter: ComputeOperation,
+    resolve: ComputeOperation,
+    replay_scatter: ComputeOperation,
+    replay_resolve: ComputeOperation,
+    validate: ComputeOperation,
+}
+
+impl X86LirPage {
+    fn record(&self, encoder: &mut wgpu::CommandEncoder, validate: bool) -> Result<()> {
+        if validate {
+            self.scatter.record(encoder)?;
+            self.resolve.record(encoder)?;
+            self.validate.record(encoder)?;
+        } else {
+            self.replay_scatter.record(encoder)?;
+            self.replay_resolve.record(encoder)?;
+        }
+        Ok(())
+    }
 }
 
 impl GpuX86LirStage {
@@ -115,28 +126,24 @@ impl GpuX86LirStage {
         };
         let semantic_capacity = capacities.semantic_instructions.max(1);
         let target_capacity = capacities.target_instructions.max(1);
-        let semantic_order = semantic
+        let target_page_rows = target_capacity.min(TARGET_LIR_PAGE_ROWS);
+        let _semantic_order = semantic
             .execution_order
             .context("x86 lowering requires GPU-scheduled semantic LIR")?;
         let counts = alias_u32("lir.x86.count_by_semantic", semantic_capacity)?;
         let offsets = alias_u32("lir.x86.offset_by_semantic", semantic_capacity)?;
-        let semantic_to_target =
-            alias_u32("lir.target.semantic_to_target_start", semantic_capacity)?;
         let total = alias_u32("lir.x86.total", 1)?;
         let core = workspace
-            .alias(graph, resource("lir.x86.core")?, target_capacity as usize)
+            .alias(graph, resource("lir.x86.core")?, target_page_rows as usize)
             .map_err(anyhow::Error::msg)?;
         let operands = workspace
             .alias(
                 graph,
                 resource("lir.x86.operands")?,
-                target_capacity as usize,
+                target_page_rows as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let origins = alias_u32("lir.x86.semantic_origins", target_capacity)?;
-        let flags = alias_u32("lir.x86.flags", target_capacity)?;
-        let scheduled_function_ids =
-            alias_u32("lir.target.scheduled_function_ids", target_capacity)?;
+        let semantic_origins = alias_u32("lir.x86.semantic_origins", target_page_rows)?;
         let frame_slot_by_decl_token = alias_u32(
             "lir.x86.frame_slot_by_decl_token",
             capacities
@@ -159,36 +166,6 @@ impl GpuX86LirStage {
             "lir.x86.decl_slots.scatter",
             "codegen/lir/x86/decl_slots_scatter",
         )?;
-        let count_params = uniform_from_val(
-            device,
-            "lir.x86.count.params",
-            &CountParams {
-                semantic_capacity,
-                reserved0: 0,
-                reserved1: 0,
-                reserved2: 0,
-            },
-        );
-        let scatter_params = uniform_from_val(
-            device,
-            "lir.x86.scatter.params",
-            &ScatterParams {
-                semantic_capacity,
-                target_capacity,
-                reserved0: 0,
-                reserved1: 0,
-            },
-        );
-        let schedule_params = uniform_from_val(
-            device,
-            "lir.x86.schedule.params",
-            &ScheduleParams {
-                target_capacity,
-                semantic_capacity,
-                reserved0: 0,
-                reserved1: 0,
-            },
-        );
         let decl_slot_params = uniform_from_val(
             device,
             "lir.x86.decl_slots.params",
@@ -202,49 +179,47 @@ impl GpuX86LirStage {
                 function_capacity: capacities.hir_nodes.max(1),
             },
         );
-        let count_group = make_group(
-            device,
-            &count_pass,
-            "lir.x86.count.bind_group",
-            &[
-                ("gParams", count_params.as_entire_binding()),
-                ("semantic_lir_total", semantic.count.as_entire_binding()),
-                ("semantic_lir_core", semantic.core.as_entire_binding()),
-                (
-                    "semantic_lir_operands",
-                    semantic.operands.as_entire_binding(),
-                ),
-                (
-                    "semantic_schedule_order",
-                    semantic_order.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_schedule",
-                    semantic.schedule.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_arg_count_by_instruction",
-                    semantic.call_arg_count_by_instruction.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_arg_start_by_instruction",
-                    semantic.call_arg_start_by_instruction.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_args",
-                    semantic.call_args.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                ("target_lir_count", counts.as_entire_binding()),
-            ],
-        )?;
+        let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
+        let mut resources = ResourceMap::new();
+        resources.register_graph_bindings(graph, &graph_bindings);
+        semantic.register(graph, &mut resources)?;
+        let context = (graph, &allocations);
+        let count_params = (0..semantic_capacity.div_ceil(SEMANTIC_LIR_PAGE_ROWS))
+            .map(|page_id| {
+                let semantic_start = page_id * SEMANTIC_LIR_PAGE_ROWS;
+                uniform_from_val(
+                    device,
+                    &format!("lir.x86.count.page.{page_id}.params"),
+                    &CountParams {
+                        semantic_capacity,
+                        semantic_start,
+                        page_capacity: semantic_capacity
+                            .saturating_sub(semantic_start)
+                            .min(SEMANTIC_LIR_PAGE_ROWS),
+                        reserved: 0,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let count_pages = count_params
+            .iter()
+            .enumerate()
+            .map(|(page_id, params)| {
+                let semantic_start = page_id as u32 * SEMANTIC_LIR_PAGE_ROWS;
+                let page_capacity = semantic_capacity
+                    .saturating_sub(semantic_start)
+                    .min(SEMANTIC_LIR_PAGE_ROWS);
+                ComputeOperation::direct_with_uniform(
+                    device,
+                    &context,
+                    &resources,
+                    "lir.x86.count",
+                    &count_pass,
+                    params,
+                    page_capacity,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let count_scan = GpuResidentExclusiveScan::new(
             device,
             graph,
@@ -270,201 +245,111 @@ impl GpuX86LirStage {
             &offsets,
             &total,
         )?;
-        let scatter_group = make_group(
+        let target_pages = GpuTargetPagePlanner::new(
             device,
-            &scatter_pass,
-            "lir.x86.scatter.bind_group",
-            &[
-                ("gParams", scatter_params.as_entire_binding()),
-                ("semantic_lir_total", semantic.count.as_entire_binding()),
-                ("semantic_lir_core", semantic.core.as_entire_binding()),
-                (
-                    "semantic_lir_operands",
-                    semantic.operands.as_entire_binding(),
-                ),
-                (
-                    "semantic_schedule_order",
-                    semantic_order.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_schedule",
-                    semantic.schedule.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_arg_count_by_instruction",
-                    semantic.call_arg_count_by_instruction.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_arg_start_by_instruction",
-                    semantic.call_arg_start_by_instruction.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_call_args",
-                    semantic.call_args.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_aggregate_element_total",
-                    semantic.aggregate_element_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_aggregate_elements",
-                    semantic.aggregate_elements.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_string_total",
-                    semantic.string_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                ("target_lir_offset", offsets.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                (
-                    "semantic_to_target_start",
-                    semantic_to_target.as_entire_binding(),
-                ),
-                ("target_lir_core", core.as_entire_binding()),
-                ("target_lir_operands", operands.as_entire_binding()),
-                ("target_semantic_origin", origins.as_entire_binding()),
-                ("target_lir_flags", flags.as_entire_binding()),
-            ],
-        )?;
-        let validate_group = make_group(
-            device,
-            &validate_pass,
-            "lir.x86.validate.bind_group",
-            &[
-                ("gParams", scatter_params.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                ("target_lir_core", core.as_entire_binding()),
-                ("target_lir_flags", flags.as_entire_binding()),
-                ("lowering_status", semantic.status.as_entire_binding()),
-            ],
-        )?;
-        let resolve_group = make_group(
-            device,
-            &resolve_pass,
-            "lir.x86.resolve.bind_group",
-            &[
-                ("gParams", schedule_params.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                ("target_lir_core", core.as_entire_binding()),
-                ("target_lir_operands", operands.as_entire_binding()),
-                ("target_semantic_origin", origins.as_entire_binding()),
-                (
-                    "semantic_to_target_start",
-                    semantic_to_target.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_schedule",
-                    semantic.schedule.as_entire_binding(),
-                ),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-            ],
-        )?;
-        validate(
             graph,
+            workspace,
             &allocations,
-            semantic,
-            &counts,
-            &offsets,
-            &semantic_to_target,
-            &total,
-            &core,
-            &operands,
-            &origins,
-            &flags,
+            &resources,
+            capacities,
         )?;
-        validate_target_status(graph, &allocations, semantic.status, &total, &core, &flags)?;
-        validate_resolve(
-            graph,
-            &allocations,
-            semantic,
-            &total,
-            &core,
-            &operands,
-            &origins,
-            &semantic_to_target,
-            &scheduled_function_ids,
-        )?;
+        let pages = (0..target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
+            .map(|page_id| {
+                let target_start = page_id * TARGET_LIR_PAGE_ROWS;
+                let page_capacity = target_capacity
+                    .saturating_sub(target_start)
+                    .min(TARGET_LIR_PAGE_ROWS);
+                let params = uniform_from_val(
+                    device,
+                    &format!("lir.x86.page.{page_id}.params"),
+                    &TargetPageParams {
+                        semantic_capacity,
+                        target_capacity,
+                        target_start,
+                        page_capacity,
+                    },
+                );
+                Ok(X86LirPage {
+                    scatter: ComputeOperation::direct_with_uniform(
+                        device,
+                        &context,
+                        &resources,
+                        "lir.x86.scatter",
+                        &scatter_pass,
+                        &params,
+                        page_capacity,
+                    )?,
+                    resolve: ComputeOperation::direct_with_uniform(
+                        device,
+                        &context,
+                        &resources,
+                        "lir.x86.resolve",
+                        &resolve_pass,
+                        &params,
+                        page_capacity,
+                    )?,
+                    replay_scatter: ComputeOperation::direct_with_uniform(
+                        device,
+                        &context,
+                        &resources,
+                        "lir.x86.scatter.replay",
+                        &scatter_pass,
+                        &params,
+                        page_capacity,
+                    )?,
+                    replay_resolve: ComputeOperation::direct_with_uniform(
+                        device,
+                        &context,
+                        &resources,
+                        "lir.x86.resolve.replay",
+                        &resolve_pass,
+                        &params,
+                        page_capacity,
+                    )?,
+                    validate: ComputeOperation::direct_with_uniform(
+                        device,
+                        &context,
+                        &resources,
+                        "lir.x86.validate",
+                        &validate_pass,
+                        &params,
+                        page_capacity,
+                    )?,
+                    _params: params,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         let functions = GpuTargetFunctionTable::new(
             device,
             graph,
             workspace,
             &allocations,
+            &resources,
+            semantic_capacity,
             target_capacity,
             capacities.hir_nodes,
-            &total,
-            &scheduled_function_ids,
+            semantic.count,
         )?;
-        let decl_slots_clear_group = make_group(
+        let decl_slots_clear = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "lir.x86.decl_slots.clear",
             &decl_slots_clear_pass,
-            "lir.x86.decl_slots.clear.bind_group",
-            &[
-                ("gParams", decl_slot_params.as_entire_binding()),
-                (
-                    "x86_frame_slot_by_decl_token",
-                    frame_slot_by_decl_token.as_entire_binding(),
-                ),
-            ],
+            &decl_slot_params,
+            frame_slot_by_decl_token.count as u32,
         )?;
-        let decl_slots_scatter_group = make_group(
+        let decl_slots_scatter = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
+            "lir.x86.decl_slots.scatter",
             &decl_slots_scatter_pass,
-            "lir.x86.decl_slots.scatter.bind_group",
-            &[
-                ("gParams", decl_slot_params.as_entire_binding()),
-                (
-                    "semantic_lir_param_total",
-                    semantic.param_count.as_entire_binding(),
-                ),
-                ("semantic_lir_params", semantic.params.as_entire_binding()),
-                (
-                    "semantic_lir_local_total",
-                    semantic.local_count.as_entire_binding(),
-                ),
-                ("semantic_lir_locals", semantic.locals.as_entire_binding()),
-                (
-                    "semantic_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_functions",
-                    semantic.functions.as_entire_binding(),
-                ),
-                (
-                    "target_function_count",
-                    functions.output().count.as_entire_binding(),
-                ),
-                (
-                    "target_functions",
-                    functions.output().rows.as_entire_binding(),
-                ),
-                (
-                    "target_function_index_by_semantic",
-                    functions.output().index_by_semantic.as_entire_binding(),
-                ),
-                (
-                    "x86_frame_slot_by_decl_token",
-                    frame_slot_by_decl_token.as_entire_binding(),
-                ),
-            ],
-        )?;
-        validate_decl_slots(
-            graph,
-            &allocations,
-            semantic,
-            functions.output(),
-            &frame_slot_by_decl_token,
+            &decl_slot_params,
+            capacities
+                .parameters
+                .max(capacities.semantic_instructions)
+                .max(1),
         )?;
         let artifact = GpuX86ArtifactStage::new(
             device,
@@ -476,9 +361,7 @@ impl GpuX86LirStage {
             &total,
             &core,
             &operands,
-            &scheduled_function_ids,
-            functions.output(),
-            &frame_slot_by_decl_token,
+            &semantic_origins,
         )?;
         let object = GpuX86ObjectStage::new(
             device,
@@ -487,45 +370,25 @@ impl GpuX86LirStage {
             &allocations,
             capacities,
             semantic,
-            &total,
-            &core,
-            &operands,
-            &scheduled_function_ids,
-            functions.output(),
             artifact.object_view(),
         )?;
         Ok(Self {
-            semantic_capacity,
-            count_pass,
-            scatter_pass,
-            resolve_pass,
-            validate_pass,
-            decl_slots_clear_pass,
-            decl_slots_scatter_pass,
-            count_group,
-            scatter_group,
-            resolve_group,
-            validate_group,
-            decl_slots_clear_group,
-            decl_slots_scatter_group,
+            count_pages,
+            pages,
+            decl_slots_clear,
+            decl_slots_scatter,
             count_scan,
+            target_pages,
             functions,
             _count_params: count_params,
-            _scatter_params: scatter_params,
-            _schedule_params: schedule_params,
             _decl_slot_params: decl_slot_params,
             _counts: counts,
             _offsets: offsets,
             total,
             core,
             operands,
-            _origins: origins,
-            _flags: flags,
+            #[cfg(test)]
             frame_slot_by_decl_token,
-            decl_slot_dispatch_capacity: capacities
-                .parameters
-                .max(capacities.semantic_instructions)
-                .max(1),
             artifact,
             object,
         })
@@ -539,410 +402,129 @@ impl GpuX86LirStage {
         }
     }
 
-    pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_lir(encoder)?;
-        self.artifact.record(encoder)
-    }
-
-    pub(crate) fn record_object(
+    pub(crate) fn record_count_page(
         &self,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        library_id: u32,
-        unit_id: u32,
+        page_id: usize,
     ) -> Result<()> {
+        self.count_pages
+            .get(page_id)
+            .context("x86 semantic count page is outside the configured unit capacity")?
+            .record(encoder)
+    }
+
+    pub(crate) fn count_page_count(&self) -> usize {
+        self.count_pages.len()
+    }
+
+    pub(crate) fn target_page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    pub(crate) fn record_before_target_pages(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.record_after_counts_prefix(encoder)
+    }
+
+    pub(crate) fn record_measure_page(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        page_id: usize,
+    ) -> Result<()> {
+        self.pages[page_id].record(encoder, true)?;
+        self.artifact.record_byte_count(encoder, page_id)
+    }
+
+    pub(crate) fn record_between_target_pages(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        object: bool,
+    ) -> Result<()> {
+        self.artifact.record_layout_after_byte_counts(encoder)?;
+        if object {
+            self.object.record_status_normalization(encoder)?;
+        }
+        self.artifact.record_clear(encoder)?;
+        Ok(())
+    }
+
+    pub(crate) fn record_emit_page(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        page_id: usize,
+    ) -> Result<()> {
+        self.pages[page_id].record(encoder, false)?;
+        self.artifact.record_emit(encoder, page_id)
+    }
+
+    pub(crate) fn record_after_target_pages(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        object: bool,
+    ) -> Result<()> {
+        self.artifact
+            .record_extra_emits(encoder, self.pages.len())?;
+        if object {
+            self.object.record_projection(encoder)
+        } else {
+            self.artifact.record_length_readback(encoder);
+            Ok(())
+        }
+    }
+
+    pub(crate) fn set_object_identity(&self, queue: &wgpu::Queue, library_id: u32, unit_id: u32) {
         self.object.set_identity(queue, library_id, unit_id);
-        self.record_lir(encoder)?;
-        self.artifact.record_layout(encoder)?;
-        self.object.record_status_normalization(encoder)?;
-        self.artifact.record_emission(encoder)?;
-        self.object.record_projection(encoder)
     }
 
-    fn record_lir(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.count_pass,
-            &self.count_group,
-            self.semantic_capacity,
-        )?;
+    #[cfg(test)]
+    fn record_counts(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        for count in &self.count_pages {
+            count.record(encoder)?;
+        }
+        Ok(())
+    }
+
+    fn record_after_counts_prefix(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.count_scan.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.scatter_pass,
-            &self.scatter_group,
-            self.core.count as u32,
-        )?;
-        record_direct(
-            encoder,
-            &self.validate_pass,
-            &self.validate_group,
-            self.core.count as u32,
-        )?;
-        record_direct(
-            encoder,
-            &self.resolve_pass,
-            &self.resolve_group,
-            self.core.count as u32,
-        )?;
+        self.target_pages.record(encoder)?;
         self.functions.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.decl_slots_clear_pass,
-            &self.decl_slots_clear_group,
-            self.frame_slot_by_decl_token.count as u32,
-        )?;
-        record_direct(
-            encoder,
-            &self.decl_slots_scatter_pass,
-            &self.decl_slots_scatter_group,
-            self.decl_slot_dispatch_capacity,
-        )
+        self.decl_slots_clear.record(encoder)?;
+        self.decl_slots_scatter.record(encoder)
     }
 
-    pub(crate) fn finish_artifact(&self, device: &wgpu::Device) -> Result<Vec<u8>> {
-        self.artifact.finish(device)
+    #[cfg(test)]
+    fn record_lir(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_counts(encoder)?;
+        self.record_after_counts_prefix(encoder)?;
+        for page in &self.pages {
+            page.record(encoder, true)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish_artifact(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Vec<u8>> {
+        self.artifact.finish(device, queue)
     }
 
     pub(crate) fn finish_object(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
     ) -> Result<super::x86::GpuX86RelocatableObject> {
-        self.object.finish(device, library_id, unit_id)
+        self.object.finish(device, queue, library_id, unit_id)
     }
-}
-
-fn validate_decl_slots(
-    graph: &CompilerGraph,
-    allocations: &crate::gpu::compiler_graph::CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    functions: GpuTargetFunctionView<'_>,
-    frame_slots: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "lir.x86.decl_slots.clear",
-        vec![bound(
-            "x86_frame_slot_by_decl_token",
-            resource("lir.x86.frame_slot_by_decl_token"),
-            frame_slots,
-        )?],
-    )?;
-    run(
-        "lir.x86.decl_slots.scatter",
-        vec![
-            bound(
-                "semantic_lir_param_total",
-                resource("lir.semantic.param_total"),
-                semantic.param_count,
-            )?,
-            bound(
-                "semantic_lir_params",
-                resource("lir.semantic.params"),
-                semantic.params,
-            )?,
-            bound(
-                "semantic_lir_local_total",
-                resource("lir.semantic.local_total"),
-                semantic.local_count,
-            )?,
-            bound(
-                "semantic_lir_locals",
-                resource("lir.semantic.locals"),
-                semantic.locals,
-            )?,
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "target_function_count",
-                resource("lir.target.function_count"),
-                functions.count,
-            )?,
-            bound(
-                "target_functions",
-                resource("lir.target.functions"),
-                functions.rows,
-            )?,
-            bound(
-                "target_function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                functions.index_by_semantic,
-            )?,
-            bound(
-                "x86_frame_slot_by_decl_token",
-                resource("lir.x86.frame_slot_by_decl_token"),
-                frame_slots,
-            )?,
-        ],
-    )
-}
-
-fn validate_target_status(
-    graph: &CompilerGraph,
-    allocations: &crate::gpu::compiler_graph::CompilerGraphAllocations,
-    status: &LaniusBuffer<LoweringStatus>,
-    total: &LaniusBuffer<u32>,
-    core: &LaniusBuffer<X86LirCore>,
-    flags: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    allocations
-        .validate_pass_bindings(
-            graph,
-            graph.pass_id("lir.x86.validate").unwrap(),
-            &[
-                bound("target_lir_total", resource("lir.x86.total"), total)?,
-                bound("target_lir_core", resource("lir.x86.core"), core)?,
-                bound("target_lir_flags", resource("lir.x86.flags"), flags)?,
-                bound("lowering_status", resource("lowering.status"), status)?,
-            ],
-        )
-        .map_err(anyhow::Error::msg)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate_resolve(
-    graph: &CompilerGraph,
-    allocations: &crate::gpu::compiler_graph::CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    total: &LaniusBuffer<u32>,
-    core: &LaniusBuffer<X86LirCore>,
-    operands: &LaniusBuffer<X86LirOperands>,
-    origins: &LaniusBuffer<u32>,
-    semantic_to_target: &LaniusBuffer<u32>,
-    function_ids: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    allocations
-        .validate_pass_bindings(
-            graph,
-            graph.pass_id("lir.x86.resolve").unwrap(),
-            &[
-                bound("target_lir_total", resource("lir.x86.total"), total)?,
-                bound("target_lir_core", resource("lir.x86.core"), core)?,
-                bound(
-                    "target_lir_operands",
-                    resource("lir.x86.operands"),
-                    operands,
-                )?,
-                bound(
-                    "target_semantic_origin",
-                    resource("lir.x86.semantic_origins"),
-                    origins,
-                )?,
-                bound(
-                    "semantic_to_target_start",
-                    resource("lir.target.semantic_to_target_start"),
-                    semantic_to_target,
-                )?,
-                bound(
-                    "semantic_lir_schedule",
-                    resource("lir.semantic.schedule"),
-                    semantic.schedule,
-                )?,
-                bound(
-                    "scheduled_function_id",
-                    resource("lir.target.scheduled_function_ids"),
-                    function_ids,
-                )?,
-            ],
-        )
-        .map_err(anyhow::Error::msg)
 }
 
 fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
     make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate(
-    graph: &CompilerGraph,
-    allocations: &crate::gpu::compiler_graph::CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    counts: &LaniusBuffer<u32>,
-    offsets: &LaniusBuffer<u32>,
-    semantic_to_target: &LaniusBuffer<u32>,
-    total: &LaniusBuffer<u32>,
-    core: &LaniusBuffer<X86LirCore>,
-    operands: &LaniusBuffer<X86LirOperands>,
-    origins: &LaniusBuffer<u32>,
-    flags: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "lir.x86.count",
-        vec![
-            bound(
-                "semantic_lir_total",
-                resource("lir.semantic.total"),
-                semantic.count,
-            )?,
-            bound(
-                "semantic_lir_core",
-                resource("lir.semantic.core"),
-                semantic.core,
-            )?,
-            bound(
-                "semantic_lir_operands",
-                resource("lir.semantic.operands"),
-                semantic.operands,
-            )?,
-            bound(
-                "semantic_schedule_order",
-                resource("lir.semantic.schedule_order"),
-                semantic.execution_order.unwrap(),
-            )?,
-            bound(
-                "semantic_lir_schedule",
-                resource("lir.semantic.schedule"),
-                semantic.schedule,
-            )?,
-            bound(
-                "semantic_lir_call_arg_count_by_instruction",
-                resource("lir.semantic.call_arg_count_by_instruction"),
-                semantic.call_arg_count_by_instruction,
-            )?,
-            bound(
-                "semantic_lir_call_arg_start_by_instruction",
-                resource("lir.semantic.call_arg_start_by_instruction"),
-                semantic.call_arg_start_by_instruction,
-            )?,
-            bound(
-                "semantic_lir_call_args",
-                resource("lir.semantic.call_args"),
-                semantic.call_args,
-            )?,
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "target_lir_count",
-                resource("lir.x86.count_by_semantic"),
-                counts,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.x86.scatter",
-        vec![
-            bound(
-                "semantic_lir_total",
-                resource("lir.semantic.total"),
-                semantic.count,
-            )?,
-            bound(
-                "semantic_lir_core",
-                resource("lir.semantic.core"),
-                semantic.core,
-            )?,
-            bound(
-                "semantic_lir_operands",
-                resource("lir.semantic.operands"),
-                semantic.operands,
-            )?,
-            bound(
-                "semantic_schedule_order",
-                resource("lir.semantic.schedule_order"),
-                semantic.execution_order.unwrap(),
-            )?,
-            bound(
-                "semantic_lir_schedule",
-                resource("lir.semantic.schedule"),
-                semantic.schedule,
-            )?,
-            bound(
-                "semantic_lir_call_arg_count_by_instruction",
-                resource("lir.semantic.call_arg_count_by_instruction"),
-                semantic.call_arg_count_by_instruction,
-            )?,
-            bound(
-                "semantic_lir_call_arg_start_by_instruction",
-                resource("lir.semantic.call_arg_start_by_instruction"),
-                semantic.call_arg_start_by_instruction,
-            )?,
-            bound(
-                "semantic_lir_call_args",
-                resource("lir.semantic.call_args"),
-                semantic.call_args,
-            )?,
-            bound(
-                "semantic_lir_aggregate_element_total",
-                resource("lir.semantic.aggregate_element_total"),
-                semantic.aggregate_element_count,
-            )?,
-            bound(
-                "semantic_lir_aggregate_elements",
-                resource("lir.semantic.aggregate_elements"),
-                semantic.aggregate_elements,
-            )?,
-            bound(
-                "semantic_lir_string_total",
-                resource("lir.semantic.string_total"),
-                semantic.string_count,
-            )?,
-            bound(
-                "semantic_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "semantic_lir_functions",
-                resource("lir.semantic.functions"),
-                semantic.functions,
-            )?,
-            bound(
-                "target_lir_offset",
-                resource("lir.x86.offset_by_semantic"),
-                offsets,
-            )?,
-            bound("target_lir_total", resource("lir.x86.total"), total)?,
-            bound(
-                "semantic_to_target_start",
-                resource("lir.target.semantic_to_target_start"),
-                semantic_to_target,
-            )?,
-            bound("target_lir_core", resource("lir.x86.core"), core)?,
-            bound(
-                "target_lir_operands",
-                resource("lir.x86.operands"),
-                operands,
-            )?,
-            bound(
-                "target_semantic_origin",
-                resource("lir.x86.semantic_origins"),
-                origins,
-            )?,
-            bound("target_lir_flags", resource("lir.x86.flags"), flags)?,
-        ],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -950,6 +532,7 @@ mod tests {
     use super::*;
     use crate::{
         codegen::lowering_ir::{
+            LoweringStatus,
             LoweringTarget,
             SemanticLirAggregateElement,
             SemanticLirCallArg,
@@ -958,7 +541,6 @@ mod tests {
             SemanticLirLocal,
             SemanticLirOperands,
             SemanticLirParam,
-            SemanticLirSchedule,
             SemanticLirString,
             lowering_compiler_graph,
             opcode,
@@ -1016,48 +598,33 @@ mod tests {
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
         let total = storage_ro_from_u32s(&gpu.device, "test.x86_lir.total", &[8]);
-        let core = storage_ro_from_bytes::<SemanticLirCore>(
+        let page_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
-            "test.x86_lir.core",
+            "test.x86_lir.page_core",
             &record_bytes(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
                 [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
                 [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0],
                 [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 3, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0],
                 [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 0, u32::MAX, 5, 0],
                 [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 6, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0],
                 [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0],
             ]),
             8,
         );
-        let operands = storage_ro_from_bytes::<SemanticLirOperands>(
+        let page_operands = storage_ro_from_bytes::<SemanticLirOperands>(
             &gpu.device,
-            "test.x86_lir.operands",
+            "test.x86_lir.page_operands",
             &record_bytes(&[
-                [0, 7, u32::MAX, u32::MAX],
                 [1, 9, u32::MAX, u32::MAX],
+                [0, 7, u32::MAX, u32::MAX],
                 [2, 1, 0, u32::MAX],
                 [3, 2, u32::MAX, u32::MAX],
-                [4, 42, 0, 2],
                 [5, 6, u32::MAX, u32::MAX],
                 [6, u32::MAX, u32::MAX, u32::MAX],
+                [4, 42, 0, 2],
                 [7, 7, 11, 23],
-            ]),
-            8,
-        );
-        let schedule = storage_ro_from_bytes::<SemanticLirSchedule>(
-            &gpu.device,
-            "test.x86_lir.schedule",
-            &record_bytes(&[
-                [0, 0, 5, 0],
-                [0, 0, 1, 0],
-                [0, 0, 5, 4],
-                [0, 6, 6, 0],
-                [0, 10, 10, 0],
-                [0, 8, 8, 0],
-                [0, 9, 9, 0],
-                [0, 11, 11, 0],
             ]),
             8,
         );
@@ -1073,16 +640,31 @@ mod tests {
             0,
             &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]),
         );
+        let semantic_owners =
+            storage_ro_from_u32s(&gpu.device, "test.x86_lir.semantic_owners", &[0; 8]);
+        let semantic_ops = storage_ro_from_u32s(
+            &gpu.device,
+            "test.x86_lir.semantic_ops",
+            &[
+                opcode::SEMANTIC_LIR_OP_CONST_I32,
+                opcode::SEMANTIC_LIR_OP_CONST_I32,
+                opcode::SEMANTIC_LIR_OP_ADD,
+                opcode::SEMANTIC_LIR_OP_RETURN,
+                opcode::SEMANTIC_LIR_OP_CALL,
+                opcode::SEMANTIC_LIR_OP_BRANCH,
+                opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN,
+                opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
+            ],
+        );
         let call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.x86_lir.call_args",
             &record_bytes(&[[4, 0, 0, 0], [4, 2, 1, 0]]),
             2,
         );
-        let call_arg_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.call_arg_count", &[2]);
-        let call_arg_start_by_instruction = storage_ro_from_u32s(
+        let call_arg_start_by_hir = storage_ro_from_u32s(
             &gpu.device,
-            "test.x86_lir.call_arg_start_by_instruction",
+            "test.x86_lir.call_arg_start_by_hir",
             &[
                 u32::MAX,
                 u32::MAX,
@@ -1094,15 +676,15 @@ mod tests {
                 u32::MAX,
             ],
         );
-        let call_arg_count_by_instruction = storage_ro_from_u32s(
+        let call_arg_count_by_hir = storage_ro_from_u32s(
             &gpu.device,
-            "test.x86_lir.call_arg_count_by_instruction",
+            "test.x86_lir.call_arg_count_by_hir",
             &[0, 0, 0, 0, 2, 0, 0, 0],
         );
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_lir.aggregate_elements",
-            &record_bytes(&[[u32::MAX; 4]; 4]),
+            &record_bytes(&[[u32::MAX; 5]; 4]),
             4,
         );
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -1117,10 +699,10 @@ mod tests {
             &gpu.device,
             "test.x86_lir.functions",
             &record_bytes(&[
-                [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0],
-                [u32::MAX; 12],
-                [u32::MAX; 12],
-                [u32::MAX; 12],
+                [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, u32::MAX],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
             ]),
             4,
         );
@@ -1155,12 +737,14 @@ mod tests {
             capacities,
             GpuSemanticLirView {
                 count: &total,
-                core: &core,
-                operands: &operands,
+                core: &page_core,
+                operands: &page_operands,
+                owner_by_instruction: &semantic_owners,
+                op_by_instruction: &semantic_ops,
+                function_id_by_hir: &semantic_owners,
                 call_args: &call_args,
-                call_arg_count: &call_arg_count,
-                call_arg_start_by_instruction: &call_arg_start_by_instruction,
-                call_arg_count_by_instruction: &call_arg_count_by_instruction,
+                call_arg_start_by_hir: &call_arg_start_by_hir,
+                call_arg_count_by_hir: &call_arg_count_by_hir,
                 aggregate_elements: &aggregate_elements,
                 aggregate_element_count: &empty_count,
                 strings: &string_rows,
@@ -1173,7 +757,6 @@ mod tests {
                 param_count: &param_count,
                 locals: &locals,
                 local_count: &local_count,
-                schedule: &schedule,
                 execution_order: Some(&semantic_order),
                 status: &status,
             },

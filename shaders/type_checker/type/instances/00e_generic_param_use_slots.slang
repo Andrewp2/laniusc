@@ -5,6 +5,7 @@
 // binary search over the sorted compact rows keyed by (owner declaration,
 // interned name id). This avoids scanning declaration subtrees for every use.
 
+import hir_records;
 import status;
 import fixed.compact_method;
 
@@ -17,10 +18,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

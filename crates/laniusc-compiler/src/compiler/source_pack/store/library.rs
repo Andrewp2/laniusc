@@ -299,29 +299,22 @@ impl FilesystemArtifactStore {
 
     /// Stores the compact build-unit page for a partition.
     ///
-    /// Inline frontend/codegen units are expanded into their own unit pages
+    /// Inline compilation units are expanded into their own unit pages
     /// before the compact page is written.
     pub fn store_library_build_unit_page(
         &self,
         page: &SourcePackLibraryBuildUnitPage,
     ) -> Result<PathBuf, CompileError> {
         validate_library_build_unit_page(page, page.target, Some(page.partition_index))?;
-        let frontend_unit_count = if page.frontend_units.is_empty() {
-            library_build_unit_page_frontend_unit_count(page)
+        let unit_count = if page.units.is_empty() {
+            library_build_unit_page_unit_count(page)
         } else {
-            self.store_library_frontend_unit_pages_from_units(page)?
-        };
-        let codegen_unit_count = if page.codegen_units.is_empty() {
-            library_build_unit_page_codegen_unit_count(page)
-        } else {
-            self.store_library_codegen_unit_pages_from_units(page)?
+            self.store_library_compilation_unit_pages_from_units(page, &page.units)?
         };
         let mut stored_page = page.clone();
-        stored_page.frontend_unit_count = frontend_unit_count;
-        stored_page.codegen_unit_count = codegen_unit_count;
+        stored_page.unit_count = unit_count;
         stored_page.dependency_library_ids.clear();
-        stored_page.frontend_units.clear();
-        stored_page.codegen_units.clear();
+        stored_page.units.clear();
         validate_library_build_unit_page(
             &stored_page,
             stored_page.target,
@@ -339,28 +332,17 @@ impl FilesystemArtifactStore {
         Ok(path)
     }
 
-    /// Stores frontend-unit pages embedded in a build-unit page.
-    pub(in crate::compiler) fn store_library_frontend_unit_pages_from_units(
+    /// Stores compilation-unit pages embedded in a build-unit page.
+    pub(in crate::compiler) fn store_library_compilation_unit_pages_from_units(
         &self,
         page: &SourcePackLibraryBuildUnitPage,
+        units: &[CompilationUnit],
     ) -> Result<usize, CompileError> {
-        for unit in &page.frontend_units {
-            let unit_page = library_frontend_unit_page(page, unit.clone())?;
-            self.store_library_frontend_unit_page(&unit_page)?;
+        for unit in units {
+            let unit_page = library_compilation_unit_page(page, unit.clone())?;
+            self.store_library_compilation_unit_page(&unit_page)?;
         }
-        Ok(page.frontend_units.len())
-    }
-
-    /// Stores codegen-unit pages embedded in a build-unit page.
-    pub(in crate::compiler) fn store_library_codegen_unit_pages_from_units(
-        &self,
-        page: &SourcePackLibraryBuildUnitPage,
-    ) -> Result<usize, CompileError> {
-        for unit in &page.codegen_units {
-            let unit_page = library_codegen_unit_page(page, unit.clone())?;
-            self.store_library_codegen_unit_page(&unit_page)?;
-        }
-        Ok(page.codegen_units.len())
+        Ok(units.len())
     }
 
     /// Loads and validates the compact build-unit page for a partition.
@@ -380,111 +362,49 @@ impl FilesystemArtifactStore {
         Ok(page)
     }
 
-    /// Stores one expanded frontend-unit page.
-    pub fn store_library_frontend_unit_page(
+    /// Stores one expanded compilation-unit page.
+    pub fn store_library_compilation_unit_page(
         &self,
-        page: &SourcePackLibraryFrontendUnitPage,
+        page: &SourcePackLibraryCompilationUnitPage,
     ) -> Result<PathBuf, CompileError> {
-        validate_frontend_unit_page(
+        validate_compilation_unit_page(
             page,
             page.target,
             Some(page.partition_index),
-            Some(page.frontend_unit_index),
+            Some(page.unit_index),
         )?;
-        let path = self.library_frontend_unit_page_path_for_target(
+        let path = self.library_compilation_unit_page_path_for_target(
             page.target,
             page.partition_index,
-            page.frontend_unit_index,
+            page.unit_index,
         );
         let bytes = serialize_store_json(
             page,
             format!(
-                "source-pack library frontend-unit page {}:{}",
-                page.partition_index, page.frontend_unit_index
+                "source-pack library compilation-unit page {}:{}",
+                page.partition_index, page.unit_index
             ),
         )?;
-        write_store_file_atomic(&path, &bytes, "source-pack library frontend-unit page")?;
+        write_store_file_atomic(&path, &bytes, "source-pack library compilation-unit page")?;
         Ok(path)
     }
 
-    /// Loads and validates one expanded frontend-unit page.
-    pub fn load_library_frontend_unit_page_for_target(
+    /// Loads and validates one expanded compilation-unit page.
+    pub fn load_library_compilation_unit_page_for_target(
         &self,
         target: SourcePackArtifactTarget,
         partition_index: usize,
-        frontend_unit_index: usize,
-    ) -> Result<SourcePackLibraryFrontendUnitPage, CompileError> {
-        let path = self.library_frontend_unit_page_path_for_target(
-            target,
-            partition_index,
-            frontend_unit_index,
-        );
-        let bytes = read_store_file(&path, "source-pack library frontend-unit page")?;
-        let page = parse_store_json::<SourcePackLibraryFrontendUnitPage>(
+        unit_index: usize,
+    ) -> Result<SourcePackLibraryCompilationUnitPage, CompileError> {
+        let path =
+            self.library_compilation_unit_page_path_for_target(target, partition_index, unit_index);
+        let bytes = read_store_file(&path, "source-pack library compilation-unit page")?;
+        let page = parse_store_json::<SourcePackLibraryCompilationUnitPage>(
             &bytes,
             &path,
-            "source-pack library frontend-unit page",
+            "source-pack library compilation-unit page",
         )?;
-        validate_frontend_unit_page(
-            &page,
-            target,
-            Some(partition_index),
-            Some(frontend_unit_index),
-        )?;
-        Ok(page)
-    }
-
-    /// Stores one expanded codegen-unit page.
-    pub fn store_library_codegen_unit_page(
-        &self,
-        page: &SourcePackLibraryCodegenUnitPage,
-    ) -> Result<PathBuf, CompileError> {
-        validate_codegen_unit_page(
-            page,
-            page.target,
-            Some(page.partition_index),
-            Some(page.codegen_unit_index),
-        )?;
-        let path = self.library_codegen_unit_page_path_for_target(
-            page.target,
-            page.partition_index,
-            page.codegen_unit_index,
-        );
-        let bytes = serialize_store_json(
-            page,
-            format!(
-                "source-pack library codegen-unit page {}:{}",
-                page.partition_index, page.codegen_unit_index
-            ),
-        )?;
-        write_store_file_atomic(&path, &bytes, "source-pack library codegen-unit page")?;
-        Ok(path)
-    }
-
-    /// Loads and validates one expanded codegen-unit page.
-    pub fn load_library_codegen_unit_page_for_target(
-        &self,
-        target: SourcePackArtifactTarget,
-        partition_index: usize,
-        codegen_unit_index: usize,
-    ) -> Result<SourcePackLibraryCodegenUnitPage, CompileError> {
-        let path = self.library_codegen_unit_page_path_for_target(
-            target,
-            partition_index,
-            codegen_unit_index,
-        );
-        let bytes = read_store_file(&path, "source-pack library codegen-unit page")?;
-        let page = parse_store_json::<SourcePackLibraryCodegenUnitPage>(
-            &bytes,
-            &path,
-            "source-pack library codegen-unit page",
-        )?;
-        validate_codegen_unit_page(
-            &page,
-            target,
-            Some(partition_index),
-            Some(codegen_unit_index),
-        )?;
+        validate_compilation_unit_page(&page, target, Some(partition_index), Some(unit_index))?;
         Ok(page)
     }
 }

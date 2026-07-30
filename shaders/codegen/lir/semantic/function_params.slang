@@ -1,9 +1,9 @@
+import hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
 import gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_param_count;

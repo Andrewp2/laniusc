@@ -1,5 +1,6 @@
 // Build a parallel exact-name candidate table for imported declarations.
 
+import dependency_interface;
 import atomics;
 import gpu_index;
 import status;
@@ -20,7 +21,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> dependency_visible_total;
 StructuredBuffer<uint> dependency_visible_owner_module;
 StructuredBuffer<uint> dependency_visible_decl;
-StructuredBuffer<uint> dependency_declaration_words;
 RWStructuredBuffer<uint> dependency_visible_lookup;
 RWStructuredBuffer<uint> status;
 
@@ -42,9 +42,9 @@ uint visible_hash(uint visible_i)
     uint declaration_i = dependency_visible_decl[visible_i];
     uint base = declaration_i * DECL_WORDS;
     uint hash = mix(2166136261u, dependency_visible_owner_module[visible_i]);
-    hash = mix(hash, dependency_declaration_words[base + 5u]);
-    hash = mix(hash, dependency_declaration_words[base + 1u]);
-    return mix(hash, dependency_declaration_words[base + 2u]);
+    hash = mix(hash, dependency_declaration_word(base + 5u));
+    hash = mix(hash, dependency_declaration_word(base + 1u));
+    return mix(hash, dependency_declaration_word(base + 2u));
 }
 
 [shader("compute")]
@@ -55,7 +55,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (visible_i >= min(dependency_visible_total[0u], gParams.visible_capacity))
         return;
     uint declaration_i = dependency_visible_decl[visible_i];
-    if (declaration_i >= gParams.declaration_count ||
+    if (declaration_i >= dependency_declaration_count() ||
         dependency_visible_owner_module[visible_i] == INVALID)
         return;
     uint mask = gParams.lookup_capacity - 1u;

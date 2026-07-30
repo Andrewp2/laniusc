@@ -3,15 +3,16 @@ import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import gpu_index;
 
-struct Params { uint semantic_capacity; uint target_capacity; uint reserved0; uint reserved1; };
+struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> semantic_lir_total;
 StructuredBuffer<SemanticLirCore> semantic_lir_core;
 StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
-StructuredBuffer<SemanticLirSchedule> semantic_lir_schedule;
-StructuredBuffer<uint> semantic_lir_call_arg_start_by_instruction;
-StructuredBuffer<uint> semantic_lir_call_arg_count_by_instruction;
+StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> semantic_function_id_by_hir;
+StructuredBuffer<uint> semantic_lir_call_arg_start_by_hir;
+StructuredBuffer<uint> semantic_lir_call_arg_count_by_hir;
 StructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
@@ -28,6 +29,7 @@ RWStructuredBuffer<uint> target_lir_flags;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint TARGET_PAGE_ROWS = 65536u;
 
 uint scheduled_owner(uint target_row, uint semantic_count)
 {
@@ -44,9 +46,8 @@ uint scheduled_owner(uint target_row, uint semantic_count)
 
 uint call_argument_width(SemanticLirCallArg argument)
 {
-    if (argument.value_instruction >= gParams.semantic_capacity) return 1u;
-    return x86_semantic_type_is_string(
-        semantic_lir_core[argument.value_instruction]) ? 2u : 1u;
+    return (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u
+        ? 2u : 1u;
 }
 
 uint call_abi_argument_count(uint start, uint count)
@@ -57,7 +58,7 @@ uint call_abi_argument_count(uint start, uint count)
     return result;
 }
 
-void write_call_arg(uint row, uint semantic_row, uint abi_row,
+void write_call_arg(uint page_row, uint row, uint semantic_row, uint abi_row,
                     SemanticLirCore source, uint argument_start,
                     uint argument_count, uint call_result_words)
 {
@@ -65,7 +66,7 @@ void write_call_arg(uint row, uint semantic_row, uint abi_row,
     argument.call_instruction = INVALID;
     argument.value_instruction = INVALID;
     argument.ordinal = INVALID;
-    argument.flags = 0u;
+    argument.value_metadata = 0u;
     uint component = 0u;
     uint abi_ordinal = 0u;
     uint cursor = 0u;
@@ -95,25 +96,18 @@ void write_call_arg(uint row, uint semantic_row, uint abi_row,
     // Carry the checked semantic value type through target resolution. The
     // emitter uses this target-IR fact to choose word- versus dword-sized ABI
     // moves without chasing the source expression's producer shape.
-    SemanticLirCore argument_core;
-    argument_core.op = 0u;
-    argument_core.type_id = 0u;
-    argument_core.type_ref_tag = SEMANTIC_TYPE_REF_INVALID;
-    argument_core.type_ref_payload = INVALID;
-    argument_core.source_hir = INVALID;
-    argument_core.flags = 0u;
-    if (argument.value_instruction < gParams.semantic_capacity)
-        argument_core = semantic_lir_core[argument.value_instruction];
-    uint argument_type = argument_core.type_id;
+    uint argument_type =
+        argument.value_metadata & SEMANTIC_LIR_VALUE_TYPE_MASK;
     operands.metadata = (argument_type & 0xffu) |
-        (x86_semantic_type_is_aggregate(argument_core)
+        ((argument.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
             ? X86_LIR_METADATA_AGGREGATE : 0u) |
-        (x86_semantic_type_is_string(argument_core) && component == 0u
+        ((argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u &&
+         component == 0u
             ? X86_LIR_METADATA_WIDE : 0u);
-    target_lir_core[row] = core;
-    target_lir_operands[row] = operands;
-    target_semantic_origin[row] = semantic_row;
-    target_lir_flags[row] = argument.call_instruction == semantic_row &&
+    target_lir_core[page_row] = core;
+    target_lir_operands[page_row] = operands;
+    target_semantic_origin[page_row] = semantic_row;
+    target_lir_flags[page_row] = argument.call_instruction == semantic_row &&
         argument.value_instruction < gParams.semantic_capacity &&
         abi_ordinal + sret_shift < 6u
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
@@ -123,7 +117,9 @@ void write_call_arg(uint row, uint semantic_row, uint abi_row,
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
     uint target_total = min(gParams.target_capacity, target_lir_total[0u]);
     if (row >= target_total) return;
     uint semantic_count = min(gParams.semantic_capacity, semantic_lir_total[0u]);
@@ -133,8 +129,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint semantic_row = semantic_schedule_order[scheduled_row];
     uint target_start = target_lir_offset[scheduled_row];
     SemanticLirCore source = semantic_lir_core[semantic_row];
-    uint argument_count = semantic_lir_call_arg_count_by_instruction[semantic_row];
-    uint argument_start = semantic_lir_call_arg_start_by_instruction[semantic_row];
+    uint argument_count = semantic_lir_call_arg_count_by_hir[source.source_hir];
+    uint argument_start = semantic_lir_call_arg_start_by_hir[source.source_hir];
     uint argument_rows = call_abi_argument_count(argument_start, argument_count);
     SemanticLirOperands args = semantic_lir_operands[semantic_row];
     uint function_count = min(gParams.semantic_capacity, semantic_lir_function_total[0u]);
@@ -147,7 +143,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_row = row - target_start;
     if (local_row < argument_rows)
     {
-        write_call_arg(row, semantic_row, local_row, source,
+        write_call_arg(page_row, row, semantic_row, local_row, source,
             argument_start, argument_count, call_result_words);
         return;
     }
@@ -165,13 +161,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = operation_row - 1u;
         operands.c = call_result_words;
         operands.metadata = source.type_id;
-        target_lir_core[row] = core;
-        target_lir_operands[row] = operands;
-        target_semantic_origin[row] = semantic_row;
-        target_lir_flags[row] = 0u;
+        target_lir_core[page_row] = core;
+        target_lir_operands[page_row] = operands;
+        target_semantic_origin[page_row] = semantic_row;
+        target_lir_flags[page_row] = 0u;
         return;
     }
-    uint owner = semantic_lir_schedule[semantic_row].function_id;
+    uint owner =
+        semantic_function_id_by_hir[semantic_owner_by_instruction[semantic_row]];
     uint return_words = source.op == SEMANTIC_LIR_OP_RETURN && owner < function_count
         ? semantic_lir_functions[owner].result_word_count : 0u;
     if (return_words != 0u && operation_row < return_words)
@@ -186,10 +183,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = operation_row;
         operands.c = return_words;
         operands.metadata = source.type_id;
-        target_lir_core[row] = core;
-        target_lir_operands[row] = operands;
-        target_semantic_origin[row] = semantic_row;
-        target_lir_flags[row] = args.a < gParams.semantic_capacity ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
+        target_lir_core[page_row] = core;
+        target_lir_operands[page_row] = operands;
+        target_semantic_origin[page_row] = semantic_row;
+        target_lir_flags[page_row] = args.a < gParams.semantic_capacity ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }
     if (source.op == SEMANTIC_LIR_OP_AGGREGATE_NEW && operation_row != 0u)
@@ -200,6 +197,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         element.value_instruction = INVALID;
         element.ordinal = INVALID;
         element.name_token = INVALID;
+        element.value_metadata = 0u;
         uint element_total = semantic_lir_aggregate_element_total[0u];
         if (element_row < element_total)
             element = semantic_lir_aggregate_elements[element_row];
@@ -213,12 +211,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = element.ordinal;
         operands.c = target_start + 1u + element.ordinal;
         operands.metadata = source.type_id;
-        target_lir_core[row] = core;
-        target_lir_operands[row] = operands;
-        target_semantic_origin[row] = semantic_row;
-        target_lir_flags[row] = element.aggregate_instruction == semantic_row &&
+        target_lir_core[page_row] = core;
+        target_lir_operands[page_row] = operands;
+        target_semantic_origin[page_row] = semantic_row;
+        target_lir_flags[page_row] =
+            element.aggregate_instruction == semantic_row &&
             element.value_instruction < gParams.semantic_capacity &&
-            element.ordinal < args.b ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
+            element.ordinal < args.b
+                ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }
     if (source.op == SEMANTIC_LIR_OP_CONST_STRING)
@@ -233,10 +233,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = 0u;
         operands.c = 0u;
         operands.metadata = source.type_id;
-        target_lir_core[row] = core;
-        target_lir_operands[row] = operands;
-        target_semantic_origin[row] = semantic_row;
-        target_lir_flags[row] = args.a < semantic_lir_string_total[0u]
+        target_lir_core[page_row] = core;
+        target_lir_operands[page_row] = operands;
+        target_semantic_origin[page_row] = semantic_row;
+        target_lir_flags[page_row] = args.a < semantic_lir_string_total[0u]
             ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }
@@ -325,8 +325,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     operands.b = b;
     operands.c = c;
     operands.metadata = metadata;
-    target_lir_core[row] = core;
-    target_lir_operands[row] = operands;
-    target_semantic_origin[row] = semantic_row;
-    target_lir_flags[row] = flags;
+    target_lir_core[page_row] = core;
+    target_lir_operands[page_row] = operands;
+    target_semantic_origin[page_row] = semantic_row;
+    target_lir_flags[page_row] = flags;
 }

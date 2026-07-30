@@ -1,3 +1,5 @@
+import hir_records;
+
 // Publish target-independent aggregate result metadata by dense call-site ID.
 //
 // This pass runs after direct, qualified, and method call resolution. Named
@@ -14,8 +16,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

@@ -5,13 +5,12 @@
 // projection is entirely dense-HIR keyed: no raw parser row survives into the
 // checked semantic artifact boundary.
 
+import hir_records;
 import gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

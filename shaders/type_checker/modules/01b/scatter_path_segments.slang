@@ -1,8 +1,8 @@
+import hir_records;
+
 // Project compact HIR path segments into name-resolution storage.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
-struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;

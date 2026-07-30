@@ -1,21 +1,16 @@
 use super::*;
-use crate::compiler::{
-    GPU_SEMANTIC_INTERFACE_VERSION,
-    GpuSemanticInterfaceArtifact,
-    GpuSemanticInterfaceDeclarationRecord,
-    GpuSemanticInterfaceIdentityArtifact,
-    GpuSemanticInterfaceMemberRecord,
-    GpuSemanticInterfaceModuleRecord,
-    GpuSemanticInterfaceModuleSegmentRecord,
-    GpuSemanticInterfaceTypeEdge,
-    GpuSemanticInterfaceTypeRecord,
+use crate::{
+    compiler::{GPU_SEMANTIC_INTERFACE_VERSION, GpuSemanticInterfaceArtifact},
+    gpu::{
+        buffers::readback_bytes,
+        readback::{PagedReadback, read_u32_words},
+    },
 };
 
 const MODULE_WORDS: usize = 2;
 const MODULE_SEGMENT_WORDS: usize = 4;
 const DECLARATION_WORDS: usize = 14;
 const COUNT_WORDS: usize = 5;
-const STATUS_WORDS: usize = 4;
 const TYPE_WORDS: usize = 9;
 const MEMBER_WORDS: usize = 10;
 
@@ -115,14 +110,6 @@ struct RecordedSemanticInterfaceTypeTopology {
     _member_index_by_generic_row: LaniusBuffer<u32>,
     _member_written: LaniusBuffer<u32>,
     _params: LaniusBuffer<SemanticInterfaceTypeTopologyParams>,
-    count_readback: wgpu::Buffer,
-    edge_total_readback: wgpu::Buffer,
-    types_readback: wgpu::Buffer,
-    edges_readback: wgpu::Buffer,
-    edge_written_readback: wgpu::Buffer,
-    member_total_readback: wgpu::Buffer,
-    member_written_readback: wgpu::Buffer,
-    members_readback: wgpu::Buffer,
 }
 
 /// GPU outputs and host-visible copies recorded for one bounded unit's public
@@ -131,10 +118,7 @@ struct RecordedSemanticInterfaceTypeTopology {
 pub struct RecordedSemanticInterface {
     expected_library_id: u32,
     expected_unit_id: u32,
-    module_capacity: usize,
-    module_segment_capacity: usize,
-    declaration_capacity: usize,
-    name_byte_capacity: usize,
+    artifact_capacity: usize,
     _name_ref_len: LaniusBuffer<u32>,
     _name_ref_prefix: LaniusBuffer<u32>,
     _scan_total: LaniusBuffer<u32>,
@@ -150,12 +134,10 @@ pub struct RecordedSemanticInterface {
     _counts: LaniusBuffer<u32>,
     _status: LaniusBuffer<u32>,
     _type_topology: RecordedSemanticInterfaceTypeTopology,
-    modules_readback: wgpu::Buffer,
-    module_segments_readback: wgpu::Buffer,
-    declarations_readback: wgpu::Buffer,
-    name_bytes_readback: wgpu::Buffer,
-    counts_readback: wgpu::Buffer,
-    status_readback: wgpu::Buffer,
+    _artifact_words: LaniusBuffer<u32>,
+    _artifact_length: LaniusBuffer<u32>,
+    metadata_readback: LaniusBuffer<u8>,
+    artifact_readback: PagedReadback,
 }
 
 impl GpuTypeChecker {
@@ -169,6 +151,7 @@ impl GpuTypeChecker {
         library_id: u32,
         unit_id: u32,
         source_len: u32,
+        token_capacity: u32,
         source_bytes: &wgpu::Buffer,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
     ) -> Result<RecordedSemanticInterface> {
@@ -208,6 +191,13 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("type_decl_const_param_count_by_owner_token")?,
+            state
+                .typecheck_graph
+                .u32_buffer("external_type_library_id")?,
+            state.typecheck_graph.u32_buffer("external_type_unit_id")?,
+            state
+                .typecheck_graph
+                .u32_buffer("external_type_local_index")?,
         ];
         let inputs = GpuSemanticInterfaceIdentityBuffers {
             name_count_out: &name_scan_total,
@@ -237,17 +227,9 @@ impl GpuTypeChecker {
             type_generic_param_slot_by_token: &graph_buffers[2],
             type_const_param_slot_by_token: &graph_buffers[3],
             type_instance_decl_token: &state.type_instance_decl_token,
-            type_instance_external_canonical: &state.type_instance_external_canonical,
-            dependency_type_count: module_path
-                .dependency_interfaces
-                .as_ref()
-                .map_or(0, |dependencies| dependencies.type_count),
-            dependency_type_words: module_path
-                .dependency_interfaces
-                .as_ref()
-                .map_or(&state.type_instance_external_canonical, |dependencies| {
-                    &dependencies.type_words
-                }),
+            external_type_library_id: &graph_buffers[11],
+            external_type_unit_id: &graph_buffers[12],
+            external_type_local_index: &graph_buffers[13],
             path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
@@ -265,6 +247,7 @@ impl GpuTypeChecker {
             library_id,
             unit_id,
             source_len,
+            token_capacity,
             source_bytes,
             hir,
             inputs,
@@ -280,6 +263,7 @@ impl GpuTypeChecker {
         library_id: u32,
         unit_id: u32,
         source_len: u32,
+        token_capacity: u32,
         source_bytes: &wgpu::Buffer,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: GpuSemanticInterfaceIdentityBuffers<'_>,
@@ -291,19 +275,20 @@ impl GpuTypeChecker {
             1,
             "module key segment counts",
         )?;
-        let decl_capacity = u32_capacity(
+        let decl_storage_capacity = u32_capacity(
             inputs.public_decl_local_id,
             1,
             "persisted public declarations",
         )?;
+        let decl_capacity = decl_storage_capacity.min(token_capacity).max(1);
         if u32_capacity(
             inputs.public_decl_index_by_local,
             1,
             "local-to-persisted public declarations",
-        )? != decl_capacity
+        )? < decl_capacity
         {
             return Err(anyhow::anyhow!(
-                "semantic-interface public declaration maps have different capacities"
+                "semantic-interface public declaration map is shorter than its token-bounded domain"
             ));
         }
         let module_segment_capacity = u32_capacity(
@@ -311,16 +296,13 @@ impl GpuTypeChecker {
             1,
             "module key segment names",
         )?;
-        let member_capacity =
+        let semantic_hir_capacity =
             u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?
-                .checked_add(u32_capacity(
-                    inputs.type_expr_ref_tag,
-                    1,
-                    "semantic-interface member tokens",
-                )?)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("semantic-interface member capacity overflows u32")
-                })?;
+                .min(token_capacity)
+                .max(1);
+        let member_capacity = semantic_hir_capacity
+            .checked_add(token_capacity)
+            .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
         let name_ref_count = module_segment_capacity
             .checked_add(decl_capacity)
             .and_then(|value| value.checked_add(member_capacity))
@@ -483,12 +465,57 @@ impl GpuTypeChecker {
             encoder,
             library_id,
             unit_id,
+            token_capacity,
             hir,
             &inputs,
             &status,
             scan_scratch,
             typecheck_graph,
         )?;
+        let mut identity_resources = ResourceMap::new();
+        identity_resources.buffer("name_count_out", inputs.name_count_out);
+        identity_resources.buffer("name_spans", inputs.name_spans);
+        identity_resources.buffer("name_hash_lo", inputs.name_hash_lo);
+        identity_resources.buffer("name_hash_hi", inputs.name_hash_hi);
+        identity_resources.buffer("module_count_out", inputs.module_count_out);
+        identity_resources.buffer("module_key_segment_count", inputs.module_key_segment_count);
+        identity_resources.buffer("module_key_segment_base", inputs.module_key_segment_base);
+        identity_resources.buffer(
+            "module_key_segment_name_id",
+            inputs.module_key_segment_name_id,
+        );
+        identity_resources.buffer("module_segment_prefix", &module_segment_prefix);
+        identity_resources.buffer("module_segment_total", &module_segment_total);
+        identity_resources.buffer("public_decl_count", inputs.public_decl_count);
+        identity_resources.buffer("public_decl_local_id", inputs.public_decl_local_id);
+        identity_resources.buffer(
+            "public_decl_index_by_local",
+            inputs.public_decl_index_by_local,
+        );
+        identity_resources.buffer("decl_module_id", inputs.decl_module_id);
+        identity_resources.buffer("decl_name_id", inputs.decl_name_id);
+        identity_resources.buffer("decl_namespace", inputs.decl_namespace);
+        identity_resources.buffer("decl_kind", inputs.decl_kind);
+        identity_resources.buffer("decl_parent_type_decl", inputs.decl_parent_type_decl);
+        identity_resources.buffer("interface_name_ref_len", &name_ref_len);
+        identity_resources.buffer("interface_name_ref_prefix", &name_ref_prefix);
+        identity_resources.buffer(
+            "interface_signature_type_by_decl",
+            &type_topology._signature_type_by_decl,
+        );
+        identity_resources.buffer("interface_member_prefix", &type_topology._member_prefix);
+        identity_resources.buffer("interface_member_count", &type_topology._member_count);
+        identity_resources.buffer("interface_member_total", &type_topology._member_total);
+        identity_resources.buffer("interface_member_name_id", &type_topology._member_name_id);
+        identity_resources.buffer("interface_modules", &modules);
+        identity_resources.buffer("interface_module_segments", &module_segments);
+        identity_resources.buffer("interface_declaration_words", &declarations);
+        identity_resources.buffer("interface_member_words", &type_topology._members);
+        identity_resources.buffer("interface_counts", &counts);
+        identity_resources.buffer("interface_status", &status);
+        identity_resources.buffer("source_bytes", source_bytes);
+        identity_resources.buffer("language_symbol_bytes", inputs.language_symbol_bytes);
+        identity_resources.buffer("interface_name_byte_words", &name_byte_words);
 
         let size_params = uniform_from_val(
             device,
@@ -502,61 +529,13 @@ impl GpuTypeChecker {
                 member_capacity,
             },
         );
-        let size_bind_group = bind_group::create_bind_group_from_bindings(
+        let size_bind_group = identity_resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check.interface.identity_sizes"),
+            "type_check.interface.identity_sizes",
             &self
                 .passes
                 .kernel("type_checker/interface/00_identity_sizes"),
-            0,
-            &[
-                ("gParams", size_params.as_entire_binding()),
-                ("name_count_out", inputs.name_count_out.as_entire_binding()),
-                ("name_spans", inputs.name_spans.as_entire_binding()),
-                (
-                    "module_count_out",
-                    inputs.module_count_out.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_count",
-                    inputs.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    inputs.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    inputs.module_key_segment_name_id.as_entire_binding(),
-                ),
-                (
-                    "module_segment_prefix",
-                    module_segment_prefix.as_entire_binding(),
-                ),
-                (
-                    "module_segment_total",
-                    module_segment_total.as_entire_binding(),
-                ),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_name_id", inputs.decl_name_id.as_entire_binding()),
-                (
-                    "interface_member_total",
-                    type_topology._member_total.as_entire_binding(),
-                ),
-                (
-                    "interface_member_name_id",
-                    type_topology._member_name_id.as_entire_binding(),
-                ),
-                ("interface_name_ref_len", name_ref_len.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            &[("gParams", size_params.as_entire_binding())],
         )?;
 
         let record_params = uniform_from_val(
@@ -573,104 +552,13 @@ impl GpuTypeChecker {
                 member_capacity,
             },
         );
-        let record_bind_group = bind_group::create_bind_group_from_bindings(
+        let record_bind_group = identity_resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check.interface.identity_records"),
+            "type_check.interface.identity_records",
             &self
                 .passes
                 .kernel("type_checker/interface/01_identity_records"),
-            0,
-            &[
-                ("gParams", record_params.as_entire_binding()),
-                ("name_count_out", inputs.name_count_out.as_entire_binding()),
-                ("name_spans", inputs.name_spans.as_entire_binding()),
-                ("name_hash_lo", inputs.name_hash_lo.as_entire_binding()),
-                ("name_hash_hi", inputs.name_hash_hi.as_entire_binding()),
-                (
-                    "module_count_out",
-                    inputs.module_count_out.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_count",
-                    inputs.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    inputs.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    inputs.module_key_segment_name_id.as_entire_binding(),
-                ),
-                (
-                    "module_segment_prefix",
-                    module_segment_prefix.as_entire_binding(),
-                ),
-                (
-                    "module_segment_total",
-                    module_segment_total.as_entire_binding(),
-                ),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                ("decl_module_id", inputs.decl_module_id.as_entire_binding()),
-                ("decl_name_id", inputs.decl_name_id.as_entire_binding()),
-                ("decl_namespace", inputs.decl_namespace.as_entire_binding()),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                (
-                    "decl_parent_type_decl",
-                    inputs.decl_parent_type_decl.as_entire_binding(),
-                ),
-                ("interface_name_ref_len", name_ref_len.as_entire_binding()),
-                (
-                    "interface_name_ref_prefix",
-                    name_ref_prefix.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    type_topology._signature_type_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_member_prefix",
-                    type_topology._member_prefix.as_entire_binding(),
-                ),
-                (
-                    "interface_member_count",
-                    type_topology._member_count.as_entire_binding(),
-                ),
-                (
-                    "interface_member_total",
-                    type_topology._member_total.as_entire_binding(),
-                ),
-                (
-                    "interface_member_name_id",
-                    type_topology._member_name_id.as_entire_binding(),
-                ),
-                ("interface_modules", modules.as_entire_binding()),
-                (
-                    "interface_module_segments",
-                    module_segments.as_entire_binding(),
-                ),
-                (
-                    "interface_declaration_words",
-                    declarations.as_entire_binding(),
-                ),
-                (
-                    "interface_member_words",
-                    type_topology._members.as_entire_binding(),
-                ),
-                ("interface_counts", counts.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            &[("gParams", record_params.as_entire_binding())],
         )?;
 
         let byte_params = uniform_from_val(
@@ -686,73 +574,13 @@ impl GpuTypeChecker {
                 member_capacity,
             },
         );
-        let byte_bind_group = bind_group::create_bind_group_from_bindings(
+        let byte_bind_group = identity_resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check.interface.identity_bytes"),
+            "type_check.interface.identity_bytes",
             &self
                 .passes
                 .kernel("type_checker/interface/02_identity_bytes"),
-            0,
-            &[
-                ("gParams", byte_params.as_entire_binding()),
-                ("name_count_out", inputs.name_count_out.as_entire_binding()),
-                ("name_spans", inputs.name_spans.as_entire_binding()),
-                (
-                    "module_count_out",
-                    inputs.module_count_out.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_count",
-                    inputs.module_key_segment_count.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_base",
-                    inputs.module_key_segment_base.as_entire_binding(),
-                ),
-                (
-                    "module_key_segment_name_id",
-                    inputs.module_key_segment_name_id.as_entire_binding(),
-                ),
-                (
-                    "module_segment_prefix",
-                    module_segment_prefix.as_entire_binding(),
-                ),
-                (
-                    "module_segment_total",
-                    module_segment_total.as_entire_binding(),
-                ),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_name_id", inputs.decl_name_id.as_entire_binding()),
-                (
-                    "interface_member_total",
-                    type_topology._member_total.as_entire_binding(),
-                ),
-                (
-                    "interface_member_name_id",
-                    type_topology._member_name_id.as_entire_binding(),
-                ),
-                ("interface_name_ref_len", name_ref_len.as_entire_binding()),
-                (
-                    "interface_name_ref_prefix",
-                    name_ref_prefix.as_entire_binding(),
-                ),
-                ("source_bytes", source_bytes.as_entire_binding()),
-                (
-                    "language_symbol_bytes",
-                    inputs.language_symbol_bytes.as_entire_binding(),
-                ),
-                (
-                    "interface_name_byte_words",
-                    name_byte_words.as_entire_binding(),
-                ),
-            ],
+            &[("gParams", byte_params.as_entire_binding())],
         )?;
 
         record_typecheck_clear_buffer(encoder, &name_ref_len, 0, None);
@@ -788,78 +616,136 @@ impl GpuTypeChecker {
             name_ref_count,
         )?;
 
-        let module_words = (module_capacity as usize).saturating_mul(MODULE_WORDS);
-        let segment_words = (module_segment_capacity as usize).saturating_mul(MODULE_SEGMENT_WORDS);
-        let declaration_words = (declaration_capacity as usize).saturating_mul(DECLARATION_WORDS);
-        let modules_readback =
-            readback_u32s(device, "rb.type_check.interface.modules", module_words);
-        let module_segments_readback = readback_u32s(
+        let artifact_capacity = semantic_interface_artifact_capacity(
+            module_capacity,
+            module_segment_capacity,
+            declaration_capacity,
+            type_topology.type_capacity,
+            type_topology.edge_capacity,
+            type_topology.member_capacity,
+            name_byte_capacity,
+        )?;
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] semantic_interface.capacity: tokens={token_capacity} modules={module_capacity} module_segments={module_segment_capacity} declarations={declaration_capacity} types={} edges={} members={} names={} artifact_bytes={artifact_capacity}",
+                type_topology.type_capacity,
+                type_topology.edge_capacity,
+                type_topology.member_capacity,
+                name_byte_capacity,
+            );
+        }
+        let artifact_word_capacity = artifact_capacity.div_ceil(4);
+        let artifact_words = typed_storage_u32_rw(
             device,
-            "rb.type_check.interface.module_segments",
-            segment_words,
+            "type_check.interface.artifact.words",
+            artifact_word_capacity,
+            wgpu::BufferUsages::COPY_SRC,
         );
-        let declarations_readback = readback_u32s(
+        let artifact_length = typed_storage_u32_rw(
             device,
-            "rb.type_check.interface.declarations",
-            declaration_words,
+            "type_check.interface.artifact.length",
+            1,
+            wgpu::BufferUsages::COPY_SRC,
         );
-        let name_bytes_readback = readback_u32s(
+        let metadata_readback = readback_bytes(
             device,
-            "rb.type_check.interface.name_bytes",
-            name_word_capacity,
+            "type_check.interface.artifact.metadata.readback",
+            20,
+            20,
         );
-        let counts_readback = readback_u32s(device, "rb.type_check.interface.counts", COUNT_WORDS);
-        let status_readback = readback_u32s(device, "rb.type_check.interface.status", STATUS_WORDS);
+        let artifact_readback = PagedReadback::new(
+            device,
+            "type_check.interface.artifact.readback",
+            artifact_capacity.min(4 << 20),
+        );
+        let artifact_params = uniform_from_val(
+            device,
+            "type_check.interface.artifact.params",
+            &SemanticInterfaceArtifactParams {
+                module_capacity,
+                module_segment_capacity,
+                declaration_capacity,
+                type_capacity: type_topology.type_capacity as u32,
+                edge_capacity: type_topology.edge_capacity as u32,
+                member_capacity: type_topology.member_capacity as u32,
+                name_byte_capacity,
+                artifact_word_capacity: u32::try_from(artifact_word_capacity).map_err(|_| {
+                    anyhow::anyhow!("semantic-interface artifact capacity exceeds u32 words")
+                })?,
+                unit_id,
+                version: GPU_SEMANTIC_INTERFACE_VERSION,
+            },
+        );
+        let mut artifact_resources = ResourceMap::new();
+        artifact_resources.buffers([
+            ("interface_counts", &counts),
+            (
+                "interface_complete_type_count",
+                &type_topology._complete_type_count,
+            ),
+            (
+                "interface_complete_edge_total",
+                &type_topology._complete_edge_total,
+            ),
+            ("interface_member_total", &type_topology._member_total),
+            ("interface_modules", &modules),
+            ("interface_module_segments", &module_segments),
+            ("interface_declaration_words", &declarations),
+            ("interface_types", &type_topology._types),
+            ("interface_edges", &type_topology._edges),
+            ("interface_edge_written", &type_topology._edge_written),
+            ("interface_member_words", &type_topology._members),
+            ("interface_member_written", &type_topology._member_written),
+            ("interface_name_byte_words", &name_byte_words),
+            ("interface_status", &status),
+            ("interface_artifact_words", &artifact_words),
+            ("interface_artifact_length", &artifact_length),
+        ]);
+        let artifact_kernel = self
+            .passes
+            .kernel("type_checker/interface/artifact/materialize");
+        let artifact_bind_group = artifact_resources.reflected_bind_group_with_overrides(
+            device,
+            "type_check.interface.artifact",
+            artifact_kernel,
+            &[("gParams", artifact_params.as_entire_binding())],
+        )?;
+        let artifact_work_capacity = module_capacity
+            .max(module_segment_capacity)
+            .max(declaration_capacity)
+            .max(type_topology.type_capacity as u32)
+            .max(type_topology.edge_capacity as u32)
+            .max(type_topology.member_capacity as u32)
+            .max(name_byte_capacity.div_ceil(4))
+            .max(1);
+        record_compute(
+            encoder,
+            artifact_kernel,
+            &artifact_bind_group,
+            "type_check.interface.artifact",
+            artifact_work_capacity,
+        )?;
         record_typecheck_copy_buffer_to_buffer(
             encoder,
-            &modules,
+            &artifact_length,
             0,
-            &modules_readback,
+            &metadata_readback.buffer,
             0,
-            (module_words.max(1) * 4) as u64,
+            4,
         );
         record_typecheck_copy_buffer_to_buffer(
             encoder,
-            &module_segments,
+            &status,
             0,
-            &module_segments_readback,
-            0,
-            (segment_words.max(1) * 4) as u64,
+            &metadata_readback.buffer,
+            4,
+            16,
         );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &declarations,
-            0,
-            &declarations_readback,
-            0,
-            (declaration_words.max(1) * 4) as u64,
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &type_topology._members,
-            0,
-            &type_topology.members_readback,
-            0,
-            u64::from(member_capacity).saturating_mul(MEMBER_WORDS as u64 * 4),
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &name_byte_words,
-            0,
-            &name_bytes_readback,
-            0,
-            (name_word_capacity.max(1) * 4) as u64,
-        );
-        record_typecheck_copy_buffer_to_buffer(encoder, &counts, 0, &counts_readback, 0, 20);
-        record_typecheck_copy_buffer_to_buffer(encoder, &status, 0, &status_readback, 0, 16);
 
         Ok(RecordedSemanticInterface {
             expected_library_id: library_id,
             expected_unit_id: unit_id,
-            module_capacity: module_capacity as usize,
-            module_segment_capacity: module_segment_capacity as usize,
-            declaration_capacity: declaration_capacity as usize,
-            name_byte_capacity: name_byte_capacity as usize,
+            artifact_capacity,
             _name_ref_len: name_ref_len,
             _name_ref_prefix: name_ref_prefix,
             _scan_total: scan_total,
@@ -875,12 +761,10 @@ impl GpuTypeChecker {
             _counts: counts,
             _status: status,
             _type_topology: type_topology,
-            modules_readback,
-            module_segments_readback,
-            declarations_readback,
-            name_bytes_readback,
-            counts_readback,
-            status_readback,
+            _artifact_words: artifact_words,
+            _artifact_length: artifact_length,
+            metadata_readback,
+            artifact_readback,
         })
     }
 
@@ -890,24 +774,26 @@ impl GpuTypeChecker {
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
+        token_capacity: u32,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: &GpuSemanticInterfaceIdentityBuffers<'_>,
         status: &wgpu::Buffer,
         scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
-        let hir_capacity = u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?;
+        let hir_storage_capacity =
+            u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?;
         let decl_capacity = u32_capacity(
             inputs.public_decl_local_id,
             1,
             "semantic-interface public declarations",
-        )?;
-        let capacity = hir_capacity.max(1);
-        let token_capacity = u32_capacity(
-            inputs.type_expr_ref_tag,
-            1,
-            "semantic-interface type reference tags",
-        )?;
+        )?
+        .min(token_capacity)
+        .max(1);
+        // Canonical HIR assigns every durable row a unique token/file anchor;
+        // parser storage capacity is therefore not the semantic row domain.
+        // The same token bound is used by the resident type-check shaders.
+        let capacity = hir_storage_capacity.min(token_capacity).max(1);
         let type_capacity = capacity
             .checked_add(decl_capacity)
             .and_then(|value| value.checked_add(1))
@@ -925,7 +811,6 @@ impl GpuTypeChecker {
                 token_capacity,
                 library_id,
                 unit_id,
-                dependency_type_count: inputs.dependency_type_count,
             },
         );
         let parent = typed_storage_u32_rw(
@@ -1310,1086 +1195,287 @@ impl GpuTypeChecker {
             scan_scratch,
         )?;
 
-        let bind =
-            |label: &str, pass: &PassData, bindings: &[(&str, wgpu::BindingResource<'_>)]| {
-                bind_group::create_bind_group_from_bindings(device, Some(label), pass, 0, bindings)
-            };
-        let init = bind(
-            "type_check.interface.type_topology.init",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/00_init"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_parent", parent.as_entire_binding()),
-                (
-                    "interface_type_child_ordinal",
-                    child_ordinal.as_entire_binding(),
-                ),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let attach_unary = bind(
-            "type_check.interface.type_topology.attach_unary",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/01_attach_unary"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    hir.compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "compact_type_arg_count",
-                    hir.compact_type_arg_count.as_entire_binding(),
-                ),
-                (
-                    "compact_type_args",
-                    hir.compact_type_args.as_entire_binding(),
-                ),
-                ("interface_type_parent", parent.as_entire_binding()),
-                (
-                    "interface_type_child_ordinal",
-                    child_ordinal.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
-        )?;
-        let seed_declarations = bind(
-            "type_check.interface.type_topology.seed_declarations",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/02_seed_declarations"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                (
-                    "compact_fn_return_type",
-                    hir.compact_fn_return_type.as_entire_binding(),
-                ),
-                (
-                    "compact_type_alias_target",
-                    hir.compact_type_alias_target.as_entire_binding(),
-                ),
-                (
-                    "compact_const_type",
-                    hir.compact_const_type.as_entire_binding(),
-                ),
-                ("interface_type_parent", parent.as_entire_binding()),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                (
-                    "interface_decl_direct_type_hir",
-                    direct_type_hir_by_decl.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
-        )?;
-        let seed_params = bind(
-            "type_check.interface.type_topology.seed_params",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/02b_seed_params"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "compact_param_count",
-                    hir.compact_param_count.as_entire_binding(),
-                ),
-                ("compact_params", hir.compact_params.as_entire_binding()),
-                (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
-                ),
-                ("interface_type_parent", parent.as_entire_binding()),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
-        )?;
-        let seed_fields = bind(
-            "type_check.interface.type_topology.seed_fields",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/02c_seed_fields"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "compact_field_count",
-                    hir.compact_field_count.as_entire_binding(),
-                ),
-                ("compact_fields", hir.compact_fields.as_entire_binding()),
-                (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
-                ),
-                ("interface_type_parent", parent.as_entire_binding()),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
-        )?;
-        let seed_variants = bind(
-            "type_check.interface.type_topology.seed_variants",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/02d_seed_variants"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "compact_variant_count",
-                    hir.compact_variant_count.as_entire_binding(),
-                ),
-                (
-                    "compact_variant_payload_row_count",
-                    hir.compact_variant_payload_row_count.as_entire_binding(),
-                ),
-                ("compact_variants", hir.compact_variants.as_entire_binding()),
-                (
-                    "compact_variant_payloads",
-                    hir.compact_variant_payloads.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                ("interface_type_parent", parent.as_entire_binding()),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
-        )?;
-        let root_init = bind(
-            "type_check.interface.type_topology.root_init",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/03_root_init"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                ("interface_type_parent", parent.as_entire_binding()),
-                ("interface_type_root_link", root_link_a.as_entire_binding()),
-                (
-                    "interface_type_root_owner",
-                    root_owner_a.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let root_step_ab = bind(
-            "type_check.interface.type_topology.root_step_ab",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/04_root_step"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "interface_type_root_link_in",
-                    root_link_a.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_owner_in",
-                    root_owner_a.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_link_out",
-                    root_link_b.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_owner_out",
-                    root_owner_b.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let root_step_ba = bind(
-            "type_check.interface.type_topology.root_step_ba",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/04_root_step"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "interface_type_root_link_in",
-                    root_link_b.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_owner_in",
-                    root_owner_b.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_link_out",
-                    root_link_a.as_entire_binding(),
-                ),
-                (
-                    "interface_type_root_owner_out",
-                    root_owner_a.as_entire_binding(),
-                ),
-            ],
-        )?;
         let root_steps = u32::BITS - (capacity - 1).leading_zeros();
         let final_root_owner = if root_steps & 1 == 0 {
             &root_owner_a
         } else {
             &root_owner_b
         };
-        let mark_reverse = bind(
+
+        let mut topology_resources = ResourceMap::new();
+        macro_rules! register_resources {
+            ($($name:literal => $buffer:expr),* $(,)?) => {
+                $(topology_resources.add($name, $buffer.as_entire_binding());)*
+            };
+        }
+        register_resources!(
+            "gParams" => params,
+            "compact_const_type" => hir.compact_const_type,
+            "compact_field_count" => hir.compact_field_count,
+            "compact_fields" => hir.compact_fields,
+            "compact_fn_return_type" => hir.compact_fn_return_type,
+            "compact_hir_core" => hir.compact_hir_core,
+            "compact_hir_count" => hir.compact_hir_count,
+            "compact_hir_payload" => hir.compact_hir_payload,
+            "compact_param_count" => hir.compact_param_count,
+            "compact_param_ranges" => hir.compact_param_ranges,
+            "compact_params" => hir.compact_params,
+            "compact_type_alias_target" => hir.compact_type_alias_target,
+            "compact_type_arg_count" => hir.compact_type_arg_count,
+            "compact_type_arg_ranges" => hir.compact_type_arg_ranges,
+            "compact_type_args" => hir.compact_type_args,
+            "compact_variant_count" => hir.compact_variant_count,
+            "compact_variant_payload_count" => hir.compact_variant_payload_count,
+            "compact_variant_payload_row_count" => hir.compact_variant_payload_row_count,
+            "compact_variant_payloads" => hir.compact_variant_payloads,
+            "compact_variants" => hir.compact_variants,
+            "decl_hir_node" => inputs.decl_hir_node,
+            "decl_id_by_name_token" => inputs.decl_id_by_name_token,
+            "decl_kind" => inputs.decl_kind,
+            "decl_parent_type_decl" => inputs.decl_parent_type_decl,
+            "external_type_library_id" => inputs.external_type_library_id,
+            "external_type_unit_id" => inputs.external_type_unit_id,
+            "external_type_local_index" => inputs.external_type_local_index,
+            "generic_param_count_out" => inputs.generic_param_count_out,
+            "generic_param_kind" => inputs.generic_param_kind,
+            "generic_param_name_id" => inputs.generic_param_name_id,
+            "generic_param_owner_token" => inputs.generic_param_owner_token,
+            "generic_param_token" => inputs.generic_param_token,
+            "name_id_by_token" => inputs.name_id_by_token,
+            "path_id_by_owner_token" => inputs.path_id_by_owner_token,
+            "public_decl_count" => inputs.public_decl_count,
+            "public_decl_index_by_hir" => inputs.public_decl_index_by_hir,
+            "public_decl_index_by_local" => inputs.public_decl_index_by_local,
+            "public_decl_local_id" => inputs.public_decl_local_id,
+            "resolved_type_decl" => inputs.resolved_type_decl,
+            "type_const_param_slot_by_token" => inputs.type_const_param_slot_by_token,
+            "type_expr_ref_payload" => inputs.type_expr_ref_payload,
+            "type_expr_ref_tag" => inputs.type_expr_ref_tag,
+            "type_generic_param_slot_by_token" => inputs.type_generic_param_slot_by_token,
+            "type_instance_decl_token" => inputs.type_instance_decl_token,
+            "interface_complete_edge_total" => complete_edge_total,
+            "interface_complete_type_count" => complete_type_count,
+            "interface_decl_direct_type_hir" => direct_type_hir_by_decl,
+            "interface_field_count_by_hir" => field_count_by_hir,
+            "interface_generic_const_count_by_decl" => generic_const_count_by_decl,
+            "interface_generic_type_count_by_decl" => generic_type_count_by_decl,
+            "interface_member_count" => member_count,
+            "interface_member_index_by_generic_row" => member_index_by_generic_row,
+            "interface_member_name_id" => member_name_id,
+            "interface_member_prefix" => member_prefix,
+            "interface_member_total" => member_total,
+            "interface_member_words" => members,
+            "interface_member_written" => member_written,
+            "interface_signature_edge_count" => signature_edge_count,
+            "interface_signature_edge_prefix" => signature_edge_prefix,
+            "interface_signature_edge_total" => signature_edge_total,
+            "interface_signature_type_by_decl" => signature_type_by_decl,
+            "interface_signature_type_flag" => signature_type_flag,
+            "interface_signature_type_prefix" => signature_type_prefix,
+            "interface_signature_type_total" => signature_type_total,
+            "interface_status" => status,
+            "interface_type_child_ordinal" => child_ordinal,
+            "interface_type_count" => count,
+            "interface_type_edge_count" => edge_count,
+            "interface_type_edge_prefix" => edge_prefix,
+            "interface_type_edge_total" => edge_total,
+            "interface_type_edge_written" => edge_written,
+            "interface_type_edges" => edges,
+            "interface_type_hir_order" => hir_order,
+            "interface_type_index_by_hir" => index_by_hir,
+            "interface_type_local_decl_by_hir" => local_decl_by_hir,
+            "interface_type_parent" => parent,
+            "interface_type_path_classification" => path_classification,
+            "interface_type_reverse_flag" => reverse_flag,
+            "interface_type_reverse_prefix" => reverse_prefix,
+            "interface_type_root_link" => root_link_a,
+            "interface_type_root_owner" => final_root_owner,
+            "interface_type_seed_owner" => seed_owner,
+            "interface_types" => types,
+            "interface_variant_count_by_hir" => variant_count_by_hir,
+        );
+        macro_rules! bind_topology {
+            ($label:literal, $kernel:literal) => {
+                topology_resources.reflected_bind_group_with_overrides(
+                    device,
+                    $label,
+                    &self.passes.kernel($kernel),
+                    &[],
+                )
+            };
+            ($label:literal, $kernel:literal, $overrides:expr) => {
+                topology_resources.reflected_bind_group_with_overrides(
+                    device,
+                    $label,
+                    &self.passes.kernel($kernel),
+                    $overrides,
+                )
+            };
+        }
+
+        let init = bind_topology!(
+            "type_check.interface.type_topology.init",
+            "type_checker/interface/type_topology/00_init"
+        )?;
+        let attach_unary = bind_topology!(
+            "type_check.interface.type_topology.attach_unary",
+            "type_checker/interface/type_topology/01_attach_unary"
+        )?;
+        let seed_declarations = bind_topology!(
+            "type_check.interface.type_topology.seed_declarations",
+            "type_checker/interface/type_topology/02_seed_declarations"
+        )?;
+        let seed_params = bind_topology!(
+            "type_check.interface.type_topology.seed_params",
+            "type_checker/interface/type_topology/02b_seed_params"
+        )?;
+        let seed_fields = bind_topology!(
+            "type_check.interface.type_topology.seed_fields",
+            "type_checker/interface/type_topology/02c_seed_fields"
+        )?;
+        let seed_variants = bind_topology!(
+            "type_check.interface.type_topology.seed_variants",
+            "type_checker/interface/type_topology/02d_seed_variants"
+        )?;
+        let root_init = bind_topology!(
+            "type_check.interface.type_topology.root_init",
+            "type_checker/interface/type_topology/03_root_init",
+            &[(
+                "interface_type_root_owner",
+                root_owner_a.as_entire_binding()
+            )]
+        )?;
+        let root_step_ab = bind_topology!(
+            "type_check.interface.type_topology.root_step_ab",
+            "type_checker/interface/type_topology/04_root_step",
+            &[
+                (
+                    "interface_type_root_link_in",
+                    root_link_a.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_owner_in",
+                    root_owner_a.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_link_out",
+                    root_link_b.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_owner_out",
+                    root_owner_b.as_entire_binding()
+                ),
+            ]
+        )?;
+        let root_step_ba = bind_topology!(
+            "type_check.interface.type_topology.root_step_ba",
+            "type_checker/interface/type_topology/04_root_step",
+            &[
+                (
+                    "interface_type_root_link_in",
+                    root_link_b.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_owner_in",
+                    root_owner_b.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_link_out",
+                    root_link_a.as_entire_binding()
+                ),
+                (
+                    "interface_type_root_owner_out",
+                    root_owner_a.as_entire_binding()
+                ),
+            ]
+        )?;
+        let mark_reverse = bind_topology!(
             "type_check.interface.type_topology.mark_reverse",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/05_mark_reverse"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "interface_type_root_owner",
-                    final_root_owner.as_entire_binding(),
-                ),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                (
-                    "interface_type_reverse_flag",
-                    reverse_flag.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/type_topology/05_mark_reverse"
         )?;
-        let scatter = bind(
+        let scatter = bind_topology!(
             "type_check.interface.type_topology.scatter",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/06_scatter"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "interface_type_reverse_flag",
-                    reverse_flag.as_entire_binding(),
-                ),
-                (
-                    "interface_type_reverse_prefix",
-                    reverse_prefix.as_entire_binding(),
-                ),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/type_topology/06_scatter"
         )?;
-        let edge_counts = bind(
+        let edge_counts = bind_topology!(
             "type_check.interface.type_topology.edge_counts",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/08_edge_counts"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    hir.compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "compact_type_arg_ranges",
-                    hir.compact_type_arg_ranges.as_entire_binding(),
-                ),
-                ("interface_type_edge_count", edge_count.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/08_edge_counts"
         )?;
-        let edge_scatter = bind(
+        let edge_scatter = bind_topology!(
             "type_check.interface.type_topology.edge_scatter",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/09_edge_scatter"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_parent", parent.as_entire_binding()),
-                (
-                    "interface_type_child_ordinal",
-                    child_ordinal.as_entire_binding(),
-                ),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_type_edge_prefix",
-                    edge_prefix.as_entire_binding(),
-                ),
-                ("interface_type_edge_count", edge_count.as_entire_binding()),
-                ("interface_type_edges", edges.as_entire_binding()),
-                (
-                    "interface_type_edge_written",
-                    edge_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/09_edge_scatter"
         )?;
-        let resolve_local_decl = bind(
+        let resolve_local_decl = bind_topology!(
             "type_check.interface.type_topology.resolve_local_decl",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/10_resolve_local_decl"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "type_expr_ref_tag",
-                    inputs.type_expr_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "type_expr_ref_payload",
-                    inputs.type_expr_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "type_instance_decl_token",
-                    inputs.type_instance_decl_token.as_entire_binding(),
-                ),
-                (
-                    "path_id_by_owner_token",
-                    inputs.path_id_by_owner_token.as_entire_binding(),
-                ),
-                (
-                    "resolved_type_decl",
-                    inputs.resolved_type_decl.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "interface_type_local_decl_by_hir",
-                    local_decl_by_hir.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/type_topology/10_resolve_local_decl"
         )?;
-        let classify_path = bind(
+        let classify_path = bind_topology!(
             "type_check.interface.type_topology.classify_path",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/11_classify_path"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                ("compact_hir_core", hir.compact_hir_core.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    hir.compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "type_expr_ref_tag",
-                    inputs.type_expr_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "type_expr_ref_payload",
-                    inputs.type_expr_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "type_generic_param_slot_by_token",
-                    inputs.type_generic_param_slot_by_token.as_entire_binding(),
-                ),
-                (
-                    "type_instance_external_canonical",
-                    inputs.type_instance_external_canonical.as_entire_binding(),
-                ),
-                (
-                    "dependency_type_words",
-                    inputs.dependency_type_words.as_entire_binding(),
-                ),
-                (
-                    "interface_type_local_decl_by_hir",
-                    local_decl_by_hir.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                (
-                    "interface_type_path_classification",
-                    path_classification.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/11_classify_path"
         )?;
-        let type_records = bind(
+        let type_records = bind_topology!(
             "type_check.interface.type_topology.type_records",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/12_type_records"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                (
-                    "interface_type_edge_prefix",
-                    edge_prefix.as_entire_binding(),
-                ),
-                ("interface_type_edge_count", edge_count.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    hir.compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "interface_type_path_classification",
-                    path_classification.as_entire_binding(),
-                ),
-                ("interface_types", types.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/12_type_records"
         )?;
-        let array_lengths = bind(
+        let array_lengths = bind_topology!(
             "type_check.interface.type_topology.array_lengths",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/13_array_lengths"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    hir.compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "type_const_param_slot_by_token",
-                    inputs.type_const_param_slot_by_token.as_entire_binding(),
-                ),
-                ("interface_types", types.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/13_array_lengths"
         )?;
-        let signature_flags = bind(
+        let signature_flags = bind_topology!(
             "type_check.interface.signature.flags",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/00_flags"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                (
-                    "compact_param_ranges",
-                    hir.compact_param_ranges.as_entire_binding(),
-                ),
-                (
-                    "compact_variant_count",
-                    hir.compact_variant_count.as_entire_binding(),
-                ),
-                (
-                    "compact_variant_payload_count",
-                    hir.compact_variant_payload_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_flag",
-                    signature_type_flag.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_count",
-                    signature_edge_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    signature_type_by_decl.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/00_flags"
         )?;
-        let signature_totals = bind(
+        let signature_totals = bind_topology!(
             "type_check.interface.signature.totals",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/01_totals"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_edge_total", edge_total.as_entire_binding()),
-                (
-                    "interface_signature_type_total",
-                    signature_type_total.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_total",
-                    signature_edge_total.as_entire_binding(),
-                ),
-                ("interface_types", types.as_entire_binding()),
-                (
-                    "interface_complete_type_count",
-                    complete_type_count.as_entire_binding(),
-                ),
-                (
-                    "interface_complete_edge_total",
-                    complete_edge_total.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/signature/01_totals"
         )?;
-        let signature_direct_types = bind(
+        let signature_direct_types = bind_topology!(
             "type_check.interface.signature.direct_types",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/01b_direct_types"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_flag",
-                    signature_type_flag.as_entire_binding(),
-                ),
-                (
-                    "interface_decl_direct_type_hir",
-                    direct_type_hir_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    signature_type_by_decl.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/01b_direct_types"
         )?;
-        let signature_synthetic_types = bind(
+        let signature_synthetic_types = bind_topology!(
             "type_check.interface.signature.synthetic_types",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/01c_synthetic_types"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_edge_total", edge_total.as_entire_binding()),
-                (
-                    "interface_signature_type_flag",
-                    signature_type_flag.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_prefix",
-                    signature_type_prefix.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_count",
-                    signature_edge_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_prefix",
-                    signature_edge_prefix.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    signature_type_by_decl.as_entire_binding(),
-                ),
-                ("interface_types", types.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/01c_synthetic_types"
         )?;
-        let signature_param_edges = bind(
+        let signature_param_edges = bind_topology!(
             "type_check.interface.signature.param_edges",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/02_param_edges"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_param_count",
-                    hir.compact_param_count.as_entire_binding(),
-                ),
-                ("compact_params", hir.compact_params.as_entire_binding()),
-                (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_count",
-                    signature_edge_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_prefix",
-                    signature_edge_prefix.as_entire_binding(),
-                ),
-                ("interface_type_edge_total", edge_total.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                ("interface_type_edges", edges.as_entire_binding()),
-                (
-                    "interface_type_edge_written",
-                    edge_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/02_param_edges"
         )?;
-        let signature_return_edges = bind(
+        let signature_return_edges = bind_topology!(
             "type_check.interface.signature.return_edges",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/03_return_edges"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_edge_total", edge_total.as_entire_binding()),
-                (
-                    "interface_signature_edge_count",
-                    signature_edge_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_prefix",
-                    signature_edge_prefix.as_entire_binding(),
-                ),
-                (
-                    "interface_decl_direct_type_hir",
-                    direct_type_hir_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "decl_parent_type_decl",
-                    inputs.decl_parent_type_decl.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    signature_type_by_decl.as_entire_binding(),
-                ),
-                ("interface_type_edges", edges.as_entire_binding()),
-                (
-                    "interface_type_edge_written",
-                    edge_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/03_return_edges"
         )?;
-        let signature_variant_payload_edges = bind(
+        let signature_variant_payload_edges = bind_topology!(
             "type_check.interface.signature.variant_payload_edges",
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/02b_variant_payload_edges"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_variant_payload_row_count",
-                    hir.compact_variant_payload_row_count.as_entire_binding(),
-                ),
-                (
-                    "compact_variant_count",
-                    hir.compact_variant_count.as_entire_binding(),
-                ),
-                ("compact_variants", hir.compact_variants.as_entire_binding()),
-                (
-                    "compact_variant_payloads",
-                    hir.compact_variant_payloads.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_count",
-                    signature_edge_count.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_edge_prefix",
-                    signature_edge_prefix.as_entire_binding(),
-                ),
-                ("interface_type_edge_total", edge_total.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                ("interface_type_edges", edges.as_entire_binding()),
-                (
-                    "interface_type_edge_written",
-                    edge_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/signature/02b_variant_payload_edges"
         )?;
-        let members_variant_counts = bind(
+        let members_variant_counts = bind_topology!(
             "type_check.interface.members.variant_counts",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/00_variant_counts"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_field_count",
-                    hir.compact_field_count.as_entire_binding(),
-                ),
-                ("compact_fields", hir.compact_fields.as_entire_binding()),
-                (
-                    "compact_variant_count",
-                    hir.compact_variant_count.as_entire_binding(),
-                ),
-                ("compact_variants", hir.compact_variants.as_entire_binding()),
-                (
-                    "interface_field_count_by_hir",
-                    field_count_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_variant_count_by_hir",
-                    variant_count_by_hir.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/members/00_variant_counts"
         )?;
-        let members_generic_counts = bind(
+        let members_generic_counts = bind_topology!(
             "type_check.interface.members.generic_counts",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/00b_generic_counts"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "generic_param_count_out",
-                    inputs.generic_param_count_out.as_entire_binding(),
-                ),
-                (
-                    "generic_param_owner_token",
-                    inputs.generic_param_owner_token.as_entire_binding(),
-                ),
-                (
-                    "generic_param_token",
-                    inputs.generic_param_token.as_entire_binding(),
-                ),
-                (
-                    "generic_param_kind",
-                    inputs.generic_param_kind.as_entire_binding(),
-                ),
-                (
-                    "type_generic_param_slot_by_token",
-                    inputs.type_generic_param_slot_by_token.as_entire_binding(),
-                ),
-                (
-                    "type_const_param_slot_by_token",
-                    inputs.type_const_param_slot_by_token.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_type_count_by_decl",
-                    generic_type_count_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_const_count_by_decl",
-                    generic_const_count_by_decl.as_entire_binding(),
-                ),
-            ],
+            "type_checker/interface/members/00b_generic_counts"
         )?;
-        let members_counts = bind(
+        let members_counts = bind_topology!(
             "type_check.interface.members.counts",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/01_counts"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "public_decl_count",
-                    inputs.public_decl_count.as_entire_binding(),
-                ),
-                (
-                    "public_decl_local_id",
-                    inputs.public_decl_local_id.as_entire_binding(),
-                ),
-                ("decl_kind", inputs.decl_kind.as_entire_binding()),
-                ("decl_hir_node", inputs.decl_hir_node.as_entire_binding()),
-                (
-                    "compact_hir_count",
-                    hir.compact_hir_count.as_entire_binding(),
-                ),
-                (
-                    "compact_param_ranges",
-                    hir.compact_param_ranges.as_entire_binding(),
-                ),
-                (
-                    "interface_field_count_by_hir",
-                    field_count_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_variant_count_by_hir",
-                    variant_count_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_type_count_by_decl",
-                    generic_type_count_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_const_count_by_decl",
-                    generic_const_count_by_decl.as_entire_binding(),
-                ),
-                ("interface_member_count", member_count.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/members/01_counts"
         )?;
-        let members_scatter_hir = bind(
+        let members_scatter_hir = bind_topology!(
             "type_check.interface.members.scatter_hir",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/02_scatter_hir"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "compact_param_count",
-                    hir.compact_param_count.as_entire_binding(),
-                ),
-                ("compact_params", hir.compact_params.as_entire_binding()),
-                (
-                    "compact_field_count",
-                    hir.compact_field_count.as_entire_binding(),
-                ),
-                ("compact_fields", hir.compact_fields.as_entire_binding()),
-                (
-                    "compact_variant_count",
-                    hir.compact_variant_count.as_entire_binding(),
-                ),
-                ("compact_variants", hir.compact_variants.as_entire_binding()),
-                (
-                    "public_decl_index_by_hir",
-                    inputs.public_decl_index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "name_id_by_token",
-                    inputs.name_id_by_token.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_type_count_by_decl",
-                    generic_type_count_by_decl.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_const_count_by_decl",
-                    generic_const_count_by_decl.as_entire_binding(),
-                ),
-                ("interface_member_prefix", member_prefix.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                (
-                    "interface_signature_type_by_decl",
-                    signature_type_by_decl.as_entire_binding(),
-                ),
-                ("interface_member_words", members.as_entire_binding()),
-                (
-                    "interface_member_name_id",
-                    member_name_id.as_entire_binding(),
-                ),
-                (
-                    "interface_member_written",
-                    member_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/members/02_scatter_hir"
         )?;
-        let members_scatter_generic = bind(
+        let members_scatter_generic = bind_topology!(
             "type_check.interface.members.scatter_generic",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/03_scatter_generic"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "generic_param_count_out",
-                    inputs.generic_param_count_out.as_entire_binding(),
-                ),
-                (
-                    "generic_param_owner_token",
-                    inputs.generic_param_owner_token.as_entire_binding(),
-                ),
-                (
-                    "generic_param_name_id",
-                    inputs.generic_param_name_id.as_entire_binding(),
-                ),
-                (
-                    "generic_param_token",
-                    inputs.generic_param_token.as_entire_binding(),
-                ),
-                (
-                    "generic_param_kind",
-                    inputs.generic_param_kind.as_entire_binding(),
-                ),
-                (
-                    "type_generic_param_slot_by_token",
-                    inputs.type_generic_param_slot_by_token.as_entire_binding(),
-                ),
-                (
-                    "type_const_param_slot_by_token",
-                    inputs.type_const_param_slot_by_token.as_entire_binding(),
-                ),
-                (
-                    "interface_generic_type_count_by_decl",
-                    generic_type_count_by_decl.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    inputs.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "public_decl_index_by_local",
-                    inputs.public_decl_index_by_local.as_entire_binding(),
-                ),
-                ("interface_member_prefix", member_prefix.as_entire_binding()),
-                ("interface_member_words", members.as_entire_binding()),
-                (
-                    "interface_member_name_id",
-                    member_name_id.as_entire_binding(),
-                ),
-                (
-                    "interface_member_index_by_generic_row",
-                    member_index_by_generic_row.as_entire_binding(),
-                ),
-                (
-                    "interface_member_written",
-                    member_written.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/members/03_scatter_generic"
         )?;
-        let members_normalize_types = bind(
+        let members_normalize_types = bind_topology!(
             "type_check.interface.members.normalize_types",
-            &self
-                .passes
-                .kernel("type_checker/interface/members/04_normalize_types"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                (
-                    "interface_type_root_owner",
-                    final_root_owner.as_entire_binding(),
-                ),
-                ("interface_type_seed_owner", seed_owner.as_entire_binding()),
-                ("interface_member_prefix", member_prefix.as_entire_binding()),
-                ("interface_member_total", member_total.as_entire_binding()),
-                (
-                    "interface_generic_type_count_by_decl",
-                    generic_type_count_by_decl.as_entire_binding(),
-                ),
-                ("interface_types", types.as_entire_binding()),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/members/04_normalize_types"
         )?;
-        let validate = bind(
+        let validate = bind_topology!(
             "type_check.interface.type_topology.validate",
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/07_validate"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("interface_type_count", count.as_entire_binding()),
-                ("interface_type_hir_order", hir_order.as_entire_binding()),
-                ("interface_type_parent", parent.as_entire_binding()),
-                (
-                    "interface_type_index_by_hir",
-                    index_by_hir.as_entire_binding(),
-                ),
-                ("interface_status", status.as_entire_binding()),
-            ],
+            "type_checker/interface/type_topology/07_validate"
         )?;
 
         record_typecheck_clear_buffer(encoder, &edge_written, 0, None);
@@ -2672,93 +1758,6 @@ impl GpuTypeChecker {
             capacity,
         )?;
 
-        let count_readback = readback_u32s(device, "rb.type_check.interface.type_count", 1);
-        let edge_total_readback =
-            readback_u32s(device, "rb.type_check.interface.type_edge_total", 1);
-        let types_readback = readback_u32s(
-            device,
-            "rb.type_check.interface.types",
-            (type_capacity as usize).saturating_mul(TYPE_WORDS),
-        );
-        let edges_readback = readback_u32s(
-            device,
-            "rb.type_check.interface.type_edges",
-            edge_capacity as usize,
-        );
-        let edge_written_readback = readback_u32s(
-            device,
-            "rb.type_check.interface.type_edge_written",
-            edge_capacity as usize,
-        );
-        let member_total_readback =
-            readback_u32s(device, "rb.type_check.interface.member_total", 1);
-        let member_written_readback = readback_u32s(
-            device,
-            "rb.type_check.interface.member_written",
-            member_capacity as usize,
-        );
-        let members_readback = readback_u32s(
-            device,
-            "rb.type_check.interface.members",
-            (member_capacity as usize).saturating_mul(MEMBER_WORDS),
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &complete_type_count,
-            0,
-            &count_readback,
-            0,
-            4,
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &complete_edge_total,
-            0,
-            &edge_total_readback,
-            0,
-            4,
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &types,
-            0,
-            &types_readback,
-            0,
-            u64::from(type_capacity).saturating_mul(TYPE_WORDS as u64 * 4),
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &edges,
-            0,
-            &edges_readback,
-            0,
-            u64::from(edge_capacity).saturating_mul(4),
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &member_total,
-            0,
-            &member_total_readback,
-            0,
-            4,
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &member_written,
-            0,
-            &member_written_readback,
-            0,
-            u64::from(member_capacity).saturating_mul(4),
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
-            &edge_written,
-            0,
-            &edge_written_readback,
-            0,
-            u64::from(edge_capacity).saturating_mul(4),
-        );
-
         Ok(RecordedSemanticInterfaceTypeTopology {
             type_capacity: type_capacity as usize,
             edge_capacity: edge_capacity as usize,
@@ -2809,406 +1808,104 @@ impl GpuTypeChecker {
             _member_index_by_generic_row: member_index_by_generic_row,
             _member_written: member_written,
             _params: params,
-            count_readback,
-            edge_total_readback,
-            types_readback,
-            edges_readback,
-            edge_written_readback,
-            member_total_readback,
-            member_written_readback,
-            members_readback,
         })
     }
 
-    /// Decodes and validates the identity portion after the caller submits the
-    /// command encoder containing `record_semantic_interface`.
-    fn decode_semantic_interface_identity(
-        &self,
-        device: &wgpu::Device,
-        recorded: &RecordedSemanticInterface,
-    ) -> Result<GpuSemanticInterfaceIdentityArtifact> {
-        let counts = readback_words(
-            device,
-            &recorded.counts_readback,
-            "semantic-interface counts",
-        )?;
-        let status = readback_words(
-            device,
-            &recorded.status_readback,
-            "semantic-interface status",
-        )?;
-        let status_bits = status.first().copied().unwrap_or(u32::MAX);
-        if status_bits != 0 {
-            return Err(anyhow::anyhow!(
-                "semantic-interface GPU identity export failed: status=0x{status_bits:08x}, detail={}, name_id={}, name_len={}",
-                status.get(1).copied().unwrap_or(u32::MAX),
-                status.get(2).copied().unwrap_or(u32::MAX),
-                status.get(3).copied().unwrap_or(u32::MAX),
-            ));
-        }
-        validate_recorded_type_topology(device, &recorded._type_topology)?;
-        if counts.len() != COUNT_WORDS {
-            return Err(anyhow::anyhow!(
-                "semantic-interface count readback has {} words; expected {COUNT_WORDS}",
-                counts.len()
-            ));
-        }
-        let library_id = counts[0];
-        let module_count = checked_readback_count("module", counts[1], recorded.module_capacity)?;
-        let module_segment_count = checked_readback_count(
-            "module segment",
-            counts[2],
-            recorded.module_segment_capacity,
-        )?;
-        let declaration_count =
-            checked_readback_count("declaration", counts[3], recorded.declaration_capacity)?;
-        let name_byte_count =
-            checked_readback_count("name byte", counts[4], recorded.name_byte_capacity)?;
-        if library_id != recorded.expected_library_id {
-            return Err(anyhow::anyhow!(
-                "semantic-interface library id changed during GPU export: expected {}, got {library_id}",
-                recorded.expected_library_id
-            ));
-        }
-
-        let module_words = readback_words(
-            device,
-            &recorded.modules_readback,
-            "semantic-interface modules",
-        )?;
-        let segment_words = readback_words(
-            device,
-            &recorded.module_segments_readback,
-            "semantic-interface module segments",
-        )?;
-        let declaration_words = readback_words(
-            device,
-            &recorded.declarations_readback,
-            "semantic-interface declarations",
-        )?;
-        let name_words = readback_words(
-            device,
-            &recorded.name_bytes_readback,
-            "semantic-interface name bytes",
-        )?;
-
-        let modules = module_words
-            .chunks_exact(MODULE_WORDS)
-            .take(module_count)
-            .map(|row| GpuSemanticInterfaceModuleRecord {
-                first_segment: row[0],
-                segment_count: row[1],
-            })
-            .collect();
-        let module_segments = segment_words
-            .chunks_exact(MODULE_SEGMENT_WORDS)
-            .take(module_segment_count)
-            .map(|row| GpuSemanticInterfaceModuleSegmentRecord {
-                name_hash_lo: row[0],
-                name_hash_hi: row[1],
-                name_byte_start: row[2],
-                name_byte_len: row[3],
-            })
-            .collect();
-        let declarations = declaration_words
-            .chunks_exact(DECLARATION_WORDS)
-            .take(declaration_count)
-            .map(|row| GpuSemanticInterfaceDeclarationRecord {
-                module: row[0],
-                name_hash_lo: row[1],
-                name_hash_hi: row[2],
-                name_byte_start: row[3],
-                name_byte_len: row[4],
-                namespace: row[5],
-                kind: row[6],
-                signature_type: row[7],
-                first_member: row[8],
-                member_count: row[9],
-                owner_declaration: row[10],
-                flags: row[11],
-                value_lo: row[12],
-                value_hi: row[13],
-            })
-            .collect();
-        let mut name_bytes = Vec::with_capacity(name_byte_count);
-        for word in name_words {
-            name_bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        name_bytes.truncate(name_byte_count);
-        let artifact = GpuSemanticInterfaceIdentityArtifact {
-            library_id,
-            unit_id: recorded.expected_unit_id,
-            modules,
-            module_segments,
-            declarations,
-            name_bytes,
-        };
-        artifact.validate().map_err(|reason| {
-            anyhow::anyhow!("invalid GPU semantic-interface identity: {reason}")
-        })?;
-        Ok(artifact)
-    }
-
-    /// Decodes and validates the complete public semantic interface after the
-    /// caller submits the command encoder containing the recorded GPU work.
+    /// Reads the exact persisted interface emitted by the GPU. Only the small
+    /// length/status packet is mapped at capacity; artifact data is transferred
+    /// in bounded pages up to the exact length reported by the shader.
     pub fn finish_semantic_interface(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         recorded: &RecordedSemanticInterface,
     ) -> Result<GpuSemanticInterfaceArtifact> {
-        let identity = self.decode_semantic_interface_identity(device, recorded)?;
-        let topology = &recorded._type_topology;
-        let type_count_words = readback_words(
+        let metadata_slice = recorded.metadata_readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
             device,
-            &topology.count_readback,
-            "semantic-interface type count",
+            &metadata_slice,
+            "semantic-interface artifact metadata",
         )?;
-        let edge_count_words = readback_words(
-            device,
-            &topology.edge_total_readback,
-            "semantic-interface type edge count",
-        )?;
-        let member_count_words = readback_words(
-            device,
-            &topology.member_total_readback,
-            "semantic-interface member count",
-        )?;
-        let type_count = checked_readback_count(
-            "type",
-            type_count_words.first().copied().unwrap_or(u32::MAX),
-            topology.type_capacity,
-        )?;
-        let edge_count = checked_readback_count(
-            "type edge",
-            edge_count_words.first().copied().unwrap_or(u32::MAX),
-            topology.edge_capacity,
-        )?;
-        let member_count = checked_readback_count(
-            "member",
-            member_count_words.first().copied().unwrap_or(u32::MAX),
-            topology.member_capacity,
-        )?;
-        let type_words = readback_words(
-            device,
-            &topology.types_readback,
-            "semantic-interface type records",
-        )?;
-        let edge_words = readback_words(
-            device,
-            &topology.edges_readback,
-            "semantic-interface type edges",
-        )?;
-        let member_words = readback_words(
-            device,
-            &topology.members_readback,
-            "semantic-interface member records",
-        )?;
-        if type_words.len() < type_count.saturating_mul(TYPE_WORDS)
-            || edge_words.len() < edge_count
-            || member_words.len() < member_count.saturating_mul(MEMBER_WORDS)
-        {
+        let mapped = metadata_slice.get_mapped_range();
+        let metadata = read_u32_words::<5>(&mapped, "semantic-interface artifact metadata")?;
+        drop(mapped);
+        recorded.metadata_readback.unmap();
+        let [byte_len, status, detail, name_id, name_len] = metadata;
+        if status != 0 {
             return Err(anyhow::anyhow!(
-                "semantic-interface complete readback is shorter than its GPU counts"
+                "semantic-interface GPU export failed: status=0x{status:08x}, detail={detail}, name_id={name_id}, name_len={name_len}"
             ));
         }
-
-        let types = type_words
-            .chunks_exact(TYPE_WORDS)
-            .take(type_count)
-            .map(|row| GpuSemanticInterfaceTypeRecord {
-                kind: row[0],
-                payload_lo: row[1],
-                payload_hi: row[2],
-                first_edge: row[3],
-                edge_count: row[4],
-                length_kind: row[5],
-                length_lo: row[6],
-                length_hi: row[7],
-                nominal_unit_id: row[8],
-            })
-            .collect();
-        let type_edges = edge_words
-            .iter()
-            .take(edge_count)
-            .map(|&type_index| GpuSemanticInterfaceTypeEdge { type_index })
-            .collect();
-        let members = member_words
-            .chunks_exact(MEMBER_WORDS)
-            .take(member_count)
-            .map(|row| GpuSemanticInterfaceMemberRecord {
-                owner_declaration: row[0],
-                kind: row[1],
-                ordinal: row[2],
-                name_hash_lo: row[3],
-                name_hash_hi: row[4],
-                name_byte_start: row[5],
-                name_byte_len: row[6],
-                type_index: row[7],
-                value_lo: row[8],
-                value_hi: row[9],
-            })
-            .collect();
-        let artifact = GpuSemanticInterfaceArtifact {
-            version: GPU_SEMANTIC_INTERFACE_VERSION,
-            library_id: identity.library_id,
-            unit_id: identity.unit_id,
-            modules: identity.modules,
-            module_segments: identity.module_segments,
-            declarations: identity.declarations,
-            types,
-            type_edges,
-            members,
-            name_bytes: identity.name_bytes,
-        };
-        artifact.validate().map_err(|reason| {
-            let member_ranges = artifact
-                .declarations
-                .iter()
-                .take(16)
-                .map(|declaration| (declaration.first_member, declaration.member_count))
-                .collect::<Vec<_>>();
-            anyhow::anyhow!(
-                "invalid complete GPU semantic interface: {reason}; first member ranges: {member_ranges:?}"
-            )
-        })?;
+        let byte_len = byte_len as usize;
+        if byte_len > recorded.artifact_capacity {
+            return Err(anyhow::anyhow!(
+                "semantic-interface artifact requires {byte_len} bytes but its bounded GPU output has {}",
+                recorded.artifact_capacity
+            ));
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] semantic_interface.artifact: bytes={byte_len} capacity_bytes={} amplification={:.3}",
+                recorded.artifact_capacity,
+                recorded.artifact_capacity as f64 / byte_len.max(1) as f64,
+            );
+        }
+        let bytes = recorded.artifact_readback.read(
+            device,
+            queue,
+            &recorded._artifact_words.buffer,
+            0,
+            byte_len,
+            "semantic-interface artifact",
+        )?;
+        let artifact = GpuSemanticInterfaceArtifact::from_bytes(&bytes)
+            .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;
+        if artifact.library_id != recorded.expected_library_id
+            || artifact.unit_id != recorded.expected_unit_id
+        {
+            return Err(anyhow::anyhow!(
+                "semantic-interface identity changed during GPU export: expected [{}, {}], got [{}, {}]",
+                recorded.expected_library_id,
+                recorded.expected_unit_id,
+                artifact.library_id,
+                artifact.unit_id,
+            ));
+        }
         Ok(artifact)
     }
 }
 
-fn validate_recorded_type_topology(
-    device: &wgpu::Device,
-    recorded: &RecordedSemanticInterfaceTypeTopology,
-) -> Result<()> {
-    let count_words = readback_words(
-        device,
-        &recorded.count_readback,
-        "semantic-interface type count",
-    )?;
-    let edge_total_words = readback_words(
-        device,
-        &recorded.edge_total_readback,
-        "semantic-interface type edge count",
-    )?;
-    let count = checked_readback_count(
-        "type",
-        count_words.first().copied().unwrap_or(u32::MAX),
-        recorded.type_capacity,
-    )?;
-    let edge_total = checked_readback_count(
-        "type edge",
-        edge_total_words.first().copied().unwrap_or(u32::MAX),
-        recorded.edge_capacity,
-    )?;
-    let type_words = readback_words(
-        device,
-        &recorded.types_readback,
-        "semantic-interface type records",
-    )?;
-    let edges = readback_words(
-        device,
-        &recorded.edges_readback,
-        "semantic-interface type edges",
-    )?;
-    let edge_written = readback_words(
-        device,
-        &recorded.edge_written_readback,
-        "semantic-interface type edge written flags",
-    )?;
-    if type_words.len() < count.saturating_mul(TYPE_WORDS)
-        || edges.len() < edge_total
-        || edge_written.len() < edge_total
-    {
-        return Err(anyhow::anyhow!(
-            "semantic-interface type readback is shorter than its GPU counts"
-        ));
-    }
-    if let Some((index, &flag)) = edge_written[..edge_total]
-        .iter()
-        .enumerate()
-        .find(|(_, flag)| **flag != 1)
-    {
-        return Err(anyhow::anyhow!(
-            "semantic-interface type edge {index} has invalid written flag {flag}"
-        ));
-    }
-    let member_total_words = readback_words(
-        device,
-        &recorded.member_total_readback,
-        "semantic-interface member count",
-    )?;
-    let member_total = checked_readback_count(
-        "member",
-        member_total_words.first().copied().unwrap_or(u32::MAX),
-        recorded.member_capacity,
-    )?;
-    let member_written = readback_words(
-        device,
-        &recorded.member_written_readback,
-        "semantic-interface member written flags",
-    )?;
-    if member_written.len() < member_total {
-        return Err(anyhow::anyhow!(
-            "semantic-interface member written readback is shorter than its GPU count"
-        ));
-    }
-    if let Some((index, &flag)) = member_written[..member_total]
-        .iter()
-        .enumerate()
-        .find(|(_, flag)| **flag != 1)
-    {
-        return Err(anyhow::anyhow!(
-            "semantic-interface member {index} has invalid written flag {flag}; flags={:?}",
-            &member_written[..member_total.min(16)]
-        ));
-    }
-    for index in 0..count {
-        let row = &type_words[index * TYPE_WORDS..(index + 1) * TYPE_WORDS];
-        let kind = row[0];
-        let first_edge = row[3] as usize;
-        let edge_count = row[4] as usize;
-        let edge_end = first_edge.checked_add(edge_count).ok_or_else(|| {
-            anyhow::anyhow!("semantic-interface type record {index} edge range overflows")
-        })?;
-        if edge_end > edge_total {
-            return Err(anyhow::anyhow!(
-                "semantic-interface type record {index} edge range {first_edge}..{edge_end} exceeds {edge_total}"
-            ));
-        }
-        if !matches!(kind, 1..=8) {
-            return Err(anyhow::anyhow!(
-                "semantic-interface type record {index} has unsupported kind {kind}"
-            ));
-        }
-        if matches!(kind, 1 | 2 | 8) && edge_count != 0 {
-            return Err(anyhow::anyhow!(
-                "semantic-interface leaf type record {index} has {edge_count} edges"
-            ));
-        }
-        if matches!(kind, 4..=6) && edge_count != 1 {
-            return Err(anyhow::anyhow!(
-                "semantic-interface unary type record {index} has {edge_count} edges"
-            ));
-        }
-        if kind == 7 && edge_count == 0 {
-            return Err(anyhow::anyhow!(
-                "semantic-interface function type record {index} has no return edge"
-            ));
-        }
-        if kind == 4 && !matches!(row[5], 1 | 2) {
-            return Err(anyhow::anyhow!(
-                "semantic-interface array type record {index} has invalid length kind {}",
-                row[5]
-            ));
-        }
-        for &target in &edges[first_edge..edge_end] {
-            if target as usize >= index {
-                return Err(anyhow::anyhow!(
-                    "semantic-interface type record {index} edge target {target} is not in prior topological order"
-                ));
-            }
-        }
-    }
-    Ok(())
+fn semantic_interface_artifact_capacity(
+    module_capacity: u32,
+    module_segment_capacity: u32,
+    declaration_capacity: u32,
+    type_capacity: usize,
+    edge_capacity: usize,
+    member_capacity: usize,
+    name_byte_capacity: u32,
+) -> Result<usize> {
+    let table_words = [
+        (module_capacity as usize, MODULE_WORDS),
+        (module_segment_capacity as usize, MODULE_SEGMENT_WORDS),
+        (declaration_capacity as usize, DECLARATION_WORDS),
+        (type_capacity, TYPE_WORDS),
+        (edge_capacity, 1),
+        (member_capacity, MEMBER_WORDS),
+    ]
+    .into_iter()
+    .try_fold(0usize, |total, (rows, words)| {
+        rows.checked_mul(words)
+            .and_then(|words| total.checked_add(words))
+    })
+    .ok_or_else(|| anyhow::anyhow!("semantic-interface artifact table capacity overflows"))?;
+    72usize
+        .checked_add(
+            table_words
+                .checked_mul(4)
+                .ok_or_else(|| anyhow::anyhow!("semantic-interface artifact bytes overflow"))?,
+        )
+        .and_then(|bytes| bytes.checked_add(name_byte_capacity as usize))
+        .ok_or_else(|| anyhow::anyhow!("semantic-interface artifact capacity overflows"))
 }
 
 fn u32_capacity(buffer: &wgpu::Buffer, words_per_row: u64, label: &str) -> Result<u32> {
@@ -3244,34 +1941,4 @@ fn initialized_u32_buffer(
             | extra_usage,
     });
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), words.len(), label)
-}
-
-fn readback_words(device: &wgpu::Device, buffer: &wgpu::Buffer, label: &str) -> Result<Vec<u32>> {
-    let slice = buffer.slice(..);
-    crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
-    let mapped = slice.get_mapped_range();
-    if mapped.len() % 4 != 0 {
-        drop(mapped);
-        buffer.unmap();
-        return Err(anyhow::anyhow!(
-            "{label} readback byte length is not word aligned"
-        ));
-    }
-    let words = mapped
-        .chunks_exact(4)
-        .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
-        .collect();
-    drop(mapped);
-    buffer.unmap();
-    Ok(words)
-}
-
-fn checked_readback_count(label: &str, count: u32, capacity: usize) -> Result<usize> {
-    let count = count as usize;
-    if count > capacity {
-        return Err(anyhow::anyhow!(
-            "semantic-interface {label} count {count} exceeds readback capacity {capacity}"
-        ));
-    }
-    Ok(count)
 }

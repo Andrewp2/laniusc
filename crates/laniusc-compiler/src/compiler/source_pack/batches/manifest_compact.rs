@@ -5,7 +5,7 @@ use super::*;
 /// The returned manifest carries counts and limits only; detailed schedule,
 /// artifact, batch, and source records stay in their persisted page files.
 pub(in crate::compiler) fn compact_path_build_manifest_from_stored_indexes(
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
     target: SourcePackArtifactTarget,
     schedule_index: &SourcePackLibraryScheduleIndex,

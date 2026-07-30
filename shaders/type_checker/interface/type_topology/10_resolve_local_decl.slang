@@ -1,10 +1,11 @@
+import hir_records;
+
 // Resolve each HIR type node to the local declaration row selected by the
 // module resolver. Named generic instances use their checked instance binding
 // as a fallback; neither path inspects source spelling.
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> type_expr_ref_tag;

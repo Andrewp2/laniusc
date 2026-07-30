@@ -8,7 +8,7 @@ pub(in crate::compiler) struct BuildUnitSummaryAccumulator<'a> {
     /// Partition whose source range and metadata are being summarized.
     pub(in crate::compiler) partition: &'a SourcePackLibraryPartition,
     /// Normalized unit limits used to rebuild frontend and codegen units.
-    pub(in crate::compiler) limits: CodegenUnitLimits,
+    pub(in crate::compiler) limits: CompilationUnitLimits,
     /// Dense codegen-unit index expected for the next replayed unit.
     pub(in crate::compiler) expected_codegen_unit_index: usize,
     /// Next source index the replayed codegen units must start at.
@@ -25,7 +25,7 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
     /// Starts a build-unit summary for one library partition.
     pub(in crate::compiler) fn new(
         partition: &'a SourcePackLibraryPartition,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Self {
         Self {
             partition,
@@ -41,9 +41,9 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
     /// Records one replayed codegen unit and validates contiguous coverage.
     pub(in crate::compiler) fn record_codegen_unit(
         &mut self,
-        unit: &CodegenUnit,
+        unit: &CompilationUnit,
     ) -> Result<(), CompileError> {
-        validate_codegen_unit_shape(
+        validate_compilation_unit_shape(
             unit,
             self.partition.target,
             self.partition.partition_index,
@@ -172,8 +172,7 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
                 source_bytes: self.partition.source_byte_count,
                 source_lines: self.source_lines,
             },
-            frontend_unit_count: codegen_unit_count,
-            codegen_unit_count,
+            unit_count: codegen_unit_count,
         })
     }
 }
@@ -182,40 +181,31 @@ impl<'a> BuildUnitSummaryAccumulator<'a> {
 pub(in crate::compiler) struct BuildUnitSummary {
     /// Single frontend unit covering the partition's whole source range.
     pub(in crate::compiler) frontend_unit: LibraryUnit,
-    /// Number of frontend units that page expansion will emit.
-    pub(in crate::compiler) frontend_unit_count: usize,
-    /// Number of codegen units that page expansion will emit.
-    pub(in crate::compiler) codegen_unit_count: usize,
+    /// Number of compilation units that page expansion will emit.
+    pub(in crate::compiler) unit_count: usize,
 }
 
-/// Replays stored source-file records to summarize frontend/codegen unit counts.
+/// Replays stored source-file records once to summarize the shared compilation units.
 pub(in crate::compiler) fn summarize_build_units(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<BuildUnitSummary, CompileError> {
     validate_library_partition(partition, partition.target, Some(partition.partition_index))?;
     let mut summary_builder = BuildUnitSummaryAccumulator::new(partition, limits);
-    let codegen_unit_count = CodegenUnitPlan::try_for_each_from_fallible_files(
+    let codegen_unit_count = CompilationUnitPlan::try_for_each_from_fallible_files(
         source_unit_inputs_from_records(store, partition),
         limits,
         |unit| summary_builder.record_codegen_unit(&unit),
     )?;
-    let frontend_unit_count = FrontendUnitPlan::try_for_each_from_fallible_files(
-        source_unit_inputs_from_records(store, partition),
-        limits,
-        |_| Ok::<(), CompileError>(()),
-    )?;
-    let mut summary = summary_builder.finish(codegen_unit_count)?;
-    summary.frontend_unit_count = frontend_unit_count;
-    Ok(summary)
+    summary_builder.finish(codegen_unit_count)
 }
 
 /// Creates the compact build-unit page for one library partition.
 pub(in crate::compiler) fn compact_build_unit_page(
     store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<SourcePackLibraryBuildUnitPage, CompileError> {
     validate_library_partition(partition, partition.target, Some(partition.partition_index))?;
     let summary = summarize_build_units(store, partition, limits)?;
@@ -231,28 +221,19 @@ pub(in crate::compiler) fn compact_build_unit_page(
         source_line_count: partition.source_line_count,
         limits: limits.normalized(),
         frontend_unit: summary.frontend_unit,
-        frontend_unit_count: summary.frontend_unit_count,
-        codegen_unit_count: summary.codegen_unit_count,
-        frontend_units: Vec::new(),
-        codegen_units: Vec::new(),
+        unit_count: summary.unit_count,
+        units: Vec::new(),
     };
     validate_library_build_unit_page(&page, partition.target, Some(partition.partition_index))?;
     Ok(page)
 }
 
-/// Returns the effective number of codegen-unit pages for a build-unit page.
-pub(in crate::compiler) fn library_build_unit_page_codegen_unit_count(
+/// Returns the effective number of compilation-unit pages for a build-unit page.
+pub(in crate::compiler) fn library_build_unit_page_unit_count(
     page: &SourcePackLibraryBuildUnitPage,
 ) -> usize {
-    page.codegen_unit_count.max(page.codegen_units.len())
-}
-
-/// Returns the effective number of frontend-unit pages for a build-unit page.
-pub(in crate::compiler) fn library_build_unit_page_frontend_unit_count(
-    page: &SourcePackLibraryBuildUnitPage,
-) -> usize {
-    page.frontend_unit_count
-        .max(page.frontend_units.len())
+    page.unit_count
+        .max(page.units.len())
         .max(usize::from(page.frontend_unit.source_file_count != 0))
 }
 
@@ -324,68 +305,38 @@ pub(in crate::compiler) fn library_schedule_page_contains_frontend_job(
         && job_index < library_schedule_page_frontend_job_end(page)?)
 }
 
-/// Builds a persisted frontend-unit page from a compact build-unit page.
-pub(in crate::compiler) fn library_frontend_unit_page(
+/// Builds a persisted compilation-unit page from a compact build-unit page.
+pub(in crate::compiler) fn library_compilation_unit_page(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
-    unit: FrontendUnit,
-) -> Result<SourcePackLibraryFrontendUnitPage, CompileError> {
+    unit: CompilationUnit,
+) -> Result<SourcePackLibraryCompilationUnitPage, CompileError> {
     validate_library_build_unit_page(
         build_unit_page,
         build_unit_page.target,
         Some(build_unit_page.partition_index),
     )?;
-    let frontend_unit_count = library_build_unit_page_frontend_unit_count(build_unit_page);
-    let page = SourcePackLibraryFrontendUnitPage {
-        version: SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION,
+    let unit_count = library_build_unit_page_unit_count(build_unit_page);
+    let page = SourcePackLibraryCompilationUnitPage {
+        version: SOURCE_PACK_LIBRARY_COMPILATION_UNIT_PAGE_VERSION,
         target: build_unit_page.target,
         partition_index: build_unit_page.partition_index,
         library_id: build_unit_page.library_id,
         limits: build_unit_page.limits,
-        frontend_unit_index: unit.unit_index,
-        frontend_unit_count,
+        unit_index: unit.unit_index,
+        unit_count,
         unit,
     };
-    validate_frontend_unit_page(
+    validate_compilation_unit_page(
         &page,
         build_unit_page.target,
         Some(build_unit_page.partition_index),
-        Some(page.frontend_unit_index),
+        Some(page.unit_index),
     )?;
     Ok(page)
 }
 
-/// Builds a persisted codegen-unit page from a compact build-unit page.
-pub(in crate::compiler) fn library_codegen_unit_page(
-    build_unit_page: &SourcePackLibraryBuildUnitPage,
-    unit: CodegenUnit,
-) -> Result<SourcePackLibraryCodegenUnitPage, CompileError> {
-    validate_library_build_unit_page(
-        build_unit_page,
-        build_unit_page.target,
-        Some(build_unit_page.partition_index),
-    )?;
-    let codegen_unit_count = library_build_unit_page_codegen_unit_count(build_unit_page);
-    let page = SourcePackLibraryCodegenUnitPage {
-        version: SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION,
-        target: build_unit_page.target,
-        partition_index: build_unit_page.partition_index,
-        library_id: build_unit_page.library_id,
-        limits: build_unit_page.limits,
-        codegen_unit_index: unit.unit_index,
-        codegen_unit_count,
-        unit,
-    };
-    validate_codegen_unit_page(
-        &page,
-        build_unit_page.target,
-        Some(build_unit_page.partition_index),
-        Some(page.codegen_unit_index),
-    )?;
-    Ok(page)
-}
-
-/// Expands and stores frontend-unit pages from persisted source records.
-pub(in crate::compiler) fn store_frontend_unit_pages_from_source_records(
+/// Expands and stores compilation-unit pages from persisted source records.
+pub(in crate::compiler) fn store_compilation_unit_pages_from_source_records(
     build_unit_page: &SourcePackLibraryBuildUnitPage,
     partition: &SourcePackLibraryPartition,
     store: &FilesystemArtifactStore,
@@ -410,79 +361,25 @@ pub(in crate::compiler) fn store_frontend_unit_pages_from_source_records(
             build_unit_page.partition_index
         )));
     }
-    let expected_frontend_unit_count = library_build_unit_page_frontend_unit_count(build_unit_page);
-    let mut emitted_frontend_unit_count = 0usize;
-    let iterated_frontend_unit_count = FrontendUnitPlan::try_for_each_from_fallible_files(
+    let expected_unit_count = library_build_unit_page_unit_count(build_unit_page);
+    let mut emitted_unit_count = 0usize;
+    let iterated_unit_count = CompilationUnitPlan::try_for_each_from_fallible_files(
         source_unit_inputs_from_records(store, partition),
         build_unit_page.limits,
         |unit| {
-            let page = library_frontend_unit_page(build_unit_page, unit)?;
-            store.store_library_frontend_unit_page(&page)?;
-            emitted_frontend_unit_count += 1;
+            let page = library_compilation_unit_page(build_unit_page, unit)?;
+            store.store_library_compilation_unit_page(&page)?;
+            emitted_unit_count += 1;
             Ok::<(), CompileError>(())
         },
     )?;
-    if iterated_frontend_unit_count != expected_frontend_unit_count
-        || emitted_frontend_unit_count != expected_frontend_unit_count
-    {
+    if iterated_unit_count != expected_unit_count || emitted_unit_count != expected_unit_count {
         return Err(library_partition_contract_error(format!(
-            "build-unit page {} emitted {} frontend-unit pages from {} iterated stored records but expected {}",
+            "build-unit page {} emitted {} compilation-unit pages from {} iterated stored records but expected {}",
             build_unit_page.partition_index,
-            emitted_frontend_unit_count,
-            iterated_frontend_unit_count,
-            expected_frontend_unit_count
-        )));
-    }
-    Ok(())
-}
-
-/// Expands and stores codegen-unit pages from persisted source records.
-pub(in crate::compiler) fn store_codegen_unit_pages_from_source_records(
-    build_unit_page: &SourcePackLibraryBuildUnitPage,
-    partition: &SourcePackLibraryPartition,
-    store: &FilesystemArtifactStore,
-) -> Result<(), CompileError> {
-    validate_library_build_unit_page(
-        build_unit_page,
-        build_unit_page.target,
-        Some(build_unit_page.partition_index),
-    )?;
-    validate_library_partition(
-        partition,
-        build_unit_page.target,
-        Some(build_unit_page.partition_index),
-    )?;
-    if build_unit_page.library_id != partition.library_id
-        || build_unit_page.first_source_index != partition.first_source_index
-        || build_unit_page.source_file_count != partition.source_file_count
-        || build_unit_page.source_byte_count != partition.source_byte_count
-    {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {} does not match partition metadata",
-            build_unit_page.partition_index
-        )));
-    }
-    let expected_codegen_unit_count = library_build_unit_page_codegen_unit_count(build_unit_page);
-    let mut emitted_codegen_unit_count = 0usize;
-    let iterated_codegen_unit_count = CodegenUnitPlan::try_for_each_from_fallible_files(
-        source_unit_inputs_from_records(store, partition),
-        build_unit_page.limits,
-        |unit| {
-            let page = library_codegen_unit_page(build_unit_page, unit)?;
-            store.store_library_codegen_unit_page(&page)?;
-            emitted_codegen_unit_count += 1;
-            Ok::<(), CompileError>(())
-        },
-    )?;
-    if iterated_codegen_unit_count != expected_codegen_unit_count
-        || emitted_codegen_unit_count != expected_codegen_unit_count
-    {
-        return Err(library_partition_contract_error(format!(
-            "build-unit page {} emitted {} codegen-unit pages from {} iterated stored records but expected {}",
-            build_unit_page.partition_index,
-            emitted_codegen_unit_count,
-            iterated_codegen_unit_count,
-            expected_codegen_unit_count
+            emitted_unit_count,
+            iterated_unit_count,
+            expected_unit_count
         )));
     }
     Ok(())
@@ -599,8 +496,8 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
     validate_library_partition(partition, index.target, Some(entry.partition_index))?;
     validate_library_build_unit_page(build_unit_page, index.target, Some(entry.partition_index))?;
     if build_unit_page.library_id != entry.library_id
-        || library_build_unit_page_codegen_unit_count(build_unit_page) != entry.codegen_job_count
-        || library_build_unit_page_frontend_unit_count(build_unit_page)
+        || library_build_unit_page_unit_count(build_unit_page) != entry.codegen_job_count
+        || library_build_unit_page_unit_count(build_unit_page)
             != library_schedule_entry_frontend_job_count(entry)
     {
         return Err(library_partition_contract_error(format!(
@@ -611,8 +508,11 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
 
     let first_frontend_unit_index = library_schedule_entry_first_frontend_job_index(entry);
     let frontend_job_count = library_schedule_entry_frontend_job_count(entry);
-    let first_frontend_unit_page =
-        store.load_library_frontend_unit_page_for_target(index.target, entry.partition_index, 0)?;
+    let first_frontend_unit_page = store.load_library_compilation_unit_page_for_target(
+        index.target,
+        entry.partition_index,
+        0,
+    )?;
     let first_frontend_job = frontend_job_from_unit(
         build_unit_page.library_id,
         &first_frontend_unit_page.unit,
@@ -639,7 +539,7 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
     };
 
     for frontend_unit_offset in 0..frontend_job_count {
-        let unit_page = store.load_library_frontend_unit_page_for_target(
+        let unit_page = store.load_library_compilation_unit_page_for_target(
             index.target,
             entry.partition_index,
             frontend_unit_offset,
@@ -682,14 +582,19 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
             index.target,
             index.job_count,
             &job,
-            |writer| write_dependency_frontend_job_ranges(writer, store, partition),
+            |writer| {
+                if frontend_unit_offset != 0 {
+                    writer.push_range(entry.frontend_job_index, frontend_unit_offset)?;
+                }
+                write_dependency_frontend_job_ranges(writer, store, partition)
+            },
         )?;
     }
 
     let first_codegen_unit_index =
         entry.first_codegen_job_index - library_schedule_index_frontend_job_count(index);
     for codegen_unit_offset in 0..entry.codegen_job_count {
-        let unit_page = store.load_library_codegen_unit_page_for_target(
+        let unit_page = store.load_library_compilation_unit_page_for_target(
             index.target,
             entry.partition_index,
             codegen_unit_offset,
@@ -731,29 +636,22 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
             &job,
             |writer| {
                 writer.push(owning_frontend_job_index)?;
-                if codegen_unit_offset > 0 {
-                    writer.push_range(entry.frontend_job_index, codegen_unit_offset)?;
-                }
-                let remaining_frontend_job_count = frontend_job_count
-                    .checked_sub(codegen_unit_offset.saturating_add(1))
+                let sibling_frontends = SourcePackJobIndexRange {
+                    first_job_index: entry.frontend_job_index,
+                    job_count: frontend_job_count,
+                };
+                for range in sibling_frontends
+                    .excluding(owning_frontend_job_index)
                     .ok_or_else(|| {
                         library_partition_contract_error(format!(
-                            "schedule page {} codegen unit {} exceeds frontend job count {}",
-                            entry.partition_index, codegen_unit_offset, frontend_job_count
+                            "schedule page {} frontend job range overflows",
+                            entry.partition_index
                         ))
-                    })?;
-                if remaining_frontend_job_count > 0 {
-                    let first_following_frontend_job_index =
-                        owning_frontend_job_index.checked_add(1).ok_or_else(|| {
-                            library_partition_contract_error(format!(
-                                "schedule page {} following frontend dependency overflows",
-                                entry.partition_index
-                            ))
-                        })?;
-                    writer.push_range(
-                        first_following_frontend_job_index,
-                        remaining_frontend_job_count,
-                    )?;
+                    })?
+                    .into_iter()
+                    .flatten()
+                {
+                    writer.push_range(range.first_job_index, range.job_count)?;
                 }
                 write_dependency_frontend_job_ranges(writer, store, partition)
             },
@@ -769,7 +667,7 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
 /// Converts one frontend unit into a source-pack library-frontend job.
 pub(in crate::compiler) fn frontend_job_from_unit(
     library_id: u32,
-    unit: &FrontendUnit,
+    unit: &CompilationUnit,
     job_index: usize,
     phase_unit_index: usize,
 ) -> SourcePackJob {
@@ -791,7 +689,7 @@ pub(in crate::compiler) fn frontend_job_from_unit(
 /// Converts one codegen unit into a source-pack codegen job.
 pub(in crate::compiler) fn codegen_job_from_unit(
     page: &SourcePackLibrarySchedulePage,
-    unit: &CodegenUnit,
+    unit: &CompilationUnit,
     job_index: usize,
     phase_unit_index: usize,
     frontend_job_index: usize,

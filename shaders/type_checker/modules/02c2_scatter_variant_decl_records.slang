@@ -1,3 +1,5 @@
+import hir_records;
+
 // Scatter compact enum variants into the declaration table.
 //
 // Variants are family rows, not grammar/HIR-item rediscoveries. Their owner is
@@ -13,8 +15,6 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_variant_count;

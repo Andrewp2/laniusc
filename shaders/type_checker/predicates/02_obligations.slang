@@ -4,6 +4,7 @@
 // records. It intentionally stays bounded: direct calls only, concrete impl
 // rows only, and trait bounds with at most two type arguments.
 
+import hir_records;
 import fixed.key;
 import generated_parse_production_ids;
 import hir_expr_semantics;
@@ -19,8 +20,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -31,7 +30,6 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
-StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
@@ -96,12 +94,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
-
-static const uint EXPR_RECORD_STRIDE = 4u;
-static const uint EXPR_RECORD_FORM = 0u;
-static const uint EXPR_RECORD_LEFT = 1u;
-static const uint EXPR_RECORD_RIGHT = 2u;
-static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -242,27 +234,36 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-uint expr_record_slot(uint node, uint slot)
+uint compact_node_for_raw(uint node)
 {
-    return valid_node(node) ? hir_expr_record[node * EXPR_RECORD_STRIDE + slot] : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return dense < count ? dense : INVALID;
 }
 
-uint expr_form(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_FORM) : 0u;
-}
-
-uint expr_value_token(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
-}
-
-uint resolve_expr(uint node)
+uint compact_expr_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
     uint result = hir_expr_result_root_node[node];
-    return valid_node(result) ? result : node;
+    return compact_node_for_raw(valid_node(result) ? result : node);
+}
+
+uint compact_expr_form(uint node)
+{
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    return node < count ? compact_hir_payload[node].a : 0u;
+}
+
+uint compact_expr_value_token(uint node)
+{
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node >= count)
+        return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint visible_type_for_token(uint token_i)
@@ -319,7 +320,7 @@ uint direct_node_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
+    uint lit = hir_scalar_type_for_expr_form(compact_expr_form(compact_expr_for_raw(node)));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -358,13 +359,41 @@ uint direct_node_type(uint node)
     return TY_UNKNOWN;
 }
 
-uint direct_expr_record_type(uint node)
+uint direct_compact_node_type(uint node)
 {
-    node = resolve_expr(node);
-    if (!valid_node(node))
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node >= count)
         return TY_UNKNOWN;
 
-    uint form = expr_form(node);
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    uint literal = hir_scalar_type_for_expr_form(payload.a);
+    if (literal != TY_UNKNOWN)
+        return literal;
+    if (core.kind == HIR_NAME_EXPR)
+        return visible_type_for_token(compact_expr_value_token(node));
+    if (core.kind == HIR_MEMBER_EXPR)
+        return visible_type_for_token(payload.c);
+    if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MATCH_EXPR)
+        return valid_token(core.token_start) ? call_return_type[core.token_start] : TY_UNKNOWN;
+    if (core.kind != HIR_CALL_EXPR || payload.a >= count)
+        return TY_UNKNOWN;
+
+    HirCore callee = compact_hir_core[payload.a];
+    uint token = callee.kind == HIR_MEMBER_EXPR
+        ? compact_hir_payload[payload.a].c
+        : callee.token_start;
+    return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
+}
+
+uint direct_expr_record_type(uint node)
+{
+    uint expr = compact_expr_for_raw(node);
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (expr >= compact_count)
+        return TY_UNKNOWN;
+
+    uint form = compact_expr_form(expr);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
@@ -372,10 +401,7 @@ uint direct_expr_record_type(uint node)
     if (form == HIR_EXPR_FLOAT)
         return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
-    {
-        uint token_i = expr_value_token(node);
-        return visible_type_for_token(token_i);
-    }
+        return visible_type_for_token(compact_expr_value_token(expr));
 
     if (form == HIR_EXPR_NOT ||
         form == HIR_EXPR_EQ ||
@@ -394,8 +420,9 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_MUL ||
         form == HIR_EXPR_DIV)
     {
-        uint left_ty = direct_node_type(resolve_expr(expr_record_slot(node, EXPR_RECORD_LEFT)));
-        uint right_ty = direct_node_type(resolve_expr(expr_record_slot(node, EXPR_RECORD_RIGHT)));
+        HirPayload payload = compact_hir_payload[expr];
+        uint left_ty = direct_compact_node_type(payload.b);
+        uint right_ty = direct_compact_node_type(payload.c);
         return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
     }
 
@@ -416,15 +443,19 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint result = resolve_expr(root);
+    uint result = hir_expr_result_root_node[root];
     if (!valid_node(result))
+        result = root;
+    uint expr = compact_expr_for_raw(result);
+    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (expr >= compact_count)
         return TY_UNKNOWN;
 
     uint record_ty = direct_expr_record_type(result);
     if (record_ty != TY_UNKNOWN)
     {
-        uint token_i = valid_token(expr_value_token(result))
-            ? expr_value_token(result)
+        uint token_i = valid_token(compact_expr_value_token(expr))
+            ? compact_expr_value_token(expr)
             : hir_token_pos[result];
         value_token = valid_token(token_i) ? token_i : INVALID;
         return record_ty;

@@ -1,8 +1,6 @@
+import hir_records;
 import codegen.lowering_ir;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 static const uint LIR_INVALID = 0xffffffffu;
 

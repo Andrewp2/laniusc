@@ -522,7 +522,7 @@ mod tests {
             std::env::temp_dir().join(format!("laniusc-gpu-link-{}.wasm", std::process::id()));
         std::fs::write(&path, &module).expect("write linked Wasm fixture");
         let output = std::process::Command::new(node)
-            .args(["-e", "const fs=require('fs'); WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(x=>process.stdout.write(String(x.instance.exports.main())))", path.to_str().unwrap()])
+            .args(["-e", "const fs=require('fs'); const env=new Proxy({}, {get:()=>()=>0}); WebAssembly.instantiate(fs.readFileSync(process.argv[1]),{env}).then(x=>process.stdout.write(String(x.instance.exports.main())))", path.to_str().unwrap()])
             .output().expect("run linked Wasm fixture in Node");
         let _ = std::fs::remove_file(&path);
         assert!(

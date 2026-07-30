@@ -11,7 +11,7 @@ use super::{
 /// The module index sorts module keys, resolves imports into module ids, and
 /// validates the import graph before declaration lookup consumes it.
 pub(in crate::type_checker) struct ModuleIndex {
-    pub(in crate::type_checker) scatter_module_records: wgpu::BindGroup,
+    pub(in crate::type_checker) scatter_module_records: ComputeOperation,
     pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
     pub(in crate::type_checker) module_key_radix_dispatch_params:
         LaniusBuffer<ModuleKeyRadixParams>,
@@ -23,8 +23,8 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) clear_dependency_module_lookup: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) build_dependency_module_lookup: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) resolve_dependency_imports: Option<wgpu::BindGroup>,
-    pub(in crate::type_checker) scatter_import_records: wgpu::BindGroup,
-    pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
+    pub(in crate::type_checker) scatter_import_records: ComputeOperation,
+    pub(in crate::type_checker) resolve_imports: ComputeOperation,
     pub(in crate::type_checker) seed_import_edge_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) import_edge_key_radix_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) sort_import_edges: RadixSortOperation<ModuleKeyRadixParams>,
@@ -35,6 +35,7 @@ pub(in crate::type_checker) struct ModuleIndex {
 /// Creates bind groups for module indexing and import-edge validation.
 pub(in crate::type_checker) fn create_module_index(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     layout: Layout,
     inputs: &CreateInputs<'_>,
@@ -51,31 +52,19 @@ pub(in crate::type_checker) fn create_module_index(
             key_step: 0,
         },
     );
-    let scatter_module_records = resources.reflected_bind_group_with_overrides(
+    let mut module_record_resources = resources.clone();
+    module_record_resources.buffer("gParams", &module_record_params);
+    let scatter_module_records = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02_scatter_module_records",
-        &passes.kernel("type_checker/modules/02_scatter_module_records"),
-        &[
-            ("gParams", module_record_params.as_entire_binding()),
-            (
-                "module_record_flag",
-                buffers.module_record_flag.as_entire_binding(),
-            ),
-            (
-                "module_record_prefix",
-                buffers.module_record_prefix.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_hir",
-                buffers.path_id_by_owner_hir.as_entire_binding(),
-            ),
-            ("module_file_id", buffers.module_file_id.as_entire_binding()),
-            ("module_path_id", buffers.module_path_id.as_entire_binding()),
-            (
-                "module_owner_hir",
-                buffers.module_owner_hir.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &module_record_resources,
+        passes,
+        MODULE_RECORDS_SCATTER,
+        layout
+            .n_blocks
+            .max(layout.module_n_blocks)
+            .saturating_mul(256)
+            .max(1),
     )?;
 
     let module_key_build_params = uniform_from_val(
@@ -272,34 +261,13 @@ pub(in crate::type_checker) fn create_module_index(
 
     retained_params.push(validate_module_params);
 
-    let scatter_import_records = resources.reflected_bind_group_with_overrides(
+    let scatter_import_records = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_02b_scatter_import_records",
-        &passes.kernel("type_checker/modules/02b_scatter_import_records"),
-        &[
-            (
-                "import_record_flag",
-                buffers.import_record_flag.as_entire_binding(),
-            ),
-            (
-                "import_record_prefix",
-                buffers.import_record_prefix.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_hir",
-                buffers.path_id_by_owner_hir.as_entire_binding(),
-            ),
-            (
-                "import_module_file_id",
-                buffers.import_module_file_id.as_entire_binding(),
-            ),
-            ("import_path_id", buffers.import_path_id.as_entire_binding()),
-            ("import_kind", buffers.import_kind.as_entire_binding()),
-            (
-                "import_owner_hir",
-                buffers.import_owner_hir.as_entire_binding(),
-            ),
-        ],
+        graph,
+        resources,
+        passes,
+        IMPORT_RECORDS_SCATTER,
+        inputs.hir_active_dispatch_args,
     )?;
 
     let resolve_import_params = uniform_from_val(
@@ -314,60 +282,17 @@ pub(in crate::type_checker) fn create_module_index(
             key_step: u32::from(inputs.dependency_interfaces.is_some()),
         },
     );
-    let resolve_imports = resources.reflected_bind_group_with_overrides(
+    let mut resolve_resources = resources.clone();
+    resolve_resources.buffer("gParams", &resolve_import_params);
+    resolve_resources.alias("sorted_module_key_order", "module_key_to_module_id")?;
+    resolve_resources.alias("path_prefix_id", "path_prefix_id_a")?;
+    let resolve_imports = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_05_resolve_imports",
-        &passes.kernel("type_checker/modules/05_resolve_imports"),
-        &[
-            ("gParams", resolve_import_params.as_entire_binding()),
-            (
-                "import_count_out",
-                buffers.import_count_out.as_entire_binding(),
-            ),
-            ("import_kind", buffers.import_kind.as_entire_binding()),
-            ("import_path_id", buffers.import_path_id.as_entire_binding()),
-            (
-                "import_module_id",
-                buffers.import_module_id.as_entire_binding(),
-            ),
-            (
-                "import_owner_hir",
-                buffers.import_owner_hir.as_entire_binding(),
-            ),
-            (
-                "path_segment_count",
-                buffers.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_segment_base",
-                buffers.path_segment_base.as_entire_binding(),
-            ),
-            (
-                "path_prefix_id",
-                buffers.path_prefix_id_a.as_entire_binding(),
-            ),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            (
-                "module_table_count_out",
-                buffers.module_table_count_out.as_entire_binding(),
-            ),
-            (
-                "sorted_module_key_order",
-                buffers.module_key_to_module_id.as_entire_binding(),
-            ),
-            (
-                "module_key_canonical_id",
-                buffers.module_key_canonical_id.as_entire_binding(),
-            ),
-            (
-                "import_target_module_id",
-                buffers.import_target_module_id.as_entire_binding(),
-            ),
-            ("import_status", buffers.import_status.as_entire_binding()),
-        ],
+        graph,
+        &resolve_resources,
+        passes,
+        RESOLVE_IMPORTS,
+        &buffers.import_dispatch_args,
     )?;
 
     let dependency_module_params = inputs.dependency_interfaces.map(|dependencies| {
@@ -392,14 +317,6 @@ pub(in crate::type_checker) fn create_module_index(
             &passes.kernel("type_checker/dependencies/00_build_module_lookup"),
             &[
                 ("gParams", params.as_entire_binding()),
-                (
-                    "dependency_module_words",
-                    dependencies.module_words.as_entire_binding(),
-                ),
-                (
-                    "dependency_module_segment_words",
-                    dependencies.module_segment_words.as_entire_binding(),
-                ),
                 (
                     "dependency_module_lookup",
                     dependencies.module_lookup.as_entire_binding(),
@@ -458,18 +375,6 @@ pub(in crate::type_checker) fn create_module_index(
                     (
                         "path_owner_token",
                         buffers.path_owner_token.as_entire_binding(),
-                    ),
-                    (
-                        "dependency_module_words",
-                        dependencies.module_words.as_entire_binding(),
-                    ),
-                    (
-                        "dependency_module_segment_words",
-                        dependencies.module_segment_words.as_entire_binding(),
-                    ),
-                    (
-                        "dependency_name_byte_words",
-                        dependencies.name_byte_words.as_entire_binding(),
                     ),
                     (
                         "dependency_module_lookup",

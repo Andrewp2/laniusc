@@ -2,6 +2,7 @@
 // declaration ref remains the single consumer-facing semantic source; callers
 // do not walk alias syntax or repeat bounded projection passes.
 
+import hir_records;
 import gpu_index;
 
 struct Params
@@ -12,7 +13,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> decl_count_out;

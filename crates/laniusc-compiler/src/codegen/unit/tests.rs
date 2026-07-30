@@ -1,18 +1,40 @@
 use super::*;
 
-fn limits(max_source_bytes: usize, max_source_files: usize) -> CodegenUnitLimits {
-    CodegenUnitLimits {
+fn limits(max_source_bytes: usize, max_source_files: usize) -> CompilationUnitLimits {
+    CompilationUnitLimits {
         max_source_bytes,
         max_source_files,
     }
 }
 
 #[test]
-fn default_frontend_unit_capacity_is_ten_mebibytes() {
+fn default_frontend_unit_capacity_matches_the_resident_gpu_workspace() {
     assert_eq!(
-        CodegenUnitLimits::default().max_source_bytes,
-        10 * 1024 * 1024,
+        CompilationUnitLimits::default().max_source_bytes,
+        1024 * 1024,
     );
+}
+
+#[test]
+fn job_range_exclusion_keeps_compact_sibling_ranges() {
+    let range = SourcePackJobIndexRange {
+        first_job_index: 10,
+        job_count: 5,
+    };
+    assert_eq!(
+        range.excluding(12),
+        Some([
+            Some(SourcePackJobIndexRange {
+                first_job_index: 10,
+                job_count: 2,
+            }),
+            Some(SourcePackJobIndexRange {
+                first_job_index: 13,
+                job_count: 2,
+            }),
+        ])
+    );
+    assert_eq!(range.excluding(9), Some([Some(range), None]));
 }
 
 fn test_job(job_index: usize, dependency_job_indices: Vec<usize>) -> SourcePackJob {
@@ -375,7 +397,7 @@ fn assert_link_interface_batches_respect_limits(
     }
 }
 
-fn assert_codegen_units_cover_sources_once(plan: &CodegenUnitPlan, source_file_count: usize) {
+fn assert_codegen_units_cover_sources_once(plan: &CompilationUnitPlan, source_file_count: usize) {
     let mut coverage = vec![0usize; source_file_count];
     for unit in &plan.units {
         assert!(
@@ -394,7 +416,7 @@ fn assert_codegen_units_cover_sources_once(plan: &CodegenUnitPlan, source_file_c
     );
 }
 
-fn assert_frontend_units_cover_sources_once(plan: &FrontendUnitPlan, source_file_count: usize) {
+fn assert_frontend_units_cover_sources_once(plan: &CompilationUnitPlan, source_file_count: usize) {
     let mut coverage = vec![0usize; source_file_count];
     for unit in &plan.units {
         assert!(
@@ -432,7 +454,7 @@ fn assert_library_units_cover_sources_once(plan: &LibraryUnitPlan, source_file_c
     );
 }
 
-fn assert_codegen_units_respect_limits(plan: &CodegenUnitPlan, limits: CodegenUnitLimits) {
+fn assert_codegen_units_respect_limits(plan: &CompilationUnitPlan, limits: CompilationUnitLimits) {
     let limits = limits.normalized();
     for unit in &plan.units {
         if unit.oversized_source_file {
@@ -457,7 +479,7 @@ fn assert_codegen_units_respect_limits(plan: &CodegenUnitPlan, limits: CodegenUn
     }
 }
 
-fn assert_frontend_units_respect_limits(plan: &FrontendUnitPlan, limits: CodegenUnitLimits) {
+fn assert_frontend_units_respect_limits(plan: &CompilationUnitPlan, limits: CompilationUnitLimits) {
     let limits = limits.normalized();
     for unit in &plan.units {
         if unit.oversized_source_file {
@@ -497,7 +519,7 @@ fn contiguous_library_spans(library_ids: &[u32]) -> Vec<(u32, std::ops::Range<us
     spans
 }
 
-fn assert_codegen_units_stay_within_library_spans(plan: &CodegenUnitPlan, library_ids: &[u32]) {
+fn assert_codegen_units_stay_within_library_spans(plan: &CompilationUnitPlan, library_ids: &[u32]) {
     let spans = contiguous_library_spans(library_ids);
     for unit in &plan.units {
         let unit_range = unit.source_range();
@@ -516,9 +538,9 @@ fn assert_codegen_units_stay_within_library_spans(plan: &CodegenUnitPlan, librar
 }
 
 fn assert_oversized_codegen_units_match_source_sizes<S: AsRef<str>>(
-    plan: &CodegenUnitPlan,
+    plan: &CompilationUnitPlan,
     sources: &[S],
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) {
     let expected_oversized_sources = sources
         .iter()
@@ -612,6 +634,28 @@ fn assert_declared_library_dependencies_reach_frontend_jobs(
                     dependency_job.job_index
                 );
             }
+        }
+    }
+}
+
+fn assert_frontend_units_see_preceding_units(schedule: &SourcePackJobSchedule) {
+    for job in schedule
+        .jobs
+        .iter()
+        .filter(|job| job.phase == SourcePackJobPhase::LibraryFrontend)
+    {
+        for earlier in schedule.jobs[..job.job_index]
+            .iter()
+            .filter(|earlier| earlier.phase == SourcePackJobPhase::LibraryFrontend)
+            .filter(|earlier| earlier.library_id == job.library_id)
+        {
+            assert!(
+                job_depends_on_job(schedule, job, earlier.job_index),
+                "frontend unit {} cannot resolve declarations from preceding unit {} of library {}",
+                job.job_index,
+                earlier.job_index,
+                job.library_id,
+            );
         }
     }
 }
@@ -712,7 +756,7 @@ fn batch_and_shard_limits_are_bounded_by_record_caps() {
 fn codegen_units_respect_file_byte_and_library_boundaries() {
     let sources = ["aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc"];
     let unit_limits = limits(20, 8);
-    let plan = CodegenUnitPlan::from_source_pack(&sources, unit_limits);
+    let plan = CompilationUnitPlan::from_source_pack(&sources, unit_limits);
     assert_codegen_units_cover_sources_once(&plan, sources.len());
     assert_codegen_units_respect_limits(&plan, unit_limits);
     assert!(
@@ -724,7 +768,8 @@ fn codegen_units_respect_file_byte_and_library_boundaries() {
     let sources = ["a", "b", "c", "d"];
     let libraries = [0u32, 0, 1, 1];
     let unit_limits = limits(64, 8);
-    let plan = CodegenUnitPlan::from_source_pack_with_libraries(&sources, &libraries, unit_limits);
+    let plan =
+        CompilationUnitPlan::from_source_pack_with_libraries(&sources, &libraries, unit_limits);
     assert_codegen_units_cover_sources_once(&plan, sources.len());
     assert_codegen_units_respect_limits(&plan, unit_limits);
     assert_codegen_units_stay_within_library_spans(&plan, &libraries);
@@ -735,14 +780,14 @@ fn codegen_units_respect_file_byte_and_library_boundaries() {
 
     let sources = ["a", "b", "c", "d", "e"];
     let unit_limits = limits(64, 2);
-    let plan = CodegenUnitPlan::from_source_pack(&sources, unit_limits);
+    let plan = CompilationUnitPlan::from_source_pack(&sources, unit_limits);
     assert_codegen_units_cover_sources_once(&plan, sources.len());
     assert_codegen_units_respect_limits(&plan, unit_limits);
     assert_eq!(plan.max_unit_source_files(), unit_limits.max_source_files);
 
     let sources = ["small", "this file is too large", "tiny"];
     let unit_limits = limits(8, 8);
-    let plan = CodegenUnitPlan::from_source_pack(&sources, unit_limits);
+    let plan = CompilationUnitPlan::from_source_pack(&sources, unit_limits);
     assert_codegen_units_cover_sources_once(&plan, sources.len());
     assert_codegen_units_respect_limits(&plan, unit_limits);
     assert_oversized_codegen_units_match_source_sizes(&plan, &sources, unit_limits);
@@ -753,7 +798,8 @@ fn frontend_and_library_units_keep_contiguous_library_spans() {
     let sources = ["aaaa", "bbbb", "cccc"];
     let libraries = [5u32, 5, 5];
     let unit_limits = limits(4, 8);
-    let plan = FrontendUnitPlan::from_source_pack_with_libraries(&sources, &libraries, unit_limits);
+    let plan =
+        CompilationUnitPlan::from_source_pack_with_libraries(&sources, &libraries, unit_limits);
     assert_frontend_units_cover_sources_once(&plan, sources.len());
     assert_frontend_units_respect_limits(&plan, unit_limits);
     assert_eq!(plan.unit_count(), sources.len());
@@ -790,7 +836,7 @@ fn source_pack_schedules_preserve_dependency_and_source_coverage_invariants() {
         sources: Vec<&'static str>,
         libraries: Vec<u32>,
         dependencies: Vec<SourcePackLibraryDependency>,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     }
 
     let cases = [
@@ -866,9 +912,11 @@ fn source_pack_schedules_preserve_dependency_and_source_coverage_invariants() {
             &case.dependencies,
             case.limits,
         );
+        let bounded_schedule = plan.bounded_frontend_job_schedule();
+        assert_frontend_units_see_preceding_units(&bounded_schedule);
         for (schedule_name, schedule) in [
             ("coarse", plan.job_schedule()),
-            ("bounded", plan.bounded_frontend_job_schedule()),
+            ("bounded", bounded_schedule),
         ] {
             assert_eq!(
                 schedule.link_job_count(),

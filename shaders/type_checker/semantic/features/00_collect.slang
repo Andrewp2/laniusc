@@ -4,6 +4,7 @@
 // atomic OR into a one-word summary, so this remains parallel over the active
 // HIR rather than rediscovering source structure on the host.
 
+import hir_records;
 import atomics;
 
 struct Params
@@ -16,7 +17,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> compact_method_count;

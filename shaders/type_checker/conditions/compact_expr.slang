@@ -2,12 +2,11 @@
 // HIR after scalar expression types have reached their pointer-jump fixed
 // point. No raw parser node or token scan participates in this pass.
 
+import hir_records;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

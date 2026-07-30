@@ -217,7 +217,7 @@ mod tests {
         gpu::{
             buffers::{readback_bytes, storage_ro_from_bytes, storage_ro_from_u32s},
             device,
-            passes_core::{make_pass_data_from_shader_key, map_readback_blocking},
+            passes_core::{bind_group, make_pass_data_from_shader_key, map_readback_blocking},
         },
         parser::buffers::HirCore,
     };

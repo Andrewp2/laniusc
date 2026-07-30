@@ -1,7 +1,7 @@
 // HIR array-return projection.
 //
-// This pass consumes parser-owned return-statement records and expression-result
-// roots plus compact call payloads, visible-decl records, declaration type refs,
+// This pass consumes compact return statements and call arguments, visible-decl records,
+// declaration type refs,
 // and function return type refs. It publishes the array-return sentinel for `return values;` and
 // bounded one-argument `return copy(values);` call results only when the returned declaration or
 // declaration-backed call argument has the same bounded array instance as the
@@ -21,18 +21,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> call_arg_row_node;
-StructuredBuffer<uint> call_arg_row_start;
-StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -42,6 +34,8 @@ StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
@@ -62,11 +56,7 @@ static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_NAME_EXPR = 22u;
 
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
-
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -112,32 +102,36 @@ uint enclosing_function_decl_token(uint token)
     return valid_token(fn_token) ? fn_token : INVALID;
 }
 
-uint stmt_slot(uint node, uint slot)
+uint active_compact_hir_count()
 {
-    return node * STMT_RECORD_STRIDE + slot;
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-uint expr_slot(uint node, uint slot)
-{
-    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
-}
-
-uint result_expr(uint node)
+uint compact_node_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : INVALID;
+    uint dense = raw_to_compact_hir[node];
+    return dense < active_compact_hir_count() ? dense : INVALID;
 }
 
-uint name_token_for_expr(uint root)
+HirPayload stmt_payload(uint node)
 {
-    uint node = result_expr(root);
-    if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
-        return INVALID;
+    uint dense = compact_node_for_raw(node);
+    HirPayload payload;
+    payload.a = 0u;
+    payload.b = INVALID;
+    payload.c = INVALID;
+    payload.d = INVALID;
+    return dense < active_compact_hir_count() ? compact_hir_payload[dense] : payload;
+}
 
-    uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-    return valid_token(token) ? token : hir_token_pos[node];
+uint name_token_for_expr(uint node)
+{
+    if (node >= active_compact_hir_count() || compact_hir_core[node].kind != HIR_NAME_EXPR)
+        return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
@@ -239,38 +233,34 @@ bool is_array_type(uint ty)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (call_node >= active_compact_hir_count() || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_hir = raw_to_compact_hir[call_node];
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (call_hir >= count)
-        return INVALID;
-    uint callee_hir = compact_hir_payload[call_hir].a;
-    if (callee_hir >= count)
+    uint callee_hir = compact_hir_payload[call_node].a;
+    if (callee_hir >= active_compact_hir_count())
         return INVALID;
 
-    uint token = compact_hir_core[callee_hir].token_start;
+    HirCore callee = compact_hir_core[callee_hir];
+    uint token = callee.kind == 21u
+        ? compact_hir_payload[callee_hir].c
+        : callee.token_start;
     return valid_token(token) ? token : INVALID;
 }
 
-uint compact_call_arg_count(uint call_node)
+uint call_argument_count(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (call_node >= active_compact_hir_count() || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return 0u;
-    uint call_hir = raw_to_compact_hir[call_node];
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    return call_hir < count ? compact_hir_payload[call_hir].c : 0u;
+    return compact_hir_payload[call_node].c;
 }
 
 uint direct_array_return_call_node(uint return_node)
 {
-    uint expr_node = hir_stmt_record[stmt_slot(return_node, 1u)];
-    uint call_node = result_expr(expr_node);
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    uint call_node = stmt_payload(return_node).b;
+    if (call_node >= active_compact_hir_count() || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    if (compact_call_arg_count(call_node) != 1u)
+    if (call_argument_count(call_node) != 1u)
         return INVALID;
 
     uint callee_token = call_callee_token(call_node);
@@ -281,22 +271,27 @@ uint direct_array_return_call_node(uint return_node)
 
 uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
-    if (!valid_node(call_node))
+    if (call_node >= active_compact_hir_count())
         return INVALID;
 
-    uint start = call_arg_row_start[call_node];
-    uint count = call_arg_row_count[call_node];
+    HirPayload call = compact_hir_payload[call_node];
+    uint start = call.b;
+    uint count = call.c;
     if (start == INVALID || ordinal >= count)
         return INVALID;
 
     uint row = start + ordinal;
-    return row < active_hir_node_count() ? call_arg_row_node[row] : INVALID;
+    uint active_args = min(compact_call_arg_count[0u], gParams.n_hir_nodes);
+    if (row >= active_args)
+        return INVALID;
+    HirCallArg arg = compact_call_args[row];
+    return arg.call == call_node && arg.ordinal == ordinal ? arg.value : INVALID;
 }
 
 uint returned_call_arg_array_instance(uint return_node)
 {
     uint call_node = direct_array_return_call_node(return_node);
-    if (!valid_node(call_node))
+    if (call_node >= active_compact_hir_count())
         return INVALID;
 
     uint arg_node = call_arg_node_for_call(call_node, 0u);
@@ -306,15 +301,15 @@ uint returned_call_arg_array_instance(uint return_node)
 
 void publish_identifier_array_return(uint return_node)
 {
-    if (hir_kind[return_node] != HIR_RETURN_STMT ||
-        hir_stmt_record[stmt_slot(return_node, 0u)] != STMT_RECORD_KIND_RETURN)
+    HirPayload stmt = stmt_payload(return_node);
+    if (hir_kind[return_node] != HIR_RETURN_STMT || stmt.a != STMT_RECORD_KIND_RETURN)
         return;
 
     uint return_token = hir_token_pos[return_node];
     if (!valid_token(return_token))
         return;
 
-    uint value_token = hir_stmt_record[stmt_slot(return_node, 3u)];
+    uint value_token = stmt.d;
     uint src_instance = declaration_array_instance(value_token);
     if (src_instance == INVALID)
         return;
@@ -329,7 +324,7 @@ void publish_identifier_array_return(uint return_node)
 void publish_call_array_return(uint return_node)
 {
     if (hir_kind[return_node] != HIR_RETURN_STMT ||
-        hir_stmt_record[stmt_slot(return_node, 0u)] != STMT_RECORD_KIND_RETURN)
+        stmt_payload(return_node).a != STMT_RECORD_KIND_RETURN)
         return;
 
     uint return_token = hir_token_pos[return_node];

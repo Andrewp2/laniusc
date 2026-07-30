@@ -15,6 +15,7 @@ use super::{
 /// Creates the complete module/path state from loaded passes and typed inputs.
 pub(in crate::type_checker) fn create_with_passes(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     inputs: CreateInputs<'_>,
     resources: &ResourceMap<'_>,
@@ -37,16 +38,25 @@ pub(in crate::type_checker) fn create_with_passes(
         import_visible_n_blocks,
         ..
     } = layout;
-    let buffers = Buffers::new(device, layout, &inputs);
+    let buffers = Buffers::new(device, graph, layout, &inputs)?;
+    let resource_buffers = buffers.clone();
+    let mut module_resources = resources.clone();
+    resource_buffers.register_resources(&mut module_resources);
     let PathSequences {
         clear_state: clear_path_state,
         dispatch_params: path_prefix_dispatch_params,
         dispatch_args: path_prefix_dispatch_args,
         rounds: path_prefix_rounds,
         finalize: path_prefix_finalize,
-    } = create_path_sequences(passes, device, &inputs, &buffers, resources)?;
-    let dependency_visibility =
-        dependency_visibility::create(passes, device, layout, &inputs, &buffers, resources)?;
+    } = create_path_sequences(passes, device, &inputs, &buffers, &module_resources)?;
+    let dependency_visibility = dependency_visibility::create(
+        passes,
+        device,
+        layout,
+        &inputs,
+        &buffers,
+        &module_resources,
+    )?;
     let RecordDiscovery {
         mark_records,
         extract_module_record_flag_params,
@@ -65,7 +75,15 @@ pub(in crate::type_checker) fn create_with_passes(
         module_scan,
         import_scan,
         decl_scan,
-    } = create_record_discovery(passes, device, layout, &inputs, &buffers, resources)?;
+    } = create_record_discovery(
+        passes,
+        graph,
+        device,
+        layout,
+        &inputs,
+        &buffers,
+        &module_resources,
+    )?;
     let ModuleIndex {
         scatter_module_records,
         build_module_keys,
@@ -84,7 +102,15 @@ pub(in crate::type_checker) fn create_with_passes(
         sort_import_edges,
         validate_import_cycles,
         mut retained_params,
-    } = create_module_index(passes, device, layout, &inputs, &buffers, resources)?;
+    } = create_module_index(
+        passes,
+        graph,
+        device,
+        layout,
+        &inputs,
+        &buffers,
+        &module_resources,
+    )?;
     let ProjectionBindGroups {
         clear_type_path_types,
         project_type_paths,
@@ -103,64 +129,19 @@ pub(in crate::type_checker) fn create_with_passes(
         bind_match_patterns,
         type_match_payloads,
         type_match_exprs,
-    } = create_projection_bind_groups(passes, device, &inputs, &buffers)?;
+    } = create_projection_bind_groups(passes, device, &inputs, &module_resources)?;
     let Buffers {
-        record_family_bits,
-        record_family_flag,
-        module_record_flag,
-        import_record_flag,
-        decl_record_flag,
-        path_record_flag,
-        module_record_prefix,
-        import_record_prefix,
-        decl_record_prefix,
         record_scan_local_prefix,
         record_scan_block_sum,
         record_scan_prefix_a,
         record_scan_prefix_b,
-        module_count_out,
-        module_table_count_out,
         import_count_out,
         decl_count_out,
-        module_file_id,
-        module_path_id,
-        module_owner_hir,
-        module_status,
-        module_key_canonical_id,
-        module_key_segment_count,
-        module_key_segment_base,
-        module_key_segment_name_id,
         module_key_to_module_id,
-        module_key_order_tmp,
         module_key_radix_dispatch_args,
-        module_key_radix_block_histogram,
-        module_key_radix_block_bucket_prefix,
-        module_key_radix_bucket_total,
-        module_key_radix_bucket_base,
-        module_id_by_file_id,
-        import_module_file_id,
-        import_path_id,
-        import_kind,
-        import_owner_hir,
-        import_module_id,
-        import_target_module_id,
-        import_target_dependency_module_id,
-        import_status,
-        import_edge_key_order,
-        import_edge_key_order_tmp,
-        import_edge_key_radix_dispatch_args,
-        decl_module_file_id,
         decl_module_id,
-        decl_name_token,
-        decl_id_by_name_token,
         decl_name_id,
-        decl_kind,
         decl_namespace,
-        decl_visibility,
-        decl_hir_node,
-        decl_parent_type_decl,
-        decl_token_start,
-        decl_token_end,
         decl_key_to_decl_id,
         decl_key_order_tmp,
         decl_key_radix_dispatch_args,
@@ -178,10 +159,6 @@ pub(in crate::type_checker) fn create_with_passes(
         decl_value_key_count_out,
         decl_type_key_to_decl_id,
         decl_value_key_to_decl_id,
-        interface_public_decl_count,
-        interface_public_decl_local_id,
-        interface_public_decl_index_by_local,
-        interface_public_decl_index_by_hir,
         import_visible_type_count,
         import_visible_value_count,
         import_visible_type_prefix,
@@ -197,7 +174,6 @@ pub(in crate::type_checker) fn create_with_passes(
         import_visible_type_key_name_id,
         import_visible_type_key_to_decl_id,
         import_visible_type_status,
-        import_visible_type_duplicate_of,
         import_visible_type_key_radix_dispatch_args,
         import_visible_value_module_id,
         import_visible_value_name_id,
@@ -208,7 +184,6 @@ pub(in crate::type_checker) fn create_with_passes(
         import_visible_value_key_name_id,
         import_visible_value_key_to_decl_id,
         import_visible_value_status,
-        import_visible_value_duplicate_of,
         import_visible_value_key_radix_dispatch_args,
         import_visible_validate_dispatch_args,
         import_visible_key_radix_block_histogram,
@@ -219,44 +194,14 @@ pub(in crate::type_checker) fn create_with_passes(
         resolved_value_decl,
         resolved_type_status,
         resolved_value_status,
-        path_record_prefix,
-        path_scan_local_prefix,
-        path_scan_block_sum,
-        path_scan_prefix_a,
-        path_scan_prefix_b,
-        path_start,
-        path_len,
-        path_segment_count,
-        path_segment_base,
-        path_segment_name_id,
-        path_segment_token,
-        path_segment_count_out,
-        path_max_segment_count,
-        path_prefix_base,
         path_prefix_id_a,
-        path_prefix_id_b,
-        path_prefix_table_state,
-        path_prefix_row_dispatch_args,
-        path_prefix_round_dispatch_args,
-        path_owner_hir,
-        path_call_hir,
-        path_owner_token,
-        path_id_by_owner_hir,
-        path_id_by_owner_token,
-        path_owner_module_id,
-        path_kind,
-        path_count_out,
-        path_dispatch_args,
         import_dispatch_args,
-    } = buffers;
+        ..
+    } = resource_buffers.clone();
     let CreateInputs {
         params,
         token_capacity,
         hir_node_capacity,
-        status_buf,
-        hir_active_count_buf: _,
-        hir_items,
-        name_id_by_token,
         ..
     } = inputs;
 
@@ -270,28 +215,15 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let clear_file_module_map = bind_group::create_bind_group_from_bindings(
+    let mut clear_file_map_resources = module_resources.clone();
+    clear_file_map_resources.buffer("gParams", &decl_module_params);
+    let clear_file_module_map = ComputeOperation::direct_spec(
         device,
-        Some("type_check_modules_05b_clear_file_module_map"),
-        &passes.kernel("type_checker/modules/05b_clear_file_module_map"),
-        0,
-        &[
-            ("gParams", decl_module_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            (
-                "module_id_by_file_id",
-                module_id_by_file_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            ("status", status_buf.as_entire_binding()),
-        ],
+        graph,
+        &clear_file_map_resources,
+        passes,
+        FILE_MODULE_MAP_CLEAR,
+        n_blocks.saturating_mul(256).max(1),
     )?;
 
     let build_file_module_map_params = uniform_from_val(
@@ -304,23 +236,15 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let build_file_module_map = bind_group::create_bind_group_from_bindings(
+    let mut build_file_map_resources = module_resources.clone();
+    build_file_map_resources.buffer("gParams", &build_file_module_map_params);
+    let build_file_module_map = ComputeOperation::indirect_spec(
         device,
-        Some("type_check_modules_05c_build_file_module_map"),
-        &passes.kernel("type_checker/modules/05c_build_file_module_map"),
-        0,
-        &[
-            ("gParams", build_file_module_map_params.as_entire_binding()),
-            (
-                "module_table_count_out",
-                module_table_count_out.as_entire_binding(),
-            ),
-            ("module_file_id", module_file_id.as_entire_binding()),
-            (
-                "module_id_by_file_id",
-                module_id_by_file_id.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &build_file_map_resources,
+        passes,
+        FILE_MODULE_MAP_BUILD,
+        &module_key_radix_dispatch_args,
     )?;
 
     let attach_record_modules_params = uniform_from_val(
@@ -333,56 +257,22 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let attach_record_modules = bind_group::create_bind_group_from_bindings(
+    let mut attach_resources = module_resources.clone();
+    attach_resources.buffer("gParams", &attach_record_modules_params);
+    let attach_record_modules = ComputeOperation::direct_spec(
         device,
-        Some("type_check_modules_05d_attach_record_modules"),
-        &passes.kernel("type_checker/modules/05d_attach_record_modules"),
-        0,
-        &[
-            ("gParams", attach_record_modules_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            (
-                "decl_module_file_id",
-                decl_module_file_id.as_entire_binding(),
-            ),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            (
-                "import_module_file_id",
-                import_module_file_id.as_entire_binding(),
-            ),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_owner_hir", path_owner_hir.as_entire_binding()),
-            ("compact_hir_count", hir_items.hir.count.as_entire_binding()),
-            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
-            ("module_count_out", module_count_out.as_entire_binding()),
-            (
-                "module_id_by_file_id",
-                module_id_by_file_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &attach_resources,
+        passes,
+        ATTACH_RECORD_MODULES,
+        record_n_blocks.saturating_mul(256).max(1),
     )?;
 
-    let seed_decl_key_order = bind_group::create_bind_group_from_bindings(
+    let seed_decl_key_order = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_06a_seed_decl_key_order"),
+        "type_check_modules_06a_seed_decl_key_order",
         &passes.kernel("type_checker/modules/06a_seed_decl_key_order"),
-        0,
-        &[
-            ("gParams", decl_module_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            (
-                "decl_key_to_decl_id",
-                decl_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_status", decl_status.as_entire_binding()),
-            ("decl_duplicate_of", decl_duplicate_of.as_entire_binding()),
-        ],
+        &[("gParams", decl_module_params.as_entire_binding())],
     )?;
 
     let decl_key_radix_dispatch_params = uniform_from_val(
@@ -493,48 +383,29 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let validate_decls = bind_group::create_bind_group_from_bindings(
+    let validate_decls = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_07_validate_decls"),
+        "type_check_modules_07_validate_decls",
         &passes.kernel("type_checker/modules/07_validate_decls"),
-        0,
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
             (
                 "sorted_decl_key_order",
                 decl_key_to_decl_id.as_entire_binding(),
             ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("decl_token_start", decl_token_start.as_entire_binding()),
-            ("decl_status", decl_status.as_entire_binding()),
-            ("decl_duplicate_of", decl_duplicate_of.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
         ],
     )?;
 
-    let mark_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
+    let mut namespace_resources = module_resources.clone();
+    namespace_resources.buffer("gParams", &validate_decl_params);
+    namespace_resources.alias("sorted_decl_key_order", "decl_key_to_decl_id")?;
+    let mark_decl_namespace_keys = ComputeOperation::indirect_spec(
         device,
-        Some("type_check_modules_08_mark_decl_namespace_keys"),
-        &passes.kernel("type_checker/modules/08_mark_decl_namespace_keys"),
-        0,
-        &[
-            ("gParams", validate_decl_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            (
-                "sorted_decl_key_order",
-                decl_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_status", decl_status.as_entire_binding()),
-            ("decl_type_key_flag", decl_type_key_flag.as_entire_binding()),
-            (
-                "decl_value_key_flag",
-                decl_value_key_flag.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &namespace_resources,
+        passes,
+        DECL_NAMESPACE_MARK,
+        &decl_key_radix_dispatch_args,
     )?;
 
     // Type and value namespace scans execute side-by-side at each scan level.
@@ -607,75 +478,13 @@ pub(in crate::type_checker) fn create_with_passes(
         compiler_graph::DECL_NAMESPACE_SCAN,
     )?;
 
-    let scatter_decl_namespace_keys = bind_group::create_bind_group_from_bindings(
+    let scatter_decl_namespace_keys = ComputeOperation::indirect_spec(
         device,
-        Some("type_check_modules_08b_scatter_decl_namespace_keys"),
-        &passes.kernel("type_checker/modules/08b_scatter_decl_namespace_keys"),
-        0,
-        &[
-            ("gParams", validate_decl_params.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            (
-                "sorted_decl_key_order",
-                decl_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_type_key_flag", decl_type_key_flag.as_entire_binding()),
-            (
-                "decl_type_key_prefix",
-                decl_type_key_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_flag",
-                decl_value_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_prefix",
-                decl_value_key_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-        ],
-    )?;
-
-    let mark_public_decl_keys = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_08c_mark_public_decl_keys"),
-        &passes.kernel("type_checker/modules/08c_mark_public_decl_keys"),
-        0,
-        &[
-            ("gParams", validate_decl_params.as_entire_binding()),
-            (
-                "decl_type_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_visibility", decl_visibility.as_entire_binding()),
-            (
-                "decl_type_public_flag",
-                decl_type_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_value_public_flag",
-                decl_value_key_flag.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &namespace_resources,
+        passes,
+        DECL_NAMESPACE_SCATTER,
+        &decl_key_radix_dispatch_args,
     )?;
 
     // Declaration validation status/duplicate buffers are dead once
@@ -685,6 +494,21 @@ pub(in crate::type_checker) fn create_with_passes(
         typed_alias_storage_u32(&decl_status, record_capacity_u32 as usize);
     let decl_value_public_prefix =
         typed_alias_storage_u32(&decl_duplicate_of, record_capacity_u32 as usize);
+    let mut public_resources = module_resources.clone();
+    public_resources.buffer("decl_type_public_flag", &decl_type_key_flag);
+    public_resources.buffer("decl_value_public_flag", &decl_value_key_flag);
+    public_resources.buffer("decl_type_public_prefix", &decl_type_public_prefix);
+    public_resources.buffer("decl_value_public_prefix", &decl_value_public_prefix);
+    let mut public_mark_resources = public_resources.clone();
+    public_mark_resources.buffer("gParams", &validate_decl_params);
+    let mark_public_decl_keys = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &public_mark_resources,
+        passes,
+        DECL_PUBLIC_MARK,
+        &decl_key_radix_dispatch_args,
+    )?;
 
     let (decl_type_public_scan, decl_value_public_scan) = PrefixScanOperation::from_pair_spec(
         device,
@@ -692,89 +516,17 @@ pub(in crate::type_checker) fn create_with_passes(
         &scan_resources,
         compiler_graph::DECL_PUBLIC_SCAN,
     )?;
-    let clear_interface_public_decls = bind_group::create_bind_group_from_bindings(
+    let clear_interface_public_decls = public_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_interface_public_decls_00_clear"),
+        "type_check_interface_public_decls_00_clear",
         &passes.kernel("type_checker/interface/public_decls/00_clear"),
-        0,
-        &[
-            ("gParams", validate_decl_params.as_entire_binding()),
-            (
-                "interface_public_decl_count",
-                interface_public_decl_count.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_local_id",
-                interface_public_decl_local_id.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_index_by_local",
-                interface_public_decl_index_by_local.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_index_by_hir",
-                interface_public_decl_index_by_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", validate_decl_params.as_entire_binding())],
     )?;
-    let map_interface_public_decls = bind_group::create_bind_group_from_bindings(
+    let map_interface_public_decls = public_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_interface_public_decls_01_map"),
+        "type_check_interface_public_decls_01_map",
         &passes.kernel("type_checker/interface/public_decls/01_map"),
-        0,
-        &[
-            ("gParams", validate_decl_params.as_entire_binding()),
-            (
-                "decl_type_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_type_public_flag",
-                decl_type_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_value_public_flag",
-                decl_value_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_type_public_prefix",
-                decl_type_public_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_value_public_prefix",
-                decl_value_public_prefix.as_entire_binding(),
-            ),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            (
-                "interface_public_decl_count",
-                interface_public_decl_count.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_local_id",
-                interface_public_decl_local_id.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_index_by_local",
-                interface_public_decl_index_by_local.as_entire_binding(),
-            ),
-            (
-                "interface_public_decl_index_by_hir",
-                interface_public_decl_index_by_hir.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", validate_decl_params.as_entire_binding())],
     )?;
 
     let import_visibility_params = uniform_from_val(
@@ -787,62 +539,15 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let count_import_visibility = bind_group::create_bind_group_from_bindings(
+    let mut import_visibility_resources = public_resources.clone();
+    import_visibility_resources.buffer("gParams", &import_visibility_params);
+    let count_import_visibility = ComputeOperation::indirect_spec(
         device,
-        Some("type_check_modules_09_count_import_visibility"),
-        &passes.kernel("type_checker/modules/09_count_import_visibility"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("import_status", import_status.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "import_target_module_id",
-                import_target_module_id.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_type_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_value_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "decl_type_public_flag",
-                decl_type_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_value_public_flag",
-                decl_value_key_flag.as_entire_binding(),
-            ),
-            (
-                "decl_type_public_prefix",
-                decl_type_public_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_value_public_prefix",
-                decl_value_public_prefix.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            (
-                "import_visible_type_count",
-                import_visible_type_count.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_count",
-                import_visible_value_count.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &import_visibility_resources,
+        passes,
+        IMPORT_VISIBILITY_COUNT,
+        &import_dispatch_args,
     )?;
 
     let (import_visible_type_scan, import_visible_value_scan) =
@@ -853,127 +558,75 @@ pub(in crate::type_checker) fn create_with_passes(
             compiler_graph::IMPORT_VISIBLE_SCAN,
         )?;
 
-    let scatter_import_visible_type = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_09b_scatter_import_visibility.type"),
-        &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("import_status", import_status.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "import_target_module_id",
-                import_target_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_count",
-                import_visible_type_count.as_entire_binding(),
-            ),
-            (
-                "import_visible_count_out",
-                import_visible_type_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_prefix",
-                import_visible_type_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_public_flag", decl_type_key_flag.as_entire_binding()),
-            (
-                "decl_public_prefix",
-                decl_type_public_prefix.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
-            (
-                "import_visible_module_id",
-                import_visible_type_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_name_id",
-                import_visible_type_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_decl_id",
-                import_visible_type_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_order",
-                import_visible_type_key_order.as_entire_binding(),
-            ),
-        ],
-    )?;
+    let mut import_visible_type_resources = public_resources.clone();
+    import_visible_type_resources.buffer("import_visible_count", &import_visible_type_count);
+    import_visible_type_resources
+        .buffer("import_visible_count_out", &import_visible_type_count_out);
+    import_visible_type_resources.buffer("import_visible_prefix", &import_visible_type_prefix);
+    import_visible_type_resources.buffer("decl_key_count_out", &decl_type_key_count_out);
+    import_visible_type_resources.buffer("decl_key_to_decl_id", &decl_type_key_to_decl_id);
+    import_visible_type_resources.buffer("decl_public_flag", &decl_type_key_flag);
+    import_visible_type_resources.buffer("decl_public_prefix", &decl_type_public_prefix);
+    import_visible_type_resources
+        .buffer("import_visible_module_id", &import_visible_type_module_id);
+    import_visible_type_resources.buffer("import_visible_name_id", &import_visible_type_name_id);
+    import_visible_type_resources.buffer("import_visible_decl_id", &import_visible_type_decl_id);
+    import_visible_type_resources
+        .buffer("import_visible_key_order", &import_visible_type_key_order);
+    import_visible_type_resources.buffer(
+        "import_visible_key_module_id",
+        &import_visible_type_key_module_id,
+    );
+    import_visible_type_resources.buffer(
+        "import_visible_key_name_id",
+        &import_visible_type_key_name_id,
+    );
+    import_visible_type_resources.buffer(
+        "import_visible_key_to_decl_id",
+        &import_visible_type_key_to_decl_id,
+    );
+    let scatter_import_visible_type = import_visible_type_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_09b_scatter_import_visibility.type",
+            &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
-    let scatter_import_visible_value = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_09b_scatter_import_visibility.value"),
-        &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("import_status", import_status.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "import_target_module_id",
-                import_target_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_count",
-                import_visible_value_count.as_entire_binding(),
-            ),
-            (
-                "import_visible_count_out",
-                import_visible_value_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_prefix",
-                import_visible_value_prefix.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_public_flag", decl_value_key_flag.as_entire_binding()),
-            (
-                "decl_public_prefix",
-                decl_value_public_prefix.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
-            (
-                "import_visible_module_id",
-                import_visible_value_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_name_id",
-                import_visible_value_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_decl_id",
-                import_visible_value_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_order",
-                import_visible_value_key_order.as_entire_binding(),
-            ),
-        ],
-    )?;
+    let mut import_visible_value_resources = public_resources.clone();
+    import_visible_value_resources.buffer("import_visible_count", &import_visible_value_count);
+    import_visible_value_resources
+        .buffer("import_visible_count_out", &import_visible_value_count_out);
+    import_visible_value_resources.buffer("import_visible_prefix", &import_visible_value_prefix);
+    import_visible_value_resources.buffer("decl_key_count_out", &decl_value_key_count_out);
+    import_visible_value_resources.buffer("decl_key_to_decl_id", &decl_value_key_to_decl_id);
+    import_visible_value_resources.buffer("decl_public_flag", &decl_value_key_flag);
+    import_visible_value_resources.buffer("decl_public_prefix", &decl_value_public_prefix);
+    import_visible_value_resources
+        .buffer("import_visible_module_id", &import_visible_value_module_id);
+    import_visible_value_resources.buffer("import_visible_name_id", &import_visible_value_name_id);
+    import_visible_value_resources.buffer("import_visible_decl_id", &import_visible_value_decl_id);
+    import_visible_value_resources
+        .buffer("import_visible_key_order", &import_visible_value_key_order);
+    import_visible_value_resources.buffer(
+        "import_visible_key_module_id",
+        &import_visible_value_key_module_id,
+    );
+    import_visible_value_resources.buffer(
+        "import_visible_key_name_id",
+        &import_visible_value_key_name_id,
+    );
+    import_visible_value_resources.buffer(
+        "import_visible_key_to_decl_id",
+        &import_visible_value_key_to_decl_id,
+    );
+    let scatter_import_visible_value = import_visible_value_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_09b_scatter_import_visibility.value",
+            &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
     let import_visible_type_key_radix_dispatch_params = uniform_from_val(
         device,
@@ -1177,89 +830,21 @@ pub(in crate::type_checker) fn create_with_passes(
         },
     )?;
 
-    let build_import_visible_type_key_table = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_09e_build_import_visible_key_tables.type"),
-        &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            (
-                "import_visible_count_out",
-                import_visible_type_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_order",
-                import_visible_type_key_order.as_entire_binding(),
-            ),
-            (
-                "import_visible_module_id",
-                import_visible_type_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_name_id",
-                import_visible_type_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_decl_id",
-                import_visible_type_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_module_id",
-                import_visible_type_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_name_id",
-                import_visible_type_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_to_decl_id",
-                import_visible_type_key_to_decl_id.as_entire_binding(),
-            ),
-        ],
-    )?;
+    let build_import_visible_type_key_table = import_visible_type_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_09e_build_import_visible_key_tables.type",
+            &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
-    let build_import_visible_value_key_table = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_09e_build_import_visible_key_tables.value"),
-        &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            (
-                "import_visible_count_out",
-                import_visible_value_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_order",
-                import_visible_value_key_order.as_entire_binding(),
-            ),
-            (
-                "import_visible_module_id",
-                import_visible_value_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_name_id",
-                import_visible_value_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_decl_id",
-                import_visible_value_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_module_id",
-                import_visible_value_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_name_id",
-                import_visible_value_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_to_decl_id",
-                import_visible_value_key_to_decl_id.as_entire_binding(),
-            ),
-        ],
-    )?;
+    let build_import_visible_value_key_table = import_visible_value_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_09e_build_import_visible_key_tables.value",
+            &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
     let (import_visible_validate_dispatch_params, import_visible_validate_dispatch_args_group) =
         create_pair_max_dispatch(
@@ -1286,62 +871,11 @@ pub(in crate::type_checker) fn create_with_passes(
     );
     let make_import_visible_validation_bind_group =
         |label: &str, params: &LaniusBuffer<ModuleKeyRadixParams>| {
-            bind_group::create_bind_group_from_bindings(
+            module_resources.reflected_bind_group_with_overrides(
                 device,
-                Some(label),
+                label,
                 &passes.kernel("type_checker/modules/09f_validate_import_visible_keys"),
-                0,
-                &[
-                    ("gParams", params.as_entire_binding()),
-                    (
-                        "import_visible_type_count_out",
-                        import_visible_type_count_out.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_type_key_module_id",
-                        import_visible_type_key_module_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_type_key_name_id",
-                        import_visible_type_key_name_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_type_key_to_decl_id",
-                        import_visible_type_key_to_decl_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_count_out",
-                        import_visible_value_count_out.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_key_module_id",
-                        import_visible_value_key_module_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_key_name_id",
-                        import_visible_value_key_name_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_key_to_decl_id",
-                        import_visible_value_key_to_decl_id.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_type_status",
-                        import_visible_type_status.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_type_duplicate_of",
-                        import_visible_type_duplicate_of.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_status",
-                        import_visible_value_status.as_entire_binding(),
-                    ),
-                    (
-                        "import_visible_value_duplicate_of",
-                        import_visible_value_duplicate_of.as_entire_binding(),
-                    ),
-                ],
+                &[("gParams", params.as_entire_binding())],
             )
         };
     let initialize_import_visible_keys = make_import_visible_validation_bind_group(
@@ -1353,161 +887,52 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_visibility_mark_params,
     )?;
 
-    let resolve_local_type_paths = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_10_resolve_local_paths.type"),
-        &passes.kernel("type_checker/modules/10_resolve_local_paths"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("resolved_decl", resolved_type_decl.as_entire_binding()),
-            ("resolved_status", resolved_type_status.as_entire_binding()),
-        ],
-    )?;
+    import_visible_type_resources.buffer("decl_key_count_out", &decl_type_key_count_out);
+    import_visible_type_resources.buffer("decl_key_to_decl_id", &decl_type_key_to_decl_id);
+    import_visible_type_resources.buffer("import_visible_status", &import_visible_type_status);
+    import_visible_type_resources.buffer("resolved_decl", &resolved_type_decl);
+    import_visible_type_resources.buffer("resolved_status", &resolved_type_status);
+    import_visible_type_resources.buffer("path_prefix_id", &path_prefix_id_a);
+    import_visible_type_resources.buffer("sorted_module_key_order", &module_key_to_module_id);
+    import_visible_value_resources.buffer("decl_key_count_out", &decl_value_key_count_out);
+    import_visible_value_resources.buffer("decl_key_to_decl_id", &decl_value_key_to_decl_id);
+    import_visible_value_resources.buffer("import_visible_status", &import_visible_value_status);
+    import_visible_value_resources.buffer("resolved_decl", &resolved_value_decl);
+    import_visible_value_resources.buffer("resolved_status", &resolved_value_status);
+    import_visible_value_resources.buffer("path_prefix_id", &path_prefix_id_a);
+    import_visible_value_resources.buffer("sorted_module_key_order", &module_key_to_module_id);
 
-    let resolve_local_value_paths = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_10_resolve_local_paths.value"),
-        &passes.kernel("type_checker/modules/10_resolve_local_paths"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("resolved_decl", resolved_value_decl.as_entire_binding()),
-            ("resolved_status", resolved_value_status.as_entire_binding()),
-        ],
-    )?;
+    let resolve_local_type_paths = import_visible_type_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10_resolve_local_paths.type",
+            &passes.kernel("type_checker/modules/10_resolve_local_paths"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
-    let resolve_imported_type_paths = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_10b_resolve_imported_paths.type"),
-        &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_count_out",
-                import_visible_type_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_module_id",
-                import_visible_type_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_name_id",
-                import_visible_type_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_to_decl_id",
-                import_visible_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_status",
-                import_visible_type_status.as_entire_binding(),
-            ),
-            ("resolved_decl", resolved_type_decl.as_entire_binding()),
-            ("resolved_status", resolved_type_status.as_entire_binding()),
-        ],
-    )?;
+    let resolve_local_value_paths = import_visible_value_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10_resolve_local_paths.value",
+            &passes.kernel("type_checker/modules/10_resolve_local_paths"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
-    let resolve_imported_value_paths = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_10b_resolve_imported_paths.value"),
-        &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_count_out",
-                import_visible_value_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_module_id",
-                import_visible_value_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_name_id",
-                import_visible_value_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_key_to_decl_id",
-                import_visible_value_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_status",
-                import_visible_value_status.as_entire_binding(),
-            ),
-            ("resolved_decl", resolved_value_decl.as_entire_binding()),
-            ("resolved_status", resolved_value_status.as_entire_binding()),
-        ],
-    )?;
+    let resolve_imported_type_paths = import_visible_type_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10b_resolve_imported_paths.type",
+            &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
+
+    let resolve_imported_value_paths = import_visible_value_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10b_resolve_imported_paths.value",
+            &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
+            &[("gParams", import_visibility_params.as_entire_binding())],
+        )?;
 
     let resolve_qualified_path_params = uniform_from_val(
         device,
@@ -1519,253 +944,59 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let resolve_qualified_type_paths = bind_group::create_bind_group_from_bindings(
+    let resolve_qualified_type_paths = import_visible_type_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10c_resolve_qualified_paths.type",
+            &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
+            &[("gParams", resolve_qualified_path_params.as_entire_binding())],
+        )?;
+
+    let resolve_qualified_value_paths = import_visible_value_resources
+        .reflected_bind_group_with_overrides(
+            device,
+            "type_check_modules_10c_resolve_qualified_paths.value",
+            &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
+            &[("gParams", resolve_qualified_path_params.as_entire_binding())],
+        )?;
+
+    let mut decl_core_resources = module_resources.clone();
+    decl_core_resources.buffer("gParams", params);
+    let scatter_decl_core_records = ComputeOperation::indirect_spec(
         device,
-        Some("type_check_modules_10c_resolve_qualified_paths.type"),
-        &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
-        0,
-        &[
-            ("gParams", resolve_qualified_path_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            ("path_prefix_id", path_prefix_id_a.as_entire_binding()),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "module_table_count_out",
-                module_table_count_out.as_entire_binding(),
-            ),
-            (
-                "sorted_module_key_order",
-                module_key_to_module_id.as_entire_binding(),
-            ),
-            (
-                "module_key_canonical_id",
-                module_key_canonical_id.as_entire_binding(),
-            ),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("import_status", import_status.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "import_target_module_id",
-                import_target_module_id.as_entire_binding(),
-            ),
-            (
-                "import_edge_key_order",
-                import_edge_key_order.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_type_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_type_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_visibility", decl_visibility.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("resolved_decl", resolved_type_decl.as_entire_binding()),
-            ("resolved_status", resolved_type_status.as_entire_binding()),
-        ],
+        graph,
+        &decl_core_resources,
+        passes,
+        DECL_RECORDS_SCATTER,
+        inputs.hir_active_dispatch_args,
     )?;
 
-    let resolve_qualified_value_paths = bind_group::create_bind_group_from_bindings(
+    let append_variant_decl_count = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_10c_resolve_qualified_paths.value"),
-        &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
-        0,
-        &[
-            ("gParams", resolve_qualified_path_params.as_entire_binding()),
-            ("path_count_out", path_count_out.as_entire_binding()),
-            ("path_kind", path_kind.as_entire_binding()),
-            ("path_segment_count", path_segment_count.as_entire_binding()),
-            ("path_segment_base", path_segment_base.as_entire_binding()),
-            (
-                "path_segment_name_id",
-                path_segment_name_id.as_entire_binding(),
-            ),
-            ("path_prefix_id", path_prefix_id_a.as_entire_binding()),
-            (
-                "path_owner_module_id",
-                path_owner_module_id.as_entire_binding(),
-            ),
-            (
-                "module_table_count_out",
-                module_table_count_out.as_entire_binding(),
-            ),
-            (
-                "sorted_module_key_order",
-                module_key_to_module_id.as_entire_binding(),
-            ),
-            (
-                "module_key_canonical_id",
-                module_key_canonical_id.as_entire_binding(),
-            ),
-            ("import_count_out", import_count_out.as_entire_binding()),
-            ("import_status", import_status.as_entire_binding()),
-            ("import_module_id", import_module_id.as_entire_binding()),
-            (
-                "import_target_module_id",
-                import_target_module_id.as_entire_binding(),
-            ),
-            (
-                "import_edge_key_order",
-                import_edge_key_order.as_entire_binding(),
-            ),
-            (
-                "decl_key_count_out",
-                decl_value_key_count_out.as_entire_binding(),
-            ),
-            (
-                "decl_key_to_decl_id",
-                decl_value_key_to_decl_id.as_entire_binding(),
-            ),
-            ("decl_module_id", decl_module_id.as_entire_binding()),
-            ("decl_visibility", decl_visibility.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("resolved_decl", resolved_value_decl.as_entire_binding()),
-            ("resolved_status", resolved_value_status.as_entire_binding()),
-        ],
-    )?;
-
-    let scatter_decl_core_records = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_02c_scatter_decl_core_records"),
-        &passes.kernel("type_checker/modules/02c_scatter_decl_core_records"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("decl_record_flag", decl_record_flag.as_entire_binding()),
-            ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            ("compact_hir_links", hir_items.hir.links.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            ("name_id_by_token", name_id_by_token.as_entire_binding()),
-            (
-                "decl_module_file_id",
-                decl_module_file_id.as_entire_binding(),
-            ),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_visibility", decl_visibility.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "decl_parent_type_decl",
-                decl_parent_type_decl.as_entire_binding(),
-            ),
-        ],
-    )?;
-
-    let append_variant_decl_count = bind_group::create_bind_group_from_bindings(
-        device,
-        Some("type_check_modules_02c1_append_variant_decl_count"),
+        "type_check_modules_02c1_append_variant_decl_count",
         &passes.kernel("type_checker/modules/02c1_append_variant_decl_count"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
 
-    let clear_decl_lookup = bind_group::create_bind_group_from_bindings(
+    let clear_decl_lookup = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_02d_clear_decl_lookup"),
+        "type_check_modules_02d_clear_decl_lookup",
         &passes.kernel("type_checker/modules/02d/clear_decl_lookup"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "decl_id_by_name_token",
-                decl_id_by_name_token.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
 
-    let scatter_decl_span_records = bind_group::create_bind_group_from_bindings(
+    let scatter_decl_span_records = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_02d_scatter_decl_span_records"),
+        "type_check_modules_02d_scatter_decl_span_records",
         &passes.kernel("type_checker/modules/02d/scatter_decl_span_records"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("decl_record_flag", decl_record_flag.as_entire_binding()),
-            ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            ("compact_hir_core", hir_items.hir.core.as_entire_binding()),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_token_start", decl_token_start.as_entire_binding()),
-            ("decl_token_end", decl_token_end.as_entire_binding()),
-            (
-                "decl_id_by_name_token",
-                decl_id_by_name_token.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
 
-    let scatter_variant_decl_records = bind_group::create_bind_group_from_bindings(
+    let scatter_variant_decl_records = module_resources.reflected_bind_group_with_overrides(
         device,
-        Some("type_check_modules_02c2_scatter_variant_decl_records"),
+        "type_check_modules_02c2_scatter_variant_decl_records",
         &passes.kernel("type_checker/modules/02c2_scatter_variant_decl_records"),
-        0,
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "compact_variant_count",
-                hir_items.hir.variant_count.as_entire_binding(),
-            ),
-            (
-                "compact_variants",
-                hir_items.hir.variants.as_entire_binding(),
-            ),
-            (
-                "compact_hir_payload",
-                hir_items.hir.payload.as_entire_binding(),
-            ),
-            ("decl_record_flag", decl_record_flag.as_entire_binding()),
-            ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("name_id_by_token", name_id_by_token.as_entire_binding()),
-            (
-                "decl_module_file_id",
-                decl_module_file_id.as_entire_binding(),
-            ),
-            ("decl_name_token", decl_name_token.as_entire_binding()),
-            ("decl_name_id", decl_name_id.as_entire_binding()),
-            ("decl_kind", decl_kind.as_entire_binding()),
-            ("decl_namespace", decl_namespace.as_entire_binding()),
-            ("decl_visibility", decl_visibility.as_entire_binding()),
-            ("decl_hir_node", decl_hir_node.as_entire_binding()),
-            (
-                "decl_parent_type_decl",
-                decl_parent_type_decl.as_entire_binding(),
-            ),
-            ("decl_token_start", decl_token_start.as_entire_binding()),
-            ("decl_token_end", decl_token_end.as_entire_binding()),
-            (
-                "decl_id_by_name_token",
-                decl_id_by_name_token.as_entire_binding(),
-            ),
-        ],
+        &[("gParams", params.as_entire_binding())],
     )?;
     retained_params.push(decl_module_params);
     retained_params.push(attach_record_modules_params);
@@ -1781,152 +1012,10 @@ pub(in crate::type_checker) fn create_with_passes(
         record_n_blocks,
         module_n_blocks,
         token_capacity,
-        record_family_bits,
-        record_family_flag,
-        module_record_flag,
-        import_record_flag,
-        decl_record_flag,
-        module_record_prefix,
-        import_record_prefix,
-        decl_record_prefix,
-        record_scan_local_prefix,
-        record_scan_block_sum,
-        record_scan_prefix_a,
-        record_scan_prefix_b,
-        module_count_out,
-        module_table_count_out,
-        import_count_out,
-        decl_count_out,
-        module_file_id,
-        module_path_id,
-        module_owner_hir,
-        module_status,
-        module_key_canonical_id,
-        module_key_segment_count,
-        module_key_segment_base,
-        module_key_segment_name_id,
-        module_key_to_module_id,
-        module_key_order_tmp,
-        module_key_radix_dispatch_args,
-        module_key_radix_block_histogram,
-        module_key_radix_block_bucket_prefix,
-        module_key_radix_bucket_total,
-        module_key_radix_bucket_base,
-        module_id_by_file_id,
-        import_module_file_id,
-        import_path_id,
-        import_kind,
-        import_owner_hir,
-        import_module_id,
-        import_target_module_id,
-        import_target_dependency_module_id,
+        resources: buffers,
         dependency_interfaces: inputs.dependency_interfaces.cloned(),
         dependency_visibility,
         dependency_module_params,
-        import_status,
-        import_edge_key_order,
-        import_edge_key_order_tmp,
-        import_edge_key_radix_dispatch_args,
-        import_dispatch_args,
-        decl_module_file_id,
-        decl_module_id,
-        decl_name_token,
-        decl_id_by_name_token,
-        decl_name_id,
-        decl_kind,
-        decl_namespace,
-        decl_visibility,
-        decl_hir_node,
-        decl_parent_type_decl,
-        decl_token_start,
-        decl_token_end,
-        decl_key_to_decl_id,
-        decl_key_order_tmp,
-        decl_key_radix_dispatch_args,
-        decl_key_radix_block_histogram,
-        decl_key_radix_block_bucket_prefix,
-        decl_key_radix_bucket_total,
-        decl_key_radix_bucket_base,
-        decl_status,
-        decl_duplicate_of,
-        decl_type_key_flag,
-        decl_value_key_flag,
-        decl_type_key_prefix,
-        decl_value_key_prefix,
-        decl_type_key_count_out,
-        decl_value_key_count_out,
-        decl_type_key_to_decl_id,
-        decl_value_key_to_decl_id,
-        interface_public_decl_count,
-        interface_public_decl_local_id,
-        interface_public_decl_index_by_local,
-        interface_public_decl_index_by_hir,
-        import_visible_type_count,
-        import_visible_value_count,
-        import_visible_type_prefix,
-        import_visible_value_prefix,
-        import_visible_type_count_out,
-        import_visible_value_count_out,
-        import_visible_type_module_id,
-        import_visible_type_name_id,
-        import_visible_type_decl_id,
-        import_visible_type_key_order,
-        import_visible_type_key_order_tmp,
-        import_visible_type_key_module_id,
-        import_visible_type_key_name_id,
-        import_visible_type_key_to_decl_id,
-        import_visible_type_status,
-        import_visible_type_duplicate_of,
-        import_visible_type_key_radix_dispatch_args,
-        import_visible_value_module_id,
-        import_visible_value_name_id,
-        import_visible_value_decl_id,
-        import_visible_value_key_order,
-        import_visible_value_key_order_tmp,
-        import_visible_value_key_module_id,
-        import_visible_value_key_name_id,
-        import_visible_value_key_to_decl_id,
-        import_visible_value_status,
-        import_visible_value_duplicate_of,
-        import_visible_value_key_radix_dispatch_args,
-        import_visible_validate_dispatch_args,
-        import_visible_key_radix_block_histogram,
-        import_visible_key_radix_block_bucket_prefix,
-        import_visible_key_radix_bucket_total,
-        import_visible_key_radix_bucket_base,
-        resolved_type_decl,
-        resolved_value_decl,
-        resolved_type_status,
-        resolved_value_status,
-        path_record_flag,
-        path_record_prefix,
-        path_scan_local_prefix,
-        path_scan_block_sum,
-        path_scan_prefix_a,
-        path_scan_prefix_b,
-        path_start,
-        path_len,
-        path_segment_count,
-        path_segment_base,
-        path_segment_name_id,
-        path_segment_token,
-        path_segment_count_out,
-        path_max_segment_count,
-        path_prefix_base,
-        path_prefix_id_a,
-        path_prefix_id_b,
-        path_prefix_table_state,
-        path_prefix_row_dispatch_args,
-        path_prefix_round_dispatch_args,
-        path_owner_hir,
-        path_call_hir,
-        path_owner_token,
-        path_id_by_owner_hir,
-        path_id_by_owner_token,
-        path_owner_module_id,
-        path_kind,
-        path_count_out,
-        path_dispatch_args,
         _extract_module_record_flag_params: extract_module_record_flag_params,
         _extract_import_record_flag_params: extract_import_record_flag_params,
         _extract_decl_record_flag_params: extract_decl_record_flag_params,
@@ -1950,15 +1039,21 @@ pub(in crate::type_checker) fn create_with_passes(
             path_prefix_dispatch_args,
             path_prefix_rounds,
             path_prefix_finalize,
-            extract_module_record_flag,
-            module_scan,
-            extract_import_record_flag,
-            import_scan,
-            extract_decl_record_flag,
-            decl_scan,
-            scatter_module_records,
-            scatter_import_records,
-            scatter_decl_core_records,
+            module_records: CompactionOperation::new(
+                extract_module_record_flag,
+                module_scan,
+                scatter_module_records,
+            ),
+            import_records: CompactionOperation::new(
+                extract_import_record_flag,
+                import_scan,
+                scatter_import_records,
+            ),
+            decl_records: CompactionOperation::new(
+                extract_decl_record_flag,
+                decl_scan,
+                scatter_decl_core_records,
+            ),
             append_variant_decl_count,
             scatter_variant_decl_records,
             clear_decl_lookup,

@@ -1,9 +1,8 @@
+import hir_records;
+
 // Scatter named generic argument refs from the compact type-argument family.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirRange { uint start; uint count; };
-struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

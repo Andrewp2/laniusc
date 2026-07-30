@@ -10,6 +10,10 @@ use super::*;
 
 static NEXT_BOUNDED_BUILD_ID: AtomicU64 = AtomicU64::new(0);
 
+fn resident_source_unit_limits() -> CompilationUnitLimits {
+    CompilationUnitLimits::default()
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
     /// Compile a path-backed source pack to Wasm, retaining the resident fast
     /// path when it fits one unit and otherwise executing bounded units.
@@ -17,14 +21,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
     ) -> Result<Vec<u8>, CompileError> {
-        if source_pack.requires_bounded_compilation() {
-            self.compile_path_manifest_bounded(source_pack, SourcePackArtifactTarget::Wasm)
-                .await
-        } else {
-            let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
-            self.compile_source_pack_manifest_to_wasm(&source_pack)
-                .await
-        }
+        self.compile_path_manifest(source_pack, SourcePackArtifactTarget::Wasm)
+            .await
     }
 
     /// Compile a path-backed source pack to x86_64, retaining the resident fast
@@ -33,26 +31,72 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
     ) -> Result<Vec<u8>, CompileError> {
-        if source_pack.requires_bounded_compilation() {
-            self.compile_path_manifest_bounded(source_pack, SourcePackArtifactTarget::X86_64)
+        self.compile_path_manifest(source_pack, SourcePackArtifactTarget::X86_64)
+            .await
+    }
+
+    async fn compile_path_manifest(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        target: SourcePackArtifactTarget,
+    ) -> Result<Vec<u8>, CompileError> {
+        let limits = resident_source_unit_limits();
+        let bounded = source_pack.requires_bounded_compilation_with_limits(limits);
+        let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
+        if report_memory {
+            crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
+        }
+        let result = if bounded {
+            self.compile_path_manifest_bounded(source_pack, target, limits)
                 .await
         } else {
             let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
-            self.compile_source_pack_manifest_to_x86_64(&source_pack)
-                .await
+            match target {
+                SourcePackArtifactTarget::Wasm => {
+                    self.compile_source_pack_manifest_to_wasm(&source_pack)
+                        .await
+                }
+                SourcePackArtifactTarget::X86_64 => {
+                    self.compile_source_pack_manifest_to_x86_64(&source_pack)
+                        .await
+                }
+                SourcePackArtifactTarget::Generic => unreachable!("concrete backend required"),
+            }
+        };
+        if report_memory {
+            let units = source_pack.frontend_unit_plan(limits);
+            let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
+            eprintln!(
+                "source_pack_scale target={target:?} mode={} source_bytes={} source_files={} units={} max_unit_bytes={} peak_gpu_bytes={} peak_gpu_allocations={}",
+                if bounded { "bounded" } else { "resident" },
+                source_pack
+                    .files
+                    .iter()
+                    .map(|file| file.byte_len)
+                    .sum::<usize>(),
+                source_pack.files.len(),
+                units.unit_count(),
+                units.max_unit_source_bytes(),
+                peak.bytes,
+                peak.allocations,
+            );
+            if let Err(error) = &result {
+                eprintln!("source_pack_scale_error error={error:?}");
+            }
         }
+        result
     }
 
     pub(in crate::compiler) async fn compile_path_manifest_bounded(
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
         target: SourcePackArtifactTarget,
+        limits: CompilationUnitLimits,
     ) -> Result<Vec<u8>, CompileError> {
         let artifact_root = TemporaryBoundedArtifactRoot::create()?;
         let libraries = path_manifest_libraries(source_pack)?;
         prepare_ordered_library_path_metadata_for_target(libraries, artifact_root.path(), target)?;
 
-        let limits = CodegenUnitLimits::default();
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let shard_limits = SourcePackBuildShardLimits::default();
         loop {
@@ -215,13 +259,13 @@ mod tests {
     }
 
     #[test]
-    fn bounded_path_routing_uses_general_codegen_unit_limits() {
-        let limits = CodegenUnitLimits::default();
+    fn bounded_path_routing_uses_resident_workspace_limits() {
+        let limits = resident_source_unit_limits();
         let small = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, limits.max_source_bytes)],
             library_dependencies: Vec::new(),
         };
-        assert!(!small.requires_bounded_compilation());
+        assert!(!small.requires_bounded_compilation_with_limits(limits));
 
         let small_multi_library = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, 1), file(1, 1, 1)],
@@ -230,13 +274,13 @@ mod tests {
                 depends_on_library_id: 0,
             }],
         };
-        assert!(!small_multi_library.requires_bounded_compilation());
+        assert!(!small_multi_library.requires_bounded_compilation_with_limits(limits));
 
         let oversized = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, limits.max_source_bytes + 1)],
             library_dependencies: Vec::new(),
         };
-        assert!(oversized.requires_bounded_compilation());
+        assert!(oversized.requires_bounded_compilation_with_limits(limits));
 
         let oversized_aggregate = ExplicitSourcePackPathManifest {
             files: vec![
@@ -248,7 +292,7 @@ mod tests {
                 depends_on_library_id: 0,
             }],
         };
-        assert!(oversized_aggregate.requires_bounded_compilation());
+        assert!(oversized_aggregate.requires_bounded_compilation_with_limits(limits));
 
         let many_files = ExplicitSourcePackPathManifest {
             files: (0..=limits.max_source_files)
@@ -256,7 +300,38 @@ mod tests {
                 .collect(),
             library_dependencies: Vec::new(),
         };
-        assert!(many_files.requires_bounded_compilation());
+        assert!(many_files.requires_bounded_compilation_with_limits(limits));
+    }
+
+    #[test]
+    fn ten_mebibyte_project_is_split_at_the_stable_resident_capacity() {
+        let limits = resident_source_unit_limits();
+        assert_eq!(limits.max_source_bytes, 1024 * 1024);
+
+        let source_pack = ExplicitSourcePackPathManifest {
+            files: (0..10).map(|index| file(0, index, 1024 * 1024)).collect(),
+            library_dependencies: Vec::new(),
+        };
+        assert!(source_pack.requires_bounded_compilation_with_limits(limits));
+
+        let inputs = source_pack
+            .files
+            .iter()
+            .enumerate()
+            .map(|(source_index, file)| SourceFileUnitInput {
+                library_id: file.library_id,
+                source_index,
+                byte_len: file.byte_len,
+                line_count: file.line_count.unwrap_or(0),
+            })
+            .collect::<Vec<_>>();
+        let frontend = CompilationUnitPlan::from_files(&inputs, limits);
+        let codegen = CompilationUnitPlan::from_files(&inputs, limits);
+
+        assert_eq!(frontend.unit_count(), 10);
+        assert_eq!(codegen.unit_count(), 10);
+        assert_eq!(frontend.max_unit_source_bytes(), limits.max_source_bytes);
+        assert_eq!(codegen.max_unit_source_bytes(), limits.max_source_bytes);
     }
 
     #[test]

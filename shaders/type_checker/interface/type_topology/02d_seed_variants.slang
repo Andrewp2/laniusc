@@ -1,10 +1,8 @@
 // Seed public enum-variant payload roots from compact family rows.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

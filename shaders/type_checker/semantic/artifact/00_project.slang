@@ -1,3 +1,4 @@
+import hir_records;
 import gpu_index;
 
 struct Params
@@ -9,9 +10,6 @@ struct Params
     uint parser_feature_flags;
 };
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

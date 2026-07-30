@@ -1,3 +1,5 @@
+import hir_records;
+
 // Identify generic aliases whose target is another alias with a complete
 // positional parameter forwarding row. Argument lanes validate the row in the
 // following pass; no declaration lane walks the argument list.
@@ -10,8 +12,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirRange { uint start; uint count; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_type_alias_target;

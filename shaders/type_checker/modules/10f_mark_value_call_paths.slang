@@ -1,3 +1,5 @@
+import hir_records;
+
 // Mark compact-HIR value paths and calls for downstream value consumers.
 //
 // Paths, their owners, and call callees all use dense compact-HIR ids. The
@@ -5,9 +7,6 @@
 // zero remains the non-call sentinel for the other value-path consumers.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

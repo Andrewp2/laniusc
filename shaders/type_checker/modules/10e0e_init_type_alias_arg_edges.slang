@@ -3,6 +3,7 @@
 // parameter token. Each HIR lane handles one argument; no declaration lane
 // walks an argument list.
 
+import hir_records;
 import gpu_index;
 
 struct Params
@@ -13,9 +14,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

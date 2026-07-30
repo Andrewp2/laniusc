@@ -5,6 +5,7 @@
 // backend ABI projection. It does not inspect token spelling, source bytes,
 // source-level names or function bodies.
 
+import hir_records;
 import atomics;
 import gpu_index;
 
@@ -17,9 +18,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

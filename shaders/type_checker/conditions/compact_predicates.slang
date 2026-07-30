@@ -2,16 +2,12 @@
 // One lane may own one row from each dense family. No raw production, parent,
 // sibling, or raw-to-compact relation crosses this pass boundary.
 
+import hir_records;
 import fixed.compact_method;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirPredicate { uint owner; uint subject; uint bound; uint metadata; };
-struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
-struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
 struct PredicateDiagnosticFact
 {
     uint status;

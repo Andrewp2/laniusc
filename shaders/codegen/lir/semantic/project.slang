@@ -1,21 +1,9 @@
+import hir_records;
 import gpu_index;
 import codegen.lowering_ir;
+import checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint n_hir_nodes; uint reserved0; uint reserved1; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct CheckedCallArtifact
-{
-    uint target_token;
-    uint dependency_decl;
-    uint intrinsic_tag;
-    uint return_type;
-    uint receiver_hir;
-    uint arg_count;
-    uint return_ref_tag;
-    uint return_ref_payload;
-};
-
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -24,10 +12,6 @@ StructuredBuffer<uint> compact_expr_root;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
-StructuredBuffer<uint> dependency_counts;
-StructuredBuffer<uint> dependency_declaration_library_id;
-StructuredBuffer<uint> dependency_declaration_unit_id;
-StructuredBuffer<uint> dependency_declaration_local_index;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
@@ -122,17 +106,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
             else
             {
-                uint dependency = checked.dependency_decl;
-                uint dependency_count = dependency_counts[3u];
-                if (dependency < dependency_count)
+                if (checked.dependency_library_id != INVALID &&
+                    checked.dependency_unit_id != INVALID &&
+                    checked.dependency_local_index != INVALID)
                 {
                     semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
-                    semantic_call_symbol_library_id[node] =
-                        dependency_declaration_library_id[dependency];
-                    semantic_call_symbol_unit_id[node] =
-                        dependency_declaration_unit_id[dependency];
-                    semantic_call_symbol_local_index[node] =
-                        dependency_declaration_local_index[dependency];
+                    semantic_call_symbol_library_id[node] = checked.dependency_library_id;
+                    semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
+                    semantic_call_symbol_local_index[node] = checked.dependency_local_index;
                     semantic_call_result_type[node] = checked.return_type;
                     semantic_call_receiver[node] = checked.receiver_hir;
                 }

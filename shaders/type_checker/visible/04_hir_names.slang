@@ -13,6 +13,7 @@
 //   by compact declaration-node records plus dense initializer spans, not by
 //   walking parser parent/root chains.
 
+import hir_records;
 import range_query;
 import segment_tree;
 import status;
@@ -27,8 +28,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

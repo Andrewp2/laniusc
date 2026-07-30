@@ -5,7 +5,7 @@
 // field. Broader nested context propagation should be added as another explicit
 // relation, not by restoring per-consumer tree walks.
 
-import atomics;
+import hir_records;
 
 struct Params
 {
@@ -18,18 +18,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_type_value_node;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_array_lit_context_stmt_node;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_nearest_array_element_node;
-StructuredBuffer<uint> hir_struct_lit_head_node;
-StructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
@@ -40,13 +32,18 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_len;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 
 RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
-RWStructuredBuffer<uint> array_element_struct_literal_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
@@ -57,9 +54,9 @@ static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
-static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -100,34 +97,27 @@ uint enclosing_function_decl_token(uint token)
     return valid_token(fn_token) ? fn_token : INVALID;
 }
 
-uint stmt_slot(uint node, uint slot)
+uint active_compact_hir_count()
 {
-    return node * STMT_RECORD_STRIDE + slot;
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-uint type_head_token_for_node(uint type_node)
+uint compact_node_for_raw(uint node)
 {
-    if (!valid_node(type_node))
+    if (!valid_node(node))
         return INVALID;
+    uint dense = raw_to_compact_hir[node];
+    return dense < active_compact_hir_count() ? dense : INVALID;
+}
 
-    uint leaf_node = hir_type_path_leaf_node[type_node];
-    if (valid_node(leaf_node))
-    {
-        uint leaf = hir_token_pos[leaf_node];
-        if (valid_token(leaf))
-            return leaf;
-    }
-
-    uint value_node = hir_type_value_node[type_node];
-    if (valid_node(value_node))
-    {
-        uint value_head = hir_token_pos[value_node];
-        if (valid_token(value_head))
-            return value_head;
-    }
-
-    uint type_head = hir_token_pos[type_node];
-    return valid_token(type_head) ? type_head : INVALID;
+HirPayload stmt_payload(uint node)
+{
+    HirPayload payload;
+    payload.a = 0u;
+    payload.b = INVALID;
+    payload.c = INVALID;
+    payload.d = INVALID;
+    return node < active_compact_hir_count() ? compact_hir_payload[node] : payload;
 }
 
 bool context_for_type_ref(uint tag, uint payload, out uint decl_token, out uint instance_i)
@@ -158,11 +148,32 @@ uint bounded_array_instance_from_ref(uint tag, uint payload)
     return type_instance_kind[payload] == TYPE_INSTANCE_ARRAY ? payload : INVALID;
 }
 
-bool context_for_type_node(uint type_node, out uint decl_token, out uint instance_i)
+uint type_head_token_for_compact_node(uint type_node)
+{
+    if (type_node >= active_compact_hir_count())
+        return INVALID;
+    uint path = path_id_by_owner_hir[type_node];
+    if (path < gParams.n_hir_nodes)
+    {
+        uint count = path_len[path];
+        uint base = path_segment_base[path];
+        uint row = count == 0u ? INVALID : base + count - 1u;
+        if (row < gParams.n_tokens && row >= base)
+        {
+            uint token = path_segment_token[row];
+            if (valid_token(token))
+                return token;
+        }
+    }
+    uint token = compact_hir_core[type_node].token_start;
+    return valid_token(token) ? token : INVALID;
+}
+
+bool context_for_compact_type_node(uint type_node, out uint decl_token, out uint instance_i)
 {
     decl_token = INVALID;
     instance_i = INVALID;
-    uint type_head = type_head_token_for_node(type_node);
+    uint type_head = type_head_token_for_compact_node(type_node);
     if (!valid_token(type_head))
         return false;
     return context_for_type_ref(
@@ -174,7 +185,9 @@ bool context_for_type_node(uint type_node, out uint decl_token, out uint instanc
 
 bool is_struct_literal(uint node)
 {
-    return valid_node(node) && valid_node(hir_struct_lit_head_node[node]);
+    uint dense = compact_node_for_raw(node);
+    return dense < active_compact_hir_count() &&
+           compact_hir_core[dense].kind == HIR_STRUCT_LITERAL_EXPR;
 }
 
 void publish_context(uint literal_node, uint decl_token, uint instance_i)
@@ -189,7 +202,8 @@ void publish_let_context(uint literal_node, uint stmt_node)
 {
     uint decl_token = INVALID;
     uint instance_i = INVALID;
-    uint decl = hir_stmt_record[stmt_slot(stmt_node, 1u)];
+    HirPayload stmt = stmt_payload(stmt_node);
+    uint decl = stmt.b;
     if (valid_token(decl) &&
         context_for_type_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl], decl_token, instance_i))
     {
@@ -197,14 +211,15 @@ void publish_let_context(uint literal_node, uint stmt_node)
         return;
     }
 
-    uint type_node = hir_stmt_record[stmt_slot(stmt_node, 3u)];
-    if (context_for_type_node(type_node, decl_token, instance_i))
+    if (context_for_compact_type_node(stmt.d, decl_token, instance_i))
         publish_context(literal_node, decl_token, instance_i);
 }
 
 void publish_return_context(uint literal_node, uint stmt_node)
 {
-    uint return_token = hir_token_pos[stmt_node];
+    uint return_token = stmt_node < active_compact_hir_count()
+        ? compact_hir_core[stmt_node].token_start
+        : INVALID;
     if (!valid_token(return_token))
         return;
 
@@ -220,7 +235,9 @@ void publish_return_context(uint literal_node, uint stmt_node)
 
 uint function_return_array_instance(uint return_node)
 {
-    uint return_token = hir_token_pos[return_node];
+    uint return_token = return_node < active_compact_hir_count()
+        ? compact_hir_core[return_node].token_start
+        : INVALID;
     if (!valid_token(return_token))
         return INVALID;
 
@@ -235,11 +252,11 @@ uint function_return_array_instance(uint return_node)
 
 uint let_array_instance(uint let_node)
 {
-    if (!valid_node(let_node) ||
-        hir_stmt_record[stmt_slot(let_node, 0u)] != STMT_RECORD_KIND_LET)
+    HirPayload stmt = stmt_payload(let_node);
+    if (let_node >= active_compact_hir_count() || stmt.a != STMT_RECORD_KIND_LET)
         return INVALID;
 
-    uint decl = hir_stmt_record[stmt_slot(let_node, 1u)];
+    uint decl = stmt.b;
     if (!valid_token(decl))
         return INVALID;
 
@@ -250,10 +267,10 @@ uint let_array_instance(uint let_node)
 
 uint array_instance_for_context_stmt(uint stmt_node)
 {
-    if (!valid_node(stmt_node))
+    if (stmt_node >= active_compact_hir_count())
         return INVALID;
 
-    uint kind = hir_stmt_record[stmt_slot(stmt_node, 0u)];
+    uint kind = stmt_payload(stmt_node).a;
     if (kind == STMT_RECORD_KIND_LET)
         return let_array_instance(stmt_node);
     if (kind == STMT_RECORD_KIND_RETURN)
@@ -278,8 +295,11 @@ bool publish_array_element_context(uint literal_node, uint stmt_node)
         return false;
 
     uint array_node = hir_array_element_parent_lit[element_node];
-    if (!valid_node(array_node) ||
-        hir_array_lit_context_stmt_node[array_node] != stmt_node)
+    uint array = compact_node_for_raw(array_node);
+    uint array_stmt = array < active_compact_hir_count()
+        ? compact_hir_payload[array].d
+        : INVALID;
+    if (!valid_node(array_node) || array_stmt != stmt_node)
         return false;
 
     uint array_instance = array_instance_for_context_stmt(stmt_node);
@@ -311,18 +331,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!is_struct_literal(i))
         return;
 
-    uint element_node = enclosing_array_element_node(i);
-    if (valid_node(element_node))
-        atomic_u32_min(array_element_struct_literal_node, element_node, i);
-
-    uint stmt_node = hir_struct_lit_context_stmt_node[i];
-    if (!valid_node(stmt_node))
+    uint literal = compact_node_for_raw(i);
+    uint stmt_node = literal < active_compact_hir_count()
+        ? compact_hir_payload[literal].d
+        : INVALID;
+    if (stmt_node >= active_compact_hir_count())
         return;
 
     if (publish_array_element_context(i, stmt_node))
         return;
 
-    uint kind = hir_stmt_record[stmt_slot(stmt_node, 0u)];
+    uint kind = stmt_payload(stmt_node).a;
     if (kind == STMT_RECORD_KIND_LET)
         publish_let_context(i, stmt_node);
     else if (kind == STMT_RECORD_KIND_RETURN)

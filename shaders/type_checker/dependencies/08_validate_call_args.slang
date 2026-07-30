@@ -3,6 +3,8 @@
 // 08b_validate_call_type_args after a prefix scan; this pass never walks a
 // variable-width type argument list in one invocation.
 
+import dependency_interface;
+import hir_records;
 import gpu_index;
 import hir_expr_semantics;
 import status;
@@ -20,9 +22,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -30,20 +29,20 @@ StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_subtree_end;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> type_instance_external_canonical;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> dependency_counts;
-StructuredBuffer<uint> dependency_declaration_words;
-StructuredBuffer<uint> dependency_type_words;
-StructuredBuffer<uint> dependency_type_edge_words;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> canonical_type_subtree_start;
 StructuredBuffer<uint> type_semantic_row_by_token;
@@ -95,25 +94,25 @@ uint callee_token(uint call)
     return token < gParams.visible_capacity ? token : INVALID;
 }
 
-bool canonical_nominal_matches(uint expected_type_i, uint actual_type_i)
+bool stable_nominal_matches(uint expected_type_i, uint actual_token)
 {
-    uint type_count = dependency_counts[4u];
-    if (expected_type_i >= type_count || actual_type_i >= type_count)
+    uint type_count = dependency_count(4u);
+    if (expected_type_i >= type_count || actual_token >= gParams.visible_capacity)
         return false;
     uint expected = canonical_type_roots[expected_type_i];
-    uint actual = canonical_type_roots[actual_type_i];
     uint expected_base = expected * TYPE_WORDS;
-    uint actual_base = actual * TYPE_WORDS;
-    return dependency_type_words[expected_base] == INTERFACE_TYPE_DECLARATION &&
-           dependency_type_words[actual_base] == INTERFACE_TYPE_DECLARATION &&
-           dependency_type_words[expected_base + 1u] == dependency_type_words[actual_base + 1u] &&
-           dependency_type_words[expected_base + 2u] == dependency_type_words[actual_base + 2u] &&
-           dependency_type_words[expected_base + 8u] == dependency_type_words[actual_base + 8u];
+    return dependency_type_word(expected_base) == INTERFACE_TYPE_DECLARATION &&
+           dependency_type_word(expected_base + 1u) ==
+               external_type_library_id[actual_token] &&
+           dependency_type_word(expected_base + 2u) ==
+               external_type_local_index[actual_token] &&
+           dependency_type_word(expected_base + 8u) ==
+               external_type_unit_id[actual_token];
 }
 
 uint canonical_subtree_count(uint root)
 {
-    uint type_count = dependency_counts[4u];
+    uint type_count = dependency_count(4u);
     if (root >= type_count)
         return INVALID;
     uint start = canonical_type_subtree_start[root];
@@ -149,22 +148,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint arg_node = arg.value;
     uint callee = callee_token(arg.call);
     if (callee == INVALID) return;
-    uint declaration_i = call_dependency_decl[callee];
-    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count)
+    uint declaration_i = dependency_find_declaration(
+        call_dependency_library_id[callee],
+        call_dependency_unit_id[callee],
+        call_dependency_local_index[callee]);
+    if (declaration_i == INVALID)
         return;
 
-    uint signature_i = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
+    uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
     uint signature_base = signature_i * TYPE_WORDS;
-    if (dependency_type_words[signature_base] != INTERFACE_TYPE_FUNCTION)
+    if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION)
         return;
-    uint first_edge = dependency_type_words[signature_base + 3u];
-    uint edge_count = dependency_type_words[signature_base + 4u];
+    uint first_edge = dependency_type_word(signature_base + 3u);
+    uint edge_count = dependency_type_word(signature_base + 4u);
     uint ordinal = arg.ordinal;
     if (edge_count == 0u || ordinal >= edge_count - 1u)
         return;
-    uint expected_type_i = canonical_type_roots[dependency_type_edge_words[first_edge + ordinal]];
+    uint expected_type_i = canonical_type_roots[dependency_type_edge_word(first_edge + ordinal)];
     uint expected_base = expected_type_i * TYPE_WORDS;
-    uint expected_kind = dependency_type_words[expected_base];
+    uint expected_kind = dependency_type_word(expected_base);
 
     // Imported function generics participate in the shared compact call-row
     // claim pipeline. This late structural validator must not second-guess the
@@ -188,21 +190,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint actual_payload = actual_ref_token < gParams.visible_capacity
             ? decl_type_ref_payload[actual_ref_token]
             : INVALID;
-        uint expected_count = dependency_type_words[expected_base + 4u];
+        uint expected_count = dependency_type_word(expected_base + 4u);
         bool matches = false;
         if (expected_kind == INTERFACE_TYPE_DECLARATION &&
             actual_tag == TYPE_REF_EXTERNAL_CANONICAL)
         {
-            matches = canonical_nominal_matches(expected_type_i, actual_payload) &&
+            matches = stable_nominal_matches(expected_type_i, actual_ref_token) &&
                       expected_count == 0u;
         }
         else if (expected_kind == INTERFACE_TYPE_DECLARATION &&
                  actual_tag == TYPE_REF_INSTANCE &&
                  actual_payload < gParams.visible_capacity)
         {
-            uint actual_canonical = type_instance_external_canonical[actual_payload];
-            matches = actual_canonical != INVALID &&
-                      canonical_nominal_matches(expected_type_i, actual_canonical) &&
+            matches = stable_nominal_matches(expected_type_i, actual_payload) &&
                       type_instance_arg_count[actual_payload] == expected_count;
             if (matches && expected_count != 0u)
             {
@@ -231,9 +231,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                       expected_count == 1u;
             if (matches && expected_kind == INTERFACE_TYPE_ARRAY)
                 matches = type_instance_len_kind[actual_payload] ==
-                              dependency_type_words[expected_base + 5u] &&
+                              dependency_type_word(expected_base + 5u) &&
                           type_instance_len_payload[actual_payload] ==
-                              dependency_type_words[expected_base + 6u];
+                              dependency_type_word(expected_base + 6u);
             if (matches)
             {
                 uint expected_subtree_count = canonical_subtree_count(expected_type_i);
@@ -257,7 +257,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 HIR_SEM_TY_UNKNOWN);
         return;
     }
-    uint expected = dependency_type_words[expected_base + 1u];
+    uint expected = dependency_type_word(expected_base + 1u);
     if (actual == HIR_SEM_TY_UNKNOWN && arg_token < gParams.visible_capacity)
         actual = visible_type[arg_token];
     if (actual != expected)

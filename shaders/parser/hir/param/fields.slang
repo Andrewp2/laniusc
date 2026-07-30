@@ -116,7 +116,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node == INVALID)
         return;
 
-    hir_param_record[node] = uint4(INVALID, INVALID, INVALID, INVALID);
     if (hir_kind[node] != HIR_PARAM)
         return;
 
@@ -132,10 +131,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (ordinal == INVALID)
         return;
 
-    hir_param_record[node] = uint4(
+    // Parameters have a distinct source-token anchor.  Store their temporary
+    // record by that token rather than by sparse parse-tree node, so this
+    // family is bounded by source tokens just like the compact HIR output.
+    hir_param_record[name_token] = uint4(
         fn_node,
         ordinal,
         name_token,
         node);
-    hir_param_type_node[node] = parameter_type_node(node);
+    hir_param_type_node[name_token] = parameter_type_node(node);
 }

@@ -11,6 +11,7 @@
 //   so signature validators can join parameters by ordinal without walking a
 //   source-sized method-local chain.
 
+import hir_records;
 import gpu_index;
 import radix;
 import scatter;
@@ -41,7 +42,6 @@ StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;

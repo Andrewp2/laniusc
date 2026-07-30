@@ -7,7 +7,9 @@
 // after generic/method substitution. This pass is the only boundary that joins
 // those domains; downstream semantic passes consume the dense record directly.
 
+import hir_records;
 import gpu_index;
+import checked_semantic_artifact;
 
 struct Params
 {
@@ -16,23 +18,6 @@ struct Params
     uint n_hir_nodes;
     uint n_source_files;
     uint parser_feature_flags;
-};
-
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirPath { uint owner; uint segment_start; uint segment_count; uint kind; };
-struct HirPathSegment { uint path; uint name_token; uint ordinal; uint file_id; };
-struct CheckedCallArtifact
-{
-    uint target_token;
-    uint dependency_decl;
-    uint intrinsic_tag;
-    uint return_type;
-    uint receiver_hir;
-    uint arg_count;
-    uint return_ref_tag;
-    uint return_ref_payload;
 };
 
 ConstantBuffer<Params> gParams;
@@ -47,7 +32,9 @@ StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> backend_call_fn_index;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
@@ -120,7 +107,9 @@ CheckedCallArtifact empty_call()
 {
     CheckedCallArtifact call;
     call.target_token = INVALID;
-    call.dependency_decl = INVALID;
+    call.dependency_library_id = INVALID;
+    call.dependency_unit_id = INVALID;
+    call.dependency_local_index = INVALID;
     call.intrinsic_tag = 0u;
     call.return_type = 0u;
     call.receiver_hir = INVALID;
@@ -145,7 +134,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (valid_token(callee_token))
         {
             call.target_token = backend_call_fn_index[callee_token];
-            call.dependency_decl = call_dependency_decl[callee_token];
+            if (call_dependency_library_id[callee_token] != INVALID)
+            {
+                call.dependency_library_id = call_dependency_library_id[callee_token];
+                call.dependency_unit_id = call_dependency_unit_id[callee_token];
+                call.dependency_local_index = call_dependency_local_index[callee_token];
+            }
             call.intrinsic_tag = call_intrinsic_tag[callee_token];
             call.return_type = call_return_type[callee_token];
             uint return_token = call_return_type_token[callee_token];

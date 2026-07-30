@@ -26,6 +26,7 @@ gpu-debug = []
 graphics_debugger = []
 
 [build-dependencies]
+laniusc-shaders = { path = "../laniusc-shaders" }
 which = "8.0.0"
 
 [dev-dependencies]

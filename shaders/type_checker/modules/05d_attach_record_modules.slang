@@ -1,3 +1,5 @@
+import hir_records;
+
 // GPU record-to-module-id attachment.
 //
 // Scheduling contract:
@@ -25,7 +27,6 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_module_file_id;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_owner_hir;
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> module_count_out;

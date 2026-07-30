@@ -1,6 +1,7 @@
 // Emit fixed-width stable records from compacted topology and preclassified
 // path identities. Descendants already have lower compacted indices.
 
+import hir_records;
 import atomics;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
@@ -9,7 +10,6 @@ StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_hir_order;
 StructuredBuffer<uint> interface_type_edge_prefix;
 StructuredBuffer<uint> interface_type_edge_count;
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint4> interface_type_path_classification;
 RWStructuredBuffer<uint> interface_types;

@@ -1,5 +1,6 @@
 // Validate direct-call const length claims after final call resolution.
 
+import hir_records;
 import status;
 
 struct Params
@@ -13,7 +14,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;

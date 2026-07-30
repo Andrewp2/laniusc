@@ -18,7 +18,7 @@ use capacity::{
 };
 use laniusc_compiler::{
     codegen::unit::{
-        CodegenUnitLimits,
+        CompilationUnitLimits,
         SourcePackArtifactTarget,
         SourcePackBuildShardLimits,
         SourcePackJobBatchLimits,
@@ -813,7 +813,7 @@ async fn run_source_pack_descriptor_phase(
     }
     let target = source_pack_artifact_target_for_phase(phase)?;
     let artifact_root = source_pack_descriptor_artifact_root(config, phase, phase_name)?;
-    let limits = CodegenUnitLimits::default();
+    let limits = CompilationUnitLimits::default();
     let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
     let max_items = config.bounded_max_items();
     let max_ready_items = config.bounded_max_ready_items();

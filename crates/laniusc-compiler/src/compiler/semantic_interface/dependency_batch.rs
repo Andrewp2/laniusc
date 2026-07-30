@@ -17,6 +17,9 @@ pub(crate) struct GpuSemanticInterfaceDependencyBatch {
     pub(crate) declaration_unit_id: Vec<u32>,
     pub(crate) declaration_local_index: Vec<u32>,
     pub(crate) declarations: Vec<GpuSemanticInterfaceDeclarationRecord>,
+    pub(crate) type_library_id: Vec<u32>,
+    pub(crate) type_unit_id: Vec<u32>,
+    pub(crate) type_local_index: Vec<u32>,
     pub(crate) types: Vec<GpuSemanticInterfaceTypeRecord>,
     pub(crate) type_edges: Vec<GpuSemanticInterfaceTypeEdge>,
     pub(crate) members: Vec<GpuSemanticInterfaceMemberRecord>,
@@ -144,7 +147,13 @@ impl GpuSemanticInterfaceDependencyBatch {
                     value_hi: declaration.value_hi,
                 });
         }
-        self.types.extend(interface.types.iter().map(|ty| {
+        for (local_index, ty) in interface.types.iter().enumerate() {
+            self.type_library_id.push(interface.library_id);
+            self.type_unit_id.push(interface.unit_id);
+            self.type_local_index.push(
+                u32::try_from(local_index)
+                    .map_err(|_| "dependency type local index does not fit in u32".to_string())?,
+            );
             let payload_lo = if matches!(
                 GpuSemanticInterfaceTypeKind::from_u32(ty.kind),
                 Some(
@@ -156,7 +165,7 @@ impl GpuSemanticInterfaceDependencyBatch {
             } else {
                 ty.payload_lo
             };
-            GpuSemanticInterfaceTypeRecord {
+            self.types.push(GpuSemanticInterfaceTypeRecord {
                 kind: ty.kind,
                 payload_lo,
                 payload_hi: ty.payload_hi,
@@ -166,8 +175,8 @@ impl GpuSemanticInterfaceDependencyBatch {
                 length_lo: ty.length_lo,
                 length_hi: ty.length_hi,
                 nominal_unit_id: ty.nominal_unit_id,
-            }
-        }));
+            });
+        }
         self.type_edges
             .extend(
                 interface
@@ -214,6 +223,9 @@ impl GpuSemanticInterfaceDependencyBatch {
             || self.declaration_library_id.len() != self.declarations.len()
             || self.declaration_unit_id.len() != self.declarations.len()
             || self.declaration_local_index.len() != self.declarations.len()
+            || self.type_library_id.len() != self.types.len()
+            || self.type_unit_id.len() != self.types.len()
+            || self.type_local_index.len() != self.types.len()
         {
             return Err(
                 "dependency semantic-interface identity side tables have different lengths"
@@ -448,6 +460,9 @@ mod tests {
         assert_eq!(batch.declaration_library_id, vec![7, 9]);
         assert_eq!(batch.declaration_unit_id, vec![70, 90]);
         assert_eq!(batch.declaration_local_index, vec![0, 0]);
+        assert_eq!(batch.type_library_id, vec![7, 7, 9, 9]);
+        assert_eq!(batch.type_unit_id, vec![70, 70, 90, 90]);
+        assert_eq!(batch.type_local_index, vec![0, 1, 0, 1]);
         assert_eq!(batch.declarations[1].module, 1);
         assert_eq!(batch.declarations[1].signature_type, 3);
         assert_eq!(batch.types[3].first_edge, 1);
@@ -486,5 +501,7 @@ mod tests {
         assert_eq!(batch.library_ids, vec![7, 7]);
         assert_eq!(batch.unit_ids, vec![70, 71]);
         assert_eq!(batch.declaration_unit_id, vec![70, 71]);
+        assert_eq!(batch.type_unit_id, vec![70, 70, 71, 71]);
+        assert_eq!(batch.type_local_index, vec![0, 1, 0, 1]);
     }
 }

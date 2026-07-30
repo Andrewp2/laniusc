@@ -3,6 +3,7 @@
 // result root. Lowering reverses that depth to obtain child-before-parent
 // postorder without a serial tree walk.
 
+import hir_records;
 import codegen.lir.semantic.common;
 import gpu_index;
 

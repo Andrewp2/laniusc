@@ -68,6 +68,16 @@ impl HierarchicalRadixSortKernels {
                 "type_checker/names/radix/00c/bucket/bases",
             )?;
             graph.assign_kernel(step.scatter, self.scatter)?;
+            for pass in [
+                step.histogram,
+                step.bucket_local,
+                step.bucket_chunks,
+                step.bucket_apply,
+                step.bucket_bases,
+                step.scatter,
+            ] {
+                graph.require_complete_reflection(pass)?;
+            }
         }
         Ok(())
     }

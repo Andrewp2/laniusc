@@ -3,12 +3,11 @@
 // in the type-instance passes, while this boundary rejects a definite
 // aggregate/non-aggregate category mismatch.
 
+import hir_records;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -19,7 +18,7 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -112,7 +111,7 @@ bool resolved_dependency_call(uint node)
     HirPayload payload = compact_hir_payload[callee];
     uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
     if (!valid_token(token)) token = core.token_start;
-    return valid_token(token) && call_dependency_decl[token] != INVALID;
+    return valid_token(token) && call_dependency_library_id[token] != INVALID;
 }
 
 bool expression_type_ref(uint node, out uint tag, out uint payload)

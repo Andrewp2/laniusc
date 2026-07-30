@@ -2,13 +2,11 @@
 // and source spans replace the legacy raw parent/sibling walk; type, predicate,
 // call-head, and postfix syntax are left to their dedicated compact passes.
 
+import hir_records;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 struct TokenIn { uint kind; uint start; uint len; };
 
 ConstantBuffer<Params> gParams;

@@ -26,32 +26,16 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         "type_check.visible.hir_semantic_dispatch_args",
         1,
     )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/visible/03b_mark_hir_decl_names"),
-        &groups.mark_hir_decl_names,
-        "type_check.visible.mark_hir_decl_names",
-        &groups.hir_semantic_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.visible.mark_hir_decl_names.done",
-    );
-    groups.hir_decl_scan.record(encoder)?;
-    stamp_typecheck_timer(&mut timer, encoder, "typecheck.visible.hir_decl_scan.done");
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/visible/03c_scatter_hir_decls"),
-        &groups.scatter_hir_decl_records,
-        "type_check.visible.scatter_hir_decl_records",
-        &groups.hir_semantic_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.visible.scatter_hir_decl_records.done",
-    );
+    groups
+        .hir_declarations
+        .record_staged(encoder, |stage, encoder| {
+            let label = match stage {
+                CompactionStage::Mark => "typecheck.visible.mark_hir_decl_names.done",
+                CompactionStage::Scan => "typecheck.visible.hir_decl_scan.done",
+                CompactionStage::Scatter => "typecheck.visible.scatter_hir_decl_records.done",
+            };
+            stamp_typecheck_timer(&mut timer, encoder, label);
+        })?;
     record_compute(
         encoder,
         &passes.kernel("type_checker/count/dispatch_args"),

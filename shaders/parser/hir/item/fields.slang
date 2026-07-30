@@ -256,13 +256,6 @@ uint name_token_for_item(uint i, uint prod, uint start)
 void clear_item(uint i)
 {
     hir_item_kind[i] = HIR_ITEM_KIND_NONE;
-    hir_item_name_token[i] = INVALID;
-    hir_item_namespace[i] = HIR_ITEM_NAMESPACE_NONE;
-    hir_item_visibility[i] = HIR_ITEM_VIS_PRIVATE;
-    hir_item_path_start[i] = INVALID;
-    hir_item_path_end[i] = INVALID;
-    hir_item_path_node[i] = INVALID;
-    hir_item_import_target_kind[i] = HIR_ITEM_IMPORT_TARGET_NONE;
 }
 
 uint import_target_kind(uint i)
@@ -330,26 +323,28 @@ void publish_module_or_import(uint i, uint prod)
 {
     uint item_kind = item_kind_for_production(prod);
     uint target_kind = import_target_kind(i);
+    uint anchor = hir_token_pos[i];
+    if (anchor == INVALID)
+        return;
     hir_item_kind[i] = item_kind;
-    hir_item_namespace[i] = namespace_for_item(item_kind);
-    hir_item_visibility[i] = HIR_ITEM_VIS_PRIVATE;
-    hir_item_name_token[i] = INVALID;
-    hir_item_path_node[i] = module_or_import_path_node(i, prod, target_kind);
-    hir_item_path_start[i] = module_or_import_path_start(i, prod, target_kind);
-    hir_item_path_end[i] = module_or_import_path_end(i, prod, target_kind);
-    hir_item_import_target_kind[i] = target_kind;
+    hir_item_namespace[anchor] = namespace_for_item(item_kind);
+    hir_item_visibility[anchor] = HIR_ITEM_VIS_PRIVATE;
+    hir_item_name_token[anchor] = INVALID;
+    hir_item_path_node[anchor] = module_or_import_path_node(i, prod, target_kind);
+    hir_item_path_start[anchor] = module_or_import_path_start(i, prod, target_kind);
+    hir_item_path_end[anchor] = module_or_import_path_end(i, prod, target_kind);
+    hir_item_import_target_kind[anchor] = target_kind;
 }
 
 void publish_decl(uint i, uint prod, uint start, uint visibility)
 {
+    if (start == INVALID)
+        return;
     uint item_kind = item_kind_for_production(prod);
     hir_item_kind[i] = item_kind;
-    hir_item_namespace[i] = namespace_for_item(item_kind);
-    hir_item_visibility[i] = visibility;
-    hir_item_name_token[i] = name_token_for_item(i, prod, start);
-    hir_item_path_start[i] = INVALID;
-    hir_item_path_end[i] = INVALID;
-    hir_item_path_node[i] = INVALID;
+    hir_item_namespace[start] = namespace_for_item(item_kind);
+    hir_item_visibility[start] = visibility;
+    hir_item_name_token[start] = name_token_for_item(i, prod, start);
 }
 
 uint enum_item_visibility(uint enum_i)
@@ -403,8 +398,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint p_kind = parent_kind(i);
     if (is_impl_owner(prod) && (p_kind == PROD_ITEM_IMPL || p_kind == PROD_PUB_IMPL))
     {
-        hir_item_visibility[i] =
-            p_kind == PROD_PUB_IMPL ? HIR_ITEM_VIS_PUBLIC : HIR_ITEM_VIS_PRIVATE;
+        if (start != INVALID)
+            hir_item_visibility[start] =
+                p_kind == PROD_PUB_IMPL ? HIR_ITEM_VIS_PUBLIC : HIR_ITEM_VIS_PRIVATE;
         return;
     }
 

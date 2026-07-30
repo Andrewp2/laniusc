@@ -2,12 +2,22 @@ import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
 import gpu_index;
 
-struct Params { uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity; };
+struct Params
+{
+    uint target_capacity;
+    uint token_capacity;
+    uint function_capacity;
+    uint artifact_capacity;
+    uint target_start;
+    uint page_capacity;
+    uint reserved0;
+    uint reserved1;
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
-StructuredBuffer<uint> scheduled_function_id;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
@@ -91,14 +101,16 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
     if (row >= gParams.target_capacity) return;
     target_byte_length[row] = 0u;
     if (row >= total) return;
-    X86LirCore core = target_lir_core[row];
-    X86LirOperands operands = target_lir_operands[row];
-    uint function_id = scheduled_function_id[row];
+    X86LirCore core = target_lir_core[page_row];
+    X86LirOperands operands = target_lir_operands[page_row];
+    uint function_id = semantic_function_id_by_hir[core.source_hir];
     uint function_count = min(gParams.function_capacity,
         min(target_function_count[0u], semantic_lir_function_total[0u]));
     uint function_index = function_id < gParams.function_capacity

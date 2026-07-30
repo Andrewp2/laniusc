@@ -20,6 +20,7 @@
 //   source bytes, hash token text, perform CPU lookup, or compare names by
 //   spelling.
 
+import hir_records;
 import fixed.key;
 import range_query;
 
@@ -58,8 +59,6 @@ StructuredBuffer<uint> hir_type_arg_next;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> path_count_out;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

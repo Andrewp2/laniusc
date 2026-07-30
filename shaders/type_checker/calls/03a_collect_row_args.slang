@@ -4,6 +4,8 @@
 // linked-list matcher. This pass consumes that relation and owns validation,
 // generic claim marking, and per-argument diagnostics.
 
+import external_type_identity;
+import hir_records;
 import atomics;
 import hir_expr_semantics;
 import status;
@@ -18,8 +20,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -48,7 +48,6 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -707,9 +706,7 @@ bool same_named_instance_decl(uint expected_instance, uint actual_instance)
     uint actual_decl = type_instance_decl_token[actual_instance];
     if (valid_token(expected_decl) || valid_token(actual_decl))
         return valid_token(expected_decl) && expected_decl == actual_decl;
-    uint expected_external = type_instance_external_canonical[expected_instance];
-    return expected_external != INVALID &&
-           expected_external == type_instance_external_canonical[actual_instance];
+    return external_type_identity_equal(expected_instance, actual_instance);
 }
 
 bool actual_arg_decl_instance_ref(uint arg_node, out uint actual_instance)
@@ -1052,13 +1049,11 @@ void emit_generic_claim(uint row, uint callee_i, uint slot, uint arg_ty)
     {
         if (tag == TYPE_REF_INSTANCE && valid_token(payload))
         {
-            uint external = type_instance_external_canonical[payload];
-            if (external != INVALID)
+            if (external_type_identity_valid(payload))
             {
-                // Retain the local instance so return substitution preserves
-                // concrete arguments. The scalar claim column carries the
-                // stable external nominal identity.
-                call_generic_claim_type[row] = external + 1u;
+                // Retain the instance carrying the stable three-part identity;
+                // the scalar column only marks this claim as concrete.
+                call_generic_claim_type[row] = 1u;
             }
             else
             {

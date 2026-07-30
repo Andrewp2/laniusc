@@ -575,7 +575,7 @@ impl SourcePackJobSchedule {
 }
 impl SourcePackJobPlan {
     /// Builds a single-library source-pack job plan from in-memory sources.
-    pub fn from_source_pack<S: AsRef<str>>(sources: &[S], limits: CodegenUnitLimits) -> Self {
+    pub fn from_source_pack<S: AsRef<str>>(sources: &[S], limits: CompilationUnitLimits) -> Self {
         Self::from_file_stream_with_dependencies(
             sources.iter().enumerate().map(|(source_index, source)| {
                 SourceFileUnitInput::from_source(0, source_index, source.as_ref())
@@ -589,7 +589,7 @@ impl SourcePackJobPlan {
     pub fn from_source_pack_with_libraries<S, L>(
         sources: &[S],
         library_ids: &[L],
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Self
     where
         S: AsRef<str>,
@@ -603,7 +603,7 @@ impl SourcePackJobPlan {
         sources: &[S],
         library_ids: &[L],
         library_dependencies: &[SourcePackLibraryDependency],
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Self
     where
         S: AsRef<str>,
@@ -632,7 +632,7 @@ impl SourcePackJobPlan {
     }
 
     /// Builds a job plan from precomputed source-file facts.
-    pub fn from_files(files: &[SourceFileUnitInput], limits: CodegenUnitLimits) -> Self {
+    pub fn from_files(files: &[SourceFileUnitInput], limits: CompilationUnitLimits) -> Self {
         Self::from_files_with_dependencies(files, &[], limits)
     }
 
@@ -640,7 +640,7 @@ impl SourcePackJobPlan {
     pub fn from_files_with_dependencies(
         files: &[SourceFileUnitInput],
         library_dependencies: &[SourcePackLibraryDependency],
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Self {
         Self::from_file_stream_with_dependencies(
             files.iter().copied(),
@@ -653,7 +653,7 @@ impl SourcePackJobPlan {
     pub fn from_file_stream_with_dependencies<I>(
         files: I,
         library_dependencies: &[SourcePackLibraryDependency],
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Self
     where
         I: IntoIterator<Item = SourceFileUnitInput>,
@@ -670,7 +670,7 @@ impl SourcePackJobPlan {
     pub fn try_from_fallible_file_stream_with_dependencies<I, E>(
         files: I,
         library_dependencies: &[SourcePackLibraryDependency],
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<SourceFileUnitInput, E>>,
@@ -684,12 +684,12 @@ impl SourcePackJobPlan {
 
     /// Returns whether the source pack must run more than one codegen job.
     pub fn requires_multiple_codegen_jobs(&self) -> bool {
-        self.codegen_units.unit_count() > 1
+        self.units.unit_count() > 1
     }
 
     /// Returns whether any library is split into multiple frontend jobs.
     pub fn requires_multiple_frontend_jobs(&self) -> bool {
-        self.frontend_units.unit_count() > self.libraries.library_count()
+        self.units.unit_count() > self.libraries.library_count()
     }
 
     /// Builds the default job schedule with one frontend job per library.
@@ -705,7 +705,7 @@ impl SourcePackJobPlan {
         let mut jobs = Vec::with_capacity(
             self.libraries
                 .library_count()
-                .saturating_add(self.codegen_units.unit_count())
+                .saturating_add(self.units.unit_count())
                 .saturating_add(1),
         );
 
@@ -738,7 +738,7 @@ impl SourcePackJobPlan {
         }
 
         let mut library_index_cursor = 0usize;
-        for unit in &self.codegen_units.units {
+        for unit in &self.units.units {
             let unit_range = unit.source_range();
             while self
                 .libraries
@@ -819,11 +819,11 @@ impl SourcePackJobPlan {
         let dependency_index = self.library_dependency_index();
         let library_order = self.topological_library_indices(&dependency_index);
         let mut frontend_job_ranges_by_library_index = vec![None; self.libraries.libraries.len()];
-        let mut frontend_job_index_by_unit_index = vec![None; self.frontend_units.unit_count()];
+        let mut frontend_job_index_by_unit_index = vec![None; self.units.unit_count()];
         let mut jobs = Vec::with_capacity(
-            self.frontend_units
+            self.units
                 .unit_count()
-                .saturating_add(self.codegen_units.unit_count())
+                .saturating_add(self.units.unit_count())
                 .saturating_add(1),
         );
         let mut dependency_job_ranges_by_job_index = Vec::with_capacity(jobs.capacity());
@@ -844,6 +844,13 @@ impl SourcePackJobPlan {
             let frontend_units = self.frontend_units_for_library(library);
             for frontend_unit in frontend_units {
                 let job_index = jobs.len();
+                let mut unit_dependency_ranges = dependency_job_ranges.clone();
+                if job_index != first_frontend_job_index {
+                    unit_dependency_ranges.push(SourcePackJobIndexRange {
+                        first_job_index: first_frontend_job_index,
+                        job_count: job_index - first_frontend_job_index,
+                    });
+                }
                 jobs.push(SourcePackJob {
                     job_index,
                     phase: SourcePackJobPhase::LibraryFrontend,
@@ -857,7 +864,8 @@ impl SourcePackJobPlan {
                     oversized_source_file: frontend_unit.oversized_source_file,
                     dependency_job_indices: Vec::new(),
                 });
-                dependency_job_ranges_by_job_index.push(dependency_job_ranges.clone());
+                dependency_job_ranges_by_job_index
+                    .push(compact_job_index_ranges(unit_dependency_ranges));
                 if let Some(slot) =
                     frontend_job_index_by_unit_index.get_mut(frontend_unit.unit_index)
                 {
@@ -876,7 +884,7 @@ impl SourcePackJobPlan {
 
         let mut library_index_cursor = 0usize;
         let mut frontend_unit_cursor = 0usize;
-        for unit in &self.codegen_units.units {
+        for unit in &self.units.units {
             let unit_range = unit.source_range();
             while self
                 .libraries
@@ -916,21 +924,13 @@ impl SourcePackJobPlan {
                 if let Some(Some(frontend_range)) =
                     frontend_job_ranges_by_library_index.get(library_index)
                 {
-                    if frontend_range.first_job_index < library_job_index {
-                        dependency_job_ranges.push(SourcePackJobIndexRange {
-                            first_job_index: frontend_range.first_job_index,
-                            job_count: library_job_index - frontend_range.first_job_index,
-                        });
-                    }
-                    let after_library_job_index = library_job_index.saturating_add(1);
-                    if let Some(frontend_range_end) = frontend_range.end_job_index() {
-                        if after_library_job_index < frontend_range_end {
-                            dependency_job_ranges.push(SourcePackJobIndexRange {
-                                first_job_index: after_library_job_index,
-                                job_count: frontend_range_end - after_library_job_index,
-                            });
-                        }
-                    }
+                    dependency_job_ranges.extend(
+                        frontend_range
+                            .excluding(library_job_index)
+                            .into_iter()
+                            .flatten()
+                            .flatten(),
+                    );
                 }
                 let library_id = self
                     .libraries
@@ -1462,8 +1462,8 @@ impl SourcePackJobPlan {
     fn frontend_units_for_library<'a>(
         &'a self,
         library: &'a LibraryUnit,
-    ) -> impl Iterator<Item = &'a FrontendUnit> + 'a {
-        self.frontend_units.units.iter().filter(move |unit| {
+    ) -> impl Iterator<Item = &'a CompilationUnit> + 'a {
+        self.units.units.iter().filter(move |unit| {
             unit.library_id == library.library_id
                 && range_contains_range(library.source_range(), unit.source_range())
         })
@@ -1474,24 +1474,21 @@ impl SourcePackJobPlan {
         library_index: usize,
         frontend_unit_cursor: &mut usize,
         source_range: Range<usize>,
-    ) -> Option<&FrontendUnit> {
+    ) -> Option<&CompilationUnit> {
         let library = self.libraries.libraries.get(library_index)?;
         while self
-            .frontend_units
+            .units
             .units
             .get(*frontend_unit_cursor)
             .is_some_and(|unit| unit.source_range().end <= source_range.start)
         {
             *frontend_unit_cursor += 1;
         }
-        self.frontend_units
-            .units
-            .get(*frontend_unit_cursor)
-            .filter(|unit| {
-                unit.library_id == library.library_id
-                    && range_contains_range(library.source_range(), unit.source_range())
-                    && range_contains_range(unit.source_range(), source_range.clone())
-            })
+        self.units.units.get(*frontend_unit_cursor).filter(|unit| {
+            unit.library_id == library.library_id
+                && range_contains_range(library.source_range(), unit.source_range())
+                && range_contains_range(unit.source_range(), source_range.clone())
+        })
     }
 
     fn topological_library_indices(
@@ -1573,34 +1570,29 @@ struct SourcePackLibraryDependencyIndex {
 #[derive(Clone, Debug)]
 /// Streaming builder for a source-pack job plan.
 pub struct SourcePackJobPlanBuilder {
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     library_builder: LibraryBuilder,
-    frontend_builder: UnitBuilder,
     unit_builder: UnitBuilder,
     libraries: Vec<LibraryUnit>,
-    frontend_units: Vec<FrontendUnit>,
-    codegen_units: Vec<CodegenUnit>,
+    units: Vec<CompilationUnit>,
 }
 
 impl SourcePackJobPlanBuilder {
     /// Creates a builder that applies normalized codegen unit limits.
-    pub fn new(limits: CodegenUnitLimits) -> Self {
+    pub fn new(limits: CompilationUnitLimits) -> Self {
         Self {
             limits: limits.normalized(),
             library_builder: LibraryBuilder::default(),
-            frontend_builder: UnitBuilder::default(),
             unit_builder: UnitBuilder::default(),
             libraries: Vec::new(),
-            frontend_units: Vec::new(),
-            codegen_units: Vec::new(),
+            units: Vec::new(),
         }
     }
 
-    /// Adds one source file to the library, frontend, and codegen unit streams.
+    /// Adds one source file to the library and compilation-unit streams.
     pub fn push(&mut self, file: SourceFileUnitInput) {
         self.push_library_file(file);
-        self.push_frontend_file(file);
-        self.push_codegen_file(file);
+        self.push_unit_file(file);
     }
 
     fn push_library_file(&mut self, file: SourceFileUnitInput) {
@@ -1610,32 +1602,11 @@ impl SourcePackJobPlanBuilder {
         self.library_builder.push(file);
     }
 
-    fn push_frontend_file(&mut self, file: SourceFileUnitInput) {
+    fn push_unit_file(&mut self, file: SourceFileUnitInput) {
         if file.byte_len > self.limits.max_source_bytes {
-            self.flush_frontend_unit();
-            self.frontend_units.push(FrontendUnit {
-                unit_index: self.frontend_units.len(),
-                library_id: file.library_id,
-                first_source_index: file.source_index,
-                source_file_count: 1,
-                source_bytes: file.byte_len,
-                source_lines: file.line_count,
-                oversized_source_file: true,
-            });
-            return;
-        }
-
-        if self.frontend_builder.should_flush_before(file, self.limits) {
-            self.flush_frontend_unit();
-        }
-        self.frontend_builder.push(file);
-    }
-
-    fn push_codegen_file(&mut self, file: SourceFileUnitInput) {
-        if file.byte_len > self.limits.max_source_bytes {
-            self.flush_codegen_unit();
-            self.codegen_units.push(CodegenUnit {
-                unit_index: self.codegen_units.len(),
+            self.flush_unit();
+            self.units.push(CompilationUnit {
+                unit_index: self.units.len(),
                 library_id: file.library_id,
                 first_source_index: file.source_index,
                 source_file_count: 1,
@@ -1647,7 +1618,7 @@ impl SourcePackJobPlanBuilder {
         }
 
         if self.unit_builder.should_flush_before(file, self.limits) {
-            self.flush_codegen_unit();
+            self.flush_unit();
         }
         self.unit_builder.push(file);
     }
@@ -1658,18 +1629,9 @@ impl SourcePackJobPlanBuilder {
         }
     }
 
-    fn flush_frontend_unit(&mut self) {
-        if let Some(unit) = self
-            .frontend_builder
-            .take_frontend(self.frontend_units.len(), false)
-        {
-            self.frontend_units.push(unit);
-        }
-    }
-
-    fn flush_codegen_unit(&mut self) {
-        if let Some(unit) = self.unit_builder.take(self.codegen_units.len(), false) {
-            self.codegen_units.push(unit);
+    fn flush_unit(&mut self) {
+        if let Some(unit) = self.unit_builder.take(self.units.len(), false) {
+            self.units.push(unit);
         }
     }
 
@@ -1679,18 +1641,12 @@ impl SourcePackJobPlanBuilder {
         library_dependencies: &[SourcePackLibraryDependency],
     ) -> SourcePackJobPlan {
         self.flush_library();
-        self.flush_frontend_unit();
-        self.flush_codegen_unit();
+        self.flush_unit();
         SourcePackJobPlan {
             libraries: LibraryUnitPlan {
                 libraries: self.libraries,
             },
-            frontend_units: FrontendUnitPlan {
-                units: self.frontend_units,
-            },
-            codegen_units: CodegenUnitPlan {
-                units: self.codegen_units,
-            },
+            units: CompilationUnitPlan { units: self.units },
             library_dependencies: library_dependencies.to_vec(),
         }
     }

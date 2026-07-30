@@ -14,6 +14,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> fn_start_token_by_decl_token;
 StructuredBuffer<uint> call_param_row_count_out;
 RWStructuredBuffer<uint> backend_call_fn_index;
@@ -35,7 +36,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint semantic_target = call_fn_index[token_i];
-    if (semantic_target == INVALID || semantic_target >= gParams.n_tokens)
+    if (call_dependency_library_id[token_i] != INVALID ||
+        semantic_target == INVALID || semantic_target >= gParams.n_tokens)
     {
         backend_call_fn_index[token_i] = INVALID;
     }

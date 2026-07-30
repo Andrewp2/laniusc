@@ -8,6 +8,7 @@
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
 
+import hir_records;
 import scatter;
 
 struct Params
@@ -21,9 +22,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_record_flag;
 StructuredBuffer<uint> decl_record_prefix;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;

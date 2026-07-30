@@ -1,3 +1,5 @@
+import hir_records;
+
 // HIR declaration type-reference projection.
 //
 // This pass publishes declaration-token keyed type refs for local lets,
@@ -13,9 +15,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

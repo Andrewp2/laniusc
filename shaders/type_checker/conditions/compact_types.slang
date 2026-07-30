@@ -2,13 +2,12 @@
 // generic failures are classified through the compact method family rather
 // than raw production IDs or raw ancestor links.
 
+import hir_records;
 import fixed.compact_method;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 struct TokenIn { uint kind; uint start; uint len; };
 
 ConstantBuffer<Params> gParams;

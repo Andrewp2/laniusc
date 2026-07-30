@@ -1,24 +1,12 @@
 // Dense-HIR method contract lookup and compact signature comparison helpers.
 // Consumers operate on method HIR ids and compact parameter rows exclusively.
 
+import hir_records;
 import fixed.compact_method;
 import fixed.key;
 import range_query;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirMethodSignature
-{
-    uint first_param_token;
-    uint impl_receiver_type;
-    uint receiver_mode;
-    uint metadata;
-};
-struct HirParam { uint owner; uint name_token; uint type_node; uint ordinal; };
-struct HirRange { uint start; uint count; };
-struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_active_count;

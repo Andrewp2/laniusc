@@ -548,9 +548,13 @@ impl GpuSourcePackArtifactDescriptor {
         let Some(payload) = &self.codegen_object_payload else {
             return Ok(());
         };
-        if self.stage != GpuSourcePackArtifactStage::CodegenObject {
+        if !matches!(
+            self.stage,
+            GpuSourcePackArtifactStage::LibraryInterface
+                | GpuSourcePackArtifactStage::CodegenObject
+        ) {
             return Err(format!(
-                "descriptor stage {:?} must not reference a codegen-object payload",
+                "descriptor stage {:?} must not reference a compiled-unit object payload",
                 self.stage
             ));
         }

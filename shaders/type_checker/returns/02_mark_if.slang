@@ -1,3 +1,5 @@
+import hir_records;
+
 // Lift direct if/else return facts into the enclosing block and function rows.
 
 struct Params
@@ -9,8 +11,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

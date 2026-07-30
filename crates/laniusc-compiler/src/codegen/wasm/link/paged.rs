@@ -4,8 +4,12 @@ use super::GpuWasmLinkInput;
 
 const WASM_MODULE_HEADER_BYTES: usize = 8;
 const WASM_SECTION_PREFIX_BYTES: usize = 11;
-const WASM_EXPORT_SECTION_BYTES: usize = 22;
 const WASM_PADDED_INDEX_BYTES: usize = 5;
+const WASM_HOST_TYPE_ENTRIES_BYTES: usize = 132;
+const WASM_HOST_IMPORT_SECTION_BYTES: usize = 712;
+const WASM_MEMORY_SECTION_BYTES: usize = 17;
+const WASM_GLOBAL_SECTION_BYTES: usize = 12;
+const WASM_EXPORT_SECTION_BYTES: usize = 31;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct GpuWasmOutputPage {
@@ -35,9 +39,13 @@ impl GpuWasmPagedExecutablePlan {
         }
 
         let function_count = input.function_count;
-        let type_data_start = WASM_MODULE_HEADER_BYTES + WASM_SECTION_PREFIX_BYTES;
-        let function_section_start = type_data_start
+        let type_data_start =
+            WASM_MODULE_HEADER_BYTES + WASM_SECTION_PREFIX_BYTES + WASM_HOST_TYPE_ENTRIES_BYTES;
+        let type_data_end = type_data_start
             .checked_add(input.type_byte_len())
+            .ok_or_else(|| "Wasm type section end overflows".to_string())?;
+        let function_section_start = type_data_end
+            .checked_add(WASM_HOST_IMPORT_SECTION_BYTES)
             .ok_or_else(|| "Wasm type section end overflows".to_string())?;
         let function_section_len = WASM_SECTION_PREFIX_BYTES
             .checked_add(
@@ -48,6 +56,8 @@ impl GpuWasmPagedExecutablePlan {
             .ok_or_else(|| "Wasm function section length overflows".to_string())?;
         let code_section_start = function_section_start
             .checked_add(function_section_len)
+            .and_then(|end| end.checked_add(WASM_MEMORY_SECTION_BYTES))
+            .and_then(|end| end.checked_add(WASM_GLOBAL_SECTION_BYTES))
             .and_then(|end| end.checked_add(WASM_EXPORT_SECTION_BYTES))
             .ok_or_else(|| "Wasm code section start overflows".to_string())?;
         let body_data_start = code_section_start
@@ -59,7 +69,7 @@ impl GpuWasmPagedExecutablePlan {
         u32::try_from(output_len)
             .map_err(|_| format!("Wasm output length {output_len} exceeds u32"))?;
 
-        let type_output = type_data_start..function_section_start;
+        let type_output = type_data_start..type_data_end;
         let body_output = body_data_start..output_len;
         let page_count = output_len.div_ceil(page_capacity);
         let mut pages = Vec::with_capacity(page_count);
@@ -150,7 +160,10 @@ mod tests {
     fn page_geometry_covers_output_once_and_requests_only_intersecting_payloads() {
         let input = input_with_body(40, &[]);
         let plan = GpuWasmPagedExecutablePlan::new(&input, 32).expect("plan pages");
-        assert_eq!(plan.output_len, 8 + 11 + 3 + 11 + 5 + 22 + 11 + 40);
+        assert_eq!(
+            plan.output_len,
+            8 + 11 + 132 + 3 + 712 + 11 + 5 + 17 + 12 + 31 + 11 + 40
+        );
         assert_eq!(
             plan.pages.iter().map(|page| page.output_len).sum::<u32>(),
             plan.output_len as u32

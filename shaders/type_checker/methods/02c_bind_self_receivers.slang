@@ -1,3 +1,5 @@
+import hir_records;
+
 // Bind HIR `self` member receivers to their method receiver declaration.
 //
 // This pass consumes method declaration metadata and parser-owned member
@@ -16,7 +18,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;

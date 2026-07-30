@@ -4,13 +4,10 @@
 // are compact family ids, node references are dense HIR ids, and declarations
 // and visible bindings use declaration-row and token ids respectively.
 
+import hir_records;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
-struct HirMatchPayload { uint arm; uint pattern; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

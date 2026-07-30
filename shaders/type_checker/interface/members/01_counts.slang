@@ -1,4 +1,5 @@
 // Size one contiguous stable member segment per public declaration.
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
@@ -6,7 +7,6 @@ StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
-struct HirRange { uint start; uint count; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> interface_field_count_by_hir;

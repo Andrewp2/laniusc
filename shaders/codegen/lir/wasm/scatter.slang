@@ -3,12 +3,13 @@ import codegen.lir.wasm.host_abi;
 import codegen.lowering_ir;
 import gpu_index;
 
-struct Params { uint semantic_capacity; uint target_capacity; uint reserved0; uint reserved1; };
+struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> semantic_lir_total;
 StructuredBuffer<SemanticLirCore> semantic_lir_core;
 StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
-StructuredBuffer<SemanticLirSchedule> semantic_lir_schedule;
+StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 StructuredBuffer<uint> semantic_lir_string_total;
@@ -20,6 +21,7 @@ RWStructuredBuffer<WasmLirInstruction> target_lir_core;
 RWStructuredBuffer<WasmLirOperands> target_lir_operands;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint TARGET_PAGE_ROWS = 65536u;
 static const uint WASM_SYNTHETIC_I32_TEMP = 0xfffffffeu;
 static const uint WASM_SYNTHETIC_F32_TEMP = 0xfffffffdu;
 
@@ -40,7 +42,9 @@ uint scheduled_owner(uint target_row, uint semantic_count)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
     uint target_total = min(gParams.target_capacity, target_lir_total[0u]);
     if (row >= target_total) return;
     uint semantic_count = min(gParams.semantic_capacity, semantic_lir_total[0u]);
@@ -63,7 +67,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
-    flags |= semantic_lir_schedule[semantic_row].function_id == WASM_LIR_INVALID
+    flags |= semantic_function_id_by_hir[
+        semantic_owner_by_instruction[semantic_row]] == WASM_LIR_INVALID
         ? 0u : (1u << 8u);
 
     uint opcode = wasm_scalar_opcode(core, operands);
@@ -90,8 +95,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint phase = local_row % 6u;
             SemanticLirAggregateElement aggregate_element =
                 semantic_lir_aggregate_elements[operands.a + element];
-            bool element_is_f32 = aggregate_element.value_instruction < semantic_count &&
-                semantic_lir_core[aggregate_element.value_instruction].type_id == TY_FLOAT;
+            bool element_is_f32 =
+                (aggregate_element.value_metadata &
+                 SEMANTIC_LIR_VALUE_TYPE_MASK) == TY_FLOAT;
             uint temporary = element_is_f32
                 ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
             opcode = phase == 0u ? WASM_LIR_OP_LOCAL_SET
@@ -176,7 +182,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     inst.immediate = immediate;
     inst.semantic_instruction = semantic_row;
     inst.flags = flags;
-    target_lir_core[row] = inst;
+    target_lir_core[page_row] = inst;
     WasmLirOperands target_operands;
     // Preserve both kinds of relocatable target. Local calls retain the
     // semantic function id; symbolic calls retain their exact declaration
@@ -187,5 +193,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     target_operands.b = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
     target_operands.c = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
     target_operands.metadata = core.type_id;
-    target_lir_operands[row] = target_operands;
+    target_lir_operands[page_row] = target_operands;
 }

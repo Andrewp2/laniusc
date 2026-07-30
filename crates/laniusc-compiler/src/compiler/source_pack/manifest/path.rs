@@ -18,7 +18,7 @@ pub struct SourcePackPathBuildManifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_files: Vec<ExplicitSourcePathFile>,
     pub library_dependencies: Vec<SourcePackLibraryDependency>,
-    pub limits: CodegenUnitLimits,
+    pub limits: CompilationUnitLimits,
     pub batch_limits: SourcePackJobBatchLimits,
     pub artifacts: SourcePackBuildArtifactManifest,
 }

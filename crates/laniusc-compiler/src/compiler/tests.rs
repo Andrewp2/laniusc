@@ -294,7 +294,7 @@ fn assert_progress_page_matches_model(
 
 #[test]
 fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
-    let limits = CodegenUnitLimits::default().normalized();
+    let limits = CompilationUnitLimits::default().normalized();
     let too_many_files = vec![""; limits.max_source_files + 1];
     let too_many_files_err = validate_in_memory_source_pack_fits_default_codegen_unit(
         "test in-memory source pack",
@@ -599,7 +599,7 @@ fn source_pack_contract_test_manifest() -> SourcePackPathBuildManifest {
             line_count: file.line_count.unwrap_or(0),
         })
         .collect::<Vec<_>>();
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 1,
     };
@@ -2235,7 +2235,7 @@ fn explicit_source_path_manifest_plans_from_metadata_without_reading_sources() {
         },
     ])
     .expect("load metadata-only source manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 5,
         max_source_files: 8,
     };
@@ -2608,20 +2608,8 @@ fn diagnostic_test_library_unit(library_id: u32) -> LibraryUnit {
     }
 }
 
-fn diagnostic_test_frontend_unit(library_id: u32) -> FrontendUnit {
-    FrontendUnit {
-        unit_index: 0,
-        library_id,
-        first_source_index: 0,
-        source_file_count: 1,
-        source_bytes: 1,
-        source_lines: 1,
-        oversized_source_file: false,
-    }
-}
-
-fn diagnostic_test_codegen_unit(library_id: u32) -> CodegenUnit {
-    CodegenUnit {
+fn diagnostic_test_compilation_unit(library_id: u32) -> CompilationUnit {
+    CompilationUnit {
         unit_index: 0,
         library_id,
         first_source_index: 0,
@@ -2815,6 +2803,52 @@ fn source_root_configuration_errors_are_structured() {
 }
 
 #[test]
+fn source_root_path_manifest_orders_dependencies_before_importers() {
+    let root = unique_compiler_test_root("source-root-dependency-order");
+    let source_root = root.join("src");
+    std::fs::create_dir_all(&source_root).expect("create source root");
+    let entry = root.join("main.lani");
+    let a = source_root.join("a.lani");
+    let b = source_root.join("b.lani");
+    let c = source_root.join("c.lani");
+    std::fs::write(
+        &entry,
+        "module main;\nimport a;\nimport b;\nfn main() -> i32 { return 0; }\n",
+    )
+    .expect("write entry");
+    std::fs::write(
+        &a,
+        "module a;\nimport c;\npub fn value() -> i32 { return 1; }\n",
+    )
+    .expect("write a");
+    std::fs::write(
+        &b,
+        "module b;\nimport a;\npub fn value() -> i32 { return 2; }\n",
+    )
+    .expect("write b");
+    std::fs::write(&c, "module c;\npub fn value() -> i32 { return 3; }\n").expect("write c");
+
+    let manifest = load_entry_path_manifest_with_source_root(&entry, &source_root)
+        .expect("load source-root path manifest");
+    let paths = manifest
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        vec![
+            std::fs::canonicalize(c).expect("canonical c"),
+            std::fs::canonicalize(a).expect("canonical a"),
+            std::fs::canonicalize(b).expect("canonical b"),
+            entry,
+        ]
+    );
+
+    std::fs::remove_dir_all(root).expect("remove source-root dependency-order dir");
+}
+
+#[test]
 fn descriptor_worker_rejects_generic_target_with_structured_diagnostic() {
     let root = unique_compiler_test_root("descriptor-target-diagnostics");
 
@@ -2853,7 +2887,7 @@ fn bounded_source_pack_preparation_errors_are_structured() {
     let root = unique_compiler_test_root("bounded-preparation-limit-diagnostics");
     let err = prepare_artifact_build_chunk(
         &root,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         },
@@ -3135,7 +3169,7 @@ fn source_pack_work_queue_prepare_progress_version_errors_are_structured() {
 
 #[test]
 fn compact_artifact_manifest_rejects_bad_library_streams() {
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };
@@ -3216,7 +3250,7 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
             build_libraries(core_path, app_path),
             &store,
             SourcePackArtifactTarget::X86_64,
-            CodegenUnitLimits {
+            CompilationUnitLimits {
                 max_source_bytes: 8,
                 max_source_files: 4,
             },
@@ -3348,7 +3382,7 @@ fn explicit_source_path_manifest_loads_only_requested_job_sources() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("load source path manifest");
-    let schedule = manifest.job_schedule(CodegenUnitLimits {
+    let schedule = manifest.job_schedule(CompilationUnitLimits {
         max_source_bytes: 6,
         max_source_files: 8,
     });
@@ -3395,7 +3429,7 @@ fn explicit_source_path_manifest_rejects_changed_job_source_metadata() {
         }])
         .expect("load source path manifest");
     std::fs::write(&source_path, "changed\n").expect("change source after planning");
-    let schedule = manifest.job_schedule(CodegenUnitLimits {
+    let schedule = manifest.job_schedule(CompilationUnitLimits {
         max_source_bytes: 64,
         max_source_files: 8,
     });
@@ -3892,9 +3926,8 @@ fn source_pack_source_file_validation_version_errors_are_structured() {
 fn source_pack_build_unit_validation_version_errors_are_structured() {
     let target = SourcePackArtifactTarget::Generic;
     let library_id = 1;
-    let limits = CodegenUnitLimits::default().normalized();
-    let frontend_unit = diagnostic_test_frontend_unit(library_id);
-    let codegen_unit = diagnostic_test_codegen_unit(library_id);
+    let limits = CompilationUnitLimits::default().normalized();
+    let frontend_unit = diagnostic_test_compilation_unit(library_id);
 
     let build_unit_page = SourcePackLibraryBuildUnitPage {
         version: SOURCE_PACK_LIBRARY_BUILD_UNIT_PAGE_VERSION + 1,
@@ -3908,10 +3941,8 @@ fn source_pack_build_unit_validation_version_errors_are_structured() {
         source_line_count: 1,
         limits,
         frontend_unit: diagnostic_test_library_unit(library_id),
-        frontend_unit_count: 1,
-        codegen_unit_count: 1,
-        frontend_units: vec![frontend_unit.clone()],
-        codegen_units: vec![codegen_unit.clone()],
+        unit_count: 1,
+        units: vec![frontend_unit.clone()],
     };
     let err = validate_library_build_unit_page(&build_unit_page, target, Some(0))
         .expect_err("unsupported build-unit page versions should be structured");
@@ -3920,38 +3951,21 @@ fn source_pack_build_unit_validation_version_errors_are_structured() {
         "unsupported source-pack library build-unit page version",
     );
 
-    let frontend_unit_page = SourcePackLibraryFrontendUnitPage {
-        version: SOURCE_PACK_LIBRARY_FRONTEND_UNIT_PAGE_VERSION + 1,
+    let unit_page = SourcePackLibraryCompilationUnitPage {
+        version: SOURCE_PACK_LIBRARY_COMPILATION_UNIT_PAGE_VERSION + 1,
         target,
         partition_index: 0,
         library_id,
         limits,
-        frontend_unit_index: 0,
-        frontend_unit_count: 1,
+        unit_index: 0,
+        unit_count: 1,
         unit: frontend_unit,
     };
-    let err = validate_frontend_unit_page(&frontend_unit_page, target, Some(0), Some(0))
-        .expect_err("unsupported frontend-unit page versions should be structured");
+    let err = validate_compilation_unit_page(&unit_page, target, Some(0), Some(0))
+        .expect_err("unsupported compilation-unit page versions should be structured");
     assert_source_pack_library_partition_invalid(
         err,
-        "unsupported source-pack library frontend-unit page version",
-    );
-
-    let codegen_unit_page = SourcePackLibraryCodegenUnitPage {
-        version: SOURCE_PACK_LIBRARY_CODEGEN_UNIT_PAGE_VERSION + 1,
-        target,
-        partition_index: 0,
-        library_id,
-        limits,
-        codegen_unit_index: 0,
-        codegen_unit_count: 1,
-        unit: codegen_unit,
-    };
-    let err = validate_codegen_unit_page(&codegen_unit_page, target, Some(0), Some(0))
-        .expect_err("unsupported codegen-unit page versions should be structured");
-    assert_source_pack_library_partition_invalid(
-        err,
-        "unsupported source-pack library codegen-unit page version",
+        "unsupported source-pack library compilation-unit page version",
     );
 }
 
@@ -5619,7 +5633,7 @@ fn source_pack_artifact_prepare_resumes_from_persisted_metadata_without_paths() 
 
     let prepared = prepare_artifact_build(
         &artifact_root,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 4,
             max_source_files: 8,
         },
@@ -5701,7 +5715,7 @@ fn source_pack_artifact_build_from_metadata_chunk_caps_oversized_item_limit() {
 
     let step = prepare_artifact_build_chunk(
         &artifact_root,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         },
@@ -5771,7 +5785,7 @@ fn source_pack_library_schedule_chunk_public_api_caps_oversized_library_limit() 
 
     let step = prepare_library_schedule_chunk(
         &artifact_root,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         },
@@ -5868,7 +5882,7 @@ fn metadata_schedule_reconstructs_multi_unit_libraries() {
     let prepared_pages = prepare_schedule_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 4,
             max_source_files: 1,
         },
@@ -6025,7 +6039,7 @@ fn work_queue_worker_run_honors_zero_item_limit() {
             dependency_library_ids: Vec::new(),
         }],
         &artifact_root,
-        CodegenUnitLimits {
+        CompilationUnitLimits {
             max_source_bytes: 4,
             max_source_files: 1,
         },

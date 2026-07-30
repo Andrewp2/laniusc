@@ -1,3 +1,4 @@
+import hir_records;
 import codegen.lir.semantic.common;
 import gpu_index;
 

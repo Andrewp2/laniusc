@@ -3,68 +3,72 @@
 use super::*;
 
 impl CallBindGroups {
-    /// Records the primary call relation collection passes.
-    pub(in crate::type_checker) fn record_primary(
+    pub(in crate::type_checker) fn record_primary_prefix(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        hir_active_dispatch_args: &wgpu::Buffer,
-        dependency_params: Option<(
-            &PassData,
-            &wgpu::BindGroup,
-            &PassData,
-            &wgpu::BindGroup,
-            &PassData,
-            &wgpu::BindGroup,
-        )>,
     ) -> Result<()> {
         self.clear.record(encoder)?;
         self.clear_entrypoints.record(encoder)?;
         self.return_refs.record(encoder)?;
         self.entrypoints.record(encoder)?;
         self.functions.record(encoder)?;
-        self.param_types.record(encoder)?;
-        if let Some((
-            project_calls,
-            project_calls_group,
-            project_params,
-            project_params_group,
-            _,
-            _,
-        )) = dependency_params
-        {
-            record_compute_indirect(
-                encoder,
-                project_calls,
-                project_calls_group,
-                "type_check.dependencies.project_calls",
-                hir_active_dispatch_args,
-            )?;
-            record_compute_indirect(
-                encoder,
-                project_params,
-                project_params_group,
-                "type_check.dependencies.project_call_params",
-                hir_active_dispatch_args,
-            )?;
-        }
+        self.param_types.record(encoder)
+    }
+
+    pub(in crate::type_checker) fn record_primary_scan(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
         self.call_param_segment_scan.record(encoder)?;
-        self.scatter_compact_hir_params.record(encoder)?;
-        if let Some((_, _, _, _, scatter_params, scatter_group)) = dependency_params {
-            record_compute_indirect(
-                encoder,
-                scatter_params,
-                scatter_group,
-                "type_check.dependencies.scatter_call_params",
-                hir_active_dispatch_args,
-            )?;
-        }
+        self.scatter_compact_hir_params.record(encoder)
+    }
+
+    pub(in crate::type_checker) fn record_primary_suffix(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
         self.intrinsics.record(encoder)?;
         self.clear_hir_call_args.record(encoder)?;
         self.pack_hir_call_args.record(encoder)?;
-        self.mark_compact_hir_call_args.record(encoder)?;
-        self.compact_hir_call_arg_scan.record(encoder)?;
-        self.scatter_compact_hir_call_args.record(encoder)
+        self.compact_hir_call_args.record(encoder)
     }
+}
+
+pub(in crate::type_checker) fn record_dependency_call_counts(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    visibility: &DependencyVisibilityState,
+    hir_active_dispatch_args: &wgpu::Buffer,
+) -> Result<()> {
+    record_compute_indirect(
+        encoder,
+        &passes.kernel("type_checker/dependencies/07_project_calls"),
+        &visibility.project_calls_group,
+        "type_check.dependencies.project_calls",
+        hir_active_dispatch_args,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.kernel("type_checker/dependencies/07a_project_call_params"),
+        &visibility.project_call_params_group,
+        "type_check.dependencies.project_call_params",
+        hir_active_dispatch_args,
+    )
+}
+
+pub(in crate::type_checker) fn record_dependency_call_params(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    visibility: &DependencyVisibilityState,
+    hir_active_dispatch_args: &wgpu::Buffer,
+) -> Result<()> {
+    record_compute_indirect(
+        encoder,
+        &passes.kernel("type_checker/dependencies/07b_scatter_call_params"),
+        &visibility.scatter_call_params_group,
+        "type_check.dependencies.scatter_call_params",
+        hir_active_dispatch_args,
+    )
 }
 
 /// Clears generic parameter cache rows before later call-resolution passes refill them.

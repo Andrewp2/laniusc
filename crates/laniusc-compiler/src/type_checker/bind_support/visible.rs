@@ -4,6 +4,7 @@ use super::super::*;
 /// from the reflected compiler graph.
 pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     resources: &ResourceMap<'_>,
     shape: VisibleShape,
@@ -41,15 +42,13 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             ),
         ],
     )?;
-    let mark_hir_decl_names = reflected(
-        "type_check_visible_03b_mark_hir_decl_names",
-        "type_checker/visible/03b_mark_hir_decl_names",
-    )?;
-    let hir_decl_scan =
-        PrefixScanOperation::from_spec(device, passes, resources, compiler_graph::VISIBLE_SCAN)?;
-    let scatter_hir_decl_records = reflected(
-        "type_check_visible_03c_scatter_hir_decls",
-        "type_checker/visible/03c_scatter_hir_decls",
+    let hir_declarations = CompactionOperation::indirect(
+        device,
+        graph,
+        resources,
+        passes,
+        VISIBLE_DECL_COMPACTION,
+        hir_semantic_dispatch_args,
     )?;
     let match_payload_dispatch_args = typed_storage_u32_rw(
         device,
@@ -154,9 +153,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         match_payload_dispatch_args,
         clear,
         hir_semantic_dispatch,
-        mark_hir_decl_names,
-        hir_decl_scan,
-        scatter_hir_decl_records,
+        hir_declarations,
         match_payload_dispatch,
         scatter_match_payload_decls,
         finalize_decl_count,

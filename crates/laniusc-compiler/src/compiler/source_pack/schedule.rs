@@ -13,7 +13,7 @@ pub(in crate::compiler) fn prepare_schedule<I, PI, DI, P>(
     libraries: I,
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<PreparedLibrarySchedulePages, CompileError>
 where
     I: IntoIterator<Item = ExplicitSourceLibraryPathDependencyStream<PI, DI>>,
@@ -104,11 +104,13 @@ where
         };
         validate_library_partition(&partition, target, Some(partition.partition_index))?;
         let compact_build_unit_page = compact_build_unit_page(store, &partition, limits)?;
-        store_frontend_unit_pages_from_source_records(&compact_build_unit_page, &partition, store)?;
-        store_codegen_unit_pages_from_source_records(&compact_build_unit_page, &partition, store)?;
+        store_compilation_unit_pages_from_source_records(
+            &compact_build_unit_page,
+            &partition,
+            store,
+        )?;
         let frontend_job_index = total_frontend_job_count;
-        let frontend_job_count =
-            library_build_unit_page_frontend_unit_count(&compact_build_unit_page);
+        let frontend_job_count = library_build_unit_page_unit_count(&compact_build_unit_page);
         total_frontend_job_count = total_frontend_job_count
             .checked_add(frontend_job_count)
             .ok_or_else(|| {
@@ -118,9 +120,7 @@ where
                 ))
             })?;
         total_codegen_job_count = total_codegen_job_count
-            .checked_add(library_build_unit_page_codegen_unit_count(
-                &compact_build_unit_page,
-            ))
+            .checked_add(library_build_unit_page_unit_count(&compact_build_unit_page))
             .ok_or_else(|| {
                 library_partition_contract_error(format!(
                     "schedule index codegen job range overflows at partition {}",
@@ -194,10 +194,10 @@ where
             partition_index,
             library_id: build_unit_page.library_id,
             first_frontend_job_index,
-            frontend_job_count: library_build_unit_page_frontend_unit_count(&build_unit_page),
+            frontend_job_count: library_build_unit_page_unit_count(&build_unit_page),
             frontend_job_index: first_frontend_job_index,
             first_codegen_job_index,
-            codegen_job_count: library_build_unit_page_codegen_unit_count(&build_unit_page),
+            codegen_job_count: library_build_unit_page_unit_count(&build_unit_page),
         };
         let page = prepare_partition_schedule_page(
             store,
@@ -259,7 +259,7 @@ where
 pub(in crate::compiler) fn prepare_schedule_from_metadata(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<PreparedLibrarySchedulePages, CompileError> {
     let library_partition_index = store.load_library_partition_index_for_target(target)?;
     validate_library_partition_index(&library_partition_index, target)?;
@@ -275,11 +275,13 @@ pub(in crate::compiler) fn prepare_schedule_from_metadata(
             store.load_library_source_file_page_for_target(target, partition_index)?;
         validate_source_file_page_partition(&partition, &source_file_page)?;
         let compact_build_unit_page = compact_build_unit_page(store, &partition, limits)?;
-        store_frontend_unit_pages_from_source_records(&compact_build_unit_page, &partition, store)?;
-        store_codegen_unit_pages_from_source_records(&compact_build_unit_page, &partition, store)?;
+        store_compilation_unit_pages_from_source_records(
+            &compact_build_unit_page,
+            &partition,
+            store,
+        )?;
         let frontend_job_index = total_frontend_job_count;
-        let frontend_job_count =
-            library_build_unit_page_frontend_unit_count(&compact_build_unit_page);
+        let frontend_job_count = library_build_unit_page_unit_count(&compact_build_unit_page);
         total_frontend_job_count = total_frontend_job_count
             .checked_add(frontend_job_count)
             .ok_or_else(|| {
@@ -288,7 +290,7 @@ pub(in crate::compiler) fn prepare_schedule_from_metadata(
                 ))
             })?;
         total_codegen_job_count = total_codegen_job_count
-            .checked_add(library_build_unit_page_codegen_unit_count(
+            .checked_add(library_build_unit_page_unit_count(
                 &compact_build_unit_page,
             ))
             .ok_or_else(|| {
@@ -341,10 +343,10 @@ pub(in crate::compiler) fn prepare_schedule_from_metadata(
             partition_index,
             library_id: build_unit_page.library_id,
             first_frontend_job_index,
-            frontend_job_count: library_build_unit_page_frontend_unit_count(&build_unit_page),
+            frontend_job_count: library_build_unit_page_unit_count(&build_unit_page),
             frontend_job_index: first_frontend_job_index,
             first_codegen_job_index,
-            codegen_job_count: library_build_unit_page_codegen_unit_count(&build_unit_page),
+            codegen_job_count: library_build_unit_page_unit_count(&build_unit_page),
         };
         let page = prepare_partition_schedule_page(
             store,
@@ -406,7 +408,7 @@ pub(in crate::compiler) fn prepare_schedule_from_metadata(
 pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     max_new_libraries: usize,
 ) -> Result<FilesystemLibrarySchedulePrepareStepResult, CompileError> {
     if max_new_libraries == 0 {
@@ -508,15 +510,18 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
                     store.load_library_source_file_page_for_target(target, partition_index)?;
                 validate_source_file_page_partition(&partition, &source_file_page)?;
                 let build_unit_page = compact_build_unit_page(store, &partition, limits)?;
-                store_frontend_unit_pages_from_source_records(&build_unit_page, &partition, store)?;
-                store_codegen_unit_pages_from_source_records(&build_unit_page, &partition, store)?;
+                store_compilation_unit_pages_from_source_records(
+                    &build_unit_page,
+                    &partition,
+                    store,
+                )?;
                 store.store_library_build_unit_page(&build_unit_page)?;
                 new_library_build_unit_page_count += 1;
                 build_unit_page
             };
             validate_build_unit_partition(&build_unit_page, &partition, limits)?;
             let frontend_job_index = progress.frontend_job_count;
-            let frontend_job_count = library_build_unit_page_frontend_unit_count(&build_unit_page);
+            let frontend_job_count = library_build_unit_page_unit_count(&build_unit_page);
             progress.frontend_job_count = progress
                 .frontend_job_count
                 .checked_add(frontend_job_count)
@@ -527,7 +532,7 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
                 })?;
             progress.codegen_job_count = progress
                 .codegen_job_count
-                .checked_add(library_build_unit_page_codegen_unit_count(
+                .checked_add(library_build_unit_page_unit_count(
                     &build_unit_page,
                 ))
                 .ok_or_else(|| {
@@ -600,10 +605,10 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
             partition_index,
             library_id: build_unit_page.library_id,
             first_frontend_job_index,
-            frontend_job_count: library_build_unit_page_frontend_unit_count(&build_unit_page),
+            frontend_job_count: library_build_unit_page_unit_count(&build_unit_page),
             frontend_job_index: first_frontend_job_index,
             first_codegen_job_index,
-            codegen_job_count: library_build_unit_page_codegen_unit_count(&build_unit_page),
+            codegen_job_count: library_build_unit_page_unit_count(&build_unit_page),
         };
         if store
             .library_schedule_page_path_for_target(target, partition_index)
@@ -712,7 +717,7 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
 pub(in crate::compiler) fn validate_build_unit_partition(
     page: &SourcePackLibraryBuildUnitPage,
     partition: &SourcePackLibraryPartition,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<(), CompileError> {
     validate_library_build_unit_page(page, partition.target, Some(partition.partition_index))?;
     if page.library_id != partition.library_id

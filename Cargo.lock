@@ -732,6 +732,7 @@ dependencies = [
  "encase",
  "futures-intrusive",
  "hashbrown 0.15.5",
+ "laniusc-shaders",
  "log",
  "pollster",
  "proptest",

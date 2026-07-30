@@ -1,3 +1,5 @@
+import hir_records;
+
 // Seed type-alias parent links. Non-generic aliases always forward. Generic
 // aliases forward only when the preceding parallel validation proved a full
 // positional parameter mapping, which preserves use-site substitution.
@@ -10,8 +12,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirRange { uint start; uint count; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_type_alias_target;

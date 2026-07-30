@@ -82,7 +82,6 @@ pub(in crate::type_checker) struct SemanticInterfaceTypeTopologyParams {
     pub(in crate::type_checker) token_capacity: u32,
     pub(in crate::type_checker) library_id: u32,
     pub(in crate::type_checker) unit_id: u32,
-    pub(in crate::type_checker) dependency_type_count: u32,
 }
 
 /// Capacity and producer identity packet for interface record scatter.
@@ -110,6 +109,22 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityByteParams {
     pub(in crate::type_checker) module_index_capacity: u32,
     pub(in crate::type_checker) decl_capacity: u32,
     pub(in crate::type_checker) member_capacity: u32,
+}
+
+/// Capacities and stable identity used to materialize one persisted interface.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct SemanticInterfaceArtifactParams {
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) module_segment_capacity: u32,
+    pub(in crate::type_checker) declaration_capacity: u32,
+    pub(in crate::type_checker) type_capacity: u32,
+    pub(in crate::type_checker) edge_capacity: u32,
+    pub(in crate::type_checker) member_capacity: u32,
+    pub(in crate::type_checker) name_byte_capacity: u32,
+    pub(in crate::type_checker) artifact_word_capacity: u32,
+    pub(in crate::type_checker) unit_id: u32,
+    pub(in crate::type_checker) version: u32,
 }
 
 /// Capacities for dependency semantic-interface module indexing.

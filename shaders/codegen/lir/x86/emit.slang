@@ -2,12 +2,22 @@ import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
 import gpu_index;
 
-struct Params { uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity; };
+struct Params
+{
+    uint target_capacity;
+    uint token_capacity;
+    uint function_capacity;
+    uint artifact_capacity;
+    uint target_start;
+    uint page_capacity;
+    uint reserved0;
+    uint reserved1;
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
-StructuredBuffer<uint> scheduled_function_id;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
@@ -588,14 +598,17 @@ void emit_rodata_word(uint word_row, X86ArtifactLayout layout)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     if (layout.status != 0u) return;
     emit_rodata_word(row, layout);
     if (row >= total) return;
     if (row == 0u) emit_header_and_wrapper(layout);
-    uint function_id = scheduled_function_id[row];
+    X86LirCore core = target_lir_core[page_row];
+    uint function_id = semantic_function_id_by_hir[core.source_hir];
     uint semantic_function_count = min(gParams.function_capacity,
         semantic_lir_function_total[0u]);
     if (function_id >= semantic_function_count) return;
@@ -605,7 +618,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SemanticLirFunction semantic_function = semantic_lir_functions[function_id];
     uint cursor = layout.body_offset + target_byte_offset[row];
     if (row == function.instruction_start) emit_prologue(cursor, function, semantic_function);
-    emit_instruction(cursor, target_lir_core[row], target_lir_operands[row], function,
+    emit_instruction(cursor, core, target_lir_operands[page_row], function,
                      semantic_function, layout);
     if (row + 1u == function.instruction_start + function.instruction_count) emit_footer(cursor);
 }

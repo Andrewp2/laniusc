@@ -4,6 +4,8 @@
 // are present. It attaches element refs and array length records, and forwards
 // reference type nodes to their child type refs.
 
+import hir_records;
+
 struct Params
 {
     uint n_tokens;
@@ -13,14 +15,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_type_value_node;
-StructuredBuffer<uint> hir_type_len_token;
-StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> module_type_path_type;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
@@ -62,7 +64,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -80,7 +82,7 @@ uint projected_type_for_type_node(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (valid_token(token))
     {
         uint projected = module_type_path_type[token];
@@ -88,8 +90,11 @@ uint projected_type_for_type_node(uint node)
             return projected;
     }
 
-    uint leaf_node = hir_type_path_leaf_node[node];
-    uint leaf_token = valid_node(leaf_node) ? hir_token_pos[leaf_node] : INVALID;
+    uint path = path_id_by_owner_hir[node];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    uint segment_count = path < path_count ? path_segment_count[path] : 0u;
+    uint segment = segment_count == 0u ? INVALID : path_segment_base[path] + segment_count - 1u;
+    uint leaf_token = segment < gParams.n_tokens ? path_segment_token[segment] : INVALID;
     if (valid_token(leaf_token))
     {
         uint projected = module_type_path_type[leaf_token];
@@ -103,10 +108,10 @@ uint projected_type_for_type_node(uint node)
 bool child_ref(uint node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_ERROR;
-    payload = valid_node(node) ? hir_token_pos[node] : INVALID;
+    payload = valid_node(node) ? compact_hir_core[node].token_start : INVALID;
     if (!valid_node(node))
         return false;
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
         return false;
     tag = type_expr_ref_tag[token];
@@ -127,7 +132,8 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
 {
     uint elem_tag = TYPE_REF_INVALID;
     uint elem_payload = INVALID;
-    bool ok = child_ref(hir_type_value_node[node], elem_tag, elem_payload);
+    HirPayload type = compact_hir_payload[node];
+    bool ok = child_ref(type.b, elem_tag, elem_payload);
 
     type_instance_elem_ref_tag[token] = ok ? elem_tag : TYPE_REF_ERROR;
     type_instance_elem_ref_payload[token] = ok ? elem_payload : token;
@@ -136,7 +142,7 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
     if (!is_array)
         return;
 
-    uint len_token = hir_type_len_token[node];
+    uint len_token = type.c;
     if (!valid_token(len_token))
     {
         type_instance_len_kind[token] = TYPE_LEN_UNSUPPORTED;
@@ -144,7 +150,7 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
     }
     else
     {
-        uint len_value = hir_type_len_value[node];
+        uint len_value = type.d;
         if (len_value != INVALID)
         {
             type_instance_len_kind[token] = TYPE_LEN_LITERAL;
@@ -163,14 +169,15 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node) || hir_kind[node] != HIR_TYPE)
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_TYPE)
         return;
 
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
         return;
 
-    uint form = hir_type_form[node];
+    HirPayload type = compact_hir_payload[node];
+    uint form = type.a;
     if (form == HIR_TYPE_FORM_ARRAY || form == HIR_TYPE_FORM_SLICE)
     {
         publish_array_or_slice_details(node, token, form == HIR_TYPE_FORM_ARRAY);
@@ -181,7 +188,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint tag = TYPE_REF_INVALID;
         uint payload = INVALID;
-        if (child_ref(hir_type_value_node[node], tag, payload))
+        if (child_ref(type.b, tag, payload))
         {
             type_expr_ref_tag[token] = tag;
             type_expr_ref_payload[token] = payload;

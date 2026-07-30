@@ -1,73 +1,70 @@
-//! Shared compaction of a scheduled target instruction stream into functions.
+//! Shared compaction of scheduled semantic rows into target function ranges.
 
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::{bound, make_group, record_direct},
     lowering_ir::TargetLirFunction,
     scan::{GpuResidentExclusiveScan, GraphScanContract},
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    compiler_graph::{
-        BoundGraphResource,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphWorkspace,
-    },
+    compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    operations::ComputeOperation,
     passes_core::{PassData, make_pass_data_from_shader_key},
+    resource_registry::ResourceMap,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct FunctionParams {
+    semantic_capacity: u32,
     target_capacity: u32,
     function_capacity: u32,
-    reserved0: u32,
-    reserved1: u32,
+    reserved: u32,
 }
 
 #[derive(Clone, Copy)]
+#[cfg(test)]
 pub(crate) struct GpuTargetFunctionView<'a> {
     pub count: &'a LaniusBuffer<u32>,
     pub rows: &'a LaniusBuffer<TargetLirFunction>,
-    pub index_by_semantic: &'a LaniusBuffer<u32>,
 }
 
-/// A target-independent function table over already scheduled instructions.
-/// All storage and bind groups are resident; recording only dispatches work.
+/// Compact target ranges derived from the already sorted semantic schedule.
+///
+/// Function ownership is semantic metadata. Target lowering supplies only the
+/// exact scanned target offset for each scheduled semantic row, so this stage
+/// never scans or allocates scratch proportional to expanded target capacity.
 pub(crate) struct GpuTargetFunctionTable {
-    target_capacity: u32,
-    function_capacity: u32,
-    mark_pass: PassData,
-    scatter_pass: PassData,
-    finalize_pass: PassData,
-    mark_group: wgpu::BindGroup,
-    scatter_group: wgpu::BindGroup,
-    finalize_group: wgpu::BindGroup,
+    mark: ComputeOperation,
+    scatter: ComputeOperation,
+    finalize: ComputeOperation,
     scan: GpuResidentExclusiveScan,
     _params: LaniusBuffer<FunctionParams>,
     _flags: LaniusBuffer<u32>,
     _prefix: LaniusBuffer<u32>,
     _starts: LaniusBuffer<u32>,
     _compact_ids: LaniusBuffer<u32>,
-    count: LaniusBuffer<u32>,
-    rows: LaniusBuffer<TargetLirFunction>,
-    index_by_semantic: LaniusBuffer<u32>,
+    _count: LaniusBuffer<u32>,
+    _rows: LaniusBuffer<TargetLirFunction>,
+    _index_by_semantic: LaniusBuffer<u32>,
 }
 
 impl GpuTargetFunctionTable {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
+        resources: &ResourceMap<'_>,
+        semantic_capacity: u32,
         target_capacity: u32,
         function_capacity: u32,
-        target_total: &LaniusBuffer<u32>,
-        scheduled_function_ids: &LaniusBuffer<u32>,
+        semantic_total: &LaniusBuffer<u32>,
     ) -> Result<Self> {
+        let semantic_capacity = semantic_capacity.max(1);
         let target_capacity = target_capacity.max(1);
         let function_capacity = function_capacity.max(1);
         let resource = |name: &str| {
@@ -80,8 +77,8 @@ impl GpuTargetFunctionTable {
                 .alias(graph, resource(name)?, rows.max(1) as usize)
                 .map_err(anyhow::Error::msg)
         };
-        let flags = alias_u32("lir.target.function_flags", target_capacity)?;
-        let prefix = alias_u32("lir.target.function_prefix", target_capacity)?;
+        let flags = alias_u32("lir.target.function_flags", semantic_capacity)?;
+        let prefix = alias_u32("lir.target.function_prefix", semantic_capacity)?;
         let starts = alias_u32("lir.target.function_starts", function_capacity)?;
         let compact_ids = alias_u32("lir.target.compact_function_ids", function_capacity)?;
         let count = alias_u32("lir.target.function_count", 1)?;
@@ -94,48 +91,29 @@ impl GpuTargetFunctionTable {
             .map_err(anyhow::Error::msg)?;
         let index_by_semantic =
             alias_u32("lir.target.function_index_by_semantic", function_capacity)?;
-        let mark_pass = load(
-            device,
-            "lir.target.functions.mark",
-            "codegen/lir/functions/mark",
-        )?;
-        let scatter_pass = load(
-            device,
-            "lir.target.functions.scatter_starts",
-            "codegen/lir/functions/scatter_starts",
-        )?;
-        let finalize_pass = load(
-            device,
-            "lir.target.functions.finalize",
-            "codegen/lir/functions/finalize",
-        )?;
         let params = uniform_from_val(
             device,
             "lir.target.functions.params",
             &FunctionParams {
+                semantic_capacity,
                 target_capacity,
                 function_capacity,
-                reserved0: 0,
-                reserved1: 0,
+                reserved: 0,
             },
         );
-        let mark_group = make_group(
+        let context = (graph, allocations);
+        let mark = ComputeOperation::direct_with_uniform(
             device,
-            &mark_pass,
-            "lir.target.functions.mark.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-                ("function_start_flag", flags.as_entire_binding()),
-                (
-                    "function_index_by_semantic",
-                    index_by_semantic.as_entire_binding(),
-                ),
-            ],
+            &context,
+            resources,
+            "lir.target.functions.mark",
+            &load(
+                device,
+                "lir.target.functions.mark",
+                "codegen/lir/functions/mark",
+            )?,
+            &params,
+            semantic_capacity.max(function_capacity),
         )?;
         let scan = GpuResidentExclusiveScan::new(
             device,
@@ -147,7 +125,7 @@ impl GpuTargetFunctionTable {
                 up_pass: "lir.target.function_scan.hierarchy_up",
                 down_pass: "lir.target.function_scan.hierarchy_down",
                 apply_pass: "lir.target.function_scan.apply",
-                count: target_total_resource(graph)?,
+                count: "lir.semantic.total",
                 input: "lir.target.function_flags",
                 local: "lir.target.function_scan_local",
                 block_sum: "lir.target.function_scan_block_sum",
@@ -156,223 +134,71 @@ impl GpuTargetFunctionTable {
                 output: "lir.target.function_prefix",
                 total: "lir.target.function_count",
             },
-            target_capacity,
-            target_total,
+            semantic_capacity,
+            semantic_total,
             &flags,
             &prefix,
             &count,
         )?;
-        let scatter_group = make_group(
+        let scatter = ComputeOperation::direct_with_uniform(
             device,
-            &scatter_pass,
-            "lir.target.functions.scatter_starts.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                (
-                    "scheduled_function_id",
-                    scheduled_function_ids.as_entire_binding(),
-                ),
-                ("function_start_flag", flags.as_entire_binding()),
-                ("function_prefix", prefix.as_entire_binding()),
-                ("function_start", starts.as_entire_binding()),
-                ("compact_function_id", compact_ids.as_entire_binding()),
-            ],
+            &context,
+            resources,
+            "lir.target.functions.scatter_starts",
+            &load(
+                device,
+                "lir.target.functions.scatter_starts",
+                "codegen/lir/functions/scatter_starts",
+            )?,
+            &params,
+            semantic_capacity,
         )?;
-        let finalize_group = make_group(
+        let finalize = ComputeOperation::direct_with_uniform(
             device,
-            &finalize_pass,
-            "lir.target.functions.finalize.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                ("function_count", count.as_entire_binding()),
-                ("function_start", starts.as_entire_binding()),
-                ("compact_function_id", compact_ids.as_entire_binding()),
-                ("target_function", rows.as_entire_binding()),
-                (
-                    "function_index_by_semantic",
-                    index_by_semantic.as_entire_binding(),
-                ),
-            ],
-        )?;
-        validate(
-            graph,
-            allocations,
-            target_total,
-            scheduled_function_ids,
-            &flags,
-            &prefix,
-            &starts,
-            &compact_ids,
-            &count,
-            &rows,
-            &index_by_semantic,
-        )?;
-        Ok(Self {
-            target_capacity,
+            &context,
+            resources,
+            "lir.target.functions.finalize",
+            &load(
+                device,
+                "lir.target.functions.finalize",
+                "codegen/lir/functions/finalize",
+            )?,
+            &params,
             function_capacity,
-            mark_pass,
-            scatter_pass,
-            finalize_pass,
-            mark_group,
-            scatter_group,
-            finalize_group,
+        )?;
+
+        Ok(Self {
+            mark,
+            scatter,
+            finalize,
             scan,
             _params: params,
             _flags: flags,
             _prefix: prefix,
             _starts: starts,
             _compact_ids: compact_ids,
-            count,
-            rows,
-            index_by_semantic,
+            _count: count,
+            _rows: rows,
+            _index_by_semantic: index_by_semantic,
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn output(&self) -> GpuTargetFunctionView<'_> {
         GpuTargetFunctionView {
-            count: &self.count,
-            rows: &self.rows,
-            index_by_semantic: &self.index_by_semantic,
+            count: &self._count,
+            rows: &self._rows,
         }
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.mark_pass,
-            &self.mark_group,
-            self.target_capacity,
-        )?;
+        self.mark.record(encoder)?;
         self.scan.record(encoder)?;
-        record_direct(
-            encoder,
-            &self.scatter_pass,
-            &self.scatter_group,
-            self.target_capacity,
-        )?;
-        record_direct(
-            encoder,
-            &self.finalize_pass,
-            &self.finalize_group,
-            self.function_capacity,
-        )
-    }
-}
-
-fn target_total_resource(graph: &CompilerGraph) -> Result<&'static str> {
-    if graph.resource_id("lir.x86.total").is_some() {
-        Ok("lir.x86.total")
-    } else if graph.resource_id("lir.wasm.total").is_some() {
-        Ok("lir.wasm.total")
-    } else {
-        anyhow::bail!("target function graph has no target total")
+        self.scatter.record(encoder)?;
+        self.finalize.record(encoder)
     }
 }
 
 fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
     make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate(
-    graph: &CompilerGraph,
-    allocations: &CompilerGraphAllocations,
-    total: &LaniusBuffer<u32>,
-    function_ids: &LaniusBuffer<u32>,
-    flags: &LaniusBuffer<u32>,
-    prefix: &LaniusBuffer<u32>,
-    starts: &LaniusBuffer<u32>,
-    compact_ids: &LaniusBuffer<u32>,
-    count: &LaniusBuffer<u32>,
-    rows: &LaniusBuffer<TargetLirFunction>,
-    index_by_semantic: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let total_name = target_total_resource(graph)?;
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "lir.target.functions.mark",
-        vec![
-            bound("target_lir_total", resource(total_name), total)?,
-            bound(
-                "scheduled_function_id",
-                resource("lir.target.scheduled_function_ids"),
-                function_ids,
-            )?,
-            bound(
-                "function_start_flag",
-                resource("lir.target.function_flags"),
-                flags,
-            )?,
-            bound(
-                "function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                index_by_semantic,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.target.functions.scatter_starts",
-        vec![
-            bound("target_lir_total", resource(total_name), total)?,
-            bound(
-                "scheduled_function_id",
-                resource("lir.target.scheduled_function_ids"),
-                function_ids,
-            )?,
-            bound(
-                "function_start_flag",
-                resource("lir.target.function_flags"),
-                flags,
-            )?,
-            bound(
-                "function_prefix",
-                resource("lir.target.function_prefix"),
-                prefix,
-            )?,
-            bound(
-                "function_start",
-                resource("lir.target.function_starts"),
-                starts,
-            )?,
-            bound(
-                "compact_function_id",
-                resource("lir.target.compact_function_ids"),
-                compact_ids,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.target.functions.finalize",
-        vec![
-            bound("target_lir_total", resource(total_name), total)?,
-            bound(
-                "function_count",
-                resource("lir.target.function_count"),
-                count,
-            )?,
-            bound(
-                "function_start",
-                resource("lir.target.function_starts"),
-                starts,
-            )?,
-            bound(
-                "compact_function_id",
-                resource("lir.target.compact_function_ids"),
-                compact_ids,
-            )?,
-            bound("target_function", resource("lir.target.functions"), rows)?,
-            bound(
-                "function_index_by_semantic",
-                resource("lir.target.function_index_by_semantic"),
-                index_by_semantic,
-            )?,
-        ],
-    )
 }

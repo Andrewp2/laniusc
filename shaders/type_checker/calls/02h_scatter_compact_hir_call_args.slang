@@ -1,3 +1,5 @@
+import hir_records;
+
 // Scatter parser-produced compact HIR call-argument rows directly.
 //
 // Per-call argument counts have already been prefix-scanned, so each argument
@@ -13,9 +15,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

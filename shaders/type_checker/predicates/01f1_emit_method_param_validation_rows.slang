@@ -1,3 +1,5 @@
+import hir_records;
+
 // Validate compact parameter rows after method-level validation has published
 // one stable row per dense method HIR id.
 

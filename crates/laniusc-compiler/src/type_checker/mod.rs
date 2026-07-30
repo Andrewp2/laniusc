@@ -32,7 +32,7 @@ mod util;
 use anyhow::Result;
 use bind_models::*;
 use bind_support::*;
-pub(crate) use dependency_interface::GpuDependencyInterfaceState;
+pub(crate) use dependency_interface::{GpuDependencyInterfacePages, GpuDependencyInterfaceState};
 use module_path::*;
 use operations::*;
 use params::*;
@@ -65,7 +65,6 @@ use crate::gpu::{
         DispatchDim,
         InputElements,
         PassData,
-        bind_group,
         count_recorded_compute_pass,
         plan_workgroups,
         recorded_compute_pass_count,
@@ -182,18 +181,21 @@ pub enum GpuTypeCheckError {
 pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// Host-visible semantic feature summary measured by the GPU parser.
     pub parser_feature_flags: u32,
-    /// Exact GPU-counted upper bound for compact module/path record families.
+    /// Token-bounded upper capacity for compact module/path record families.
     pub module_record_capacity: u32,
     /// GPU-counted compact local parameters plus the dependency-parameter
     /// upper bound of one row per compact call argument.
     pub call_param_row_capacity: u32,
-    /// Exact GPU-counted number of compact call-argument rows.
+    /// Token-bounded upper capacity for compact call-argument rows.
     pub call_arg_row_capacity: u32,
     /// The parser's compact semantic artifact. Keeping this as one typed view
     /// preserves allocation identity for compiler-graph validation and makes
     /// it impossible for type-check code to assemble a partial HIR from raw
     /// parser rows.
     pub hir: &'a crate::parser::buffers::GpuHirView,
+    /// Dead parser-phase storage available to the type-check graph's slot
+    /// allocator. These buffers contain no semantic input at this boundary.
+    pub upstream_workspace: &'a [crate::gpu::buffers::TrackedBufferView<'a>],
     /// Raw-parser to dense-HIR projection. This remains a typed allocation
     /// view so compiler-graph alias validation sees the parser workspace slot
     /// that physically backs it.
@@ -204,31 +206,22 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub next_sibling: &'a LaniusBuffer<u32>,
     pub subtree_end: &'a LaniusBuffer<u32>,
     pub type_form: &'a LaniusBuffer<u32>,
-    pub type_value_node: &'a LaniusBuffer<u32>,
     pub type_len_token: &'a LaniusBuffer<u32>,
-    pub type_len_value: &'a LaniusBuffer<u32>,
-    pub type_file_id: &'a LaniusBuffer<u32>,
     pub type_path_leaf_node: &'a LaniusBuffer<u32>,
     pub bound_path_owner_by_leaf: &'a LaniusBuffer<u32>,
     pub type_arg_start: &'a LaniusBuffer<u32>,
     pub type_arg_count: &'a LaniusBuffer<u32>,
     pub type_arg_next: &'a LaniusBuffer<u32>,
-    pub type_root_owner: &'a LaniusBuffer<u32>,
     pub method_impl_receiver_type_node: &'a LaniusBuffer<u32>,
-    pub expr_record: &'a LaniusBuffer<u32>,
     pub expr_name_role: &'a LaniusBuffer<u32>,
     pub expr_result_root_node: &'a LaniusBuffer<u32>,
     pub member_receiver_node: &'a LaniusBuffer<u32>,
     pub member_receiver_token: &'a LaniusBuffer<u32>,
     pub member_name_token: &'a LaniusBuffer<u32>,
-    pub stmt_record: &'a LaniusBuffer<u32>,
-    pub nearest_loop_node: &'a LaniusBuffer<u32>,
     pub nearest_fn_node: &'a LaniusBuffer<u32>,
-    pub array_lit_context_stmt_node: &'a LaniusBuffer<u32>,
     pub array_element_parent_lit: &'a LaniusBuffer<u32>,
     pub nearest_array_element_node: &'a LaniusBuffer<u32>,
     pub struct_lit_head_node: &'a LaniusBuffer<u32>,
-    pub struct_lit_context_stmt_node: &'a LaniusBuffer<u32>,
     pub struct_lit_field_parent_lit: &'a LaniusBuffer<u32>,
     pub struct_lit_field_value_node: &'a LaniusBuffer<u32>,
     pub semantic_dense_node: &'a LaniusBuffer<u32>,
@@ -236,35 +229,6 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// identities across the parser/typecheck phase boundary.
     pub semantic_count: &'a LaniusBuffer<u32>,
     pub semantic_subtree_end: &'a LaniusBuffer<u32>,
-}
-
-/// Scratch and metadata buffers supplied by the caller after earlier phase data
-/// has been proven dead or intentionally retained.
-///
-/// Buffer identity is part of the resident type-check cache contract whenever a
-/// pass binds one of these buffers. Add new bind-group-affecting buffers to the
-/// resident fingerprint instead of erasing allocation identity at the phase
-/// boundary.
-#[derive(Clone, Copy)]
-pub struct GpuTypeCheckExternalScratchBuffers<'a> {
-    pub record_family_flag: Option<&'a LaniusBuffer<u32>>,
-    pub path_id_by_owner_hir: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub decl_type_key_to_decl_id: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub decl_value_key_to_decl_id: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub resolved_type_decl: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub resolved_value_decl: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub resolved_type_status: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub resolved_value_status: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_start: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_len: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_segment_count: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_segment_base: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_segment_name_id: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_segment_token: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_owner_hir: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_owner_token: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_owner_module_id: crate::gpu::buffers::TrackedBufferView<'a>,
-    pub path_kind: crate::gpu::buffers::TrackedBufferView<'a>,
 }
 
 impl std::fmt::Display for GpuTypeCheckError {
@@ -412,7 +376,9 @@ struct ResidentTypeCheckState {
     hir_active_dispatch: wgpu::BindGroup,
     semantic_features: SemanticFeaturesOperation,
     type_instance_decl_token: LaniusBuffer<u32>,
-    type_instance_external_canonical: LaniusBuffer<u32>,
+    _call_dependency_library_id: LaniusBuffer<u32>,
+    _call_dependency_unit_id: LaniusBuffer<u32>,
+    _call_dependency_local_index: LaniusBuffer<u32>,
     type_subtree_compare_buffers: Box<TypeSubtreeCompareBuffers>,
     name_bind_groups: NameBindGroups,
     language_name_bind_groups: LanguageNameBindGroups,
@@ -423,20 +389,11 @@ struct ResidentTypeCheckState {
     methods: MethodBindGroups,
     predicates: Option<PredicateBindGroups>,
     type_instances: TypeInstanceBindGroups,
-    returns_clear: wgpu::BindGroup,
-    returns_mark: wgpu::BindGroup,
-    returns_mark_if: wgpu::BindGroup,
-    returns_validate: wgpu::BindGroup,
-    semantic_predicate_diagnostics_clear: wgpu::BindGroup,
-    semantic_predicate_diagnostics_claim: wgpu::BindGroup,
-    semantic_predicate_diagnostics_project: wgpu::BindGroup,
+    returns: ReturnValidationOperation,
+    predicate_diagnostics: PredicateDiagnosticsOperation,
     conditions_compact_expr: wgpu::BindGroup,
     conditions_compact_stmt: wgpu::BindGroup,
-    conditions_compact_calls: wgpu::BindGroup,
-    conditions_compact_types: wgpu::BindGroup,
-    conditions_compact_methods: wgpu::BindGroup,
-    conditions_compact_predicates: wgpu::BindGroup,
-    conditions_compact_names: wgpu::BindGroup,
+    condition_finalization: ConditionFinalizationOperation,
     conditions_compact_aggregate_requests: wgpu::BindGroup,
     semantic_expression_refs_project: wgpu::BindGroup,
     semantic_struct_literal_refs_project: wgpu::BindGroup,
@@ -475,7 +432,9 @@ impl ResidentTypeCheckState {
 #[derive(encase::ShaderType)]
 pub(crate) struct GpuCheckedCallArtifact {
     pub target_token: u32,
-    pub dependency_decl: u32,
+    pub dependency_library_id: u32,
+    pub dependency_unit_id: u32,
+    pub dependency_local_index: u32,
     pub intrinsic_tag: u32,
     pub return_type: u32,
     pub receiver_hir: u32,
@@ -576,17 +535,6 @@ impl OwnedGpuSemanticArtifact {
     }
 }
 
-/// Canonical identities for declarations imported by one bounded unit.
-/// Semantic lowering reads only these columns; the larger dependency
-/// type-check state remains outside the backend contract.
-#[derive(Clone, Copy)]
-pub(crate) struct GpuDependencySymbolBuffers<'a> {
-    pub counts: &'a LaniusBuffer<u32>,
-    pub declaration_library_id: &'a LaniusBuffer<u32>,
-    pub declaration_unit_id: &'a LaniusBuffer<u32>,
-    pub declaration_local_index: &'a LaniusBuffer<u32>,
-}
-
 /// Borrowed GPU tables required to canonicalize a bounded unit's public
 /// semantic interface. Source bytes and parser-owned signature/member tables
 /// are supplied separately by the compiler orchestration layer.
@@ -619,9 +567,9 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub type_generic_param_slot_by_token: &'a wgpu::Buffer,
     pub type_const_param_slot_by_token: &'a wgpu::Buffer,
     pub type_instance_decl_token: &'a wgpu::Buffer,
-    pub type_instance_external_canonical: &'a wgpu::Buffer,
-    pub dependency_type_count: u32,
-    pub dependency_type_words: &'a wgpu::Buffer,
+    pub external_type_library_id: &'a wgpu::Buffer,
+    pub external_type_unit_id: &'a wgpu::Buffer,
+    pub external_type_local_index: &'a wgpu::Buffer,
     pub path_id_by_owner_token: &'a wgpu::Buffer,
     pub resolved_type_decl: &'a wgpu::Buffer,
     pub decl_id_by_name_token: &'a wgpu::Buffer,

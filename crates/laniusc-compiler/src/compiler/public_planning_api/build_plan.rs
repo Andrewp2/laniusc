@@ -4,7 +4,7 @@ use super::*;
 pub fn plan_pack_frontend_from_paths<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<SourcePackBuildPlan, CompileError>
 where
     SP: AsRef<Path>,
@@ -20,7 +20,7 @@ where
 pub fn plan_pack_artifacts_from_paths<SP, UP>(
     stdlib_paths: &[SP],
     user_paths: &[UP],
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
 where
@@ -40,7 +40,7 @@ where
 /// Plan frontend library/codegen units from explicit library path groups.
 pub fn plan_libraries_frontend_from_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
 ) -> Result<SourcePackBuildPlan, CompileError>
 where
     P: AsRef<Path>,
@@ -52,7 +52,7 @@ where
 /// Plan a compact artifact manifest from explicit library path groups.
 pub fn plan_libraries_artifacts_from_paths<P>(
     libraries: Vec<ExplicitSourceLibraryPaths<P>>,
-    limits: CodegenUnitLimits,
+    limits: CompilationUnitLimits,
     batch_limits: SourcePackJobBatchLimits,
 ) -> Result<SourcePackBuildArtifactManifest, CompileError>
 where

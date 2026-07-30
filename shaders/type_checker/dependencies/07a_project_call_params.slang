@@ -1,5 +1,7 @@
 // Publish imported function parameter counts from compact call-argument rows.
 
+import dependency_interface;
+import hir_records;
 import gpu_index;
 
 struct Params
@@ -13,18 +15,15 @@ struct Params
     uint namespace;
     uint hir_capacity;
 };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
-StructuredBuffer<uint> call_dependency_decl;
-StructuredBuffer<uint> dependency_declaration_words;
-StructuredBuffer<uint> dependency_type_words;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_param_count;
 
 static const uint INVALID = 0xffffffffu;
@@ -59,12 +58,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirCallArg arg = compact_call_args[row];
     uint token = callee_token(arg.call);
     if (token == INVALID) return;
-    uint declaration_i = call_dependency_decl[token];
-    if (declaration_i == INVALID || declaration_i >= gParams.declaration_count) return;
-    uint signature_i = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
+    uint declaration_i = dependency_find_declaration(
+        call_dependency_library_id[token],
+        call_dependency_unit_id[token],
+        call_dependency_local_index[token]);
+    if (declaration_i == INVALID) return;
+    uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
     uint signature_base = signature_i * TYPE_WORDS;
-    if (dependency_type_words[signature_base] != INTERFACE_TYPE_FUNCTION) return;
-    uint edge_count = dependency_type_words[signature_base + 4u];
+    if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION) return;
+    uint edge_count = dependency_type_word(signature_base + 4u);
     uint param_count = edge_count == 0u ? 0u : edge_count - 1u;
     if (arg.ordinal < param_count) call_param_count[token] = param_count;
 }

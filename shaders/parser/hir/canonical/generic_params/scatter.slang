@@ -1,9 +1,8 @@
+import hir_records;
 import generated_parse_production_ids;
 import prefix_scan;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirGenericParam { uint owner; uint name_token; uint kind; uint file_id; };
-struct HirRange { uint start; uint count; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;

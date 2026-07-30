@@ -1,8 +1,9 @@
+import hir_records;
+import codegen.lir.semantic.common;
 import codegen.lowering_ir;
 import gpu_index;
 
 struct Params { uint n_call_args; uint n_hir_nodes; uint lir_capacity; uint reserved; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_call_arg_count;
@@ -10,11 +11,12 @@ StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> semantic_call_receiver;
 StructuredBuffer<uint> semantic_call_arg_count_by_hir;
 StructuredBuffer<uint> semantic_call_arg_prefix_by_hir;
+StructuredBuffer<uint> semantic_expr_type;
+StructuredBuffer<uint> semantic_expr_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_lir_count;
 StructuredBuffer<uint> semantic_lir_offset;
 RWStructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
-RWStructuredBuffer<uint> semantic_lir_call_arg_start_scratch;
-RWStructuredBuffer<uint> semantic_lir_call_arg_count_scratch;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -25,6 +27,16 @@ uint lir_for_hir(uint node)
            semantic_lir_count[node] != 0u
         ? semantic_lir_offset[node]
         : INVALID;
+}
+
+uint value_metadata_for_hir(uint node)
+{
+    return node < gParams.n_hir_nodes
+        ? semantic_lir_value_metadata(
+            semantic_lir_type(semantic_expr_type[node]),
+            semantic_expr_ref_tag[node],
+            semantic_expr_ref_payload[node])
+        : 0u;
 }
 
 [shader("compute")]
@@ -45,16 +57,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.call_instruction = lir_for_hir(source.call);
         result.value_instruction = lir_for_hir(source.value);
         result.ordinal = source.ordinal + receiver_shift;
-        result.flags = source.file_id;
+        result.value_metadata = value_metadata_for_hir(source.value);
         if (destination < gParams.n_call_args)
             semantic_lir_call_args[destination] = result;
-        if (destination < gParams.n_call_args &&
-            result.call_instruction < gParams.lir_capacity)
-        {
-            uint ignored;
-            InterlockedMin(semantic_lir_call_arg_start_scratch[result.call_instruction], destination, ignored);
-            InterlockedAdd(semantic_lir_call_arg_count_scratch[result.call_instruction], 1u, ignored);
-        }
     }
 
     if (row < gParams.n_hir_nodes &&
@@ -66,15 +71,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         receiver.call_instruction = lir_for_hir(row);
         receiver.value_instruction = lir_for_hir(semantic_call_receiver[row]);
         receiver.ordinal = 0u;
-        receiver.flags = 0u;
+        receiver.value_metadata =
+            value_metadata_for_hir(semantic_call_receiver[row]);
         if (destination < gParams.n_call_args)
             semantic_lir_call_args[destination] = receiver;
-        if (destination < gParams.n_call_args &&
-            receiver.call_instruction < gParams.lir_capacity)
-        {
-            uint ignored;
-            InterlockedMin(semantic_lir_call_arg_start_scratch[receiver.call_instruction], destination, ignored);
-            InterlockedAdd(semantic_lir_call_arg_count_scratch[receiver.call_instruction], 1u, ignored);
-        }
     }
 }

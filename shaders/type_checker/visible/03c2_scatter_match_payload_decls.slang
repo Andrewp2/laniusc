@@ -5,6 +5,7 @@
 // this pass writes it at raw_decl_count + payload_row without rediscovering the
 // relation through parser-node indices.
 
+import hir_records;
 import atomics;
 
 struct Params
@@ -14,9 +15,6 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
-struct HirMatchPayload { uint arm; uint pattern; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;

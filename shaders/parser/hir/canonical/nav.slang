@@ -1,6 +1,6 @@
+import hir_records;
+
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;

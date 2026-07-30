@@ -1,13 +1,11 @@
 // Publish match result types from compact match-arm and dense expression rows.
 
+import hir_records;
 import atomics;
 import hir_expr_semantics;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirMatchArm { uint owner; uint pattern; uint result; uint ordinal; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -109,12 +107,15 @@ uint direct_node_type(uint node)
     if (core.kind == HIR_CALL_EXPR)
     {
         uint callee = payload.a;
-        uint callee_ty = valid_hir(callee)
-            ? visible_type_for_token(expression_token(callee))
+        uint callee_token = valid_hir(callee) ? expression_token(callee) : INVALID;
+        uint return_ty = valid_token(callee_token)
+            ? call_return_type[callee_token]
             : TY_UNKNOWN;
-        if (callee_ty != TY_UNKNOWN)
-            return callee_ty;
-        return valid_token(core.token_start) ? call_return_type[core.token_start] : TY_UNKNOWN;
+        if (return_ty != TY_UNKNOWN)
+            return return_ty;
+        return valid_token(core.token_start)
+            ? call_return_type[core.token_start]
+            : TY_UNKNOWN;
     }
     return TY_UNKNOWN;
 }

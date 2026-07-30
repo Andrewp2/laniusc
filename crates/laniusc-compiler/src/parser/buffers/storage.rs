@@ -1,108 +1,4 @@
-use crate::gpu::{
-    buffers::{LaniusBuffer, storage_rw_for_array},
-    compiler_graph::{
-        CompilerGraphBuilder,
-        CompilerPhase,
-        PassAccess,
-        PassDesc,
-        ResourceClass,
-        ResourceDesc,
-        ResourceDomain,
-    },
-    workspace::{WorkspacePlan, WorkspaceUsageClass},
-};
-
-pub(super) fn parser_phase_workspace_plan(tree_capacity: u32) -> WorkspacePlan {
-    let tree_bytes = u64::from(tree_capacity) * 4;
-    let mut graph = CompilerGraphBuilder::new();
-    let tree_prefix_inblock = graph
-        .add_resource(ResourceDesc {
-            name: "tree.prefix_inblock",
-            domain: ResourceDomain::RawNodes,
-            class: ResourceClass::Workspace,
-            bytes: tree_bytes,
-            usage: WorkspaceUsageClass::Storage,
-        })
-        .expect("parser graph resource names are unique");
-    let tree_prefix = graph
-        .add_resource(ResourceDesc {
-            name: "tree.prefix",
-            domain: ResourceDomain::RawNodes,
-            class: ResourceClass::Workspace,
-            bytes: tree_bytes + 4,
-            usage: WorkspaceUsageClass::Storage,
-        })
-        .expect("parser graph resource names are unique");
-    let hir_family_flag = graph
-        .add_resource(ResourceDesc {
-            name: "hir.family_flag",
-            domain: ResourceDomain::HirNodes,
-            class: ResourceClass::Workspace,
-            bytes: tree_bytes,
-            usage: WorkspaceUsageClass::Storage,
-        })
-        .expect("parser graph resource names are unique");
-    let hir_family_local_prefix = graph
-        .add_resource(ResourceDesc {
-            name: "hir.family_local_prefix",
-            domain: ResourceDomain::HirNodes,
-            class: ResourceClass::Workspace,
-            // Reserve the full slot inherited from `tree.prefix`; the final
-            // word is padding during HIR scans.
-            bytes: tree_bytes + 4,
-            usage: WorkspaceUsageClass::Storage,
-        })
-        .expect("parser graph resource names are unique");
-    let typecheck_fn_entrypoint_tag = graph
-        .add_resource(ResourceDesc {
-            name: "typecheck.fn_entrypoint_tag",
-            domain: ResourceDomain::HirNodes,
-            class: ResourceClass::Workspace,
-            bytes: tree_bytes,
-            usage: WorkspaceUsageClass::Storage,
-        })
-        .expect("parser graph resource names are unique");
-
-    graph
-        .add_pass(PassDesc {
-            name: "parser.raw_tree_prefix",
-            phase: CompilerPhase::Parse,
-            dispatch_domain: ResourceDomain::RawNodes,
-            accesses: vec![
-                PassAccess::write("prefix_inblock", tree_prefix_inblock),
-                PassAccess::write("tree_prefix", tree_prefix),
-            ],
-        })
-        .expect("parser graph pass is valid");
-    graph
-        .add_pass(PassDesc {
-            name: "parser.hir_family_compaction",
-            phase: CompilerPhase::Hir,
-            dispatch_domain: ResourceDomain::HirNodes,
-            accesses: vec![
-                PassAccess::write("hir_family_flag", hir_family_flag),
-                PassAccess::write("hir_family_local_prefix", hir_family_local_prefix),
-            ],
-        })
-        .expect("parser graph pass is valid");
-    graph
-        .add_pass(PassDesc {
-            name: "typecheck.function_entrypoint_tags",
-            phase: CompilerPhase::TypeCheck,
-            dispatch_domain: ResourceDomain::HirNodes,
-            accesses: vec![PassAccess::write(
-                "fn_entrypoint_tag",
-                typecheck_fn_entrypoint_tag,
-            )],
-        })
-        .expect("parser graph pass is valid");
-
-    graph
-        .build()
-        .expect("parser compiler graph must be valid")
-        .workspace_plan()
-        .clone()
-}
+use crate::gpu::buffers::{LaniusBuffer, storage_rw_for_array};
 
 /// Reinterprets one typed storage buffer as another typed buffer with a new element count.
 pub(super) fn alias_storage_buffer<T, U>(
@@ -230,7 +126,7 @@ pub(crate) fn pointer_jump_step_capacity(items: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{parser_phase_workspace_plan, pointer_jump_step_capacity};
+    use super::pointer_jump_step_capacity;
 
     #[test]
     fn pointer_jump_capacity_is_ceiling_log_two() {
@@ -241,21 +137,5 @@ mod tests {
         assert_eq!(pointer_jump_step_capacity(4), 2);
         assert_eq!(pointer_jump_step_capacity(5), 3);
         assert_eq!(pointer_jump_step_capacity(u32::MAX), 32);
-    }
-
-    #[test]
-    fn parser_raw_hir_and_typecheck_scratch_fit_two_stable_slots() {
-        let plan = parser_phase_workspace_plan(1024);
-        assert_eq!(plan.slots.len(), 2);
-        let slot = |name| {
-            plan.assignments
-                .iter()
-                .find(|assignment| assignment.name == name)
-                .unwrap()
-                .slot
-        };
-        assert_eq!(slot("tree.prefix_inblock"), slot("hir.family_flag"));
-        assert_eq!(slot("tree.prefix"), slot("hir.family_local_prefix"));
-        assert_eq!(slot("tree.prefix"), slot("typecheck.fn_entrypoint_tag"));
     }
 }

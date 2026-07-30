@@ -1,3 +1,4 @@
+import hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
 import gpu_index;
@@ -9,8 +10,6 @@ struct Params
     uint semantic_capacity;
     uint reserved;
 };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
-struct HirArrayElement { uint array; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -20,6 +19,9 @@ StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_init_field_ordinal_by_row;
 StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> semantic_expr_type;
+StructuredBuffer<uint> semantic_expr_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_lir_count;
 StructuredBuffer<uint> semantic_lir_offset;
 RWStructuredBuffer<uint> semantic_lir_aggregate_element_total;
@@ -33,6 +35,16 @@ uint lir_for_hir(uint node, uint hir_count)
     return node != LIR_INVALID && node < hir_count && semantic_lir_count[node] != 0u
         ? semantic_lir_offset[node]
         : LIR_INVALID;
+}
+
+uint value_metadata_for_hir(uint node, uint hir_count)
+{
+    return node < hir_count
+        ? semantic_lir_value_metadata(
+            semantic_lir_type(semantic_expr_type[node]),
+            semantic_expr_ref_tag[node],
+            semantic_expr_ref_payload[node])
+        : 0u;
 }
 
 [shader("compute")]
@@ -63,6 +75,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.value_instruction = lir_for_hir(source.value, hir_count);
         result.ordinal = source.ordinal;
         result.name_token = LIR_INVALID;
+        result.value_metadata = value_metadata_for_hir(source.value, hir_count);
     }
     else
     {
@@ -77,6 +90,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? lir_for_hir(source.value, hir_count) : LIR_INVALID;
         result.ordinal = struct_init_field_ordinal_by_row[row - array_count];
         result.name_token = source.name_token;
+        result.value_metadata = value_metadata_for_hir(source.value, hir_count);
     }
     semantic_lir_aggregate_elements[row] = result;
 }

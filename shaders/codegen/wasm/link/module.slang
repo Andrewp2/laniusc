@@ -1,4 +1,6 @@
 import byte_packing;
+import codegen.lir.wasm.host_abi;
+import codegen.lir.wasm.module_sections;
 struct LinkParams
 {
     uint function_count;
@@ -26,12 +28,42 @@ uint byte_at(uint pos)
         pos - gLink.output_page_base >= gLink.output_page_len) return 0u;
     if (pos == 0u) return 0u; if (pos == 1u) return 0x61u; if (pos == 2u) return 0x73u; if (pos == 3u) return 0x6du;
     if (pos == 4u) return 1u; if (pos >= 5u && pos < 8u) return 0u;
-    uint type_start = 8u; uint type_payload = 5u + gLink.type_len; uint func_start = type_start + 6u + type_payload;
-    uint func_payload = 5u + 5u * gLink.function_count; uint export_start = func_start + 6u + func_payload;
-    uint code_start = export_start + 22u; uint code_payload = 5u + gLink.body_len; uint body_start = code_start + 11u;
-    if (pos < func_start) { uint r = pos - type_start; if (r == 0u) return 1u; if (r < 6u) return leb5(type_payload, r - 1u); if (r < 11u) return leb5(gLink.function_count, r - 6u); return byte_address_load_u8(link_type_bytes, r - 11u - gLink.type_input_base); }
-    if (pos < export_start) { uint r = pos - func_start; if (r == 0u) return 3u; if (r < 6u) return leb5(func_payload, r - 1u); if (r < 11u) return leb5(gLink.function_count, r - 6u); r -= 11u; return leb5(r / 5u, r % 5u); }
-    if (pos < code_start) { uint r = pos - export_start; if (r == 0u) return 7u; if (r < 6u) return leb5(16u, r - 1u); if (r < 11u) return leb5(1u, r - 6u); if (r == 11u) return 4u; if (r == 12u) return 109u; if (r == 13u) return 97u; if (r == 14u) return 105u; if (r == 15u) return 110u; if (r == 16u) return 0u; return leb5(gLink.entry_function, r - 17u); }
+    uint type_start = 8u;
+    uint object_type_start = type_start + 11u + WASM_HOST_TYPE_ENTRIES_LENGTH;
+    uint import_start = object_type_start + gLink.type_len;
+    uint func_start = import_start + WASM_HOST_IMPORT_SECTION_LENGTH;
+    uint func_payload = 5u + 5u * gLink.function_count;
+    uint memory_start = func_start + 6u + func_payload;
+    uint global_start = memory_start + WASM_MEMORY_SECTION_LENGTH;
+    uint export_start = global_start + WASM_GLOBAL_SECTION_LENGTH;
+    uint code_start = export_start + WASM_EXPORT_SECTION_LENGTH;
+    uint code_payload = 5u + gLink.body_len;
+    uint body_start = code_start + 11u;
+    if (pos < object_type_start)
+    {
+        uint r = pos - type_start;
+        if (r == 0u) return 1u;
+        if (r < 6u) return leb5(5u + WASM_HOST_TYPE_ENTRIES_LENGTH + gLink.type_len, r - 1u);
+        if (r < 11u) return leb5(WASM_HOST_TYPE_COUNT + gLink.function_count, r - 6u);
+        return wasm_host_type_entries_byte(r - 11u);
+    }
+    if (pos < import_start)
+        return byte_address_load_u8(link_type_bytes, pos - object_type_start - gLink.type_input_base);
+    if (pos < func_start) return wasm_host_import_section_byte(pos - import_start);
+    if (pos < memory_start)
+    {
+        uint r = pos - func_start;
+        if (r == 0u) return 3u;
+        if (r < 6u) return leb5(func_payload, r - 1u);
+        if (r < 11u) return leb5(gLink.function_count, r - 6u);
+        r -= 11u;
+        return leb5(WASM_HOST_TYPE_COUNT + r / 5u, r % 5u);
+    }
+    if (pos < global_start) return wasm_memory_section_byte(pos - memory_start, 16384u);
+    if (pos < export_start) return wasm_global_section_byte(pos - global_start, 0u);
+    if (pos < code_start)
+        return wasm_export_section_byte(pos - export_start,
+            WASM_HOST_IMPORT_COUNT + gLink.entry_function);
     if (pos < body_start) { uint r = pos - code_start; if (r == 0u) return 10u; if (r < 6u) return leb5(code_payload, r - 1u); return leb5(gLink.function_count, r - 6u); }
     return byte_address_load_u8(link_body_bytes, pos - body_start - gLink.body_input_base);
 }

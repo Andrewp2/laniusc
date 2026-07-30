@@ -3,12 +3,12 @@
 // row; variable-length type arguments are expanded by the downstream scan and
 // aggregate_args pass, never walked serially here.
 
+import external_type_identity;
+import hir_records;
 import gpu_index;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -16,7 +16,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint> call_dependency_decl;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -27,7 +27,6 @@ StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_external_canonical;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
@@ -119,7 +118,7 @@ bool resolved_dependency_call(uint node)
     HirPayload payload = compact_hir_payload[callee];
     uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
     if (!valid_token(token)) token = core.token_start;
-    return valid_token(token) && call_dependency_decl[token] != INVALID;
+    return valid_token(token) && call_dependency_library_id[token] != INVALID;
 }
 
 bool same_generic_slot(uint lhs, uint rhs, bool is_const)
@@ -160,9 +159,7 @@ bool same_named_identity(uint lhs, uint rhs)
     uint rhs_decl = type_instance_decl_token[rhs];
     if (valid_token(lhs_decl) || valid_token(rhs_decl))
         return valid_token(lhs_decl) && lhs_decl == rhs_decl;
-    uint lhs_external = type_instance_external_canonical[lhs];
-    uint rhs_external = type_instance_external_canonical[rhs];
-    return lhs_external != INVALID && lhs_external == rhs_external;
+    return external_type_identity_equal(lhs, rhs);
 }
 
 bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_token)

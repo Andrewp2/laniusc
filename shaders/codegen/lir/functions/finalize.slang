@@ -1,7 +1,7 @@
 import codegen.lowering_ir;
 import gpu_index;
 
-struct Params { uint target_capacity; uint function_capacity; uint reserved0; uint reserved1; };
+struct Params { uint semantic_capacity; uint target_capacity; uint function_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<uint> function_count;

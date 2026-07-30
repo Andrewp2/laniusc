@@ -1,11 +1,9 @@
 // Publish the target-independent expression forest over dense compact HIR.
 
+import hir_records;
 import atomics;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCallArg { uint call; uint value; uint ordinal; uint file_id; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;

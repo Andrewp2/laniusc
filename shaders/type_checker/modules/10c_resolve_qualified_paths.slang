@@ -293,6 +293,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
          path_kind[path_i] != PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR))
         return;
 
+    // Dependency pages resolve imported qualified paths before this local
+    // module-table pass. Their stable identity must not be overwritten merely
+    // because an imported module is absent from the current unit's module rows.
+    if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
+        return;
+
     uint count = path_segment_count[path_i];
     if (count <= 1u)
         return;

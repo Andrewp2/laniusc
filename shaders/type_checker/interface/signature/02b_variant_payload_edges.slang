@@ -1,9 +1,8 @@
 // Scatter one compact enum-variant payload row per invocation.
 
+import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
-struct HirVariant { uint owner; uint name_token; uint ordinal; uint file_id; };
-struct HirVariantPayload { uint variant; uint type_node; uint ordinal; uint file_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<uint> compact_variant_count;

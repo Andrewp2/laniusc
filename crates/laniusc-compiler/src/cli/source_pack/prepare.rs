@@ -20,7 +20,7 @@ use crate::{
         missing_cli_argument_error,
     },
     codegen::unit::{
-        CodegenUnitLimits,
+        CompilationUnitLimits,
         SourcePackArtifactTarget,
         SourcePackBuildShardLimits,
         SourcePackJobBatchLimits,
@@ -178,7 +178,7 @@ pub(crate) fn prepare_build_from_metadata_chunk_only(
         source_pack,
         "--source-pack-build-from-metadata requires --source-pack-artifact-root",
     )?;
-    let limits = CodegenUnitLimits::default();
+    let limits = CompilationUnitLimits::default();
     let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
     let shard_limits = SourcePackBuildShardLimits::default();
     let step = prepare_artifact_build_chunk(

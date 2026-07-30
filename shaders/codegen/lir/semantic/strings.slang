@@ -1,3 +1,4 @@
+import hir_records;
 import codegen.lowering_ir;
 import gpu_index;
 
@@ -8,7 +9,6 @@ struct Params
     uint n_hir_nodes;
     uint reserved;
 };
-struct HirString { uint node; uint data_offset; uint decoded_len; uint file_id; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_string_count;

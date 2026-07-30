@@ -34,22 +34,12 @@ impl GpuTypeChecker {
         passes: &TypeCheckPasses,
         input_fingerprint: u64,
         uses_hir_items: bool,
-        module_path_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
     ) -> Result<ResidentTypeCheckState> {
         let allocation_timing =
             crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let allocation_start = std::time::Instant::now();
         let mut allocation_last = allocation_start;
-        // The compiler currently routes its dead frontend workspace through
-        // `module_path_scratch`, while standalone callers may provide the same
-        // contract through `external_scratch`. The compiler also routes parser
-        // scratch through `module_path_scratch`. Keep this contract deliberately
-        // limited to the lookup rows: other fields in the larger scratch bundle
-        // have overlapping durable lifetimes.
-        // The compiler maps this field to dedicated expression-root scratch
-        // whose parser lifetime has ended and which is not retained by module
-        // path bind groups.
         macro_rules! allocation_stamp {
             ($stage:literal) => {
                 if allocation_timing {
@@ -100,6 +90,7 @@ impl GpuTypeChecker {
             generic_claim_capacity_for_features(token_capacity, parser_feature_flags);
         let predicate_capacity =
             predicate_capacity_for_features(hir_node_capacity, parser_feature_flags);
+        let upstream_workspace = hir_items.map(|items| items.upstream_workspace);
         let typecheck_graph = compiler_graph::TypeCheckCompilerGraph::new(
             device,
             hir_node_capacity,
@@ -111,6 +102,7 @@ impl GpuTypeChecker {
             call_generic_claim_capacity,
             predicate_capacity,
             passes,
+            upstream_workspace.unwrap_or(&[]),
         )?;
         let compact_expr_scalar_type_a =
             typecheck_graph.u32_buffer("compact_expr_scalar_type.a")?;
@@ -196,27 +188,16 @@ impl GpuTypeChecker {
         );
         let name_capacity = token_capacity.saturating_add(LANGUAGE_SYMBOL_COUNT).max(1);
         let name_n_blocks = name_capacity.div_ceil(256).max(1);
-        let hir_value_decl_name_present = typed_storage_u32_rw(
-            device,
-            "type_check.resident.hir_value_decl_name_present",
-            name_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let hir_value_decl_name_present =
+            typecheck_graph.u32_buffer("hir_value_decl_name_present")?;
         let hir_visible_decl_capacity = token_capacity.max(1);
         let hir_decl_record_n_blocks = hir_visible_decl_capacity.div_ceil(256).max(1);
         let hir_decl_tree_leaf_count = hir_visible_decl_capacity
             .div_ceil(HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
             .max(1);
         let hir_decl_tree_leaf_base = hir_decl_tree_leaf_count.next_power_of_two().max(1);
-        let generic_param_count_out = typecheck_graph.u32_buffer("generic_param_count_out")?;
-        let generic_param_owner_token = typecheck_graph.u32_buffer("generic_param_owner_token")?;
-        let generic_param_name_id = typecheck_graph.u32_buffer("generic_param_name_id")?;
-        let generic_param_token = typecheck_graph.u32_buffer("generic_param_token")?;
-        let generic_param_kind = typecheck_graph.u32_buffer("generic_param_kind")?;
-        let generic_param_key_order = typecheck_graph.u32_buffer("generic_param_key_order")?;
         let generic_param_key_order_tmp =
             typecheck_graph.optional_buffer::<u32>("generic_param_key_order_tmp")?;
-        let generic_param_slot_order = typecheck_graph.u32_buffer("generic_param_slot_order")?;
         let generic_param_slot_order_tmp =
             typecheck_graph.optional_buffer::<u32>("generic_param_slot_order_tmp")?;
         let name_order_in = typecheck_graph.u32_buffer("name_hash_lo")?;
@@ -271,12 +252,7 @@ impl GpuTypeChecker {
             "type_check.resident.language_symbol_len",
             LANGUAGE_SYMBOL_LENS,
         );
-        let name_id_by_token = typed_storage_u32_rw(
-            device,
-            "type_check.resident.name_id_by_token",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let name_id_by_token = typecheck_graph.u32_buffer("name_id_by_token")?;
         let language_name_id = typed_storage_u32_rw(
             device,
             "type_check.resident.language_name_id",
@@ -304,24 +280,12 @@ impl GpuTypeChecker {
             LANGUAGE_DECL_COUNT as usize,
             wgpu::BufferUsages::empty(),
         );
-        let language_type_code_by_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.language_type_code_by_name_id",
-            name_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let language_entrypoint_tag_by_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.language_entrypoint_tag_by_name_id",
-            name_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let language_intrinsic_tag_by_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.language_intrinsic_tag_by_name_id",
-            name_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let language_type_code_by_name_id =
+            typecheck_graph.u32_buffer("language_type_code_by_name_id")?;
+        let language_entrypoint_tag_by_name_id =
+            typecheck_graph.u32_buffer("language_entrypoint_tag_by_name_id")?;
+        let language_intrinsic_tag_by_name_id =
+            typecheck_graph.u32_buffer("language_intrinsic_tag_by_name_id")?;
         let if_depth_n_blocks = token_capacity.div_ceil(256).max(1);
         let fn_n_blocks = token_capacity.div_ceil(256).max(1);
         let if_depth_params_value = IfDepthParams {
@@ -346,27 +310,27 @@ impl GpuTypeChecker {
             "type_check.resident.fn_context.params",
             &fn_params_value,
         );
-        let enclosing_fn = typecheck_graph.u32_buffer("enclosing_fn")?;
-        let call_fn_index = typecheck_graph.u32_buffer("call_fn_index")?;
-        let backend_call_fn_index = typecheck_graph.u32_buffer("backend_call_fn_index")?;
-        let call_dependency_decl = typed_storage_u32_fill_rw(
+        let call_dependency_library_id = typed_storage_u32_fill_rw(
             device,
-            "type_check.resident.call_dependency_decl",
+            "type_check.resident.call_dependency_library_id",
             token_capacity as usize,
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let call_intrinsic_tag = typecheck_graph.u32_buffer("call_intrinsic_tag")?;
-        let call_return_type = typecheck_graph.u32_buffer("call_return_type")?;
-        let call_return_type_token = typecheck_graph.u32_buffer("call_return_type_token")?;
-        let call_param_count = typecheck_graph.u32_buffer("call_param_count")?;
-        let call_generic_slot_type = typecheck_graph.u32_buffer("call_generic_slot_type")?;
-        let call_generic_slot_ordinal = typecheck_graph.u32_buffer("call_generic_slot_ordinal")?;
-        let call_arg_row_node = typecheck_graph.u32_buffer("call_arg_row_node")?;
-        let call_arg_row_call_node = typecheck_graph.u32_buffer("call_arg_row_call_node")?;
-        let call_arg_row_ordinal = typecheck_graph.u32_buffer("call_arg_row_ordinal")?;
-        let call_arg_row_start = typecheck_graph.u32_buffer("call_arg_row_start")?;
-        let call_arg_row_count = typecheck_graph.u32_buffer("call_arg_row_count")?;
+        let call_dependency_unit_id = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_dependency_unit_id",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_dependency_local_index = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_dependency_local_index",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let method_module_id_by_file_id_implicit_root = typed_storage_u32_fill_rw(
             device,
             "type_check.resident.method_module_id_by_file_id_implicit_root",
@@ -381,18 +345,8 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
-        let method_call_name_id = typecheck_graph.u32_buffer("method_call_name_id")?;
-        let type_expr_ref_tag = typecheck_graph.u32_buffer("type_expr_ref_tag")?;
-        let type_expr_ref_payload = typecheck_graph.u32_buffer("type_expr_ref_payload")?;
-        let type_instance_kind = typecheck_graph.u32_buffer("type_instance_kind")?;
-        let type_decl_generic_param_count =
-            typecheck_graph.u32_buffer("type_decl_generic_param_count")?;
         let type_decl_generic_param_count_by_owner_token =
             typecheck_graph.u32_buffer("type_decl_generic_param_count_by_owner_token")?;
-        let type_decl_hir_node_by_token =
-            typecheck_graph.u32_buffer("type_decl_hir_node_by_token")?;
-        let type_generic_param_slot_by_token =
-            typecheck_graph.u32_buffer("type_generic_param_slot_by_token")?;
         // Local and imported named instances share this identity discriminator.
         // It must survive name-radix scratch reuse and be reset independently:
         // an imported canonical id and a stale local declaration token are
@@ -404,26 +358,9 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let type_instance_external_canonical = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.type_instance_external_canonical",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_arg_start = typecheck_graph.u32_buffer("type_instance_arg_start")?;
-        let type_instance_arg_count = typecheck_graph.u32_buffer("type_instance_arg_count")?;
         let type_instance_arg_ref_tag = typecheck_graph.u32_buffer("type_instance_arg_ref_tag")?;
         let type_instance_arg_ref_payload =
             typecheck_graph.u32_buffer("type_instance_arg_ref_payload")?;
-        let type_instance_arg_row_start =
-            typecheck_graph.u32_buffer("type_instance_arg_row_start")?;
-        let type_instance_arg_row_count_out =
-            typecheck_graph.u32_buffer("type_instance_arg_row_count_out")?;
-        let type_instance_arg_row_ref_tag =
-            typecheck_graph.u32_buffer("type_instance_arg_row_ref_tag")?;
-        let type_instance_arg_row_ref_payload =
-            typecheck_graph.u32_buffer("type_instance_arg_row_ref_payload")?;
         let type_semantic_buffers = Box::new(TypeSemanticBuffers {
             row_by_token: typecheck_graph.u32_buffer("type_semantic_row_by_token")?,
             scan_input: typecheck_graph.u32_buffer("type_semantic_scan_input")?,
@@ -465,12 +402,8 @@ impl GpuTypeChecker {
                 },
             ),
         });
-        let type_instance_state = typecheck_graph.u32_buffer("type_instance_state")?;
         let predicate_capacity_u32 = predicate_capacity;
         let predicate_key_radix_n_blocks = predicate_capacity_u32.div_ceil(256).max(1);
-        let predicate_syntax_token = typecheck_graph.u32_buffer("predicate_syntax_token")?;
-        let fn_return_ref_tag = typecheck_graph.u32_buffer("fn_return_ref_tag")?;
-        let fn_return_ref_payload = typecheck_graph.u32_buffer("fn_return_ref_payload")?;
         // Declaration refs survive name/type-instance construction and feed
         // late semantic projection. They cannot alias radix rows that later
         // type-family sorts overwrite; the compiler graph may recolor them
@@ -551,8 +484,31 @@ impl GpuTypeChecker {
         resources.buffer("hir_value_decl_name_present", &hir_value_decl_name_present);
         resources.buffer("module_type_path_type", &module_type_path_type);
         resources.buffer("module_type_path_status", &module_type_path_status);
+        resources.buffer("module_value_path_expr_head", &module_value_path_expr_head);
+        resources.buffer("module_value_path_call_head", &module_value_path_call_head);
+        resources.buffer("module_value_path_call_open", &module_value_path_call_open);
+        resources.buffer(
+            "module_value_path_call_path_id",
+            &module_value_path_call_path_id,
+        );
+        resources.buffer("module_value_path_call_leaf", &module_value_path_call_leaf);
+        resources.buffer(
+            "module_value_path_associated_method_token",
+            &module_value_path_associated_method_token,
+        );
+        resources.buffer(
+            "module_value_path_associated_receiver_token",
+            &module_value_path_associated_receiver_token,
+        );
+        resources.buffer(
+            "module_value_path_const_head",
+            &module_value_path_const_head,
+        );
+        resources.buffer("module_value_path_const_end", &module_value_path_const_end);
         resources.buffer("module_value_path_status", &module_value_path_status);
-        resources.buffer("call_dependency_decl", &call_dependency_decl);
+        resources.buffer("call_dependency_library_id", &call_dependency_library_id);
+        resources.buffer("call_dependency_unit_id", &call_dependency_unit_id);
+        resources.buffer("call_dependency_local_index", &call_dependency_local_index);
         resources.buffer("name_id_by_token", &name_id_by_token);
         resources.buffer("language_name_id", &language_name_id);
         resources.buffer("language_decl_symbol_slot", &language_decl_symbol_slot);
@@ -608,10 +564,6 @@ impl GpuTypeChecker {
         );
         resources.buffer("type_instance_decl_token", &type_instance_decl_token);
         resources.buffer(
-            "type_instance_external_canonical",
-            &type_instance_external_canonical,
-        );
-        resources.buffer(
             "type_semantic_row_by_token",
             &type_semantic_buffers.row_by_token,
         );
@@ -655,6 +607,9 @@ impl GpuTypeChecker {
         );
         resources.buffer("decl_type_ref_tag", &decl_type_ref_tag);
         resources.buffer("decl_type_ref_payload", &decl_type_ref_payload);
+        if let Some(dependencies) = dependency_interfaces {
+            resources.buffer("dependency_words", &dependencies.words);
+        }
         allocation_stamp!("resources");
         let hir_active_dispatch = reflected_bind_group_from_resources(
             device,
@@ -669,12 +624,11 @@ impl GpuTypeChecker {
             &resources,
             &hir_active_dispatch_args,
         )?;
-        typecheck_graph
-            .validate_prefix_scan_bindings(compiler_graph::NAMES_SCAN.passes, &resources)?;
         let language_name_bind_groups =
             create_language_name_bind_groups(device, passes, &resources)?;
         let name_bind_groups = create_name_bind_groups(
             passes,
+            &typecheck_graph,
             device,
             source_len,
             name_capacity,
@@ -683,22 +637,11 @@ impl GpuTypeChecker {
         )?;
         for pass in [
             compiler_graph::LANGUAGE_NAMES_CLEAR_PASS,
-            compiler_graph::NAMES_MARK_PASS,
             compiler_graph::LANGUAGE_TYPE_CODES_CLEAR_PASS,
             compiler_graph::LANGUAGE_DECLS_MATERIALIZE_PASS,
         ] {
             typecheck_graph.validate_registered_pass_bindings(pass, &resources)?;
         }
-        typecheck_graph.validate_registered_pass_binding_aliases(
-            compiler_graph::NAMES_SCATTER_PASS,
-            &resources,
-            &[
-                ("name_order_in", "name_hash_lo"),
-                ("name_order_tmp", "name_hash_hi"),
-                ("name_count_out", "name_scan_total"),
-                ("name_max_len_out", "name_max_len"),
-            ],
-        )?;
         for pass in [
             compiler_graph::NAMES_HASH_PREPARE_PASS,
             compiler_graph::NAMES_HASH_INSERT_PASS,
@@ -714,6 +657,7 @@ impl GpuTypeChecker {
         let module_path = if let Some(hir_items) = hir_items {
             Some(create_module_path_state_with_passes(
                 passes,
+                &typecheck_graph,
                 device,
                 ModulePathCreateInputs {
                     params: &self.params_buf,
@@ -722,80 +666,16 @@ impl GpuTypeChecker {
                     token_capacity,
                     hir_node_capacity,
                     parser_hir_node_capacity,
-                    token_buf,
-                    token_count_buf,
-                    hir_status_buf,
-                    hir_kind_buf,
-                    hir_token_pos_buf,
-                    hir_token_end_buf,
-                    status_buf: &self.status_buf,
                     hir_active_count_buf: &hir_active_count,
                     hir_active_dispatch_args: &hir_active_dispatch_args,
                     hir_items,
-                    name_id_by_token: &name_id_by_token,
-                    language_name_id: &language_name_id,
                     decl_name_token: &decl_name_token,
                     decl_id_by_name_token: &decl_id_by_name_token,
                     decl_kind: &decl_kind,
-                    module_type_path_type: &module_type_path_type,
-                    module_type_path_status: &module_type_path_status,
-                    module_value_path_expr_head: &module_value_path_expr_head,
-                    module_value_path_call_head: &module_value_path_call_head,
-                    module_value_path_call_open: &module_value_path_call_open,
-                    module_value_path_call_path_id: &module_value_path_call_path_id,
-                    module_value_path_call_leaf: &module_value_path_call_leaf,
-                    module_value_path_associated_method_token:
-                        &module_value_path_associated_method_token,
-                    module_value_path_associated_receiver_token:
-                        &module_value_path_associated_receiver_token,
-                    module_value_path_const_head: &module_value_path_const_head,
-                    module_value_path_const_end: &module_value_path_const_end,
-                    module_value_path_status: &module_value_path_status,
-                    visible_decl: &visible_decl,
-                    visible_type: &visible_type,
-                    enclosing_fn: &enclosing_fn,
-                    call_fn_index: &call_fn_index,
-                    call_dependency_decl: &call_dependency_decl,
-                    call_return_type: &call_return_type,
-                    call_return_type_token: &call_return_type_token,
-                    call_generic_slot_type: &call_generic_slot_type,
-                    call_generic_slot_ordinal: &call_generic_slot_ordinal,
-                    method_call_name_id: &method_call_name_id,
-                    call_param_count: &call_param_count,
-                    call_arg_row_node: &call_arg_row_node,
-                    call_arg_row_call_node: &call_arg_row_call_node,
-                    call_arg_row_ordinal: &call_arg_row_ordinal,
-                    call_arg_row_start: &call_arg_row_start,
-                    call_arg_row_count: &call_arg_row_count,
-                    type_expr_ref_tag: &type_expr_ref_tag,
-                    type_expr_ref_payload: &type_expr_ref_payload,
-                    type_instance_kind: &type_instance_kind,
-                    type_instance_decl_token: &type_instance_decl_token,
-                    type_instance_arg_start: &type_instance_arg_start,
-                    type_instance_arg_count: &type_instance_arg_count,
                     type_instance_arg_ref_tag: &type_instance_arg_ref_tag,
                     type_instance_arg_ref_payload: &type_instance_arg_ref_payload,
-                    type_instance_arg_row_start: &type_instance_arg_row_start,
-                    type_instance_arg_row_count_out: &type_instance_arg_row_count_out,
-                    type_instance_arg_row_ref_tag: &type_instance_arg_row_ref_tag,
-                    type_instance_arg_row_ref_payload: &type_instance_arg_row_ref_payload,
-                    type_decl_generic_param_count: &type_decl_generic_param_count,
                     type_decl_generic_param_count_by_owner_token:
                         &type_decl_generic_param_count_by_owner_token,
-                    type_generic_param_slot_by_token: &type_generic_param_slot_by_token,
-                    type_decl_hir_node_by_token: &type_decl_hir_node_by_token,
-                    generic_param_count_out: &generic_param_count_out,
-                    generic_param_owner_token: &generic_param_owner_token,
-                    generic_param_name_id: &generic_param_name_id,
-                    generic_param_token: &generic_param_token,
-                    generic_param_kind: &generic_param_kind,
-                    generic_param_key_order: &generic_param_key_order,
-                    generic_param_slot_order: &generic_param_slot_order,
-                    type_instance_state: &type_instance_state,
-                    decl_type_ref_tag: &decl_type_ref_tag,
-                    decl_type_ref_payload: &decl_type_ref_payload,
-                    fn_return_ref_tag: &fn_return_ref_tag,
-                    fn_return_ref_payload: &fn_return_ref_payload,
                     module_record_family_bits: &module_record_family_bits,
                     module_record_family_flag: &module_record_family_flag,
                     module_record_prefix: &module_record_prefix,
@@ -817,7 +697,6 @@ impl GpuTypeChecker {
                         &module_path_key_radix_block_bucket_prefix,
                     module_path_key_radix_bucket_total: &module_path_key_radix_bucket_total,
                     module_path_key_radix_bucket_base: &module_path_key_radix_bucket_base,
-                    external_scratch: module_path_scratch,
                     dependency_interfaces,
                 },
                 &resources,
@@ -846,12 +725,6 @@ impl GpuTypeChecker {
             "module_value_path_associated_receiver_token",
             &module_value_path_associated_receiver_token,
         );
-        let compact_hir_count = buffer_from_resources(&resources, "compact_hir_count")?;
-        let compact_hir_core = buffer_from_resources(&resources, "compact_hir_core")?;
-        let compact_hir_links = buffer_from_resources(&resources, "compact_hir_links")?;
-        let compact_hir_payload = buffer_from_resources(&resources, "compact_hir_payload")?;
-        let compact_hir_expr_parent = buffer_from_resources(&resources, "compact_hir_expr_parent")?;
-        let token_words = buffer_from_resources(&resources, "token_words")?;
         let semantic_calls_project = reflected_bind_group_from_resources(
             device,
             "type_check.semantic_artifact.calls",
@@ -971,134 +844,21 @@ impl GpuTypeChecker {
             compiler_graph::CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS,
             &resources,
         )?;
-        let conditions_compact_calls = resources.reflected_bind_group_with_overrides(
+        let predicate_diagnostics = PredicateDiagnosticsOperation::new(
             device,
-            "type_check.conditions.compact_calls",
-            &passes.kernel("type_checker/conditions/compact_calls"),
-            &[("call_fn_index", backend_call_fn_index.as_entire_binding())],
-        )?;
-        typecheck_graph.validate_registered_pass_binding_aliases(
-            compiler_graph::CONDITIONS_COMPACT_CALLS_PASS,
+            &typecheck_graph,
             &resources,
-            &[("call_fn_index", "backend_call_fn_index")],
+            passes,
+            hir_node_capacity,
+            &hir_active_dispatch_args,
         )?;
-        let conditions_compact_types = reflected_bind_group_from_resources(
+        let condition_finalization = ConditionFinalizationOperation::new(
             device,
-            "type_check.conditions.compact_types",
-            &passes.kernel("type_checker/conditions/compact_types"),
+            &typecheck_graph,
             &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::CONDITIONS_COMPACT_TYPES_PASS,
-            &resources,
-        )?;
-        let conditions_compact_methods = reflected_bind_group_from_resources(
-            device,
-            "type_check.conditions.compact_methods",
-            &passes.kernel("type_checker/conditions/compact_methods"),
-            &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::CONDITIONS_COMPACT_METHODS_PASS,
-            &resources,
-        )?;
-        let semantic_predicate_diagnostics_clear = reflected_bind_group_from_resources(
-            device,
-            "type_check.semantic_artifact.predicate_diagnostics.clear",
-            &passes.kernel("type_checker/semantic/artifact/00_predicate_diagnostics_clear"),
-            &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::PREDICATE_DIAGNOSTICS_CLEAR_PASS,
-            &resources,
-        )?;
-        let semantic_predicate_diagnostics_claim = reflected_bind_group_from_resources(
-            device,
-            "type_check.semantic_artifact.predicate_diagnostics.claim",
-            &passes.kernel("type_checker/semantic/artifact/01_predicate_diagnostics_claim"),
-            &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::PREDICATE_DIAGNOSTICS_CLAIM_PASS,
-            &resources,
-        )?;
-        let semantic_predicate_diagnostics_project = reflected_bind_group_from_resources(
-            device,
-            "type_check.semantic_artifact.predicate_diagnostics",
-            &passes.kernel("type_checker/semantic/artifact/02_predicate_diagnostics"),
-            &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::PREDICATE_DIAGNOSTICS_PROJECT_PASS,
-            &resources,
-        )?;
-        let conditions_compact_predicates = reflected_bind_group_from_resources(
-            device,
-            "type_check.conditions.compact_predicates",
-            &passes.kernel("type_checker/conditions/compact_predicates"),
-            &resources,
-        )?;
-        typecheck_graph.validate_registered_pass_bindings(
-            compiler_graph::CONDITIONS_COMPACT_PREDICATES_PASS,
-            &resources,
-        )?;
-        let conditions_compact_names = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.conditions.compact_names"),
-            &passes.kernel("type_checker/conditions/compact_names"),
-            0,
-            &[
-                ("gParams", self.params_buf.as_entire_binding()),
-                ("compact_hir_count", compact_hir_count.as_entire_binding()),
-                ("compact_hir_core", compact_hir_core.as_entire_binding()),
-                ("compact_hir_links", compact_hir_links.as_entire_binding()),
-                (
-                    "compact_hir_payload",
-                    compact_hir_payload.as_entire_binding(),
-                ),
-                (
-                    "compact_hir_expr_parent",
-                    compact_hir_expr_parent.as_entire_binding(),
-                ),
-                ("token_words", token_words.as_entire_binding()),
-                (
-                    "predicate_syntax_token",
-                    predicate_syntax_token.as_entire_binding(),
-                ),
-                ("type_expr_ref_tag", type_expr_ref_tag.as_entire_binding()),
-                (
-                    "module_type_path_status",
-                    module_type_path_status.as_entire_binding(),
-                ),
-                (
-                    "module_value_path_status",
-                    module_value_path_status.as_entire_binding(),
-                ),
-                (
-                    "module_value_path_call_leaf",
-                    module_value_path_call_leaf.as_entire_binding(),
-                ),
-                (
-                    "module_value_path_associated_method_token",
-                    module_value_path_associated_method_token.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl.as_entire_binding()),
-                ("visible_type", visible_type.as_entire_binding()),
-                ("call_fn_index", backend_call_fn_index.as_entire_binding()),
-                ("call_return_type", call_return_type.as_entire_binding()),
-                ("call_intrinsic_tag", call_intrinsic_tag.as_entire_binding()),
-                (
-                    "method_call_name_id",
-                    method_call_name_id.as_entire_binding(),
-                ),
-                ("enclosing_fn", enclosing_fn.as_entire_binding()),
-                ("status", self.status_buf.as_entire_binding()),
-            ],
-        )?;
-        typecheck_graph.validate_registered_pass_binding_aliases(
-            compiler_graph::CONDITIONS_COMPACT_NAMES_PASS,
-            &resources,
-            &[("call_fn_index", "backend_call_fn_index")],
+            passes,
+            hir_node_capacity,
+            &method_compact_dispatch_args,
         )?;
         let aggregate_compare_scan = PrefixScanOperation::from_resource_names(
             device,
@@ -1107,11 +867,10 @@ impl GpuTypeChecker {
             &resources,
             compiler_graph::AGGREGATE_SCAN_RESOURCES,
         )?;
-        let aggregate_compare_dispatch = bind_group::create_bind_group_from_bindings(
+        let aggregate_compare_dispatch = resources.reflected_bind_group_with_overrides(
             device,
-            Some("type_check.conditions.aggregate_compare_dispatch"),
+            "type_check.conditions.aggregate_compare_dispatch",
             &passes.kernel("type_checker/count/dispatch_args"),
-            0,
             &[
                 (
                     "gParams",
@@ -1143,30 +902,31 @@ impl GpuTypeChecker {
             &resources,
             compiler_graph::TYPE_SUBTREE_SCAN_RESOURCES,
         )?);
-        let type_subtree_compare_dispatch = Box::new(bind_group::create_bind_group_from_bindings(
-            device,
-            Some("type_check.conditions.type_subtree_compare_dispatch"),
-            &passes.kernel("type_checker/count/dispatch_args"),
-            0,
-            &[
-                (
-                    "gParams",
-                    type_subtree_compare_buffers
-                        .dispatch_params
-                        .as_entire_binding(),
-                ),
-                (
-                    "count_in",
-                    type_subtree_compare_buffers.count_out.as_entire_binding(),
-                ),
-                (
-                    "dispatch_args",
-                    type_subtree_compare_buffers
-                        .dispatch_args
-                        .as_entire_binding(),
-                ),
-            ],
-        )?);
+        let type_subtree_compare_dispatch = Box::new(
+            resources.reflected_bind_group_with_overrides(
+                device,
+                "type_check.conditions.type_subtree_compare_dispatch",
+                &passes.kernel("type_checker/count/dispatch_args"),
+                &[
+                    (
+                        "gParams",
+                        type_subtree_compare_buffers
+                            .dispatch_params
+                            .as_entire_binding(),
+                    ),
+                    (
+                        "count_in",
+                        type_subtree_compare_buffers.count_out.as_entire_binding(),
+                    ),
+                    (
+                        "dispatch_args",
+                        type_subtree_compare_buffers
+                            .dispatch_args
+                            .as_entire_binding(),
+                    ),
+                ],
+            )?,
+        );
         let conditions_type_subtree = Box::new(reflected_bind_group_from_resources(
             device,
             "type_check_resident_conditions_type_subtree",
@@ -1213,8 +973,6 @@ impl GpuTypeChecker {
                 typecheck_graph.validate_registered_pass_bindings(pass, &resources)?;
             }
         }
-        typecheck_graph
-            .validate_prefix_scan_bindings(compiler_graph::VISIBLE_SCAN.passes, &resources)?;
         if let Some(buffer) = generic_param_key_order_tmp.as_ref() {
             resources.buffer("generic_param_key_order_tmp", buffer);
         }
@@ -1344,17 +1102,16 @@ impl GpuTypeChecker {
         }
         let type_instances = create_type_instance_bind_groups(
             device,
+            &typecheck_graph,
             passes,
             &resources,
             token_capacity,
             hir_node_capacity,
         )?;
-        for passes in [
+        typecheck_graph.validate_prefix_scan_bindings(
             compiler_graph::TYPE_INSTANCE_ARG_ROW_SCAN.passes,
-            compiler_graph::TYPE_SEMANTIC_SCAN.passes,
-        ] {
-            typecheck_graph.validate_prefix_scan_bindings(passes, &resources)?;
-        }
+            &resources,
+        )?;
         allocation_stamp!("type_instances");
         let method_module_id_by_file_id = module_path
             .as_ref()
@@ -1395,38 +1152,13 @@ impl GpuTypeChecker {
         )?;
         allocation_stamp!("methods");
 
-        let returns_clear = reflected_bind_group_from_resources(
+        let returns = ReturnValidationOperation::new(
             device,
-            "type_check_resident_returns_clear",
-            &passes.kernel("type_checker/returns/00_clear"),
+            &typecheck_graph,
             &resources,
+            passes,
+            &hir_active_dispatch_args,
         )?;
-        let returns_mark = reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_returns_mark",
-            &passes.kernel("type_checker/returns/01_mark"),
-            &resources,
-        )?;
-        let returns_mark_if = reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_returns_mark_if",
-            &passes.kernel("type_checker/returns/02_mark_if"),
-            &resources,
-        )?;
-        let returns_validate = reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_returns_validate",
-            &passes.kernel("type_checker/returns/03_validate"),
-            &resources,
-        )?;
-        for pass in [
-            compiler_graph::RETURNS_CLEAR_PASS,
-            compiler_graph::RETURNS_MARK_PASS,
-            compiler_graph::RETURNS_MARK_IF_PASS,
-            compiler_graph::RETURNS_VALIDATE_PASS,
-        ] {
-            typecheck_graph.validate_registered_pass_bindings(pass, &resources)?;
-        }
         let scope_hir = reflected_bind_group_from_resources(
             device,
             "type_check_resident_scope_hir",
@@ -1464,6 +1196,7 @@ impl GpuTypeChecker {
         }
         let visible_bind_groups = create_resident_visible_bind_groups(
             passes,
+            &typecheck_graph,
             device,
             &resources,
             VisibleShape {
@@ -1515,7 +1248,9 @@ impl GpuTypeChecker {
             hir_active_dispatch,
             semantic_features,
             type_instance_decl_token,
-            type_instance_external_canonical,
+            _call_dependency_library_id: call_dependency_library_id,
+            _call_dependency_unit_id: call_dependency_unit_id,
+            _call_dependency_local_index: call_dependency_local_index,
             type_subtree_compare_buffers,
             name_bind_groups,
             language_name_bind_groups,
@@ -1526,21 +1261,12 @@ impl GpuTypeChecker {
             methods,
             predicates,
             type_instances,
-            returns_clear,
-            returns_mark,
-            returns_mark_if,
-            returns_validate,
-            semantic_predicate_diagnostics_clear,
-            semantic_predicate_diagnostics_claim,
-            semantic_predicate_diagnostics_project,
+            returns,
+            predicate_diagnostics,
             conditions_compact_expr,
             conditions_compact_stmt,
             conditions_compact_aggregate_requests,
-            conditions_compact_calls,
-            conditions_compact_types,
-            conditions_compact_methods,
-            conditions_compact_predicates,
-            conditions_compact_names,
+            condition_finalization,
             semantic_expression_refs_project,
             semantic_struct_literal_refs_project,
             semantic_array_index_refs_project,

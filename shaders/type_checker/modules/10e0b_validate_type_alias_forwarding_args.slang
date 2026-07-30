@@ -1,3 +1,5 @@
+import hir_records;
+
 // Validate one positional forwarding edge per generic argument in parallel.
 // The final count check in root initialization rejects missing/duplicate rows.
 
@@ -9,8 +11,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirTypeArg { uint owner; uint value; uint ordinal; uint file_id; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> compact_type_arg_count;

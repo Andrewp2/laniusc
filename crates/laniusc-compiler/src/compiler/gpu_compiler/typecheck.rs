@@ -10,6 +10,33 @@ use crate::{
     type_checker::{GpuTypeCheckCode, GpuTypeCheckError},
 };
 
+#[derive(Clone, Copy)]
+enum DependencyInterfacePages<'a> {
+    Flat(&'a [crate::compiler::GpuSemanticInterfaceArtifact]),
+    Paged(&'a [Vec<crate::compiler::GpuSemanticInterfaceArtifact>]),
+}
+
+impl<'a> DependencyInterfacePages<'a> {
+    fn is_empty(self) -> bool {
+        match self {
+            Self::Flat(interfaces) => interfaces.is_empty(),
+            Self::Paged(pages) => pages.iter().all(Vec::is_empty),
+        }
+    }
+
+    fn slices(self) -> Vec<&'a [crate::compiler::GpuSemanticInterfaceArtifact]> {
+        match self {
+            Self::Flat(interfaces) if interfaces.is_empty() => Vec::new(),
+            Self::Flat(interfaces) => vec![interfaces],
+            Self::Paged(pages) => pages
+                .iter()
+                .filter(|page| !page.is_empty())
+                .map(Vec::as_slice)
+                .collect(),
+        }
+    }
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
     /// Type-check one in-memory source string using `<source>` as the diagnostic
     /// path.
@@ -59,7 +86,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             None,
             Some(library_id),
             0,
-            dependency_interfaces,
+            DependencyInterfacePages::Flat(dependency_interfaces),
             false,
             None,
             None,
@@ -84,7 +111,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             None,
             Some(library_id),
             0,
-            &[],
+            DependencyInterfacePages::Flat(&[]),
             true,
             None,
             None,
@@ -134,7 +161,39 @@ impl<'gpu> GpuCompiler<'gpu> {
             None,
             Some(library_id),
             unit_id,
-            dependency_interfaces,
+            DependencyInterfacePages::Flat(dependency_interfaces),
+            true,
+            None,
+            None,
+        )
+        .await?
+        .semantic_interface
+        .ok_or_else(|| {
+            CompileError::GpuFrontend(
+                "semantic-interface export did not produce an artifact".to_string(),
+            )
+        })
+    }
+
+    pub(in crate::compiler) async fn semantic_interface_for_source_pack_unit_with_dependency_pages<
+        S: AsRef<str>,
+    >(
+        &self,
+        library_id: u32,
+        unit_id: u32,
+        sources: &[S],
+        dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+    ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
+        validate_in_memory_source_pack_fits_default_codegen_unit(
+            "semantic interface source pack with dependency pages",
+            sources,
+        )?;
+        self.type_check_explicit_source_pack_with_paths_and_interface(
+            sources,
+            None,
+            Some(library_id),
+            unit_id,
+            DependencyInterfacePages::Paged(dependency_pages),
             true,
             None,
             None,
@@ -300,15 +359,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                         timer.stamp(encoder, "typecheck.done");
                     }
                     if let Some(target) = target {
-                        self.ensure_lowering_capacity(
-                            bufs.n,
-                            token_capacity,
-                            typecheck_parse.hir.capacity,
-                        )
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let pipeline = self
                             .lowering_pipeline(target)
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        pipeline
+                            .ensure_frontend_capacity(
+                                bufs.n,
+                                token_capacity,
+                                typecheck_parse.hir.capacity,
+                            )
+                            .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
@@ -320,7 +380,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 encoder,
                                 &typecheck_parse.hir,
                                 semantic.view(),
-                                None,
                             )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
@@ -343,7 +402,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map(|target| {
                             self.lowering_pipeline(target)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_artifact(device)
+                                .finish_artifact(device, queue)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
                         })
                         .transpose()
@@ -372,7 +431,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             source_paths,
             None,
             0,
-            &[],
+            DependencyInterfacePages::Flat(&[]),
             false,
             None,
             None,
@@ -394,7 +453,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             source_paths,
             None,
             0,
-            &[],
+            DependencyInterfacePages::Flat(&[]),
             false,
             Some(target),
             None,
@@ -404,54 +463,71 @@ impl<'gpu> GpuCompiler<'gpu> {
         .ok_or_else(|| CompileError::GpuCodegen("lowering produced no target artifact".into()))
     }
 
-    pub(super) async fn compile_checked_source_pack_to_wasm_object_with_lowering<S: AsRef<str>>(
+    /// Compiles one bounded unit once, producing both artifacts needed by the
+    /// remaining project: its public semantic interface and its target object.
+    pub(in crate::compiler) async fn compile_source_pack_unit_with_dependency_pages<
+        S: AsRef<str>,
+    >(
         &self,
         sources: &[S],
         library_id: u32,
         unit_id: u32,
-        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
-    ) -> Result<crate::codegen::wasm::GpuWasmRelocatableObject, CompileError> {
-        self.type_check_explicit_source_pack_with_paths_and_interface(
+        dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        target: SourcePackArtifactTarget,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        if target == SourcePackArtifactTarget::X86_64 && sources.is_empty() {
+            return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
+        }
+        validate_in_memory_source_pack_fits_default_codegen_unit(
+            "compile source-pack unit",
             sources,
-            None,
-            Some(library_id),
-            unit_id,
-            dependency_interfaces,
-            false,
-            None,
-            Some(LoweringObjectRequest::Wasm {
+        )?;
+        let object_request = match target {
+            SourcePackArtifactTarget::X86_64 => LoweringObjectRequest::X86_64 {
                 library_id,
                 unit_id,
-            }),
-        )
-        .await?
-        .wasm_object
-        .ok_or_else(|| CompileError::GpuCodegen("lowering produced no Wasm object".into()))
-    }
-
-    pub(super) async fn compile_checked_source_pack_to_x86_object_with_lowering<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        library_id: u32,
-        unit_id: u32,
-        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
-    ) -> Result<crate::codegen::x86::GpuX86RelocatableObject, CompileError> {
-        self.type_check_explicit_source_pack_with_paths_and_interface(
-            sources,
-            None,
-            Some(library_id),
-            unit_id,
-            dependency_interfaces,
-            false,
-            None,
-            Some(LoweringObjectRequest::X86_64 {
+            },
+            SourcePackArtifactTarget::Wasm => LoweringObjectRequest::Wasm {
                 library_id,
                 unit_id,
-            }),
-        )
-        .await?
-        .x86_object
-        .ok_or_else(|| CompileError::GpuCodegen("lowering produced no x86 object".into()))
+            },
+            SourcePackArtifactTarget::Generic => {
+                return Err(CompileError::GpuCodegen(
+                    "a compiled source-pack unit requires a concrete target".into(),
+                ));
+            }
+        };
+        let artifacts = self
+            .type_check_explicit_source_pack_with_paths_and_interface(
+                sources,
+                None,
+                Some(library_id),
+                unit_id,
+                DependencyInterfacePages::Paged(dependency_pages),
+                true,
+                None,
+                Some(object_request),
+            )
+            .await?;
+        let interface = artifacts.semantic_interface.ok_or_else(|| {
+            CompileError::GpuFrontend(
+                "compiled source-pack unit produced no semantic interface".into(),
+            )
+        })?;
+        let object = match target {
+            SourcePackArtifactTarget::X86_64 => {
+                CompiledSourcePackObject::X86_64(artifacts.x86_object.ok_or_else(|| {
+                    CompileError::GpuCodegen("lowering produced no x86 object".into())
+                })?)
+            }
+            SourcePackArtifactTarget::Wasm => {
+                CompiledSourcePackObject::Wasm(artifacts.wasm_object.ok_or_else(|| {
+                    CompileError::GpuCodegen("lowering produced no Wasm object".into())
+                })?)
+            }
+            SourcePackArtifactTarget::Generic => unreachable!(),
+        };
+        Ok(CompiledSourcePackUnit { interface, object })
     }
 
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
@@ -460,21 +536,23 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_paths: Option<&[Option<PathBuf>]>,
         library_id: Option<u32>,
         unit_id: u32,
-        dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
+        dependency_interfaces: DependencyInterfacePages<'_>,
         emit_semantic_interface: bool,
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest>,
     ) -> Result<CheckedSourcePackArtifacts, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
-        let dependency_state = match library_id {
+        let dependency_page_slices = dependency_interfaces.slices();
+        let dependency_pages = match library_id {
             Some(_) if dependency_interfaces.is_empty() => None,
             Some(library_id) => Some(
-                gpu_type_checker::GpuDependencyInterfaceState::new(
+                gpu_type_checker::GpuDependencyInterfacePages::new(
                     &self.gpu.device,
+                    &self.gpu.queue,
                     library_id,
                     unit_id,
-                    dependency_interfaces,
+                    &dependency_page_slices,
                 )
                 .map_err(|err| {
                     CompileError::GpuFrontend(format!(
@@ -493,6 +571,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             .with_recorded_resident_source_pack_tokens_after_count(
                 sources,
                 |device, queue, bufs, token_count, encoder, mut timer| {
+                    let mut record_host_timer =
+                        CompilerHostTimer::new("compile.source-pack.record");
                     let token_capacity = token_count.max(1);
                     let parser_capacity = self
                         .parser
@@ -506,6 +586,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
+                    record_host_timer.stamp("parser_capacity");
                     let parser_tree_capacity = parser_capacity.tree_capacity;
                     let parser_feature_flags =
                         parser_capacity.parser_feature_flags | bufs.parser_feature_flags_value;
@@ -539,14 +620,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
                     parser_recorded?;
+                    record_host_timer.stamp("parser_record");
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
                         "compiler.typecheck.source_pack.parser-boundary",
                         parser_encoder.finish(),
                     );
+                    record_host_timer.stamp("parser_submit");
                     let ll1 = parser_check.read_status_result(device).map_err(|err| {
                         parser_execution_failed_for_source_pack(&diagnostic_files, err)
                     })?;
+                    record_host_timer.stamp("parser_status");
                     if !ll1.accepted {
                         let parser_failure = self
                             .parser
@@ -586,10 +670,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         &typecheck_parse,
                         active_tree_capacity,
                         parser_tree_capacity,
-                        dependency_state.as_ref(),
+                        dependency_pages.as_ref(),
                         timer.as_deref_mut(),
                         |err| type_check_execution_failed_for_source_pack(&diagnostic_files, err),
                     )?;
+                    record_host_timer.stamp("typecheck");
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
@@ -604,6 +689,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     library_id,
                                     unit_id,
                                     bufs.n,
+                                    token_capacity,
                                     &bufs.in_bytes,
                                     typecheck_parse.semantic_interface_hir_buffers(),
                                 )
@@ -614,6 +700,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 })
                         })
                         .transpose()?;
+                    record_host_timer.stamp("semantic_interface");
                     if lowering_target.is_some() && object_request.is_some() {
                         return Err(CompileError::GpuCodegen(
                             "one lowering job cannot request both an executable and an object"
@@ -621,15 +708,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                         ));
                     }
                     if let Some(target) = lowering_target {
-                        self.ensure_lowering_capacity(
-                            bufs.n,
-                            token_capacity,
-                            typecheck_parse.hir.capacity,
-                        )
-                        .map_err(CompileError::GpuCodegen)?;
                         let pipeline = self
                             .lowering_pipeline(target)
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        pipeline
+                            .ensure_frontend_capacity(
+                                bufs.n,
+                                token_capacity,
+                                typecheck_parse.hir.capacity,
+                            )
+                            .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
@@ -641,30 +729,25 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 encoder,
                                 &typecheck_parse.hir,
                                 semantic.view(),
-                                dependency_state
-                                    .as_ref()
-                                    .map(|dependencies| dependencies.symbol_buffers()),
                             )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     if let Some(request) = object_request {
-                        self.ensure_lowering_capacity(
-                            bufs.n,
-                            token_capacity,
-                            typecheck_parse.hir.capacity,
-                        )
-                        .map_err(CompileError::GpuCodegen)?;
                         let pipeline = self
                             .lowering_pipeline(request.target())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        pipeline
+                            .ensure_frontend_capacity(
+                                bufs.n,
+                                token_capacity,
+                                typecheck_parse.hir.capacity,
+                            )
+                            .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
                             )
                         })?;
-                        let dependencies = dependency_state
-                            .as_ref()
-                            .map(|dependencies| dependencies.symbol_buffers());
                         let (library_id, unit_id) = request.ids();
                         pipeline
                             .record_checked_hir_object(
@@ -673,12 +756,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 encoder,
                                 &typecheck_parse.hir,
                                 semantic.view(),
-                                dependencies,
                                 library_id,
                                 unit_id,
                             )
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
+                    record_host_timer.stamp("lowering");
                     Ok(RecordedTypeCheckWithDiagnosticBuffers {
                         type_check,
                         diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
@@ -686,6 +769,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     })
                 },
                 |device, queue, recorded| {
+                    let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
                     self.type_checker
                         .finish_recorded_check(device, &recorded.type_check)
                         .map_err(|err| {
@@ -697,12 +781,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 err,
                             )
                         })?;
+                    finish_timer.stamp("typecheck_status");
                     let semantic_interface = recorded
                         .semantic_interface
                         .as_ref()
                         .map(|identity| {
                             self.type_checker
-                                .finish_semantic_interface(device, identity)
+                                .finish_semantic_interface(device, queue, identity)
                                 .map_err(|err| {
                                     CompileError::GpuFrontend(format!(
                                         "semantic-interface readback failed: {err}"
@@ -710,14 +795,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 })
                         })
                         .transpose()?;
+                    finish_timer.stamp("semantic_interface");
                     let target_artifact = lowering_target
                         .map(|target| {
                             self.lowering_pipeline(target)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_artifact(device)
+                                .finish_artifact(device, queue)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
                         })
                         .transpose()?;
+                    finish_timer.stamp("target_artifact");
                     let x86_object = object_request
                         .and_then(|request| match request {
                             LoweringObjectRequest::X86_64 {
@@ -729,10 +816,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map(|(library_id, unit_id)| {
                             self.lowering_pipeline(LoweringTarget::X86_64)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_x86_object(device, library_id, unit_id)
+                                .finish_x86_object(device, queue, library_id, unit_id)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
                         })
                         .transpose()?;
+                    finish_timer.stamp("x86_object");
                     let wasm_object = object_request
                         .and_then(|request| match request {
                             LoweringObjectRequest::Wasm {
@@ -744,10 +832,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .map(|(library_id, unit_id)| {
                             self.lowering_pipeline(LoweringTarget::Wasm)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_wasm_object(device, library_id, unit_id)
+                                .finish_wasm_object(device, queue, library_id, unit_id)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))
                         })
                         .transpose()?;
+                    finish_timer.stamp("wasm_object");
                     Ok(CheckedSourcePackArtifacts {
                         semantic_interface,
                         target_artifact,
@@ -773,14 +862,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         parse_bufs: &OwnedTypecheckParserBuffers,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
-        dependency_interfaces: Option<&gpu_type_checker::GpuDependencyInterfaceState>,
+        dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
-        let module_path_scratch =
-            Self::typecheck_external_scratch_from_frontend_buffers(lexer_bufs, parse_bufs);
+        let upstream_workspace = parse_bufs.typecheck_workspace(lexer_bufs);
         self.type_checker
-            .record_resident_token_buffer_with_hir_items_and_scratch_on_gpu(
+            .record_resident_token_buffer_with_hir_items_on_gpu(
                 device,
                 queue,
                 encoder,
@@ -798,44 +886,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                 &parse_bufs.hir_token_end,
                 &parse_bufs.hir_token_file_id,
                 &parse_bufs.ll1_status,
-                parse_bufs.hir_item_buffers(),
-                module_path_scratch,
-                dependency_interfaces,
+                parse_bufs.hir_item_buffers(&upstream_workspace),
+                dependency_pages,
                 timer,
             )
             .map_err(map_execution_error)
-    }
-
-    fn typecheck_external_scratch_from_frontend_buffers<'a>(
-        lexer_bufs: &'a LexerBuffers,
-        parse_bufs: &'a OwnedTypecheckParserBuffers,
-    ) -> gpu_type_checker::GpuTypeCheckExternalScratchBuffers<'a> {
-        // Typecheck runs after lexing and parser HIR construction, but before
-        // x86. Reuse frontend workspaces that are dead at this phase boundary;
-        // do not borrow source/token buffers or parser HIR records that are
-        // still read by typecheck or x86 lowering.
-        gpu_type_checker::GpuTypeCheckExternalScratchBuffers {
-            record_family_flag: Some(&parse_bufs.hir_list_rank_flag),
-            path_id_by_owner_hir: (&parse_bufs.hir_type_alias_owner_link_b).into(),
-            // Declaration type-key lookup is consumed before the shared DFA
-            // chunk storage is populated with type-instance length payloads.
-            decl_type_key_to_decl_id: (&lexer_bufs.dfa_chunk_summaries).into(),
-            decl_value_key_to_decl_id: (&parse_bufs.hir_variant_payload_link_b).into(),
-            resolved_type_decl: (&lexer_bufs.tok_types).into(),
-            resolved_value_decl: (&lexer_bufs.flags_packed).into(),
-            resolved_type_status: (&lexer_bufs.s_all_final).into(),
-            resolved_value_status: (&lexer_bufs.s_keep_final).into(),
-            path_start: (&lexer_bufs.end_positions).into(),
-            path_len: (&lexer_bufs.types_compact).into(),
-            path_segment_count: (&lexer_bufs.all_index_compact).into(),
-            path_segment_base: (&parse_bufs.sc_offsets).into(),
-            path_segment_name_id: (&parse_bufs.emit_offsets).into(),
-            path_segment_token: (&parse_bufs.pack_sc_prefix_a).into(),
-            path_owner_hir: (&parse_bufs.pack_sc_prefix_b).into(),
-            path_owner_token: (&parse_bufs.pack_emit_prefix_a).into(),
-            path_owner_module_id: (&parse_bufs.pack_emit_prefix_b).into(),
-            path_kind: (&parse_bufs.hir_match_arm_owner_a).into(),
-        }
     }
 }
 
@@ -878,6 +933,41 @@ struct CheckedSourcePackArtifacts {
     target_artifact: Option<Vec<u8>>,
     x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
     wasm_object: Option<crate::codegen::wasm::GpuWasmRelocatableObject>,
+}
+
+pub(in crate::compiler) struct CompiledSourcePackUnit {
+    pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
+    pub(in crate::compiler) object: CompiledSourcePackObject,
+}
+
+pub(in crate::compiler) enum CompiledSourcePackObject {
+    X86_64(crate::codegen::x86::GpuX86RelocatableObject),
+    Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
+}
+
+#[cfg(test)]
+impl CompiledSourcePackObject {
+    pub(in crate::compiler) fn into_x86_64(
+        self,
+    ) -> Result<crate::codegen::x86::GpuX86RelocatableObject, CompileError> {
+        match self {
+            Self::X86_64(object) => Ok(object),
+            Self::Wasm(_) => Err(CompileError::GpuCodegen(
+                "compiled source-pack unit returned a Wasm object for x86_64".into(),
+            )),
+        }
+    }
+
+    pub(in crate::compiler) fn into_wasm(
+        self,
+    ) -> Result<crate::codegen::wasm::GpuWasmRelocatableObject, CompileError> {
+        match self {
+            Self::Wasm(object) => Ok(object),
+            Self::X86_64(_) => Err(CompileError::GpuCodegen(
+                "compiled source-pack unit returned an x86_64 object for Wasm".into(),
+            )),
+        }
+    }
 }
 
 struct DiagnosticTokenBuffer {
@@ -1766,6 +1856,22 @@ fn read_single_token_from_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qualified_path_relations_survive_unrelated_module_declarations() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let noise = (0..32)
+            .map(|i| format!("pub fn noise_{i}() -> i32 {{ return {i}; }}\n"))
+            .collect::<String>();
+        let sources = [
+            "module app::main;\nimport lib::target;\nimport lib::noise;\nfn main() -> i32 { return lib::target::answer(); }".to_owned(),
+            "module lib::target;\npub fn answer() -> i32 { return 7; }".to_owned(),
+            format!("module lib::noise;\n{noise}"),
+        ];
+
+        pollster::block_on(compiler.type_check_source_pack(&sources))
+            .expect("qualified path remains resolvable when another module adds declarations");
+    }
 
     #[test]
     fn type_check_execution_failure_for_source_is_structured_diagnostic() {

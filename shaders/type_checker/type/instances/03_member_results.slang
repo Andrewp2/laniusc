@@ -7,6 +7,7 @@
 // transition, so layout and result types remain receiver-dependent at every
 // depth without token rescans or fixed retry counts.
 
+import hir_records;
 import fixed.key;
 import range_query;
 
@@ -19,9 +20,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

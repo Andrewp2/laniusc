@@ -3389,7 +3389,7 @@ fn artifact_build_separates_target_manifests() {
     std::fs::write(&core_path, b"core").expect("write core source");
     std::fs::write(&app_path, b"app!").expect("write app source");
 
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };
@@ -3521,7 +3521,7 @@ fn artifact_manifest_build_stops_at_batch_limit() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("load path manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 1,
         max_source_files: 1,
     };
@@ -3601,7 +3601,7 @@ fn artifact_manifest_ready_batches_reject_missing_completed_artifact() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("load path manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };
@@ -3694,7 +3694,7 @@ fn artifact_manifest_claims_ready_batches_for_workers() {
     std::fs::write(&core_path, b"core").expect("write core source");
     std::fs::write(&app_path, b"app!").expect("write app source");
 
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };
@@ -3924,7 +3924,7 @@ fn artifact_manifest_claim_respects_state_lock() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("load path manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };
@@ -4008,7 +4008,7 @@ fn artifact_manifest_batch_rejects_changed_source_metadata() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("load path manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 4,
         max_source_files: 8,
     };

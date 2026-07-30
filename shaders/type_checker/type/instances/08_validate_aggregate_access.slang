@@ -5,6 +5,7 @@
 // field selections from materialized relations instead of walking expression or
 // call subtrees in this consumer.
 
+import hir_records;
 import hir_expr_semantics;
 import status;
 
@@ -17,14 +18,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirField { uint owner; uint name_token; uint value; uint ordinal; };
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
@@ -69,12 +66,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
-static const uint HIR_EXPR_RECORD_RIGHT = 2u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
@@ -233,36 +224,33 @@ uint visible_type_for_token(uint token_i)
     return call_return_type[token_i];
 }
 
-uint expr_slot(uint node, uint slot)
-{
-    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
-}
-
-uint expr_form(uint node)
-{
-    return expr_slot(node, HIR_EXPR_RECORD_FORM);
-}
-
-uint result_expr(uint node)
+uint compact_expr_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
     uint root = hir_expr_result_root_node[node];
-    return valid_node(root) ? root : node;
+    return compact_node_for_raw(valid_node(root) ? root : node);
 }
 
-uint expr_value_token(uint node)
+uint compact_expr_form(uint node)
 {
-    return expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+    return valid_compact_node(node) ? compact_hir_payload[node].a : 0u;
+}
+
+uint compact_expr_value_token(uint node)
+{
+    if (!valid_compact_node(node))
+        return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint direct_arithmetic_operand_type(uint node)
 {
-    node = result_expr(node);
-    if (!valid_node(node))
+    if (!valid_compact_node(node))
         return TY_UNKNOWN;
 
-    uint form = expr_form(node);
+    uint form = compact_expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
@@ -270,12 +258,7 @@ uint direct_arithmetic_operand_type(uint node)
     if (form == HIR_EXPR_FLOAT)
         return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
-    {
-        uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-        if (!valid_token(token_i))
-            token_i = hir_token_pos[node];
-        return visible_type_for_token(token_i);
-    }
+        return visible_type_for_token(compact_expr_value_token(node));
 
     return TY_UNKNOWN;
 }
@@ -302,11 +285,11 @@ uint call_callee_token(uint call_node)
 
 uint direct_expr_record_type(uint node)
 {
-    node = result_expr(node);
-    if (!valid_node(node))
+    uint expr = compact_expr_for_raw(node);
+    if (!valid_compact_node(expr))
         return TY_UNKNOWN;
 
-    uint form = expr_form(node);
+    uint form = compact_expr_form(expr);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
@@ -314,12 +297,7 @@ uint direct_expr_record_type(uint node)
     if (form == HIR_EXPR_FLOAT)
         return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
-    {
-        uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-        if (!valid_token(token_i))
-            token_i = hir_token_pos[node];
-        return visible_type_for_token(token_i);
-    }
+        return visible_type_for_token(compact_expr_value_token(expr));
     if (form == HIR_EXPR_NOT ||
         form == HIR_EXPR_EQ ||
         form == HIR_EXPR_NE ||
@@ -336,8 +314,9 @@ uint direct_expr_record_type(uint node)
         form == HIR_EXPR_MUL ||
         form == HIR_EXPR_DIV)
     {
-        uint left_ty = direct_arithmetic_operand_type(expr_slot(node, HIR_EXPR_RECORD_LEFT));
-        uint right_ty = direct_arithmetic_operand_type(expr_slot(node, HIR_EXPR_RECORD_RIGHT));
+        HirPayload payload = compact_hir_payload[expr];
+        uint left_ty = direct_arithmetic_operand_type(payload.b);
+        uint right_ty = direct_arithmetic_operand_type(payload.c);
         return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
     }
 
@@ -361,7 +340,8 @@ uint direct_value_type(uint node)
     if (record_ty != TY_UNKNOWN)
         return record_ty;
 
-    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
+    uint expr = compact_expr_for_raw(node);
+    uint lit = hir_scalar_type_for_expr_form(compact_expr_form(expr));
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -393,11 +373,16 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint node = result_expr(root);
+    uint expr = compact_expr_for_raw(root);
+    uint node = valid_node(hir_expr_result_root_node[root])
+        ? hir_expr_result_root_node[root]
+        : root;
     uint ty = direct_value_type(node);
     if (ty != TY_UNKNOWN)
     {
-        uint token_i = hir_token_pos[node];
+        uint token_i = compact_expr_value_token(expr);
+        if (!valid_token(token_i))
+            token_i = hir_token_pos[node];
         value_token = valid_token(token_i) ? token_i : INVALID;
         return ty;
     }

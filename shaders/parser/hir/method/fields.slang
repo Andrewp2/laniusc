@@ -267,7 +267,10 @@ void publish_trait_method(uint method_node)
 
 void publish_method_first_param(uint param_node)
 {
-    uint4 record = hir_param_record[param_node];
+    uint token = hir_token_pos[param_node];
+    if (token == INVALID)
+        return;
+    uint4 record = hir_param_record[token];
     uint owner_fn = record.x;
     uint rank = record.y;
     uint name_token = record.z;

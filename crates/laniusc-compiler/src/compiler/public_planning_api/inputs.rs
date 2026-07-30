@@ -369,6 +369,11 @@ struct SourceRootResolvedImport {
     path: PathBuf,
 }
 
+enum SourceRootLoadAction {
+    Discover(SourceRootImport, SourceRootLibrary),
+    Finish(SourceRootResolvedImport),
+}
+
 fn collect_entry_source_root_paths(
     entry_path: &Path,
     roots: &EntrySourceRoots,
@@ -417,7 +422,7 @@ fn collect_entry_source_root_paths(
 
     let mut loaded_source_paths = BTreeSet::new();
     let mut stdlib_paths = Vec::new();
-    let mut user_paths = vec![entry_path.clone()];
+    let mut user_paths = Vec::new();
 
     let entry_source = read_source_for_import_discovery("entry", &entry_path)?;
     if let Ok(canonical_entry_path) = fs::canonicalize(&entry_path) {
@@ -432,6 +437,7 @@ fn collect_entry_source_root_paths(
         &mut stdlib_paths,
         &mut user_paths,
     )?;
+    user_paths.push(entry_path);
 
     Ok((stdlib_paths, user_paths))
 }
@@ -480,28 +486,30 @@ fn load_source_root_imports(
     let mut pending = imports
         .into_iter()
         .rev()
-        .map(|import| (import, SourceRootLibrary::User))
+        .map(|import| SourceRootLoadAction::Discover(import, SourceRootLibrary::User))
         .collect::<Vec<_>>();
-    while let Some((import, importer_library)) = pending.pop() {
-        let resolved_import = resolve_source_root_import(&import, roots, importer_library)?;
-        if !loaded_source_paths.insert(resolved_import.path.clone()) {
-            continue;
-        }
+    while let Some(action) = pending.pop() {
+        match action {
+            SourceRootLoadAction::Finish(resolved) => match resolved.library {
+                SourceRootLibrary::Stdlib => stdlib_paths.push(resolved.path),
+                SourceRootLibrary::User => user_paths.push(resolved.path),
+            },
+            SourceRootLoadAction::Discover(import, importer_library) => {
+                let resolved = resolve_source_root_import(&import, roots, importer_library)?;
+                if !loaded_source_paths.insert(resolved.path.clone()) {
+                    continue;
+                }
 
-        let imported_source =
-            read_source_for_import_discovery("source-root import", &resolved_import.path)?;
-        let nested_imports = leading_path_imports(&imported_source, &resolved_import.path)?;
-        let nested_importer_library = resolved_import.library;
-        match resolved_import.library {
-            SourceRootLibrary::Stdlib => stdlib_paths.push(resolved_import.path),
-            SourceRootLibrary::User => user_paths.push(resolved_import.path),
+                let imported_source =
+                    read_source_for_import_discovery("source-root import", &resolved.path)?;
+                let nested_imports = leading_path_imports(&imported_source, &resolved.path)?;
+                let nested_importer_library = resolved.library;
+                pending.push(SourceRootLoadAction::Finish(resolved));
+                pending.extend(nested_imports.into_iter().rev().map(|nested_import| {
+                    SourceRootLoadAction::Discover(nested_import, nested_importer_library)
+                }));
+            }
         }
-        pending.extend(
-            nested_imports
-                .into_iter()
-                .rev()
-                .map(|nested_import| (nested_import, nested_importer_library)),
-        );
     }
 
     Ok(())

@@ -1,8 +1,9 @@
+import hir_records;
+
 // Seed pointer-doubling links for the generalized signature type forest.
 
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> interface_type_parent;

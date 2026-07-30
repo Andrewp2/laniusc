@@ -338,7 +338,7 @@ fn module_pack_schedule_is_acyclic_and_covers_generated_libraries() {
         &generated.sources,
         &generated.library_ids,
         &generated.library_dependencies,
-        CodegenUnitLimits::default(),
+        CompilationUnitLimits::default(),
     );
     let schedule = job_plan.job_schedule();
 

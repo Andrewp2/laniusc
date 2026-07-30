@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    buffers::LaniusBuffer,
+    buffers::{LaniusBuffer, TrackedBufferView},
     kernels::KernelReflections,
     workspace::{WorkspaceAssignment, WorkspacePlan, WorkspaceSlotPlan, WorkspaceUsageClass},
 };
@@ -133,6 +133,9 @@ pub struct PassAccess {
     pub binding: &'static str,
     pub resource: ResourceId,
     pub mode: AccessMode,
+    pub reflected: bool,
+    /// Shader invocation within one recorded compute batch.
+    pub invocation: u16,
 }
 
 impl PassAccess {
@@ -141,6 +144,8 @@ impl PassAccess {
             binding,
             resource,
             mode: AccessMode::Read,
+            reflected: true,
+            invocation: 0,
         }
     }
 
@@ -149,6 +154,8 @@ impl PassAccess {
             binding,
             resource,
             mode: AccessMode::Write,
+            reflected: true,
+            invocation: 0,
         }
     }
 
@@ -157,7 +164,27 @@ impl PassAccess {
             binding,
             resource,
             mode: AccessMode::ReadWrite,
+            reflected: true,
+            invocation: 0,
         }
+    }
+
+    /// A command-processor read used to source indirect dispatch dimensions.
+    /// It participates in liveness and allocation validation but is not part
+    /// of the shader's reflected storage interface.
+    pub const fn indirect(binding: &'static str, resource: ResourceId) -> Self {
+        Self {
+            binding,
+            resource,
+            mode: AccessMode::Read,
+            reflected: false,
+            invocation: 0,
+        }
+    }
+
+    pub const fn in_invocation(mut self, invocation: u16) -> Self {
+        self.invocation = invocation;
+        self
     }
 }
 
@@ -420,6 +447,7 @@ pub struct CompilerGraph {
     resource_aliases: BTreeMap<&'static str, ResourceId>,
     passes: Vec<PassDesc>,
     pass_kernels: Vec<Option<&'static str>>,
+    reflection_complete: Vec<bool>,
     lifetimes: Vec<Option<ResourceLifetime>>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
@@ -434,6 +462,17 @@ pub struct CompilerGraph {
 pub struct CompilerGraphWorkspace {
     slots: Vec<LaniusBuffer<u8>>,
     slot_by_resource: Vec<Option<u32>>,
+}
+
+/// A compiler graph together with the physical storage selected for it.
+///
+/// Compiler phases own semantic state, not allocation plumbing. This value is
+/// the common boundary for materializing a graph, recovering typed resource
+/// views, and validating the allocation identities used during recording.
+pub(crate) struct MaterializedCompilerGraph {
+    graph: CompilerGraph,
+    workspace: CompilerGraphWorkspace,
+    allocations: CompilerGraphAllocations,
 }
 
 /// Allocation-preserving views of every resource physically owned by one
@@ -469,6 +508,94 @@ impl CompilerGraphWorkspace {
         Self::new_with_imports(device, label, graph, &[])
     }
 
+    /// Reuses dead storage-only allocations from the preceding compiler phase.
+    /// Largest compatible graph-owned slots are selected first; unmatched
+    /// slots keep the normal stable allocation path.
+    pub fn new_with_upstream_storage(
+        device: &wgpu::Device,
+        label: &str,
+        graph: &CompilerGraph,
+        upstream: &[TrackedBufferView<'_>],
+    ) -> Result<Self, String> {
+        // A phase may expose several typed aliases of the same physical
+        // allocation. Treat that allocation as one candidate; assigning two
+        // aliases to different slots would defeat the graph's overlap proof.
+        let mut unique = BTreeMap::<u64, TrackedBufferView<'_>>::new();
+        for buffer in upstream.iter().copied() {
+            let Some(allocation) = buffer.allocation_id() else {
+                continue;
+            };
+            unique
+                .entry(allocation)
+                .and_modify(|current| {
+                    if buffer.byte_size > current.byte_size {
+                        *current = buffer;
+                    }
+                })
+                .or_insert(buffer);
+        }
+        let mut available = unique.into_values().collect::<Vec<_>>();
+        let mut slots = graph
+            .workspace
+            .slots
+            .iter()
+            .filter(|slot| {
+                slot.usage == WorkspaceUsageClass::Storage
+                    && graph.workspace.assignments.iter().any(|assignment| {
+                        assignment.slot == slot.slot
+                            && graph
+                                .resource_id(assignment.name)
+                                .and_then(|resource| graph.resource(resource))
+                                .is_some_and(|resource| {
+                                    !matches!(
+                                        resource.class,
+                                        ResourceClass::Input | ResourceClass::External
+                                    )
+                                })
+                    })
+            })
+            .collect::<Vec<_>>();
+        slots.sort_unstable_by_key(|slot| std::cmp::Reverse(slot.bytes));
+
+        let mut imports = Vec::new();
+        for slot in slots {
+            let Some((available_index, _)) = available
+                .iter()
+                .enumerate()
+                .filter(|(_, buffer)| buffer.byte_size >= slot.bytes)
+                .min_by_key(|(_, buffer)| buffer.byte_size)
+            else {
+                continue;
+            };
+            let buffer = available.swap_remove(available_index);
+            let assignment = graph
+                .workspace
+                .assignments
+                .iter()
+                .find(|assignment| {
+                    assignment.slot == slot.slot
+                        && graph
+                            .resource_id(assignment.name)
+                            .and_then(|resource| graph.resource(resource))
+                            .is_some_and(|resource| {
+                                !matches!(
+                                    resource.class,
+                                    ResourceClass::Input | ResourceClass::External
+                                )
+                            })
+                })
+                .ok_or_else(|| format!("workspace slot {} has no logical resource", slot.slot))?;
+            let resource = graph.resource_id(assignment.name).ok_or_else(|| {
+                format!(
+                    "workspace assignment names unknown resource {}",
+                    assignment.name
+                )
+            })?;
+            imports.push((resource, buffer.alias::<u8>(buffer.byte_size as usize)));
+        }
+        Self::new_with_imports(device, label, graph, &imports)
+    }
+
     /// Builds graph workspace while importing dead upstream allocations for
     /// selected slots. Every logical resource assigned to an imported slot
     /// continues to use the graph's lifetime and alias plan; only the physical
@@ -484,9 +611,9 @@ impl CompilerGraphWorkspace {
             let desc = graph
                 .resource(*resource)
                 .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
-            if desc.class != ResourceClass::Workspace {
+            if matches!(desc.class, ResourceClass::Input | ResourceClass::External) {
                 return Err(format!(
-                    "compiler resource {} cannot import a workspace slot because it is {:?}",
+                    "compiler resource {} cannot import graph-owned storage because it is {:?}",
                     desc.name, desc.class,
                 ));
             }
@@ -595,25 +722,6 @@ impl CompilerGraphWorkspace {
             .ok_or_else(|| format!("compiler resource {} names missing slot {slot}", desc.name))
     }
 
-    /// Returns a typed view of the allocation selected for a named logical
-    /// resource. Shader-facing layers generally know the reflected resource
-    /// name, while resource IDs remain a graph-construction detail.
-    pub fn alias_named<T>(
-        &self,
-        graph: &CompilerGraph,
-        name: &str,
-        count: usize,
-    ) -> Result<LaniusBuffer<T>, String> {
-        let resource = graph
-            .resource_id(name)
-            .ok_or_else(|| format!("compiler graph has no resource `{name}`"))?;
-        self.alias(graph, resource, count)
-    }
-
-    pub fn allocation_count(&self) -> usize {
-        self.slots.len()
-    }
-
     pub fn allocations(&self) -> CompilerGraphAllocations {
         CompilerGraphAllocations {
             allocation_by_resource: self
@@ -665,6 +773,82 @@ impl CompilerGraphWorkspace {
     ) -> Result<(), String> {
         self.allocations()
             .validate_pass_bindings(graph, pass, bindings)
+    }
+}
+
+impl MaterializedCompilerGraph {
+    pub(crate) fn new_with_upstream_storage(
+        device: &wgpu::Device,
+        label: &str,
+        graph: CompilerGraph,
+        upstream: &[TrackedBufferView<'_>],
+    ) -> Result<Self, String> {
+        let workspace =
+            CompilerGraphWorkspace::new_with_upstream_storage(device, label, &graph, upstream)?;
+        Ok(Self::from_parts(graph, workspace))
+    }
+
+    fn from_parts(graph: CompilerGraph, workspace: CompilerGraphWorkspace) -> Self {
+        let allocations = workspace.allocations();
+        Self {
+            graph,
+            workspace,
+            allocations,
+        }
+    }
+
+    pub(crate) fn graph(&self) -> &CompilerGraph {
+        &self.graph
+    }
+
+    pub(crate) fn allocations(&self) -> &CompilerGraphAllocations {
+        &self.allocations
+    }
+
+    pub(crate) fn bindings(&self) -> anyhow::Result<CompilerGraphBindings> {
+        self.workspace
+            .bindings(&self.graph)
+            .map_err(anyhow::Error::msg)
+    }
+
+    /// Returns a full typed view of one named graph-owned resource.
+    pub(crate) fn buffer<T>(&self, name: &str) -> anyhow::Result<LaniusBuffer<T>> {
+        let resource = self
+            .graph
+            .resource_id(name)
+            .ok_or_else(|| anyhow::anyhow!("compiler graph has no resource `{name}`"))?;
+        let bytes = self
+            .graph
+            .resource(resource)
+            .expect("graph resource id")
+            .bytes;
+        let element_bytes = std::mem::size_of::<T>() as u64;
+        if element_bytes == 0 || bytes % element_bytes != 0 {
+            return Err(anyhow::anyhow!(
+                "compiler resource `{name}` has {bytes} bytes, incompatible with {element_bytes}-byte elements",
+            ));
+        }
+        let count = usize::try_from(bytes / element_bytes).map_err(|_| {
+            anyhow::anyhow!("compiler resource `{name}` exceeds host addressable size")
+        })?;
+        self.workspace
+            .alias(&self.graph, resource, count)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub(crate) fn u32_buffer(&self, name: &str) -> anyhow::Result<LaniusBuffer<u32>> {
+        self.buffer(name)
+    }
+
+    pub(crate) fn optional_buffer<T>(&self, name: &str) -> anyhow::Result<Option<LaniusBuffer<T>>> {
+        self.graph
+            .resource_id(name)
+            .map(|_| self.buffer(name))
+            .transpose()
+    }
+
+    pub(crate) fn contains_pass(&self, name: &str) -> bool {
+        self.graph.pass_id(name).is_some()
     }
 }
 
@@ -748,7 +932,7 @@ impl CompilerGraphAllocations {
 }
 
 impl CompilerGraph {
-    /// Returns the generated shader artifact implementing a reflected pass.
+    #[cfg(test)]
     pub(crate) fn pass_kernel(&self, pass: PassId) -> Option<&'static str> {
         self.pass_kernels.get(pass.index()).copied().flatten()
     }
@@ -1068,6 +1252,9 @@ impl CompilerGraph {
             .ok_or_else(|| format!("unknown compiler pass {}", pass.index()))?;
         let parameters = reflected_parameters(reflection);
         for access in &desc.accesses {
+            if !access.reflected {
+                continue;
+            }
             let parameter = parameters
                 .iter()
                 .copied()
@@ -1114,31 +1301,62 @@ impl CompilerGraph {
             .passes
             .get(pass.index())
             .ok_or_else(|| format!("unknown compiler pass {}", pass.index()))?;
-        for parameter in reflected_parameters(reflection) {
-            let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
-            else {
-                continue;
-            };
-            if !matches!(
-                binding_type,
-                wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { .. },
-                    ..
+        let invocations = desc
+            .accesses
+            .iter()
+            .filter(|access| access.reflected)
+            .map(|access| access.invocation)
+            .collect::<BTreeSet<_>>();
+        for invocation in invocations {
+            for parameter in reflected_parameters(reflection) {
+                let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+                else {
+                    continue;
+                };
+                if !matches!(
+                    binding_type,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { .. },
+                        ..
+                    }
+                ) {
+                    continue;
                 }
-            ) {
+                let count = desc
+                    .accesses
+                    .iter()
+                    .filter(|access| {
+                        access.reflected
+                            && access.invocation == invocation
+                            && access.binding == parameter.name
+                    })
+                    .count();
+                if count != 1 {
+                    return Err(format!(
+                        "compiler pass {} invocation {invocation} must describe reflected storage binding {} exactly once, found {count}",
+                        desc.name, parameter.name,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates every pass that carries a generated-kernel identity.
+    ///
+    /// Phase constructors assign the kernel once when registering a pass;
+    /// callers therefore do not need a second hand-maintained list pairing
+    /// pass names with the same reflections.
+    pub(crate) fn validate_assigned_pass_reflections(
+        &self,
+        kernels: &impl KernelReflections,
+    ) -> Result<(), String> {
+        for (index, kernel) in self.pass_kernels.iter().enumerate() {
+            if !self.reflection_complete[index] {
                 continue;
             }
-            let count = desc
-                .accesses
-                .iter()
-                .filter(|access| access.binding == parameter.name)
-                .count();
-            if count != 1 {
-                return Err(format!(
-                    "compiler pass {} must describe reflected storage binding {} exactly once, found {count}",
-                    desc.name, parameter.name,
-                ));
-            }
+            let Some(kernel) = kernel else { continue };
+            self.validate_complete_pass_reflection(PassId(index), kernels.reflection(kernel)?)?;
         }
         Ok(())
     }
@@ -1292,18 +1510,18 @@ fn hierarchical_radix_sort_step_passes(
     let mut histogram_accesses = key_reads();
     histogram_accesses.extend([
         PassAccess::read(name(r.count), r.count),
-        PassAccess::read(name(input), input),
-        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::write(name(r.histogram), r.histogram),
+        PassAccess::read("radix_order_in", input),
+        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::write("radix_block_histogram", r.histogram),
     ]);
     let mut scatter_accesses = key_reads();
     scatter_accesses.extend([
         PassAccess::read(name(r.count), r.count),
-        PassAccess::read(name(input), input),
-        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::read(name(r.bucket_prefix), r.bucket_prefix),
-        PassAccess::read(name(r.bucket_base), r.bucket_base),
-        PassAccess::write(name(output), output),
+        PassAccess::read("radix_order_in", input),
+        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
+        PassAccess::read("radix_bucket_base", r.bucket_base),
+        PassAccess::write("radix_order_out", output),
     ]);
     vec![
         PassDesc {
@@ -1318,9 +1536,9 @@ fn hierarchical_radix_sort_step_passes(
             dispatch_domain,
             accesses: vec![
                 PassAccess::read(name(r.count), r.count),
-                PassAccess::read_write(name(r.histogram), r.histogram),
-                PassAccess::write(name(r.bucket_prefix), r.bucket_prefix),
-                PassAccess::write(name(r.bucket_total), r.bucket_total),
+                PassAccess::read_write("radix_block_histogram", r.histogram),
+                PassAccess::write("radix_block_bucket_prefix", r.bucket_prefix),
+                PassAccess::write("radix_bucket_total", r.bucket_total),
             ],
         },
         PassDesc {
@@ -1329,8 +1547,8 @@ fn hierarchical_radix_sort_step_passes(
             dispatch_domain,
             accesses: vec![
                 PassAccess::read(name(r.count), r.count),
-                PassAccess::read_write(name(r.histogram), r.histogram),
-                PassAccess::read_write(name(r.bucket_total), r.bucket_total),
+                PassAccess::read_write("radix_block_histogram", r.histogram),
+                PassAccess::read_write("radix_bucket_total", r.bucket_total),
             ],
         },
         PassDesc {
@@ -1339,8 +1557,8 @@ fn hierarchical_radix_sort_step_passes(
             dispatch_domain,
             accesses: vec![
                 PassAccess::read(name(r.count), r.count),
-                PassAccess::read(name(r.histogram), r.histogram),
-                PassAccess::read_write(name(r.bucket_prefix), r.bucket_prefix),
+                PassAccess::read("radix_block_histogram", r.histogram),
+                PassAccess::read_write("radix_block_bucket_prefix", r.bucket_prefix),
             ],
         },
         PassDesc {
@@ -1348,8 +1566,8 @@ fn hierarchical_radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.bucket_total), r.bucket_total),
-                PassAccess::write(name(r.bucket_base), r.bucket_base),
+                PassAccess::read("radix_bucket_total", r.bucket_total),
+                PassAccess::write("radix_bucket_base", r.bucket_base),
             ],
         },
         PassDesc {
@@ -1416,18 +1634,18 @@ fn radix_sort_step_passes(
     let mut histogram_accesses = key_reads();
     histogram_accesses.extend([
         PassAccess::read(name(r.count), r.count),
-        PassAccess::read(name(input), input),
-        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::write(name(r.histogram), r.histogram),
+        PassAccess::read("radix_order_in", input),
+        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::write("radix_block_histogram", r.histogram),
     ]);
     let mut scatter_accesses = key_reads();
     scatter_accesses.extend([
         PassAccess::read(name(r.count), r.count),
-        PassAccess::read(name(input), input),
-        PassAccess::read(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::read(name(r.bucket_prefix), r.bucket_prefix),
-        PassAccess::read(name(r.bucket_base), r.bucket_base),
-        PassAccess::write(name(output), output),
+        PassAccess::read("radix_order_in", input),
+        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
+        PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
+        PassAccess::read("radix_bucket_base", r.bucket_base),
+        PassAccess::write("radix_order_out", output),
     ]);
     vec![
         PassDesc {
@@ -1441,10 +1659,10 @@ fn radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.count), r.count),
-                PassAccess::read(name(r.histogram), r.histogram),
-                PassAccess::write(name(r.bucket_prefix), r.bucket_prefix),
-                PassAccess::write(name(r.bucket_total), r.bucket_total),
+                PassAccess::read("name_count_in", r.count),
+                PassAccess::read("radix_block_histogram", r.histogram),
+                PassAccess::write("radix_block_bucket_prefix", r.bucket_prefix),
+                PassAccess::write("radix_bucket_total", r.bucket_total),
             ],
         },
         PassDesc {
@@ -1452,8 +1670,8 @@ fn radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.bucket_total), r.bucket_total),
-                PassAccess::write(name(r.bucket_base), r.bucket_base),
+                PassAccess::read("radix_bucket_total", r.bucket_total),
+                PassAccess::write("radix_bucket_base", r.bucket_base),
             ],
         },
         PassDesc {
@@ -1726,7 +1944,13 @@ fn assign_prefix_scan_kernels(
     if graph.pass_names.contains(passes.hierarchy_down) {
         graph.assign_kernel(passes.hierarchy_down, "scan/counted/02_hierarchy_down")?;
     }
-    graph.assign_kernel(passes.apply, "scan/counted/02_apply")
+    graph.assign_kernel(passes.apply, "scan/counted/02_apply")?;
+    for pass in passes.names() {
+        if graph.pass_names.contains(pass) {
+            graph.require_complete_reflection(pass)?;
+        }
+    }
+    Ok(())
 }
 
 /// Stable graph names for storage internal to a counted prefix scan.
@@ -1779,7 +2003,7 @@ pub struct PrefixScanSpec {
 }
 
 impl PrefixScanSpec {
-    pub fn register(
+    pub(crate) fn register(
         self,
         graph: &mut CompilerGraphBuilder,
         hierarchy_levels: u32,
@@ -1792,6 +2016,30 @@ impl PrefixScanSpec {
             passes: self.passes,
             resources,
         })
+    }
+}
+
+/// A stable compaction expressed as flag production, exclusive prefix scan,
+/// and dense scatter. This is one semantic operation even though it lowers to
+/// several compute passes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompactionSpec {
+    pub mark: ReflectedComputeSpec,
+    pub scan: PrefixScanSpec,
+    pub scatter: ReflectedComputeSpec,
+}
+
+impl CompactionSpec {
+    pub(crate) fn register(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        kernels: &impl crate::gpu::kernels::KernelReflections,
+        hierarchy_levels: u32,
+    ) -> Result<(), String> {
+        self.mark.register_kernel(graph, kernels)?;
+        self.scan.register(graph, hierarchy_levels)?;
+        self.scatter.register_kernel(graph, kernels)?;
+        Ok(())
     }
 }
 
@@ -1838,152 +2086,188 @@ impl PrefixScanPairSpec {
     }
 }
 
-fn paired_scan_accesses(
+struct PrefixScanPassSet {
+    local: PassDesc,
+    hierarchy_up_first: PassDesc,
+    hierarchy_up_rest: Option<PassDesc>,
+    hierarchy_down: Option<PassDesc>,
+    apply: PassDesc,
+}
+
+impl PrefixScanPassSet {
+    fn batch(self, other: Self) -> Self {
+        fn batch(mut left: PassDesc, right: PassDesc) -> PassDesc {
+            debug_assert_eq!(left.name, right.name);
+            debug_assert_eq!(left.phase, right.phase);
+            debug_assert_eq!(left.dispatch_domain, right.dispatch_domain);
+            left.accesses.extend(right.accesses);
+            left
+        }
+        Self {
+            local: batch(self.local, other.local),
+            hierarchy_up_first: batch(self.hierarchy_up_first, other.hierarchy_up_first),
+            hierarchy_up_rest: self
+                .hierarchy_up_rest
+                .zip(other.hierarchy_up_rest)
+                .map(|(left, right)| batch(left, right)),
+            hierarchy_down: self
+                .hierarchy_down
+                .zip(other.hierarchy_down)
+                .map(|(left, right)| batch(left, right)),
+            apply: batch(self.apply, other.apply),
+        }
+    }
+}
+
+fn prefix_scan_passes(
     graph: &CompilerGraphBuilder,
-    accesses: impl IntoIterator<Item = (AccessMode, ResourceId)>,
-) -> Result<Vec<PassAccess>, String> {
-    let mut merged = Vec::<PassAccess>::new();
-    for (mode, resource) in accesses {
-        let desc = graph.resources.get(resource.index()).ok_or_else(|| {
-            format!(
-                "prefix scan references unknown resource {}",
-                resource.index()
-            )
-        })?;
-        if let Some(previous) = merged.iter().find(|access| access.resource == resource) {
-            if previous.mode == AccessMode::Read && mode == AccessMode::Read {
-                continue;
-            }
+    phase: CompilerPhase,
+    dispatch_domain: ResourceDomain,
+    hierarchy_levels: u32,
+    passes: PrefixScanGraphPasses,
+    r: PrefixScanGraphResources,
+    invocation: u16,
+) -> Result<PrefixScanPassSet, String> {
+    if hierarchy_levels == 0 {
+        return Err(format!(
+            "prefix scan {} requires at least one hierarchy level",
+            passes.local,
+        ));
+    }
+    let mut distinct = BTreeSet::new();
+    for resource in [
+        r.count,
+        r.input,
+        r.output_prefix,
+        r.total,
+        r.dispatch_args,
+        r.local_prefix,
+        r.block_sum,
+        r.block_prefix,
+        r.hierarchy,
+    ] {
+        if graph.resources.get(resource.index()).is_none() {
             return Err(format!(
-                "paired prefix scans use mutable resource {} in two simultaneous roles",
-                desc.name,
+                "prefix scan {} references unknown resource {}",
+                passes.local,
+                resource.index(),
             ));
         }
-        merged.push(PassAccess {
-            binding: desc.name,
-            resource,
-            mode,
-        });
+        if !distinct.insert(resource) {
+            return Err(format!(
+                "prefix scan {} uses resource {} for two simultaneous roles",
+                passes.local,
+                graph.resources[resource.index()].name,
+            ));
+        }
     }
-    Ok(merged)
+    let lane = |access: PassAccess| access.in_invocation(invocation);
+    let pass = |name, accesses| PassDesc {
+        name,
+        phase,
+        dispatch_domain,
+        accesses,
+    };
+    Ok(PrefixScanPassSet {
+        local: pass(
+            passes.local,
+            vec![
+                lane(PassAccess::read("scan_count", r.count)),
+                lane(PassAccess::read("scan_input", r.input)),
+                lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+                lane(PassAccess::write("scan_local_prefix", r.local_prefix)),
+                lane(PassAccess::write("scan_block_sum", r.block_sum)),
+            ],
+        ),
+        hierarchy_up_first: pass(
+            passes.hierarchy_up_first,
+            vec![
+                lane(PassAccess::read("scan_count", r.count)),
+                lane(PassAccess::read("scan_block_sum", r.block_sum)),
+                lane(PassAccess::write("scan_block_prefix", r.block_prefix)),
+                lane(PassAccess::write("scan_hierarchy", r.hierarchy)),
+            ],
+        ),
+        hierarchy_up_rest: (hierarchy_levels > 1).then(|| {
+            pass(
+                passes.hierarchy_up_rest,
+                vec![
+                    lane(PassAccess::read("scan_count", r.count)),
+                    lane(PassAccess::read("scan_block_sum", r.block_sum)),
+                    lane(PassAccess::read_write("scan_block_prefix", r.block_prefix)),
+                    lane(PassAccess::read_write("scan_hierarchy", r.hierarchy)),
+                ],
+            )
+        }),
+        hierarchy_down: (hierarchy_levels > 1).then(|| {
+            pass(
+                passes.hierarchy_down,
+                vec![
+                    lane(PassAccess::read("scan_count", r.count)),
+                    lane(PassAccess::read_write("scan_block_prefix", r.block_prefix)),
+                    lane(PassAccess::read_write("scan_hierarchy", r.hierarchy)),
+                ],
+            )
+        }),
+        apply: pass(
+            passes.apply,
+            vec![
+                lane(PassAccess::read("scan_count", r.count)),
+                lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+                lane(PassAccess::read("scan_local_prefix", r.local_prefix)),
+                lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
+                lane(PassAccess::write("scan_output_prefix", r.output_prefix)),
+                lane(PassAccess::write("scan_total", r.total)),
+            ],
+        ),
+    })
+}
+
+fn add_prefix_scan_passes(
+    graph: &mut CompilerGraphBuilder,
+    hierarchy_levels: u32,
+    passes: PrefixScanPassSet,
+) -> Result<(), String> {
+    graph.add_pass(passes.local)?;
+    graph.add_pass(passes.hierarchy_up_first)?;
+    if let Some(pass) = passes.hierarchy_up_rest {
+        graph.add_repeated_region(hierarchy_levels - 1, vec![pass])?;
+    }
+    if let Some(pass) = passes.hierarchy_down {
+        graph.add_repeated_region(hierarchy_levels - 1, vec![pass])?;
+    }
+    graph.add_pass(passes.apply)?;
+    Ok(())
 }
 
 impl CompilerGraphFragment for PrefixScanPairGraph {
     type Output = ((ResourceId, ResourceId), (ResourceId, ResourceId));
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        if self.hierarchy_levels == 0 {
-            return Err(format!(
-                "paired prefix scan {} requires at least one hierarchy level",
-                self.passes.local,
-            ));
-        }
-        let l = self.left;
-        let r = self.right;
-        graph.add_pass(PassDesc {
-            name: self.passes.local,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: paired_scan_accesses(
-                graph,
-                [
-                    (AccessMode::Read, l.count),
-                    (AccessMode::Read, l.input),
-                    (AccessMode::Read, l.dispatch_args),
-                    (AccessMode::Write, l.local_prefix),
-                    (AccessMode::Write, l.block_sum),
-                    (AccessMode::Read, r.count),
-                    (AccessMode::Read, r.input),
-                    (AccessMode::Read, r.dispatch_args),
-                    (AccessMode::Write, r.local_prefix),
-                    (AccessMode::Write, r.block_sum),
-                ],
-            )?,
-        })?;
-        graph.add_pass(PassDesc {
-            name: self.passes.hierarchy_up_first,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: paired_scan_accesses(
-                graph,
-                [
-                    (AccessMode::Read, l.count),
-                    (AccessMode::Read, l.block_sum),
-                    (AccessMode::Write, l.block_prefix),
-                    (AccessMode::Write, l.hierarchy),
-                    (AccessMode::Read, r.count),
-                    (AccessMode::Read, r.block_sum),
-                    (AccessMode::Write, r.block_prefix),
-                    (AccessMode::Write, r.hierarchy),
-                ],
-            )?,
-        })?;
-        if self.hierarchy_levels > 1 {
-            graph.add_repeated_region(
-                self.hierarchy_levels - 1,
-                vec![PassDesc {
-                    name: self.passes.hierarchy_up_rest,
-                    phase: self.phase,
-                    dispatch_domain: self.dispatch_domain,
-                    accesses: paired_scan_accesses(
-                        graph,
-                        [
-                            (AccessMode::Read, l.count),
-                            (AccessMode::Read, l.block_sum),
-                            (AccessMode::ReadWrite, l.block_prefix),
-                            (AccessMode::ReadWrite, l.hierarchy),
-                            (AccessMode::Read, r.count),
-                            (AccessMode::Read, r.block_sum),
-                            (AccessMode::ReadWrite, r.block_prefix),
-                            (AccessMode::ReadWrite, r.hierarchy),
-                        ],
-                    )?,
-                }],
-            )?;
-            graph.add_repeated_region(
-                self.hierarchy_levels - 1,
-                vec![PassDesc {
-                    name: self.passes.hierarchy_down,
-                    phase: self.phase,
-                    dispatch_domain: self.dispatch_domain,
-                    accesses: paired_scan_accesses(
-                        graph,
-                        [
-                            (AccessMode::Read, l.count),
-                            (AccessMode::ReadWrite, l.block_prefix),
-                            (AccessMode::ReadWrite, l.hierarchy),
-                            (AccessMode::Read, r.count),
-                            (AccessMode::ReadWrite, r.block_prefix),
-                            (AccessMode::ReadWrite, r.hierarchy),
-                        ],
-                    )?,
-                }],
-            )?;
-        }
-        graph.add_pass(PassDesc {
-            name: self.passes.apply,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: paired_scan_accesses(
-                graph,
-                [
-                    (AccessMode::Read, l.count),
-                    (AccessMode::Read, l.dispatch_args),
-                    (AccessMode::Read, l.local_prefix),
-                    (AccessMode::Read, l.block_prefix),
-                    (AccessMode::Write, l.output_prefix),
-                    (AccessMode::Write, l.total),
-                    (AccessMode::Read, r.count),
-                    (AccessMode::Read, r.dispatch_args),
-                    (AccessMode::Read, r.local_prefix),
-                    (AccessMode::Read, r.block_prefix),
-                    (AccessMode::Write, r.output_prefix),
-                    (AccessMode::Write, r.total),
-                ],
-            )?,
-        })?;
+        let left = prefix_scan_passes(
+            graph,
+            self.phase,
+            self.dispatch_domain,
+            self.hierarchy_levels,
+            self.passes,
+            self.left,
+            0,
+        )?;
+        let right = prefix_scan_passes(
+            graph,
+            self.phase,
+            self.dispatch_domain,
+            self.hierarchy_levels,
+            self.passes,
+            self.right,
+            1,
+        )?;
+        add_prefix_scan_passes(graph, self.hierarchy_levels, left.batch(right))?;
         assign_prefix_scan_kernels(graph, self.passes)?;
-        Ok(((l.output_prefix, l.total), (r.output_prefix, r.total)))
+        Ok((
+            (self.left.output_prefix, self.left.total),
+            (self.right.output_prefix, self.right.total),
+        ))
     }
 }
 
@@ -1991,119 +2275,18 @@ impl CompilerGraphFragment for PrefixScanGraph {
     type Output = (ResourceId, ResourceId);
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        if self.hierarchy_levels == 0 {
-            return Err(format!(
-                "prefix scan {} requires at least one hierarchy level",
-                self.passes.local,
-            ));
-        }
-        let r = self.resources;
-        let mut distinct = BTreeSet::new();
-        for resource in [
-            r.count,
-            r.input,
-            r.output_prefix,
-            r.total,
-            r.dispatch_args,
-            r.local_prefix,
-            r.block_sum,
-            r.block_prefix,
-            r.hierarchy,
-        ] {
-            if graph.resources.get(resource.index()).is_none() {
-                return Err(format!(
-                    "prefix scan {} references unknown resource {}",
-                    self.passes.local,
-                    resource.index(),
-                ));
-            }
-            if !distinct.insert(resource) {
-                return Err(format!(
-                    "prefix scan {} uses resource {} for two simultaneous roles",
-                    self.passes.local,
-                    graph.resources[resource.index()].name,
-                ));
-            }
-        }
-
-        let count_name = graph.resources[r.count.index()].name;
-        let input_name = graph.resources[r.input.index()].name;
-        let output_prefix_name = graph.resources[r.output_prefix.index()].name;
-        let total_name = graph.resources[r.total.index()].name;
-        let dispatch_args_name = graph.resources[r.dispatch_args.index()].name;
-        let local_prefix_name = graph.resources[r.local_prefix.index()].name;
-        let block_sum_name = graph.resources[r.block_sum.index()].name;
-        let block_prefix_name = graph.resources[r.block_prefix.index()].name;
-        let hierarchy_name = graph.resources[r.hierarchy.index()].name;
-        graph.add_pass(PassDesc {
-            name: self.passes.local,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: vec![
-                PassAccess::read(count_name, r.count),
-                PassAccess::read(input_name, r.input),
-                PassAccess::read(dispatch_args_name, r.dispatch_args),
-                PassAccess::write(local_prefix_name, r.local_prefix),
-                PassAccess::write(block_sum_name, r.block_sum),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: self.passes.hierarchy_up_first,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: vec![
-                PassAccess::read(count_name, r.count),
-                PassAccess::read(block_sum_name, r.block_sum),
-                PassAccess::write(block_prefix_name, r.block_prefix),
-                PassAccess::write(hierarchy_name, r.hierarchy),
-            ],
-        })?;
-
-        if self.hierarchy_levels > 1 {
-            graph.add_repeated_region(
-                self.hierarchy_levels - 1,
-                vec![PassDesc {
-                    name: self.passes.hierarchy_up_rest,
-                    phase: self.phase,
-                    dispatch_domain: self.dispatch_domain,
-                    accesses: vec![
-                        PassAccess::read(count_name, r.count),
-                        PassAccess::read(block_sum_name, r.block_sum),
-                        PassAccess::read_write(block_prefix_name, r.block_prefix),
-                        PassAccess::read_write(hierarchy_name, r.hierarchy),
-                    ],
-                }],
-            )?;
-            graph.add_repeated_region(
-                self.hierarchy_levels - 1,
-                vec![PassDesc {
-                    name: self.passes.hierarchy_down,
-                    phase: self.phase,
-                    dispatch_domain: self.dispatch_domain,
-                    accesses: vec![
-                        PassAccess::read(count_name, r.count),
-                        PassAccess::read_write(block_prefix_name, r.block_prefix),
-                        PassAccess::read_write(hierarchy_name, r.hierarchy),
-                    ],
-                }],
-            )?;
-        }
-
-        graph.add_pass(PassDesc {
-            name: self.passes.apply,
-            phase: self.phase,
-            dispatch_domain: self.dispatch_domain,
-            accesses: vec![
-                PassAccess::read(count_name, r.count),
-                PassAccess::read(dispatch_args_name, r.dispatch_args),
-                PassAccess::read(local_prefix_name, r.local_prefix),
-                PassAccess::read(block_prefix_name, r.block_prefix),
-                PassAccess::write(output_prefix_name, r.output_prefix),
-                PassAccess::write(total_name, r.total),
-            ],
-        })?;
+        let passes = prefix_scan_passes(
+            graph,
+            self.phase,
+            self.dispatch_domain,
+            self.hierarchy_levels,
+            self.passes,
+            self.resources,
+            0,
+        )?;
+        add_prefix_scan_passes(graph, self.hierarchy_levels, passes)?;
         assign_prefix_scan_kernels(graph, self.passes)?;
-        Ok((r.output_prefix, r.total))
+        Ok((self.resources.output_prefix, self.resources.total))
     }
 }
 
@@ -2112,6 +2295,7 @@ pub struct CompilerGraphBuilder {
     resources: Vec<ResourceDesc>,
     passes: Vec<PassDesc>,
     pass_kernels: Vec<Option<&'static str>>,
+    reflection_complete: Vec<bool>,
     resource_names: BTreeSet<&'static str>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
     pass_names: BTreeSet<&'static str>,
@@ -2147,6 +2331,25 @@ impl CompilerGraphBuilder {
                 Ok(())
             }
         }
+    }
+
+    /// Marks a manually assembled pass as having the complete storage surface
+    /// of its assigned kernel. Such passes join the graph-wide reflection
+    /// validation performed before workspace materialization.
+    pub(crate) fn require_complete_reflection(&mut self, pass_name: &str) -> Result<(), String> {
+        let pass = self
+            .passes
+            .iter()
+            .position(|pass| pass.name == pass_name)
+            .map(PassId)
+            .ok_or_else(|| format!("unknown compiler pass `{pass_name}`"))?;
+        if self.pass_kernels[pass.index()].is_none() {
+            return Err(format!(
+                "compiler pass `{pass_name}` cannot require reflection without an assigned kernel",
+            ));
+        }
+        self.reflection_complete[pass.index()] = true;
+        Ok(())
     }
 
     pub fn new() -> Self {
@@ -2574,7 +2777,7 @@ impl CompilerGraphBuilder {
                 desc.name, desc.phase, previous.phase,
             ));
         }
-        let mut resources = BTreeSet::new();
+        let mut resources = BTreeMap::<ResourceId, (AccessMode, u16)>::new();
         for access in &desc.accesses {
             if access.resource.index() >= self.resources.len() {
                 return Err(format!(
@@ -2583,17 +2786,26 @@ impl CompilerGraphBuilder {
                     access.resource.index(),
                 ));
             }
-            if !resources.insert(access.resource) {
+            if let Some((mode, invocation)) = resources.get(&access.resource) {
+                let reason = if *invocation == access.invocation {
+                    "more than once in one invocation"
+                } else if mode.writes() || access.mode.writes() {
+                    "mutably in multiple invocations"
+                } else {
+                    continue;
+                };
                 return Err(format!(
-                    "compiler pass {} declares resource {} more than once",
+                    "compiler pass {} declares resource {} {reason}",
                     desc.name,
                     self.resources[access.resource.index()].name,
                 ));
             }
+            resources.insert(access.resource, (access.mode, access.invocation));
         }
         let id = PassId(self.passes.len());
         self.passes.push(desc);
         self.pass_kernels.push(None);
+        self.reflection_complete.push(false);
         Ok(id)
     }
 
@@ -2668,6 +2880,8 @@ impl CompilerGraphBuilder {
                 binding: binding.binding,
                 resource: binding.resource,
                 mode,
+                reflected: true,
+                invocation: 0,
             });
         }
         if let Some((extra, _)) = supplied.into_iter().next() {
@@ -2675,12 +2889,14 @@ impl CompilerGraphBuilder {
                 "compiler pass {name} maps {extra}, which is not a reflected storage binding",
             ));
         }
-        self.add_pass(PassDesc {
+        let pass = self.add_pass(PassDesc {
             name,
             phase,
             dispatch_domain,
             accesses,
-        })
+        })?;
+        self.reflection_complete[pass.index()] = true;
+        Ok(pass)
     }
 
     /// Adds a reflected compute pass by matching storage-binding names to
@@ -2893,6 +3109,39 @@ impl CompilerGraphBuilder {
             iterations,
         });
         Ok(ids)
+    }
+
+    /// Marks an already declared contiguous pass range as a repeated command
+    /// body. This is useful when construction of the individual passes is
+    /// shared with non-repeated target variants.
+    pub fn repeat_pass_range(
+        &mut self,
+        iterations: u32,
+        first: &'static str,
+        last: &'static str,
+    ) -> Result<(), String> {
+        if iterations == 0 {
+            return Err("compiler repeated pass region has zero iterations".into());
+        }
+        let first_pass = self
+            .passes
+            .iter()
+            .position(|pass| pass.name == first)
+            .ok_or_else(|| format!("unknown first repeated pass {first}"))?;
+        let last_pass = self
+            .passes
+            .iter()
+            .position(|pass| pass.name == last)
+            .ok_or_else(|| format!("unknown last repeated pass {last}"))?;
+        if last_pass < first_pass {
+            return Err(format!("repeated pass range {first}..{last} is reversed"));
+        }
+        self.repeated_regions.push(RepeatedPassRegion {
+            first_pass: PassId(first_pass),
+            pass_count: (last_pass - first_pass + 1) as u32,
+            iterations,
+        });
+        Ok(())
     }
 
     pub fn add_paged_region(
@@ -3130,6 +3379,7 @@ impl CompilerGraphBuilder {
             resource_aliases: self.resource_aliases,
             passes: self.passes,
             pass_kernels: self.pass_kernels,
+            reflection_complete: self.reflection_complete,
             lifetimes,
             repeated_regions: self.repeated_regions,
             paged_regions: self.paged_regions,
@@ -3144,11 +3394,10 @@ fn plan_graph_workspace(
     resources: &[ResourceDesc],
     lifetimes: &[Option<ResourceLifetime>],
 ) -> Result<WorkspacePlan, String> {
-    #[derive(Clone, Copy)]
     struct SlotState {
         plan: WorkspaceSlotPlan,
-        last_pass: PassId,
         dedicated: bool,
+        lifetimes: Vec<ResourceLifetime>,
     }
 
     // `Resident` is a per-resource incomplete-composition boundary. Keep that
@@ -3168,10 +3417,15 @@ fn plan_graph_workspace(
             .then_some((index, resource, lifetimes[index]?))
         })
         .collect::<Vec<_>>();
+    // Place the largest intervals first. The first resource assigned to a
+    // slot then fixes its physical size, and every later assignment is free.
+    // Starting in pass order is a poor fit for weighted interval coloring:
+    // deleting one large early interval can fragment smaller later resources
+    // across several allocations and increase total memory.
     order.sort_unstable_by_key(|(_, resource, lifetime)| {
         (
-            lifetime.first_pass,
             std::cmp::Reverse(resource.bytes),
+            lifetime.first_pass,
             resource.name,
         )
     });
@@ -3194,14 +3448,15 @@ fn plan_graph_workspace(
                     .filter(|(_, slot)| {
                         !slot.dedicated
                             && slot.plan.usage == resource.usage
-                            && slot.last_pass < lifetime.first_pass
+                            && slot.lifetimes.iter().all(|other| {
+                                lifetime.last_pass < other.first_pass
+                                    || other.last_pass < lifetime.first_pass
+                            })
                     })
                     .min_by_key(|(_, slot)| {
-                        let resulting_bytes = slot.plan.bytes.max(resource.bytes);
                         (
-                            resulting_bytes - slot.plan.bytes,
-                            resulting_bytes,
-                            std::cmp::Reverse(slot.last_pass),
+                            std::cmp::Reverse(slot.plan.bytes),
+                            slot.lifetimes.len(),
                             slot.plan.slot,
                         )
                     })
@@ -3216,14 +3471,14 @@ fn plan_graph_workspace(
                     bytes: resource.bytes,
                     usage: resource.usage,
                 },
-                last_pass: lifetime.last_pass,
                 dedicated,
+                lifetimes: Vec::new(),
             });
             index
         });
         let slot = &mut slots[slot_index];
         slot.plan.bytes = slot.plan.bytes.max(resource.bytes);
-        slot.last_pass = lifetime.last_pass;
+        slot.lifetimes.push(lifetime);
         assignment_by_resource.insert(resource_index, slot.plan.slot);
     }
 
@@ -3251,10 +3506,13 @@ fn plan_graph_workspace(
                 .expect("workspace assignment resource");
             let lifetime = lifetimes[resource_index].expect("workspace resource lifetime");
             eprintln!(
-                "compiler_graph_slot slot={} index={} resource={} first={} last={}",
+                "compiler_graph_slot slot={} index={} resource={} bytes={} usage={:?} class={:?} first={} last={}",
                 assignment.slot,
                 resource_index,
                 assignment.name,
+                resources[resource_index].bytes,
+                resources[resource_index].usage,
+                resources[resource_index].class,
                 lifetime.first_pass.index(),
                 lifetime.last_pass.index(),
             );
@@ -3363,6 +3621,61 @@ mod tests {
         assert_eq!(graph.lifetime(hir).unwrap().producer, Some(hir_pass));
         assert_eq!(graph.workspace_plan().slots.len(), 1);
         assert_eq!(graph.workspace_plan().slots[0].bytes, 96);
+    }
+
+    #[test]
+    fn removing_workspace_interval_does_not_fragment_later_slots() {
+        const ROWS: [(&str, usize, usize, u64); 6] = [
+            ("long_small_a", 1, 4, 20),
+            ("long_small_b", 2, 4, 20),
+            ("middle_large", 2, 3, 100),
+            ("late_large", 4, 4, 100),
+            ("late_medium", 3, 4, 40),
+            ("early_medium", 0, 1, 40),
+        ];
+        const PASSES: [&str; 5] = ["p0", "p1", "p2", "p3", "p4"];
+
+        fn build_without(excluded: Option<&str>) -> CompilerGraph {
+            let mut builder = CompilerGraphBuilder::new();
+            let resources = ROWS
+                .iter()
+                .filter(|(name, _, _, _)| Some(*name) != excluded)
+                .map(|&(name, first, last, bytes)| {
+                    let resource = builder
+                        .add_resource(workspace(name, ResourceDomain::DispatchArguments, bytes))
+                        .unwrap();
+                    (name, first, last, resource)
+                })
+                .collect::<Vec<_>>();
+            for (pass_index, &name) in PASSES.iter().enumerate() {
+                let accesses = resources
+                    .iter()
+                    .filter_map(|&(binding, first, last, resource)| {
+                        if first == pass_index {
+                            Some(PassAccess::write(binding, resource))
+                        } else if last == pass_index {
+                            Some(PassAccess::read(binding, resource))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                builder
+                    .add_pass(PassDesc {
+                        name,
+                        phase: CompilerPhase::SemanticLowering,
+                        dispatch_domain: ResourceDomain::DispatchArguments,
+                        accesses,
+                    })
+                    .unwrap();
+            }
+            builder.build().unwrap()
+        }
+
+        let full = build_without(None);
+        let reduced = build_without(Some("middle_large"));
+        assert_eq!(full.workspace_bytes(), 180);
+        assert_eq!(reduced.workspace_bytes(), 180);
     }
 
     #[test]

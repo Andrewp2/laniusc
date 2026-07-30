@@ -101,6 +101,7 @@ struct GraphResourceIdentity {
 }
 
 /// Name-keyed binding resource map used by reflection-based bind-group builders.
+#[derive(Clone)]
 pub(crate) struct ResourceMap<'a> {
     resources: HashMap<String, wgpu::BindingResource<'a>>,
     graph_identities: HashMap<String, GraphResourceIdentity>,
@@ -171,6 +172,23 @@ impl<'a> ResourceMap<'a> {
         }
     }
 
+    /// Registers another shader name for an existing resource without erasing
+    /// its allocation identity or logical view extent.
+    pub(crate) fn alias(&mut self, name: &'static str, existing: &str) -> Result<()> {
+        let resource = self
+            .resources
+            .get(existing)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("GPU resource `{existing}` is not registered"))?;
+        let identity = *self
+            .graph_identities
+            .get(existing)
+            .ok_or_else(|| anyhow::anyhow!("GPU resource `{existing}` has no tracked identity"))?;
+        self.resources.insert(name.to_owned(), resource);
+        self.graph_identities.insert(name.to_owned(), identity);
+        Ok(())
+    }
+
     /// Registers every graph-owned buffer under its canonical resource name
     /// and under reflected binding names that identify exactly one resource.
     /// Ambiguous operation-local names (for example radix ping-pong inputs)
@@ -211,6 +229,41 @@ impl<'a> ResourceMap<'a> {
                 self.buffer(name, buffer);
             }
         }
+    }
+
+    /// Rebinds one logical graph resource and every reflected name that refers
+    /// to it. Phase imports use this after registering the resident workspace,
+    /// so bind-group construction and ownership validation see the same view.
+    pub(crate) fn graph_buffer<B>(
+        &mut self,
+        graph: &CompilerGraph,
+        name: &str,
+        buffer: B,
+    ) -> Result<()>
+    where
+        B: ResourceBinding<'a> + Copy,
+    {
+        let resource = graph
+            .resource_id(name)
+            .ok_or_else(|| anyhow::anyhow!("compiler graph has no resource `{name}`"))?;
+        self.buffer(
+            graph.resource(resource).expect("graph resource id").name,
+            buffer,
+        );
+        for (alias, target) in graph.resource_aliases() {
+            if target == resource {
+                self.buffer(alias, buffer);
+            }
+        }
+        for access in graph
+            .passes()
+            .iter()
+            .flat_map(|pass| pass.accesses.iter())
+            .filter(|access| access.resource == resource)
+        {
+            self.buffer(access.binding, buffer);
+        }
+        Ok(())
     }
 
     /// Logical number of `u32` rows exposed by a registered typed view.
@@ -264,42 +317,45 @@ impl<'a> ResourceMap<'a> {
         let pass = graph
             .pass_id(pass_name)
             .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
-        graph
+        let mut bindings = Vec::new();
+        for access in &graph
             .pass(pass)
             .expect("pass id came from this graph")
             .accesses
-            .iter()
-            .map(|access| {
-                let registered_name = aliases
-                    .iter()
-                    .find_map(|(binding, registered)| {
-                        (*binding == access.binding).then_some(*registered)
-                    })
-                    .unwrap_or(access.binding);
-                let canonical_name = graph
-                    .resource(access.resource)
-                    .expect("pass access resource belongs to graph")
-                    .name;
-                let identity = self
-                    .graph_identities
-                    .get(registered_name)
-                    .or_else(|| self.graph_identities.get(canonical_name))
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "compiler pass `{pass_name}` binding `{}` maps to `{registered_name}` (canonical resource `{canonical_name}`), which is not registered as a buffer",
-                            access.binding,
-                        )
-                    })?;
-                graph
-                    .bind_registered_resource(
+        {
+            let registered_name = aliases
+                .iter()
+                .find_map(|(binding, registered)| {
+                    (*binding == access.binding).then_some(*registered)
+                })
+                .unwrap_or(access.binding);
+            let canonical_name = graph
+                .resource(access.resource)
+                .expect("pass access resource belongs to graph")
+                .name;
+            let identity = self
+                .graph_identities
+                .get(registered_name)
+                .or_else(|| self.graph_identities.get(canonical_name))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "compiler pass `{pass_name}` binding `{}` maps to `{registered_name}` (canonical resource `{canonical_name}`), which is not registered as a buffer",
                         access.binding,
-                        access.resource,
-                        identity.allocation_id,
-                        identity.byte_size,
                     )
-                    .map_err(anyhow::Error::msg)
-            })
-            .collect()
+                })?;
+            let bound = graph
+                .bind_registered_resource(
+                    access.binding,
+                    access.resource,
+                    identity.allocation_id,
+                    identity.byte_size,
+                )
+                .map_err(anyhow::Error::msg)?;
+            if !bindings.contains(&bound) {
+                bindings.push(bound);
+            }
+        }
+        Ok(bindings)
     }
 }
 

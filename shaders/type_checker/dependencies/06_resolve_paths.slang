@@ -1,5 +1,6 @@
 // Resolve still-unmatched one-segment paths to canonical dependency identities.
 
+import dependency_interface;
 import byte_packing;
 import gpu_index;
 
@@ -35,13 +36,14 @@ StructuredBuffer<uint> name_hash_hi;
 StructuredBuffer<NameSpan> name_spans;
 ByteAddressBuffer source_bytes;
 ByteAddressBuffer language_symbol_bytes;
-StructuredBuffer<uint> dependency_declaration_words;
-StructuredBuffer<uint> dependency_name_byte_words;
 StructuredBuffer<uint> dependency_visible_owner_module;
 StructuredBuffer<uint> dependency_visible_decl;
 StructuredBuffer<uint> dependency_visible_lookup;
 RWStructuredBuffer<uint> resolved_dependency_decl;
 RWStructuredBuffer<uint> resolved_status;
+RWStructuredBuffer<uint> resolved_dependency_library_id;
+RWStructuredBuffer<uint> resolved_dependency_unit_id;
+RWStructuredBuffer<uint> resolved_dependency_local_index;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -69,9 +71,46 @@ uint key_hash(uint owner_module, uint namespace_value, uint lo, uint hi)
     return mix(hash, hi);
 }
 
+bool module_segment_equal(uint name_id, uint dependency_segment)
+{
+    uint segment = dependency_segment * 4u;
+    if (name_hash_lo[name_id] != dependency_module_segment_word(segment) ||
+        name_hash_hi[name_id] != dependency_module_segment_word(segment + 1u))
+        return false;
+    NameSpan span = name_spans[name_id];
+    uint start = dependency_module_segment_word(segment + 2u);
+    uint len = dependency_module_segment_word(segment + 3u);
+    if (span.len != len) return false;
+    for (uint byte_i = 0u; byte_i < 64u; byte_i += 1u)
+    {
+        if (byte_i >= len) break;
+        if (local_name_byte(span, byte_i) != dependency_name_byte(start + byte_i))
+            return false;
+    }
+    return true;
+}
+
+bool module_prefix_equal(uint path_i, uint prefix_count, uint module_i)
+{
+    uint module = module_i * 2u;
+    uint first_segment = dependency_module_word(module);
+    if (dependency_module_word(module + 1u) != prefix_count || prefix_count > 8u)
+        return false;
+    uint first = path_segment_base[path_i];
+    for (uint segment_i = 0u; segment_i < 8u; segment_i += 1u)
+    {
+        if (segment_i >= prefix_count) break;
+        if (!module_segment_equal(
+                path_segment_name_id[first + segment_i],
+                first_segment + segment_i))
+            return false;
+    }
+    return true;
+}
+
 uint dependency_name_byte(uint byte_i)
 {
-    uint word = dependency_name_byte_words[byte_i >> 2u];
+    uint word = dependency_name_byte_word(byte_i >> 2u);
     return (word >> ((byte_i & 3u) * 8u)) & 0xffu;
 }
 
@@ -87,16 +126,16 @@ bool exact_match(uint name_id, uint owner_module, uint visible_i)
     if (dependency_visible_owner_module[visible_i] != owner_module)
         return false;
     uint declaration_i = dependency_visible_decl[visible_i];
-    if (declaration_i >= gParams.declaration_count)
+    if (declaration_i >= dependency_declaration_count())
         return false;
     uint base = declaration_i * DECL_WORDS;
-    if (dependency_declaration_words[base + 5u] != gParams.namespace ||
-        dependency_declaration_words[base + 1u] != name_hash_lo[name_id] ||
-        dependency_declaration_words[base + 2u] != name_hash_hi[name_id])
+    if (dependency_declaration_word(base + 5u) != gParams.namespace ||
+        dependency_declaration_word(base + 1u) != name_hash_lo[name_id] ||
+        dependency_declaration_word(base + 2u) != name_hash_hi[name_id])
         return false;
     NameSpan span = name_spans[name_id];
-    uint start = dependency_declaration_words[base + 3u];
-    uint len = dependency_declaration_words[base + 4u];
+    uint start = dependency_declaration_word(base + 3u);
+    uint len = dependency_declaration_word(base + 4u);
     if (span.len != len || len > 64u)
         return false;
     for (uint byte_i = 0u; byte_i < 64u; byte_i += 1u)
@@ -109,6 +148,41 @@ bool exact_match(uint name_id, uint owner_module, uint visible_i)
     return true;
 }
 
+uint find_qualified_declaration(
+    uint path_i,
+    uint prefix_count,
+    uint name_id,
+    uint owner_module,
+    out bool ambiguous)
+{
+    ambiguous = false;
+    uint mask = gParams.lookup_capacity - 1u;
+    uint slot = key_hash(
+        owner_module, gParams.namespace, name_hash_lo[name_id], name_hash_hi[name_id]) & mask;
+    uint match = INVALID;
+    for (uint probe = 0u; probe < gParams.lookup_capacity; probe += 1u)
+    {
+        uint visible_i = dependency_visible_lookup[slot];
+        if (visible_i == INVALID) break;
+        if (visible_i < gParams.visible_capacity && exact_match(name_id, owner_module, visible_i))
+        {
+            uint declaration_i = dependency_visible_decl[visible_i];
+            uint module_i = dependency_declaration_word(declaration_i * DECL_WORDS);
+            if (module_prefix_equal(path_i, prefix_count, module_i))
+            {
+                if (match != INVALID && match != declaration_i)
+                {
+                    ambiguous = true;
+                    return INVALID;
+                }
+                match = declaration_i;
+            }
+        }
+        slot = (slot + 1u) & mask;
+    }
+    return match;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -117,39 +191,70 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_i >= gParams.path_capacity)
         return;
     resolved_dependency_decl[path_i] = INVALID;
-    if (path_i >= min(path_count_out[0u], gParams.path_capacity) ||
-        path_segment_count[path_i] != 1u)
+    if (path_i >= min(path_count_out[0u], gParams.path_capacity))
         return;
     uint expected_kind = gParams.namespace == 3u
         ? PATH_RECORD_KIND_HIR_TYPE_EXPR
         : PATH_RECORD_KIND_HIR_PATH_EXPR;
-    if (path_kind[path_i] != expected_kind ||
-        resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
+    if (path_kind[path_i] != expected_kind)
         return;
+    if (gParams.namespace == 2u && dependency_is_first_page() &&
+        resolved_status[path_i] != PATH_RESOLVE_STATUS_OK)
+    {
+        resolved_dependency_library_id[path_i] = INVALID;
+        resolved_dependency_unit_id[path_i] = INVALID;
+        resolved_dependency_local_index[path_i] = INVALID;
+    }
+    if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
+    {
+        if (gParams.namespace == 2u)
+            resolved_dependency_decl[path_i] = dependency_find_declaration(
+                resolved_dependency_library_id[path_i],
+                resolved_dependency_unit_id[path_i],
+                resolved_dependency_local_index[path_i]);
+        return;
+    }
     uint owner_module = path_owner_module_id[path_i];
     if (owner_module == INVALID)
         return;
-    uint name_id = path_segment_name_id[path_segment_base[path_i]];
+    uint segment_count = path_segment_count[path_i];
+    if (segment_count == 0u) return;
+    uint first_segment = path_segment_base[path_i];
+    uint name_id = path_segment_name_id[first_segment + segment_count - 1u];
     uint mask = gParams.lookup_capacity - 1u;
     uint slot = key_hash(
         owner_module, gParams.namespace, name_hash_lo[name_id], name_hash_hi[name_id]) & mask;
     uint match = INVALID;
-    for (uint probe = 0u; probe < gParams.lookup_capacity; probe += 1u)
+    if (segment_count > 1u)
     {
-        uint visible_i = dependency_visible_lookup[slot];
-        if (visible_i == INVALID)
-            break;
-        if (visible_i < gParams.visible_capacity && exact_match(name_id, owner_module, visible_i))
+        bool ambiguous = false;
+        match = find_qualified_declaration(
+            path_i, segment_count - 1u, name_id, owner_module, ambiguous);
+        if (ambiguous)
         {
-            uint declaration_i = dependency_visible_decl[visible_i];
-            if (match != INVALID && match != declaration_i)
-            {
-                resolved_status[path_i] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
-                return;
-            }
-            match = declaration_i;
+            resolved_status[path_i] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+            return;
         }
-        slot = (slot + 1u) & mask;
+    }
+    else
+    {
+        for (uint probe = 0u; probe < gParams.lookup_capacity; probe += 1u)
+        {
+            uint visible_i = dependency_visible_lookup[slot];
+            if (visible_i == INVALID) break;
+            if (visible_i < gParams.visible_capacity &&
+                exact_match(name_id, owner_module, visible_i))
+            {
+                uint declaration_i = dependency_visible_decl[visible_i];
+                if (match != INVALID && match != declaration_i)
+                {
+                    resolved_status[path_i] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+                    return;
+                }
+                match = declaration_i;
+            }
+            slot = (slot + 1u) & mask;
+        }
     }
     if (match == INVALID)
     {
@@ -158,5 +263,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     resolved_dependency_decl[path_i] = match;
+    if (gParams.namespace == 2u)
+    {
+        resolved_dependency_library_id[path_i] =
+            dependency_declaration_library_id(match);
+        resolved_dependency_unit_id[path_i] =
+            dependency_declaration_unit_id(match);
+        resolved_dependency_local_index[path_i] =
+            dependency_declaration_local_index(match);
+    }
     resolved_status[path_i] = PATH_RESOLVE_STATUS_OK;
 }

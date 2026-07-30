@@ -1505,18 +1505,105 @@ impl ParserHirItemReadbacks {
             bufs.total_emit,
             bufs.hir_kind.count,
         )?;
+        let hir_token_pos = read_u32_vec(&self.hir_token_pos, tree_len);
+        let hir_item_kind = read_u32_vec(&self.hir_item_kind, tree_len);
+        let hir_item_name_token_words =
+            read_u32_vec(&self.hir_item_name_token, bufs.hir_item_name_token.count);
+        let hir_item_namespace_words =
+            read_u32_vec(&self.hir_item_namespace, bufs.hir_item_namespace.count);
+        let hir_item_visibility_words =
+            read_u32_vec(&self.hir_item_visibility, bufs.hir_item_visibility.count);
+        let hir_item_path_start_words =
+            read_u32_vec(&self.hir_item_path_start, bufs.hir_item_path_start.count);
+        let hir_item_path_end_words =
+            read_u32_vec(&self.hir_item_path_end, bufs.hir_item_path_end.count);
+        let hir_item_path_node_words =
+            read_u32_vec(&self.hir_item_path_node, bufs.hir_item_path_node.count);
+        let hir_item_import_target_kind_words = read_u32_vec(
+            &self.hir_item_import_target_kind,
+            bufs.hir_item_import_target_kind.count,
+        );
+        let mut hir_item_path_start = Vec::with_capacity(tree_len);
+        let mut hir_item_path_end = Vec::with_capacity(tree_len);
+        let mut hir_item_path_node = Vec::with_capacity(tree_len);
+        let mut hir_item_import_target_kind = Vec::with_capacity(tree_len);
+        let mut hir_item_name_token = Vec::with_capacity(tree_len);
+        let mut hir_item_namespace = Vec::with_capacity(tree_len);
+        let mut hir_item_visibility = Vec::with_capacity(tree_len);
+        for node in 0..tree_len {
+            let anchor = hir_token_pos.get(node).copied().unwrap_or(u32::MAX) as usize;
+            let is_item = hir_item_kind.get(node).copied().unwrap_or(0) != 0;
+            hir_item_name_token.push(if is_item {
+                *hir_item_name_token_words.get(anchor).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_item_namespace.push(if is_item {
+                *hir_item_namespace_words.get(anchor).unwrap_or(&0)
+            } else {
+                0
+            });
+            hir_item_visibility.push(if is_item {
+                *hir_item_visibility_words.get(anchor).unwrap_or(&0)
+            } else {
+                0
+            });
+            hir_item_path_start.push(if is_item {
+                *hir_item_path_start_words.get(anchor).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_item_path_end.push(if is_item {
+                *hir_item_path_end_words.get(anchor).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_item_path_node.push(if is_item {
+                *hir_item_path_node_words.get(anchor).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_item_import_target_kind.push(if is_item {
+                *hir_item_import_target_kind_words.get(anchor).unwrap_or(&0)
+            } else {
+                0
+            });
+        }
         let hir_param_record_words =
-            read_u32_vec(&self.hir_param_record, tree_len.saturating_mul(4));
+            read_u32_vec(&self.hir_param_record, bufs.hir_param_record.count);
+        let hir_param_type_words =
+            read_u32_vec(&self.hir_param_type_node, bufs.hir_param_type_node.count);
         let mut hir_param_owner_fn_node = Vec::with_capacity(tree_len);
         let mut hir_param_ordinal = Vec::with_capacity(tree_len);
         let mut hir_param_name_token = Vec::with_capacity(tree_len);
         let mut hir_param_record_node = Vec::with_capacity(tree_len);
+        let mut hir_param_type_node = Vec::with_capacity(tree_len);
         for node in 0..tree_len {
-            let base = node * 4;
-            hir_param_owner_fn_node.push(*hir_param_record_words.get(base).unwrap_or(&u32::MAX));
-            hir_param_ordinal.push(*hir_param_record_words.get(base + 1).unwrap_or(&u32::MAX));
-            hir_param_name_token.push(*hir_param_record_words.get(base + 2).unwrap_or(&u32::MAX));
-            hir_param_record_node.push(*hir_param_record_words.get(base + 3).unwrap_or(&u32::MAX));
+            let anchor = hir_token_pos.get(node).copied().unwrap_or(u32::MAX) as usize;
+            let base = anchor.saturating_mul(4);
+            let record_node = *hir_param_record_words.get(base + 3).unwrap_or(&u32::MAX);
+            let owns_anchor = record_node == node as u32;
+            hir_param_owner_fn_node.push(if owns_anchor {
+                *hir_param_record_words.get(base).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_param_ordinal.push(if owns_anchor {
+                *hir_param_record_words.get(base + 1).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_param_name_token.push(if owns_anchor {
+                *hir_param_record_words.get(base + 2).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
+            hir_param_record_node.push(if owns_anchor { record_node } else { u32::MAX });
+            hir_param_type_node.push(if owns_anchor {
+                *hir_param_type_words.get(anchor).unwrap_or(&u32::MAX)
+            } else {
+                u32::MAX
+            });
         }
         let hir_expr_record_words = read_u32_vec(&self.hir_expr_record, tree_len.saturating_mul(4));
         let mut hir_expr_record_form = Vec::with_capacity(tree_len);
@@ -1555,7 +1642,7 @@ impl ParserHirItemReadbacks {
             ll1_status,
             node_kind: read_u32_vec(&self.node_kind, tree_len),
             hir_kind: read_u32_vec(&self.hir_kind, tree_len),
-            hir_token_pos: read_u32_vec(&self.hir_token_pos, tree_len),
+            hir_token_pos,
             hir_token_end: read_u32_vec(&self.hir_token_end, tree_len),
             hir_node_file_id: read_u32_vec(&self.hir_node_file_id, tree_len),
             hir_semantic_dense_node: read_u32_vec(&self.hir_semantic_dense_node, tree_len),
@@ -1575,16 +1662,16 @@ impl ParserHirItemReadbacks {
             hir_type_arg_next: read_u32_vec(&self.hir_type_arg_next, tree_len),
             hir_type_alias_target_node: read_u32_vec(&self.hir_type_alias_target_node, tree_len),
             hir_fn_return_type_node: read_u32_vec(&self.hir_fn_return_type_node, tree_len),
-            hir_item_kind: read_u32_vec(&self.hir_item_kind, tree_len),
-            hir_item_name_token: read_u32_vec(&self.hir_item_name_token, tree_len),
+            hir_item_kind,
+            hir_item_name_token,
             hir_item_decl_token: read_u32_vec(&self.hir_item_decl_token, tree_len),
-            hir_item_namespace: read_u32_vec(&self.hir_item_namespace, tree_len),
-            hir_item_visibility: read_u32_vec(&self.hir_item_visibility, tree_len),
-            hir_item_path_start: read_u32_vec(&self.hir_item_path_start, tree_len),
-            hir_item_path_end: read_u32_vec(&self.hir_item_path_end, tree_len),
-            hir_item_path_node: read_u32_vec(&self.hir_item_path_node, tree_len),
+            hir_item_namespace,
+            hir_item_visibility,
+            hir_item_path_start,
+            hir_item_path_end,
+            hir_item_path_node,
             hir_item_file_id: read_u32_vec(&self.hir_item_file_id, tree_len),
-            hir_item_import_target_kind: read_u32_vec(&self.hir_item_import_target_kind, tree_len),
+            hir_item_import_target_kind,
             hir_variant_parent_enum: read_u32_vec_padded(
                 &self.hir_variant_parent_enum,
                 tree_len,
@@ -1606,7 +1693,7 @@ impl ParserHirItemReadbacks {
             hir_param_ordinal,
             hir_param_name_token,
             hir_param_record_node,
-            hir_param_type_node: read_u32_vec(&self.hir_param_type_node, tree_len),
+            hir_param_type_node,
             hir_method_owner_node: read_u32_vec(&self.hir_method_owner_node, tree_len),
             hir_method_impl_node: read_u32_vec(&self.hir_method_impl_node, tree_len),
             hir_method_name_token: read_u32_vec(&self.hir_method_name_token, tree_len),

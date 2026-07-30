@@ -5,7 +5,58 @@ use super::{super::*, inputs::CreateInputs, layout::Layout};
 /// `State` keeps these buffers alive after construction; this intermediate
 /// owner lets creation code wire discovery, indexing, declaration, and
 /// projection bind groups without exposing raw allocation details.
-pub(super) struct Buffers {
+macro_rules! module_path_buffers {
+    (
+        $(pub(super) $field:ident: $ty:ty,)*
+        ; optional $(pub(super) $optional_field:ident: $optional_ty:ty,)*
+    ) => {
+        #[derive(Clone)]
+        pub(in crate::type_checker) struct Buffers {
+            $(pub(in crate::type_checker) $field: $ty,)*
+            $(pub(in crate::type_checker) $optional_field: Option<$optional_ty>,)*
+        }
+
+        impl Buffers {
+            pub(in crate::type_checker) fn register_resources<'a>(
+                &'a self,
+                resources: &mut ResourceMap<'a>,
+            ) {
+                $(resources.buffer(stringify!($field), &self.$field);)*
+                $(if let Some(buffer) = &self.$optional_field {
+                    resources.buffer(stringify!($optional_field), buffer);
+                })*
+                resources.buffers([
+                    ("module_record_family_bits", &self.record_family_bits),
+                    ("module_record_family_flag", &self.record_family_flag),
+                    ("module_record_prefix", &self.module_record_prefix),
+                    ("module_record_count_out", &self.module_count_out),
+                    ("import_record_count_out", &self.import_count_out),
+                ]);
+            }
+        }
+    };
+}
+
+/// Allocates the common case for module resources: a zero-initialized `u32`
+/// storage array whose diagnostic label is its reflected resource name.
+macro_rules! module_storage_buffers {
+    ($device:expr; $(
+        $field:ident $([$usage:ident])? : $count:expr;
+    )*) => {
+        $(
+            let $field = typed_storage_u32_rw(
+                $device,
+                concat!("type_check.resident.", stringify!($field)),
+                $count,
+                module_storage_buffers!(@usage $($usage)?),
+            );
+        )*
+    };
+    (@usage) => { wgpu::BufferUsages::empty() };
+    (@usage $usage:ident) => { wgpu::BufferUsages::$usage };
+}
+
+module_path_buffers! {
     pub(super) record_family_bits: LaniusBuffer<u32>,
     pub(super) record_family_flag: LaniusBuffer<u32>,
     pub(super) module_record_flag: LaniusBuffer<u32>,
@@ -45,7 +96,6 @@ pub(super) struct Buffers {
     pub(super) import_owner_hir: LaniusBuffer<u32>,
     pub(super) import_module_id: LaniusBuffer<u32>,
     pub(super) import_target_module_id: LaniusBuffer<u32>,
-    pub(super) import_target_dependency_module_id: Option<LaniusBuffer<u32>>,
     pub(super) import_status: LaniusBuffer<u32>,
     pub(super) import_edge_key_order: LaniusBuffer<u32>,
     pub(super) import_edge_key_order_tmp: LaniusBuffer<u32>,
@@ -125,9 +175,8 @@ pub(super) struct Buffers {
     pub(super) path_scan_block_sum: LaniusBuffer<u32>,
     pub(super) path_scan_prefix_a: LaniusBuffer<u32>,
     pub(super) path_scan_prefix_b: LaniusBuffer<u32>,
-    pub(super) path_start: LaniusBuffer<u32>,
-    pub(super) path_len: LaniusBuffer<u32>,
     pub(super) path_segment_count: LaniusBuffer<u32>,
+    pub(super) path_len: LaniusBuffer<u32>,
     pub(super) path_segment_base: LaniusBuffer<u32>,
     pub(super) path_segment_name_id: LaniusBuffer<u32>,
     pub(super) path_segment_token: LaniusBuffer<u32>,
@@ -149,11 +198,18 @@ pub(super) struct Buffers {
     pub(super) path_count_out: LaniusBuffer<u32>,
     pub(super) path_dispatch_args: LaniusBuffer<u32>,
     pub(super) import_dispatch_args: LaniusBuffer<u32>,
+    ; optional
+    pub(super) import_target_dependency_module_id: LaniusBuffer<u32>,
 }
 
 impl Buffers {
     /// Allocates module/path storage and aliases dead scratch buffers where safe.
-    pub(super) fn new(device: &wgpu::Device, layout: Layout, inputs: &CreateInputs<'_>) -> Self {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        graph: &compiler_graph::TypeCheckCompilerGraph,
+        layout: Layout,
+        inputs: &CreateInputs<'_>,
+    ) -> Result<Self> {
         let Layout {
             n_blocks,
             record_capacity,
@@ -165,14 +221,10 @@ impl Buffers {
         } = layout;
         let hir_node_capacity = inputs.hir_node_capacity;
         let token_capacity = inputs.token_capacity;
-        let retained_path_external = inputs.external_scratch;
         let path_segment_capacity = token_capacity.max(1) as usize;
-        let path_segment_name_id = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_segment_name_id",
-            path_segment_capacity,
-            retained_path_external.map(|scratch| scratch.path_segment_name_id),
-        );
+        let path_segment_name_id = graph
+            .u32_buffer("path_segment_name_id")?
+            .alias(path_segment_capacity);
         // Module/path family rows have graph-owned identities. The compiler graph
         // may still color their phase-local lifetimes onto reusable physical slots,
         // but this constructor never borrows an unrelated semantic relation.
@@ -222,11 +274,8 @@ impl Buffers {
         let key_radix_bucket_base = inputs
             .module_path_key_radix_bucket_base
             .alias(NAME_RADIX_BUCKETS as usize);
-        let module_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            module_count_out: 1;
         );
         let module_table_count_out = typed_storage_u32_fill_rw(
             device,
@@ -235,156 +284,55 @@ impl Buffers {
             layout.module_capacity_u32,
             wgpu::BufferUsages::empty(),
         );
-        let import_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let decl_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_file_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_file_id",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_path_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_path_id",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_owner_hir = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_owner_hir",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_status = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_status",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_key_canonical_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_canonical_id",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_key_segment_count = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_segment_count",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_key_segment_base = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_segment_base",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            import_count_out: 1;
+            decl_count_out: 1;
+            module_file_id: module_capacity;
+            module_path_id: module_capacity;
+            module_owner_hir: module_capacity;
+            module_status: module_capacity;
+            module_key_canonical_id: module_capacity;
+            module_key_segment_count: module_capacity;
+            module_key_segment_base: module_capacity;
         );
         let module_key_segment_name_id = path_segment_name_id.clone();
-        let module_key_to_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_to_module_id",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_key_order_tmp = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_order_tmp",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_key_radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_key_radix_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        module_storage_buffers!(device;
+            module_key_to_module_id: module_capacity;
+            module_key_order_tmp: module_capacity;
+            module_key_radix_dispatch_args [INDIRECT]: 3;
         );
         let module_key_radix_block_histogram = key_radix_block_histogram.clone();
         let module_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
         let module_key_radix_bucket_total = key_radix_bucket_total.clone();
         let module_key_radix_bucket_base = key_radix_bucket_base.clone();
-        let module_id_by_file_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_id_by_file_id",
-            module_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            module_id_by_file_id: module_capacity;
+            import_module_file_id: import_record_capacity;
+            import_path_id: import_record_capacity;
+            import_kind: import_record_capacity;
+            import_owner_hir: import_record_capacity;
         );
-        let import_module_file_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_module_file_id",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_path_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_path_id",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_kind = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_kind",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_owner_hir = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_owner_hir",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_module_id",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_target_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_target_module_id",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
+        let import_module_id = graph
+            .u32_buffer("import_module_id")?
+            .alias(import_record_capacity);
+        let import_target_module_id = graph
+            .u32_buffer("import_target_module_id")?
+            .alias(import_record_capacity);
         let import_target_dependency_module_id = inputs.dependency_interfaces.map(|_| {
             typed_storage_u32_rw(
                 device,
                 "type_check.resident.import_target_dependency_module_id",
-                import_record_capacity,
+                import_record_capacity.saturating_mul(4),
                 wgpu::BufferUsages::empty(),
             )
         });
-        let import_status = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_status",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_edge_key_order = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_edge_key_order",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_edge_key_order_tmp = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_edge_key_order_tmp",
-            import_record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_edge_key_radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_edge_key_radix_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        let import_status = graph
+            .u32_buffer("import_status")?
+            .alias(import_record_capacity);
+        module_storage_buffers!(device;
+            import_edge_key_order: import_record_capacity;
+            import_edge_key_order_tmp: import_record_capacity;
+            import_edge_key_radix_dispatch_args [INDIRECT]: 3;
         );
         // Declaration tables are retained through module/path resolution, but they
         // are not part of the x86 handoff. Use parser token/tree workspaces that
@@ -395,11 +343,8 @@ impl Buffers {
             record_capacity,
             None::<&wgpu::Buffer>,
         );
-        let decl_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_module_id",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            decl_module_id: record_capacity;
         );
         let decl_name_id = typed_reuse_storage_u32(
             device,
@@ -432,17 +377,9 @@ impl Buffers {
         // independent retained storage; aliasing them onto the hash tables
         // made exported identities depend on which declaration rows happened
         // to overwrite which names.
-        let decl_hir_node = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_hir_node",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let decl_parent_type_decl = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_parent_type_decl",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            decl_hir_node: record_capacity;
+            decl_parent_type_decl: record_capacity;
         );
         let decl_token_start = typed_reuse_storage_u32(
             device,
@@ -456,23 +393,17 @@ impl Buffers {
             record_capacity,
             None::<&wgpu::Buffer>,
         );
-        let decl_key_to_decl_id = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_key_to_decl_id",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
+        let decl_key_to_decl_id = graph
+            .u32_buffer("decl_key_to_decl_id")?
+            .alias(record_capacity);
         let decl_key_order_tmp = typed_reuse_storage_u32(
             device,
             "type_check.resident.decl_key_order_tmp",
             record_capacity,
             None::<&wgpu::Buffer>,
         );
-        let decl_key_radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_key_radix_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        module_storage_buffers!(device;
+            decl_key_radix_dispatch_args [INDIRECT]: 3;
         );
         let decl_key_radix_block_histogram = key_radix_block_histogram.clone();
         let decl_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
@@ -529,29 +460,11 @@ impl Buffers {
         );
         // Persisted semantic-interface declaration identity crosses the point
         // where namespace/public-key scratch is reused by type instances.
-        let interface_public_decl_count = typed_storage_u32_rw(
-            device,
-            "type_check.resident.interface_public_decl_count",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let interface_public_decl_local_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.interface_public_decl_local_id",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let interface_public_decl_index_by_local = typed_storage_u32_rw(
-            device,
-            "type_check.resident.interface_public_decl_index_by_local",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let interface_public_decl_index_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.resident.interface_public_decl_index_by_hir",
-            record_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            interface_public_decl_count: 1;
+            interface_public_decl_local_id: record_capacity;
+            interface_public_decl_index_by_local: record_capacity;
+            interface_public_decl_index_by_hir: record_capacity;
         );
         let import_visible_type_count = inputs.import_visible_type_count.alias(record_capacity);
         let import_visible_value_count = inputs.import_visible_value_count.alias(record_capacity);
@@ -559,172 +472,47 @@ impl Buffers {
         let import_visible_value_prefix = inputs.import_visible_value_prefix.alias(record_capacity);
         let import_visible_type_count_out = inputs.import_visible_type_count_out.clone();
         let import_visible_value_count_out = inputs.import_visible_value_count_out.clone();
-        let import_visible_type_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_module_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_name_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_decl_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_decl_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_order = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_order",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_order_tmp = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_order_tmp",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_module_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_name_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_to_decl_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_to_decl_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_status = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_status",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_duplicate_of = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_duplicate_of",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_type_key_radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_type_key_radix_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let import_visible_value_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_module_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_name_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_decl_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_decl_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_order = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_order",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_order_tmp = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_order_tmp",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_module_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_module_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_name_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_to_decl_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_to_decl_id",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_status = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_status",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_duplicate_of = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_duplicate_of",
-            import_visible_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let import_visible_value_key_radix_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_value_key_radix_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let import_visible_validate_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_visible_validate_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        module_storage_buffers!(device;
+            import_visible_type_module_id: import_visible_capacity;
+            import_visible_type_name_id: import_visible_capacity;
+            import_visible_type_decl_id: import_visible_capacity;
+            import_visible_type_key_order: import_visible_capacity;
+            import_visible_type_key_order_tmp: import_visible_capacity;
+            import_visible_type_key_module_id: import_visible_capacity;
+            import_visible_type_key_name_id: import_visible_capacity;
+            import_visible_type_key_to_decl_id: import_visible_capacity;
+            import_visible_type_status: import_visible_capacity;
+            import_visible_type_duplicate_of: import_visible_capacity;
+            import_visible_type_key_radix_dispatch_args [INDIRECT]: 3;
+            import_visible_value_module_id: import_visible_capacity;
+            import_visible_value_name_id: import_visible_capacity;
+            import_visible_value_decl_id: import_visible_capacity;
+            import_visible_value_key_order: import_visible_capacity;
+            import_visible_value_key_order_tmp: import_visible_capacity;
+            import_visible_value_key_module_id: import_visible_capacity;
+            import_visible_value_key_name_id: import_visible_capacity;
+            import_visible_value_key_to_decl_id: import_visible_capacity;
+            import_visible_value_status: import_visible_capacity;
+            import_visible_value_duplicate_of: import_visible_capacity;
+            import_visible_value_key_radix_dispatch_args [INDIRECT]: 3;
+            import_visible_validate_dispatch_args [INDIRECT]: 3;
         );
         let import_visible_key_radix_block_histogram = key_radix_block_histogram;
         let import_visible_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix;
         let import_visible_key_radix_bucket_total = key_radix_bucket_total;
         let import_visible_key_radix_bucket_base = key_radix_bucket_base;
-        let resolved_type_decl = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.resolved_type_decl",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.resolved_type_decl),
-        );
-        let resolved_value_decl = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.resolved_value_decl",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.resolved_value_decl),
-        );
-        let resolved_type_status = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.resolved_type_status",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.resolved_type_status),
-        );
-        let resolved_value_status = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.resolved_value_status",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.resolved_value_status),
-        );
+        let resolved_type_decl = graph
+            .u32_buffer("resolved_type_decl")?
+            .alias(record_capacity);
+        let resolved_value_decl = graph
+            .u32_buffer("resolved_value_decl")?
+            .alias(record_capacity);
+        let resolved_type_status = graph
+            .u32_buffer("resolved_type_status")?
+            .alias(record_capacity);
+        let resolved_value_status = graph
+            .u32_buffer("resolved_value_status")?
+            .alias(record_capacity);
         // Path prefixes are only needed until path records have been scattered.
         // Later module/import scatters read the retained path_id_by_owner_hir table,
         // so this prefix can share the module/import/decl prefix scratch.
@@ -733,95 +521,36 @@ impl Buffers {
         let path_scan_block_sum = record_scan_block_sum.clone();
         let path_scan_prefix_a = record_scan_prefix_a.clone();
         let path_scan_prefix_b = record_scan_prefix_b.clone();
-        let path_start = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_start",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_start),
-        );
-        let path_len = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_len",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_len),
-        );
-        let path_segment_count = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_segment_count",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_segment_count),
-        );
-        let path_segment_base = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_segment_base",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_segment_base),
-        );
-        let path_segment_token = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_segment_token",
-            path_segment_capacity,
-            retained_path_external.map(|scratch| scratch.path_segment_token),
-        );
-        let path_segment_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_segment_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_max_segment_count = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_max_segment_count",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_prefix_base = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_base",
-            path_segment_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_prefix_id_a = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_id_a",
-            path_segment_capacity,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_prefix_id_b = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_id_b",
-            path_segment_capacity,
-            wgpu::BufferUsages::empty(),
+        let path_segment_count = graph
+            .u32_buffer("path_segment_count")?
+            .alias(record_capacity);
+        let path_len = graph.u32_buffer("path_len")?.alias(record_capacity);
+        let path_segment_base = graph
+            .u32_buffer("path_segment_base")?
+            .alias(record_capacity);
+        let path_segment_token = graph
+            .u32_buffer("path_segment_token")?
+            .alias(path_segment_capacity);
+        module_storage_buffers!(device;
+            path_segment_count_out: 1;
+            path_max_segment_count: 1;
+            path_prefix_base: path_segment_capacity;
+            path_prefix_id_a: path_segment_capacity;
+            path_prefix_id_b: path_segment_capacity;
         );
         let path_prefix_table_capacity = path_segment_capacity
             .checked_mul(2)
             .expect("path-prefix table capacity overflow");
-        let path_prefix_table_state = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_table_state",
-            path_prefix_table_capacity,
-            wgpu::BufferUsages::empty(),
+        module_storage_buffers!(device;
+            path_prefix_table_state: path_prefix_table_capacity;
         );
         let path_prefix_round_count =
             u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
-        let path_prefix_row_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_row_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        module_storage_buffers!(device;
+            path_prefix_row_dispatch_args [INDIRECT]: 3;
+            path_prefix_round_dispatch_args [INDIRECT]: path_prefix_round_count.max(1) as usize * 3;
         );
-        let path_prefix_round_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_prefix_round_dispatch_args",
-            path_prefix_round_count.max(1) as usize * 3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let path_owner_hir = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_owner_hir",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_owner_hir),
-        );
+        let path_owner_hir = graph.u32_buffer("path_owner_hir")?.alias(record_capacity);
         let path_call_hir = typed_storage_u32_fill_rw(
             device,
             "type_check.resident.path_call_hir",
@@ -829,22 +558,14 @@ impl Buffers {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let path_owner_token = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_owner_token",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_owner_token),
-        );
+        let path_owner_token = graph.u32_buffer("path_owner_token")?.alias(record_capacity);
         // Path ids are a retained semantic artifact and are read by passes
         // that also rebuild type metadata in parser list workspaces. Keep the
         // map independent from raw-tree scratch so those workspaces can be
         // recolored without creating a same-dispatch read/write alias.
-        let path_id_by_owner_hir = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_id_by_owner_hir",
-            hir_node_capacity.max(1) as usize,
-            None::<&wgpu::Buffer>,
-        );
+        let path_id_by_owner_hir = graph
+            .u32_buffer("path_id_by_owner_hir")?
+            .alias(hir_node_capacity.max(1) as usize);
         let path_id_by_owner_token = typed_storage_u32_fill_rw(
             device,
             "type_check.resident.path_id_by_owner_token",
@@ -852,38 +573,17 @@ impl Buffers {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let path_owner_module_id = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_owner_module_id",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_owner_module_id),
-        );
-        let path_kind = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.path_kind",
-            record_capacity,
-            retained_path_external.map(|scratch| scratch.path_kind),
-        );
-        let path_count_out = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_count_out",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.path_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let import_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.import_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
+        let path_owner_module_id = graph
+            .u32_buffer("path_owner_module_id")?
+            .alias(record_capacity);
+        let path_kind = graph.u32_buffer("path_kind")?.alias(record_capacity);
+        module_storage_buffers!(device;
+            path_count_out: 1;
+            path_dispatch_args [INDIRECT]: 3;
+            import_dispatch_args [INDIRECT]: 3;
         );
 
-        Self {
+        Ok(Self {
             record_family_bits,
             record_family_flag,
             module_record_flag,
@@ -1003,9 +703,8 @@ impl Buffers {
             path_scan_block_sum,
             path_scan_prefix_a,
             path_scan_prefix_b,
-            path_start,
-            path_len,
             path_segment_count,
+            path_len,
             path_segment_base,
             path_segment_name_id,
             path_segment_token,
@@ -1027,6 +726,6 @@ impl Buffers {
             path_count_out,
             path_dispatch_args,
             import_dispatch_args,
-        }
+        })
     }
 }

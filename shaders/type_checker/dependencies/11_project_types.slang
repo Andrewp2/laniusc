@@ -3,6 +3,7 @@
 // retains an explicit external graph-node identity and is never encoded as a
 // local declaration token.
 
+import dependency_interface;
 import gpu_index;
 
 struct Params
@@ -19,13 +20,14 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_dependency_decl;
-StructuredBuffer<uint> dependency_declaration_words;
-StructuredBuffer<uint> dependency_type_words;
 StructuredBuffer<uint> canonical_type_roots;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> module_type_path_type;
 RWStructuredBuffer<uint> module_type_path_status;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
 
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
@@ -47,17 +49,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint declaration_i = resolved_dependency_decl[path_i];
     uint owner_token = path_owner_token[path_i];
-    if (declaration_i >= gParams.declaration_count || owner_token >= gParams.token_capacity)
+    if (declaration_i >= dependency_declaration_count() || owner_token >= gParams.token_capacity)
         return;
-    uint signature = dependency_declaration_words[declaration_i * DECL_WORDS + 7u];
-    if (signature >= gParams.type_count)
+    uint signature = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+    if (signature >= dependency_type_count())
         return;
     uint root = canonical_type_roots[signature];
-    if (root >= gParams.type_count)
+    if (root >= dependency_type_count())
         return;
     uint type_base = root * TYPE_WORDS;
-    uint kind = dependency_type_words[type_base];
-    uint payload = dependency_type_words[type_base + 1u];
+    uint kind = dependency_type_word(type_base);
+    uint payload = dependency_type_word(type_base + 1u);
     if (kind == INTERFACE_TYPE_SCALAR)
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_SCALAR;
@@ -68,6 +70,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
         type_expr_ref_payload[owner_token] = root;
+        external_type_library_id[owner_token] = kind == 3u
+            ? dependency_type_word(type_base + 1u)
+            : dependency_type_library_id(root);
+        external_type_unit_id[owner_token] = kind == 3u
+            ? dependency_type_word(type_base + 8u)
+            : dependency_type_unit_id(root);
+        external_type_local_index[owner_token] = kind == 3u
+            ? dependency_type_word(type_base + 2u)
+            : dependency_type_local_index(root);
     }
     module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
 }

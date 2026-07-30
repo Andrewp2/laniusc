@@ -2,23 +2,11 @@
 // Downstream validation consumes this artifact instead of reconstructing an
 // expression's type from token-keyed declaration and call work tables.
 
+import hir_records;
 import gpu_index;
+import checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct CheckedCallArtifact
-{
-    uint target_token;
-    uint dependency_decl;
-    uint intrinsic_tag;
-    uint return_type;
-    uint receiver_hir;
-    uint arg_count;
-    uint return_ref_tag;
-    uint return_ref_payload;
-};
-
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;

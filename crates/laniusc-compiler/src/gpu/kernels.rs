@@ -4,12 +4,16 @@
 //! phases refer to that identity through graph nodes and high-level operations;
 //! they do not own one Rust field or loader call per pipeline.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
 use super::passes_core::{PassData, make_pass_data_from_shader_key};
-use crate::reflection::{SlangReflection, parse_reflection_from_bytes};
+use crate::reflection::SlangReflection;
+#[cfg(test)]
+use crate::reflection::parse_reflection_from_bytes;
 
 /// Reflection lookup used by graph construction before physical resources
 /// and pipelines exist.
@@ -18,26 +22,31 @@ pub(crate) trait KernelReflections {
 }
 
 /// Reflection-only generated kernel catalog.
+#[cfg(test)]
 pub(crate) struct KernelCatalog {
     reflections: HashMap<String, Arc<SlangReflection>>,
 }
 
+#[cfg(test)]
 impl KernelCatalog {
-    pub(crate) fn load_prefix(prefix: &str) -> Result<Self> {
-        let keys = crate::shader_artifacts::shader_keys(prefix)
-            .with_context(|| format!("discover generated GPU kernels below `{prefix}`"))?;
-        let mut reflections = HashMap::with_capacity(keys.len());
-        for key in keys {
-            let path = crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json"));
-            let bytes = std::fs::read(&path)
-                .with_context(|| format!("read GPU kernel reflection {}", path.display()))?;
-            let reflection = parse_reflection_from_bytes(&bytes).map_err(anyhow::Error::msg)?;
-            reflections.insert(key, Arc::new(reflection));
+    pub(crate) fn load_prefixes(prefixes: &[&str]) -> Result<Self> {
+        let mut reflections = HashMap::new();
+        for prefix in prefixes {
+            let keys = crate::shader_artifacts::shader_keys(prefix)
+                .with_context(|| format!("discover generated GPU kernels below `{prefix}`"))?;
+            for key in keys {
+                let path = crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json"));
+                let bytes = std::fs::read(&path)
+                    .with_context(|| format!("read GPU kernel reflection {}", path.display()))?;
+                let reflection = parse_reflection_from_bytes(&bytes).map_err(anyhow::Error::msg)?;
+                reflections.insert(key, Arc::new(reflection));
+            }
         }
         Ok(Self { reflections })
     }
 }
 
+#[cfg(test)]
 impl KernelReflections for KernelCatalog {
     fn reflection(&self, key: &str) -> Result<&SlangReflection, String> {
         self.reflections
@@ -114,5 +123,11 @@ impl KernelReflections for KernelRegistry {
             .get(key)
             .map(|kernel| kernel.reflection.as_ref())
             .ok_or_else(|| format!("GPU kernel `{key}` was not prepared before compilation"))
+    }
+}
+
+impl super::operations::ComputeKernels for KernelRegistry {
+    fn kernel(&self, key: &str) -> &PassData {
+        self.kernel(key)
     }
 }

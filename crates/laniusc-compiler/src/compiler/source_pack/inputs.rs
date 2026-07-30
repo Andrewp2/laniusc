@@ -232,17 +232,25 @@ impl ExplicitSourcePack {
         Ok(self)
     }
     /// Plans backend codegen units over this in-memory pack.
-    pub fn codegen_unit_plan(&self, limits: CodegenUnitLimits) -> CodegenUnitPlan {
-        CodegenUnitPlan::from_source_pack_with_libraries(&self.sources, &self.library_ids, limits)
+    pub fn codegen_unit_plan(&self, limits: CompilationUnitLimits) -> CompilationUnitPlan {
+        CompilationUnitPlan::from_source_pack_with_libraries(
+            &self.sources,
+            &self.library_ids,
+            limits,
+        )
     }
 
     /// Plans frontend library-interface units over this in-memory pack.
-    pub fn frontend_unit_plan(&self, limits: CodegenUnitLimits) -> FrontendUnitPlan {
-        FrontendUnitPlan::from_source_pack_with_libraries(&self.sources, &self.library_ids, limits)
+    pub fn frontend_unit_plan(&self, limits: CompilationUnitLimits) -> CompilationUnitPlan {
+        CompilationUnitPlan::from_source_pack_with_libraries(
+            &self.sources,
+            &self.library_ids,
+            limits,
+        )
     }
 
     /// Builds the full source-pack job graph for the configured limits.
-    pub fn job_plan(&self, limits: CodegenUnitLimits) -> SourcePackJobPlan {
+    pub fn job_plan(&self, limits: CompilationUnitLimits) -> SourcePackJobPlan {
         SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
             &self.sources,
             &self.library_ids,
@@ -252,40 +260,43 @@ impl ExplicitSourcePack {
     }
 
     /// Produces a topological job schedule for the full job graph.
-    pub fn job_schedule(&self, limits: CodegenUnitLimits) -> SourcePackJobSchedule {
+    pub fn job_schedule(&self, limits: CompilationUnitLimits) -> SourcePackJobSchedule {
         self.job_plan(limits).job_schedule()
     }
 
     /// Produces a job schedule that keeps frontend jobs bounded by unit limits.
     pub fn bounded_frontend_job_schedule(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> SourcePackJobSchedule {
         self.job_plan(limits).bounded_frontend_job_schedule()
     }
 
     /// Builds the default bounded-frontend artifact plan.
-    pub fn build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
+    pub fn build_plan(&self, limits: CompilationUnitLimits) -> SourcePackBuildPlan {
         self.bounded_frontend_build_plan(limits)
     }
 
     /// Builds an artifact plan with one frontend job per whole library.
     pub fn whole_library_frontend_build_plan(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> SourcePackBuildPlan {
         self.job_plan(limits).build_plan()
     }
 
     /// Builds an artifact plan whose frontend and codegen work respect limits.
-    pub fn bounded_frontend_build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
+    pub fn bounded_frontend_build_plan(
+        &self,
+        limits: CompilationUnitLimits,
+    ) -> SourcePackBuildPlan {
         self.job_plan(limits).bounded_frontend_build_plan()
     }
 
     /// Builds a compact generic-target artifact manifest for this pack.
     pub fn compact_build_artifact_manifest(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
     ) -> SourcePackBuildArtifactManifest {
         self.compact_build_artifact_manifest_for_target(
@@ -298,7 +309,7 @@ impl ExplicitSourcePack {
     /// Builds a compact artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         target: SourcePackArtifactTarget,
     ) -> SourcePackBuildArtifactManifest {
@@ -309,7 +320,7 @@ impl ExplicitSourcePack {
     }
 
     /// Returns the source strings covered by a codegen unit.
-    pub fn source_slice_for_unit(&self, unit: &CodegenUnit) -> &[String] {
+    pub fn source_slice_for_unit(&self, unit: &CompilationUnit) -> &[String] {
         &self.sources[unit.source_range()]
     }
 
@@ -326,7 +337,7 @@ impl ExplicitSourcePack {
     /// Executes the default bounded-frontend build plan with an in-memory executor.
     pub fn execute_build_plan<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         executor: &mut E,
     ) -> Result<
         BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
@@ -347,7 +358,7 @@ impl ExplicitSourcePack {
     /// Executes the bounded-frontend build plan with explicit batch limits.
     pub fn execute_build_plan_with_batch_limits<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<
@@ -366,7 +377,13 @@ impl ExplicitSourcePackPathManifest {
     /// Returns whether this pack must use path-backed bounded execution rather
     /// than one resident frontend/backend job.
     pub fn requires_bounded_compilation(&self) -> bool {
-        let limits = CodegenUnitLimits::default();
+        self.requires_bounded_compilation_with_limits(CompilationUnitLimits::default())
+    }
+
+    /// Returns whether this pack exceeds an explicit resident compilation-unit
+    /// capacity and must therefore use path-backed bounded execution.
+    pub fn requires_bounded_compilation_with_limits(&self, limits: CompilationUnitLimits) -> bool {
+        let limits = limits.normalized();
         self.files.len() > limits.max_source_files
             || self
                 .files
@@ -450,29 +467,37 @@ impl ExplicitSourcePackPathManifest {
     }
 
     /// Plans backend codegen units over path-backed source metadata.
-    pub fn codegen_unit_plan(&self, limits: CodegenUnitLimits) -> CodegenUnitPlan {
+    pub fn codegen_unit_plan(&self, limits: CompilationUnitLimits) -> CompilationUnitPlan {
         let mut units = Vec::new();
-        CodegenUnitPlan::try_for_each_from_files(self.source_file_input_iter(), limits, |unit| {
-            units.push(unit);
-            Ok::<(), ()>(())
-        })
+        CompilationUnitPlan::try_for_each_from_files(
+            self.source_file_input_iter(),
+            limits,
+            |unit| {
+                units.push(unit);
+                Ok::<(), ()>(())
+            },
+        )
         .unwrap_or_else(|()| unreachable!("infallible path-manifest codegen-unit plan failed"));
-        CodegenUnitPlan { units }
+        CompilationUnitPlan { units }
     }
 
     /// Plans frontend library-interface units over path-backed source metadata.
-    pub fn frontend_unit_plan(&self, limits: CodegenUnitLimits) -> FrontendUnitPlan {
+    pub fn frontend_unit_plan(&self, limits: CompilationUnitLimits) -> CompilationUnitPlan {
         let mut units = Vec::new();
-        FrontendUnitPlan::try_for_each_from_files(self.source_file_input_iter(), limits, |unit| {
-            units.push(unit);
-            Ok::<(), ()>(())
-        })
+        CompilationUnitPlan::try_for_each_from_files(
+            self.source_file_input_iter(),
+            limits,
+            |unit| {
+                units.push(unit);
+                Ok::<(), ()>(())
+            },
+        )
         .unwrap_or_else(|()| unreachable!("infallible path-manifest frontend-unit plan failed"));
-        FrontendUnitPlan { units }
+        CompilationUnitPlan { units }
     }
 
     /// Builds the full source-pack job graph from path-backed source metadata.
-    pub fn job_plan(&self, limits: CodegenUnitLimits) -> SourcePackJobPlan {
+    pub fn job_plan(&self, limits: CompilationUnitLimits) -> SourcePackJobPlan {
         SourcePackJobPlan::from_file_stream_with_dependencies(
             self.source_file_input_iter(),
             &self.library_dependencies,
@@ -481,40 +506,43 @@ impl ExplicitSourcePackPathManifest {
     }
 
     /// Produces a topological job schedule for the path-backed job graph.
-    pub fn job_schedule(&self, limits: CodegenUnitLimits) -> SourcePackJobSchedule {
+    pub fn job_schedule(&self, limits: CompilationUnitLimits) -> SourcePackJobSchedule {
         self.job_plan(limits).job_schedule()
     }
 
     /// Produces a path-backed schedule that keeps frontend jobs bounded by limits.
     pub fn bounded_frontend_job_schedule(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> SourcePackJobSchedule {
         self.job_plan(limits).bounded_frontend_job_schedule()
     }
 
     /// Builds the default bounded-frontend artifact plan.
-    pub fn build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
+    pub fn build_plan(&self, limits: CompilationUnitLimits) -> SourcePackBuildPlan {
         self.bounded_frontend_build_plan(limits)
     }
 
     /// Builds an artifact plan with one frontend job per whole library.
     pub fn whole_library_frontend_build_plan(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
     ) -> SourcePackBuildPlan {
         self.job_plan(limits).build_plan()
     }
 
     /// Builds an artifact plan whose frontend and codegen work respect limits.
-    pub fn bounded_frontend_build_plan(&self, limits: CodegenUnitLimits) -> SourcePackBuildPlan {
+    pub fn bounded_frontend_build_plan(
+        &self,
+        limits: CompilationUnitLimits,
+    ) -> SourcePackBuildPlan {
         self.job_plan(limits).bounded_frontend_build_plan()
     }
 
     /// Builds a compact generic-target artifact manifest for this path manifest.
     pub fn compact_build_artifact_manifest(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
     ) -> SourcePackBuildArtifactManifest {
         self.compact_build_artifact_manifest_for_target(
@@ -527,7 +555,7 @@ impl ExplicitSourcePackPathManifest {
     /// Builds a compact artifact manifest for a concrete target.
     pub fn compact_build_artifact_manifest_for_target(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         target: SourcePackArtifactTarget,
     ) -> SourcePackBuildArtifactManifest {
@@ -566,7 +594,7 @@ impl ExplicitSourcePackPathManifest {
     /// Executes the default bounded-frontend path-backed build plan.
     pub fn execute_build_plan<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         executor: &mut E,
     ) -> Result<
         BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
@@ -587,7 +615,7 @@ impl ExplicitSourcePackPathManifest {
     /// Executes the path-backed build plan with explicit batch limits.
     pub fn execute_build_plan_with_batch_limits<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<
@@ -604,7 +632,7 @@ impl ExplicitSourcePackPathManifest {
     /// Executes the path-backed build plan while returning executor handles.
     pub fn execute_build_plan_with_handles<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<HandleBuildExecutionResult<E::LinkedOutput>, CompileError>
@@ -618,7 +646,7 @@ impl ExplicitSourcePackPathManifest {
     /// Executes path-backed artifact batches and batched link work with handles.
     pub fn execute_build_plan_with_batched_link_handles<E>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<HandleBuildExecutionResult<E::LinkedOutput>, CompileError>
@@ -632,7 +660,7 @@ impl ExplicitSourcePackPathManifest {
     /// Executes a path-backed build through an external artifact store.
     pub fn execute_build_plan_with_artifact_store<E, S>(
         &self,
-        limits: CodegenUnitLimits,
+        limits: CompilationUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
         store: &mut S,

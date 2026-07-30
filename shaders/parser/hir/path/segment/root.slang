@@ -10,6 +10,7 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_item_path_node;
 
@@ -62,7 +63,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : INVALID;
     }
     else if (kind == HIR_MODULE_ITEM || kind == HIR_IMPORT_ITEM)
-        root = hir_item_path_node[node];
+        root = hir_item_path_node[hir_token_pos[node]];
 
     // Path containers are also HIR_PATH_EXPR nodes. Module/import/type owners
     // must win over the container's self-candidate independent of lane order.

@@ -1,7 +1,7 @@
+import hir_records;
 import gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

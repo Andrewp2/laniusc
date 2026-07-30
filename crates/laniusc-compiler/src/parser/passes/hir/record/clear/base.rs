@@ -42,6 +42,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            ("token_count".into(), b.token_count.as_entire_binding()),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
                 "hir_item_name_token".into(),
@@ -72,6 +73,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_item_import_target_kind.as_entire_binding(),
             ),
             (
+                "hir_param_record".into(),
+                b.hir_param_record.as_entire_binding(),
+            ),
+            (
+                "hir_param_type_node".into(),
+                b.hir_param_type_node.as_entire_binding(),
+            ),
+            (
                 "hir_type_alias_target_node".into(),
                 b.hir_type_alias_target_node.as_entire_binding(),
             ),
@@ -82,14 +91,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
             (
                 "hir_type_len_value".into(),
                 b.hir_type_len_value.as_entire_binding(),
-            ),
-            (
-                "hir_param_record".into(),
-                b.hir_param_record.as_entire_binding(),
-            ),
-            (
-                "hir_param_type_node".into(),
-                b.hir_param_type_node.as_entire_binding(),
             ),
             (
                 "hir_method_owner_node".into(),

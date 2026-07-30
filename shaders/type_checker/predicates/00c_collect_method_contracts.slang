@@ -4,6 +4,7 @@
 // compact parameter-family row. No raw production, parent, sibling, or
 // raw-to-compact relation crosses this pass boundary.
 
+import hir_records;
 import fixed.compact_method;
 import atomics;
 
@@ -14,27 +15,8 @@ struct Params
     uint n_hir_nodes;
 };
 
-struct HirMethodSignature
-{
-    uint first_param_token;
-    uint impl_receiver_type;
-    uint receiver_mode;
-    uint metadata;
-};
 
-struct HirParam
-{
-    uint owner;
-    uint name_token;
-    uint type_node;
-    uint ordinal;
-};
 
-struct HirRange
-{
-    uint start;
-    uint count;
-};
 
 ConstantBuffer<Params> gParams;
 

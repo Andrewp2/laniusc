@@ -146,7 +146,10 @@ def render_project(workload: Workload, limit: int) -> dict[str, str]:
     shards: list[list[FunctionSource]] = []
     current: list[FunctionSource] = []
     current_bytes = 0
-    header_reserve = 32_768
+    # Cross-shard qualification lengthens reducer calls after shard ownership
+    # is known. Leave a proportional margin so every generated module still
+    # satisfies the requested hard unit boundary.
+    header_reserve = limit // 2
     for function in functions:
         function_bytes = len(function.source.encode())
         if current and current_bytes + function_bytes + header_reserve > limit:
@@ -182,7 +185,13 @@ def render_project(workload: Workload, limit: int) -> dict[str, str]:
             f"{imports}\n"
         )
         source = header + "".join(
-            without_pair_structs(function.source) for function in shard
+            qualify_cross_shard_calls(
+                without_pair_structs(function.source),
+                function.dependencies,
+                owner,
+                shard_index,
+            )
+            for function in shard
         )
         if len(source.encode()) > limit:
             raise ValueError(
@@ -197,7 +206,7 @@ def render_project(workload: Workload, limit: int) -> dict[str, str]:
         "module bench::main;\n\n"
         f"{entry_imports}\n"
         "fn main() -> i32 {\n"
-        f"    return {workload.root}() & 255;\n"
+        f"    return bench::shard_{root_shard:05d}::{workload.root}() & 255;\n"
         "}\n"
     )
     return files
@@ -223,6 +232,23 @@ def without_pair_structs(source: str) -> str:
         ),
         source,
     )
+
+
+def qualify_cross_shard_calls(
+    source: str,
+    dependencies: tuple[str, ...],
+    owner: dict[str, int],
+    current_shard: int,
+) -> str:
+    for dependency in dependencies:
+        dependency_shard = owner[dependency]
+        if dependency_shard != current_shard:
+            source = re.sub(
+                rf"\b{re.escape(dependency)}\(",
+                f"bench::shard_{dependency_shard:05d}::{dependency}(",
+                source,
+            )
+    return source
 
 
 def specialized_arguments(workload: Workload) -> dict[str, int]:

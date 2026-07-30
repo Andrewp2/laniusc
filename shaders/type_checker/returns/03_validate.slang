@@ -1,5 +1,6 @@
 // Validate that concrete non-void functions have compact-HIR return evidence.
 
+import hir_records;
 import status;
 import fixed.compact_method;
 
@@ -12,8 +13,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct HirPayload { uint a; uint b; uint c; uint d; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;

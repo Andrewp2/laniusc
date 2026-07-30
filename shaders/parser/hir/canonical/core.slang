@@ -1,9 +1,7 @@
+import hir_records;
 import generated_parse_production_ids;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
-struct HirCore { uint kind; uint parent; uint token_start; uint token_end; };
-struct HirLinks { uint first_child; uint next_sibling; uint subtree_end; uint file_id; };
-struct HirPayload { uint a; uint b; uint c; uint d; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;
@@ -136,6 +134,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= count) return;
     uint raw = canonical_dense_to_raw[row];
     uint item_kind = hir_item_kind[raw];
+    uint item_anchor = hir_token_pos[raw];
 
     HirCore core;
     uint production = node_kind[raw];
@@ -175,7 +174,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     payload.d = INVALID;
 
     uint type_form = hir_type_form[raw];
-    uint4 parameter = hir_param_record[raw];
+    uint parameter_anchor = hir_token_pos[raw];
+    uint4 parameter = parameter_anchor < gCanonical.canonical_capacity
+        ? hir_param_record[parameter_anchor]
+        : uint4(INVALID, INVALID, INVALID, INVALID);
+    if (parameter.w != raw)
+        parameter = uint4(INVALID, INVALID, INVALID, INVALID);
     uint stmt_base = raw * 4u;
     uint stmt_kind = hir_stmt_record[stmt_base];
     uint expr_form = hir_expr_record[stmt_base];
@@ -193,11 +197,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (item_kind != 0u)
     {
         payload.a = item_kind;
-        payload.b = hir_item_name_token[raw];
-        payload.c = hir_item_namespace[raw];
+        payload.b = hir_item_name_token[item_anchor];
+        payload.c = hir_item_namespace[item_anchor];
         payload.d = item_kind == 2u
-            ? hir_item_import_target_kind[raw]
-            : hir_item_visibility[raw];
+            ? hir_item_import_target_kind[hir_token_pos[raw]]
+            : hir_item_visibility[item_anchor];
     }
     else if (core.kind == 3u)
     {
@@ -211,7 +215,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.a = dense_id(parameter.x);
         payload.b = parameter.y;
         payload.c = parameter.z;
-        payload.d = dense_id(hir_param_type_node[raw]);
+        payload.d = dense_id(hir_param_type_node[parameter_anchor]);
     }
     else if (type_form != 0u)
     {
